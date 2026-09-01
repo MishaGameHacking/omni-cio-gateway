@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
+import scripts.check_v10_npm_audit_policy as audit_policy
 import scripts.check_v10_regression_shield as shield
+import scripts.run_v10_npm_audit as npm_audit
 
 
 class V10RegressionShieldGuardTests(unittest.TestCase):
@@ -188,8 +191,137 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("logs/job summaries", failures[0])
 
+    def test_npm_audit_classifies_observed_tls_break(self) -> None:
+        stderr = (
+            "npm warn audit request to https://registry.npmjs.org/-/npm/v1/security/"
+            "advisories/bulk failed, reason: Client network socket disconnected before "
+            "secure TLS connection was established\n"
+            "npm error audit endpoint returned an error\n"
+        )
+        self.assertTrue(npm_audit.is_transient_registry_failure("", stderr))
+
+    def test_npm_audit_retries_transient_then_requires_success(self) -> None:
+        results = iter(
+            (
+                subprocess.CompletedProcess(
+                    args=["npm"],
+                    returncode=1,
+                    stdout="",
+                    stderr="npm error ECONNRESET registry transport failed\n",
+                ),
+                subprocess.CompletedProcess(
+                    args=["npm"],
+                    returncode=0,
+                    stdout="found 0 vulnerabilities\n",
+                    stderr="",
+                ),
+            )
+        )
+        commands: list[list[str]] = []
+        delays: list[float] = []
+
+        def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+            commands.append(command)
+            return next(results)
+
+        status = npm_audit.run_audit(
+            npm="npm",
+            attempts=3,
+            backoff_seconds=2.0,
+            runner=runner,
+            sleeper=delays.append,
+        )
+
+        self.assertEqual(status, 0)
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(delays, [2.0])
+        self.assertEqual(commands[0], ["npm", "audit", "--audit-level=high"])
+
+    def test_npm_audit_security_finding_is_not_retried(self) -> None:
+        calls = 0
+
+        def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+            nonlocal calls
+            calls += 1
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=1,
+                stdout="# npm audit report\ncritical severity vulnerability\n",
+                stderr="npm error ECONNRESET after advisory response\n",
+            )
+
+        status = npm_audit.run_audit(
+            npm="npm",
+            attempts=3,
+            runner=runner,
+            sleeper=lambda _delay: self.fail("security findings must not sleep/retry"),
+        )
+
+        self.assertEqual(status, 1)
+        self.assertEqual(calls, 1)
+
+    def test_npm_audit_transient_exhaustion_stays_red(self) -> None:
+        calls = 0
+        delays: list[float] = []
+
+        def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+            nonlocal calls
+            calls += 1
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=1,
+                stdout="",
+                stderr="npm error ETIMEDOUT registry transport failed\n",
+            )
+
+        status = npm_audit.run_audit(
+            npm="npm",
+            attempts=3,
+            backoff_seconds=1.0,
+            runner=runner,
+            sleeper=delays.append,
+        )
+
+        self.assertEqual(status, 1)
+        self.assertEqual(calls, 3)
+        self.assertEqual(delays, [1.0, 2.0])
+
+    def test_npm_audit_policy_rejects_one_shot_workflow(self) -> None:
+        failures: list[str] = []
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workflow.yml"
+            path.write_text(
+                "permissions:\n  contents: read\n"
+                "steps:\n"
+                "  - name: Audit Web dependencies\n"
+                "    run: npm audit --audit-level=high\n",
+                encoding="utf-8",
+            )
+            audit_policy.validate_npm_audit_workflow(path, failures)
+        self.assertEqual(len(failures), 2)
+        self.assertTrue(any("bounded audit wrapper" in item for item in failures))
+        self.assertTrue(any("one-shot npm audit" in item for item in failures))
+
+    def test_npm_audit_policy_rejects_raw_command_variants(self) -> None:
+        raw_commands = (
+            "npm audit",
+            "npm.cmd audit --audit-level=critical",
+            'call "C:\\Program Files\\nodejs\\npm.cmd" audit --audit-level moderate',
+            "npm audit --audit-level low",
+        )
+        for command in raw_commands:
+            with self.subTest(command=command):
+                self.assertTrue(audit_policy._contains_direct_one_shot_audit(command))
+
+        wrapper_command = (
+            "python ..\\..\\scripts\\run_v10_npm_audit.py --npm "
+            '"C:\\Program Files\\nodejs\\npm.cmd" --audit-level high'
+        )
+        self.assertFalse(audit_policy._contains_direct_one_shot_audit(wrapper_command))
+
     def test_current_repository_satisfies_wp3_guard(self) -> None:
         self.assertEqual(shield.validate_repository(), [])
+        self.assertEqual(audit_policy.validate_repository(), [])
 
 
 if __name__ == "__main__":

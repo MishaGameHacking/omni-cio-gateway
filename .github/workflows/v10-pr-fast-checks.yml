@@ -299,6 +299,10 @@ jobs:
         if: needs.route.outputs.fast_frontend != 'true'
         run: echo Fast frontend substantive checks NOT_APPLICABLE by source-controlled path router; routing check executed successfully.
 
+      - name: Bootstrap protected runner Python for audit transport guard
+        if: needs.route.outputs.fast_frontend == 'true'
+        run: scripts\bootstrap_windows_ci_python.cmd
+
       - name: Verify exact installed Node.js and npm
         if: needs.route.outputs.fast_frontend == 'true'
         run: |
@@ -363,7 +367,7 @@ jobs:
       - name: Audit product Web dependencies
         if: needs.route.outputs.fast_frontend == 'true'
         working-directory: apps/web
-        run: call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
+        run: python ..\..\scripts\run_v10_npm_audit.py --npm "C:\Program Files\nodejs\npm.cmd" --audit-level high
 
       - name: Clean frontend workspace
         if: always()

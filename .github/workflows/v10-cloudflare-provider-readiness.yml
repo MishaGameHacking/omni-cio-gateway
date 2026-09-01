@@ -1,0 +1,93 @@
+name: V10 Cloudflare Provider Readiness
+
+on:
+  push:
+    branches:
+      - system/cloudflare-public-product
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-cloudflare-provider-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provider-readiness:
+    name: Cloudflare provider authority and build-path readiness
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+
+    steps:
+      - name: Expose installed Git Bash
+        shell: cmd
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact pushed head without external Actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Bootstrap protected runner Python
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Probe provider authority without revealing credentials or identifiers
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID_VALUE: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID_VALUE: ${{ secrets.NEON_PROJECT_ID }}
+        run: python -m scripts.check_v10_cloudflare_provider_readiness
+
+      - name: Probe Workers Builds user-scoped authority fail-closed
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
+
+      - name: Probe Neon exact-project read authority fail-closed
+        shell: bash
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
+          echo "CLOUDFLARE_CF_C_PROVIDER_READINESS=READY"
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi

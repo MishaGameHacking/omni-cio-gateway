@@ -94,6 +94,18 @@ jobs:
       - name: Verify Cloudflare public-product integrated delivery law
         run: python scripts/check_v10_cloudflare_public_product_integrated.py
 
+      - name: Verify Cloudflare Builds verifier contract
+        run: python scripts/check_v10_cloudflare_builds_verifier.py
+
+      - name: Verify Cloudflare runtime compatibility contract
+        run: python scripts/check_v10_cloudflare_runtime_compatibility.py
+
+      - name: Verify Cloudflare release acceptance contract
+        run: python scripts/check_v10_cloudflare_release_acceptance.py
+
+      - name: Verify Cloudflare candidate provider delivery contract
+        run: python scripts/check_v10_cloudflare_candidate_delivery.py
+
       - name: Verify hosted release post-merge alignment governance
         run: python scripts/check_v10_hosted_release_alignment_governance.py
 
@@ -121,6 +133,17 @@ jobs:
           scripts/check_v10_engineering_governance.py
           scripts/check_v10_cloudflare_platform_authority.py
           scripts/check_v10_cloudflare_public_product_integrated.py
+          scripts/check_v10_cloudflare_builds_verifier.py
+          scripts/run_v10_cloudflare_verifier.py
+          scripts/check_v10_cloudflare_runtime_compatibility.py
+          scripts/check_v10_cloudflare_release_acceptance.py
+          scripts/check_v10_cloudflare_live_release.py
+          scripts/check_v10_cloudflare_candidate_delivery.py
+          scripts/provision_v10_cloudflare_neon_runtime.py
+          scripts/bootstrap_v10_cloudflare_builds.py
+          scripts/write_v10_cloudflare_build_info.py
+          scripts/v10_jsonc.py
+          apps/api/cloudflare_runtime.py
           scripts/check_v10_hosted_release_alignment_governance.py
           scripts/check_v10_integrated_system_update_governance.py
           scripts/check_v10_progressive_capability_activation.py
@@ -142,6 +165,12 @@ jobs:
           tests.test_v10_hosted_release_alignment_governance
           tests.test_v10_cloudflare_platform_authority
           tests.test_v10_cloudflare_public_product_integrated
+          tests.test_v10_cloudflare_builds_verifier
+          tests.test_v10_cloudflare_runtime_compatibility
+          tests.test_v10_cloudflare_release_acceptance
+          tests.test_v10_cloudflare_live_release
+          tests.test_v10_cloudflare_candidate_provider
+          tests.test_v10_jsonc
 
       - name: Clean self-hosted workspace
         if: always()

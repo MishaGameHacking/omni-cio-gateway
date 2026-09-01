@@ -1,0 +1,80 @@
+{
+  "schema": "omni-cio.v10.cloudflare-container-deploy-authority.v1",
+  "status": "BRANCH_LOCAL_CF_C_CONTRACT",
+  "update_id": "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
+  "milestone": "CF-C",
+  "provider": "CLOUDFLARE_WORKERS_PAID",
+  "authority": {
+    "github_source_and_exact_sha_remain_rank_1": true,
+    "workers_builds_token_controls_remote_deploy_access": true,
+    "default_workers_builds_token_may_be_assumed_to_include_containers_permissions": false,
+    "containers_registry_read_is_required_for_registry_readiness_probe": true,
+    "containers_registry_write_is_required_for_candidate_image_publish": true,
+    "read_probe_success_is_candidate_deploy_acceptance": false,
+    "real_exact_sha_container_build_and_live_probe_still_required": true,
+    "provider_permission_failure_may_be_reported_as_success": false
+  },
+  "staging_autobuild_quarantine": {
+    "risk_reducing_provider_deactivation_allowed_before_registry_probe": true,
+    "persistent_branch_push_trigger_allowed_during_cf_c": false,
+    "preexisting_nonterminal_staging_builds_must_be_cancelled": true,
+    "preexisting_build_may_be_accepted_as_exact_sha_candidate": false,
+    "candidate_build_start_mode": "MANUAL_EXACT_SHA_AFTER_AUTHORITY_GATES",
+    "trigger_must_be_removed_after_candidate_attempt": true,
+    "gated_trigger_branch_filter_must_not_match_integrated_branch": true,
+    "gated_trigger_must_be_deleted_immediately_after_manual_build_start": false,
+    "gated_trigger_must_remain_until_candidate_build_terminal": true
+  },
+  "pre_mutation_probe": {
+    "command": "wrangler containers images list --json",
+    "operation": "READ_ONLY",
+    "must_run_after_exact_wrangler_install": true,
+    "must_run_before_neon_or_cloudflare_candidate_mutation": true,
+    "risk_reducing_staging_autobuild_quarantine_is_the_only_pre_probe_provider_mutation": true,
+    "stdout_must_be_suppressed": true,
+    "stderr_must_be_suppressed": true,
+    "timeout_seconds": 45,
+    "success_marker": "CLOUDFLARE_CONTAINERS_REGISTRY_READ=READY",
+    "blocked_marker": "CLOUDFLARE_CONTAINERS_REGISTRY_READ=BLOCKED",
+    "blocked_code": "CLOUDFLARE_CONTAINERS_REGISTRY_AUTHORITY_REQUIRED",
+    "blocked_exit_code": 78
+  },
+  "deployment_acceptance": {
+    "source_worker_upload_alone_is_sufficient": false,
+    "container_image_publish_success_required": true,
+    "staging_worker_and_container_live_acceptance_required": true,
+    "exact_source_sha_required": true,
+    "database_health_required": true,
+    "production_promotion_allowed_in_cf_c": false
+  },
+  "privacy": {
+    "raw_wrangler_probe_output_in_ci_allowed": false,
+    "api_token_value_in_ci_allowed": false,
+    "full_cloudflare_account_id_in_ci_allowed": false,
+    "raw_container_registry_identifier_in_diagnostic_allowed": false,
+    "controlled_diagnostic_codes_only": true
+  },
+  "protected_invariants": {
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "telegram_vk_provider_activation": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "cf_d_unlocked_before_cf_c_acceptance": false
+  },
+  "external_contract_revalidation": {
+    "cloudflare_api_token_permission_reference_checked_on": "2026-08-31",
+    "cloudflare_workers_builds_token_reference_checked_on": "2026-08-31",
+    "cloudflare_wrangler_containers_images_reference_checked_on": "2026-08-31",
+    "required_semantics": [
+      "Containers Read grants read access to Containers",
+      "Containers Edit grants write access to Containers",
+      "Workers Builds API token defines access granted to builds",
+      "default Workers Builds token permissions do not document Containers permissions",
+      "wrangler containers images list is the supported managed-registry read command",
+      "manual Workers Builds may specify both branch and commit_hash to pin an exact commit",
+      "Workers Builds API supports cancelling running builds and deleting triggers",
+      "Cloudflare does not document deletion of an owning trigger as safe while its build is still active"
+    ]
+  }
+}

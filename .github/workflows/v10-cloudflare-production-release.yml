@@ -1,0 +1,404 @@
+name: V10 Cloudflare Production Release
+
+on:
+  workflow_run:
+    workflows:
+      - Regression Shield
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact accepted main SHA to recover/retry
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: v10-cloudflare-production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: CF-D exact-main gated production release
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 70
+    env:
+      EXPECTED_HEAD: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.expected_sha }}
+
+    steps:
+      - name: Expose installed Git Bash
+        shell: cmd
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact accepted main without external Actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          bootstrap_succeeded=0
+          for bootstrap_attempt in 1 2 3; do
+            rm -rf .git
+            git init .
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git config --local gc.auto 0
+            git config --local credential.helper ""
+            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+            git config --local http.lowSpeedLimit 1000
+            git config --local http.lowSpeedTime 60
+            fetch_status=0
+            git fetch --no-tags --prune --depth=1 origin "$EXPECTED_HEAD" || fetch_status=$?
+            git config --local --unset-all credential.helper 2>/dev/null || true
+            if [ "$fetch_status" -eq 0 ]; then
+              bootstrap_succeeded=1
+              break
+            fi
+            rm -rf .git
+            if [ "$bootstrap_attempt" -lt 3 ]; then
+              echo "Repository bootstrap transport failed on attempt ${bootstrap_attempt}/3; retrying after bounded backoff." >&2
+              sleep "$((bootstrap_attempt * 5))"
+            fi
+          done
+          if [ "$bootstrap_succeeded" -ne 1 ]; then
+            echo "Repository bootstrap transport failed after 3 attempts." >&2
+            exit 70
+          fi
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Bootstrap protected runner Python
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Require all exact-main post-merge push workflows
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m scripts.check_v10_cloudflare_postmerge_release_gate \
+            --expected-sha "$EXPECTED_HEAD" \
+            --wait-seconds 900 \
+            --poll-seconds 15
+
+      - name: Resolve provider authority fail-closed without identifier logging
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID_VALUE: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID_VALUE: ${{ secrets.NEON_PROJECT_ID }}
+        run: python -m scripts.check_v10_cloudflare_provider_readiness
+
+      - name: Verify Workers Builds authority before candidate or production mutation
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
+
+      - name: Install exact Cloudflare delivery toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v24.18.0"
+          test "$(npm --version)" = "11.16.0"
+          python -m scripts.install_v10_cloudflare_delivery_toolchain
+          test "$(node ./node_modules/npm/bin/npm-cli.js --version)" = "11.16.0"
+          test "$(node ./node_modules/wrangler/bin/wrangler.js --version | awk '{print $NF}')" = "4.127.1"
+
+      - name: Verify Cloudflare Containers registry read authority
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m scripts.probe_v10_cloudflare_container_registry_authority
+
+      - name: Install exact hashed provider control-plane dependencies
+        shell: cmd
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes --no-deps --force-reinstall -r requirements.cloudflare-control-plane.txt
+          python -c "import importlib.metadata as m; expected={'psycopg':'3.3.4','psycopg-binary':'3.3.4','typing-extensions':'4.16.0','tzdata':'2026.3'}; actual={name:m.version(name) for name in expected}; assert actual == expected, actual"
+
+      - name: Rehearse exact accepted main on isolated staging Worker and Container
+        id: candidate
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
+          rm -f "$dsn_file"
+          python -m scripts.provision_v10_cloudflare_neon_runtime \
+            --expected-sha "$EXPECTED_HEAD" \
+            --environment staging
+          test -s "$dsn_file"
+
+          set +e
+          python -m scripts.probe_v10_cloudflare_staging_worker_anchor --environment staging
+          anchor_rc=$?
+          set -e
+          case "$anchor_rc" in
+            0)
+              ;;
+            10)
+              ./node_modules/.bin/wrangler deploy --config cloudflare/wrangler.bootstrap.staging.jsonc
+              python -m scripts.probe_v10_cloudflare_staging_worker_anchor --environment staging
+              ;;
+            *)
+              exit "$anchor_rc"
+              ;;
+          esac
+
+          python -m scripts.quarantine_v10_cloudflare_staging_trigger \
+            --expected-sha "$EXPECTED_HEAD"
+          python -m scripts.run_v10_cloudflare_gated_candidate \
+            --expected-sha "$EXPECTED_HEAD" \
+            --source-branch main
+
+      - name: Accept exact-main staging rehearsal
+        shell: bash
+        env:
+          OMNI_V10_CLOUDFLARE_ORIGIN: ${{ steps.candidate.outputs.staging_url }}
+        run: |
+          set -euo pipefail
+          accepted=0
+          for attempt in $(seq 1 40); do
+            if bash scripts/probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD"; then
+              accepted=1
+              break
+            fi
+            echo "CLOUDFLARE_POSTMERGE_CANDIDATE_RETRY attempt=${attempt}/40"
+            sleep 15
+          done
+          test "$accepted" -eq 1
+          echo "CLOUDFLARE_POSTMERGE_CANDIDATE=ACCEPTED"
+
+      - name: Validate canonical public domain configuration
+        shell: cmd
+        env:
+          OMNI_V10_CLOUDFLARE_CUSTOM_HOST: ${{ secrets.OMNI_V10_CLOUDFLARE_CUSTOM_HOST }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_ZONE_NAME: ${{ secrets.CLOUDFLARE_ZONE_NAME }}
+        run: python -m scripts.manage_v10_cloudflare_production validate-domain-config
+
+      - name: Bootstrap production Worker anchor without public route if absent
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          set +e
+          python -m scripts.probe_v10_cloudflare_staging_worker_anchor --environment production
+          anchor_rc=$?
+          set -e
+          case "$anchor_rc" in
+            0)
+              ;;
+            10)
+              ./node_modules/.bin/wrangler deploy --config cloudflare/wrangler.bootstrap.production.jsonc
+              python -m scripts.probe_v10_cloudflare_staging_worker_anchor --environment production
+              ;;
+            *)
+              exit "$anchor_rc"
+              ;;
+          esac
+
+      - name: Reuse production database secret or bootstrap it once
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-production-dsn.txt"
+          rm -f "$dsn_file"
+          set +e
+          python -m scripts.manage_v10_cloudflare_production probe-runtime-secret
+          secret_rc=$?
+          set -e
+          case "$secret_rc" in
+            0)
+              echo "CLOUDFLARE_PRODUCTION_DATABASE_ROLE=UNCHANGED"
+              ;;
+            10)
+              python -m scripts.provision_v10_cloudflare_neon_runtime \
+                --expected-sha "$EXPECTED_HEAD" \
+                --environment production
+              test -s "$dsn_file"
+              python -m scripts.manage_v10_cloudflare_production put-runtime-secret
+              python -m scripts.manage_v10_cloudflare_production probe-runtime-secret
+              ;;
+            *)
+              exit "$secret_rc"
+              ;;
+          esac
+
+      - name: Quarantine stale production Builds before rollback snapshot
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          python -m scripts.run_v10_cloudflare_gated_production \
+            --expected-sha "$EXPECTED_HEAD" \
+            --quarantine-only
+
+      - name: Snapshot current production Worker version for bounded rollback
+        id: rollback_snapshot
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m scripts.manage_v10_cloudflare_production snapshot-active-deployment
+
+      - name: Recheck exact current main immediately before production promotion
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m scripts.check_v10_cloudflare_postmerge_release_gate \
+            --expected-sha "$EXPECTED_HEAD" \
+            --wait-seconds 0 \
+            --poll-seconds 1
+
+      - name: Deploy exact accepted main through gated Cloudflare Workers Build
+        id: production_deploy
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          echo "OMNI_V10_PRODUCTION_DEPLOY_ATTEMPTED=1" >> "$GITHUB_ENV"
+          python -m scripts.run_v10_cloudflare_gated_production \
+            --expected-sha "$EXPECTED_HEAD"
+
+      - name: Attach or verify canonical Cloudflare Custom Domain
+        id: domain
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OMNI_V10_CLOUDFLARE_CUSTOM_HOST: ${{ secrets.OMNI_V10_CLOUDFLARE_CUSTOM_HOST }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_ZONE_NAME: ${{ secrets.CLOUDFLARE_ZONE_NAME }}
+        run: python -m scripts.manage_v10_cloudflare_production attach-domain
+
+      - name: Accept canonical Cloudflare production release
+        id: live_acceptance
+        shell: bash
+        env:
+          OMNI_V10_CLOUDFLARE_ORIGIN: https://${{ secrets.OMNI_V10_CLOUDFLARE_CUSTOM_HOST }}
+          OMNI_V10_CLOUDFLARE_CUSTOM_HOST: ${{ secrets.OMNI_V10_CLOUDFLARE_CUSTOM_HOST }}
+        run: |
+          set -euo pipefail
+          accepted=0
+          for attempt in $(seq 1 60); do
+            if bash scripts/probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD"; then
+              accepted=1
+              break
+            fi
+            echo "CLOUDFLARE_PRODUCTION_LIVE_RETRY attempt=${attempt}/60"
+            sleep 15
+          done
+          test "$accepted" -eq 1
+          echo "CLOUDFLARE_CF_D_LIVE=ACCEPTED"
+
+      - name: Record accepted production evidence
+        if: success()
+        shell: bash
+        env:
+          BUILD_UUID: ${{ steps.production_deploy.outputs.cloudflare_build_uuid }}
+        run: |
+          {
+            echo "### V10 Cloudflare CF-D production release"
+            echo "- exact accepted main SHA: \`${EXPECTED_HEAD}\`"
+            echo "- all observed post-merge push workflows: PASS"
+            echo "- exact-main isolated staging rehearsal: PASS"
+            echo "- production Worker + Container build: PASS"
+            echo "- canonical custom domain: PASS"
+            echo "- exact-SHA / health / database live acceptance: PASS"
+            echo "- Cloudflare build UUID: \`${BUILD_UUID}\`"
+            echo "- PUBLIC_MULTI_USER_ENABLED: false"
+            echo "- broker write / Real execution: OFF"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll back failed production attempt to captured prior version
+        if: >-
+          always() && env.OMNI_V10_PRODUCTION_DEPLOY_ATTEMPTED == '1' &&
+          (steps.production_deploy.outcome != 'success' ||
+           steps.domain.outcome != 'success' ||
+           steps.live_acceptance.outcome != 'success')
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OMNI_V10_CLOUDFLARE_CUSTOM_HOST: ${{ secrets.OMNI_V10_CLOUDFLARE_CUSTOM_HOST }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_ZONE_NAME: ${{ secrets.CLOUDFLARE_ZONE_NAME }}
+          PREVIOUS_VERSION_ID: ${{ steps.rollback_snapshot.outputs.previous_version_id }}
+          CUSTOM_DOMAIN_CREATED: ${{ steps.domain.outputs.custom_domain_created }}
+        run: |
+          set -euo pipefail
+          test -n "$PREVIOUS_VERSION_ID"
+          ./node_modules/.bin/wrangler rollback "$PREVIOUS_VERSION_ID" \
+            --name omni-cio-v10-web \
+            --message "Automated rollback after failed exact-main CF-D acceptance"
+          if [[ "$CUSTOM_DOMAIN_CREATED" == "true" ]]; then
+            python -m scripts.manage_v10_cloudflare_production detach-domain-if-owned
+          fi
+          echo "CLOUDFLARE_PRODUCTION_ROLLBACK=COMPLETED"
+
+      - name: Quarantine staging trigger and clean secrets/workspace
+        if: always()
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          python -m scripts.quarantine_v10_cloudflare_staging_trigger \
+            --expected-sha "$EXPECTED_HEAD"
+          quarantine_rc=$?
+          set -e
+          rm -f -- \
+            "${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt" \
+            "${RUNNER_TEMP}/omni-cio-v10-cloudflare-production-dsn.txt"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi
+          exit "$quarantine_rc"
