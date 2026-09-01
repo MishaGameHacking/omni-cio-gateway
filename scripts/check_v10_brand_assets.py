@@ -8,8 +8,11 @@ from pathlib import Path, PurePosixPath
 import struct
 import sys
 from typing import Any
-import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import ParseError
 import zlib
+
+from defusedxml import ElementTree as DefusedElementTree
+from defusedxml.common import DefusedXmlException
 
 
 EXPECTED_PATH_COUNT = 37
@@ -304,8 +307,8 @@ def _verify_pwa_manifest(package_root: Path) -> None:
 
 def _verify_xml(path: Path, relative: str) -> None:
     try:
-        ET.parse(path)
-    except (OSError, ET.ParseError) as exc:
+        DefusedElementTree.parse(path)
+    except (DefusedXmlException, OSError, ParseError) as exc:
         raise ValueError(f"Android XML invalid: {relative}: {exc}") from exc
 
 
