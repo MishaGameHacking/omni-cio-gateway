@@ -201,14 +201,14 @@ class CloudflareGatedProductionTests(unittest.TestCase):
                     return {}
                 raise AssertionError((method, path))
 
-        api = Api()
+        api = cast(builds.CloudflareApi, Api())
         with patch.object(production.time, "sleep") as sleep:
             with self.assertRaisesRegex(
                 RuntimeError,
                 "CLOUDFLARE_PRODUCTION_BUILD_CANCEL_RACE",
             ):
                 production._cancel_if_nonterminal(
-                    cast(builds.CloudflareApi, api),
+                    api,
                     _BUILD_UUID,
                 )
         self.assertEqual(
@@ -250,9 +250,10 @@ class CloudflareGatedProductionTests(unittest.TestCase):
                     )
                 raise AssertionError((method, path))
 
+        api = cast(builds.CloudflareApi, Api())
         with self.assertRaisesRegex(RuntimeError, "CLOUDFLARE_API_HTTP_ERROR"):
             production._cancel_if_nonterminal(
-                cast(builds.CloudflareApi, Api()),
+                api,
                 _BUILD_UUID,
             )
 
