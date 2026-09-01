@@ -1,0 +1,47 @@
+{
+  "schema": "omni-cio.v10.public-product-brand-identity.v1",
+  "status": "OWNER_APPROVED_PENDING_MAIN_ACCEPTANCE",
+  "decision_date": "2026-09-01",
+  "execution_unit": "FOCUSED_CHANGE",
+  "public_product_brand": "KURS",
+  "system_platform_name": "Omni-CIO",
+  "canonical_relationship": "KURS_PUBLIC_BRAND_ON_OMNI_CIO_SYSTEM",
+  "single_product_line": true,
+  "technical_namespace": {
+    "repository_rename_required": false,
+    "mass_identifier_rename_authorized": false,
+    "existing_omni_cio_api_identity_contracts_preserved": true,
+    "existing_environment_variable_names_preserved": true,
+    "existing_database_and_migration_names_preserved": true,
+    "existing_cloudflare_service_identifiers_preserved": true,
+    "existing_v9_v10_recovery_and_release_provenance_preserved": true
+  },
+  "user_facing_branding": {
+    "primary_brand": "KURS",
+    "system_attribution_allowed": "powered by Omni-CIO",
+    "visual_refresh_authorized_by_this_contract": false,
+    "second_web_product_authorized": false
+  },
+  "external_clearance": {
+    "specific_domain_selected": false,
+    "domain_choice_requires_separate_owner_decision": true,
+    "trademark_exclusivity_asserted": false,
+    "legal_name_clearance_required_before_commercial_brand_launch": true
+  },
+  "activation_and_authority": {
+    "public_multi_user_enabled": false,
+    "telegram_vk_live_activation_authorized": false,
+    "broker_write_authorized": false,
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "real_money_authorized": false,
+    "product_progress_advanced": false,
+    "cloudflare_production_cutover_accepted": false
+  },
+  "protected_invariants": {
+    "gateway_entrypoint": "app:app",
+    "wp23_plus_locked": true,
+    "one_canonical_product_auth_tenant_session_stack": true,
+    "brand_identity_never_implies_broker_authority": true
+  }
+}
