@@ -21,6 +21,8 @@ baseline = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(baseline)
 
 HEX_FINDING = baseline.HEX_HIGH_ENTROPY_FINDING
+SAMPLE_ASSET_PATH = "asset.bin"
+SAMPLE_ASSET_BYTES = b"deterministic-public-brand-asset\n"
 
 
 def _line_number(path: Path, needle: str) -> int:
@@ -78,9 +80,9 @@ def test_brand_manifest_checksum_requires_exact_tracked_bytes(
 ) -> None:
     manifest_path, digests = _write_manifest(
         tmp_path,
-        {"asset.bin": b"deterministic-public-brand-asset\n"},
+        {SAMPLE_ASSET_PATH: SAMPLE_ASSET_BYTES},
     )
-    digest = digests["asset.bin"]
+    digest = digests[SAMPLE_ASSET_PATH]
     monkeypatch.setattr(baseline, "ROOT", tmp_path)
     finding = _hex_finding(manifest_path, digest)
     report = {"results": {baseline.BRAND_MANIFEST_PATH: [finding]}}
@@ -111,7 +113,7 @@ def test_brand_manifest_does_not_allow_unknown_high_entropy_fields(
 ) -> None:
     manifest_path, _ = _write_manifest(
         tmp_path,
-        {"asset.bin": b"deterministic-public-brand-asset\n"},
+        {SAMPLE_ASSET_PATH: SAMPLE_ASSET_BYTES},
     )
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     suspicious = "".join(("89abcdef",) * 8)
@@ -140,7 +142,7 @@ def test_brand_custody_allows_public_integrity_values_only(
 ) -> None:
     manifest_path, _ = _write_manifest(
         tmp_path,
-        {"asset.bin": b"deterministic-public-brand-asset\n"},
+        {SAMPLE_ASSET_PATH: SAMPLE_ASSET_BYTES},
     )
     manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     custody_path = tmp_path / baseline.BRAND_CUSTODY_PATH
