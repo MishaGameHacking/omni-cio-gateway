@@ -20,6 +20,8 @@ assert SPEC is not None and SPEC.loader is not None
 baseline = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(baseline)
 
+HEX_FINDING = baseline.HEX_HIGH_ENTROPY_FINDING
+
 
 def _line_number(path: Path, needle: str) -> int:
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -59,6 +61,17 @@ def _write_manifest(
     return manifest_path, digests
 
 
+def _hex_finding(path: Path, needle: str) -> dict[str, object]:
+    return {
+        "type": HEX_FINDING,
+        "line_number": _line_number(path, needle),
+    }
+
+
+def _expected_failure(filename: str, line_number: object) -> str:
+    return f"potential secret: {filename}:{line_number} ({HEX_FINDING})"
+
+
 def test_brand_manifest_checksum_requires_exact_tracked_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -69,10 +82,7 @@ def test_brand_manifest_checksum_requires_exact_tracked_bytes(
     )
     digest = digests["asset.bin"]
     monkeypatch.setattr(baseline, "ROOT", tmp_path)
-    finding = {
-        "type": "Hex High Entropy String",
-        "line_number": _line_number(manifest_path, digest),
-    }
+    finding = _hex_finding(manifest_path, digest)
     report = {"results": {baseline.BRAND_MANIFEST_PATH: [finding]}}
 
     failures: list[str] = []
@@ -91,8 +101,7 @@ def test_brand_manifest_checksum_requires_exact_tracked_bytes(
     failures = []
     baseline.validate_detect_secrets_report(report, failures)
     assert failures == [
-        f"potential secret: {baseline.BRAND_MANIFEST_PATH}:"
-        f"{finding['line_number']} (Hex High Entropy String)"
+        _expected_failure(baseline.BRAND_MANIFEST_PATH, finding["line_number"])
     ]
 
 
@@ -112,26 +121,16 @@ def test_brand_manifest_does_not_allow_unknown_high_entropy_fields(
         encoding="utf-8",
     )
     monkeypatch.setattr(baseline, "ROOT", tmp_path)
-    line_number = _line_number(manifest_path, suspicious)
+    finding = _hex_finding(manifest_path, suspicious)
 
     failures: list[str] = []
     baseline.validate_detect_secrets_report(
-        {
-            "results": {
-                baseline.BRAND_MANIFEST_PATH: [
-                    {
-                        "type": "Hex High Entropy String",
-                        "line_number": line_number,
-                    }
-                ]
-            }
-        },
+        {"results": {baseline.BRAND_MANIFEST_PATH: [finding]}},
         failures,
     )
 
     assert failures == [
-        f"potential secret: {baseline.BRAND_MANIFEST_PATH}:{line_number} "
-        "(Hex High Entropy String)"
+        _expected_failure(baseline.BRAND_MANIFEST_PATH, finding["line_number"])
     ]
 
 
@@ -163,17 +162,11 @@ def test_brand_custody_allows_public_integrity_values_only(
     report = {
         "results": {
             baseline.BRAND_CUSTODY_PATH: [
-                {
-                    "type": "Hex High Entropy String",
-                    "line_number": _line_number(custody_path, manifest_sha256),
-                },
-                {
-                    "type": "Hex High Entropy String",
-                    "line_number": _line_number(
-                        custody_path,
-                        baseline._BRAND_INITIAL_MATERIALIZATION_COMMIT,
-                    ),
-                },
+                _hex_finding(custody_path, manifest_sha256),
+                _hex_finding(
+                    custody_path,
+                    baseline._BRAND_INITIAL_MATERIALIZATION_COMMIT,
+                ),
             ]
         }
     }
@@ -187,19 +180,13 @@ def test_brand_custody_allows_public_integrity_values_only(
         json.dumps(custody, indent=2) + "\n",
         encoding="utf-8",
     )
-    line_number = _line_number(custody_path, suspicious)
-    report["results"][baseline.BRAND_CUSTODY_PATH] = [
-        {
-            "type": "Hex High Entropy String",
-            "line_number": line_number,
-        }
-    ]
+    finding = _hex_finding(custody_path, suspicious)
+    report["results"][baseline.BRAND_CUSTODY_PATH] = [finding]
 
     failures = []
     baseline.validate_detect_secrets_report(report, failures)
     assert failures == [
-        f"potential secret: {baseline.BRAND_CUSTODY_PATH}:{line_number} "
-        "(Hex High Entropy String)"
+        _expected_failure(baseline.BRAND_CUSTODY_PATH, finding["line_number"])
     ]
 
 
@@ -233,17 +220,8 @@ def test_brand_guard_checksum_literal_requires_known_declaration_and_digest(
         encoding="utf-8",
     )
     monkeypatch.setattr(baseline, "ROOT", tmp_path)
-    line_number = _line_number(guard_path, master_sha256)
-    report = {
-        "results": {
-            baseline.BRAND_GUARD_PATH: [
-                {
-                    "type": "Hex High Entropy String",
-                    "line_number": line_number,
-                }
-            ]
-        }
-    }
+    finding = _hex_finding(guard_path, master_sha256)
+    report = {"results": {baseline.BRAND_GUARD_PATH: [finding]}}
 
     failures: list[str] = []
     baseline.validate_detect_secrets_report(report, failures)
@@ -254,12 +232,10 @@ def test_brand_guard_checksum_literal_requires_known_declaration_and_digest(
         guard_path.read_text(encoding="utf-8").replace(master_sha256, replacement),
         encoding="utf-8",
     )
-    line_number = _line_number(guard_path, replacement)
-    report["results"][baseline.BRAND_GUARD_PATH][0]["line_number"] = line_number
+    finding["line_number"] = _line_number(guard_path, replacement)
 
     failures = []
     baseline.validate_detect_secrets_report(report, failures)
     assert failures == [
-        f"potential secret: {baseline.BRAND_GUARD_PATH}:{line_number} "
-        "(Hex High Entropy String)"
+        _expected_failure(baseline.BRAND_GUARD_PATH, finding["line_number"])
     ]

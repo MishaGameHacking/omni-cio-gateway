@@ -54,6 +54,8 @@ BRAND_CUSTODY_PATH = "docs/brand/OMNI_CIO_BRAND_ASSETS_CUSTODY.json"
 BRAND_PACKAGE_PATH = "docs/brand/omni-cio-brand-assets-v1"
 BRAND_MANIFEST_PATH = f"{BRAND_PACKAGE_PATH}/asset-manifest.json"
 BRAND_GUARD_PATH = "scripts/check_v10_brand_assets.py"
+HEX_HIGH_ENTROPY_FINDING = "Hex High Entropy String"
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 _HEX_JSON_LINE = re.compile(
     r'^"(?P<key>[A-Za-z0-9_]+)": "(?P<value>[0-9a-f]{40}|[0-9a-f]{64})",?$'
 )
@@ -482,47 +484,66 @@ def _safe_descendant(root: Path, raw_path: object) -> Path | None:
     return candidate
 
 
-def _verified_brand_manifest_digests() -> frozenset[str]:
+def _load_brand_manifest_records() -> list[Any] | None:
     manifest_path = ROOT / BRAND_MANIFEST_PATH
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return frozenset()
+        return None
     if not isinstance(payload, dict):
-        return frozenset()
+        return None
     records = payload.get("files")
     if not isinstance(records, list) or not records:
+        return None
+    return records
+
+
+def _validated_manifest_record_digest(
+    record: object,
+    package_root: Path,
+    seen_paths: set[str],
+) -> str | None:
+    if not isinstance(record, dict):
+        return None
+    raw_path = record.get("path")
+    byte_count = record.get("bytes")
+    sha256 = record.get("sha256")
+    if not isinstance(raw_path, str) or raw_path in seen_paths:
+        return None
+    if (
+        not isinstance(byte_count, int)
+        or isinstance(byte_count, bool)
+        or byte_count < 0
+    ):
+        return None
+    if not isinstance(sha256, str) or _SHA256_HEX.fullmatch(sha256) is None:
+        return None
+
+    candidate = _safe_descendant(package_root, raw_path)
+    if candidate is None or not candidate.is_file():
+        return None
+    try:
+        actual_size = candidate.stat().st_size
+    except OSError:
+        return None
+    if actual_size != byte_count or _sha256_file(candidate) != sha256:
+        return None
+    seen_paths.add(raw_path)
+    return sha256
+
+
+def _verified_brand_manifest_digests() -> frozenset[str]:
+    records = _load_brand_manifest_records()
+    if records is None:
         return frozenset()
 
     package_root = ROOT / BRAND_PACKAGE_PATH
     seen_paths: set[str] = set()
     verified: set[str] = set()
     for record in records:
-        if not isinstance(record, dict):
+        sha256 = _validated_manifest_record_digest(record, package_root, seen_paths)
+        if sha256 is None:
             return frozenset()
-        raw_path = record.get("path")
-        byte_count = record.get("bytes")
-        sha256 = record.get("sha256")
-        if (
-            not isinstance(raw_path, str)
-            or raw_path in seen_paths
-            or not isinstance(byte_count, int)
-            or isinstance(byte_count, bool)
-            or byte_count < 0
-            or not isinstance(sha256, str)
-            or re.fullmatch(r"[0-9a-f]{64}", sha256) is None
-        ):
-            return frozenset()
-        candidate = _safe_descendant(package_root, raw_path)
-        if candidate is None or not candidate.is_file():
-            return frozenset()
-        try:
-            actual_size = candidate.stat().st_size
-        except OSError:
-            return frozenset()
-        if actual_size != byte_count or _sha256_file(candidate) != sha256:
-            return frozenset()
-        seen_paths.add(raw_path)
         verified.add(sha256)
     return frozenset(verified)
 
@@ -539,41 +560,48 @@ def _verified_brand_public_integrity_values() -> frozenset[str]:
     return frozenset(values)
 
 
+def _hex_entropy_finding_line(
+    filename: str,
+    finding: dict[str, Any],
+) -> tuple[str, list[str], str] | None:
+    if finding.get("type") != HEX_HIGH_ENTROPY_FINDING:
+        return None
+    return _read_finding_line(filename, finding.get("line_number"))
+
+
 def _approved_brand_manifest_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Hex High Entropy String":
-        return False
-    located = _read_finding_line(filename, finding.get("line_number"))
+    located = _hex_entropy_finding_line(filename, finding)
     if located is None:
         return False
     normalized, _, line = located
     if normalized != BRAND_MANIFEST_PATH:
         return False
     match = _HEX_JSON_LINE.fullmatch(line)
-    if match is None or match.group("key") != "sha256":
-        return False
-    return match.group("value") in _verified_brand_manifest_digests()
+    return (
+        match is not None
+        and match.group("key") == "sha256"
+        and match.group("value") in _verified_brand_manifest_digests()
+    )
 
 
 def _approved_brand_custody_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Hex High Entropy String":
-        return False
-    located = _read_finding_line(filename, finding.get("line_number"))
+    located = _hex_entropy_finding_line(filename, finding)
     if located is None:
         return False
     normalized, _, line = located
     if normalized != BRAND_CUSTODY_PATH:
         return False
     match = _HEX_JSON_LINE.fullmatch(line)
-    if match is None or match.group("key") not in _BRAND_CUSTODY_INTEGRITY_KEYS:
-        return False
-    return match.group("value") in _verified_brand_public_integrity_values()
+    return (
+        match is not None
+        and match.group("key") in _BRAND_CUSTODY_INTEGRITY_KEYS
+        and match.group("value") in _verified_brand_public_integrity_values()
+    )
 
 
 def _approved_brand_guard_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Hex High Entropy String":
-        return False
+    located = _hex_entropy_finding_line(filename, finding)
     line_number = finding.get("line_number")
-    located = _read_finding_line(filename, line_number)
     if (
         located is None
         or isinstance(line_number, bool)
@@ -585,12 +613,12 @@ def _approved_brand_guard_finding(filename: str, finding: dict[str, Any]) -> boo
     if normalized != BRAND_GUARD_PATH:
         return False
     match = _SHA256_LITERAL_LINE.fullmatch(line)
-    if match is None:
-        return False
     declaration = lines[line_number - 2].strip()
-    if declaration not in _BRAND_GUARD_CHECKSUM_DECLARATIONS:
-        return False
-    return match.group("value") in _verified_brand_public_integrity_values()
+    return (
+        match is not None
+        and declaration in _BRAND_GUARD_CHECKSUM_DECLARATIONS
+        and match.group("value") in _verified_brand_public_integrity_values()
+    )
 
 
 def _approved_brand_integrity_finding(filename: str, finding: dict[str, Any]) -> bool:
@@ -612,7 +640,7 @@ def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -
 
 
 def _approved_public_checksum_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Hex High Entropy String":
+    if finding.get("type") != HEX_HIGH_ENTROPY_FINDING:
         return False
     return _approved_exact_line(
         filename,
@@ -622,7 +650,7 @@ def _approved_public_checksum_finding(filename: str, finding: dict[str, Any]) ->
 
 
 def _approved_git_sha_evidence_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Hex High Entropy String":
+    if finding.get("type") != HEX_HIGH_ENTROPY_FINDING:
         return False
     return _approved_exact_line(
         filename,
