@@ -16,13 +16,14 @@ SPEC = importlib.util.spec_from_file_location(
     "check_ci_security_baseline_brand",
     SCRIPT_PATH,
 )
-assert SPEC is not None and SPEC.loader is not None
+assert SPEC is not None
+assert SPEC.loader is not None
 baseline = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(baseline)
 
 HEX_FINDING = baseline.HEX_HIGH_ENTROPY_FINDING
 LINE_NUMBER_KEY = baseline.FINDING_LINE_NUMBER_KEY
-RESULTS_KEY = baseline.DETECT_SECRETS_RESULTS_KEY
+RESULTS_KEY = baseline.DETECTOR_RESULTS_KEY
 SHA256_FIELD = baseline.SHA256_FIELD
 SAMPLE_ASSET_PATH = "asset.bin"
 SAMPLE_ASSET_BYTES = b"deterministic-public-brand-asset\n"

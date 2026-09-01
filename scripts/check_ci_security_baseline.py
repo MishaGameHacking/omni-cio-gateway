@@ -57,11 +57,12 @@ BRAND_GUARD_PATH = "scripts/check_v10_brand_assets.py"
 HEX_HIGH_ENTROPY_FINDING = "Hex High Entropy String"
 FINDING_TYPE_KEY = "type"
 FINDING_LINE_NUMBER_KEY = "line_number"
-DETECT_SECRETS_RESULTS_KEY = "results"
+DETECTOR_RESULTS_KEY = "results"
 SHA256_FIELD = "sha256"
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 _HEX_JSON_LINE = re.compile(
-    r'^"(?P<key>[A-Za-z0-9_]+)": "(?P<value>[0-9a-f]{40}|[0-9a-f]{64})",?$'
+    r'^"(?P<key>\w+)": "(?P<value>[0-9a-f]{40}|[0-9a-f]{64})",?$',
+    re.ASCII,
 )
 _SHA256_LITERAL_LINE = re.compile(r'^"(?P<value>[0-9a-f]{64})"$')
 _BRAND_TRANSPARENT_PIXEL_SHA256 = "".join(
@@ -716,7 +717,7 @@ def validate_detect_secrets_report(
     report: dict[str, Any],
     failures: list[str],
 ) -> None:
-    results = report.get(DETECT_SECRETS_RESULTS_KEY)
+    results = report.get(DETECTOR_RESULTS_KEY)
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
