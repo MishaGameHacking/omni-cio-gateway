@@ -325,13 +325,28 @@
     },
     {
       "path": "web/pwa-maskable-512.png",
-      "bytes": 275213,
-      "sha256": "349ccd7642f0e05d67a96d4e6af3b643aa1b7c2a8f1ad853b0090abd3377cb86",
+      "bytes": 136162,
+      "sha256": "7ed01bd30c062d9b459f7208718fa350ab316b3d2c4b0f70549444e5288c2280",
       "dimensions": [
         512,
         512
       ],
-      "mode": "RGBA"
+      "mode": "RGB"
     }
-  ]
+  ],
+  "repository_custody_state": "GITHUB_CANONICAL_MATERIALIZED",
+  "canonical_package_authority": "GITHUB_TRACKED_FILES_AND_THIS_MANIFEST",
+  "maskable_safe_zone": {
+    "canvas_px": 512,
+    "guaranteed_visible_circle_diameter_percent": 80,
+    "important_alpha_threshold": 8,
+    "foreground_max_extent_px": 380,
+    "source_alpha_bbox": [
+      192,
+      204,
+      832,
+      819
+    ],
+    "background": "OPAQUE_BRAND_DIAGONAL_GRADIENT"
+  }
 }
