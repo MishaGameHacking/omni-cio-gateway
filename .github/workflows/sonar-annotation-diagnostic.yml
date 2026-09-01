@@ -1,0 +1,62 @@
+name: Sonar Annotation Diagnostic
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  sonar-annotations:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - name: Read exact-head Sonar annotations without source mutation
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          API_ROOT: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $headers = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+
+          $sonar = $null
+          for ($attempt = 1; $attempt -le 60; $attempt++) {
+            $url = "$env:API_ROOT/repos/$env:REPOSITORY/commits/$env:EXPECTED_HEAD/check-runs?per_page=100"
+            $checks = Invoke-RestMethod -Headers $headers -Uri $url -Method Get
+            $sonar = @($checks.check_runs) |
+              Where-Object { $_.name -eq "SonarCloud Code Analysis" } |
+              Select-Object -First 1
+            if ($null -ne $sonar -and $sonar.status -eq "completed") {
+              break
+            }
+            Start-Sleep -Seconds 5
+          }
+
+          if ($null -eq $sonar) {
+            throw "Exact-head Sonar check was not found."
+          }
+          if ($sonar.head_sha -ne $env:EXPECTED_HEAD) {
+            throw "Sonar check head does not match the reviewed PR head."
+          }
+          if ($sonar.status -ne "completed") {
+            throw "Exact-head Sonar check did not complete before diagnostic timeout."
+          }
+
+          $annotationUrl = "$env:API_ROOT/repos/$env:REPOSITORY/check-runs/$($sonar.id)/annotations?per_page=100"
+          $annotations = @(Invoke-RestMethod -Headers $headers -Uri $annotationUrl -Method Get)
+          Write-Host "SONAR_CHECK_ID=$($sonar.id)"
+          Write-Host "SONAR_CONCLUSION=$($sonar.conclusion)"
+          Write-Host "SONAR_ANNOTATION_COUNT=$($annotations.Count)"
+          foreach ($annotation in $annotations) {
+            $title = (($annotation.title -replace "[\r\n]+", " ").Trim())
+            $message = (($annotation.message -replace "[\r\n]+", " ").Trim())
+            Write-Host ("SONAR_ANNOTATION path={0} start_line={1} end_line={2} level={3} title={4} message={5}" -f $annotation.path, $annotation.start_line, $annotation.end_line, $annotation.annotation_level, $title, $message)
+          }
