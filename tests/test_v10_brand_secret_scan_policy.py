@@ -21,6 +21,9 @@ baseline = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(baseline)
 
 HEX_FINDING = baseline.HEX_HIGH_ENTROPY_FINDING
+LINE_NUMBER_KEY = baseline.FINDING_LINE_NUMBER_KEY
+RESULTS_KEY = baseline.DETECT_SECRETS_RESULTS_KEY
+SHA256_FIELD = baseline.SHA256_FIELD
 SAMPLE_ASSET_PATH = "asset.bin"
 SAMPLE_ASSET_BYTES = b"deterministic-public-brand-asset\n"
 
@@ -51,7 +54,7 @@ def _write_manifest(
             {
                 "path": relative,
                 "bytes": len(payload),
-                "sha256": digest,
+                SHA256_FIELD: digest,
             }
         )
 
@@ -65,8 +68,8 @@ def _write_manifest(
 
 def _hex_finding(path: Path, needle: str) -> dict[str, object]:
     return {
-        "type": HEX_FINDING,
-        "line_number": _line_number(path, needle),
+        baseline.FINDING_TYPE_KEY: HEX_FINDING,
+        LINE_NUMBER_KEY: _line_number(path, needle),
     }
 
 
@@ -85,7 +88,7 @@ def test_brand_manifest_checksum_requires_exact_tracked_bytes(
     digest = digests[SAMPLE_ASSET_PATH]
     monkeypatch.setattr(baseline, "ROOT", tmp_path)
     finding = _hex_finding(manifest_path, digest)
-    report = {"results": {baseline.BRAND_MANIFEST_PATH: [finding]}}
+    report = {RESULTS_KEY: {baseline.BRAND_MANIFEST_PATH: [finding]}}
 
     failures: list[str] = []
     baseline.validate_detect_secrets_report(report, failures)
@@ -93,17 +96,17 @@ def test_brand_manifest_checksum_requires_exact_tracked_bytes(
 
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     replacement = "".join(("01234567",) * 8)
-    payload["files"][0]["sha256"] = replacement
+    payload["files"][0][SHA256_FIELD] = replacement
     manifest_path.write_text(
         json.dumps(payload, indent=2) + "\n",
         encoding="utf-8",
     )
-    finding["line_number"] = _line_number(manifest_path, replacement)
+    finding[LINE_NUMBER_KEY] = _line_number(manifest_path, replacement)
 
     failures = []
     baseline.validate_detect_secrets_report(report, failures)
     assert failures == [
-        _expected_failure(baseline.BRAND_MANIFEST_PATH, finding["line_number"])
+        _expected_failure(baseline.BRAND_MANIFEST_PATH, finding[LINE_NUMBER_KEY])
     ]
 
 
@@ -127,12 +130,12 @@ def test_brand_manifest_does_not_allow_unknown_high_entropy_fields(
 
     failures: list[str] = []
     baseline.validate_detect_secrets_report(
-        {"results": {baseline.BRAND_MANIFEST_PATH: [finding]}},
+        {RESULTS_KEY: {baseline.BRAND_MANIFEST_PATH: [finding]}},
         failures,
     )
 
     assert failures == [
-        _expected_failure(baseline.BRAND_MANIFEST_PATH, finding["line_number"])
+        _expected_failure(baseline.BRAND_MANIFEST_PATH, finding[LINE_NUMBER_KEY])
     ]
 
 
@@ -162,7 +165,7 @@ def test_brand_custody_allows_public_integrity_values_only(
     monkeypatch.setattr(baseline, "ROOT", tmp_path)
 
     report = {
-        "results": {
+        RESULTS_KEY: {
             baseline.BRAND_CUSTODY_PATH: [
                 _hex_finding(custody_path, manifest_sha256),
                 _hex_finding(
@@ -183,12 +186,12 @@ def test_brand_custody_allows_public_integrity_values_only(
         encoding="utf-8",
     )
     finding = _hex_finding(custody_path, suspicious)
-    report["results"][baseline.BRAND_CUSTODY_PATH] = [finding]
+    report[RESULTS_KEY][baseline.BRAND_CUSTODY_PATH] = [finding]
 
     failures = []
     baseline.validate_detect_secrets_report(report, failures)
     assert failures == [
-        _expected_failure(baseline.BRAND_CUSTODY_PATH, finding["line_number"])
+        _expected_failure(baseline.BRAND_CUSTODY_PATH, finding[LINE_NUMBER_KEY])
     ]
 
 
@@ -223,7 +226,7 @@ def test_brand_guard_checksum_literal_requires_known_declaration_and_digest(
     )
     monkeypatch.setattr(baseline, "ROOT", tmp_path)
     finding = _hex_finding(guard_path, master_sha256)
-    report = {"results": {baseline.BRAND_GUARD_PATH: [finding]}}
+    report = {RESULTS_KEY: {baseline.BRAND_GUARD_PATH: [finding]}}
 
     failures: list[str] = []
     baseline.validate_detect_secrets_report(report, failures)
@@ -234,10 +237,10 @@ def test_brand_guard_checksum_literal_requires_known_declaration_and_digest(
         guard_path.read_text(encoding="utf-8").replace(master_sha256, replacement),
         encoding="utf-8",
     )
-    finding["line_number"] = _line_number(guard_path, replacement)
+    finding[LINE_NUMBER_KEY] = _line_number(guard_path, replacement)
 
     failures = []
     baseline.validate_detect_secrets_report(report, failures)
     assert failures == [
-        _expected_failure(baseline.BRAND_GUARD_PATH, finding["line_number"])
+        _expected_failure(baseline.BRAND_GUARD_PATH, finding[LINE_NUMBER_KEY])
     ]

@@ -55,6 +55,10 @@ BRAND_PACKAGE_PATH = "docs/brand/omni-cio-brand-assets-v1"
 BRAND_MANIFEST_PATH = f"{BRAND_PACKAGE_PATH}/asset-manifest.json"
 BRAND_GUARD_PATH = "scripts/check_v10_brand_assets.py"
 HEX_HIGH_ENTROPY_FINDING = "Hex High Entropy String"
+FINDING_TYPE_KEY = "type"
+FINDING_LINE_NUMBER_KEY = "line_number"
+DETECT_SECRETS_RESULTS_KEY = "results"
+SHA256_FIELD = "sha256"
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 _HEX_JSON_LINE = re.compile(
     r'^"(?P<key>[A-Za-z0-9_]+)": "(?P<value>[0-9a-f]{40}|[0-9a-f]{64})",?$'
@@ -124,7 +128,7 @@ _BRAND_CUSTODY_INTEGRITY_KEYS = frozenset(
     {
         "manifest_sha256",
         "initial_materialization_commit",
-        "sha256",
+        SHA256_FIELD,
         "pixel_sha256",
         "archive_sha256",
         "source_archive_sha256",
@@ -507,7 +511,7 @@ def _validated_manifest_record_digest(
         return None
     raw_path = record.get("path")
     byte_count = record.get("bytes")
-    sha256 = record.get("sha256")
+    sha256 = record.get(SHA256_FIELD)
     if not isinstance(raw_path, str) or raw_path in seen_paths:
         return None
     if (
@@ -564,9 +568,9 @@ def _hex_entropy_finding_line(
     filename: str,
     finding: dict[str, Any],
 ) -> tuple[str, list[str], str] | None:
-    if finding.get("type") != HEX_HIGH_ENTROPY_FINDING:
+    if finding.get(FINDING_TYPE_KEY) != HEX_HIGH_ENTROPY_FINDING:
         return None
-    return _read_finding_line(filename, finding.get("line_number"))
+    return _read_finding_line(filename, finding.get(FINDING_LINE_NUMBER_KEY))
 
 
 def _approved_brand_manifest_finding(filename: str, finding: dict[str, Any]) -> bool:
@@ -579,7 +583,7 @@ def _approved_brand_manifest_finding(filename: str, finding: dict[str, Any]) -> 
     match = _HEX_JSON_LINE.fullmatch(line)
     return (
         match is not None
-        and match.group("key") == "sha256"
+        and match.group("key") == SHA256_FIELD
         and match.group("value") in _verified_brand_manifest_digests()
     )
 
@@ -601,7 +605,7 @@ def _approved_brand_custody_finding(filename: str, finding: dict[str, Any]) -> b
 
 def _approved_brand_guard_finding(filename: str, finding: dict[str, Any]) -> bool:
     located = _hex_entropy_finding_line(filename, finding)
-    line_number = finding.get("line_number")
+    line_number = finding.get(FINDING_LINE_NUMBER_KEY)
     if (
         located is None
         or isinstance(line_number, bool)
@@ -630,31 +634,31 @@ def _approved_brand_integrity_finding(filename: str, finding: dict[str, Any]) ->
 
 
 def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Secret Keyword":
+    if finding.get(FINDING_TYPE_KEY) != "Secret Keyword":
         return False
     return _approved_exact_line(
         filename,
-        finding.get("line_number"),
+        finding.get(FINDING_LINE_NUMBER_KEY),
         APPROVED_KEYWORD_LINES,
     )
 
 
 def _approved_public_checksum_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != HEX_HIGH_ENTROPY_FINDING:
+    if finding.get(FINDING_TYPE_KEY) != HEX_HIGH_ENTROPY_FINDING:
         return False
     return _approved_exact_line(
         filename,
-        finding.get("line_number"),
+        finding.get(FINDING_LINE_NUMBER_KEY),
         APPROVED_PUBLIC_CHECKSUM_LINES,
     )
 
 
 def _approved_git_sha_evidence_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != HEX_HIGH_ENTROPY_FINDING:
+    if finding.get(FINDING_TYPE_KEY) != HEX_HIGH_ENTROPY_FINDING:
         return False
     return _approved_exact_line(
         filename,
-        finding.get("line_number"),
+        finding.get(FINDING_LINE_NUMBER_KEY),
         APPROVED_GIT_SHA_EVIDENCE_LINES,
     )
 
@@ -678,8 +682,8 @@ def _validate_detect_secrets_finding(
         return
     if _approved_detect_secrets_finding(filename, finding):
         return
-    line_number = finding.get("line_number", "unknown")
-    finding_type = finding.get("type", "unknown")
+    line_number = finding.get(FINDING_LINE_NUMBER_KEY, "unknown")
+    finding_type = finding.get(FINDING_TYPE_KEY, "unknown")
     failures.append(f"potential secret: {filename}:{line_number} ({finding_type})")
 
 
@@ -712,7 +716,7 @@ def validate_detect_secrets_report(
     report: dict[str, Any],
     failures: list[str],
 ) -> None:
-    results = report.get("results")
+    results = report.get(DETECT_SECRETS_RESULTS_KEY)
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
