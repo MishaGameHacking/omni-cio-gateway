@@ -1,0 +1,127 @@
+name: Temporary Maskable Brand Asset Repair
+
+on:
+  push:
+    branches:
+      - "assets/omni-cio-brand-assets-v1"
+    paths:
+      - ".github/workflows/brand-assets-maskable-repair.yml"
+      - "scripts/_temporary_generate_maskable_brand_asset.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: brand-assets-maskable-repair-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Generate deterministic maskable PWA asset
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/assets/omni-cio-brand-assets-v1'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+
+    steps:
+      - name: Expose installed Git Bash before repository bootstrap
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact triggering branch without external Actions
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local gc.auto 0
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/maskable-repair"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          test "$(git rev-parse refs/remotes/origin/maskable-repair)" = "$EXPECTED_HEAD"
+          git checkout -b maskable-repair "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Install reviewed Pillow wheel with exact hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/pillow-maskable-repair.txt" <<'EOF'
+          Pillow==12.3.0 --hash=sha256:a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09
+          EOF
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: --no-deps --require-hashes -r "$RUNNER_TEMP/pillow-maskable-repair.txt"
+          python -c "import PIL; assert PIL.__version__ == '12.3.0'; print('Pillow 12.3.0 verified')"
+
+      - name: Generate and verify deterministic maskable asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/_temporary_generate_maskable_brand_asset.py docs/brand/omni-cio-brand-assets-v1
+          test "$(find docs/brand/omni-cio-brand-assets-v1 -type f | wc -l | tr -d ' ')" = "37"
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('docs/brand/omni-cio-brand-assets-v1')
+          manifest = json.loads((root / 'asset-manifest.json').read_text(encoding='utf-8'))
+          records = {record['path']: record for record in manifest['files']}
+          ordinary = root / 'web/pwa-icon-512.png'
+          maskable = root / 'web/pwa-maskable-512.png'
+          assert records['web/pwa-maskable-512.png']['sha256'] == hashlib.sha256(maskable.read_bytes()).hexdigest()
+          assert hashlib.sha256(ordinary.read_bytes()).hexdigest() != hashlib.sha256(maskable.read_bytes()).hexdigest()
+          assert records['web/pwa-maskable-512.png']['mode'] == 'RGB'
+          print('Maskable manifest binding verified')
+          PY
+
+      - name: Commit generated asset on unchanged branch head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          git diff --check
+          git add -- docs/brand/omni-cio-brand-assets-v1/asset-manifest.json docs/brand/omni-cio-brand-assets-v1/web/pwa-maskable-512.png
+          if git diff --cached --quiet; then
+            echo "Maskable repair produced no repository changes; refusing an ambiguous no-op." >&2
+            exit 67
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Brand: repair deterministic maskable PWA asset"
+          repaired_head="$(git rev-parse HEAD)"
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/${BRANCH_NAME}:refs/remotes/origin/prepush"
+          test "$(git rev-parse refs/remotes/origin/prepush)" = "$EXPECTED_HEAD"
+          git push origin "HEAD:refs/heads/${BRANCH_NAME}"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          echo "Repaired branch head: ${repaired_head}"
+
+      - name: Clean workspace
+        if: always()
+        shell: bash
+        run: |
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi
