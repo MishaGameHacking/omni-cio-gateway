@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "brand": "Omni-CIO",
+  "mark": "Omni Sentinel Core",
+  "custody_state": "OWNER_ORIGINAL_ARCHIVE_PRESERVED",
+  "import_date": "2026-09-01",
+  "canonical_repository": "MishaGameHacking/omni-cio-gateway",
+  "repository_branch": "assets/omni-cio-brand-assets-v1",
+  "package": {
+    "filename": "omni-cio-brand-assets-v1.zip",
+    "sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718",
+    "path_count": 37,
+    "manifest_path": "docs/brand/omni-cio-brand-assets-v1/asset-manifest.json"
+  },
+  "durable_binary_mirror": {
+    "provider": "GOOGLE_DRIVE_CONNECTED_OWNER_STORAGE",
+    "file_id": "18B0OCxuU36BUEzbz8nr2dIiSj9wjsqF-",
+    "filename": "omni-cio-brand-assets-v1.zip",
+    "mime_type": "application/zip",
+    "sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718"
+  },
+  "canonical_master": {
+    "path": "raster/omni-sentinel-core-1024.png",
+    "sha256": "6ab10a3546dc57c0d88b352ab052db4e8f9b6464d52b4b4616b991c370bd805f"
+  },
+  "repaired_derivative": {
+    "path": "transparent/omni-sentinel-core-color-1024.png",
+    "sha256": "d1e69a10dd56ac11ce70d8de81589a3a1c0875108b1d161183337b48df658236"
+  },
+  "authority_effect": {
+    "starts_web_visual_update": false,
+    "changes_cloudflare_or_domain": false,
+    "activates_public_users": false,
+    "expands_broker_or_real_money_authority": false
+  }
+}
