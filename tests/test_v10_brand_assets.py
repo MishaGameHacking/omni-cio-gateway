@@ -15,10 +15,16 @@ SCRIPT = ROOT / "scripts/check_v10_brand_assets.py"
 PACKAGE = ROOT / "docs/brand/omni-cio-brand-assets-v1"
 CUSTODY = ROOT / "docs/brand/OMNI_CIO_BRAND_ASSETS_CUSTODY.json"
 MANIFEST = PACKAGE / "asset-manifest.json"
+GIT_ATTRIBUTES = ROOT / ".gitattributes"
 MASKABLE_PATH = "web/pwa-maskable-512.png"
 ORDINARY_PWA_512_PATH = "web/pwa-icon-512.png"
 BRAND_ROOT_RELATIVE = "docs/brand"
 MASKABLE_SAFE_ZONE_KEY = "maskable_safe_zone"
+BRAND_TEXT_EOL_RULES = {
+    "docs/brand/omni-cio-brand-assets-v1/**/*.md text eol=lf",
+    "docs/brand/omni-cio-brand-assets-v1/**/*.json text eol=lf",
+    "docs/brand/omni-cio-brand-assets-v1/**/*.xml text eol=lf",
+}
 
 
 class V10BrandAssetsTests(unittest.TestCase):
@@ -55,6 +61,14 @@ class V10BrandAssetsTests(unittest.TestCase):
         assert "Package paths verified: 37" in completed.stdout
         assert "Maskable PWA safe-zone contract: verified" in completed.stdout
         assert "Authority expansion: none" in completed.stdout
+
+    def test_byte_hashed_brand_text_is_lf_pinned_for_portable_checkout(self) -> None:
+        observed_rules = {
+            line.strip()
+            for line in GIT_ATTRIBUTES.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        assert BRAND_TEXT_EOL_RULES.issubset(observed_rules)
 
     def test_manifest_contains_complete_web_and_android_delivery_set(self) -> None:
         payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
