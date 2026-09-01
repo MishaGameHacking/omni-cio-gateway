@@ -245,3 +245,39 @@ def test_brand_guard_checksum_literal_requires_known_declaration_and_digest(
     assert failures == [
         _expected_failure(baseline.BRAND_GUARD_PATH, finding[LINE_NUMBER_KEY])
     ]
+
+
+def test_brand_integrity_hashing_is_bounded_to_one_pass_per_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assets = {
+        "first.bin": b"first-brand-asset\n",
+        "second.bin": b"second-brand-asset\n",
+        "nested/third.bin": b"third-brand-asset\n",
+    }
+    manifest_path, digests = _write_manifest(tmp_path, assets)
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+
+    real_sha256_file = baseline._sha256_file
+    hashed_paths: list[Path] = []
+
+    def counted_sha256_file(path: Path) -> str:
+        hashed_paths.append(path.resolve())
+        return real_sha256_file(path)
+
+    monkeypatch.setattr(baseline, "_sha256_file", counted_sha256_file)
+    findings = [_hex_finding(manifest_path, digest) for digest in digests.values()]
+    report = {RESULTS_KEY: {baseline.BRAND_MANIFEST_PATH: findings}}
+
+    failures: list[str] = []
+    baseline.validate_detect_secrets_report(report, failures)
+
+    package_root = tmp_path / baseline.BRAND_PACKAGE_PATH
+    expected_paths = {
+        (package_root / relative).resolve() for relative in assets
+    }
+    expected_paths.add(manifest_path.resolve())
+    assert failures == []
+    assert len(hashed_paths) == len(expected_paths)
+    assert set(hashed_paths) == expected_paths

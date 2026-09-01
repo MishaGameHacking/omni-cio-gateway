@@ -553,8 +553,9 @@ def _verified_brand_manifest_digests() -> frozenset[str]:
     return frozenset(verified)
 
 
-def _verified_brand_public_integrity_values() -> frozenset[str]:
-    manifest_digests = _verified_brand_manifest_digests()
+def _verified_brand_public_integrity_values(
+    manifest_digests: frozenset[str],
+) -> frozenset[str]:
     if not manifest_digests:
         return frozenset()
     values = set(manifest_digests)
@@ -563,6 +564,11 @@ def _verified_brand_public_integrity_values() -> frozenset[str]:
         values.add(manifest_sha256)
     values.update(_KNOWN_BRAND_PUBLIC_INTEGRITY_VALUES)
     return frozenset(values)
+
+
+def _verified_brand_integrity_evidence() -> tuple[frozenset[str], frozenset[str]]:
+    manifest_digests = _verified_brand_manifest_digests()
+    return manifest_digests, _verified_brand_public_integrity_values(manifest_digests)
 
 
 def _hex_entropy_finding_line(
@@ -574,7 +580,11 @@ def _hex_entropy_finding_line(
     return _read_finding_line(filename, finding.get(FINDING_LINE_NUMBER_KEY))
 
 
-def _approved_brand_manifest_finding(filename: str, finding: dict[str, Any]) -> bool:
+def _approved_brand_manifest_finding(
+    filename: str,
+    finding: dict[str, Any],
+    manifest_digests: frozenset[str],
+) -> bool:
     located = _hex_entropy_finding_line(filename, finding)
     if located is None:
         return False
@@ -585,11 +595,15 @@ def _approved_brand_manifest_finding(filename: str, finding: dict[str, Any]) -> 
     return (
         match is not None
         and match.group("key") == SHA256_FIELD
-        and match.group("value") in _verified_brand_manifest_digests()
+        and match.group("value") in manifest_digests
     )
 
 
-def _approved_brand_custody_finding(filename: str, finding: dict[str, Any]) -> bool:
+def _approved_brand_custody_finding(
+    filename: str,
+    finding: dict[str, Any],
+    public_integrity_values: frozenset[str],
+) -> bool:
     located = _hex_entropy_finding_line(filename, finding)
     if located is None:
         return False
@@ -600,11 +614,15 @@ def _approved_brand_custody_finding(filename: str, finding: dict[str, Any]) -> b
     return (
         match is not None
         and match.group("key") in _BRAND_CUSTODY_INTEGRITY_KEYS
-        and match.group("value") in _verified_brand_public_integrity_values()
+        and match.group("value") in public_integrity_values
     )
 
 
-def _approved_brand_guard_finding(filename: str, finding: dict[str, Any]) -> bool:
+def _approved_brand_guard_finding(
+    filename: str,
+    finding: dict[str, Any],
+    public_integrity_values: frozenset[str],
+) -> bool:
     located = _hex_entropy_finding_line(filename, finding)
     line_number = finding.get(FINDING_LINE_NUMBER_KEY)
     if (
@@ -622,15 +640,22 @@ def _approved_brand_guard_finding(filename: str, finding: dict[str, Any]) -> boo
     return (
         match is not None
         and declaration in _BRAND_GUARD_CHECKSUM_DECLARATIONS
-        and match.group("value") in _verified_brand_public_integrity_values()
+        and match.group("value") in public_integrity_values
     )
 
 
-def _approved_brand_integrity_finding(filename: str, finding: dict[str, Any]) -> bool:
+def _approved_brand_integrity_finding(
+    filename: str,
+    finding: dict[str, Any],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
+) -> bool:
     return (
-        _approved_brand_manifest_finding(filename, finding)
-        or _approved_brand_custody_finding(filename, finding)
-        or _approved_brand_guard_finding(filename, finding)
+        _approved_brand_manifest_finding(filename, finding, manifest_digests)
+        or _approved_brand_custody_finding(
+            filename, finding, public_integrity_values
+        )
+        or _approved_brand_guard_finding(filename, finding, public_integrity_values)
     )
 
 
@@ -664,12 +689,22 @@ def _approved_git_sha_evidence_finding(filename: str, finding: dict[str, Any]) -
     )
 
 
-def _approved_detect_secrets_finding(filename: str, finding: dict[str, Any]) -> bool:
+def _approved_detect_secrets_finding(
+    filename: str,
+    finding: dict[str, Any],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
+) -> bool:
     return (
         _approved_keyword_metadata_finding(filename, finding)
         or _approved_public_checksum_finding(filename, finding)
         or _approved_git_sha_evidence_finding(filename, finding)
-        or _approved_brand_integrity_finding(filename, finding)
+        or _approved_brand_integrity_finding(
+            filename,
+            finding,
+            manifest_digests,
+            public_integrity_values,
+        )
     )
 
 
@@ -677,11 +712,18 @@ def _validate_detect_secrets_finding(
     filename: str,
     finding: object,
     failures: list[str],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
 ) -> None:
     if not isinstance(finding, dict):
         failures.append(f"invalid detect-secrets finding for {filename}")
         return
-    if _approved_detect_secrets_finding(filename, finding):
+    if _approved_detect_secrets_finding(
+        filename,
+        finding,
+        manifest_digests,
+        public_integrity_values,
+    ):
         return
     line_number = finding.get(FINDING_LINE_NUMBER_KEY, "unknown")
     finding_type = finding.get(FINDING_TYPE_KEY, "unknown")
@@ -692,25 +734,41 @@ def _validate_detect_secrets_findings(
     filename: str,
     findings: object,
     failures: list[str],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
 ) -> None:
     if not isinstance(findings, list):
         failures.append(f"invalid detect-secrets findings for {filename}")
         return
     for finding in findings:
-        _validate_detect_secrets_finding(filename, finding, failures)
+        _validate_detect_secrets_finding(
+            filename,
+            finding,
+            failures,
+            manifest_digests,
+            public_integrity_values,
+        )
 
 
 def _validate_detect_secrets_file(
     filename: object,
     findings: object,
     failures: list[str],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
 ) -> None:
     if not isinstance(filename, str):
         failures.append("invalid detect-secrets filename")
         return
     if GENERATED_SECRET_SCAN_PATH.search(filename):
         return
-    _validate_detect_secrets_findings(filename, findings, failures)
+    _validate_detect_secrets_findings(
+        filename,
+        findings,
+        failures,
+        manifest_digests,
+        public_integrity_values,
+    )
 
 
 def validate_detect_secrets_report(
@@ -721,8 +779,15 @@ def validate_detect_secrets_report(
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
+    manifest_digests, public_integrity_values = _verified_brand_integrity_evidence()
     for filename, findings in results.items():
-        _validate_detect_secrets_file(filename, findings, failures)
+        _validate_detect_secrets_file(
+            filename,
+            findings,
+            failures,
+            manifest_digests,
+            public_integrity_values,
+        )
 
 
 def validate_repository_baseline() -> list[str]:
