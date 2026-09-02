@@ -12,86 +12,109 @@ After PR #436 was squash-merged, exact accepted candidate main
 successfully. Several independent Web audits still failed closed while retrieving npm
 security advisory metadata.
 
-The most useful evidence came from the second exact-main attempts of two workflows on
-the same physical Windows host:
+The first evidence showed concurrent retry streams from two runner services on physical
+host `LAPTOP-NPSGA016`:
 
 - `V10 WP16 Web Design System Audit` run `33694058921`, runner
-  `omni-cio-ci-2`, started its npm audit at `23:22:55Z` and received `ECONNRESET` on
-  all three bounded attempts at approximately `23:23:07Z`, `23:23:24Z` and
-  `23:23:47Z`;
+  `omni-cio-ci-2`, received `ECONNRESET` on all three bounded attempts;
 - `V10 WP22A Clientless Access Audit` run `33694058904`, runner
-  `omni-cio-ci`, started the same audit at `23:22:52Z` and received `ECONNRESET` on
-  all three bounded attempts at approximately `23:23:05Z`, `23:23:22Z` and
-  `23:23:44Z`.
+  `omni-cio-ci`, received the same transport failure on an almost identical retry
+  schedule.
 
-Both runner services reported machine `LAPTOP-NPSGA016`. Their registry requests and
-retry windows therefore overlapped almost exactly. The same exact-main batch also
-contained successful npm audits in other workflows, and the WP21 rerun later completed
-its audit successfully. No npm vulnerability report was returned in the failing jobs.
+PR #440 exact-head evidence then proved that host serialization works but is not by
+itself sufficient:
 
-The existing FL074 wrapper correctly recognized the transport class, retried only that
-class and stayed RED after exhaustion. The newly exposed repository-side defect was that
-multiple runner services on one physical host could independently enter the same remote
-security-audit retry loop at the same time, creating avoidable duplicate transport load
-and synchronized retries.
+- WP22 run `33695387038` acquired the host slot and exhausted three serialized
+  `ECONNRESET` attempts;
+- WP19 run `33695387063` explicitly waited for that slot, then exhausted its own three
+  serialized attempts;
+- WP22A run `33695387116` also emitted the host-slot wait marker and then exhausted
+  three serialized attempts;
+- Fast PR run `33695386947` exhausted the same serialized retry path;
+- WP16 run `33695387151` subsequently completed `npm audit` successfully on the same
+  machine only seconds after another workflow had exhausted its third attempt.
+
+No failing job returned an npm vulnerability report. Web type-check, lint, unit tests,
+build and the surrounding repository/security contracts completed successfully before
+the transport-only failure paths.
+
+Current npm documentation confirms that `npm audit` submits dependency data using a POST
+to the Bulk Advisory endpoint. npm's generic fetch retry configuration documents retry
+behavior for idempotent registry reads, so this audit POST cannot rely on that setting as
+its complete transport-recovery budget.
 
 ## Root cause class
 
-`SELF_HOSTED_NPM_AUDIT_HOST_CONCURRENCY_GAP`
+`SELF_HOSTED_NPM_AUDIT_RETRY_WINDOW_AND_CONCURRENCY_GAP`
 
-The provider/network layer remains external, so the evidence does not claim that local
-concurrency is the sole cause of every npm `ECONNRESET`. It does prove that Omni-CIO's
-self-hosted contour allowed concurrent identical audit calls from two services on the
-same machine during the observed failure window. That is an avoidable amplification
-path inside repository control.
+Two repository-controlled weaknesses are proven:
+
+1. sibling runner services could previously amplify the same transient failure with
+   overlapping audit/retry streams;
+2. after serialization removed that overlap, the accepted three-attempt / 5-second-base
+   retry horizon still ended while the same endpoint later became reachable within the
+   surrounding exact-head batch.
+
+The upstream/provider/network trigger for each `ECONNRESET` remains external and is not
+claimed to be uniquely identified. npm's public status can remain operational while an
+individual self-hosted path experiences a transient reset, so status alone is not
+accepted as proof that the audit POST succeeded.
 
 ## Blast radius
 
 The shared `scripts/run_v10_npm_audit.py` wrapper is consumed by the accepted Web audit
-workflows for WP15 through WP22A and fast PR checks. Any two jobs scheduled to separate
-runner services on the same Windows host could previously overlap their remote audit
-attempts.
+workflows for WP15 through WP22A and fast PR checks. A short transient advisory-endpoint
+window can therefore block multiple otherwise-valid exact-head or exact-main gates.
 
-The security classification logic, package lock, npm version, audit level and
-fail-closed result handling are not defective and are not relaxed by this correction.
+The package lock, npm version, audit level, security-result classification and
+fail-closed behavior are not defective and are not relaxed by this correction.
 
 ## Corrective invariant
 
 The mandatory npm security audit must now:
 
 - acquire one host-local interprocess transport slot before the first `npm audit` call;
-- hold that slot across the complete bounded retry/backoff sequence so a second runner
-  service cannot synchronize retries with the first;
+- hold that slot across the complete bounded retry/backoff sequence so sibling services
+  cannot synchronize remote retries;
 - use only standard-library OS file locking and no new dependency;
-- wait only a bounded 180 seconds for the host slot;
-- fail closed if the lock cannot be opened/acquired within the bound;
+- wait at most 600 seconds for the host slot, then fail closed;
+- use five attempts by default, which is the already-reviewed hard maximum;
+- use a 15-second default linear backoff with each delay capped at 60 seconds, producing
+  `15 / 30 / 45 / 60` seconds before attempts 2 through 5;
 - release the OS lock when the wrapper exits, including exceptional exit;
-- preserve the existing three-attempt default, maximum attempt bound, audit level,
-  exact npm command and recognized-transient classification;
-- never retry a real npm audit report/security finding;
+- preserve the exact npm command and `high` audit threshold;
+- retry only recognized transport/temporary registry failures;
+- never retry or suppress a real npm audit vulnerability report;
 - never fall back to a mirror, cached acceptance, disabled audit, `continue-on-error` or
   fabricated success.
 
 ## Directly coupled consumers
 
-Because all accepted Web dependency audits already call the shared wrapper, the host
-serialization applies consistently without weakening or deleting any workflow-specific
-security step.
+All accepted Web dependency-audit workflows already call the shared wrapper, so the
+serialization and enlarged bounded retry horizon apply consistently without deleting or
+softening any workflow-specific security step.
 
-Deterministic regression coverage verifies that the complete transient retry sequence is
-executed under one host transport slot and that a lock failure returns RED before npm is
-invoked.
+Deterministic regression coverage verifies that:
+
+- the complete retry sequence stays under one host transport slot;
+- the default budget reaches a fifth attempt and uses exactly `15 / 30 / 45 / 60`
+  seconds of bounded backoff;
+- a custom large backoff remains capped at 60 seconds;
+- lock acquisition failure returns RED before npm is invoked.
 
 ## Permanent learning
 
 - Retry logic must account for concurrency at the physical-host boundary when multiple
-  self-hosted runner services share the same egress path.
-- Identical retry schedules from sibling runner services can amplify a transient remote
-  failure; bounded host serialization is preferable to increasing remote request volume.
+  self-hosted runner services share one egress path.
+- Removing concurrency amplification does not prove the external transport is healthy;
+  exact-head evidence must still test whether the bounded retry horizon covers observed
+  transient windows.
 - Security transport resilience must not blur the distinction between transport failure
   and a vulnerability finding.
-- A transport-coordination failure is itself fail-closed evidence, never permission to
-  skip the mandatory dependency audit.
+- Increasing a bounded retry horizon is acceptable only when the hard attempt/delay caps
+  and fail-closed terminal result remain explicit.
+- A transport-coordination or retry-exhaustion failure is never permission to skip the
+  mandatory dependency audit.
 
 ## Security and authority invariants preserved
 

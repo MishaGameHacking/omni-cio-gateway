@@ -48,8 +48,10 @@ _TRANSIENT_REGISTRY_MARKERS = (
 )
 _MAX_ATTEMPTS = 5
 _MAX_BACKOFF_SECONDS = 60.0
+_DEFAULT_ATTEMPTS = 5
+_DEFAULT_BACKOFF_SECONDS = 15.0
 _HOST_LOCK_FILENAME = "omni-cio-v10-npm-audit.lock"
-_HOST_LOCK_WAIT_SECONDS = 180.0
+_HOST_LOCK_WAIT_SECONDS = 600.0
 _HOST_LOCK_POLL_SECONDS = 0.25
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess[str]]
@@ -196,8 +198,8 @@ def run_audit(
     *,
     npm: str,
     audit_level: str = "high",
-    attempts: int = 3,
-    backoff_seconds: float = 5.0,
+    attempts: int = _DEFAULT_ATTEMPTS,
+    backoff_seconds: float = _DEFAULT_BACKOFF_SECONDS,
     runner: Runner = _default_runner,
     sleeper: Sleeper = time.sleep,
     lock_factory: LockFactory = _audit_transport_lock,
@@ -247,7 +249,10 @@ def run_audit(
                     )
                     return _safe_exit_code(completed.returncode)
 
-                delay = backoff_seconds * attempt
+                delay = min(
+                    backoff_seconds * attempt,
+                    _MAX_BACKOFF_SECONDS,
+                )
                 print(
                     f"npm audit registry transport failed on attempt {attempt}/{attempts}; "
                     f"retrying after {delay:g}s.",
@@ -270,8 +275,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--npm", default="npm")
     parser.add_argument("--audit-level", choices=_AUDIT_LEVELS, default="high")
-    parser.add_argument("--attempts", type=int, default=3)
-    parser.add_argument("--backoff-seconds", type=float, default=5.0)
+    parser.add_argument("--attempts", type=int, default=_DEFAULT_ATTEMPTS)
+    parser.add_argument(
+        "--backoff-seconds",
+        type=float,
+        default=_DEFAULT_BACKOFF_SECONDS,
+    )
     return parser
 
 
