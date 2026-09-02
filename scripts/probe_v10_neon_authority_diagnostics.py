@@ -25,6 +25,17 @@ _UNKNOWN = "UNKNOWN"
 _TRUE = "TRUE"
 _FALSE = "FALSE"
 _CANONICAL_LOOKUP_LIMIT = 10
+_AUTH_PATH = "/auth"
+_CURRENT_USER_ORGANIZATIONS_PATH = "/users/me/organizations"
+_AUTH_METHODS = frozenset(
+    {
+        "keycloak",
+        "session_cookie",
+        "api_key_user",
+        "api_key_org",
+        "oauth",
+    }
+)
 
 
 class _NeonReadApi(Protocol):
@@ -50,6 +61,10 @@ class _ReadEvidence:
 
 @dataclass(frozen=True, slots=True)
 class NeonAuthorityDiagnostic:
+    auth_status: str
+    auth_method: str
+    credential_orgs_status: str
+    configured_org_match: str
     organization_status: str
     project_status: str
     branches_status: str
@@ -62,6 +77,10 @@ class NeonAuthorityDiagnostic:
         return " ".join(
             (
                 "CLOUDFLARE_NEON_AUTHORITY_DIAGNOSTIC",
+                f"auth_status={self.auth_status}",
+                f"auth_method={self.auth_method}",
+                f"credential_orgs_status={self.credential_orgs_status}",
+                f"configured_org_match={self.configured_org_match}",
                 f"organization_status={self.organization_status}",
                 f"exact_project_status={self.project_status}",
                 f"exact_branches_status={self.branches_status}",
@@ -90,6 +109,63 @@ def _read(api: _NeonReadApi, path: str) -> _ReadEvidence:
     except _base.ProvisioningStopped as exc:
         return _ReadEvidence(_status(exc))
     return _ReadEvidence(_STATUS_OK, payload)
+
+
+def _auth_method(payload: object) -> str:
+    if not isinstance(payload, dict):
+        raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_AUTH_RESPONSE_INVALID")
+    value = payload.get("auth_method")
+    if not isinstance(value, str) or value not in _AUTH_METHODS:
+        raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_AUTH_METHOD_INVALID")
+    return value
+
+
+def _credential_auth(api: _NeonReadApi) -> tuple[str, str]:
+    evidence = _read(api, _AUTH_PATH)
+    if evidence.status != _STATUS_OK:
+        return evidence.status, _UNKNOWN
+    try:
+        method = _auth_method(evidence.payload)
+    except _base.ProvisioningStopped:
+        return _STATUS_INVALID_PAYLOAD, _UNKNOWN
+    return evidence.status, method
+
+
+def _configured_org_match(payload: object, expected_org_id: str) -> str:
+    if not isinstance(payload, dict):
+        raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_ORGS_RESPONSE_INVALID")
+    raw_organizations = payload.get("organizations")
+    if not isinstance(raw_organizations, list):
+        raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_ORGS_INVALID")
+    configured_org_present = False
+    for item in raw_organizations:
+        if not isinstance(item, dict):
+            raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_ORG_INVALID")
+        organization_id = item.get("id")
+        if not isinstance(organization_id, str):
+            raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_ORG_ID_INVALID")
+        _org._validate_neon_org_id(organization_id)
+        configured_org_present = configured_org_present or (
+            organization_id == expected_org_id
+        )
+    return _TRUE if configured_org_present else _FALSE
+
+
+def _credential_organizations(
+    api: _NeonReadApi,
+    expected_org_id: str,
+) -> tuple[str, str]:
+    evidence = _read(api, _CURRENT_USER_ORGANIZATIONS_PATH)
+    if evidence.status != _STATUS_OK:
+        return evidence.status, _UNKNOWN
+    try:
+        configured_org_match = _configured_org_match(
+            evidence.payload,
+            expected_org_id,
+        )
+    except _base.ProvisioningStopped:
+        return _STATUS_INVALID_PAYLOAD, _UNKNOWN
+    return evidence.status, configured_org_match
 
 
 def _canonical_query_path(organization_id: str) -> str:
@@ -181,19 +257,11 @@ def _organization_classification(
     return None
 
 
-def _all_exact_resource_reads_denied(
-    organization_status: str,
-    project_status: str,
-    branches_status: str,
-) -> bool:
-    return all(
-        status in _DENIED_STATUSES
-        for status in (organization_status, project_status, branches_status)
-    )
-
-
 def _classification(
     *,
+    auth_status: str,
+    credential_orgs_status: str,
+    configured_org_match: str,
     organization_status: str,
     project_status: str,
     branches_status: str,
@@ -202,11 +270,15 @@ def _classification(
     configured_id_match: str,
 ) -> str:
     if _STATUS_UNAUTHORIZED in {
+        auth_status,
+        credential_orgs_status,
         organization_status,
         project_status,
         branches_status,
     }:
         return "CREDENTIAL_INVALID"
+    if credential_orgs_status == _STATUS_OK and configured_org_match == _FALSE:
+        return "CONFIGURED_ORG_ID_DRIFT"
     organization_classification = _organization_classification(
         organization_status=organization_status,
         project_status=project_status,
@@ -217,12 +289,14 @@ def _classification(
     )
     if organization_classification is not None:
         return organization_classification
-    if _all_exact_resource_reads_denied(
-        organization_status,
-        project_status,
-        branches_status,
+    if (
+        credential_orgs_status == _STATUS_OK
+        and configured_org_match == _TRUE
+        and organization_status in _DENIED_STATUSES
+        and canonical_query_status == _STATUS_SKIPPED
+        and _exact_resource_denied(project_status, branches_status)
     ):
-        return "ORG_SCOPE_UNAVAILABLE_EXACT_PROJECT_FORBIDDEN"
+        return "CONFIGURED_ORG_MATCH_EXACT_PROJECT_FORBIDDEN"
     if branches_status == _STATUS_OK:
         return "EXACT_PROJECT_BRANCH_READABLE"
     return "UNRESOLVED"
@@ -235,6 +309,11 @@ def diagnose_neon_authority(
 ) -> NeonAuthorityDiagnostic:
     safe_org_id = _org._validate_neon_org_id(organization_id)
     safe_project_id = _runtime._validate_neon_project_id(project_id)
+    auth_status, auth_method = _credential_auth(api)
+    credential_orgs_status, configured_org_match = _credential_organizations(
+        api,
+        safe_org_id,
+    )
     organization = _read(api, f"/organizations/{safe_org_id}")
     project = _read(api, f"/projects/{safe_project_id}")
     branches = _read(api, f"/projects/{safe_project_id}/branches?limit=1")
@@ -247,6 +326,9 @@ def diagnose_neon_authority(
         )
     )
     classification = _classification(
+        auth_status=auth_status,
+        credential_orgs_status=credential_orgs_status,
+        configured_org_match=configured_org_match,
         organization_status=organization.status,
         project_status=project.status,
         branches_status=branches.status,
@@ -255,6 +337,10 @@ def diagnose_neon_authority(
         configured_id_match=configured_id_match,
     )
     return NeonAuthorityDiagnostic(
+        auth_status=auth_status,
+        auth_method=auth_method,
+        credential_orgs_status=credential_orgs_status,
+        configured_org_match=configured_org_match,
         organization_status=organization.status,
         project_status=project.status,
         branches_status=branches.status,
