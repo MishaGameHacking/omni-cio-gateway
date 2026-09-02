@@ -151,42 +151,6 @@ def _load_expected_project(
     )
 
 
-def _validate_project_scoped_auth(api: _org.OrgScopedNeonApi) -> None:
-    payload = _base._json_object(
-        api.request(_HTTP_GET, "/auth"),
-        "NEON_AUTH_RESPONSE_INVALID",
-    )
-    account_id = payload.get("account_id")
-    if not isinstance(account_id, str) or not account_id.strip():
-        raise _base.ProvisioningStopped("NEON_AUTH_RESPONSE_INVALID")
-    if payload.get("auth_method") != "api_key_org":
-        raise _base.ProvisioningStopped("NEON_PROJECT_SCOPED_ORG_KEY_REQUIRED")
-    _base._emit("NEON_AUTH_CREDENTIAL=ORG_API_KEY_VERIFIED")
-
-
-def _validate_project_scoped_organization(
-    api: _org.OrgScopedNeonApi,
-    organization_id: str,
-) -> None:
-    safe_org_id = _org._validate_neon_org_id(organization_id)
-    payload = _base._json_object(
-        api.request(_HTTP_GET, "/users/me/organizations"),
-        "NEON_ORGANIZATIONS_RESPONSE_INVALID",
-    )
-    organizations = [
-        _base._json_object(item, "NEON_ORGANIZATION_INVALID")
-        for item in _base._json_list(
-            payload.get("organizations"),
-            "NEON_ORGANIZATIONS_INVALID",
-        )
-    ]
-    if len(organizations) != 1:
-        raise _base.ProvisioningStopped("NEON_API_KEY_ORGANIZATION_BINDING_AMBIGUOUS")
-    if organizations[0].get("id") != safe_org_id:
-        raise _base.ProvisioningStopped("NEON_API_KEY_ORGANIZATION_MISMATCH")
-    _base._emit("NEON_ORGANIZATION_BINDING=VERIFIED")
-
-
 def _validate_branch_payload(payload: object) -> dict[str, Any]:
     body = _base._json_object(payload, "NEON_BRANCHES_RESPONSE_INVALID")
     branches = _base._json_list(
@@ -203,9 +167,8 @@ def _project_scoped_branch_authority(
     organization_id: str,
     project_id: str,
 ) -> dict[str, Any]:
+    _org._validate_neon_org_id(organization_id)
     safe_project_id = _validate_neon_project_id(project_id)
-    _validate_project_scoped_auth(api)
-    _validate_project_scoped_organization(api, organization_id)
     try:
         payload = api.request(
             _HTTP_GET,

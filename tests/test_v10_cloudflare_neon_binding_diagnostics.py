@@ -13,10 +13,7 @@ _ORG_ID = "org-test"
 _CANONICAL_ID = "project-frankfurt"
 _BRANCH_ID = "br-main-test"
 _RUNTIME_ROLE = "omni_cio_cloudflare_staging"
-_AUTH_METHOD_ORG = "api_key_org"
-_AUTH_METHOD_USER = "api_key_user"
 _AUTH_FAILURE = "NEON_API_KEY_INSUFFICIENT"
-_ORGANIZATIONS_PATH = "/users/me/organizations"
 _DATABASE_NAME = "neondb"
 _HTTP_GET = "GET"
 
@@ -74,16 +71,10 @@ class _ScopedFallbackApi(neon_org.OrgScopedNeonApi):
         self,
         *,
         exact_failure: neon_base.ProvisioningStopped | None = None,
-        auth_method: object = _AUTH_METHOD_ORG,
-        organizations: object | None = None,
         branch_payload: object | None = None,
         branch_failure: neon_base.ProvisioningStopped | None = None,
     ) -> None:
         self.exact_failure = exact_failure
-        self.auth_method = auth_method
-        self.organizations = (
-            organizations if organizations is not None else [{"id": _ORG_ID}]
-        )
         self.branch_payload = branch_payload if branch_payload is not None else _branches()
         self.branch_failure = branch_failure
         self.calls: list[tuple[str, str]] = []
@@ -95,13 +86,6 @@ class _ScopedFallbackApi(neon_org.OrgScopedNeonApi):
             if self.exact_failure is not None:
                 raise self.exact_failure
             return {"project": _project(_CANONICAL_ID)}
-        if method == _HTTP_GET and path == "/auth":
-            return {
-                "account_id": "account-test",
-                "auth_method": self.auth_method,
-            }
-        if method == _HTTP_GET and path == _ORGANIZATIONS_PATH:
-            return {"organizations": self.organizations}
         if method == _HTTP_GET and path == f"/projects/{_CANONICAL_ID}/branches?limit=100":
             if self.branch_failure is not None:
                 raise self.branch_failure
@@ -172,7 +156,7 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         project = neon._validate_bound_project(payload, _ORG_ID, _CANONICAL_ID)
         self.assertEqual(project["pg_version"], "18")
 
-    def test_forbidden_project_metadata_uses_exact_branch_authority(self) -> None:
+    def test_forbidden_project_metadata_uses_only_exact_branch_authority(self) -> None:
         api = _ScopedFallbackApi(
             exact_failure=neon_base.ProvisioningStopped(
                 _AUTH_FAILURE,
@@ -181,79 +165,22 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         )
         scope = neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
         self.assertEqual(scope, "PROJECT_SCOPED")
-        self.assertIn((_HTTP_GET, "/auth"), api.calls)
-        self.assertIn((_HTTP_GET, _ORGANIZATIONS_PATH), api.calls)
-        self.assertIn(
-            (_HTTP_GET, f"/projects/{_CANONICAL_ID}/branches?limit=100"),
+        self.assertEqual(
             api.calls,
+            [
+                (_HTTP_GET, f"/projects/{_CANONICAL_ID}"),
+                (_HTTP_GET, f"/projects/{_CANONICAL_ID}/branches?limit=100"),
+            ],
         )
         self.assertFalse(
             any(
-                method == _HTTP_GET and path.startswith("/projects?")
-                for method, path in api.calls
+                path == "/auth"
+                or path.startswith("/users/")
+                or path.startswith("/organizations/")
+                or path.startswith("/projects?")
+                for _, path in api.calls
             )
         )
-
-    def test_scoped_fallback_rejects_non_org_api_key(self) -> None:
-        api = _ScopedFallbackApi(
-            exact_failure=neon_base.ProvisioningStopped(
-                _AUTH_FAILURE,
-                status=403,
-            ),
-            auth_method=_AUTH_METHOD_USER,
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_PROJECT_SCOPED_ORG_KEY_REQUIRED",
-        ):
-            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
-        self.assertNotIn((_HTTP_GET, _ORGANIZATIONS_PATH), api.calls)
-
-    def test_scoped_fallback_ignores_optional_plan_metadata(self) -> None:
-        api = _ScopedFallbackApi(
-            exact_failure=neon_base.ProvisioningStopped(
-                _AUTH_FAILURE,
-                status=403,
-            ),
-            organizations=[{"id": _ORG_ID, "plan": "free_v2"}],
-        )
-        self.assertEqual(
-            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID),
-            "PROJECT_SCOPED",
-        )
-
-    def test_scoped_fallback_rejects_organization_mismatch(self) -> None:
-        api = _ScopedFallbackApi(
-            exact_failure=neon_base.ProvisioningStopped(
-                _AUTH_FAILURE,
-                status=403,
-            ),
-            organizations=[{"id": "org-other"}],
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_API_KEY_ORGANIZATION_MISMATCH",
-        ) as caught:
-            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
-        self.assertNotIn(_ORG_ID, str(caught.exception))
-        self.assertNotIn("org-other", str(caught.exception))
-
-    def test_scoped_fallback_rejects_ambiguous_organization_binding(self) -> None:
-        api = _ScopedFallbackApi(
-            exact_failure=neon_base.ProvisioningStopped(
-                _AUTH_FAILURE,
-                status=403,
-            ),
-            organizations=[
-                {"id": _ORG_ID},
-                {"id": "org-other"},
-            ],
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_API_KEY_ORGANIZATION_BINDING_AMBIGUOUS",
-        ):
-            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
 
     def test_scoped_fallback_rejects_wrong_project_binding(self) -> None:
         api = _ScopedFallbackApi(
@@ -273,6 +200,38 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
             neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
         self.assertEqual(caught.exception.status, 404)
         self.assertNotIn(_CANONICAL_ID, str(caught.exception))
+
+    def test_scoped_fallback_rejects_branch_forbidden_as_binding_mismatch(self) -> None:
+        api = _ScopedFallbackApi(
+            exact_failure=neon_base.ProvisioningStopped(
+                _AUTH_FAILURE,
+                status=403,
+            ),
+            branch_failure=neon_base.ProvisioningStopped(
+                _AUTH_FAILURE,
+                status=403,
+            ),
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NEON_PROJECT_KEY_BINDING_MISMATCH",
+        ) as caught:
+            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
+        self.assertEqual(caught.exception.status, 403)
+
+    def test_scoped_fallback_preserves_non_binding_failure(self) -> None:
+        api = _ScopedFallbackApi(
+            exact_failure=neon_base.ProvisioningStopped(
+                _AUTH_FAILURE,
+                status=403,
+            ),
+            branch_failure=neon_base.ProvisioningStopped(
+                "NEON_API_LOCKED",
+                status=423,
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "NEON_API_LOCKED"):
+            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
 
     def test_scoped_fallback_rejects_malformed_branch_payload(self) -> None:
         api = _ScopedFallbackApi(
