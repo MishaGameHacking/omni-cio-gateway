@@ -142,7 +142,7 @@ def _load_expected_project(
     project_id: str,
 ) -> dict[str, Any]:
     safe_project_id = _validate_neon_project_id(project_id)
-    payload = api.request(_HTTP_GET, f"/projects/{safe_project_id}")
+    payload = api.request("GET", f"/projects/{safe_project_id}")
     return _validate_bound_project(
         payload,
         organization_id,
