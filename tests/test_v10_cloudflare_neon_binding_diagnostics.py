@@ -21,11 +21,11 @@ _DATABASE_NAME = "neondb"
 _HTTP_GET = "GET"
 
 
-def _postgres_uri(host: str) -> str:
+def _postgres_uri(user: str, marker: str, host: str) -> str:
     return urlunsplit(
         (
             "postgresql",
-            f"owner:test-marker@{host}",
+            f"{user}:{marker}@{host}",
             f"/{_DATABASE_NAME}",
             "sslmode=require",
             "",
@@ -33,8 +33,16 @@ def _postgres_uri(host: str) -> str:
     )
 
 
-_FRANKFURT_DIRECT_URI = _postgres_uri("ep-test.eu-central-1.aws.neon.tech")
-_FRANKFURT_POOLED_URI = _postgres_uri("ep-test-pooler.eu-central-1.aws.neon.tech")
+_FRANKFURT_DIRECT_URI = _postgres_uri(
+    "owner",
+    "test-marker",
+    "ep-test.eu-central-1.aws.neon.tech",
+)
+_FRANKFURT_POOLED_URI = _postgres_uri(
+    "owner",
+    "test-marker",
+    "ep-test-pooler.eu-central-1.aws.neon.tech",
+)
 
 
 def _project(project_id: str, **overrides: object) -> dict[str, object]:
@@ -297,7 +305,11 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
 
     def test_project_scoped_target_rejects_non_frankfurt_connection(self) -> None:
         api = _ScopedTargetApi(
-            direct_uri=_postgres_uri("ep-test.us-east-2.aws.neon.tech")
+            direct_uri=_postgres_uri(
+                "owner",
+                "test-marker",
+                "ep-test.us-east-2.aws.neon.tech",
+            )
         )
         with self.assertRaisesRegex(RuntimeError, "NEON_FRANKFURT_REGION_REQUIRED"):
             neon._project_scoped_target(
