@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import errno
 from pathlib import Path
 import subprocess
 import unittest
@@ -34,6 +35,23 @@ class V10NpmAuditHostSerializationTests(unittest.TestCase):
     def test_windows_lock_path_fails_closed_without_system_root(self) -> None:
         with self.assertRaises(npm_audit.AuditTransportLockError):
             npm_audit._host_lock_path({}, platform="win32")
+
+    def test_windows_lock_contention_accepts_only_locking_violation(self) -> None:
+        self.assertTrue(
+            npm_audit._is_windows_lock_contention(
+                OSError(errno.EACCES, "synthetic locking violation")
+            )
+        )
+        self.assertFalse(
+            npm_audit._is_windows_lock_contention(
+                OSError(errno.EBADF, "synthetic bad descriptor")
+            )
+        )
+        self.assertFalse(
+            npm_audit._is_windows_lock_contention(
+                OSError(errno.EINVAL, "synthetic invalid argument")
+            )
+        )
 
     def test_retry_sequence_holds_one_host_transport_slot(self) -> None:
         results = iter(

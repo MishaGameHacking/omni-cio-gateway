@@ -43,17 +43,25 @@ to the Bulk Advisory endpoint. npm's generic fetch retry configuration documents
 behavior for idempotent registry reads, so this audit POST cannot rely on that setting as
 its complete transport-recovery budget.
 
-Independent PR review also exposed a portability defect in the first serialization
-implementation: `tempfile.gettempdir()` may resolve to a per-service-account directory on
-Windows, or to a service-private temporary namespace on POSIX. Although current exact-head
-logs proved the installed Windows runner services were sharing the lock in this machine
-configuration, a per-user temporary path is not an acceptable host-global invariant.
+Independent PR review also exposed two lock-layer defects in the first serialization
+implementation:
+
+- `tempfile.gettempdir()` may resolve to a per-service-account directory on Windows, or
+  to a service-private temporary namespace on POSIX;
+- the Windows `msvcrt.locking(..., LK_NBLCK, 1)` path treated every `OSError` as ordinary
+  contention. Microsoft CRT documentation distinguishes `EACCES` locking violations
+  from fatal `EBADF`/`EINVAL` failures for `_locking`; waiting on the latter would mask a
+  real lock error until the contention timeout.
+
+Current exact-head logs proved the installed OWNER Windows runner services were sharing
+the original lock, but those implementation details were not sufficiently strong
+portable invariants and are corrected before merge.
 
 ## Root cause class
 
 `SELF_HOSTED_NPM_AUDIT_RETRY_WINDOW_AND_CONCURRENCY_GAP`
 
-Three repository-controlled weaknesses are addressed:
+Four repository-controlled weaknesses are addressed:
 
 1. sibling runner services could previously amplify the same transient failure with
    overlapping audit/retry streams;
@@ -61,7 +69,9 @@ Three repository-controlled weaknesses are addressed:
    retry horizon still ended while the same endpoint later became reachable within the
    surrounding exact-head batch;
 3. the first lock-file location depended on a process/service temporary directory instead
-   of an explicit host-shared location.
+   of an explicit host-shared location;
+4. Windows lock acquisition did not distinguish real lock errors from normal
+   non-blocking contention.
 
 The upstream/provider/network trigger for each `ECONNRESET` remains external and is not
 claimed to be uniquely identified. npm's public status can remain operational while an
@@ -75,8 +85,9 @@ workflows for WP15 through WP22A and fast PR checks. A short transient advisory-
 window can therefore block multiple otherwise-valid exact-head or exact-main gates.
 
 The lock-location defect could affect any future deployment where sibling runner services
-use distinct service accounts or isolated temporary namespaces, even though current
-Windows exact-head evidence showed actual serialization on the OWNER host.
+use distinct service accounts or isolated temporary namespaces. The Windows error
+classification defect could turn a broken descriptor/invalid locking operation into a
+misleading long wait instead of an immediate fail-closed diagnostic.
 
 The package lock, npm version, audit level, security-result classification and
 fail-closed behavior are not defective and are not relaxed by this correction.
@@ -95,6 +106,9 @@ The mandatory npm security audit must now:
   a separately provisioned host-shared lock root;
 - fail closed if the Windows host-global root cannot be resolved or the lock file cannot
   be opened;
+- on Windows, treat only CRT `EACCES` from non-blocking `_locking` as contention;
+  non-contention lock errors fail closed immediately instead of consuming the wait bound;
+- fail closed if lock release itself fails on either supported OS path;
 - use `/var/tmp` as the portable POSIX default; POSIX service deployments with isolated
   temporary namespaces must set the explicit host-shared lock-root override;
 - wait at most 600 seconds for the host slot, then fail closed;
@@ -119,6 +133,7 @@ Deterministic regression coverage verifies that:
 - Windows resolves the default lock to a host-global system temporary directory;
 - an explicit host-shared lock root overrides the platform default;
 - missing Windows system-root evidence fails closed;
+- Windows classifies `EACCES` as contention but rejects `EBADF`/`EINVAL` as such;
 - the complete retry sequence stays under one host transport slot;
 - the default budget reaches a fifth attempt and uses exactly `15 / 30 / 45 / 60`
   seconds of bounded backoff;
@@ -131,6 +146,8 @@ Deterministic regression coverage verifies that:
   self-hosted runner services share one egress path.
 - A cross-process lock is only as global as its namespace/path; per-user temporary
   directories are not an acceptable substitute for a host-global coordination surface.
+- Contention and lock-integrity errors are distinct failure classes and must not be
+  collapsed into the same timeout path.
 - Removing concurrency amplification does not prove the external transport is healthy;
   exact-head evidence must still test whether the bounded retry horizon covers observed
   transient windows.

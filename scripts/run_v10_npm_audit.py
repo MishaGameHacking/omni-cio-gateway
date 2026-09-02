@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
+import errno
 import os
 from pathlib import Path
 import subprocess
@@ -107,6 +108,10 @@ def _host_lock_path(
     return Path("/var/tmp") / _HOST_LOCK_FILENAME
 
 
+def _is_windows_lock_contention(exc: OSError) -> bool:
+    return exc.errno == errno.EACCES
+
+
 def _lock_wait(
     *,
     deadline: float,
@@ -154,7 +159,12 @@ def _audit_transport_lock(
                 lock_file.seek(0)
                 try:
                     msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-                except OSError:
+                except OSError as exc:
+                    if not _is_windows_lock_contention(exc):
+                        raise AuditTransportLockError(
+                            "npm audit host transport lock failed; "
+                            "security gate remains failed closed."
+                        ) from exc
                     waited = True
                     _lock_wait(
                         deadline=deadline,
@@ -175,7 +185,13 @@ def _audit_transport_lock(
                 yield
             finally:
                 lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError as exc:
+                    raise AuditTransportLockError(
+                        "npm audit host transport lock release failed; "
+                        "security gate remains failed closed."
+                    ) from exc
             return
 
         while True:
@@ -206,7 +222,13 @@ def _audit_transport_lock(
         try:
             yield
         finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except OSError as exc:
+                raise AuditTransportLockError(
+                    "npm audit host transport lock release failed; "
+                    "security gate remains failed closed."
+                ) from exc
 
 
 def _default_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
