@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
-NEON_PROJECT_AUTHORITY_PROBE = "probe_provider_access_from_env"
+NEON_PROJECT_AUTHORITY_PROBE = "probe_provider_access_from_env()"
 
 
 class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
