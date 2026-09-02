@@ -13,6 +13,7 @@ _REQUIRED = frozenset({"Regression Shield", "V10 Engineering Governance"})
 def _run(
     name: str,
     *,
+    status: str = "completed",
     conclusion: str | None = "success",
     attempt: int = 1,
     run_id: int = 1,
@@ -22,22 +23,27 @@ def _run(
         "head_sha": _SHA,
         "head_branch": "main",
         "event": "push",
-        "status": "completed" if conclusion is not None else "in_progress",
+        "status": status,
         "conclusion": conclusion,
         "run_attempt": attempt,
         "id": run_id,
     }
 
 
+def _eleven_successful_runs():
+    rows = [
+        _run("Regression Shield", run_id=1),
+        _run("V10 Engineering Governance", run_id=2),
+    ]
+    rows.extend(_run(f"workflow-{index}", run_id=10 + index) for index in range(9))
+    return rows
+
+
 class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
     def test_gate_requires_core_and_success_only_for_all_observed_latest_runs(
         self,
     ) -> None:
-        rows = [
-            _run("Regression Shield", run_id=1),
-            _run("V10 Engineering Governance", run_id=2),
-        ]
-        rows.extend(_run(f"workflow-{index}", run_id=10 + index) for index in range(9))
+        rows = _eleven_successful_runs()
         ready, observed = gate._gate_state(rows, _REQUIRED, 11)
         self.assertTrue(ready)
         self.assertEqual(observed, 11)
@@ -63,11 +69,66 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
     def test_pending_or_missing_workflows_never_count_as_ready(self) -> None:
         rows = [
             _run("Regression Shield"),
-            _run("V10 Engineering Governance", conclusion=None),
+            _run(
+                "V10 Engineering Governance",
+                status="in_progress",
+                conclusion=None,
+            ),
         ]
         ready, observed = gate._gate_state(rows, _REQUIRED, 11)
         self.assertFalse(ready)
         self.assertEqual(observed, 2)
+
+    def test_completed_without_conclusion_is_pending_until_materialized(self) -> None:
+        rows = _eleven_successful_runs()
+        rows[-1]["conclusion"] = None
+
+        ready, observed = gate._gate_state(rows, _REQUIRED, 11)
+        self.assertFalse(ready)
+        self.assertEqual(observed, 11)
+
+        rows[-1]["conclusion"] = "success"
+        ready, observed = gate._gate_state(rows, _REQUIRED, 11)
+        self.assertTrue(ready)
+        self.assertEqual(observed, 11)
+
+    def test_completed_without_conclusion_times_out_as_pending(self) -> None:
+        rows = _eleven_successful_runs()
+        rows[-1]["conclusion"] = None
+        environment = {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}
+
+        with (
+            patch.object(gate, "_contract", return_value=(_REQUIRED, 11)),
+            patch.object(gate, "_current_main_sha", return_value=_SHA),
+            patch.object(gate, "_workflow_runs", return_value=rows),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PUSH_WORKFLOWS_PENDING",
+            ):
+                gate.wait_for_release_gate(
+                    _SHA,
+                    environ=environment,
+                    wait_seconds=0,
+                    poll_seconds=1,
+                )
+
+    def test_malformed_status_or_completed_conclusion_fails_closed(self) -> None:
+        rows = _eleven_successful_runs()
+        rows[-1]["status"] = None
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_RUN_INVALID",
+        ):
+            gate._gate_state(rows, _REQUIRED, 11)
+
+        rows = _eleven_successful_runs()
+        rows[-1]["conclusion"] = 7
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_RUN_INVALID",
+        ):
+            gate._gate_state(rows, _REQUIRED, 11)
 
     def test_workflow_runs_paginates_complete_exact_sha_evidence(self) -> None:
         first_page = [_run(f"workflow-{index}", run_id=index + 1) for index in range(100)]
@@ -167,8 +228,7 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
         workflow_runs.assert_not_called()
 
     def test_wait_rechecks_main_after_all_workflows_are_green(self) -> None:
-        rows = [_run("Regression Shield"), _run("V10 Engineering Governance")]
-        rows.extend(_run(f"workflow-{index}") for index in range(9))
+        rows = _eleven_successful_runs()
         environment = {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}
         with (
             patch.object(gate, "_contract", return_value=(_REQUIRED, 11)),
