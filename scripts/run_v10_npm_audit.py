@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
+import os
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 from typing import TextIO
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 
 _AUDIT_LEVELS = ("info", "low", "moderate", "high", "critical", "none")
@@ -39,9 +48,18 @@ _TRANSIENT_REGISTRY_MARKERS = (
 )
 _MAX_ATTEMPTS = 5
 _MAX_BACKOFF_SECONDS = 60.0
+_HOST_LOCK_FILENAME = "omni-cio-v10-npm-audit.lock"
+_HOST_LOCK_WAIT_SECONDS = 180.0
+_HOST_LOCK_POLL_SECONDS = 0.25
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess[str]]
 Sleeper = Callable[[float], None]
+Monotonic = Callable[[], float]
+LockFactory = Callable[[], AbstractContextManager[None]]
+
+
+class AuditTransportLockError(RuntimeError):
+    """Fail-closed host transport serialization failure."""
 
 
 def _safe_exit_code(returncode: int) -> int:
@@ -63,6 +81,108 @@ def is_transient_registry_failure(stdout: str, stderr: str) -> bool:
     return any(marker in combined for marker in _TRANSIENT_REGISTRY_MARKERS)
 
 
+def _lock_wait(
+    *,
+    deadline: float,
+    monotonic: Monotonic,
+    sleeper: Sleeper,
+    poll_seconds: float,
+) -> None:
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise AuditTransportLockError(
+            "npm audit host transport lock timed out; security gate remains failed closed."
+        )
+    sleeper(min(poll_seconds, remaining))
+
+
+@contextmanager
+def _audit_transport_lock(
+    *,
+    wait_seconds: float = _HOST_LOCK_WAIT_SECONDS,
+    poll_seconds: float = _HOST_LOCK_POLL_SECONDS,
+    sleeper: Sleeper = time.sleep,
+    monotonic: Monotonic = time.monotonic,
+) -> Iterator[None]:
+    """Serialize npm audit transport across runner services on one physical host."""
+
+    lock_path = Path(tempfile.gettempdir()) / _HOST_LOCK_FILENAME
+    try:
+        lock_file = lock_path.open("a+b")
+    except OSError as exc:
+        raise AuditTransportLockError(
+            "npm audit host transport lock could not be opened; "
+            "security gate remains failed closed."
+        ) from exc
+
+    waited = False
+    with lock_file:
+        deadline = monotonic() + wait_seconds
+        if sys.platform == "win32":
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+
+            while True:
+                lock_file.seek(0)
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                except OSError:
+                    waited = True
+                    _lock_wait(
+                        deadline=deadline,
+                        monotonic=monotonic,
+                        sleeper=sleeper,
+                        poll_seconds=poll_seconds,
+                    )
+                else:
+                    break
+
+            if waited:
+                print(
+                    "npm audit host transport slot waited for a concurrent audit; "
+                    "proceeding serially.",
+                    file=sys.stderr,
+                )
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+
+        while True:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                waited = True
+                _lock_wait(
+                    deadline=deadline,
+                    monotonic=monotonic,
+                    sleeper=sleeper,
+                    poll_seconds=poll_seconds,
+                )
+            except OSError as exc:
+                raise AuditTransportLockError(
+                    "npm audit host transport lock failed; "
+                    "security gate remains failed closed."
+                ) from exc
+            else:
+                break
+
+        if waited:
+            print(
+                "npm audit host transport slot waited for a concurrent audit; "
+                "proceeding serially.",
+                file=sys.stderr,
+            )
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _default_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -80,6 +200,7 @@ def run_audit(
     backoff_seconds: float = 5.0,
     runner: Runner = _default_runner,
     sleeper: Sleeper = time.sleep,
+    lock_factory: LockFactory = _audit_transport_lock,
 ) -> int:
     if audit_level not in _AUDIT_LEVELS:
         raise ValueError(f"unsupported npm audit level: {audit_level}")
@@ -93,42 +214,49 @@ def run_audit(
         raise ValueError("npm command must be a non-empty single-line value")
 
     command = [npm, "audit", f"--audit-level={audit_level}"]
-    for attempt in range(1, attempts + 1):
-        try:
-            completed = runner(command)
-        except OSError as exc:
-            print(f"npm audit launcher failed: {exc}", file=sys.stderr)
-            return 70
+    try:
+        with lock_factory():
+            for attempt in range(1, attempts + 1):
+                try:
+                    completed = runner(command)
+                except OSError as exc:
+                    print(f"npm audit launcher failed: {exc}", file=sys.stderr)
+                    return 70
 
-        _emit(completed.stdout, stream=sys.stdout)
-        _emit(completed.stderr, stream=sys.stderr)
+                _emit(completed.stdout, stream=sys.stdout)
+                _emit(completed.stderr, stream=sys.stderr)
 
-        if completed.returncode == 0:
-            return 0
+                if completed.returncode == 0:
+                    return 0
 
-        if not is_transient_registry_failure(completed.stdout, completed.stderr):
-            print(
-                "npm audit failed with a security finding or non-transient error; "
-                "retry is forbidden.",
-                file=sys.stderr,
-            )
-            return _safe_exit_code(completed.returncode)
+                if not is_transient_registry_failure(
+                    completed.stdout, completed.stderr
+                ):
+                    print(
+                        "npm audit failed with a security finding or non-transient error; "
+                        "retry is forbidden.",
+                        file=sys.stderr,
+                    )
+                    return _safe_exit_code(completed.returncode)
 
-        if attempt == attempts:
-            print(
-                f"npm audit registry transport failed after {attempts} attempts; "
-                "security gate remains failed closed.",
-                file=sys.stderr,
-            )
-            return _safe_exit_code(completed.returncode)
+                if attempt == attempts:
+                    print(
+                        f"npm audit registry transport failed after {attempts} attempts; "
+                        "security gate remains failed closed.",
+                        file=sys.stderr,
+                    )
+                    return _safe_exit_code(completed.returncode)
 
-        delay = backoff_seconds * attempt
-        print(
-            f"npm audit registry transport failed on attempt {attempt}/{attempts}; "
-            f"retrying after {delay:g}s.",
-            file=sys.stderr,
-        )
-        sleeper(delay)
+                delay = backoff_seconds * attempt
+                print(
+                    f"npm audit registry transport failed on attempt {attempt}/{attempts}; "
+                    f"retrying after {delay:g}s.",
+                    file=sys.stderr,
+                )
+                sleeper(delay)
+    except AuditTransportLockError as exc:
+        print(str(exc), file=sys.stderr)
+        return 75
 
     return 1
 
@@ -136,8 +264,8 @@ def run_audit(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Run mandatory npm audit with bounded retries only for recognized transient "
-            "registry transport failures."
+            "Run mandatory npm audit with host serialization and bounded retries only "
+            "for recognized transient registry transport failures."
         )
     )
     parser.add_argument("--npm", default="npm")
