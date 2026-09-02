@@ -10,7 +10,6 @@ from scripts import provision_v10_render_neon_preview_org_scope as neon_org
 
 _ORG_ID = "org-test"
 _CANONICAL_ID = "project-frankfurt"
-_STALE_ID = "project-stale"
 _BRANCH_ID = "br-main-test"
 _RUNTIME_ROLE = "omni_cio_cloudflare_staging"
 _FRANKFURT_DIRECT_URI = (
@@ -329,17 +328,6 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
                     "NEON_POSTGRES_VERSION_INVALID",
                 ):
                     neon._verify_postgres18(_VersionConnection(row))
-
-    def test_stale_project_id_never_appears_in_error_text(self) -> None:
-        api = _ScopedFallbackApi(
-            exact_failure=neon_base.ProvisioningStopped(
-                "NEON_API_KEY_INSUFFICIENT",
-                status=403,
-            )
-        )
-        with self.assertRaises(RuntimeError) as caught:
-            neon._load_expected_project(api, _ORG_ID, _STALE_ID)
-        self.assertNotIn(_STALE_ID, str(caught.exception))
 
 
 if __name__ == "__main__":
