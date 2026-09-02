@@ -152,6 +152,25 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
             "CONFIGURED_ORG_MATCH_EXACT_PROJECT_FORBIDDEN",
         )
 
+    def test_credential_org_match_validates_the_complete_payload(self) -> None:
+        api = _DiagnosticApi(
+            _base_responses(
+                credential_organizations={
+                    "organizations": [
+                        {"id": _ORG_ID},
+                        {"id": 123},
+                    ]
+                },
+                organization=_failure(403),
+                project=_failure(403),
+                branches=_failure(403),
+            )
+        )
+        result = diagnostics.diagnose_neon_authority(api, _ORG_ID, _PROJECT_ID)
+        self.assertEqual(result.credential_orgs_status, "INVALID_PAYLOAD")
+        self.assertEqual(result.configured_org_match, "UNKNOWN")
+        self.assertEqual(result.classification, "UNRESOLVED")
+
     def test_organization_authority_detects_configured_project_id_drift(self) -> None:
         responses = _base_responses(
             organization={"organization": {"id": _ORG_ID}},
@@ -269,10 +288,7 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
         self.assertEqual(result.canonical_query_status, "INVALID_PAYLOAD")
         self.assertEqual(result.canonical_name_matches, "UNKNOWN")
         self.assertEqual(result.configured_id_match, "UNKNOWN")
-        self.assertEqual(
-            result.classification,
-            "CONFIGURED_ORG_MATCH_EXACT_PROJECT_FORBIDDEN",
-        )
+        self.assertEqual(result.classification, "UNRESOLVED")
 
     def test_probe_reports_only_safe_identity_and_status_evidence(self) -> None:
         token = "diagnostic-token-value"
