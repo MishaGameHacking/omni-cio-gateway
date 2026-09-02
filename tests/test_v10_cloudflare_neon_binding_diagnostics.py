@@ -17,6 +17,7 @@ _AUTH_METHOD_USER = "api_key_user"
 _AUTH_FAILURE = "NEON_API_KEY_INSUFFICIENT"
 _ORGANIZATIONS_PATH = "/users/me/organizations"
 _DATABASE_NAME = "neondb"
+_HTTP_GET = "GET"
 _FRANKFURT_DIRECT_URI = (
     "postgresql://owner:password@ep-test.eu-central-1.aws.neon.tech/"
     f"{_DATABASE_NAME}?sslmode=require"
@@ -73,18 +74,18 @@ class _ScopedFallbackApi(neon_org.OrgScopedNeonApi):
     def request(self, method: str, path: str, **kwargs: Any) -> object:
         del kwargs
         self.calls.append((method, path))
-        if method == "GET" and path == f"/projects/{_CANONICAL_ID}":
+        if method == _HTTP_GET and path == f"/projects/{_CANONICAL_ID}":
             if self.exact_failure is not None:
                 raise self.exact_failure
             return {"project": _project(_CANONICAL_ID)}
-        if method == "GET" and path == "/auth":
+        if method == _HTTP_GET and path == "/auth":
             return {
                 "account_id": "account-test",
                 "auth_method": self.auth_method,
             }
-        if method == "GET" and path == _ORGANIZATIONS_PATH:
+        if method == _HTTP_GET and path == _ORGANIZATIONS_PATH:
             return {"organizations": self.organizations}
-        if method == "GET" and path == f"/projects/{_CANONICAL_ID}/branches?limit=100":
+        if method == _HTTP_GET and path == f"/projects/{_CANONICAL_ID}/branches?limit=100":
             if self.branch_failure is not None:
                 raise self.branch_failure
             return self.branch_payload
@@ -97,7 +98,7 @@ class _ScopedTargetApi(_ScopedFallbackApi):
         self.direct_uri = direct_uri
 
     def request(self, method: str, path: str, **kwargs: Any) -> object:
-        if method == "GET" and path == (
+        if method == _HTTP_GET and path == (
             f"/projects/{_CANONICAL_ID}/branches/{_BRANCH_ID}/databases"
         ):
             self.calls.append((method, path))
@@ -109,7 +110,7 @@ class _ScopedTargetApi(_ScopedFallbackApi):
                     }
                 ]
             }
-        if method == "GET" and path.startswith(
+        if method == _HTTP_GET and path.startswith(
             f"/projects/{_CANONICAL_ID}/connection_uri?"
         ):
             self.calls.append((method, path))
@@ -142,7 +143,7 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         api = _ScopedFallbackApi()
         project = neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
         self.assertEqual(project["id"], _CANONICAL_ID)
-        self.assertEqual(api.calls, [("GET", f"/projects/{_CANONICAL_ID}")])
+        self.assertEqual(api.calls, [(_HTTP_GET, f"/projects/{_CANONICAL_ID}")])
 
     def test_exact_project_accepts_string_postgres_version(self) -> None:
         payload = {
@@ -163,15 +164,15 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         )
         scope = neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
         self.assertEqual(scope, "PROJECT_SCOPED")
-        self.assertIn(("GET", "/auth"), api.calls)
-        self.assertIn(("GET", _ORGANIZATIONS_PATH), api.calls)
+        self.assertIn((_HTTP_GET, "/auth"), api.calls)
+        self.assertIn((_HTTP_GET, _ORGANIZATIONS_PATH), api.calls)
         self.assertIn(
-            ("GET", f"/projects/{_CANONICAL_ID}/branches?limit=100"),
+            (_HTTP_GET, f"/projects/{_CANONICAL_ID}/branches?limit=100"),
             api.calls,
         )
         self.assertFalse(
             any(
-                method == "GET" and path.startswith("/projects?")
+                method == _HTTP_GET and path.startswith("/projects?")
                 for method, path in api.calls
             )
         )
@@ -189,7 +190,7 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
             "NEON_PROJECT_SCOPED_ORG_KEY_REQUIRED",
         ):
             neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
-        self.assertNotIn(("GET", _ORGANIZATIONS_PATH), api.calls)
+        self.assertNotIn((_HTTP_GET, _ORGANIZATIONS_PATH), api.calls)
 
     def test_scoped_fallback_ignores_optional_plan_metadata(self) -> None:
         api = _ScopedFallbackApi(
@@ -280,7 +281,7 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         self.assertEqual(target.database_name, _DATABASE_NAME)
         self.assertFalse(
             any(
-                method == "GET" and path.startswith("/projects?")
+                method == _HTTP_GET and path.startswith("/projects?")
                 for method, path in api.calls
             )
         )
@@ -303,7 +304,7 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
     def test_project_scoped_target_rejects_runtime_role_as_bootstrap_owner(self) -> None:
         class RuntimeOwnerApi(_ScopedTargetApi):
             def request(self, method: str, path: str, **kwargs: Any) -> object:
-                if method == "GET" and path == (
+                if method == _HTTP_GET and path == (
                     f"/projects/{_CANONICAL_ID}/branches/{_BRANCH_ID}/databases"
                 ):
                     self.calls.append((method, path))
