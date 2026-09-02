@@ -311,12 +311,13 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
                 "ep-test.us-east-2.aws.neon.tech",
             )
         )
+        branches = _branches()
         with self.assertRaisesRegex(RuntimeError, "NEON_FRANKFURT_REGION_REQUIRED"):
             neon._project_scoped_target(
                 api,
                 _CANONICAL_ID,
                 _RUNTIME_ROLE,
-                _branches(),
+                branches,
             )
 
     def test_project_scoped_target_rejects_runtime_role_as_bootstrap_owner(self) -> None:
@@ -336,12 +337,14 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
                     }
                 return super().request(method, path, **kwargs)
 
+        api = RuntimeOwnerApi()
+        branches = _branches()
         with self.assertRaisesRegex(RuntimeError, "NEON_BOOTSTRAP_ROLE_INVALID"):
             neon._project_scoped_target(
-                RuntimeOwnerApi(),
+                api,
                 _CANONICAL_ID,
                 _RUNTIME_ROLE,
-                _branches(),
+                branches,
             )
 
     def test_postgres18_is_verified_before_mutation_stage(self) -> None:
@@ -358,11 +361,12 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
     def test_invalid_postgres_version_payload_fails_closed(self) -> None:
         for row in (None, (), ("not-a-version",), ("180005", "extra")):
             with self.subTest(row=row):
+                connection = _VersionConnection(row)
                 with self.assertRaisesRegex(
                     RuntimeError,
                     "NEON_POSTGRES_VERSION_INVALID",
                 ):
-                    neon._verify_postgres18(_VersionConnection(row))
+                    neon._verify_postgres18(connection)
 
 
 if __name__ == "__main__":
