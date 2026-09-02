@@ -1,0 +1,352 @@
+{
+  "brand": "Omni-CIO",
+  "mark": "Omni Sentinel Core",
+  "status": "approved master composition",
+  "generated_utc": "2026-09-01T15:20:12.766267+00:00",
+  "android": {
+    "canvas_px": 432,
+    "safe_zone_px": 264,
+    "foreground_alpha_bbox": [
+      86,
+      91,
+      346,
+      341
+    ],
+    "foreground_content_size": [
+      260,
+      250
+    ]
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 5986,
+      "sha256": "6ea8569bc66328077581d074b23582446a4f01eae0ac868c0ae2c453ea69a371"
+    },
+    {
+      "path": "android/res/drawable/omni_launcher_background.xml",
+      "bytes": 296,
+      "sha256": "c4073e70359178c9a65a117eb8cdc9454b9f954be3ac25a88eedac5045f2157c"
+    },
+    {
+      "path": "android/res/drawable-nodpi/omni_launcher_foreground.png",
+      "bytes": 59767,
+      "sha256": "57d3cea26434b8a3b43c54fa7ae69c8d5fbd67fade47af289efaa914319337b5",
+      "dimensions": [
+        432,
+        432
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "android/res/drawable-nodpi/omni_launcher_monochrome.png",
+      "bytes": 17368,
+      "sha256": "b363487be59f6e67d3c3f128c9be9a45b061c8c0829b1f4d222bbabf349058b6",
+      "dimensions": [
+        432,
+        432
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "android/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "bytes": 277,
+      "sha256": "ac9b02206ea363a1f4667acaa4d3fb5577c6b7d970fbda646d5b9d6e245445cd"
+    },
+    {
+      "path": "android/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+      "bytes": 277,
+      "sha256": "ac9b02206ea363a1f4667acaa4d3fb5577c6b7d970fbda646d5b9d6e245445cd"
+    },
+    {
+      "path": "android/res/mipmap-anydpi-v33/ic_launcher.xml",
+      "bytes": 350,
+      "sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    {
+      "path": "android/res/mipmap-anydpi-v33/ic_launcher_round.xml",
+      "bytes": 350,
+      "sha256": "26c72d98633c26efa81a80b66b283693b2b28ad5a01ca18aadc59e03269e23dc"
+    },
+    {
+      "path": "android/source-layers/omni-launcher-background-432.png",
+      "bytes": 12537,
+      "sha256": "2786942a7927c6f33f580798e876ab3fabe100102331cd8a9ee1f952ff32b1b8",
+      "dimensions": [
+        432,
+        432
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "android/source-layers/omni-launcher-foreground-432.png",
+      "bytes": 59767,
+      "sha256": "57d3cea26434b8a3b43c54fa7ae69c8d5fbd67fade47af289efaa914319337b5",
+      "dimensions": [
+        432,
+        432
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "android/source-layers/omni-launcher-monochrome-432.png",
+      "bytes": 17368,
+      "sha256": "b363487be59f6e67d3c3f128c9be9a45b061c8c0829b1f4d222bbabf349058b6",
+      "dimensions": [
+        432,
+        432
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "brand-tokens.json",
+      "bytes": 774,
+      "sha256": "5d5359daaafbb61f188ff640584563bc0b9a22d14f98d20d4da0d73cf915cfda"
+    },
+    {
+      "path": "monochrome/omni-sentinel-core-dark-1024.png",
+      "bytes": 54011,
+      "sha256": "1337d5996e78c6080f2ca1558f92006045eca25bde0d2b42fdf1c0dd1412062d",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "monochrome/omni-sentinel-core-white-1024.png",
+      "bytes": 53613,
+      "sha256": "dab238b313067f50ad27115f96ecb1446ca3a07d6c339b5515babd7df6018dfc",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "qa/android-safe-zone-test.png",
+      "bytes": 85838,
+      "sha256": "e5823c027f0e831af0f9b59a4cfde0ae8f9febadb1d9a106ca0981483dbdcf16",
+      "dimensions": [
+        1340,
+        560
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "qa/size-readability-test.png",
+      "bytes": 112574,
+      "sha256": "e458a6465eafd503e9d31b0f5ea0559aaa53692a12d79493562641e9cf9e9cd7",
+      "dimensions": [
+        1500,
+        820
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "qa/system-mask-light-background-test.png",
+      "bytes": 89646,
+      "sha256": "c4ac73c68fdb0c5036a1fc67fd664f37fd28421db4005a305631e0d5fd9a1c2b",
+      "dimensions": [
+        1320,
+        500
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "raster/omni-sentinel-core-1024.png",
+      "bytes": 1075186,
+      "sha256": "6ab10a3546dc57c0d88b352ab052db4e8f9b6464d52b4b4616b991c370bd805f",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "raster/omni-sentinel-core-128.png",
+      "bytes": 19689,
+      "sha256": "1261525126e84f72cfcf6b6c64df5c538d088ec37556814f0d38891fda34fd99",
+      "dimensions": [
+        128,
+        128
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "raster/omni-sentinel-core-16.png",
+      "bytes": 696,
+      "sha256": "fb358fcc4fd198e1ea23d90f462fe5a308a3510cb196443f67a9ddcbd50d8d0b",
+      "dimensions": [
+        16,
+        16
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "raster/omni-sentinel-core-256.png",
+      "bytes": 67709,
+      "sha256": "735885daa12826ceebb59a08fa6257a20d90e597a06f043ea23ca9568f19a5c5",
+      "dimensions": [
+        256,
+        256
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "raster/omni-sentinel-core-32.png",
+      "bytes": 2010,
+      "sha256": "e09c6e99acb17baeb4b966cd9962c7ade97deefbe8462cdc4a3acaa85d7d1779",
+      "dimensions": [
+        32,
+        32
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "raster/omni-sentinel-core-48.png",
+      "bytes": 3850,
+      "sha256": "927bf54c72b966ab92d6be975b56cd3e14d528153ce580876b6a5d44367fda1c",
+      "dimensions": [
+        48,
+        48
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "raster/omni-sentinel-core-512.png",
+      "bytes": 275213,
+      "sha256": "349ccd7642f0e05d67a96d4e6af3b643aa1b7c2a8f1ad853b0090abd3377cb86",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "raster/omni-sentinel-core-64.png",
+      "bytes": 6241,
+      "sha256": "d7e86c88e3a620d45e9defe79949d4b601f676d004951eba2b56e2f5c8110eea",
+      "dimensions": [
+        64,
+        64
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "source/PRODUCTION-PROMPTS.md",
+      "bytes": 2664,
+      "sha256": "fc655e8df3f9e290e09bd2ba7332996c7cb399bb0d78297bb5144034b36eaca2"
+    },
+    {
+      "path": "source/omni-sentinel-core-approved-source-1254.png",
+      "bytes": 1450738,
+      "sha256": "897186cab24c657ce0aea3d431ca1c0dc68415ceb60e355839125b8032806298",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "source/omni-sentinel-core-foreground-source-1254.png",
+      "bytes": 638340,
+      "sha256": "3eeb2a7452585cdda7d4e42636e36d7ea7bdb84ce718dfb3029289f87d294b4f",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "source/omni-sentinel-core-small-source-1254.png",
+      "bytes": 1648462,
+      "sha256": "4c21e70d523dbc7ae1b5b5a943b1ac30dc751c52c4b3279418373b5d1fb48d38",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "mode": "RGB"
+    },
+    {
+      "path": "transparent/omni-sentinel-core-color-1024.png",
+      "bytes": 383535,
+      "sha256": "1f1b2a44dbf3c55b485c478f39f114072dca3658c9c912e317ca2c487cbb3095",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "web/apple-touch-icon-180.png",
+      "bytes": 35368,
+      "sha256": "bb8e19496b3b033e40ff72aa2a6313f8d30f42fc7c8aa285e6105bba52c87841",
+      "dimensions": [
+        180,
+        180
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "web/favicon.ico",
+      "bytes": 6617,
+      "sha256": "957ad904af70f4c977ba112b59a0dc54bc57cad365861cd4e36dc4faa697b7bb",
+      "dimensions": [
+        48,
+        48
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "web/manifest-icons.snippet.json",
+      "bytes": 416,
+      "sha256": "c4c6d3ec096e61294e6d460ffbc9c8b1e411ab2b2c0db4e00b4cb69a4655b1fe"
+    },
+    {
+      "path": "web/pwa-icon-192.png",
+      "bytes": 39900,
+      "sha256": "b8dcdb126d67c389ed8f90b90b025a45ec622f61a8dac83ca4372b17706fb104",
+      "dimensions": [
+        192,
+        192
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "web/pwa-icon-512.png",
+      "bytes": 275213,
+      "sha256": "349ccd7642f0e05d67a96d4e6af3b643aa1b7c2a8f1ad853b0090abd3377cb86",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "path": "web/pwa-maskable-512.png",
+      "bytes": 136162,
+      "sha256": "7ed01bd30c062d9b459f7208718fa350ab316b3d2c4b0f70549444e5288c2280",
+      "dimensions": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    }
+  ],
+  "repository_custody_state": "GITHUB_CANONICAL_MATERIALIZED",
+  "canonical_package_authority": "GITHUB_TRACKED_FILES_AND_THIS_MANIFEST",
+  "maskable_safe_zone": {
+    "canvas_px": 512,
+    "guaranteed_visible_circle_diameter_percent": 80,
+    "important_alpha_threshold": 8,
+    "foreground_max_extent_px": 380,
+    "source_alpha_bbox": [
+      192,
+      204,
+      832,
+      819
+    ],
+    "background": "OPAQUE_BRAND_DIAGONAL_GRADIENT"
+  }
+}

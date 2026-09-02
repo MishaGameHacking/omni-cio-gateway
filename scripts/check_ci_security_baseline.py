@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import sys
 from typing import Any
@@ -48,6 +49,98 @@ _WP22A_PHASE5_IMPLEMENTATION_HEAD_SHA = "".join(
 )
 _WP22A_PHASE5_ACCEPTED_MAIN_SHA = "".join(
     ("bb15739a", "cf82ded8", "eafb6d00", "6cf222fb", "3988770d")
+)
+BRAND_CUSTODY_PATH = "docs/brand/OMNI_CIO_BRAND_ASSETS_CUSTODY.json"
+BRAND_PACKAGE_PATH = "docs/brand/omni-cio-brand-assets-v1"
+BRAND_MANIFEST_PATH = f"{BRAND_PACKAGE_PATH}/asset-manifest.json"
+BRAND_GUARD_PATH = "scripts/check_v10_brand_assets.py"
+HEX_HIGH_ENTROPY_FINDING = "Hex High Entropy String"
+FINDING_TYPE_KEY = "type"
+FINDING_LINE_NUMBER_KEY = "line_number"
+DETECTOR_RESULTS_KEY = "results"
+SHA256_FIELD = "sha256"
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+_HEX_JSON_LINE = re.compile(
+    r'^"(?P<key>\w+)": "(?P<value>[0-9a-f]{40}|[0-9a-f]{64})",?$',
+    re.ASCII,
+)
+_SHA256_LITERAL_LINE = re.compile(r'^"(?P<value>[0-9a-f]{64})"$')
+_BRAND_TRANSPARENT_PIXEL_SHA256 = "".join(
+    (
+        "28a92276",
+        "4fed4ce5",
+        "311a9c20",
+        "71e43da6",
+        "1fd65f41",
+        "837f643d",
+        "0d1f3cf3",
+        "9fbc4499",
+    )
+)
+_BRAND_INITIAL_MATERIALIZATION_COMMIT = "".join(
+    ("492055d1", "5d3361d2", "c1857f3b", "87d12ee6", "c816cf7e")
+)
+_BRAND_RECOVERY_ARCHIVE_SHA256 = "".join(
+    (
+        "4c6c83a8",
+        "881d43a5",
+        "9eace38f",
+        "f677e4fe",
+        "0ef98271",
+        "f67e0e50",
+        "d8e7ff2a",
+        "33bb5718",
+    )
+)
+_BRAND_LEGACY_TRANSPARENT_SHA256 = "".join(
+    (
+        "d1e69a10",
+        "dd56ac11",
+        "ce70d8de",
+        "81589a3a",
+        "1c087510",
+        "8b1d1611",
+        "83337b48",
+        "df658236",
+    )
+)
+_BRAND_PRECORRECTION_ARCHIVE_SHA256 = "".join(
+    (
+        "351aad1b",
+        "6bb52125",
+        "c7f67a37",
+        "55281d59",
+        "5e1c6d7b",
+        "9b4dc045",
+        "901a9077",
+        "1038ed6d",
+    )
+)
+_KNOWN_BRAND_PUBLIC_INTEGRITY_VALUES = frozenset(
+    {
+        _BRAND_TRANSPARENT_PIXEL_SHA256,
+        _BRAND_INITIAL_MATERIALIZATION_COMMIT,
+        _BRAND_RECOVERY_ARCHIVE_SHA256,
+        _BRAND_LEGACY_TRANSPARENT_SHA256,
+        _BRAND_PRECORRECTION_ARCHIVE_SHA256,
+    }
+)
+_BRAND_CUSTODY_INTEGRITY_KEYS = frozenset(
+    {
+        "manifest_sha256",
+        "initial_materialization_commit",
+        SHA256_FIELD,
+        "pixel_sha256",
+        "archive_sha256",
+        "source_archive_sha256",
+    }
+)
+_BRAND_GUARD_CHECKSUM_DECLARATIONS = frozenset(
+    {
+        "EXPECTED_MASTER_SHA256 = (",
+        "EXPECTED_TRANSPARENT_SHA256 = (",
+        "EXPECTED_TRANSPARENT_PIXEL_SHA256 = (",
+    }
 )
 APPROVED_KEYWORD_LINES = {
     "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": frozenset(
@@ -325,67 +418,303 @@ def _normalize_repo_filename(filename: str) -> str:
     return normalized
 
 
-def _approved_exact_line(
+def _read_finding_line(
     filename: str,
     line_number: object,
-    approved_by_path: dict[str, frozenset[str]],
-) -> bool:
+) -> tuple[str, list[str], str] | None:
     if isinstance(line_number, bool) or not isinstance(line_number, int):
-        return False
+        return None
     normalized = _normalize_repo_filename(filename)
-    approved_lines = approved_by_path.get(normalized)
-    if not approved_lines:
-        return False
     root = ROOT.resolve()
     candidate = (ROOT / Path(normalized)).resolve()
     try:
         candidate.relative_to(root)
     except ValueError:
-        return False
+        return None
     try:
         lines = candidate.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
-        return False
+        return None
     if line_number < 1 or line_number > len(lines):
+        return None
+    return normalized, lines, lines[line_number - 1].strip()
+
+
+def _approved_exact_line(
+    filename: str,
+    line_number: object,
+    approved_by_path: dict[str, frozenset[str]],
+) -> bool:
+    normalized = _normalize_repo_filename(filename)
+    approved_lines = approved_by_path.get(normalized)
+    if not approved_lines:
         return False
-    return lines[line_number - 1].strip() in approved_lines
+    located = _read_finding_line(filename, line_number)
+    if located is None:
+        return False
+    _, _, line = located
+    return line in approved_lines
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def _safe_descendant(root: Path, raw_path: object) -> Path | None:
+    if (
+        not isinstance(raw_path, str)
+        or not raw_path
+        or "\\" in raw_path
+        or "\x00" in raw_path
+    ):
+        return None
+    relative = PurePosixPath(raw_path)
+    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+        return None
+    if any(":" in part for part in relative.parts):
+        return None
+    resolved_root = root.resolve()
+    candidate = resolved_root.joinpath(*relative.parts).resolve()
+    try:
+        candidate.relative_to(resolved_root)
+    except ValueError:
+        return None
+    return candidate
+
+
+def _load_brand_manifest_records() -> list[Any] | None:
+    manifest_path = ROOT / BRAND_MANIFEST_PATH
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    records = payload.get("files")
+    if not isinstance(records, list) or not records:
+        return None
+    return records
+
+
+def _validated_manifest_record_digest(
+    record: object,
+    package_root: Path,
+    seen_paths: set[str],
+) -> str | None:
+    if not isinstance(record, dict):
+        return None
+    raw_path = record.get("path")
+    byte_count = record.get("bytes")
+    sha256 = record.get(SHA256_FIELD)
+    if not isinstance(raw_path, str) or raw_path in seen_paths:
+        return None
+    if (
+        not isinstance(byte_count, int)
+        or isinstance(byte_count, bool)
+        or byte_count < 0
+    ):
+        return None
+    if not isinstance(sha256, str) or _SHA256_HEX.fullmatch(sha256) is None:
+        return None
+
+    candidate = _safe_descendant(package_root, raw_path)
+    if candidate is None or not candidate.is_file():
+        return None
+    try:
+        actual_size = candidate.stat().st_size
+    except OSError:
+        return None
+    if actual_size != byte_count or _sha256_file(candidate) != sha256:
+        return None
+    seen_paths.add(raw_path)
+    return sha256
+
+
+def _verified_brand_manifest_digests() -> frozenset[str]:
+    records = _load_brand_manifest_records()
+    if records is None:
+        return frozenset()
+
+    package_root = ROOT / BRAND_PACKAGE_PATH
+    seen_paths: set[str] = set()
+    verified: set[str] = set()
+    for record in records:
+        sha256 = _validated_manifest_record_digest(record, package_root, seen_paths)
+        if sha256 is None:
+            return frozenset()
+        verified.add(sha256)
+    return frozenset(verified)
+
+
+def _verified_brand_public_integrity_values(
+    manifest_digests: frozenset[str],
+) -> frozenset[str]:
+    if not manifest_digests:
+        return frozenset()
+    values = set(manifest_digests)
+    manifest_sha256 = _sha256_file(ROOT / BRAND_MANIFEST_PATH)
+    if manifest_sha256:
+        values.add(manifest_sha256)
+    values.update(_KNOWN_BRAND_PUBLIC_INTEGRITY_VALUES)
+    return frozenset(values)
+
+
+def _verified_brand_integrity_evidence() -> tuple[frozenset[str], frozenset[str]]:
+    manifest_digests = _verified_brand_manifest_digests()
+    return manifest_digests, _verified_brand_public_integrity_values(manifest_digests)
+
+
+def _detect_secrets_report_items(
+    results: dict[Any, Any],
+) -> tuple[
+    tuple[object, object, tuple[frozenset[str], frozenset[str]]],
+    ...,
+]:
+    evidence = _verified_brand_integrity_evidence()
+    return tuple(
+        (filename, findings, evidence) for filename, findings in results.items()
+    )
+
+
+def _hex_entropy_finding_line(
+    filename: str,
+    finding: dict[str, Any],
+) -> tuple[str, list[str], str] | None:
+    if finding.get(FINDING_TYPE_KEY) != HEX_HIGH_ENTROPY_FINDING:
+        return None
+    return _read_finding_line(filename, finding.get(FINDING_LINE_NUMBER_KEY))
+
+
+def _approved_brand_manifest_finding(
+    filename: str,
+    finding: dict[str, Any],
+    manifest_digests: frozenset[str],
+) -> bool:
+    located = _hex_entropy_finding_line(filename, finding)
+    if located is None:
+        return False
+    normalized, _, line = located
+    if normalized != BRAND_MANIFEST_PATH:
+        return False
+    match = _HEX_JSON_LINE.fullmatch(line)
+    return (
+        match is not None
+        and match.group("key") == SHA256_FIELD
+        and match.group("value") in manifest_digests
+    )
+
+
+def _approved_brand_custody_finding(
+    filename: str,
+    finding: dict[str, Any],
+    public_integrity_values: frozenset[str],
+) -> bool:
+    located = _hex_entropy_finding_line(filename, finding)
+    if located is None:
+        return False
+    normalized, _, line = located
+    if normalized != BRAND_CUSTODY_PATH:
+        return False
+    match = _HEX_JSON_LINE.fullmatch(line)
+    return (
+        match is not None
+        and match.group("key") in _BRAND_CUSTODY_INTEGRITY_KEYS
+        and match.group("value") in public_integrity_values
+    )
+
+
+def _approved_brand_guard_finding(
+    filename: str,
+    finding: dict[str, Any],
+    public_integrity_values: frozenset[str],
+) -> bool:
+    located = _hex_entropy_finding_line(filename, finding)
+    line_number = finding.get(FINDING_LINE_NUMBER_KEY)
+    if (
+        located is None
+        or isinstance(line_number, bool)
+        or not isinstance(line_number, int)
+        or line_number < 2
+    ):
+        return False
+    normalized, lines, line = located
+    if normalized != BRAND_GUARD_PATH:
+        return False
+    match = _SHA256_LITERAL_LINE.fullmatch(line)
+    declaration = lines[line_number - 2].strip()
+    return (
+        match is not None
+        and declaration in _BRAND_GUARD_CHECKSUM_DECLARATIONS
+        and match.group("value") in public_integrity_values
+    )
+
+
+def _approved_brand_integrity_finding(
+    filename: str,
+    finding: dict[str, Any],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
+) -> bool:
+    return (
+        _approved_brand_manifest_finding(filename, finding, manifest_digests)
+        or _approved_brand_custody_finding(filename, finding, public_integrity_values)
+        or _approved_brand_guard_finding(filename, finding, public_integrity_values)
+    )
 
 
 def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Secret Keyword":
+    if finding.get(FINDING_TYPE_KEY) != "Secret Keyword":
         return False
     return _approved_exact_line(
         filename,
-        finding.get("line_number"),
+        finding.get(FINDING_LINE_NUMBER_KEY),
         APPROVED_KEYWORD_LINES,
     )
 
 
 def _approved_public_checksum_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Hex High Entropy String":
+    if finding.get(FINDING_TYPE_KEY) != HEX_HIGH_ENTROPY_FINDING:
         return False
     return _approved_exact_line(
         filename,
-        finding.get("line_number"),
+        finding.get(FINDING_LINE_NUMBER_KEY),
         APPROVED_PUBLIC_CHECKSUM_LINES,
     )
 
 
 def _approved_git_sha_evidence_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Hex High Entropy String":
+    if finding.get(FINDING_TYPE_KEY) != HEX_HIGH_ENTROPY_FINDING:
         return False
     return _approved_exact_line(
         filename,
-        finding.get("line_number"),
+        finding.get(FINDING_LINE_NUMBER_KEY),
         APPROVED_GIT_SHA_EVIDENCE_LINES,
     )
 
 
-def _approved_detect_secrets_finding(filename: str, finding: dict[str, Any]) -> bool:
+def _approved_detect_secrets_finding(
+    filename: str,
+    finding: dict[str, Any],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
+) -> bool:
     return (
         _approved_keyword_metadata_finding(filename, finding)
         or _approved_public_checksum_finding(filename, finding)
         or _approved_git_sha_evidence_finding(filename, finding)
+        or _approved_brand_integrity_finding(
+            filename,
+            finding,
+            manifest_digests,
+            public_integrity_values,
+        )
     )
 
 
@@ -393,14 +722,21 @@ def _validate_detect_secrets_finding(
     filename: str,
     finding: object,
     failures: list[str],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
 ) -> None:
     if not isinstance(finding, dict):
         failures.append(f"invalid detect-secrets finding for {filename}")
         return
-    if _approved_detect_secrets_finding(filename, finding):
+    if _approved_detect_secrets_finding(
+        filename,
+        finding,
+        manifest_digests,
+        public_integrity_values,
+    ):
         return
-    line_number = finding.get("line_number", "unknown")
-    finding_type = finding.get("type", "unknown")
+    line_number = finding.get(FINDING_LINE_NUMBER_KEY, "unknown")
+    finding_type = finding.get(FINDING_TYPE_KEY, "unknown")
     failures.append(f"potential secret: {filename}:{line_number} ({finding_type})")
 
 
@@ -408,37 +744,53 @@ def _validate_detect_secrets_findings(
     filename: str,
     findings: object,
     failures: list[str],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
 ) -> None:
     if not isinstance(findings, list):
         failures.append(f"invalid detect-secrets findings for {filename}")
         return
     for finding in findings:
-        _validate_detect_secrets_finding(filename, finding, failures)
+        _validate_detect_secrets_finding(
+            filename,
+            finding,
+            failures,
+            manifest_digests,
+            public_integrity_values,
+        )
 
 
 def _validate_detect_secrets_file(
     filename: object,
     findings: object,
     failures: list[str],
+    manifest_digests: frozenset[str],
+    public_integrity_values: frozenset[str],
 ) -> None:
     if not isinstance(filename, str):
         failures.append("invalid detect-secrets filename")
         return
     if GENERATED_SECRET_SCAN_PATH.search(filename):
         return
-    _validate_detect_secrets_findings(filename, findings, failures)
+    _validate_detect_secrets_findings(
+        filename,
+        findings,
+        failures,
+        manifest_digests,
+        public_integrity_values,
+    )
 
 
 def validate_detect_secrets_report(
     report: dict[str, Any],
     failures: list[str],
 ) -> None:
-    results = report.get("results")
+    results = report.get(DETECTOR_RESULTS_KEY)
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
-    for filename, findings in results.items():
-        _validate_detect_secrets_file(filename, findings, failures)
+    for filename, findings, evidence in _detect_secrets_report_items(results):
+        _validate_detect_secrets_file(filename, findings, failures, *evidence)
 
 
 def validate_repository_baseline() -> list[str]:

@@ -1,0 +1,110 @@
+{
+  "schema_version": 4,
+  "brand": "Omni-CIO",
+  "mark": "Omni Sentinel Core",
+  "custody_state": "GITHUB_CANONICAL_MATERIALIZED",
+  "import_date": "2026-09-01",
+  "canonical_repository": "MishaGameHacking/omni-cio-gateway",
+  "repository_acceptance_branch": "main",
+  "materialization_staging_branch": "assets/omni-cio-brand-assets-v1",
+  "repository_canonical_package": {
+    "root": "docs/brand/omni-cio-brand-assets-v1",
+    "path_count": 37,
+    "manifest_path": "docs/brand/omni-cio-brand-assets-v1/asset-manifest.json",
+    "manifest_sha256": "a0ef0746a1bd25aeda03570d011e95b7f3844f22e95cf68101237fce1a9c4cf6",
+    "full_binary_materialization_complete": true,
+    "integrity_guard": "scripts/check_v10_brand_assets.py",
+    "regression_test": "tests/test_v10_brand_assets.py",
+    "initial_materialization_commit": "492055d15d3361d2c1857f3b87d12ee6c816cf7e"
+  },
+  "canonical_master": {
+    "path": "raster/omni-sentinel-core-1024.png",
+    "sha256": "6ab10a3546dc57c0d88b352ab052db4e8f9b6464d52b4b4616b991c370bd805f"
+  },
+  "repaired_derivative": {
+    "path": "transparent/omni-sentinel-core-color-1024.png",
+    "bytes": 383535,
+    "sha256": "1f1b2a44dbf3c55b485c478f39f114072dca3658c9c912e317ca2c487cbb3095",
+    "pixel_sha256": "28a922764fed4ce5311a9c2071e43da61fd65f41837f643d0d1f3cf39fbc4499",
+    "encoding_contract": "PNG_RGBA8_FILTER0_ZLIB9_DETERMINISTIC"
+  },
+  "maskable_derivative": {
+    "path": "web/pwa-maskable-512.png",
+    "bytes": 136162,
+    "sha256": "7ed01bd30c062d9b459f7208718fa350ab316b3d2c4b0f70549444e5288c2280",
+    "dimensions": [
+      512,
+      512
+    ],
+    "mode": "RGB",
+    "safe_zone_contract": {
+      "canvas_px": 512,
+      "guaranteed_visible_circle_diameter_percent": 80,
+      "important_alpha_threshold": 8,
+      "foreground_max_extent_px": 380,
+      "source_alpha_bbox": [
+        192,
+        204,
+        832,
+        819
+      ],
+      "background": "OPAQUE_BRAND_DIAGONAL_GRADIENT"
+    }
+  },
+  "legacy_corrected_drive_custody": {
+    "provider": "GOOGLE_DRIVE_CONNECTED_OWNER_STORAGE",
+    "archive_folder_id": "1xViZ4jtS0mv10fnnjjPHsbOmCsy1GcVy",
+    "archive_file_id": "12Zg5A0P__n_lMr3LYmDZdzESnFZ37Vxc",
+    "expanded_folder_id": "19JbZCt5lFbL97hZ6ZHj7mJC_vavPy693",
+    "archive_filename": "omni-cio-brand-assets-v1-CANONICAL-4c6c83a8881d43a5.zip",
+    "archive_sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718",
+    "archive_bytes": 6589504,
+    "expanded_path_count": 37,
+    "visibility": "PRIVATE_NOT_SHARED",
+    "status": "RECOVERY_PROVENANCE_NOT_REPOSITORY_BYTE_AUTHORITY",
+    "transparent_derivative": {
+      "bytes": 264293,
+      "sha256": "d1e69a10dd56ac11ce70d8de81589a3a1c0875108b1d161183337b48df658236"
+    },
+    "reason": "This corrected Drive package predates the deterministic repository PNG encoding. GitHub manifest and tracked files now define canonical engineering bytes."
+  },
+  "additional_private_recovery_copy": {
+    "archive_file_id": "1k_4lm8RUg7LYgv8yX0JWd4MjP-rHLQe3",
+    "filename": "OMNI-CIO-BRAND-ASSETS-V1-RECOVERY-COPY-4c6c83a8881d43a5.zip",
+    "archive_sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718",
+    "archive_bytes": 6589504,
+    "visibility": "PRIVATE_NOT_SHARED"
+  },
+  "historical_pre_correction_custody": {
+    "archive_file_id": "1vYBw3_MwD7tH6sSynV57CaekVwNwWzfx",
+    "filename": "omni-cio-brand-assets-v1-PRE-CORRECTION-2026-09-01.zip",
+    "source_archive_sha256": "351aad1b6bb52125c7f67a3755281d595e1c6d7b9b4dc045901a90771038ed6d",
+    "status": "HISTORICAL_ONLY_DO_NOT_USE_AS_CANONICAL",
+    "known_defect": "transparent/omni-sentinel-core-color-1024.png contains an incomplete PNG IDAT stream"
+  },
+  "original_shared_drive_source": {
+    "folder_id": "1sRk82V647KjfSCV7OJQfxvX_wJqJ1BYx",
+    "original_archive_file_id": "1VrGniNzt7ZEjpkTC0dml5SuEZ5H77z8Z",
+    "status": "SOURCE_PROVENANCE_ONLY_NOT_CANONICAL",
+    "reason": "The shared source remains read-only to this integration and contains the pre-correction archive/transparent derivative."
+  },
+  "repository_binary_state": {
+    "full_binary_materialization_complete": true,
+    "path_count_verified": 37,
+    "manifest_hash_verification_required": true,
+    "transparent_pixel_identity_verification_required": true,
+    "maskable_safe_zone_verification_required": true,
+    "binary_materialization_blocker_active": false
+  },
+  "future_integration_readiness": {
+    "web_pwa_assets_complete": true,
+    "android_adaptive_assets_complete": true,
+    "starts_web_visual_update": false
+  },
+  "authority_effect": {
+    "starts_web_visual_update": false,
+    "changes_cloudflare_or_domain": false,
+    "activates_public_users": false,
+    "expands_broker_or_real_money_authority": false
+  }
+}
