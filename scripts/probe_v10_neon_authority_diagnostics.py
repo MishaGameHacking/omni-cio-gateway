@@ -14,9 +14,13 @@ from scripts import provision_v10_render_neon_preview_org_scope as _org
 
 _HTTP_GET = "GET"
 _STATUS_OK = "200"
+_STATUS_UNAUTHORIZED = "401"
+_STATUS_FORBIDDEN = "403"
+_STATUS_NOT_FOUND = "404"
 _STATUS_ERROR = "ERROR"
 _STATUS_SKIPPED = "SKIPPED"
 _STATUS_INVALID_PAYLOAD = "INVALID_PAYLOAD"
+_DENIED_STATUSES = frozenset({_STATUS_FORBIDDEN, _STATUS_NOT_FOUND})
 _UNKNOWN = "UNKNOWN"
 _TRUE = "TRUE"
 _FALSE = "FALSE"
@@ -146,6 +150,46 @@ def _canonical_lookup(
     return evidence.status, matches, configured_id_match
 
 
+def _exact_resource_denied(project_status: str, branches_status: str) -> bool:
+    return project_status in _DENIED_STATUSES or branches_status in _DENIED_STATUSES
+
+
+def _organization_classification(
+    *,
+    organization_status: str,
+    project_status: str,
+    branches_status: str,
+    canonical_query_status: str,
+    canonical_name_matches: str,
+    configured_id_match: str,
+) -> str | None:
+    if organization_status != _STATUS_OK or canonical_query_status != _STATUS_OK:
+        return None
+    if canonical_name_matches == "0":
+        return "CANONICAL_PROJECT_NOT_FOUND_IN_CONFIGURED_ORG"
+    if canonical_name_matches == "MULTIPLE":
+        return "CANONICAL_PROJECT_NAME_NOT_UNIQUE"
+    if canonical_name_matches == "1" and configured_id_match == _FALSE:
+        return "CONFIGURED_PROJECT_ID_DRIFT"
+    if configured_id_match == _TRUE and _exact_resource_denied(
+        project_status,
+        branches_status,
+    ):
+        return "EXACT_PROJECT_AUTHORIZATION_DRIFT"
+    return None
+
+
+def _all_exact_resource_reads_denied(
+    organization_status: str,
+    project_status: str,
+    branches_status: str,
+) -> bool:
+    return all(
+        status in _DENIED_STATUSES
+        for status in (organization_status, project_status, branches_status)
+    )
+
+
 def _classification(
     *,
     organization_status: str,
@@ -155,23 +199,26 @@ def _classification(
     canonical_name_matches: str,
     configured_id_match: str,
 ) -> str:
-    if "401" in {organization_status, project_status, branches_status}:
+    if _STATUS_UNAUTHORIZED in {
+        organization_status,
+        project_status,
+        branches_status,
+    }:
         return "CREDENTIAL_INVALID"
-    if organization_status == _STATUS_OK and canonical_query_status == _STATUS_OK:
-        if canonical_name_matches == "0":
-            return "CANONICAL_PROJECT_NOT_FOUND_IN_CONFIGURED_ORG"
-        if canonical_name_matches == "MULTIPLE":
-            return "CANONICAL_PROJECT_NAME_NOT_UNIQUE"
-        if canonical_name_matches == "1" and configured_id_match == _FALSE:
-            return "CONFIGURED_PROJECT_ID_DRIFT"
-        if configured_id_match == _TRUE and (
-            project_status in {"403", "404"} or branches_status in {"403", "404"}
-        ):
-            return "EXACT_PROJECT_AUTHORIZATION_DRIFT"
-    if (
-        organization_status in {"403", "404"}
-        and project_status in {"403", "404"}
-        and branches_status in {"403", "404"}
+    organization_classification = _organization_classification(
+        organization_status=organization_status,
+        project_status=project_status,
+        branches_status=branches_status,
+        canonical_query_status=canonical_query_status,
+        canonical_name_matches=canonical_name_matches,
+        configured_id_match=configured_id_match,
+    )
+    if organization_classification is not None:
+        return organization_classification
+    if _all_exact_resource_reads_denied(
+        organization_status,
+        project_status,
+        branches_status,
     ):
         return "ORG_SCOPE_UNAVAILABLE_EXACT_PROJECT_FORBIDDEN"
     if branches_status == _STATUS_OK:
