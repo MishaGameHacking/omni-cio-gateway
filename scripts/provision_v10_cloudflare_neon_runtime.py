@@ -179,13 +179,9 @@ def _validate_project_scoped_organization(
     ]
     if len(organizations) != 1:
         raise _base.ProvisioningStopped("NEON_API_KEY_ORGANIZATION_BINDING_AMBIGUOUS")
-    organization = organizations[0]
-    if organization.get("id") != safe_org_id:
+    if organizations[0].get("id") != safe_org_id:
         raise _base.ProvisioningStopped("NEON_API_KEY_ORGANIZATION_MISMATCH")
-    plan = organization.get("plan")
-    if not isinstance(plan, str) or plan.casefold() != "free":
-        raise _base.ProvisioningStopped("NEON_FREE_PLAN_REQUIRED")
-    _base._emit("NEON_ORGANIZATION=FREE_VERIFIED")
+    _base._emit("NEON_ORGANIZATION_BINDING=VERIFIED")
 
 
 def _validate_branch_payload(payload: object) -> dict[str, Any]:
