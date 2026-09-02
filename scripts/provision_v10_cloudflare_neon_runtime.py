@@ -24,6 +24,8 @@ _RUNTIME_DSN_FILENAME_BY_ENVIRONMENT = {
 _ROLE_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 _NEON_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,60}$")
 _NEON_FRANKFURT_HOST_SUFFIX = ".eu-central-1.aws.neon.tech"
+_HTTP_GET = "GET"
+_NEON_POSTGRES18_REQUIRED_CODE = "NEON_POSTGRES18_REQUIRED"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -127,8 +129,8 @@ def _validate_bound_project(
         raise _base.ProvisioningStopped("NEON_PROJECT_NAME_DRIFT")
     if project.get("org_id") != organization_id:
         raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
-    if _project_pg_version(project, "NEON_POSTGRES18_REQUIRED") != 18:
-        raise _base.ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
+    if _project_pg_version(project, _NEON_POSTGRES18_REQUIRED_CODE) != 18:
+        raise _base.ProvisioningStopped(_NEON_POSTGRES18_REQUIRED_CODE)
     if project.get("region_id") != _base.NEON_REGION:
         raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
     return project
@@ -140,7 +142,7 @@ def _load_expected_project(
     project_id: str,
 ) -> dict[str, Any]:
     safe_project_id = _validate_neon_project_id(project_id)
-    payload = api.request("GET", f"/projects/{safe_project_id}")
+    payload = api.request(_HTTP_GET, f"/projects/{safe_project_id}")
     return _validate_bound_project(
         payload,
         organization_id,
@@ -150,7 +152,7 @@ def _load_expected_project(
 
 def _validate_project_scoped_auth(api: _org.OrgScopedNeonApi) -> None:
     payload = _base._json_object(
-        api.request("GET", "/auth"),
+        api.request(_HTTP_GET, "/auth"),
         "NEON_AUTH_RESPONSE_INVALID",
     )
     account_id = payload.get("account_id")
@@ -167,7 +169,7 @@ def _validate_project_scoped_organization(
 ) -> None:
     safe_org_id = _org._validate_neon_org_id(organization_id)
     payload = _base._json_object(
-        api.request("GET", "/users/me/organizations"),
+        api.request(_HTTP_GET, "/users/me/organizations"),
         "NEON_ORGANIZATIONS_RESPONSE_INVALID",
     )
     organizations = [
@@ -205,7 +207,7 @@ def _project_scoped_branch_authority(
     _validate_project_scoped_organization(api, organization_id)
     try:
         payload = api.request(
-            "GET",
+            _HTTP_GET,
             f"/projects/{safe_project_id}/branches?limit=100",
         )
     except _base.ProvisioningStopped as exc:
@@ -302,7 +304,7 @@ class _BoundProjectNeonApi(_org.OrgScopedNeonApi):
         safe_method = method.upper()
         parsed = urlsplit(path)
         if parsed.path == "/projects":
-            if safe_method != "GET":
+            if safe_method != _HTTP_GET:
                 raise _base.ProvisioningStopped(
                     "CLOUDFLARE_NEON_PROJECT_CREATE_FORBIDDEN"
                 )
@@ -358,7 +360,7 @@ def _project_scoped_target(
 
     database_payload = _base._json_object(
         api.request(
-            "GET",
+            _HTTP_GET,
             f"/projects/{safe_project_id}/branches/{branch_id}/databases",
         ),
         "NEON_DATABASES_RESPONSE_INVALID",
@@ -396,14 +398,14 @@ def _project_scoped_target(
     pooled = urlencode({**common, "pooled": "true"})
     direct_payload = _base._json_object(
         api.request(
-            "GET",
+            _HTTP_GET,
             f"/projects/{safe_project_id}/connection_uri?{direct}",
         ),
         "NEON_CONNECTION_URI_INVALID",
     )
     pooled_payload = _base._json_object(
         api.request(
-            "GET",
+            _HTTP_GET,
             f"/projects/{safe_project_id}/connection_uri?{pooled}",
         ),
         "NEON_POOLED_CONNECTION_URI_INVALID",
@@ -450,7 +452,7 @@ def _verify_postgres18(connection: Any) -> None:
     except (TypeError, ValueError):
         raise _base.ProvisioningStopped("NEON_POSTGRES_VERSION_INVALID") from None
     if version_num // 10000 != 18:
-        raise _base.ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
+        raise _base.ProvisioningStopped(_NEON_POSTGRES18_REQUIRED_CODE)
     _base._emit("CLOUDFLARE_NEON_POSTGRES18=VERIFIED")
 
 
