@@ -137,6 +137,7 @@ def _configured_org_match(payload: object, expected_org_id: str) -> str:
     raw_organizations = payload.get("organizations")
     if not isinstance(raw_organizations, list):
         raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_ORGS_INVALID")
+    configured_org_present = False
     for item in raw_organizations:
         if not isinstance(item, dict):
             raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_ORG_INVALID")
@@ -144,9 +145,10 @@ def _configured_org_match(payload: object, expected_org_id: str) -> str:
         if not isinstance(organization_id, str):
             raise _base.ProvisioningStopped("NEON_DIAGNOSTIC_ORG_ID_INVALID")
         _org._validate_neon_org_id(organization_id)
-        if organization_id == expected_org_id:
-            return _TRUE
-    return _FALSE
+        configured_org_present = configured_org_present or (
+            organization_id == expected_org_id
+        )
+    return _TRUE if configured_org_present else _FALSE
 
 
 def _credential_organizations(
@@ -290,6 +292,8 @@ def _classification(
     if (
         credential_orgs_status == _STATUS_OK
         and configured_org_match == _TRUE
+        and organization_status in _DENIED_STATUSES
+        and canonical_query_status == _STATUS_SKIPPED
         and _exact_resource_denied(project_status, branches_status)
     ):
         return "CONFIGURED_ORG_MATCH_EXACT_PROJECT_FORBIDDEN"
