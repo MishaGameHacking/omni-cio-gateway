@@ -67,6 +67,16 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         self.assertEqual(project["id"], _CANONICAL_ID)
         self.assertEqual(api.calls, [("GET", f"/projects/{_CANONICAL_ID}")])
 
+    def test_exact_project_accepts_string_postgres_version(self) -> None:
+        payload = {
+            "project": _project(
+                _CANONICAL_ID,
+                pg_version="18",
+            )
+        }
+        project = neon._validate_bound_project(payload, _ORG_ID, _CANONICAL_ID)
+        self.assertEqual(project["pg_version"], "18")
+
     def test_forbidden_exact_project_classifies_stale_project_binding(self) -> None:
         api = _DiagnosticApi(
             expected_project_id=_STALE_ID,
@@ -82,6 +92,25 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         self.assertNotIn(_STALE_ID, message)
         self.assertNotIn(_CANONICAL_ID, message)
         self.assertEqual(len(api.calls), 2)
+
+    def test_string_version_diagnostic_classifies_stale_project_binding(self) -> None:
+        api = _DiagnosticApi(
+            expected_project_id=_STALE_ID,
+            exact_failure=neon_base.ProvisioningStopped(
+                "NEON_API_KEY_INSUFFICIENT",
+                status=403,
+            ),
+            diagnostic_payload={
+                "projects": [
+                    _project(
+                        _CANONICAL_ID,
+                        pg_version="18",
+                    )
+                ]
+            },
+        )
+        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_MISMATCH"):
+            neon._load_expected_project(api, _ORG_ID, _STALE_ID)
 
     def test_not_found_exact_project_classifies_stale_project_binding(self) -> None:
         api = _DiagnosticApi(
@@ -184,6 +213,49 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
             diagnostic_failure=neon_base.ProvisioningStopped(
                 "NEON_API_NETWORK_ERROR"
             ),
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NEON_API_KEY_INSUFFICIENT",
+        ) as caught:
+            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
+        self.assertEqual(caught.exception.status, 403)
+
+    def test_malformed_diagnostic_body_preserves_original_authority_failure(
+        self,
+    ) -> None:
+        original = neon_base.ProvisioningStopped(
+            "NEON_API_KEY_INSUFFICIENT",
+            status=403,
+        )
+        api = _DiagnosticApi(
+            expected_project_id=_CANONICAL_ID,
+            exact_failure=original,
+            diagnostic_payload={"projects": "not-a-list"},
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NEON_API_KEY_INSUFFICIENT",
+        ) as caught:
+            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
+        self.assertEqual(caught.exception.status, 403)
+
+    def test_malformed_diagnostic_pg_version_preserves_original_failure(self) -> None:
+        original = neon_base.ProvisioningStopped(
+            "NEON_API_KEY_INSUFFICIENT",
+            status=403,
+        )
+        api = _DiagnosticApi(
+            expected_project_id=_CANONICAL_ID,
+            exact_failure=original,
+            diagnostic_payload={
+                "projects": [
+                    _project(
+                        _CANONICAL_ID,
+                        pg_version="not-a-version",
+                    )
+                ]
+            },
         )
         with self.assertRaisesRegex(
             RuntimeError,

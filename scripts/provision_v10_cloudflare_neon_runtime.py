@@ -103,6 +103,13 @@ def _required_neon_project_id() -> str:
     return _validate_neon_project_id(value)
 
 
+def _project_pg_version(project: dict[str, Any], code: str) -> int:
+    try:
+        return int(project.get("pg_version", 0))
+    except (TypeError, ValueError):
+        raise _base.ProvisioningStopped(code) from None
+
+
 def _validate_bound_project(
     payload: object,
     organization_id: str,
@@ -120,7 +127,7 @@ def _validate_bound_project(
         raise _base.ProvisioningStopped("NEON_PROJECT_NAME_DRIFT")
     if project.get("org_id") != organization_id:
         raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
-    if project.get("pg_version") != 18:
+    if _project_pg_version(project, "NEON_POSTGRES18_REQUIRED") != 18:
         raise _base.ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
     if project.get("region_id") != _base.NEON_REGION:
         raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
@@ -159,7 +166,13 @@ def _canonical_diagnostic_projects(
             continue
         if project.get("org_id") != organization_id:
             continue
-        if project.get("pg_version") != 18:
+        if (
+            _project_pg_version(
+                project,
+                "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID",
+            )
+            != 18
+        ):
             continue
         if project.get("region_id") != _base.NEON_REGION:
             continue
@@ -176,13 +189,13 @@ def _raise_project_access_diagnostic(
 ) -> None:
     try:
         payload = api.request("GET", _diagnostic_project_query())
+        projects = _canonical_diagnostic_projects(
+            _diagnostic_project_rows(payload),
+            organization_id,
+        )
     except _base.ProvisioningStopped:
         raise original from None
 
-    projects = _canonical_diagnostic_projects(
-        _diagnostic_project_rows(payload),
-        organization_id,
-    )
     if not projects:
         raise _base.ProvisioningStopped(
             "NEON_API_KEY_PROJECT_SCOPE_MISMATCH",
