@@ -7,7 +7,7 @@ import re
 import secrets
 import sys
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from scripts import provision_v10_render_neon_preview as _base
 from scripts import provision_v10_render_neon_preview_org_scope as _org
@@ -23,6 +23,7 @@ _RUNTIME_DSN_FILENAME_BY_ENVIRONMENT = {
 }
 _ROLE_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 _NEON_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,60}$")
+_NEON_DIAGNOSTIC_PROJECT_LIMIT = 2
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -102,6 +103,13 @@ def _required_neon_project_id() -> str:
     return _validate_neon_project_id(value)
 
 
+def _project_pg_version(project: dict[str, Any], code: str) -> int:
+    try:
+        return int(project.get("pg_version", 0))
+    except (TypeError, ValueError):
+        raise _base.ProvisioningStopped(code) from None
+
+
 def _validate_bound_project(
     payload: object,
     organization_id: str,
@@ -119,11 +127,90 @@ def _validate_bound_project(
         raise _base.ProvisioningStopped("NEON_PROJECT_NAME_DRIFT")
     if project.get("org_id") != organization_id:
         raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
-    if project.get("pg_version") != 18:
+    if _project_pg_version(project, "NEON_POSTGRES18_REQUIRED") != 18:
         raise _base.ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
     if project.get("region_id") != _base.NEON_REGION:
         raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
     return project
+
+
+def _diagnostic_project_query() -> str:
+    query = urlencode(
+        {
+            "limit": _NEON_DIAGNOSTIC_PROJECT_LIMIT,
+            "search": _base.NEON_PROJECT_NAME,
+        }
+    )
+    return f"/projects?{query}"
+
+
+def _diagnostic_project_rows(payload: object) -> list[dict[str, Any]]:
+    body = _base._json_object(payload, "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID")
+    rows = _base._json_list(
+        body.get("projects"),
+        "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID",
+    )
+    return [
+        _base._json_object(row, "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID")
+        for row in rows
+    ]
+
+
+def _canonical_diagnostic_projects(
+    rows: list[dict[str, Any]],
+    organization_id: str,
+) -> list[dict[str, Any]]:
+    projects: list[dict[str, Any]] = []
+    for project in rows:
+        if project.get("name") != _base.NEON_PROJECT_NAME:
+            continue
+        if project.get("org_id") != organization_id:
+            continue
+        if (
+            _project_pg_version(
+                project,
+                "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID",
+            )
+            != 18
+        ):
+            continue
+        if project.get("region_id") != _base.NEON_REGION:
+            continue
+        _validate_neon_project_id(str(project.get("id", "")))
+        projects.append(project)
+    return projects
+
+
+def _raise_project_access_diagnostic(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+    expected_project_id: str,
+    original: _base.ProvisioningStopped,
+) -> None:
+    try:
+        payload = api.request("GET", _diagnostic_project_query())
+        projects = _canonical_diagnostic_projects(
+            _diagnostic_project_rows(payload),
+            organization_id,
+        )
+    except _base.ProvisioningStopped:
+        raise original from None
+
+    if not projects:
+        raise _base.ProvisioningStopped(
+            "NEON_API_KEY_PROJECT_SCOPE_MISMATCH",
+            status=original.status,
+        ) from None
+    if len(projects) != 1:
+        raise _base.ProvisioningStopped("NEON_PROJECT_DISCOVERY_AMBIGUOUS") from None
+
+    discovered_id = _validate_neon_project_id(str(projects[0].get("id", "")))
+    if discovered_id != expected_project_id:
+        raise _base.ProvisioningStopped("NEON_PROJECT_ID_MISMATCH") from None
+    raise _base.ProvisioningStopped(
+        "NEON_PROJECT_ACCESS_INCONSISTENT",
+        status=original.status,
+    ) from None
 
 
 def _load_expected_project(
@@ -132,8 +219,20 @@ def _load_expected_project(
     project_id: str,
 ) -> dict[str, Any]:
     safe_project_id = _validate_neon_project_id(project_id)
+    try:
+        payload = api.request("GET", f"/projects/{safe_project_id}")
+    except _base.ProvisioningStopped as exc:
+        if exc.status not in {403, 404}:
+            raise
+        _raise_project_access_diagnostic(
+            api,
+            organization_id,
+            safe_project_id,
+            exc,
+        )
+        raise AssertionError("unreachable Neon project diagnostic state")
     return _validate_bound_project(
-        api.request("GET", f"/projects/{safe_project_id}"),
+        payload,
         organization_id,
         safe_project_id,
     )
