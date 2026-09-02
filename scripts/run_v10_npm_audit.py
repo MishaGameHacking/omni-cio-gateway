@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import time
 from typing import TextIO
 
@@ -51,6 +50,7 @@ _MAX_BACKOFF_SECONDS = 60.0
 _DEFAULT_ATTEMPTS = 5
 _DEFAULT_BACKOFF_SECONDS = 15.0
 _HOST_LOCK_FILENAME = "omni-cio-v10-npm-audit.lock"
+_HOST_LOCK_ROOT_ENV = "OMNI_CIO_NPM_AUDIT_LOCK_ROOT"
 _HOST_LOCK_WAIT_SECONDS = 600.0
 _HOST_LOCK_POLL_SECONDS = 0.25
 
@@ -83,6 +83,30 @@ def is_transient_registry_failure(stdout: str, stderr: str) -> bool:
     return any(marker in combined for marker in _TRANSIENT_REGISTRY_MARKERS)
 
 
+def _host_lock_path(
+    environ: Mapping[str, str] = os.environ,
+    *,
+    platform: str = sys.platform,
+) -> Path:
+    configured_root = environ.get(_HOST_LOCK_ROOT_ENV, "").strip()
+    if configured_root:
+        return Path(configured_root) / _HOST_LOCK_FILENAME
+
+    if platform == "win32":
+        system_root = (
+            environ.get("SystemRoot", "").strip()
+            or environ.get("WINDIR", "").strip()
+        )
+        if not system_root:
+            raise AuditTransportLockError(
+                "npm audit host transport lock root is unavailable; "
+                "security gate remains failed closed."
+            )
+        return Path(system_root) / "Temp" / _HOST_LOCK_FILENAME
+
+    return Path("/var/tmp") / _HOST_LOCK_FILENAME
+
+
 def _lock_wait(
     *,
     deadline: float,
@@ -108,7 +132,7 @@ def _audit_transport_lock(
 ) -> Iterator[None]:
     """Serialize npm audit transport across runner services on one physical host."""
 
-    lock_path = Path(tempfile.gettempdir()) / _HOST_LOCK_FILENAME
+    lock_path = _host_lock_path()
     try:
         lock_file = lock_path.open("a+b")
     except OSError as exc:

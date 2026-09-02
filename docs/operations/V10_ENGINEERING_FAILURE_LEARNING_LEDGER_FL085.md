@@ -43,17 +43,25 @@ to the Bulk Advisory endpoint. npm's generic fetch retry configuration documents
 behavior for idempotent registry reads, so this audit POST cannot rely on that setting as
 its complete transport-recovery budget.
 
+Independent PR review also exposed a portability defect in the first serialization
+implementation: `tempfile.gettempdir()` may resolve to a per-service-account directory on
+Windows, or to a service-private temporary namespace on POSIX. Although current exact-head
+logs proved the installed Windows runner services were sharing the lock in this machine
+configuration, a per-user temporary path is not an acceptable host-global invariant.
+
 ## Root cause class
 
 `SELF_HOSTED_NPM_AUDIT_RETRY_WINDOW_AND_CONCURRENCY_GAP`
 
-Two repository-controlled weaknesses are proven:
+Three repository-controlled weaknesses are addressed:
 
 1. sibling runner services could previously amplify the same transient failure with
    overlapping audit/retry streams;
 2. after serialization removed that overlap, the accepted three-attempt / 5-second-base
    retry horizon still ended while the same endpoint later became reachable within the
-   surrounding exact-head batch.
+   surrounding exact-head batch;
+3. the first lock-file location depended on a process/service temporary directory instead
+   of an explicit host-shared location.
 
 The upstream/provider/network trigger for each `ECONNRESET` remains external and is not
 claimed to be uniquely identified. npm's public status can remain operational while an
@@ -66,6 +74,10 @@ The shared `scripts/run_v10_npm_audit.py` wrapper is consumed by the accepted We
 workflows for WP15 through WP22A and fast PR checks. A short transient advisory-endpoint
 window can therefore block multiple otherwise-valid exact-head or exact-main gates.
 
+The lock-location defect could affect any future deployment where sibling runner services
+use distinct service accounts or isolated temporary namespaces, even though current
+Windows exact-head evidence showed actual serialization on the OWNER host.
+
 The package lock, npm version, audit level, security-result classification and
 fail-closed behavior are not defective and are not relaxed by this correction.
 
@@ -77,6 +89,14 @@ The mandatory npm security audit must now:
 - hold that slot across the complete bounded retry/backoff sequence so sibling services
   cannot synchronize remote retries;
 - use only standard-library OS file locking and no new dependency;
+- on Windows, place the default lock under the host-global `SystemRoot\Temp`, never a
+  per-user `TEMP`/`TMP` directory;
+- support an explicit `OMNI_CIO_NPM_AUDIT_LOCK_ROOT` override for environments that need
+  a separately provisioned host-shared lock root;
+- fail closed if the Windows host-global root cannot be resolved or the lock file cannot
+  be opened;
+- use `/var/tmp` as the portable POSIX default; POSIX service deployments with isolated
+  temporary namespaces must set the explicit host-shared lock-root override;
 - wait at most 600 seconds for the host slot, then fail closed;
 - use five attempts by default, which is the already-reviewed hard maximum;
 - use a 15-second default linear backoff with each delay capped at 60 seconds, producing
@@ -96,6 +116,9 @@ softening any workflow-specific security step.
 
 Deterministic regression coverage verifies that:
 
+- Windows resolves the default lock to a host-global system temporary directory;
+- an explicit host-shared lock root overrides the platform default;
+- missing Windows system-root evidence fails closed;
 - the complete retry sequence stays under one host transport slot;
 - the default budget reaches a fifth attempt and uses exactly `15 / 30 / 45 / 60`
   seconds of bounded backoff;
@@ -106,6 +129,8 @@ Deterministic regression coverage verifies that:
 
 - Retry logic must account for concurrency at the physical-host boundary when multiple
   self-hosted runner services share one egress path.
+- A cross-process lock is only as global as its namespace/path; per-user temporary
+  directories are not an acceptable substitute for a host-global coordination surface.
 - Removing concurrency amplification does not prove the external transport is healthy;
   exact-head evidence must still test whether the bounded retry horizon covers observed
   transient windows.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
 import subprocess
 import unittest
 
@@ -8,6 +9,32 @@ import scripts.run_v10_npm_audit as npm_audit
 
 
 class V10NpmAuditHostSerializationTests(unittest.TestCase):
+    def test_windows_lock_path_uses_host_global_system_temp(self) -> None:
+        path = npm_audit._host_lock_path(
+            {"SystemRoot": r"C:\Windows"},
+            platform="win32",
+        )
+
+        self.assertEqual(
+            path,
+            Path(r"C:\Windows") / "Temp" / "omni-cio-v10-npm-audit.lock",
+        )
+
+    def test_configured_lock_root_overrides_platform_default(self) -> None:
+        path = npm_audit._host_lock_path(
+            {"OMNI_CIO_NPM_AUDIT_LOCK_ROOT": "/srv/omni-cio-locks"},
+            platform="linux",
+        )
+
+        self.assertEqual(
+            path,
+            Path("/srv/omni-cio-locks") / "omni-cio-v10-npm-audit.lock",
+        )
+
+    def test_windows_lock_path_fails_closed_without_system_root(self) -> None:
+        with self.assertRaises(npm_audit.AuditTransportLockError):
+            npm_audit._host_lock_path({}, platform="win32")
+
     def test_retry_sequence_holds_one_host_transport_slot(self) -> None:
         results = iter(
             (
