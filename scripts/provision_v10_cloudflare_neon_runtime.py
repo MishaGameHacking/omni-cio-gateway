@@ -26,6 +26,7 @@ _NEON_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,60}$")
 _NEON_FRANKFURT_HOST_SUFFIX = ".eu-central-1.aws.neon.tech"
 _HTTP_GET = "GET"
 _NEON_POSTGRES18_REQUIRED_CODE = "NEON_POSTGRES18_REQUIRED"
+_NEON_CONNECTION_URI_SHAPE_INVALID_CODE = "NEON_CONNECTION_URI_SHAPE_INVALID"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -413,12 +414,12 @@ def _project_scoped_target(
     bootstrap_uri = _base._neon_connection_uri(
         direct_payload.get("uri"),
         database_name,
-        "NEON_CONNECTION_URI_SHAPE_INVALID",
+        _NEON_CONNECTION_URI_SHAPE_INVALID_CODE,
     )
     pooled_bootstrap_uri = _base._neon_connection_uri(
         pooled_payload.get("uri"),
         database_name,
-        "NEON_POOLED_CONNECTION_URI_SHAPE_INVALID",
+        _NEON_CONNECTION_URI_SHAPE_INVALID_CODE,
     )
     _verify_frankfurt_uri(bootstrap_uri)
     _verify_frankfurt_uri(pooled_bootstrap_uri)
@@ -438,7 +439,9 @@ def _verify_frankfurt_uri(uri: str) -> None:
     try:
         hostname = (urlsplit(uri).hostname or "").lower().rstrip(".")
     except ValueError:
-        raise _base.ProvisioningStopped("NEON_CONNECTION_URI_SHAPE_INVALID") from None
+        raise _base.ProvisioningStopped(
+            _NEON_CONNECTION_URI_SHAPE_INVALID_CODE
+        ) from None
     if not hostname.endswith(_NEON_FRANKFURT_HOST_SUFFIX):
         raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
 
