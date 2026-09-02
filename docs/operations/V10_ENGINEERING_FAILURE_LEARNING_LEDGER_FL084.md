@@ -7,11 +7,12 @@ post-merge acceptance and production-release entry gate.
 
 ## Failure observed
 
-After PR #435 was squash-merged, exact accepted main
-`e131112491418e26ee5a64267d5f0d2c006519fb` ran its required post-merge push batch.
+After PR #435 was squash-merged, protected `main` moved to exact SHA
+`e131112491418e26ee5a64267d5f0d2c006519fb` and ran its required post-merge push batch.
 `Regression Shield` run `33689611114` completed successfully, but
 `V10 WP22A Clientless Access Audit` run `33689611175` failed in
-`Validate Cloudflare IaC with pinned OpenTofu and provider mirror`.
+`Validate Cloudflare IaC with pinned OpenTofu and provider mirror`. Therefore this SHA
+was not yet fully post-merge accepted.
 
 The preceding Web, Python, PowerShell and dependency checks were successful. The failing
 operation was the OpenTofu release download in `scripts/bootstrap_wp22a_terraform.ps1`:
