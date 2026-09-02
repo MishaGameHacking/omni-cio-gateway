@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import parse_qs, urlsplit
+from typing import Any
 import unittest
 
 import scripts.provision_v10_cloudflare_neon_runtime as neon
@@ -11,6 +11,16 @@ from scripts import provision_v10_render_neon_preview_org_scope as neon_org
 _ORG_ID = "org-test"
 _CANONICAL_ID = "project-frankfurt"
 _STALE_ID = "project-stale"
+_BRANCH_ID = "br-main-test"
+_RUNTIME_ROLE = "omni_cio_cloudflare_staging"
+_FRANKFURT_DIRECT_URI = (
+    "postgresql://owner:password@ep-test.eu-central-1.aws.neon.tech/"
+    "neondb?sslmode=require"
+)
+_FRANKFURT_POOLED_URI = (
+    "postgresql://owner:password@ep-test-pooler.eu-central-1.aws.neon.tech/"
+    "neondb?sslmode=require"
+)
 
 
 def _project(project_id: str, **overrides: object) -> dict[str, object]:
@@ -25,44 +35,109 @@ def _project(project_id: str, **overrides: object) -> dict[str, object]:
     return project
 
 
-class _DiagnosticApi(neon_org.OrgScopedNeonApi):
+def _branches() -> dict[str, object]:
+    return {
+        "branches": [
+            {
+                "id": _BRANCH_ID,
+                "name": "main",
+                "default": True,
+            }
+        ]
+    }
+
+
+class _ScopedFallbackApi(neon_org.OrgScopedNeonApi):
     def __init__(
         self,
         *,
-        expected_project_id: str,
         exact_failure: neon_base.ProvisioningStopped | None = None,
-        diagnostic_payload: object | None = None,
-        diagnostic_failure: neon_base.ProvisioningStopped | None = None,
+        auth_method: object = "api_key_org",
+        organizations: object | None = None,
+        branch_payload: object | None = None,
+        branch_failure: neon_base.ProvisioningStopped | None = None,
     ) -> None:
-        self.expected_project_id = expected_project_id
         self.exact_failure = exact_failure
-        self.diagnostic_payload = diagnostic_payload
-        self.diagnostic_failure = diagnostic_failure
+        self.auth_method = auth_method
+        self.organizations = (
+            organizations
+            if organizations is not None
+            else [{"id": _ORG_ID, "plan": "free"}]
+        )
+        self.branch_payload = branch_payload if branch_payload is not None else _branches()
+        self.branch_failure = branch_failure
         self.calls: list[tuple[str, str]] = []
 
-    def request(self, method: str, path: str, **kwargs):
+    def request(self, method: str, path: str, **kwargs: Any) -> object:
         del kwargs
         self.calls.append((method, path))
-        if method == "GET" and path == f"/projects/{self.expected_project_id}":
+        if method == "GET" and path == f"/projects/{_CANONICAL_ID}":
             if self.exact_failure is not None:
                 raise self.exact_failure
-            return {"project": _project(self.expected_project_id)}
-        if method == "GET" and urlsplit(path).path == "/projects":
-            query = parse_qs(urlsplit(path).query)
-            if query != {
-                "limit": [str(neon._NEON_DIAGNOSTIC_PROJECT_LIMIT)],
-                "search": [neon_base.NEON_PROJECT_NAME],
-            }:
-                raise AssertionError(query)
-            if self.diagnostic_failure is not None:
-                raise self.diagnostic_failure
-            return self.diagnostic_payload
+            return {"project": _project(_CANONICAL_ID)}
+        if method == "GET" and path == "/auth":
+            return {
+                "account_id": "account-test",
+                "auth_method": self.auth_method,
+            }
+        if method == "GET" and path == "/users/me/organizations":
+            return {"organizations": self.organizations}
+        if method == "GET" and path == f"/projects/{_CANONICAL_ID}/branches?limit=100":
+            if self.branch_failure is not None:
+                raise self.branch_failure
+            return self.branch_payload
         raise AssertionError((method, path))
 
 
+class _ScopedTargetApi(_ScopedFallbackApi):
+    def __init__(self, *, direct_uri: str = _FRANKFURT_DIRECT_URI) -> None:
+        super().__init__()
+        self.direct_uri = direct_uri
+
+    def request(self, method: str, path: str, **kwargs: Any) -> object:
+        if method == "GET" and path == (
+            f"/projects/{_CANONICAL_ID}/branches/{_BRANCH_ID}/databases"
+        ):
+            self.calls.append((method, path))
+            return {
+                "databases": [
+                    {
+                        "name": "neondb",
+                        "owner_name": "owner",
+                    }
+                ]
+            }
+        if method == "GET" and path.startswith(
+            f"/projects/{_CANONICAL_ID}/connection_uri?"
+        ):
+            self.calls.append((method, path))
+            if "pooled=true" in path:
+                return {"uri": _FRANKFURT_POOLED_URI}
+            return {"uri": self.direct_uri}
+        return super().request(method, path, **kwargs)
+
+
+class _VersionCursor:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self._row = row
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._row
+
+
+class _VersionConnection:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self.row = row
+        self.queries: list[str] = []
+
+    def execute(self, query: str) -> _VersionCursor:
+        self.queries.append(query)
+        return _VersionCursor(self.row)
+
+
 class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
-    def test_exact_project_success_never_runs_diagnostic_discovery(self) -> None:
-        api = _DiagnosticApi(expected_project_id=_CANONICAL_ID)
+    def test_exact_project_success_never_runs_scoped_fallback(self) -> None:
+        api = _ScopedFallbackApi()
         project = neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
         self.assertEqual(project["id"], _CANONICAL_ID)
         self.assertEqual(api.calls, [("GET", f"/projects/{_CANONICAL_ID}")])
@@ -77,192 +152,194 @@ class CloudflareNeonBindingDiagnosticTests(unittest.TestCase):
         project = neon._validate_bound_project(payload, _ORG_ID, _CANONICAL_ID)
         self.assertEqual(project["pg_version"], "18")
 
-    def test_forbidden_exact_project_classifies_stale_project_binding(self) -> None:
-        api = _DiagnosticApi(
-            expected_project_id=_STALE_ID,
+    def test_forbidden_project_metadata_uses_exact_branch_authority(self) -> None:
+        api = _ScopedFallbackApi(
+            exact_failure=neon_base.ProvisioningStopped(
+                "NEON_API_KEY_INSUFFICIENT",
+                status=403,
+            )
+        )
+        scope = neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
+        self.assertEqual(scope, "PROJECT_SCOPED")
+        self.assertIn(("GET", "/auth"), api.calls)
+        self.assertIn(("GET", "/users/me/organizations"), api.calls)
+        self.assertIn(
+            ("GET", f"/projects/{_CANONICAL_ID}/branches?limit=100"),
+            api.calls,
+        )
+        self.assertFalse(
+            any(
+                method == "GET" and path.startswith("/projects?")
+                for method, path in api.calls
+            )
+        )
+
+    def test_scoped_fallback_rejects_non_org_api_key(self) -> None:
+        api = _ScopedFallbackApi(
             exact_failure=neon_base.ProvisioningStopped(
                 "NEON_API_KEY_INSUFFICIENT",
                 status=403,
             ),
-            diagnostic_payload={"projects": [_project(_CANONICAL_ID)]},
+            auth_method="api_key_user",
         )
-        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_MISMATCH") as caught:
-            neon._load_expected_project(api, _ORG_ID, _STALE_ID)
-        message = str(caught.exception)
-        self.assertNotIn(_STALE_ID, message)
-        self.assertNotIn(_CANONICAL_ID, message)
-        self.assertEqual(len(api.calls), 2)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NEON_PROJECT_SCOPED_ORG_KEY_REQUIRED",
+        ):
+            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
+        self.assertNotIn(("GET", "/users/me/organizations"), api.calls)
 
-    def test_string_version_diagnostic_classifies_stale_project_binding(self) -> None:
-        api = _DiagnosticApi(
-            expected_project_id=_STALE_ID,
+    def test_scoped_fallback_rejects_organization_mismatch(self) -> None:
+        api = _ScopedFallbackApi(
             exact_failure=neon_base.ProvisioningStopped(
                 "NEON_API_KEY_INSUFFICIENT",
                 status=403,
             ),
-            diagnostic_payload={
-                "projects": [
-                    _project(
-                        _CANONICAL_ID,
-                        pg_version="18",
-                    )
-                ]
-            },
+            organizations=[{"id": "org-other", "plan": "free"}],
         )
-        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_MISMATCH"):
-            neon._load_expected_project(api, _ORG_ID, _STALE_ID)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NEON_API_KEY_ORGANIZATION_MISMATCH",
+        ) as caught:
+            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
+        self.assertNotIn(_ORG_ID, str(caught.exception))
+        self.assertNotIn("org-other", str(caught.exception))
 
-    def test_not_found_exact_project_classifies_stale_project_binding(self) -> None:
-        api = _DiagnosticApi(
-            expected_project_id=_STALE_ID,
+    def test_scoped_fallback_rejects_ambiguous_organization_binding(self) -> None:
+        api = _ScopedFallbackApi(
             exact_failure=neon_base.ProvisioningStopped(
+                "NEON_API_KEY_INSUFFICIENT",
+                status=403,
+            ),
+            organizations=[
+                {"id": _ORG_ID, "plan": "free"},
+                {"id": "org-other", "plan": "free"},
+            ],
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NEON_API_KEY_ORGANIZATION_BINDING_AMBIGUOUS",
+        ):
+            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
+
+    def test_scoped_fallback_rejects_wrong_project_binding(self) -> None:
+        api = _ScopedFallbackApi(
+            exact_failure=neon_base.ProvisioningStopped(
+                "NEON_API_KEY_INSUFFICIENT",
+                status=403,
+            ),
+            branch_failure=neon_base.ProvisioningStopped(
                 "NEON_API_HTTP_ERROR",
                 status=404,
             ),
-            diagnostic_payload={"projects": [_project(_CANONICAL_ID)]},
         )
-        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_MISMATCH"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NEON_PROJECT_KEY_BINDING_MISMATCH",
+        ) as caught:
+            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
+        self.assertEqual(caught.exception.status, 404)
+        self.assertNotIn(_CANONICAL_ID, str(caught.exception))
+
+    def test_scoped_fallback_rejects_malformed_branch_payload(self) -> None:
+        api = _ScopedFallbackApi(
+            exact_failure=neon_base.ProvisioningStopped(
+                "NEON_API_KEY_INSUFFICIENT",
+                status=403,
+            ),
+            branch_payload={"branches": "not-a-list"},
+        )
+        with self.assertRaisesRegex(RuntimeError, "NEON_BRANCHES_INVALID"):
+            neon.probe_provider_access(api, _ORG_ID, _CANONICAL_ID)
+
+    def test_project_scoped_target_uses_only_exact_project_subresources(self) -> None:
+        api = _ScopedTargetApi()
+        target = neon._project_scoped_target(
+            api,
+            _CANONICAL_ID,
+            _RUNTIME_ROLE,
+            _branches(),
+        )
+        self.assertEqual(target.project_id, _CANONICAL_ID)
+        self.assertEqual(target.branch_id, _BRANCH_ID)
+        self.assertEqual(target.database_name, "neondb")
+        self.assertFalse(
+            any(
+                method == "GET" and path.startswith("/projects?")
+                for method, path in api.calls
+            )
+        )
+
+    def test_project_scoped_target_rejects_non_frankfurt_connection(self) -> None:
+        api = _ScopedTargetApi(
+            direct_uri=(
+                "postgresql://owner:password@ep-test.us-east-2.aws.neon.tech/"
+                "neondb?sslmode=require"
+            )
+        )
+        with self.assertRaisesRegex(RuntimeError, "NEON_FRANKFURT_REGION_REQUIRED"):
+            neon._project_scoped_target(
+                api,
+                _CANONICAL_ID,
+                _RUNTIME_ROLE,
+                _branches(),
+            )
+
+    def test_project_scoped_target_rejects_runtime_role_as_bootstrap_owner(self) -> None:
+        class RuntimeOwnerApi(_ScopedTargetApi):
+            def request(self, method: str, path: str, **kwargs: Any) -> object:
+                if method == "GET" and path == (
+                    f"/projects/{_CANONICAL_ID}/branches/{_BRANCH_ID}/databases"
+                ):
+                    self.calls.append((method, path))
+                    return {
+                        "databases": [
+                            {
+                                "name": "neondb",
+                                "owner_name": _RUNTIME_ROLE,
+                            }
+                        ]
+                    }
+                return super().request(method, path, **kwargs)
+
+        with self.assertRaisesRegex(RuntimeError, "NEON_BOOTSTRAP_ROLE_INVALID"):
+            neon._project_scoped_target(
+                RuntimeOwnerApi(),
+                _CANONICAL_ID,
+                _RUNTIME_ROLE,
+                _branches(),
+            )
+
+    def test_postgres18_is_verified_before_mutation_stage(self) -> None:
+        connection = _VersionConnection(("180005",))
+        neon._verify_postgres18(connection)
+        self.assertEqual(connection.queries, ["SHOW server_version_num"])
+
+    def test_wrong_postgres_major_fails_closed(self) -> None:
+        connection = _VersionConnection(("170010",))
+        with self.assertRaisesRegex(RuntimeError, "NEON_POSTGRES18_REQUIRED"):
+            neon._verify_postgres18(connection)
+        self.assertEqual(connection.queries, ["SHOW server_version_num"])
+
+    def test_invalid_postgres_version_payload_fails_closed(self) -> None:
+        for row in (None, (), ("not-a-version",), ("180005", "extra")):
+            with self.subTest(row=row):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "NEON_POSTGRES_VERSION_INVALID",
+                ):
+                    neon._verify_postgres18(_VersionConnection(row))
+
+    def test_stale_project_id_never_appears_in_error_text(self) -> None:
+        api = _ScopedFallbackApi(
+            exact_failure=neon_base.ProvisioningStopped(
+                "NEON_API_KEY_INSUFFICIENT",
+                status=403,
+            )
+        )
+        with self.assertRaises(RuntimeError) as caught:
             neon._load_expected_project(api, _ORG_ID, _STALE_ID)
-
-    def test_empty_canonical_search_classifies_key_scope_mismatch(self) -> None:
-        api = _DiagnosticApi(
-            expected_project_id=_CANONICAL_ID,
-            exact_failure=neon_base.ProvisioningStopped(
-                "NEON_API_KEY_INSUFFICIENT",
-                status=403,
-            ),
-            diagnostic_payload={"projects": []},
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_API_KEY_PROJECT_SCOPE_MISMATCH",
-        ) as caught:
-            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
-        self.assertEqual(caught.exception.status, 403)
-
-    def test_wrong_visible_project_is_not_accepted_as_canonical(self) -> None:
-        api = _DiagnosticApi(
-            expected_project_id=_CANONICAL_ID,
-            exact_failure=neon_base.ProvisioningStopped(
-                "NEON_API_KEY_INSUFFICIENT",
-                status=403,
-            ),
-            diagnostic_payload={
-                "projects": [
-                    _project(
-                        "project-wrong",
-                        name="wrong-project",
-                    )
-                ]
-            },
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_API_KEY_PROJECT_SCOPE_MISMATCH",
-        ):
-            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
-
-    def test_exact_project_visible_via_list_but_forbidden_direct_is_inconsistent(
-        self,
-    ) -> None:
-        api = _DiagnosticApi(
-            expected_project_id=_CANONICAL_ID,
-            exact_failure=neon_base.ProvisioningStopped(
-                "NEON_API_KEY_INSUFFICIENT",
-                status=403,
-            ),
-            diagnostic_payload={"projects": [_project(_CANONICAL_ID)]},
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_PROJECT_ACCESS_INCONSISTENT",
-        ) as caught:
-            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
-        self.assertEqual(caught.exception.status, 403)
-
-    def test_multiple_canonical_projects_fail_closed_as_ambiguous(self) -> None:
-        api = _DiagnosticApi(
-            expected_project_id=_CANONICAL_ID,
-            exact_failure=neon_base.ProvisioningStopped(
-                "NEON_API_KEY_INSUFFICIENT",
-                status=403,
-            ),
-            diagnostic_payload={
-                "projects": [
-                    _project(_CANONICAL_ID),
-                    _project("project-frankfurt-duplicate"),
-                ]
-            },
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_PROJECT_DISCOVERY_AMBIGUOUS",
-        ):
-            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
-
-    def test_failed_diagnostic_request_preserves_original_authority_failure(
-        self,
-    ) -> None:
-        original = neon_base.ProvisioningStopped(
-            "NEON_API_KEY_INSUFFICIENT",
-            status=403,
-        )
-        api = _DiagnosticApi(
-            expected_project_id=_CANONICAL_ID,
-            exact_failure=original,
-            diagnostic_failure=neon_base.ProvisioningStopped(
-                "NEON_API_NETWORK_ERROR"
-            ),
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_API_KEY_INSUFFICIENT",
-        ) as caught:
-            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
-        self.assertEqual(caught.exception.status, 403)
-
-    def test_malformed_diagnostic_body_preserves_original_authority_failure(
-        self,
-    ) -> None:
-        original = neon_base.ProvisioningStopped(
-            "NEON_API_KEY_INSUFFICIENT",
-            status=403,
-        )
-        api = _DiagnosticApi(
-            expected_project_id=_CANONICAL_ID,
-            exact_failure=original,
-            diagnostic_payload={"projects": "not-a-list"},
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_API_KEY_INSUFFICIENT",
-        ) as caught:
-            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
-        self.assertEqual(caught.exception.status, 403)
-
-    def test_malformed_diagnostic_pg_version_preserves_original_failure(self) -> None:
-        original = neon_base.ProvisioningStopped(
-            "NEON_API_KEY_INSUFFICIENT",
-            status=403,
-        )
-        api = _DiagnosticApi(
-            expected_project_id=_CANONICAL_ID,
-            exact_failure=original,
-            diagnostic_payload={
-                "projects": [
-                    _project(
-                        _CANONICAL_ID,
-                        pg_version="not-a-version",
-                    )
-                ]
-            },
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "NEON_API_KEY_INSUFFICIENT",
-        ) as caught:
-            neon._load_expected_project(api, _ORG_ID, _CANONICAL_ID)
-        self.assertEqual(caught.exception.status, 403)
+        self.assertNotIn(_STALE_ID, str(caught.exception))
 
 
 if __name__ == "__main__":
