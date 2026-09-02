@@ -571,6 +571,18 @@ def _verified_brand_integrity_evidence() -> tuple[frozenset[str], frozenset[str]
     return manifest_digests, _verified_brand_public_integrity_values(manifest_digests)
 
 
+def _detect_secrets_report_items(
+    results: dict[Any, Any],
+) -> tuple[
+    tuple[object, object, tuple[frozenset[str], frozenset[str]]],
+    ...,
+]:
+    evidence = _verified_brand_integrity_evidence()
+    return tuple(
+        (filename, findings, evidence) for filename, findings in results.items()
+    )
+
+
 def _hex_entropy_finding_line(
     filename: str,
     finding: dict[str, Any],
@@ -777,15 +789,8 @@ def validate_detect_secrets_report(
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
-    manifest_digests, public_integrity_values = _verified_brand_integrity_evidence()
-    for filename, findings in results.items():
-        _validate_detect_secrets_file(
-            filename,
-            findings,
-            failures,
-            manifest_digests,
-            public_integrity_values,
-        )
+    for filename, findings, evidence in _detect_secrets_report_items(results):
+        _validate_detect_secrets_file(filename, findings, failures, *evidence)
 
 
 def validate_repository_baseline() -> list[str]:
