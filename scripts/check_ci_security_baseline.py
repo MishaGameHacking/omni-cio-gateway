@@ -566,11 +566,6 @@ def _verified_brand_public_integrity_values(
     return frozenset(values)
 
 
-def _verified_brand_integrity_evidence() -> tuple[frozenset[str], frozenset[str]]:
-    manifest_digests = _verified_brand_manifest_digests()
-    return manifest_digests, _verified_brand_public_integrity_values(manifest_digests)
-
-
 def _hex_entropy_finding_line(
     filename: str,
     finding: dict[str, Any],
@@ -652,9 +647,7 @@ def _approved_brand_integrity_finding(
 ) -> bool:
     return (
         _approved_brand_manifest_finding(filename, finding, manifest_digests)
-        or _approved_brand_custody_finding(
-            filename, finding, public_integrity_values
-        )
+        or _approved_brand_custody_finding(filename, finding, public_integrity_values)
         or _approved_brand_guard_finding(filename, finding, public_integrity_values)
     )
 
@@ -779,7 +772,8 @@ def validate_detect_secrets_report(
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
-    manifest_digests, public_integrity_values = _verified_brand_integrity_evidence()
+    manifest_digests = _verified_brand_manifest_digests()
+    public_integrity_values = _verified_brand_public_integrity_values(manifest_digests)
     for filename, findings in results.items():
         _validate_detect_secrets_file(
             filename,
