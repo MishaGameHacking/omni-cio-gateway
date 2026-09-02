@@ -124,7 +124,9 @@ def _canonical_project_match(
     else:
         count = "MULTIPLE"
     configured_id_match = (
-        _TRUE if any(item.get("id") == expected_project_id for item in matches) else _FALSE
+        _TRUE
+        if any(item.get("id") == expected_project_id for item in matches)
+        else _FALSE
     )
     return count, configured_id_match
 
