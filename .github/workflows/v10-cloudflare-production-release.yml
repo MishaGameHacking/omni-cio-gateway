@@ -116,6 +116,16 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
 
+      - name: Verify Neon exact-project read authority before candidate or production mutation
+        shell: bash
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
+
       - name: Install exact Cloudflare delivery toolchain
         shell: bash
         run: |
