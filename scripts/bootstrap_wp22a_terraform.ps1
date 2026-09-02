@@ -23,6 +23,7 @@ $expectedSha256 = @(
     "84e79928"
 ) -join ""
 $url = "https://github.com/opentofu/opentofu/releases/download/v$version/$archiveName"
+$maxDownloadAttempts = 3
 
 $root = [System.IO.Path]::GetFullPath($DestinationRoot)
 $installRoot = Join-Path $root "opentofu-$version-windows-amd64"
@@ -41,7 +42,23 @@ New-Item -ItemType Directory -Path $root -Force | Out-Null
 $tempArchive = Join-Path $root ("opentofu-" + [guid]::NewGuid().ToString("N") + ".zip")
 $tempExtract = Join-Path $root ("opentofu-" + [guid]::NewGuid().ToString("N"))
 try {
-    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tempArchive
+    $downloaded = $false
+    for ($attempt = 1; $attempt -le $maxDownloadAttempts; $attempt++) {
+        Remove-Item -LiteralPath $tempArchive -Force -ErrorAction SilentlyContinue
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tempArchive -TimeoutSec 90
+            $downloaded = $true
+            break
+        }
+        catch {
+            if ($attempt -eq $maxDownloadAttempts) {
+                throw "WP22A_OPENTOFU_DOWNLOAD_FAILED_AFTER_RETRIES"
+            }
+            Start-Sleep -Seconds ($attempt * 2)
+        }
+    }
+    if (-not $downloaded) { throw "WP22A_OPENTOFU_DOWNLOAD_FAILED_AFTER_RETRIES" }
+
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $tempArchive -ErrorAction Stop).Hash.ToLowerInvariant()
     if ($actual -ne $expectedSha256) { throw "WP22A_OPENTOFU_ARCHIVE_HASH_MISMATCH" }
 
