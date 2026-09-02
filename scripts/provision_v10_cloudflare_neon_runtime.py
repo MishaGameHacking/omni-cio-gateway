@@ -23,7 +23,10 @@ _RUNTIME_DSN_FILENAME_BY_ENVIRONMENT = {
 }
 _ROLE_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 _NEON_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,60}$")
-_NEON_DIAGNOSTIC_PROJECT_LIMIT = 2
+_NEON_FRANKFURT_HOST_SUFFIX = ".eu-central-1.aws.neon.tech"
+_HTTP_GET = "GET"
+_NEON_POSTGRES18_REQUIRED_CODE = "NEON_POSTGRES18_REQUIRED"
+_NEON_CONNECTION_URI_SHAPE_INVALID_CODE = "NEON_CONNECTION_URI_SHAPE_INVALID"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -127,90 +130,11 @@ def _validate_bound_project(
         raise _base.ProvisioningStopped("NEON_PROJECT_NAME_DRIFT")
     if project.get("org_id") != organization_id:
         raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
-    if _project_pg_version(project, "NEON_POSTGRES18_REQUIRED") != 18:
-        raise _base.ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
+    if _project_pg_version(project, _NEON_POSTGRES18_REQUIRED_CODE) != 18:
+        raise _base.ProvisioningStopped(_NEON_POSTGRES18_REQUIRED_CODE)
     if project.get("region_id") != _base.NEON_REGION:
         raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
     return project
-
-
-def _diagnostic_project_query() -> str:
-    query = urlencode(
-        {
-            "limit": _NEON_DIAGNOSTIC_PROJECT_LIMIT,
-            "search": _base.NEON_PROJECT_NAME,
-        }
-    )
-    return f"/projects?{query}"
-
-
-def _diagnostic_project_rows(payload: object) -> list[dict[str, Any]]:
-    body = _base._json_object(payload, "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID")
-    rows = _base._json_list(
-        body.get("projects"),
-        "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID",
-    )
-    return [
-        _base._json_object(row, "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID")
-        for row in rows
-    ]
-
-
-def _canonical_diagnostic_projects(
-    rows: list[dict[str, Any]],
-    organization_id: str,
-) -> list[dict[str, Any]]:
-    projects: list[dict[str, Any]] = []
-    for project in rows:
-        if project.get("name") != _base.NEON_PROJECT_NAME:
-            continue
-        if project.get("org_id") != organization_id:
-            continue
-        if (
-            _project_pg_version(
-                project,
-                "NEON_PROJECT_DIAGNOSTIC_RESPONSE_INVALID",
-            )
-            != 18
-        ):
-            continue
-        if project.get("region_id") != _base.NEON_REGION:
-            continue
-        _validate_neon_project_id(str(project.get("id", "")))
-        projects.append(project)
-    return projects
-
-
-def _raise_project_access_diagnostic(
-    api: _org.OrgScopedNeonApi,
-    organization_id: str,
-    expected_project_id: str,
-    original: _base.ProvisioningStopped,
-) -> None:
-    try:
-        payload = api.request("GET", _diagnostic_project_query())
-        projects = _canonical_diagnostic_projects(
-            _diagnostic_project_rows(payload),
-            organization_id,
-        )
-    except _base.ProvisioningStopped:
-        raise original from None
-
-    if not projects:
-        raise _base.ProvisioningStopped(
-            "NEON_API_KEY_PROJECT_SCOPE_MISMATCH",
-            status=original.status,
-        ) from None
-    if len(projects) != 1:
-        raise _base.ProvisioningStopped("NEON_PROJECT_DISCOVERY_AMBIGUOUS") from None
-
-    discovered_id = _validate_neon_project_id(str(projects[0].get("id", "")))
-    if discovered_id != expected_project_id:
-        raise _base.ProvisioningStopped("NEON_PROJECT_ID_MISMATCH") from None
-    raise _base.ProvisioningStopped(
-        "NEON_PROJECT_ACCESS_INCONSISTENT",
-        status=original.status,
-    ) from None
 
 
 def _load_expected_project(
@@ -219,23 +143,84 @@ def _load_expected_project(
     project_id: str,
 ) -> dict[str, Any]:
     safe_project_id = _validate_neon_project_id(project_id)
-    try:
-        payload = api.request("GET", f"/projects/{safe_project_id}")
-    except _base.ProvisioningStopped as exc:
-        if exc.status not in {403, 404}:
-            raise
-        _raise_project_access_diagnostic(
-            api,
-            organization_id,
-            safe_project_id,
-            exc,
-        )
-        raise AssertionError("unreachable Neon project diagnostic state")
+    payload = api.request("GET", f"/projects/{safe_project_id}")
     return _validate_bound_project(
         payload,
         organization_id,
         safe_project_id,
     )
+
+
+def _validate_project_scoped_auth(api: _org.OrgScopedNeonApi) -> None:
+    payload = _base._json_object(
+        api.request(_HTTP_GET, "/auth"),
+        "NEON_AUTH_RESPONSE_INVALID",
+    )
+    account_id = payload.get("account_id")
+    if not isinstance(account_id, str) or not account_id.strip():
+        raise _base.ProvisioningStopped("NEON_AUTH_RESPONSE_INVALID")
+    if payload.get("auth_method") != "api_key_org":
+        raise _base.ProvisioningStopped("NEON_PROJECT_SCOPED_ORG_KEY_REQUIRED")
+    _base._emit("NEON_AUTH_CREDENTIAL=ORG_API_KEY_VERIFIED")
+
+
+def _validate_project_scoped_organization(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+) -> None:
+    safe_org_id = _org._validate_neon_org_id(organization_id)
+    payload = _base._json_object(
+        api.request(_HTTP_GET, "/users/me/organizations"),
+        "NEON_ORGANIZATIONS_RESPONSE_INVALID",
+    )
+    organizations = [
+        _base._json_object(item, "NEON_ORGANIZATION_INVALID")
+        for item in _base._json_list(
+            payload.get("organizations"),
+            "NEON_ORGANIZATIONS_INVALID",
+        )
+    ]
+    if len(organizations) != 1:
+        raise _base.ProvisioningStopped("NEON_API_KEY_ORGANIZATION_BINDING_AMBIGUOUS")
+    if organizations[0].get("id") != safe_org_id:
+        raise _base.ProvisioningStopped("NEON_API_KEY_ORGANIZATION_MISMATCH")
+    _base._emit("NEON_ORGANIZATION_BINDING=VERIFIED")
+
+
+def _validate_branch_payload(payload: object) -> dict[str, Any]:
+    body = _base._json_object(payload, "NEON_BRANCHES_RESPONSE_INVALID")
+    branches = _base._json_list(
+        body.get("branches"),
+        "NEON_BRANCHES_INVALID",
+    )
+    for item in branches:
+        _base._json_object(item, "NEON_BRANCH_INVALID")
+    return body
+
+
+def _project_scoped_branch_authority(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+    project_id: str,
+) -> dict[str, Any]:
+    safe_project_id = _validate_neon_project_id(project_id)
+    _validate_project_scoped_auth(api)
+    _validate_project_scoped_organization(api, organization_id)
+    try:
+        payload = api.request(
+            _HTTP_GET,
+            f"/projects/{safe_project_id}/branches?limit=100",
+        )
+    except _base.ProvisioningStopped as exc:
+        if exc.status not in {403, 404}:
+            raise
+        raise _base.ProvisioningStopped(
+            "NEON_PROJECT_KEY_BINDING_MISMATCH",
+            status=exc.status,
+        ) from None
+    body = _validate_branch_payload(payload)
+    _base._emit("CLOUDFLARE_NEON_PROJECT_BINDING=EXACT_BRANCH_READ_VERIFIED")
+    return body
 
 
 def _provider_context(
@@ -256,6 +241,25 @@ def _provider_context(
     return scope, project
 
 
+def _provider_access_context(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+    project_id: str,
+) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+    try:
+        scope, project = _provider_context(api, organization_id, project_id)
+    except _base.ProvisioningStopped as exc:
+        if exc.status not in {403, 404}:
+            raise
+        branches = _project_scoped_branch_authority(
+            api,
+            organization_id,
+            project_id,
+        )
+        return "PROJECT_SCOPED", None, branches
+    return scope, project, None
+
+
 def _emit_provider_access(scope: str) -> None:
     _base._emit(f"CLOUDFLARE_NEON_PROVIDER_ACCESS=READY scope={scope}")
 
@@ -265,7 +269,7 @@ def probe_provider_access(
     organization_id: str,
     project_id: str,
 ) -> str:
-    scope, _ = _provider_context(api, organization_id, project_id)
+    scope, _, _ = _provider_access_context(api, organization_id, project_id)
     _emit_provider_access(scope)
     return scope
 
@@ -301,7 +305,7 @@ class _BoundProjectNeonApi(_org.OrgScopedNeonApi):
         safe_method = method.upper()
         parsed = urlsplit(path)
         if parsed.path == "/projects":
-            if safe_method != "GET":
+            if safe_method != _HTTP_GET:
                 raise _base.ProvisioningStopped(
                     "CLOUDFLARE_NEON_PROJECT_CREATE_FORBIDDEN"
                 )
@@ -326,6 +330,133 @@ class _BoundProjectNeonApi(_org.OrgScopedNeonApi):
             expected=expected,
             timeout=timeout,
         )
+
+
+def _project_scoped_target(
+    api: _org.OrgScopedNeonApi,
+    project_id: str,
+    runtime_role: str,
+    branch_payload: dict[str, Any],
+) -> _base.NeonTarget:
+    safe_project_id = _base._provider_segment(
+        _validate_neon_project_id(project_id),
+        "NEON_PROJECT_ID_INVALID",
+    )
+    branches = [
+        _base._json_object(item, "NEON_BRANCH_INVALID")
+        for item in _base._json_list(
+            branch_payload.get("branches"),
+            "NEON_BRANCHES_INVALID",
+        )
+    ]
+    defaults = [item for item in branches if item.get("default") is True]
+    if not defaults:
+        defaults = [item for item in branches if item.get("name") == "main"]
+    if len(defaults) != 1:
+        raise _base.ProvisioningStopped("NEON_DEFAULT_BRANCH_NOT_UNIQUE")
+    branch_id = _base._provider_segment(
+        defaults[0].get("id"),
+        "NEON_BRANCH_ID_INVALID",
+    )
+
+    database_payload = _base._json_object(
+        api.request(
+            _HTTP_GET,
+            f"/projects/{safe_project_id}/branches/{branch_id}/databases",
+        ),
+        "NEON_DATABASES_RESPONSE_INVALID",
+    )
+    databases = [
+        _base._json_object(item, "NEON_DATABASE_INVALID")
+        for item in _base._json_list(
+            database_payload.get("databases"),
+            "NEON_DATABASES_INVALID",
+        )
+    ]
+    preferred = [item for item in databases if item.get("name") == "neondb"]
+    if len(preferred) != 1:
+        if len(databases) != 1:
+            raise _base.ProvisioningStopped("NEON_DATABASE_NOT_UNIQUE")
+        preferred = databases
+    database = preferred[0]
+    database_name = _base._safe_provider_text(
+        database.get("name"),
+        "NEON_DATABASE_NAME_INVALID",
+    )
+    bootstrap_role = _base._safe_provider_text(
+        database.get("owner_name"),
+        "NEON_DATABASE_OWNER_INVALID",
+    )
+    if bootstrap_role in {_base.RUNTIME_ROLE, runtime_role}:
+        raise _base.ProvisioningStopped("NEON_BOOTSTRAP_ROLE_INVALID")
+
+    common = {
+        "branch_id": branch_id,
+        "database_name": database_name,
+        "role_name": bootstrap_role,
+    }
+    direct = urlencode({**common, "pooled": "false"})
+    pooled = urlencode({**common, "pooled": "true"})
+    direct_payload = _base._json_object(
+        api.request(
+            _HTTP_GET,
+            f"/projects/{safe_project_id}/connection_uri?{direct}",
+        ),
+        "NEON_CONNECTION_URI_INVALID",
+    )
+    pooled_payload = _base._json_object(
+        api.request(
+            _HTTP_GET,
+            f"/projects/{safe_project_id}/connection_uri?{pooled}",
+        ),
+        "NEON_POOLED_CONNECTION_URI_INVALID",
+    )
+    bootstrap_uri = _base._neon_connection_uri(
+        direct_payload.get("uri"),
+        database_name,
+        _NEON_CONNECTION_URI_SHAPE_INVALID_CODE,
+    )
+    pooled_bootstrap_uri = _base._neon_connection_uri(
+        pooled_payload.get("uri"),
+        database_name,
+        _NEON_CONNECTION_URI_SHAPE_INVALID_CODE,
+    )
+    _verify_frankfurt_uri(bootstrap_uri)
+    _verify_frankfurt_uri(pooled_bootstrap_uri)
+    _base._mask(bootstrap_uri)
+    _base._mask(pooled_bootstrap_uri)
+    return _base.NeonTarget(
+        project_id=safe_project_id,
+        branch_id=branch_id,
+        database_name=database_name,
+        bootstrap_role=bootstrap_role,
+        bootstrap_uri=bootstrap_uri,
+        pooled_bootstrap_uri=pooled_bootstrap_uri,
+    )
+
+
+def _verify_frankfurt_uri(uri: str) -> None:
+    try:
+        hostname = (urlsplit(uri).hostname or "").lower().rstrip(".")
+    except ValueError:
+        raise _base.ProvisioningStopped(
+            _NEON_CONNECTION_URI_SHAPE_INVALID_CODE
+        ) from None
+    if not hostname.endswith(_NEON_FRANKFURT_HOST_SUFFIX):
+        raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
+
+
+def _verify_postgres18(connection: Any) -> None:
+    row = connection.execute("SHOW server_version_num").fetchone()
+    if row is None or len(row) != 1:
+        raise _base.ProvisioningStopped("NEON_POSTGRES_VERSION_INVALID")
+    try:
+        version_num = int(row[0])
+    except (TypeError, ValueError):
+        raise _base.ProvisioningStopped("NEON_POSTGRES_VERSION_INVALID") from None
+    if version_num // 10000 != 18:
+        raise _base.ProvisioningStopped(_NEON_POSTGRES18_REQUIRED_CODE)
+    _base._emit("CLOUDFLARE_NEON_POSTGRES18=VERIFIED")
 
 
 def _converge_runtime_role(
@@ -450,12 +581,26 @@ def run(expected_sha: str, environment: str) -> str:
     _base._mask(runtime_password)
 
     neon = _org.OrgScopedNeonApi(neon_key, organization_id)
-    scope, project = _provider_context(neon, organization_id, project_id)
-    _emit_provider_access(scope)
-    target = _org._neon_target(
-        _BoundProjectNeonApi(neon, organization_id, project),
+    scope, project, branch_payload = _provider_access_context(
+        neon,
         organization_id,
+        project_id,
     )
+    _emit_provider_access(scope)
+    if project is not None:
+        target = _org._neon_target(
+            _BoundProjectNeonApi(neon, organization_id, project),
+            organization_id,
+        )
+    else:
+        if branch_payload is None:
+            raise AssertionError("project-scoped Neon branch authority payload missing")
+        target = _project_scoped_target(
+            neon,
+            project_id,
+            runtime_role,
+            branch_payload,
+        )
 
     try:
         import psycopg
@@ -472,6 +617,7 @@ def run(expected_sha: str, environment: str) -> str:
     )
     try:
         with connection:
+            _verify_postgres18(connection)
             _base._emit("CLOUDFLARE_DATABASE_STAGE=MIGRATIONS")
             apply_migrations(connection)
             _base._emit("CLOUDFLARE_DATABASE_STAGE=RUNTIME_ROLE")
