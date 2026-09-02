@@ -281,9 +281,16 @@ def _gate_state(
     for row in latest.values():
         status = row.get("status")
         conclusion = row.get("conclusion")
+        if not isinstance(status, str) or not status:
+            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUN_INVALID")
         if status != "completed":
             pending = True
             continue
+        if conclusion is None:
+            pending = True
+            continue
+        if not isinstance(conclusion, str) or not conclusion:
+            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUN_INVALID")
         if conclusion != "success":
             raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_PUSH_WORKFLOW_NOT_SUCCESS")
     return not pending, len(latest)
