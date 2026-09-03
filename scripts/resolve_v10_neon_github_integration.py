@@ -20,11 +20,19 @@ _STATUS_SKIPPED = "SKIPPED"
 _STATUS_UNKNOWN = "UNKNOWN"
 
 
-def _canonical_query_path(cursor: str | None = None) -> str:
+def _canonical_query_path(
+    organization_id: str,
+    cursor: str | None = None,
+    *,
+    include_org: bool = True,
+) -> str:
+    safe_org_id = _org._validate_neon_org_id(organization_id)
     query: dict[str, str] = {
         "limit": str(_CANONICAL_LOOKUP_LIMIT),
         "search": _base.NEON_PROJECT_NAME,
     }
+    if include_org:
+        query["org_id"] = safe_org_id
     if cursor is not None:
         if not cursor:
             raise _base.ProvisioningStopped("NEON_PROJECT_PAGINATION_INVALID")
@@ -56,6 +64,23 @@ def _project_page(payload: object) -> tuple[list[dict[str, Any]], str | None]:
     return rows, raw_cursor
 
 
+def _project_list_payload(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+    cursor: str | None,
+    *,
+    include_org: bool,
+) -> object:
+    return api.request(
+        "GET",
+        _canonical_query_path(
+            organization_id,
+            cursor,
+            include_org=include_org,
+        ),
+    )
+
+
 def _discover_canonical_project(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
@@ -64,16 +89,29 @@ def _discover_canonical_project(
     matches: list[dict[str, Any]] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
+    include_org = True
+    page = 0
 
-    for _page in range(_MAX_CANONICAL_PAGES):
-        rows, next_cursor = _project_page(
-            api.request("GET", _canonical_query_path(cursor))
-        )
+    while page < _MAX_CANONICAL_PAGES:
+        try:
+            payload = _project_list_payload(
+                api,
+                safe_org_id,
+                cursor,
+                include_org=include_org,
+            )
+        except _base.ProvisioningStopped as exc:
+            if page == 0 and cursor is None and include_org and exc.status == 403:
+                include_org = False
+                continue
+            raise
+        rows, next_cursor = _project_page(payload)
         matches.extend(
             row for row in rows if row.get("name") == _base.NEON_PROJECT_NAME
         )
         if len(matches) > 1:
             raise _base.ProvisioningStopped("NEON_PROJECT_NAME_NOT_UNIQUE")
+        page += 1
         if next_cursor is None:
             break
         if next_cursor in seen_cursors:
@@ -142,6 +180,22 @@ def provision_from_env(expected_sha: str, environment: str) -> str:
         return _runtime.run(expected_sha, environment)
 
 
+def _diagnostic_canonical_read(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+) -> _diagnostics.SafeRead:
+    scoped = _diagnostics._read(
+        api,
+        _canonical_query_path(organization_id),
+    )
+    if scoped.status != "403":
+        return scoped
+    return _diagnostics._read(
+        api,
+        _canonical_query_path(organization_id, include_org=False),
+    )
+
+
 def _safe_discovery_diagnostic(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
@@ -151,7 +205,7 @@ def _safe_discovery_diagnostic(
         _diagnostics._credential_organizations(api, organization_id)
     )
     organization = _diagnostics._read(api, f"/organizations/{organization_id}")
-    canonical = _diagnostics._read(api, _canonical_query_path())
+    canonical = _diagnostic_canonical_read(api, organization_id)
 
     canonical_matches = _STATUS_UNKNOWN
     project_status = _STATUS_SKIPPED
