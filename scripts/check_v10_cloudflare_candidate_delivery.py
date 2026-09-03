@@ -28,10 +28,11 @@ BUILDS_BOOTSTRAP = ROOT / "scripts/bootstrap_v10_cloudflare_builds.py"
 _CLOUDFLARE_ACCOUNT_ID_SECRET = "secrets.CLOUDFLARE_ACCOUNT_ID"
 _NEON_ORG_ID_SECRET = "secrets.NEON_ORG_ID"
 _NEON_PROJECT_ID_SECRET = "secrets.NEON_PROJECT_ID"
-_PROVIDER_IDENTITY_SECRET_MARKERS = (
+_NEON_PROJECT_ID_VARIABLE = "vars.NEON_PROJECT_ID"
+_PROVIDER_IDENTITY_CUSTODY_MARKERS = (
     _CLOUDFLARE_ACCOUNT_ID_SECRET,
     _NEON_ORG_ID_SECRET,
-    _NEON_PROJECT_ID_SECRET,
+    _NEON_PROJECT_ID_VARIABLE,
 )
 _WORKERS_BUILDS_AUTHORITY_PROBE = (
     "python -m scripts.probe_v10_cloudflare_workers_builds_authority"
@@ -93,6 +94,7 @@ def _validate_candidate_secret_scope(workflow: str) -> None:
             "secrets.NEON_API_KEY",
             _NEON_ORG_ID_SECRET,
             _NEON_PROJECT_ID_SECRET,
+            _NEON_PROJECT_ID_VARIABLE,
         ),
         "CLOUDFLARE_CANDIDATE_JOB_SECRET_SCOPE_TOO_BROAD",
     )
@@ -101,18 +103,18 @@ def _validate_candidate_secret_scope(workflow: str) -> None:
 def _validate_provider_identity_custody(workflow: str) -> None:
     _require_markers(
         workflow,
-        _PROVIDER_IDENTITY_SECRET_MARKERS,
-        "CLOUDFLARE_PROVIDER_IDENTITY_SECRET_CUSTODY_MISSING",
+        _PROVIDER_IDENTITY_CUSTODY_MARKERS,
+        "CLOUDFLARE_PROVIDER_IDENTITY_CUSTODY_MISSING",
     )
     _forbid_markers(
         workflow,
         (
             "vars.CLOUDFLARE_ACCOUNT_ID",
             "vars.NEON_ORG_ID",
-            "vars.NEON_PROJECT_ID",
+            _NEON_PROJECT_ID_SECRET,
             "CLOUDFLARE_ACCOUNT_ID_VAR_VALUE",
         ),
-        "CLOUDFLARE_PROVIDER_IDENTITY_VARIABLE_CUSTODY_FORBIDDEN",
+        "CLOUDFLARE_PROVIDER_IDENTITY_CUSTODY_DRIFT",
     )
 
 
@@ -199,7 +201,7 @@ def _validate_candidate_workflow() -> None:
             _CLOUDFLARE_ACCOUNT_ID_SECRET,
             "secrets.NEON_API_KEY",
             _NEON_ORG_ID_SECRET,
-            _NEON_PROJECT_ID_SECRET,
+            _NEON_PROJECT_ID_VARIABLE,
             "python -m scripts.check_v10_cloudflare_provider_readiness",
             _WORKERS_BUILDS_AUTHORITY_PROBE,
             _CONTAINER_REGISTRY_AUTHORITY_COMMAND,
@@ -259,7 +261,7 @@ def _validate_readiness_workflow() -> None:
         readiness,
         (
             "probe_provider_access_from_env",
-            _NEON_PROJECT_ID_SECRET,
+            _NEON_PROJECT_ID_VARIABLE,
             "NEON_PROJECT_ID:",
         ),
         "CLOUDFLARE_CANDIDATE_NEON_READ_PROBE_MISSING",

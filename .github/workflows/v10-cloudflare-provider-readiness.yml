@@ -59,7 +59,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID_VALUE: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID_VALUE: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_PROJECT_ID_VALUE: ${{ vars.NEON_PROJECT_ID }}
         run: python -m scripts.check_v10_cloudflare_provider_readiness
 
       - name: Probe Workers Builds user-scoped authority fail-closed
@@ -75,7 +75,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
         run: |
           set -euo pipefail
           python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
@@ -87,7 +87,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
         run: python -m scripts.probe_v10_neon_authority_diagnostics
 
       - name: Clean self-hosted workspace
