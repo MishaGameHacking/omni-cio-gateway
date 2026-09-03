@@ -13,6 +13,7 @@ _CLOUDFLARE_AUTHORITY_ENV = "CLOUDFLARE_API_" + "TOKEN_VALUE"
 _CLOUDFLARE_ACCOUNT_ENV = "CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE"
 _NEON_AUTHORITY_ENV = "NEON_API_" + "KEY_VALUE"
 _NEON_ORGANIZATION_ENV = "NEON_ORG_ID_VALUE"
+_NEON_PROJECT_ENV = "NEON_PROJECT_ID_VALUE"
 _ACCOUNT_ID = re.compile(r"^[0-9A-Fa-f]{32}$")
 _NEON_RESOURCE_ID = re.compile(r"^[a-z0-9-]{1,60}$")
 _DOCKER_TIMEOUT_SECONDS = 15.0
@@ -63,7 +64,7 @@ def check_provider_readiness(
     environment = os.environ if environ is None else environ
     destination = sys.stdout if output is None else output
 
-    states = (
+    states = [
         (
             "CLOUDFLARE_API_TOKEN",
             "AVAILABLE"
@@ -90,7 +91,18 @@ def check_provider_readiness(
                 lambda value: _NEON_RESOURCE_ID.fullmatch(value) is not None,
             ),
         ),
-    )
+    ]
+    if _has_value(environment, _NEON_PROJECT_ENV):
+        states.append(
+            (
+                "NEON_PROJECT_ID",
+                _valid_value(
+                    environment,
+                    _NEON_PROJECT_ENV,
+                    lambda value: _NEON_RESOURCE_ID.fullmatch(value) is not None,
+                ),
+            )
+        )
     for label, state in states:
         _emit(destination, label, state)
 
