@@ -93,23 +93,21 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
         ):
             guard._validate_candidate_secret_scope(bad)
 
-    def test_candidate_guard_requires_protected_custody_for_provider_identifiers(
-        self,
-    ) -> None:
+    def test_candidate_guard_requires_provider_managed_project_binding(self) -> None:
         protected_custody = "\n".join(
             (
                 "secrets.CLOUDFLARE_ACCOUNT_ID",
                 "secrets.NEON_ORG_ID",
-                "secrets.NEON_PROJECT_ID",
+                "vars.NEON_PROJECT_ID",
             )
         )
         guard._validate_provider_identity_custody(protected_custody)
         with self.assertRaisesRegex(
             RuntimeError,
-            "CLOUDFLARE_PROVIDER_IDENTITY_VARIABLE_CUSTODY_FORBIDDEN",
+            "CLOUDFLARE_PROVIDER_IDENTITY_CUSTODY_DRIFT",
         ):
             guard._validate_provider_identity_custody(
-                protected_custody + "\nvars.NEON_PROJECT_ID"
+                protected_custody + "\nsecrets.NEON_PROJECT_ID"
             )
 
     def test_candidate_guard_requires_workers_builds_probe_before_mutation(self) -> None:
