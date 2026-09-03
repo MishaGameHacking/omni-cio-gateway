@@ -352,22 +352,18 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
         conditional = (
             "if: ${{ failure() && steps.neon_authority.outcome == 'failure' }}"
         )
+        diagnostic_command = (
+            "python -m scripts.resolve_v10_neon_github_integration diagnose"
+        )
         for path in WORKFLOWS:
             with self.subTest(path=path.name):
                 source = path.read_text(encoding="utf-8")
                 self.assertEqual(source.count("id: neon_authority"), 1)
                 self.assertEqual(source.count(conditional), 1)
-                self.assertEqual(
-                    source.count(
-                        "python -m scripts.probe_v10_neon_authority_diagnostics"
-                    ),
-                    1,
-                )
-                diagnostic_index = source.index(
-                    "python -m scripts.probe_v10_neon_authority_diagnostics"
-                )
+                self.assertEqual(source.count(diagnostic_command), 1)
+                diagnostic_index = source.index(diagnostic_command)
                 mutation_markers = (
-                    "python -m scripts.provision_v10_cloudflare_neon_runtime",
+                    "python -m scripts.resolve_v10_neon_github_integration provision",
                     "python -m scripts.run_v10_cloudflare_gated_candidate",
                     "python -m scripts.run_v10_cloudflare_gated_production",
                 )
