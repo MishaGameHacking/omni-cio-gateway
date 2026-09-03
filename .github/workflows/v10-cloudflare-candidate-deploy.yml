@@ -59,7 +59,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID_VALUE: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID_VALUE: ${{ vars.NEON_PROJECT_ID }}
         run: python -m scripts.check_v10_cloudflare_provider_readiness
 
       - name: Verify Workers Builds authority before provider mutation
@@ -69,16 +68,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
 
-      - name: Verify Neon exact-project read authority before provider mutation
+      - name: Verify Neon canonical-project read authority before provider mutation
         id: neon_authority
-        shell: bash
+        shell: cmd
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-        run: |
-          set -euo pipefail
-          python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
+        run: python -m scripts.resolve_v10_neon_github_integration probe
 
       - name: Diagnose Neon authority failure without identifiers
         if: ${{ failure() && steps.neon_authority.outcome == 'failure' }}
@@ -86,8 +82,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-        run: python -m scripts.probe_v10_neon_authority_diagnostics
+        run: python -m scripts.resolve_v10_neon_github_integration diagnose
 
       - name: Quarantine stale automatic staging trigger
         shell: bash
@@ -129,12 +124,11 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
         run: |
           set -euo pipefail
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
           rm -f "$dsn_file"
-          python -m scripts.provision_v10_cloudflare_neon_runtime \
+          python -m scripts.resolve_v10_neon_github_integration provision \
             --expected-sha "$EXPECTED_HEAD" \
             --environment staging
           test -s "$dsn_file"
