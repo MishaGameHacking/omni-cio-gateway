@@ -88,7 +88,7 @@ class NeonGithubIntegrationResolverTests(unittest.TestCase):
         cases = (
             ({**_PROJECT, "org_id": "org-other"}, "NEON_PROJECT_ORGANIZATION_DRIFT"),
             ({**_PROJECT, "region_id": "aws-us-east-2"}, "NEON_FRANKFURT_REGION_REQUIRED"),
-            ({**_PROJECT, "pg_version": 17}, "NEON_POSTGRES_18_REQUIRED"),
+            ({**_PROJECT, "pg_version": 17}, "NEON_POSTGRES18_REQUIRED"),
         )
         for project, code in cases:
             with self.subTest(code=code):
