@@ -80,11 +80,20 @@ operator-controlled host-wide override. Automatic free-port scanning is intentio
 forbidden because different sibling runners could otherwise select different ports and
 silently defeat serialization.
 
+A final manual pre-merge review then exposed an error-precedence edge in the context
+manager exit path. If `npm audit` had already returned a real non-transient/security
+failure and the host-slot release subsequently failed, the release exception could replace
+the already-authoritative npm exit status with transport-lock status `75`. Both outcomes
+were RED, but the second classification blurred the exact distinction this wrapper is
+required to preserve. The correction now stages the npm result before leaving the slot:
+a prior nonzero npm result remains the primary exit status while the release failure is
+also logged; a clean npm result followed by release failure still fails closed as `75`.
+
 ## Root cause class
 
 `SELF_HOSTED_NPM_AUDIT_RETRY_WINDOW_CONCURRENCY_AND_COORDINATION_GAP`
 
-Six repository-controlled weaknesses are addressed:
+Seven repository-controlled weaknesses are addressed:
 
 1. sibling runner services could previously amplify the same transient failure with
    overlapping audit/retry streams;
@@ -97,7 +106,9 @@ Six repository-controlled weaknesses are addressed:
 5. predictable shared-filesystem coordination introduced an avoidable security-analysis
    surface and failed the required Sonar new-code security gate;
 6. a fixed-only loopback port provided no bounded operator recovery if an unrelated local
-   process permanently occupied the reserved default.
+   process permanently occupied the reserved default;
+7. a secondary slot-release failure could previously override a primary nonzero npm audit
+   result and misclassify an already-observed security/non-transient failure as transport.
 
 The upstream/provider/network trigger for each `ECONNRESET` remains external and is not
 claimed to be uniquely identified. npm public status can remain operational while an
@@ -112,8 +123,8 @@ window can therefore block multiple otherwise-valid exact-head or exact-main gat
 
 Any coordination primitive used by this wrapper is also shared by sibling runner
 services on one physical host. A weak namespace, an over-broad contention classifier, an
-insecure shared-file primitive, or inconsistent per-service coordination configuration
-therefore affects every consumer at once.
+insecure shared-file primitive, inconsistent per-service coordination configuration, or
+incorrect primary/cleanup error precedence therefore affects every consumer at once.
 
 The package lock, npm version, audit level, security-result classification and
 fail-closed behavior are not defective and are not relaxed by this correction.
@@ -151,6 +162,10 @@ The mandatory npm security audit must now:
 - preserve the exact npm command and `high` audit threshold;
 - retry only recognized transport/temporary registry failures;
 - never retry or suppress a real npm audit vulnerability report;
+- preserve a prior nonzero npm audit/launcher result if slot release also fails, while
+  logging the secondary release failure instead of reclassifying the primary result;
+- treat a clean npm audit followed by slot-release failure as RED `75` because the
+  coordination integrity itself was not cleanly closed;
 - never fall back to a mirror, cached acceptance, disabled audit, `continue-on-error` or
   fabricated success.
 
@@ -175,13 +190,20 @@ Deterministic regression coverage verifies that:
 - the default budget reaches a fifth attempt and uses exactly `15 / 30 / 45 / 60`
   seconds of bounded backoff;
 - a custom large backoff remains capped at 60 seconds;
-- host-slot acquisition failure returns RED before npm is invoked.
+- host-slot acquisition failure returns RED before npm is invoked;
+- slot-release failure cannot replace a prior real npm security/non-transient failure
+  status;
+- slot-release failure after a clean npm result remains RED `75`.
 
 Focused scratch preflight for the override correction completed nine deterministic tests
 and Python compilation successfully. The scratch environment had no Ruff binary and its
 PyPI DNS lookup failed, so it could not honestly reproduce `ruff==0.16.1` locally. The
 fresh exact-head trusted Windows Ruff check/format remains mandatory evidence and must not
 be inferred from earlier heads.
+
+The cleanup-precedence correction adds two deterministic regression cases but does not
+claim a new local Ruff result. Fresh exact-head trusted Windows Ruff/test/security evidence
+remains mandatory after publication of the correction head.
 
 ## Permanent learning
 
@@ -202,6 +224,8 @@ be inferred from earlier heads.
   be collapsed into the same timeout path.
 - Security transport resilience must not blur the distinction between transport failure
   and a vulnerability finding.
+- Cleanup/coordination failures must never erase an already-observed primary security
+  finding; both conditions may be reported, but failure-class authority stays explicit.
 - Increasing a bounded retry horizon is acceptable only when the hard attempt/delay caps
   and fail-closed terminal result remain explicit.
 - A transport-coordination or retry-exhaustion failure is never permission to skip the

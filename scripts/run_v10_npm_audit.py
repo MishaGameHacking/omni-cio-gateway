@@ -251,6 +251,7 @@ def run_audit(
         raise ValueError("npm command must be a non-empty single-line value")
 
     command = [npm, "audit", f"--audit-level={audit_level}"]
+    status: int | None = None
     try:
         with lock_factory():
             for attempt in range(1, attempts + 1):
@@ -258,13 +259,15 @@ def run_audit(
                     completed = runner(command)
                 except OSError as exc:
                     print(f"npm audit launcher failed: {exc}", file=sys.stderr)
-                    return 70
+                    status = 70
+                    break
 
                 _emit(completed.stdout, stream=sys.stdout)
                 _emit(completed.stderr, stream=sys.stderr)
 
                 if completed.returncode == 0:
-                    return 0
+                    status = 0
+                    break
 
                 if not is_transient_registry_failure(
                     completed.stdout, completed.stderr
@@ -274,7 +277,8 @@ def run_audit(
                         "retry is forbidden.",
                         file=sys.stderr,
                     )
-                    return _safe_exit_code(completed.returncode)
+                    status = _safe_exit_code(completed.returncode)
+                    break
 
                 if attempt == attempts:
                     print(
@@ -282,7 +286,8 @@ def run_audit(
                         "security gate remains failed closed.",
                         file=sys.stderr,
                     )
-                    return _safe_exit_code(completed.returncode)
+                    status = _safe_exit_code(completed.returncode)
+                    break
 
                 delay = min(
                     backoff_seconds * attempt,
@@ -296,9 +301,16 @@ def run_audit(
                 sleeper(delay)
     except AuditTransportLockError as exc:
         print(str(exc), file=sys.stderr)
+        if status not in (None, 0):
+            print(
+                "npm audit already produced a failing result; preserving its exit status "
+                "instead of reclassifying it as a host transport-slot failure.",
+                file=sys.stderr,
+            )
+            return status
         return 75
 
-    return 1
+    return status if status is not None else 1
 
 
 def _parser() -> argparse.ArgumentParser:

@@ -244,6 +244,52 @@ class V10NpmAuditHostSerializationTests(unittest.TestCase):
 
         self.assertEqual(status, 75)
 
+    def test_release_failure_preserves_prior_security_finding_status(self) -> None:
+        @contextmanager
+        def failed_release_lock():
+            yield
+            raise npm_audit.AuditTransportLockError(
+                "synthetic host transport slot release failure"
+            )
+
+        result = subprocess.CompletedProcess(
+            args=["npm"],
+            returncode=1,
+            stdout="# npm audit report\n1 high severity vulnerability\n",
+            stderr="",
+        )
+
+        status = npm_audit.run_audit(
+            npm="npm",
+            runner=lambda _command: result,
+            lock_factory=failed_release_lock,
+        )
+
+        self.assertEqual(status, 1)
+
+    def test_release_failure_turns_clean_audit_red(self) -> None:
+        @contextmanager
+        def failed_release_lock():
+            yield
+            raise npm_audit.AuditTransportLockError(
+                "synthetic host transport slot release failure"
+            )
+
+        result = subprocess.CompletedProcess(
+            args=["npm"],
+            returncode=0,
+            stdout="found 0 vulnerabilities\n",
+            stderr="",
+        )
+
+        status = npm_audit.run_audit(
+            npm="npm",
+            runner=lambda _command: result,
+            lock_factory=failed_release_lock,
+        )
+
+        self.assertEqual(status, 75)
+
 
 if __name__ == "__main__":
     unittest.main()
