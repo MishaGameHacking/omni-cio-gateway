@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import errno
-from pathlib import Path
+import socket
 import subprocess
 import unittest
 
@@ -10,48 +10,36 @@ import scripts.run_v10_npm_audit as npm_audit
 
 
 class V10NpmAuditHostSerializationTests(unittest.TestCase):
-    def test_windows_lock_path_uses_host_global_system_temp(self) -> None:
-        path = npm_audit._host_lock_path(
-            {"SystemRoot": r"C:\Windows"},
-            platform="win32",
-        )
+    def test_host_slot_port_avoids_project_preview_and_windows_dynamic_ranges(self) -> None:
+        self.assertGreaterEqual(npm_audit._HOST_SLOT_PORT, 32000)
+        self.assertLess(npm_audit._HOST_SLOT_PORT, 49152)
 
-        self.assertEqual(
-            path,
-            Path(r"C:\Windows") / "Temp" / "omni-cio-v10-npm-audit.lock",
-        )
-
-    def test_configured_lock_root_overrides_platform_default(self) -> None:
-        path = npm_audit._host_lock_path(
-            {"OMNI_CIO_NPM_AUDIT_LOCK_ROOT": "/srv/omni-cio-locks"},
-            platform="linux",
-        )
-
-        self.assertEqual(
-            path,
-            Path("/srv/omni-cio-locks") / "omni-cio-v10-npm-audit.lock",
-        )
-
-    def test_windows_lock_path_fails_closed_without_system_root(self) -> None:
-        with self.assertRaises(npm_audit.AuditTransportLockError):
-            npm_audit._host_lock_path({}, platform="win32")
-
-    def test_windows_lock_contention_accepts_only_locking_violation(self) -> None:
+    def test_host_slot_contention_accepts_only_address_in_use(self) -> None:
         self.assertTrue(
-            npm_audit._is_windows_lock_contention(
-                OSError(errno.EACCES, "synthetic locking violation")
+            npm_audit._is_host_slot_contention(
+                OSError(errno.EADDRINUSE, "synthetic address in use")
             )
         )
         self.assertFalse(
-            npm_audit._is_windows_lock_contention(
-                OSError(errno.EBADF, "synthetic bad descriptor")
+            npm_audit._is_host_slot_contention(
+                OSError(errno.EACCES, "synthetic access denied")
             )
         )
         self.assertFalse(
-            npm_audit._is_windows_lock_contention(
+            npm_audit._is_host_slot_contention(
                 OSError(errno.EINVAL, "synthetic invalid argument")
             )
         )
+
+    def test_real_loopback_slot_serializes_without_filesystem_state(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind((npm_audit._HOST_SLOT_ADDRESS, 0))
+            port = int(probe.getsockname()[1])
+
+        with npm_audit._audit_transport_lock(port=port):
+            with self.assertRaises(npm_audit.AuditTransportLockError):
+                with npm_audit._audit_transport_lock(port=port, wait_seconds=0.0):
+                    self.fail("second host slot must not be acquired concurrently")
 
     def test_retry_sequence_holds_one_host_transport_slot(self) -> None:
         results = iter(

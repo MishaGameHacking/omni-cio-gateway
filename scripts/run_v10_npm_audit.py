@@ -1,20 +1,14 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 import errno
-import os
-from pathlib import Path
+import socket
 import subprocess
 import sys
 import time
 from typing import TextIO
-
-if sys.platform == "win32":
-    import msvcrt
-else:
-    import fcntl
 
 
 _AUDIT_LEVELS = ("info", "low", "moderate", "high", "critical", "none")
@@ -50,15 +44,16 @@ _MAX_ATTEMPTS = 5
 _MAX_BACKOFF_SECONDS = 60.0
 _DEFAULT_ATTEMPTS = 5
 _DEFAULT_BACKOFF_SECONDS = 15.0
-_HOST_LOCK_FILENAME = "omni-cio-v10-npm-audit.lock"
-_HOST_LOCK_ROOT_ENV = "OMNI_CIO_NPM_AUDIT_LOCK_ROOT"
-_HOST_LOCK_WAIT_SECONDS = 600.0
-_HOST_LOCK_POLL_SECONDS = 0.25
+_HOST_SLOT_ADDRESS = "127.0.0.1"
+_HOST_SLOT_PORT = 43867
+_HOST_SLOT_WAIT_SECONDS = 600.0
+_HOST_SLOT_POLL_SECONDS = 0.25
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess[str]]
 Sleeper = Callable[[float], None]
 Monotonic = Callable[[], float]
 LockFactory = Callable[[], AbstractContextManager[None]]
+SocketFactory = Callable[[], socket.socket]
 
 
 class AuditTransportLockError(RuntimeError):
@@ -84,31 +79,8 @@ def is_transient_registry_failure(stdout: str, stderr: str) -> bool:
     return any(marker in combined for marker in _TRANSIENT_REGISTRY_MARKERS)
 
 
-def _host_lock_path(
-    environ: Mapping[str, str] = os.environ,
-    *,
-    platform: str = sys.platform,
-) -> Path:
-    configured_root = environ.get(_HOST_LOCK_ROOT_ENV, "").strip()
-    if configured_root:
-        return Path(configured_root) / _HOST_LOCK_FILENAME
-
-    if platform == "win32":
-        system_root = (
-            environ.get("SystemRoot", "").strip() or environ.get("WINDIR", "").strip()
-        )
-        if not system_root:
-            raise AuditTransportLockError(
-                "npm audit host transport lock root is unavailable; "
-                "security gate remains failed closed."
-            )
-        return Path(system_root) / "Temp" / _HOST_LOCK_FILENAME
-
-    return Path("/var/tmp") / _HOST_LOCK_FILENAME
-
-
-def _is_windows_lock_contention(exc: OSError) -> bool:
-    return exc.errno == errno.EACCES
+def _is_host_slot_contention(exc: OSError) -> bool:
+    return exc.errno == errno.EADDRINUSE
 
 
 def _lock_wait(
@@ -121,113 +93,106 @@ def _lock_wait(
     remaining = deadline - monotonic()
     if remaining <= 0:
         raise AuditTransportLockError(
-            "npm audit host transport lock timed out; security gate remains failed closed."
+            "npm audit host transport slot timed out; security gate remains failed closed."
         )
     sleeper(min(poll_seconds, remaining))
+
+
+def _close_host_slot_socket(slot: socket.socket) -> None:
+    try:
+        slot.close()
+    except OSError as exc:
+        raise AuditTransportLockError(
+            "npm audit host transport slot release failed; "
+            "security gate remains failed closed."
+        ) from exc
+
+
+def _new_host_slot_socket() -> socket.socket:
+    try:
+        slot = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    except OSError as exc:
+        raise AuditTransportLockError(
+            "npm audit host transport slot could not create a socket; "
+            "security gate remains failed closed."
+        ) from exc
+
+    if sys.platform != "win32":
+        return slot
+
+    exclusive_option = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+    if exclusive_option is None:
+        _close_host_slot_socket(slot)
+        raise AuditTransportLockError(
+            "npm audit host transport slot cannot enforce Windows exclusive binding; "
+            "security gate remains failed closed."
+        )
+    try:
+        slot.setsockopt(socket.SOL_SOCKET, exclusive_option, 1)
+    except OSError as exc:
+        _close_host_slot_socket(slot)
+        raise AuditTransportLockError(
+            "npm audit host transport slot could not enforce Windows exclusive binding; "
+            "security gate remains failed closed."
+        ) from exc
+    return slot
 
 
 @contextmanager
 def _audit_transport_lock(
     *,
-    wait_seconds: float = _HOST_LOCK_WAIT_SECONDS,
-    poll_seconds: float = _HOST_LOCK_POLL_SECONDS,
+    address: str = _HOST_SLOT_ADDRESS,
+    port: int = _HOST_SLOT_PORT,
+    wait_seconds: float = _HOST_SLOT_WAIT_SECONDS,
+    poll_seconds: float = _HOST_SLOT_POLL_SECONDS,
     sleeper: Sleeper = time.sleep,
     monotonic: Monotonic = time.monotonic,
+    socket_factory: SocketFactory = _new_host_slot_socket,
 ) -> Iterator[None]:
-    """Serialize npm audit transport across runner services on one physical host."""
-
-    lock_path = _host_lock_path()
-    try:
-        lock_file = lock_path.open("a+b")
-    except OSError as exc:
-        raise AuditTransportLockError(
-            "npm audit host transport lock could not be opened; "
-            "security gate remains failed closed."
-        ) from exc
+    """Serialize npm audit transport through one loopback slot per physical host."""
 
     waited = False
-    with lock_file:
-        deadline = monotonic() + wait_seconds
-        if sys.platform == "win32":
-            lock_file.seek(0, os.SEEK_END)
-            if lock_file.tell() == 0:
-                lock_file.write(b"\0")
-                lock_file.flush()
+    deadline = monotonic() + wait_seconds
+    slot: socket.socket | None = None
 
-            while True:
-                lock_file.seek(0)
-                try:
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-                except OSError as exc:
-                    if not _is_windows_lock_contention(exc):
-                        raise AuditTransportLockError(
-                            "npm audit host transport lock failed; "
-                            "security gate remains failed closed."
-                        ) from exc
-                    waited = True
-                    _lock_wait(
-                        deadline=deadline,
-                        monotonic=monotonic,
-                        sleeper=sleeper,
-                        poll_seconds=poll_seconds,
-                    )
-                else:
-                    break
-
-            if waited:
-                print(
-                    "npm audit host transport slot waited for a concurrent audit; "
-                    "proceeding serially.",
-                    file=sys.stderr,
-                )
-            try:
-                yield
-            finally:
-                lock_file.seek(0)
-                try:
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-                except OSError as exc:
-                    raise AuditTransportLockError(
-                        "npm audit host transport lock release failed; "
-                        "security gate remains failed closed."
-                    ) from exc
-            return
-
-        while True:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                waited = True
-                _lock_wait(
-                    deadline=deadline,
-                    monotonic=monotonic,
-                    sleeper=sleeper,
-                    poll_seconds=poll_seconds,
-                )
-            except OSError as exc:
-                raise AuditTransportLockError(
-                    "npm audit host transport lock failed; "
-                    "security gate remains failed closed."
-                ) from exc
-            else:
-                break
-
-        if waited:
-            print(
-                "npm audit host transport slot waited for a concurrent audit; "
-                "proceeding serially.",
-                file=sys.stderr,
-            )
+    while True:
+        candidate = socket_factory()
         try:
-            yield
-        finally:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            except OSError as exc:
+            candidate.bind((address, port))
+        except OSError as exc:
+            _close_host_slot_socket(candidate)
+            if not _is_host_slot_contention(exc):
                 raise AuditTransportLockError(
-                    "npm audit host transport lock release failed; "
+                    "npm audit host transport slot bind failed; "
                     "security gate remains failed closed."
                 ) from exc
+            waited = True
+            _lock_wait(
+                deadline=deadline,
+                monotonic=monotonic,
+                sleeper=sleeper,
+                poll_seconds=poll_seconds,
+            )
+            continue
+        slot = candidate
+        break
+
+    if waited:
+        print(
+            "npm audit host transport slot waited for a concurrent audit; "
+            "proceeding serially.",
+            file=sys.stderr,
+        )
+
+    try:
+        yield
+    finally:
+        if slot is None:
+            raise AuditTransportLockError(
+                "npm audit host transport slot disappeared before release; "
+                "security gate remains failed closed."
+            )
+        _close_host_slot_socket(slot)
 
 
 def _default_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
