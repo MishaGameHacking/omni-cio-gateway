@@ -95,8 +95,7 @@ def _host_lock_path(
 
     if platform == "win32":
         system_root = (
-            environ.get("SystemRoot", "").strip()
-            or environ.get("WINDIR", "").strip()
+            environ.get("SystemRoot", "").strip() or environ.get("WINDIR", "").strip()
         )
         if not system_root:
             raise AuditTransportLockError(
