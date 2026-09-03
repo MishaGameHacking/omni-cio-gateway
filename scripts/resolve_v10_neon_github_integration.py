@@ -30,9 +30,10 @@ def _canonical_query_path(
     query: dict[str, str] = {
         "limit": str(_CANONICAL_LOOKUP_LIMIT),
         "search": _base.NEON_PROJECT_NAME,
+        "org_id": safe_org_id,
     }
-    if include_org:
-        query["org_id"] = safe_org_id
+    if not include_org:
+        query.pop("org_id")
     if cursor is not None:
         if not cursor:
             raise _base.ProvisioningStopped("NEON_PROJECT_PAGINATION_INVALID")
