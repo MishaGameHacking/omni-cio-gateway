@@ -10,7 +10,9 @@ import scripts.run_v10_npm_audit as npm_audit
 
 
 class V10NpmAuditHostSerializationTests(unittest.TestCase):
-    def test_host_slot_port_avoids_project_preview_and_windows_dynamic_ranges(self) -> None:
+    def test_host_slot_port_avoids_project_preview_and_windows_dynamic_ranges(
+        self,
+    ) -> None:
         self.assertGreaterEqual(npm_audit._HOST_SLOT_PORT, 32000)
         self.assertLess(npm_audit._HOST_SLOT_PORT, 49152)
 
