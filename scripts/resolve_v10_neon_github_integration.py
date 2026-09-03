@@ -19,11 +19,13 @@ _STATUS_SKIPPED = "SKIPPED"
 _STATUS_UNKNOWN = "UNKNOWN"
 
 
-def _canonical_query_path() -> str:
+def _canonical_query_path(organization_id: str) -> str:
+    safe_org_id = _org._validate_neon_org_id(organization_id)
     query = urlencode(
         {
             "limit": str(_CANONICAL_LOOKUP_LIMIT),
             "search": _base.NEON_PROJECT_NAME,
+            "org_id": safe_org_id,
         }
     )
     return f"/projects?{query}"
@@ -45,7 +47,9 @@ def _discover_canonical_project(
     organization_id: str,
 ) -> dict[str, Any]:
     safe_org_id = _org._validate_neon_org_id(organization_id)
-    rows = _project_rows(api.request("GET", _canonical_query_path()))
+    rows = _project_rows(
+        api.request("GET", _canonical_query_path(safe_org_id))
+    )
     matches = [row for row in rows if row.get("name") == _base.NEON_PROJECT_NAME]
     if not matches:
         raise _base.ProvisioningStopped("NEON_CANONICAL_PROJECT_NOT_FOUND")
@@ -108,10 +112,6 @@ def provision_from_env(expected_sha: str, environment: str) -> str:
         return _runtime.run(expected_sha, environment)
 
 
-def _status(exc: _base.ProvisioningStopped) -> str:
-    return "ERROR" if exc.status is None else str(exc.status)
-
-
 def _safe_discovery_diagnostic(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
@@ -121,7 +121,7 @@ def _safe_discovery_diagnostic(
         _diagnostics._credential_organizations(api, organization_id)
     )
     organization = _diagnostics._read(api, f"/organizations/{organization_id}")
-    canonical = _diagnostics._read(api, _canonical_query_path())
+    canonical = _diagnostics._read(api, _canonical_query_path(organization_id))
 
     canonical_matches = _STATUS_UNKNOWN
     project_status = _STATUS_SKIPPED
