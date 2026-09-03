@@ -5,6 +5,7 @@ import errno
 import socket
 import subprocess
 import unittest
+from unittest.mock import MagicMock
 
 import scripts.run_v10_npm_audit as npm_audit
 
@@ -13,8 +14,35 @@ class V10NpmAuditHostSerializationTests(unittest.TestCase):
     def test_host_slot_port_avoids_project_preview_and_windows_dynamic_ranges(
         self,
     ) -> None:
-        self.assertGreaterEqual(npm_audit._HOST_SLOT_PORT, 32000)
-        self.assertLess(npm_audit._HOST_SLOT_PORT, 49152)
+        self.assertGreaterEqual(npm_audit._HOST_SLOT_PORT, npm_audit._HOST_SLOT_PORT_MIN)
+        self.assertLessEqual(npm_audit._HOST_SLOT_PORT, npm_audit._HOST_SLOT_PORT_MAX)
+
+    def test_host_slot_port_override_is_strictly_validated(self) -> None:
+        self.assertEqual(npm_audit._resolve_host_slot_port({}), 43867)
+        self.assertEqual(
+            npm_audit._resolve_host_slot_port(
+                {npm_audit._HOST_SLOT_PORT_ENV: " 43868 "}
+            ),
+            43868,
+        )
+
+        for value in ("abc", "43867.0", "-1", "31999", "49152", "１２３４５"):
+            with self.subTest(value=value):
+                with self.assertRaises(npm_audit.AuditTransportLockError):
+                    npm_audit._resolve_host_slot_port(
+                        {npm_audit._HOST_SLOT_PORT_ENV: value}
+                    )
+
+    def test_host_slot_port_override_is_propagated_before_socket_bind(self) -> None:
+        slot = MagicMock(spec=socket.socket)
+
+        with npm_audit._audit_transport_lock(
+            environ={npm_audit._HOST_SLOT_PORT_ENV: "43868"},
+            socket_factory=lambda: slot,
+        ):
+            slot.bind.assert_called_once_with((npm_audit._HOST_SLOT_ADDRESS, 43868))
+
+        slot.close.assert_called_once_with()
 
     def test_host_slot_contention_accepts_only_address_in_use(self) -> None:
         self.assertTrue(

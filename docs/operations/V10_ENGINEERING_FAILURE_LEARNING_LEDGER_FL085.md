@@ -65,11 +65,26 @@ mismatch on `db575a241c99079bef4a0b40ea737c5ffa624b4a`. Exact head
 This exposed a preflight gap: focused corrections must reproduce the authoritative Ruff
 format scope before publication.
 
+The later loopback-slot head
+`444259eb4ae17f5351ed7b42ae29dc9337a21f14` then completed the full DRAFT repository
+batch successfully, including a real Windows contention marker from WP21 followed by
+`found 0 vulnerabilities`, authoritative Ruff/static/coverage/security checks, WP22A
+npm audit and pinned OpenTofu validation, Sonar Quality Gate success and Semgrep success.
+That evidence is diagnostic only after the next correction commit.
+
+A fresh current-head manual Gitar review then found one additional recovery edge: a
+single fixed loopback port could be occupied indefinitely by an unrelated local process,
+leaving every audit correctly fail-closed but requiring a source edit to recover. The
+correction therefore keeps a safe default port while adding a strictly validated,
+operator-controlled host-wide override. Automatic free-port scanning is intentionally
+forbidden because different sibling runners could otherwise select different ports and
+silently defeat serialization.
+
 ## Root cause class
 
 `SELF_HOSTED_NPM_AUDIT_RETRY_WINDOW_CONCURRENCY_AND_COORDINATION_GAP`
 
-Five repository-controlled weaknesses are addressed:
+Six repository-controlled weaknesses are addressed:
 
 1. sibling runner services could previously amplify the same transient failure with
    overlapping audit/retry streams;
@@ -80,7 +95,9 @@ Five repository-controlled weaknesses are addressed:
 4. the first Windows lock path did not initially distinguish ordinary contention from
    real lock-integrity errors;
 5. predictable shared-filesystem coordination introduced an avoidable security-analysis
-   surface and failed the required Sonar new-code security gate.
+   surface and failed the required Sonar new-code security gate;
+6. a fixed-only loopback port provided no bounded operator recovery if an unrelated local
+   process permanently occupied the reserved default.
 
 The upstream/provider/network trigger for each `ECONNRESET` remains external and is not
 claimed to be uniquely identified. npm public status can remain operational while an
@@ -94,8 +111,9 @@ workflows for WP15 through WP22A and fast PR checks. A short transient advisory-
 window can therefore block multiple otherwise-valid exact-head or exact-main gates.
 
 Any coordination primitive used by this wrapper is also shared by sibling runner
-services on one physical host. A weak namespace, an over-broad contention classifier, or
-an insecure shared-file primitive therefore affects every consumer at once.
+services on one physical host. A weak namespace, an over-broad contention classifier, an
+insecure shared-file primitive, or inconsistent per-service coordination configuration
+therefore affects every consumer at once.
 
 The package lock, npm version, audit level, security-result classification and
 fail-closed behavior are not defective and are not relaxed by this correction.
@@ -105,15 +123,24 @@ fail-closed behavior are not defective and are not relaxed by this correction.
 The mandatory npm security audit must now:
 
 - acquire one physical-host-local transport slot before the first `npm audit` call;
-- implement that slot with an IPv4 TCP socket bound only to loopback `127.0.0.1` and a
-  fixed project-reserved port, without listening or accepting connections;
-- use port `43867`, which is outside the repository Web preview range `18000-31999` and
-  below the default Windows dynamic client range beginning at `49152`;
+- implement that slot with an IPv4 TCP socket bound only to loopback `127.0.0.1`, without
+  listening or accepting connections;
+- use default port `43867`, which is outside the repository Web preview range
+  `18000-31999` and below the default Windows dynamic client range beginning at `49152`;
+- allow only an explicit `OMNI_CIO_NPM_AUDIT_SLOT_PORT` recovery override in the bounded
+  range `32000-49151`;
+- require the override to contain ASCII decimal digits only; malformed, Unicode-digit,
+  below-range or above-range values fail closed before socket acquisition;
+- require any override to be configured identically for every sibling runner service on
+  the same physical host; the variable is recovery configuration, not a per-job routing
+  input;
+- never auto-scan or auto-fallback to another port after `EADDRINUSE`, because different
+  contenders could otherwise acquire different slots and overlap remote audit traffic;
 - on Windows require `SO_EXCLUSIVEADDRUSE` before bind so address reuse cannot silently
   defeat mutual exclusion;
 - classify only `EADDRINUSE` as ordinary slot contention;
-- fail closed immediately on socket creation, socket-option, bind, or release errors that
-  are not ordinary contention;
+- fail closed immediately on configuration, socket creation, socket-option, bind, or
+  release errors that are not ordinary contention;
 - hold the bound loopback socket across the complete retry/backoff sequence so sibling
   runner services cannot synchronize remote retries;
 - wait at most 600 seconds for the host slot, then fail closed;
@@ -132,14 +159,16 @@ remote target, proxy npm traffic, or create any new application/network authorit
 
 ## Directly coupled consumers
 
-All accepted Web dependency-audit workflows already call the shared wrapper, so the host
-serialization and enlarged bounded retry horizon apply consistently without deleting or
-softening any workflow-specific security step.
+All accepted Web dependency-audit workflows already call the shared wrapper, so host
+serialization and the enlarged bounded retry horizon apply consistently without deleting
+or softening any workflow-specific security step.
 
 Deterministic regression coverage verifies that:
 
-- the fixed host-slot port remains outside the source-controlled Web preview range and
-  below the default Windows dynamic range;
+- the default host-slot port stays inside the reserved `32000-49151` corridor, outside
+  the source-controlled Web preview range and below the default Windows dynamic range;
+- the recovery override defaults correctly, accepts a validated in-range ASCII-decimal
+  port, rejects malformed/out-of-range/Unicode-digit values, and is propagated to bind;
 - only `EADDRINUSE` is classified as normal contention;
 - a real loopback bind prevents a concurrent second slot without filesystem state;
 - the complete retry sequence stays under one host transport slot;
@@ -148,9 +177,11 @@ Deterministic regression coverage verifies that:
 - a custom large backoff remains capped at 60 seconds;
 - host-slot acquisition failure returns RED before npm is invoked.
 
-The next exact-head Windows run is also required to exercise the real Windows
-`SO_EXCLUSIVEADDRUSE` path; deterministic local tests cannot substitute for that platform
-evidence.
+Focused scratch preflight for the override correction completed nine deterministic tests
+and Python compilation successfully. The scratch environment had no Ruff binary and its
+PyPI DNS lookup failed, so it could not honestly reproduce `ruff==0.16.1` locally. The
+fresh exact-head trusted Windows Ruff check/format remains mandatory evidence and must not
+be inferred from earlier heads.
 
 ## Permanent learning
 
@@ -162,6 +193,11 @@ evidence.
 - Shared coordination should avoid predictable files in broadly shared temporary
   locations when a narrower host-local OS/network namespace can provide mutual exclusion
   without creating filesystem race/path surface.
+- A host-local coordination default needs an explicit, strictly validated recovery path
+  for unrelated local resource collisions, but that recovery path must preserve a single
+  shared slot across all sibling runners.
+- Automatic free-resource fallback is unsafe for a mutex primitive when independent
+  contenders can choose different resources.
 - Contention and coordination-integrity errors are distinct failure classes and must not
   be collapsed into the same timeout path.
 - Security transport resilience must not blur the distinction between transport failure
@@ -170,8 +206,8 @@ evidence.
   and fail-closed terminal result remain explicit.
 - A transport-coordination or retry-exhaustion failure is never permission to skip the
   mandatory dependency audit.
-- Focused preflight must include the exact authoritative formatter scope before a new
-  correction head is published.
+- Focused preflight must include the exact authoritative formatter scope whenever that
+  tool is actually available; an unavailable tool is recorded, not fabricated.
 
 ## Security and authority invariants preserved
 

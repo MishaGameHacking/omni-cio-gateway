@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 import errno
+import os
 import socket
 import subprocess
 import sys
@@ -45,7 +46,10 @@ _MAX_BACKOFF_SECONDS = 60.0
 _DEFAULT_ATTEMPTS = 5
 _DEFAULT_BACKOFF_SECONDS = 15.0
 _HOST_SLOT_ADDRESS = "127.0.0.1"
+_HOST_SLOT_PORT_ENV = "OMNI_CIO_NPM_AUDIT_SLOT_PORT"
 _HOST_SLOT_PORT = 43867
+_HOST_SLOT_PORT_MIN = 32000
+_HOST_SLOT_PORT_MAX = 49151
 _HOST_SLOT_WAIT_SECONDS = 600.0
 _HOST_SLOT_POLL_SECONDS = 0.25
 
@@ -77,6 +81,25 @@ def is_transient_registry_failure(stdout: str, stderr: str) -> bool:
     if any(marker in combined for marker in _AUDIT_RESULT_MARKERS):
         return False
     return any(marker in combined for marker in _TRANSIENT_REGISTRY_MARKERS)
+
+
+def _resolve_host_slot_port(environ: Mapping[str, str] = os.environ) -> int:
+    configured = environ.get(_HOST_SLOT_PORT_ENV, "").strip()
+    if not configured:
+        return _HOST_SLOT_PORT
+    if not configured.isascii() or not configured.isdigit():
+        raise AuditTransportLockError(
+            f"{_HOST_SLOT_PORT_ENV} must contain only decimal digits; "
+            "security gate remains failed closed."
+        )
+
+    port = int(configured)
+    if not _HOST_SLOT_PORT_MIN <= port <= _HOST_SLOT_PORT_MAX:
+        raise AuditTransportLockError(
+            f"{_HOST_SLOT_PORT_ENV} must be an integer from {_HOST_SLOT_PORT_MIN} "
+            f"through {_HOST_SLOT_PORT_MAX}; security gate remains failed closed."
+        )
+    return port
 
 
 def _is_host_slot_contention(exc: OSError) -> bool:
@@ -142,7 +165,8 @@ def _new_host_slot_socket() -> socket.socket:
 def _audit_transport_lock(
     *,
     address: str = _HOST_SLOT_ADDRESS,
-    port: int = _HOST_SLOT_PORT,
+    port: int | None = None,
+    environ: Mapping[str, str] = os.environ,
     wait_seconds: float = _HOST_SLOT_WAIT_SECONDS,
     poll_seconds: float = _HOST_SLOT_POLL_SECONDS,
     sleeper: Sleeper = time.sleep,
@@ -151,6 +175,7 @@ def _audit_transport_lock(
 ) -> Iterator[None]:
     """Serialize npm audit transport through one loopback slot per physical host."""
 
+    resolved_port = _resolve_host_slot_port(environ) if port is None else port
     waited = False
     deadline = monotonic() + wait_seconds
     slot: socket.socket | None = None
@@ -158,7 +183,7 @@ def _audit_transport_lock(
     while True:
         candidate = socket_factory()
         try:
-            candidate.bind((address, port))
+            candidate.bind((address, resolved_port))
         except OSError as exc:
             _close_host_slot_socket(candidate)
             if not _is_host_slot_contention(exc):
