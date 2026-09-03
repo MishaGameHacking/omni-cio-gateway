@@ -184,7 +184,7 @@ def provision_from_env(expected_sha: str, environment: str) -> str:
 def _diagnostic_canonical_read(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
-) -> _diagnostics.SafeRead:
+) -> _diagnostics._ReadEvidence:
     scoped = _diagnostics._read(
         api,
         _canonical_query_path(organization_id),
