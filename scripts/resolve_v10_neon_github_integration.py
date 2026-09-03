@@ -13,33 +13,47 @@ from scripts import provision_v10_render_neon_preview as _base
 from scripts import provision_v10_render_neon_preview_org_scope as _org
 
 
-_CANONICAL_LOOKUP_LIMIT = 10
+_CANONICAL_LOOKUP_LIMIT = 400
+_MAX_CANONICAL_PAGES = 10
 _STATUS_OK = "200"
 _STATUS_SKIPPED = "SKIPPED"
 _STATUS_UNKNOWN = "UNKNOWN"
 
 
-def _canonical_query_path(organization_id: str) -> str:
-    safe_org_id = _org._validate_neon_org_id(organization_id)
-    query = urlencode(
-        {
-            "limit": str(_CANONICAL_LOOKUP_LIMIT),
-            "search": _base.NEON_PROJECT_NAME,
-            "org_id": safe_org_id,
-        }
-    )
-    return f"/projects?{query}"
+def _canonical_query_path(cursor: str | None = None) -> str:
+    query: dict[str, str] = {
+        "limit": str(_CANONICAL_LOOKUP_LIMIT),
+        "search": _base.NEON_PROJECT_NAME,
+    }
+    if cursor is not None:
+        if not cursor:
+            raise _base.ProvisioningStopped("NEON_PROJECT_PAGINATION_INVALID")
+        query["cursor"] = cursor
+    return f"/projects?{urlencode(query)}"
 
 
-def _project_rows(payload: object) -> list[dict[str, Any]]:
+def _project_page(payload: object) -> tuple[list[dict[str, Any]], str | None]:
     body = _base._json_object(payload, "NEON_PROJECTS_RESPONSE_INVALID")
     raw_projects = _base._json_list(
         body.get("projects"),
         "NEON_PROJECTS_INVALID",
     )
-    return [
+    rows = [
         _base._json_object(item, "NEON_PROJECT_INVALID") for item in raw_projects
     ]
+    raw_pagination = body.get("pagination")
+    if raw_pagination is None:
+        return rows, None
+    pagination = _base._json_object(
+        raw_pagination,
+        "NEON_PROJECT_PAGINATION_INVALID",
+    )
+    raw_cursor = pagination.get("cursor")
+    if raw_cursor in (None, ""):
+        return rows, None
+    if not isinstance(raw_cursor, str):
+        raise _base.ProvisioningStopped("NEON_PROJECT_PAGINATION_INVALID")
+    return rows, raw_cursor
 
 
 def _discover_canonical_project(
@@ -47,12 +61,30 @@ def _discover_canonical_project(
     organization_id: str,
 ) -> dict[str, Any]:
     safe_org_id = _org._validate_neon_org_id(organization_id)
-    rows = _project_rows(api.request("GET", _canonical_query_path(safe_org_id)))
-    matches = [row for row in rows if row.get("name") == _base.NEON_PROJECT_NAME]
+    matches: list[dict[str, Any]] = []
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+
+    for _page in range(_MAX_CANONICAL_PAGES):
+        rows, next_cursor = _project_page(
+            api.request("GET", _canonical_query_path(cursor))
+        )
+        matches.extend(
+            row for row in rows if row.get("name") == _base.NEON_PROJECT_NAME
+        )
+        if len(matches) > 1:
+            raise _base.ProvisioningStopped("NEON_PROJECT_NAME_NOT_UNIQUE")
+        if next_cursor is None:
+            break
+        if next_cursor in seen_cursors:
+            raise _base.ProvisioningStopped("NEON_PROJECT_PAGINATION_INVALID")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    else:
+        raise _base.ProvisioningStopped("NEON_PROJECT_PAGINATION_LIMIT_EXCEEDED")
+
     if not matches:
         raise _base.ProvisioningStopped("NEON_CANONICAL_PROJECT_NOT_FOUND")
-    if len(matches) != 1:
-        raise _base.ProvisioningStopped("NEON_PROJECT_NAME_NOT_UNIQUE")
     project = matches[0]
     project_id = _runtime._validate_neon_project_id(str(project.get("id", "")))
     _runtime._validate_bound_project(
@@ -119,7 +151,7 @@ def _safe_discovery_diagnostic(
         _diagnostics._credential_organizations(api, organization_id)
     )
     organization = _diagnostics._read(api, f"/organizations/{organization_id}")
-    canonical = _diagnostics._read(api, _canonical_query_path(organization_id))
+    canonical = _diagnostics._read(api, _canonical_query_path())
 
     canonical_matches = _STATUS_UNKNOWN
     project_status = _STATUS_SKIPPED
@@ -129,37 +161,40 @@ def _safe_discovery_diagnostic(
 
     if canonical.status == _STATUS_OK:
         try:
-            rows = _project_rows(canonical.payload)
+            rows, next_cursor = _project_page(canonical.payload)
             matches = [
                 row for row in rows if row.get("name") == _base.NEON_PROJECT_NAME
             ]
-            canonical_matches = (
-                "0" if not matches else "1" if len(matches) == 1 else "MULTIPLE"
-            )
-            if len(matches) == 1:
-                project_id = _project_id(matches[0])
-                if matches[0].get("org_id") != organization_id:
-                    classification = "CONFIGURED_ORG_ID_DRIFT"
-                else:
-                    _base._mask(project_id)
-                    project = _diagnostics._read(api, f"/projects/{project_id}")
-                    branches = _diagnostics._read(
-                        api,
-                        f"/projects/{project_id}/branches?limit=1",
-                    )
-                    project_status = project.status
-                    branches_status = branches.status
-                    if branches_status == _STATUS_OK:
-                        classification = "EXACT_PROJECT_BRANCH_READABLE"
-                    elif project_status in {"403", "404"} or branches_status in {
-                        "403",
-                        "404",
-                    }:
-                        classification = "EXACT_PROJECT_AUTHORIZATION_DRIFT"
-            elif not matches:
-                classification = "CANONICAL_PROJECT_NOT_FOUND_IN_CONFIGURED_ORG"
+            if next_cursor is not None:
+                canonical_matches = "INCOMPLETE"
             else:
-                classification = "CANONICAL_PROJECT_NAME_NOT_UNIQUE"
+                canonical_matches = (
+                    "0" if not matches else "1" if len(matches) == 1 else "MULTIPLE"
+                )
+                if len(matches) == 1:
+                    project_id = _project_id(matches[0])
+                    if matches[0].get("org_id") != organization_id:
+                        classification = "CONFIGURED_ORG_ID_DRIFT"
+                    else:
+                        _base._mask(project_id)
+                        project = _diagnostics._read(api, f"/projects/{project_id}")
+                        branches = _diagnostics._read(
+                            api,
+                            f"/projects/{project_id}/branches?limit=1",
+                        )
+                        project_status = project.status
+                        branches_status = branches.status
+                        if branches_status == _STATUS_OK:
+                            classification = "EXACT_PROJECT_BRANCH_READABLE"
+                        elif project_status in {"403", "404"} or branches_status in {
+                            "403",
+                            "404",
+                        }:
+                            classification = "EXACT_PROJECT_AUTHORIZATION_DRIFT"
+                elif not matches:
+                    classification = "CANONICAL_PROJECT_NOT_FOUND_IN_CONFIGURED_ORG"
+                else:
+                    classification = "CANONICAL_PROJECT_NAME_NOT_UNIQUE"
         except _base.ProvisioningStopped:
             canonical_matches = "INVALID_PAYLOAD"
             classification = "UNRESOLVED"
