@@ -60,17 +60,22 @@ runner environment.
 A privacy-safe provider resolver now:
 
 1. reads only the existing Neon API credential and protected organization binding;
-2. performs a read-only, organization-scoped project query using the exact canonical
-   project name `omni-cio-v10-preview-frankfurt`;
-3. requires exactly one exact-name match;
-4. reuses the existing runtime validator to require the configured organization,
-   PostgreSQL 18 and `aws-eu-central-1`;
-5. masks the discovered project ID inside the Python process before any exact-project
+2. first performs a read-only project query scoped to the protected organization and the
+   exact canonical project name `omni-cio-v10-preview-frankfurt`;
+3. if and only if that first list operation returns HTTP 403, retries the same read-only
+   canonical-name query without `org_id` so a project-scoped Neon integration key can
+   expose only the projects granted by its credential scope;
+4. never downgrades a non-403 failure to that credential-scoped fallback;
+5. paginates the provider result with a bounded maximum and rejects repeated cursors,
+   incomplete evidence or multiple exact-name matches;
+6. reuses the existing runtime validator to require the protected organization,
+   PostgreSQL 18 and `aws-eu-central-1` even after credential-scoped fallback;
+7. masks the discovered project ID inside the Python process before any exact-project
    request;
-6. uses the identifier only in process memory for the existing exact-project probe or
+8. uses the identifier only in process memory for the existing exact-project probe or
    runtime provisioner;
-7. restores any temporary process environment binding before exit;
-8. emits only categorical/status evidence, never provider identifiers.
+9. restores any temporary process environment binding before exit;
+10. emits only categorical/status evidence, never provider identifiers.
 
 The official Neon GitHub integration may continue to maintain its repository variable,
 but the active release path no longer expands that value into Actions logs or requires
@@ -84,10 +89,14 @@ Deterministic guards/tests require that:
   `secrets.NEON_PROJECT_ID` nor `vars.NEON_PROJECT_ID`;
 - no active workflow assigns `NEON_PROJECT_ID` or `NEON_PROJECT_ID_VALUE`;
 - Neon API credentials remain secret-only;
-- exact canonical discovery is a GET-only operation scoped to the protected
-  organization and exact canonical project name;
+- exact canonical discovery is GET-only and first attempts the protected organization;
+- credential-scoped fallback is permitted only after a 403 from the organization-scoped
+  list operation;
+- non-403 provider failures never downgrade to fallback discovery;
+- pagination is bounded and cursor loops fail closed;
 - zero or multiple canonical-name matches fail closed;
-- organization, PostgreSQL 18 and Frankfurt drift fail closed;
+- organization, PostgreSQL 18 and Frankfurt drift fail closed after either discovery
+  mode;
 - the discovered Project ID is masked before exact-project reads;
 - temporary in-process binding is restored after provisioning;
 - diagnostics expose only status/category evidence;
@@ -102,6 +111,8 @@ Deterministic guards/tests require that:
 - Sensitive or private routing metadata should be derived inside the process from
   already-authorized provider reads when deterministic fail-closed discovery is
   available.
+- Project-scoped credentials need a narrow read-only discovery path, but fallback must
+  be explicit, status-classified and followed by exact organization/runtime validation.
 - Provider discovery must never silently broaden mutation authority: exact canonical
   identity and runtime constraints must still be proven before mutation.
 - A source privacy correction does not resolve an external credential failure. The
