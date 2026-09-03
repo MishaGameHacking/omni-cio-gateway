@@ -26,8 +26,11 @@ class _Api:
     def __init__(
         self,
         pages: dict[str | None, tuple[list[dict[str, Any]], str | None]],
+        *,
+        reject_org_scoped_list: bool = False,
     ) -> None:
         self.pages = pages
+        self.reject_org_scoped_list = reject_org_scoped_list
         self.calls: list[tuple[str, str]] = []
 
     def request(self, method: str, path: str, **kwargs: object) -> object:
@@ -37,6 +40,8 @@ class _Api:
             raise AssertionError((method, path))
         if path.startswith("/projects?"):
             query = parse_qs(urlsplit(path).query)
+            if self.reject_org_scoped_list and "org_id" in query:
+                raise base.ProvisioningStopped("NEON_API_KEY_INSUFFICIENT", status=403)
             cursor = query.get("cursor", [None])[0]
             projects, next_cursor = self.pages[cursor]
             response: dict[str, object] = {
@@ -58,20 +63,29 @@ class _Api:
         raise AssertionError((method, path))
 
 
-def _api(projects: list[dict[str, Any]]) -> org.OrgScopedNeonApi:
-    return cast(org.OrgScopedNeonApi, _Api({None: (projects, None)}))
+def _api(
+    projects: list[dict[str, Any]],
+    *,
+    reject_org_scoped_list: bool = False,
+) -> org.OrgScopedNeonApi:
+    return cast(
+        org.OrgScopedNeonApi,
+        _Api(
+            {None: (projects, None)},
+            reject_org_scoped_list=reject_org_scoped_list,
+        ),
+    )
 
 
 class NeonGithubIntegrationResolverTests(unittest.TestCase):
-    def test_canonical_query_is_read_only_and_credential_scoped(self) -> None:
-        path = resolver._canonical_query_path()
+    def test_canonical_query_prefers_protected_org_scope(self) -> None:
+        path = resolver._canonical_query_path(_ORG_ID)
         parsed = urlsplit(path)
         self.assertEqual(parsed.path, "/projects")
         query = parse_qs(parsed.query)
         self.assertEqual(query["limit"], [str(resolver._CANONICAL_LOOKUP_LIMIT)])
         self.assertEqual(query["search"], [base.NEON_PROJECT_NAME])
-        self.assertNotIn("org_id", query)
-        self.assertNotIn(_ORG_ID, path)
+        self.assertEqual(query["org_id"], [_ORG_ID])
         self.assertNotIn(_PROJECT_ID, path)
 
     def test_discovery_requires_one_exact_canonical_project_and_masks_id(self) -> None:
@@ -84,7 +98,31 @@ class NeonGithubIntegrationResolverTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(raw.calls[0][0], "GET")
         self.assertNotIn(_PROJECT_ID, raw.calls[0][1])
-        self.assertNotIn(_ORG_ID, raw.calls[0][1])
+
+    def test_project_scoped_key_falls_back_only_after_org_list_403(self) -> None:
+        api = _api([dict(_PROJECT)], reject_org_scoped_list=True)
+        project = resolver._discover_canonical_project(api, _ORG_ID)
+        self.assertEqual(project["id"], _PROJECT_ID)
+        raw = cast(_Api, api)
+        self.assertEqual(len(raw.calls), 2)
+        first_query = parse_qs(urlsplit(raw.calls[0][1]).query)
+        second_query = parse_qs(urlsplit(raw.calls[1][1]).query)
+        self.assertEqual(first_query["org_id"], [_ORG_ID])
+        self.assertNotIn("org_id", second_query)
+
+    def test_non_403_org_list_failure_never_downgrades(self) -> None:
+        class UnauthorizedApi(_Api):
+            def request(self, method: str, path: str, **kwargs: object) -> object:
+                if path.startswith("/projects?"):
+                    raise base.ProvisioningStopped("NEON_API_KEY_INVALID", status=401)
+                return super().request(method, path, **kwargs)
+
+        api = cast(
+            org.OrgScopedNeonApi,
+            UnauthorizedApi({None: ([dict(_PROJECT)], None)}),
+        )
+        with self.assertRaisesRegex(RuntimeError, "NEON_API_KEY_INVALID"):
+            resolver._discover_canonical_project(api, _ORG_ID)
 
     def test_discovery_follows_pagination_before_accepting_uniqueness(self) -> None:
         api = cast(
@@ -102,6 +140,7 @@ class NeonGithubIntegrationResolverTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 2)
         second_query = parse_qs(urlsplit(raw.calls[1][1]).query)
         self.assertEqual(second_query["cursor"], ["page-2"])
+        self.assertEqual(second_query["org_id"], [_ORG_ID])
 
     def test_discovery_rejects_duplicate_match_on_later_page(self) -> None:
         second = {**_PROJECT, "id": "canonical-project-456"}
@@ -170,6 +209,17 @@ class NeonGithubIntegrationResolverTests(unittest.TestCase):
         self.assertIn("canonical_name_matches=1", report)
         self.assertIn("exact_project_status=200", report)
         self.assertIn("exact_branches_status=200", report)
+        self.assertIn("classification=EXACT_PROJECT_BRANCH_READABLE", report)
+        self.assertNotIn(_PROJECT_ID, report)
+        self.assertNotIn(_ORG_ID, report)
+
+    def test_safe_diagnostic_uses_project_scoped_list_fallback(self) -> None:
+        report = resolver._safe_discovery_diagnostic(
+            _api([dict(_PROJECT)], reject_org_scoped_list=True),
+            _ORG_ID,
+        )
+        self.assertIn("canonical_query_status=200", report)
+        self.assertIn("canonical_name_matches=1", report)
         self.assertIn("classification=EXACT_PROJECT_BRANCH_READABLE", report)
         self.assertNotIn(_PROJECT_ID, report)
         self.assertNotIn(_ORG_ID, report)
