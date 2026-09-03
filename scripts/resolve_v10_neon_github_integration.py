@@ -47,9 +47,7 @@ def _discover_canonical_project(
     organization_id: str,
 ) -> dict[str, Any]:
     safe_org_id = _org._validate_neon_org_id(organization_id)
-    rows = _project_rows(
-        api.request("GET", _canonical_query_path(safe_org_id))
-    )
+    rows = _project_rows(api.request("GET", _canonical_query_path(safe_org_id)))
     matches = [row for row in rows if row.get("name") == _base.NEON_PROJECT_NAME]
     if not matches:
         raise _base.ProvisioningStopped("NEON_CANONICAL_PROJECT_NOT_FOUND")
@@ -126,7 +124,7 @@ def _safe_discovery_diagnostic(
     canonical_matches = _STATUS_UNKNOWN
     project_status = _STATUS_SKIPPED
     branches_status = _STATUS_SKIPPED
-    configured_id_match = "NOT_APPLICABLE"
+    configured_id_match = _STATUS_UNKNOWN
     classification = "UNRESOLVED"
 
     if canonical.status == _STATUS_OK:
