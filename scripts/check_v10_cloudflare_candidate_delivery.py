@@ -293,10 +293,13 @@ def _validate_provider_readiness() -> None:
         source,
         (
             "_CLOUDFLARE_ACCOUNT_ENV",
+            "_NEON_PROJECT_ENV",
             "_ACCOUNT_ID",
             "_NEON_RESOURCE_ID",
             "CLOUDFLARE_ACCOUNT_ID",
             "NEON_ORG_ID",
+            "NEON_PROJECT_ID",
+            "if _has_value(environment, _NEON_PROJECT_ENV):",
             "INVALID",
             "_container_engine_available",
             "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS",
@@ -309,12 +312,8 @@ def _validate_provider_readiness() -> None:
     )
     _forbid_markers(
         source,
-        (
-            "shell=True",
-            "_NEON_PROJECT_ENV",
-            "NEON_PROJECT_ID",
-        ),
-        "CLOUDFLARE_CANDIDATE_PROVIDER_PROJECT_IDENTIFIER_FORBIDDEN",
+        ("shell=True",),
+        "CLOUDFLARE_CANDIDATE_PROVIDER_SHELL_FORBIDDEN",
     )
     _forbid_markers(
         source,
