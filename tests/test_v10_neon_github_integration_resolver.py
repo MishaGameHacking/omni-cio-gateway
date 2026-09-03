@@ -23,8 +23,11 @@ _PROJECT = {
 
 
 class _Api:
-    def __init__(self, projects: list[dict[str, Any]]) -> None:
-        self.projects = projects
+    def __init__(
+        self,
+        pages: dict[str | None, tuple[list[dict[str, Any]], str | None]],
+    ) -> None:
+        self.pages = pages
         self.calls: list[tuple[str, str]] = []
 
     def request(self, method: str, path: str, **kwargs: object) -> object:
@@ -33,7 +36,15 @@ class _Api:
         if method != "GET":
             raise AssertionError((method, path))
         if path.startswith("/projects?"):
-            return {"projects": [dict(project) for project in self.projects]}
+            query = parse_qs(urlsplit(path).query)
+            cursor = query.get("cursor", [None])[0]
+            projects, next_cursor = self.pages[cursor]
+            response: dict[str, object] = {
+                "projects": [dict(project) for project in projects]
+            }
+            if next_cursor is not None:
+                response["pagination"] = {"cursor": next_cursor}
+            return response
         if path == "/auth":
             return {"auth_method": "api_key_org"}
         if path == "/users/me/organizations":
@@ -48,18 +59,19 @@ class _Api:
 
 
 def _api(projects: list[dict[str, Any]]) -> org.OrgScopedNeonApi:
-    return cast(org.OrgScopedNeonApi, _Api(projects))
+    return cast(org.OrgScopedNeonApi, _Api({None: (projects, None)}))
 
 
 class NeonGithubIntegrationResolverTests(unittest.TestCase):
-    def test_canonical_query_is_read_only_and_org_scoped(self) -> None:
-        path = resolver._canonical_query_path(_ORG_ID)
+    def test_canonical_query_is_read_only_and_credential_scoped(self) -> None:
+        path = resolver._canonical_query_path()
         parsed = urlsplit(path)
         self.assertEqual(parsed.path, "/projects")
         query = parse_qs(parsed.query)
         self.assertEqual(query["limit"], [str(resolver._CANONICAL_LOOKUP_LIMIT)])
         self.assertEqual(query["search"], [base.NEON_PROJECT_NAME])
-        self.assertEqual(query["org_id"], [_ORG_ID])
+        self.assertNotIn("org_id", query)
+        self.assertNotIn(_ORG_ID, path)
         self.assertNotIn(_PROJECT_ID, path)
 
     def test_discovery_requires_one_exact_canonical_project_and_masks_id(self) -> None:
@@ -72,6 +84,51 @@ class NeonGithubIntegrationResolverTests(unittest.TestCase):
         self.assertEqual(len(raw.calls), 1)
         self.assertEqual(raw.calls[0][0], "GET")
         self.assertNotIn(_PROJECT_ID, raw.calls[0][1])
+        self.assertNotIn(_ORG_ID, raw.calls[0][1])
+
+    def test_discovery_follows_pagination_before_accepting_uniqueness(self) -> None:
+        api = cast(
+            org.OrgScopedNeonApi,
+            _Api(
+                {
+                    None: ([{"id": "other-1", "name": "other"}], "page-2"),
+                    "page-2": ([dict(_PROJECT)], None),
+                }
+            ),
+        )
+        project = resolver._discover_canonical_project(api, _ORG_ID)
+        self.assertEqual(project["id"], _PROJECT_ID)
+        raw = cast(_Api, api)
+        self.assertEqual(len(raw.calls), 2)
+        second_query = parse_qs(urlsplit(raw.calls[1][1]).query)
+        self.assertEqual(second_query["cursor"], ["page-2"])
+
+    def test_discovery_rejects_duplicate_match_on_later_page(self) -> None:
+        second = {**_PROJECT, "id": "canonical-project-456"}
+        api = cast(
+            org.OrgScopedNeonApi,
+            _Api(
+                {
+                    None: ([dict(_PROJECT)], "page-2"),
+                    "page-2": ([second], None),
+                }
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_NAME_NOT_UNIQUE"):
+            resolver._discover_canonical_project(api, _ORG_ID)
+
+    def test_discovery_rejects_repeated_pagination_cursor(self) -> None:
+        api = cast(
+            org.OrgScopedNeonApi,
+            _Api(
+                {
+                    None: ([], "repeat"),
+                    "repeat": ([], "repeat"),
+                }
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_PAGINATION_INVALID"):
+            resolver._discover_canonical_project(api, _ORG_ID)
 
     def test_discovery_fails_closed_when_canonical_project_is_missing(self) -> None:
         api = _api([])
@@ -114,6 +171,18 @@ class NeonGithubIntegrationResolverTests(unittest.TestCase):
         self.assertIn("exact_project_status=200", report)
         self.assertIn("exact_branches_status=200", report)
         self.assertIn("classification=EXACT_PROJECT_BRANCH_READABLE", report)
+        self.assertNotIn(_PROJECT_ID, report)
+        self.assertNotIn(_ORG_ID, report)
+
+    def test_safe_diagnostic_refuses_to_claim_unique_on_paginated_page(self) -> None:
+        api = cast(
+            org.OrgScopedNeonApi,
+            _Api({None: ([dict(_PROJECT)], "page-2")}),
+        )
+        report = resolver._safe_discovery_diagnostic(api, _ORG_ID)
+        self.assertIn("canonical_name_matches=INCOMPLETE", report)
+        self.assertIn("classification=UNRESOLVED", report)
+        self.assertIn("exact_project_status=SKIPPED", report)
         self.assertNotIn(_PROJECT_ID, report)
         self.assertNotIn(_ORG_ID, report)
 
