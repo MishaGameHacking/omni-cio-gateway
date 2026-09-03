@@ -301,7 +301,7 @@ def run_audit(
                 sleeper(delay)
     except AuditTransportLockError as exc:
         print(str(exc), file=sys.stderr)
-        if status not in (None, 0):
+        if status is not None and status != 0:
             print(
                 "npm audit already produced a failing result; preserving its exit status "
                 "instead of reclassifying it as a host transport-slot failure.",
