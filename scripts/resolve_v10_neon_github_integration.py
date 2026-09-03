@@ -211,7 +211,6 @@ def _safe_discovery_diagnostic(
     canonical_matches = _STATUS_UNKNOWN
     project_status = _STATUS_SKIPPED
     branches_status = _STATUS_SKIPPED
-    configured_id_match = _STATUS_UNKNOWN
     classification = "UNRESOLVED"
 
     if canonical.status == _STATUS_OK:
@@ -278,7 +277,6 @@ def _safe_discovery_diagnostic(
             f"exact_branches_status={branches_status}",
             f"canonical_query_status={canonical.status}",
             f"canonical_name_matches={canonical_matches}",
-            f"configured_id_match={configured_id_match}",
             f"classification={classification}",
         )
     )
