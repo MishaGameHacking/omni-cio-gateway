@@ -70,14 +70,11 @@ jobs:
 
       - name: Probe Neon canonical-project read authority fail-closed
         id: neon_authority
-        shell: bash
+        shell: cmd
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-        run: |
-          set -euo pipefail
-          python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
-          echo "CLOUDFLARE_CF_C_PROVIDER_READINESS=READY"
+        run: python -m scripts.resolve_v10_neon_github_integration probe
 
       - name: Diagnose Neon authority failure without identifiers
         if: ${{ failure() && steps.neon_authority.outcome == 'failure' }}
@@ -85,7 +82,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-        run: python -m scripts.probe_v10_neon_authority_diagnostics
+        run: python -m scripts.resolve_v10_neon_github_integration diagnose
 
       - name: Clean self-hosted workspace
         if: always()
