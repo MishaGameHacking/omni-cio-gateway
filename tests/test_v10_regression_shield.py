@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 import subprocess
 import tempfile
@@ -230,6 +231,7 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             backoff_seconds=2.0,
             runner=runner,
             sleeper=delays.append,
+            lock_factory=nullcontext,
         )
 
         self.assertEqual(status, 0)
@@ -255,6 +257,7 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             attempts=3,
             runner=runner,
             sleeper=lambda _delay: self.fail("security findings must not sleep/retry"),
+            lock_factory=nullcontext,
         )
 
         self.assertEqual(status, 1)
@@ -280,6 +283,7 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             backoff_seconds=1.0,
             runner=runner,
             sleeper=delays.append,
+            lock_factory=nullcontext,
         )
 
         self.assertEqual(status, 1)
