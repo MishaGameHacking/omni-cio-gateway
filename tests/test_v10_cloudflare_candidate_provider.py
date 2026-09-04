@@ -93,12 +93,11 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
         ):
             guard._validate_candidate_secret_scope(bad)
 
-    def test_candidate_guard_requires_provider_managed_project_binding(self) -> None:
+    def test_candidate_guard_requires_protected_provider_identity_custody(self) -> None:
         protected_custody = "\n".join(
             (
                 "secrets.CLOUDFLARE_ACCOUNT_ID",
                 "secrets.NEON_ORG_ID",
-                "vars.NEON_PROJECT_ID",
             )
         )
         guard._validate_provider_identity_custody(protected_custody)

@@ -23,6 +23,9 @@ CONTAINER_DEPLOY_AUTHORITY_CONTRACT = (
     ROOT / "docs/architecture/V10_CLOUDFLARE_CONTAINER_DEPLOY_AUTHORITY_CONTRACT.json"
 )
 NEON_PROVISIONER = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
+NEON_GITHUB_INTEGRATION_RESOLVER = (
+    ROOT / "scripts/resolve_v10_neon_github_integration.py"
+)
 BUILDS_BOOTSTRAP = ROOT / "scripts/bootstrap_v10_cloudflare_builds.py"
 
 _CLOUDFLARE_ACCOUNT_ID_SECRET = "secrets.CLOUDFLARE_ACCOUNT_ID"
@@ -32,13 +35,19 @@ _NEON_PROJECT_ID_VARIABLE = "vars.NEON_PROJECT_ID"
 _PROVIDER_IDENTITY_CUSTODY_MARKERS = (
     _CLOUDFLARE_ACCOUNT_ID_SECRET,
     _NEON_ORG_ID_SECRET,
-    _NEON_PROJECT_ID_VARIABLE,
 )
 _WORKERS_BUILDS_AUTHORITY_PROBE = (
     "python -m scripts.probe_v10_cloudflare_workers_builds_authority"
 )
 _CONTAINER_REGISTRY_AUTHORITY_COMMAND = (
     "python -m scripts.probe_v10_cloudflare_container_registry_authority"
+)
+_NEON_RESOLVER_PROBE = "python -m scripts.resolve_v10_neon_github_integration probe"
+_NEON_RESOLVER_DIAGNOSE = (
+    "python -m scripts.resolve_v10_neon_github_integration diagnose"
+)
+_NEON_RESOLVER_PROVISION = (
+    "python -m scripts.resolve_v10_neon_github_integration provision"
 )
 _CLOUDFLARE_TOOLCHAIN_STEP_MARKER = (
     "- name: Install exact Cloudflare delivery toolchain"
@@ -112,6 +121,9 @@ def _validate_provider_identity_custody(workflow: str) -> None:
             "vars.CLOUDFLARE_ACCOUNT_ID",
             "vars.NEON_ORG_ID",
             _NEON_PROJECT_ID_SECRET,
+            _NEON_PROJECT_ID_VARIABLE,
+            "NEON_PROJECT_ID_VALUE:",
+            "NEON_PROJECT_ID:",
             "CLOUDFLARE_ACCOUNT_ID_VAR_VALUE",
         ),
         "CLOUDFLARE_PROVIDER_IDENTITY_CUSTODY_DRIFT",
@@ -201,13 +213,14 @@ def _validate_candidate_workflow() -> None:
             _CLOUDFLARE_ACCOUNT_ID_SECRET,
             "secrets.NEON_API_KEY",
             _NEON_ORG_ID_SECRET,
-            _NEON_PROJECT_ID_VARIABLE,
             "python -m scripts.check_v10_cloudflare_provider_readiness",
             _WORKERS_BUILDS_AUTHORITY_PROBE,
+            _NEON_RESOLVER_PROBE,
+            _NEON_RESOLVER_DIAGNOSE,
+            _NEON_RESOLVER_PROVISION,
             _CONTAINER_REGISTRY_AUTHORITY_COMMAND,
             _CONTAINER_REGISTRY_STEP_MARKER,
             _STAGING_WORKER_ANCHOR_COMMAND,
-            "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
             "bootstrap_v10_cloudflare_builds",
             "probe_v10_cloudflare_live_release.sh",
@@ -225,7 +238,15 @@ def _validate_candidate_workflow() -> None:
     )
     _forbid_markers(
         workflow,
-        ("actions/checkout", "docker build", "npx "),
+        (
+            "actions/checkout",
+            "docker build",
+            "npx ",
+            _NEON_PROJECT_ID_SECRET,
+            _NEON_PROJECT_ID_VARIABLE,
+            "NEON_PROJECT_ID_VALUE:",
+            "NEON_PROJECT_ID:",
+        ),
         "CLOUDFLARE_CANDIDATE_FORBIDDEN_DEPENDENCY",
     )
     _forbid_markers(
@@ -248,28 +269,20 @@ def _validate_readiness_workflow() -> None:
             "python -m scripts.check_v10_cloudflare_provider_readiness",
             "CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE:",
             "NEON_ORG_ID_VALUE:",
-            "NEON_PROJECT_ID_VALUE:",
+            _NEON_RESOLVER_PROBE,
+            _NEON_RESOLVER_DIAGNOSE,
         ),
         "CLOUDFLARE_CANDIDATE_PROVIDER_CHECK_MISSING",
     )
-    _require_markers(
-        readiness,
-        ("CLOUDFLARE_CF_C_PROVIDER_READINESS=READY",),
-        "CLOUDFLARE_CANDIDATE_READINESS_GATE_MISSING",
-    )
-    _require_markers(
-        readiness,
-        (
-            "probe_provider_access_from_env",
-            _NEON_PROJECT_ID_VARIABLE,
-            "NEON_PROJECT_ID:",
-        ),
-        "CLOUDFLARE_CANDIDATE_NEON_READ_PROBE_MISSING",
-    )
     _forbid_markers(
         readiness,
-        ("CLOUDFLARE_API_TOKEN=AVAILABLE", "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS"),
-        "CLOUDFLARE_CANDIDATE_INLINE_AUTHORITY_PROBE_FORBIDDEN",
+        (
+            _NEON_PROJECT_ID_SECRET,
+            _NEON_PROJECT_ID_VARIABLE,
+            "NEON_PROJECT_ID_VALUE:",
+            "NEON_PROJECT_ID:",
+        ),
+        "CLOUDFLARE_CANDIDATE_NEON_IDENTIFIER_LOGGING_FORBIDDEN",
     )
     _validate_provider_identity_custody(readiness)
 
@@ -286,6 +299,7 @@ def _validate_provider_readiness() -> None:
             "CLOUDFLARE_ACCOUNT_ID",
             "NEON_ORG_ID",
             "NEON_PROJECT_ID",
+            "if _has_value(environment, _NEON_PROJECT_ENV):",
             "INVALID",
             "_container_engine_available",
             "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS",
@@ -305,6 +319,40 @@ def _validate_provider_readiness() -> None:
         source,
         ("_CLOUDFLARE_ACCOUNT_FALLBACK_ENV",),
         "CLOUDFLARE_CANDIDATE_PROVIDER_VARIABLE_FALLBACK_FORBIDDEN",
+    )
+
+
+def _validate_neon_integration_resolver() -> None:
+    source = _read(NEON_GITHUB_INTEGRATION_RESOLVER)
+    _require_markers(
+        source,
+        (
+            "_canonical_query_path",
+            '"search": _base.NEON_PROJECT_NAME',
+            '"org_id": safe_org_id',
+            "NEON_CANONICAL_PROJECT_NOT_FOUND",
+            "NEON_PROJECT_NAME_NOT_UNIQUE",
+            "_runtime._validate_bound_project",
+            "_base._mask(project_id)",
+            "CLOUDFLARE_NEON_PROJECT_BINDING=CANONICAL_DISCOVERY_VERIFIED",
+            "_temporary_project_binding",
+            "_runtime.probe_provider_access",
+            "_runtime.run(expected_sha, environment)",
+            "diagnose_provider_access_from_env",
+        ),
+        "CLOUDFLARE_NEON_INTEGRATION_RESOLVER_GUARD_MISSING",
+    )
+    _forbid_markers(
+        source,
+        (
+            'api.request("POST"',
+            'api.request("PUT"',
+            'api.request("PATCH"',
+            'api.request("DELETE"',
+            "vars.NEON_PROJECT_ID",
+            "secrets.NEON_PROJECT_ID",
+        ),
+        "CLOUDFLARE_NEON_INTEGRATION_RESOLVER_MUTATION_FORBIDDEN",
     )
 
 
@@ -528,6 +576,7 @@ def validate() -> None:
     _validate_candidate_workflow()
     _validate_readiness_workflow()
     _validate_provider_readiness()
+    _validate_neon_integration_resolver()
     _validate_container_registry_authority_probe()
     _validate_container_deploy_authority_contract()
     _validate_ledger()

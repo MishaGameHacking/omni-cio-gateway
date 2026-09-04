@@ -64,7 +64,7 @@ def check_provider_readiness(
     environment = os.environ if environ is None else environ
     destination = sys.stdout if output is None else output
 
-    states = (
+    states = [
         (
             "CLOUDFLARE_API_TOKEN",
             "AVAILABLE"
@@ -91,15 +91,18 @@ def check_provider_readiness(
                 lambda value: _NEON_RESOURCE_ID.fullmatch(value) is not None,
             ),
         ),
-        (
-            "NEON_PROJECT_ID",
-            _valid_value(
-                environment,
-                _NEON_PROJECT_ENV,
-                lambda value: _NEON_RESOURCE_ID.fullmatch(value) is not None,
-            ),
-        ),
-    )
+    ]
+    if _has_value(environment, _NEON_PROJECT_ENV):
+        states.append(
+            (
+                "NEON_PROJECT_ID",
+                _valid_value(
+                    environment,
+                    _NEON_PROJECT_ENV,
+                    lambda value: _NEON_RESOURCE_ID.fullmatch(value) is not None,
+                ),
+            )
+        )
     for label, state in states:
         _emit(destination, label, state)
 
