@@ -16,14 +16,18 @@ _PROVIDER_BLOCKED = 78
 
 
 def _runtime_secret_present(api: builds.CloudflareApi) -> bool:
-    rows = builds._list(
-        api.request(
+    try:
+        response = api.request(
             "GET",
             f"/accounts/{api.account_id}/workers/scripts/"
             f"{quote(builds._STAGING_WORKER, safe='')}/secrets",
-        ),
-        "CLOUDFLARE_STAGING_SECRETS_INVALID",
-    )
+        )
+    except builds.BootstrapStopped as exc:
+        if exc.status == 404:
+            return False
+        raise
+
+    rows = builds._list(response, "CLOUDFLARE_STAGING_SECRETS_INVALID")
     matches = [
         row
         for row in rows
