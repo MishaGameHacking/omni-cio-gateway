@@ -352,20 +352,52 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
         conditional = (
             "if: ${{ failure() && steps.neon_authority.outcome == 'failure' }}"
         )
+        diagnostic = "python -m scripts.probe_v10_neon_authority_diagnostics"
+        production_name = "v10-cloudflare-production-release.yml"
         for path in WORKFLOWS:
             with self.subTest(path=path.name):
                 source = path.read_text(encoding="utf-8")
+                if path.name == production_name:
+                    self.assertEqual(source.count("id: neon_authority"), 0)
+                    self.assertEqual(source.count(conditional), 0)
+                    self.assertEqual(source.count(diagnostic), 2)
+                    self.assertEqual(
+                        source.count('if [ "$neon_rc" -ne 0 ]; then'),
+                        2,
+                    )
+                    diagnostic_indexes = [
+                        index
+                        for index in range(len(source))
+                        if source.startswith(diagnostic, index)
+                    ]
+                    provision = (
+                        "python -m scripts.provision_v10_cloudflare_neon_runtime"
+                    )
+                    provision_indexes = [
+                        index
+                        for index in range(len(source))
+                        if source.startswith(provision, index)
+                    ]
+                    self.assertEqual(len(provision_indexes), 2)
+                    for diagnostic_index, provision_index in zip(
+                        diagnostic_indexes,
+                        provision_indexes,
+                        strict=True,
+                    ):
+                        branch_start = source.rfind(
+                            'if [ "$neon_rc" -ne 0 ]; then',
+                            0,
+                            diagnostic_index,
+                        )
+                        self.assertGreaterEqual(branch_start, 0)
+                        self.assertLess(branch_start, diagnostic_index)
+                        self.assertLess(diagnostic_index, provision_index)
+                    continue
+
                 self.assertEqual(source.count("id: neon_authority"), 1)
                 self.assertEqual(source.count(conditional), 1)
-                self.assertEqual(
-                    source.count(
-                        "python -m scripts.probe_v10_neon_authority_diagnostics"
-                    ),
-                    1,
-                )
-                diagnostic_index = source.index(
-                    "python -m scripts.probe_v10_neon_authority_diagnostics"
-                )
+                self.assertEqual(source.count(diagnostic), 1)
+                diagnostic_index = source.index(diagnostic)
                 mutation_markers = (
                     "python -m scripts.provision_v10_cloudflare_neon_runtime",
                     "python -m scripts.run_v10_cloudflare_gated_candidate",
