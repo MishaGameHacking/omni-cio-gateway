@@ -7,6 +7,9 @@ import sys
 from typing import Iterator
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
+from scripts.probe_v10_cloudflare_staging_runtime_secret import (
+    _runtime_secret_present,
+)
 from scripts.quarantine_v10_cloudflare_staging_trigger import (
     quarantine_staging_autobuild,
 )
@@ -59,6 +62,19 @@ def _candidate_source_branch(branch: str) -> Iterator[None]:
         yield
     finally:
         builds._BRANCH = previous
+
+
+def _sync_runtime_secret(api: builds.CloudflareApi) -> None:
+    candidate = builds._staging_dsn_file()
+    if candidate.is_symlink():
+        raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_PATH_INVALID")
+    if candidate.exists():
+        builds._put_runtime_secret(api)
+        return
+    if _runtime_secret_present(api):
+        print("CLOUDFLARE_STAGING_DATABASE_SECRET=REUSED")
+        return
+    raise builds.BootstrapStopped("CLOUDFLARE_STAGING_DATABASE_SECRET_MISSING")
 
 
 def _create_gated_trigger(
@@ -136,7 +152,7 @@ def _prepare_candidate(api: builds.CloudflareApi, sha: str) -> tuple[str, str]:
     connection_uuid = builds._ensure_repo_connection(api)
     build_token_uuid = builds._ensure_build_token(api, token_id)
     worker_tag = builds._staging_worker_tag(api)
-    builds._put_runtime_secret(api)
+    _sync_runtime_secret(api)
     trigger_uuid = _create_gated_trigger(
         api,
         worker_tag=worker_tag,
