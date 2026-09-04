@@ -47,9 +47,7 @@ def _project_page(payload: object) -> tuple[list[dict[str, Any]], str | None]:
         body.get("projects"),
         "NEON_PROJECTS_INVALID",
     )
-    rows = [
-        _base._json_object(item, "NEON_PROJECT_INVALID") for item in raw_projects
-    ]
+    rows = [_base._json_object(item, "NEON_PROJECT_INVALID") for item in raw_projects]
     raw_pagination = body.get("pagination")
     if raw_pagination is None:
         return rows, None
