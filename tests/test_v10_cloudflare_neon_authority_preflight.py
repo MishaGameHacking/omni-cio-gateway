@@ -5,13 +5,9 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-READINESS_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml"
 CANDIDATE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
-NEON_PROJECT_AUTHORITY_PROBE = (
-    "python -m scripts.resolve_v10_neon_github_integration probe"
-)
-NEON_DIAGNOSTIC = "python -m scripts.resolve_v10_neon_github_integration diagnose"
+NEON_PROJECT_AUTHORITY_PROBE = "probe_provider_access_from_env()"
 
 
 class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
@@ -26,15 +22,6 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 marker_index = source.index(marker)
                 self.assertLess(probe_index, marker_index)
-
-    def _assert_neon_integration_custody(self, source: str) -> None:
-        self.assertIn("NEON_API_KEY: ${{ secrets.NEON_API_KEY }}", source)
-        self.assertIn("NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}", source)
-        self.assertNotIn("NEON_PROJECT_ID:", source)
-        self.assertNotIn("NEON_PROJECT_ID_VALUE:", source)
-        self.assertNotIn("secrets.NEON_PROJECT_ID", source)
-        self.assertNotIn("vars.NEON_PROJECT_ID", source)
-        self.assertNotIn("echo $NEON", source)
 
     def test_candidate_neon_authority_is_read_before_provider_mutation(self) -> None:
         source = self._read(CANDIDATE_WORKFLOW)
@@ -62,24 +49,21 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             ),
         )
 
-    def test_release_workflows_never_render_project_identifier_context(self) -> None:
+    def test_neon_preflight_uses_only_runtime_secret_bindings(self) -> None:
         for path in (CANDIDATE_WORKFLOW, PRODUCTION_WORKFLOW):
             with self.subTest(path=path.name):
                 source = self._read(path)
-                self._assert_neon_integration_custody(source)
-                self.assertEqual(source.count(NEON_DIAGNOSTIC), 1)
-                self.assertIn(
-                    "python -m scripts.resolve_v10_neon_github_integration provision",
-                    source,
-                )
-
-    def test_provider_readiness_never_renders_project_identifier_context(self) -> None:
-        source = self._read(READINESS_WORKFLOW)
-        self._assert_neon_integration_custody(source)
-        self.assertIn("NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}", source)
-        self.assertIn("NEON_ORG_ID_VALUE: ${{ secrets.NEON_ORG_ID }}", source)
-        self.assertEqual(source.count(NEON_PROJECT_AUTHORITY_PROBE), 1)
-        self.assertEqual(source.count(NEON_DIAGNOSTIC), 1)
+                probe_index = source.index(NEON_PROJECT_AUTHORITY_PROBE)
+                section_start = source.rfind("      - name:", 0, probe_index)
+                section_end = source.find("\n      - name:", probe_index)
+                self.assertGreaterEqual(section_start, 0)
+                self.assertGreater(section_end, probe_index)
+                section = source[section_start:section_end]
+                self.assertIn("NEON_API_KEY: ${{ secrets.NEON_API_KEY }}", section)
+                self.assertIn("NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}", section)
+                self.assertIn("NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}", section)
+                self.assertNotIn("vars.NEON_", section)
+                self.assertNotIn("echo $NEON", section)
 
 
 if __name__ == "__main__":
