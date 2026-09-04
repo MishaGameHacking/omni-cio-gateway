@@ -43,7 +43,9 @@ def _cloudflare_states(environ: Mapping[str, str]) -> tuple[tuple[str, str], ...
     return (
         (
             "CLOUDFLARE_API_TOKEN",
-            "AVAILABLE" if _has_value(environ, _CLOUDFLARE_AUTHORITY_ENV) else "MISSING",
+            "AVAILABLE"
+            if _has_value(environ, _CLOUDFLARE_AUTHORITY_ENV)
+            else "MISSING",
         ),
         (
             "CLOUDFLARE_ACCOUNT_ID",
