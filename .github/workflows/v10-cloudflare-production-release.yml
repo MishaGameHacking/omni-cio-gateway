@@ -116,26 +116,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
 
-      - name: Verify Neon exact-project read authority before candidate or production mutation
-        id: neon_authority
-        shell: bash
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
-        run: |
-          set -euo pipefail
-          python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
-
-      - name: Diagnose Neon authority failure without identifiers
-        if: ${{ failure() && steps.neon_authority.outcome == 'failure' }}
-        shell: cmd
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
-        run: python -m scripts.probe_v10_neon_authority_diagnostics
-
       - name: Install exact Cloudflare delivery toolchain
         shell: bash
         run: |
@@ -172,10 +152,33 @@ jobs:
           set -euo pipefail
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
           rm -f "$dsn_file"
-          python -m scripts.provision_v10_cloudflare_neon_runtime \
-            --expected-sha "$EXPECTED_HEAD" \
-            --environment staging
-          test -s "$dsn_file"
+
+          set +e
+          python -m scripts.probe_v10_cloudflare_staging_runtime_secret
+          secret_rc=$?
+          set -e
+          case "$secret_rc" in
+            0)
+              echo "CLOUDFLARE_STAGING_DATABASE_ROLE=UNCHANGED"
+              ;;
+            10)
+              set +e
+              python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
+              neon_rc=$?
+              set -e
+              if [ "$neon_rc" -ne 0 ]; then
+                python -m scripts.probe_v10_neon_authority_diagnostics || true
+                exit "$neon_rc"
+              fi
+              python -m scripts.provision_v10_cloudflare_neon_runtime \
+                --expected-sha "$EXPECTED_HEAD" \
+                --environment staging
+              test -s "$dsn_file"
+              ;;
+            *)
+              exit "$secret_rc"
+              ;;
+          esac
 
           set +e
           python -m scripts.probe_v10_cloudflare_staging_worker_anchor --environment staging
@@ -269,6 +272,14 @@ jobs:
               echo "CLOUDFLARE_PRODUCTION_DATABASE_ROLE=UNCHANGED"
               ;;
             10)
+              set +e
+              python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"
+              neon_rc=$?
+              set -e
+              if [ "$neon_rc" -ne 0 ]; then
+                python -m scripts.probe_v10_neon_authority_diagnostics || true
+                exit "$neon_rc"
+              fi
               python -m scripts.provision_v10_cloudflare_neon_runtime \
                 --expected-sha "$EXPECTED_HEAD" \
                 --environment production
