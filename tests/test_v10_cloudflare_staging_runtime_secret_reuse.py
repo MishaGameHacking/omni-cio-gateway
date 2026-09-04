@@ -25,6 +25,8 @@ class _Api:
     def request(self, method: str, path: str, **kwargs: Any) -> object:
         del kwargs
         self.requests.append((method, path))
+        if isinstance(self.result, Exception):
+            raise self.result
         return self.result
 
 
@@ -66,6 +68,50 @@ class CloudflareStagingRuntimeSecretReuseTests(unittest.TestCase):
                 output=io.StringIO(),
             )
         self.assertEqual(rc, 10)
+
+    def test_probe_requires_bootstrap_when_staging_worker_is_absent(self) -> None:
+        api = _Api(
+            builds.BootstrapStopped("CLOUDFLARE_API_HTTP_ERROR", status=404)
+        )
+        output = io.StringIO()
+        with (
+            patch.object(builds, "CloudflareApi", return_value=api),
+            patch.object(builds, "_mask"),
+        ):
+            rc = probe.probe_runtime_secret(
+                {
+                    "CLOUDFLARE_API_TOKEN": "synthetic-token",
+                    "CLOUDFLARE_ACCOUNT_ID": _ACCOUNT_ID,
+                },
+                output=output,
+            )
+        self.assertEqual(rc, 10)
+        self.assertEqual(
+            output.getvalue().strip(),
+            "CLOUDFLARE_STAGING_DATABASE_SECRET=BOOTSTRAP_REQUIRED",
+        )
+
+    def test_probe_keeps_cloudflare_authority_failure_blocking(self) -> None:
+        api = _Api(
+            builds.BootstrapStopped(
+                "CLOUDFLARE_API_TOKEN_INSUFFICIENT",
+                status=403,
+            )
+        )
+        output = io.StringIO()
+        with (
+            patch.object(builds, "CloudflareApi", return_value=api),
+            patch.object(builds, "_mask"),
+        ):
+            rc = probe.probe_runtime_secret(
+                {
+                    "CLOUDFLARE_API_TOKEN": "synthetic-token",
+                    "CLOUDFLARE_ACCOUNT_ID": _ACCOUNT_ID,
+                },
+                output=output,
+            )
+        self.assertEqual(rc, 78)
+        self.assertIn("status=403", output.getvalue())
 
     def test_probe_rejects_binding_type_drift(self) -> None:
         api = _Api([{"name": "OMNI_V10_POSTGRES_DSN", "type": "plain_text"}])
