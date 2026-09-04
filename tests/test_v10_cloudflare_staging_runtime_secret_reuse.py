@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
-import io
 import unittest
 from unittest.mock import patch
 
@@ -44,7 +44,10 @@ class CloudflareStagingRuntimeSecretReuseTests(unittest.TestCase):
                 output=output,
             )
         self.assertEqual(rc, 0)
-        self.assertEqual(output.getvalue().strip(), "CLOUDFLARE_STAGING_DATABASE_SECRET=REUSED")
+        self.assertEqual(
+            output.getvalue().strip(),
+            "CLOUDFLARE_STAGING_DATABASE_SECRET=REUSED",
+        )
         self.assertEqual(len(api.requests), 1)
         self.assertEqual(api.requests[0][0], "GET")
         self.assertTrue(api.requests[0][1].endswith("/secrets"))
