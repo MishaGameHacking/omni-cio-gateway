@@ -410,13 +410,15 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
             ):
                 runner._harden_windows_private_file(target)
 
-    def test_scanner_safe_non_secret_constant_names(self) -> None:
+    def test_scanner_safe_constant_names(self) -> None:
         function_source = FUNCTION_SOURCE.read_text(encoding="utf-8")
         test_source = Path(__file__).read_text(encoding="utf-8")
+        legacy_runtime_name = "RUNTIME_" + "PASS" + "WORD_DOMAIN"
+        legacy_test_name = "_TEST_" + "PASS" + "WORD_MARKER"
         self.assertIn("RUNTIME_CREDENTIAL_DERIVATION_DOMAIN", function_source)
-        self.assertNotIn("RUNTIME_PASSWORD_DOMAIN", function_source)
+        self.assertNotIn(legacy_runtime_name, function_source)
         self.assertIn("_TEST_CREDENTIAL_MARKER", test_source)
-        self.assertNotIn("_TEST_PASSWORD_MARKER", test_source)
+        self.assertNotIn(legacy_test_name, test_source)
         forbidden_pragma = "pragma: allowlist " + "secret"
         self.assertNotIn(forbidden_pragma, function_source)
         self.assertNotIn(forbidden_pragma, test_source)
