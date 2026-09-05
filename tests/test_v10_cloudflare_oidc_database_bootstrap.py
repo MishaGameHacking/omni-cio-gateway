@@ -169,6 +169,22 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "BOOTSTRAP_DSN_INVALID"):
             proxy._runtime_dsn(insecure, EXPECTED_SHA)
 
+    def test_json_decode_helpers_reject_invalid_utf8_and_invalid_json(self) -> None:
+        for payload in (b"\xff", b"{"):
+            with self.subTest(payload=payload):
+                with self.assertRaises(proxy._BootstrapRouteStopped) as proxy_error:
+                    proxy._validated_provider_runtime_dsn(payload, EXPECTED_SHA)
+                self.assertEqual(
+                    proxy_error.exception.code,
+                    "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_INVALID",
+                )
+                with self.assertRaises(runner.BootstrapStopped) as runner_error:
+                    runner._json_object(payload, "SYNTHETIC_INVALID_JSON")
+                self.assertEqual(
+                    runner_error.exception.code,
+                    "SYNTHETIC_INVALID_JSON",
+                )
+
     def test_route_is_staging_only_and_forwards_bearer_without_logging_it(self) -> None:
         production = FastAPI()
         proxy.install_cf_d_database_bootstrap_route(

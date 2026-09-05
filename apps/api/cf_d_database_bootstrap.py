@@ -245,7 +245,7 @@ def _fetch_bootstrap_response(
 def _validated_provider_runtime_dsn(content: bytes, release_sha: str) -> str:
     try:
         payload = json.loads(content.decode("utf-8"))
-    except (UnicodeError, ValueError) as exc:
+    except ValueError as exc:
         raise _BootstrapRouteStopped(
             "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_INVALID"
         ) from exc

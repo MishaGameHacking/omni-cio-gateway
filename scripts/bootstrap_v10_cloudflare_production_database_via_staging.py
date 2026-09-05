@@ -190,7 +190,7 @@ def _read_limited(response: Any, limit: int, code: str) -> bytes:
 def _json_object(data: bytes, code: str) -> dict[str, Any]:
     try:
         value = json.loads(data.decode("utf-8"))
-    except (UnicodeError, ValueError) as exc:
+    except ValueError as exc:
         raise BootstrapStopped(code) from exc
     if not isinstance(value, dict):
         raise BootstrapStopped(code)
