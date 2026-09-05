@@ -63,19 +63,26 @@ function hardenedJson(payload, status = 200) {
   });
 }
 
-async function proxyCfDNeonBootstrap(request) {
+async function proxyCfDNeonBootstrap(request, env) {
   let providerRequest;
   try {
-    providerRequest = prepareCfDNeonBootstrapRequest(request);
+    providerRequest = await prepareCfDNeonBootstrapRequest(
+      request,
+      env,
+      SOURCE_SHA,
+    );
   } catch (error) {
-    const code =
+    const requestRejected =
       error instanceof Error &&
-      /^(CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED|CLOUDFLARE_CF_D_NEON_TARGET_INVALID)$/.test(
-        error.message,
-      )
-        ? error.message
-        : "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED";
-    return hardenedJson({ detail: code }, 403);
+      error.message === "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED";
+    return hardenedJson(
+      {
+        detail: requestRejected
+          ? "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED"
+          : "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_UNAVAILABLE",
+      },
+      requestRejected ? 403 : 502,
+    );
   }
   return fetch(providerRequest);
 }

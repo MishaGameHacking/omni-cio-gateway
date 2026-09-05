@@ -17,119 +17,135 @@ activation, broker write, Real execution or any new Work Package.
 Exact-main production release run `33956589149` reached the production database
 bootstrap boundary twice while preserving fail-closed release sequencing.
 
-The fresh second attempt completed all of the following before the failure:
+The fresh second attempt completed the exact-main post-merge gate, Cloudflare provider
+and Workers Builds authority checks, pinned delivery/control-plane toolchain, Containers
+registry authority, isolated staging Worker + Container deployment, staging release/health
+acceptance, canonical public-domain configuration validation and production Worker anchor
+reuse before stopping at the one-time production database bootstrap boundary.
 
-- exact-main post-merge workflow gate;
-- Cloudflare provider and Workers Builds authority checks;
-- exact pinned delivery/control-plane toolchain installation;
-- Containers registry authority;
-- exact-main isolated staging Worker + Container deployment;
-- staging `/api/v10/release` and `/healthz` acceptance;
-- canonical public-domain configuration validation;
-- production Worker anchor reuse.
-
-Production still had no accepted runtime database binding, so the one-time OIDC
-bootstrap path was required. The runner stopped at
-`CLOUDFLARE_CF_D_STAGING_BOOTSTRAP_FAILED`; all production promotion, Custom Domain and
-live-acceptance steps remained skipped, and cleanup/quarantine succeeded.
+Production had no accepted runtime database binding, so the OIDC bootstrap path was
+required. The runner stopped at `CLOUDFLARE_CF_D_STAGING_BOOTSTRAP_FAILED`; production
+promotion, Custom Domain and live acceptance remained skipped, and cleanup/quarantine
+succeeded.
 
 The source-controlled Neon Function was independently compared with the active provider
-deployment. Provider drift was found: the active deployment predated the accepted OIDC
-source. The exact accepted function source was redeployed through the connected Neon
-control plane without handling or exposing a provider secret. A new release attempt
-still failed at the same staging bootstrap boundary.
+deployment. Provider drift was found and the exact accepted Function source was redeployed
+through the connected Neon control plane without handling or exposing a provider secret.
+A new release attempt still failed at the same boundary. Neon Function telemetry for that
+failure window contained no invocation, localizing the immediate failure before Function
+execution to staging Container -> Neon Function transport.
 
-Neon function telemetry for the second failure window contained no invocation at the
-bootstrap timestamp. That rules out an OIDC-claim/database-convergence rejection inside
-the corrected Function as the immediate failure and localizes the remaining defect to
-the staging Container -> Neon Function transport boundary before Function invocation.
-
-## Root cause class
+## Initial root cause class
 
 `CF_D_CONTAINER_DIRECT_NEON_FUNCTION_EGRESS_COUPLING`
 
 The staging bootstrap proxy performed a direct public HTTPS request from the backend
-Container to a runtime-derived Neon Function origin. Ordinary staging product health did
-not exercise that egress path, and deterministic tests replaced `httpx.Client` with an
-in-process double. Therefore exact-main staging health could be GREEN while the only
+Container to a runtime-derived Neon Function origin. Ordinary staging health did not
+exercise that egress path, and deterministic tests replaced `httpx.Client` with an
+in-process double. Exact-main staging health could therefore be GREEN while the only
 first-production-bootstrap egress path remained unproved.
 
 This is not solved by requesting another long-lived secret, reintroducing Neon management
 API authority, hardcoding project/branch identifiers, weakening OIDC validation, widening
-network access, or treating a transport failure as success.
+network access or treating a transport failure as success.
 
-## Coherent correction
+## First bridge correction and review learning
 
-The failing block is hardened end-to-end rather than patching a single caller:
+The first PR #450 correction moved the failed public egress through Cloudflare Containers
+`outboundByHost`: the staging backend called one fixed same-machine virtual hostname and
+the Worker upgraded that call to HTTPS. Independent Files-changed review correctly found
+that the first regression only searched source strings, so the egress policy was extracted
+into `cloudflare/src/cf-d-neon-bootstrap-egress.js` and executable Node positive/negative
+tests were added to the normal product Web test command.
 
-1. `apps/api/cf_d_database_bootstrap.py` keeps deriving the exact Neon Function origin
-   from the live staging PostgreSQL branch metadata and endpoint cell, but sends the
-   request to one fixed internal virtual egress hostname.
-2. `cloudflare/src/index.js` exports `ContainerProxy` and maps only that virtual hostname
-   through `Backend.outboundByHost`, using the supported Cloudflare Containers outbound
-   interception path.
-3. `cloudflare/src/cf-d-neon-bootstrap-egress.js` owns the executable trusted-Worker
-   egress policy: `POST` only, bounded exact HTTPS Neon Function target in the Frankfurt
-   cell with the dedicated `cfdprodbootstrap` suffix, no userinfo/non-default port/path/
-   query/fragment, internal target/Host header stripping and manual redirect policy.
-4. The OIDC Bearer assertion remains short-lived and passes through only for the one
-   bootstrap call. No Neon API key, project ID, organization ID or committed DSN is added.
-5. Existing product internet behavior is not globally disabled or broadened. The change
-   only supplies the missing deterministic bridge for the dedicated bootstrap hostname.
-6. The Python integration regression proves the staging FastAPI producer hands the
-   runtime-derived Function origin to the fixed Container virtual host.
-7. `apps/web/tests/cloudflare_cf_d_bootstrap_egress.test.mjs` executes the real extracted
-   Worker policy under Node and proves valid canonicalization plus negative method,
-   virtual-host, scheme, port, path, query, arbitrary-host, wrong-region, wrong-function,
-   userinfo and missing-target cases. It also proves the internal target and Host headers
-   are absent from the prepared provider request and the request body/authorization are
-   preserved.
-8. The existing product Web `node --test tests/*.test.ts tests/*.test.mjs` command makes
-   that executable regression part of the normal frontend verification lanes without a
-   new dependency or separate test runner.
+The executable-policy review rule is retained: a material egress allowlist or authority
+policy requires behavioral positive/negative tests in addition to source/governance
+guards.
 
-## Review correction batch
+## Exact-head security-analysis evidence
 
-PR #450 parent verification head `8b5b63f690e7a8f0ace4e114b2f2c8975d090b10`
-completed the repository CI batch successfully, but independent Files-changed review
-found that the first Worker security regression asserted source strings rather than
-executing the validation behavior.
+Fresh verification head `61deb599c5fd7f68ca9c116e351476dd2efec833` completed the
+repository-owned gates, but SonarQube Cloud reported **Security Rating on New Code = B**
+where A is required and exposed two annotations through the check summary. The available
+connector does not expose the private issue payload, so this ledger does not invent their
+text.
 
-That review finding is valid. String-presence tests can survive a comparison inversion or
-other semantic regression. The correction therefore extracted the egress policy into a
-Worker-compatible pure module and added executable Node tests that call the actual policy
-functions. The Python guard now also verifies that the executable `.test.mjs` file is
-covered by the existing product Web test glob. All prior exact-head evidence is invalid
-for final acceptance after this correction batch; the new head requires a fresh complete
-verification cycle.
+A first coherent security-hygiene correction removed fixed synthetic Bearer and DSN
+credential material from the new tests. Head
+`86cb38f0846943b91321925fe92a669df7a0b9ed` then completed all 13 repository GitHub
+Actions workflows `success`, while SonarQube Cloud still reported the same Security Rating
+B with two annotations. That disproves fixed synthetic credential material as the complete
+root cause.
 
-## Exact-head security-analysis correction
+The remaining new-code architecture also exposed a real authority defect independent of
+the unavailable annotation text: the Container supplied a target header that could choose
+any URL matching the broad Frankfurt `cfdprodbootstrap` branch pattern. A compromised
+Container could therefore choose a different same-pattern Neon branch. Strict hostname
+syntax reduced SSRF surface but did not make the Container an appropriate provider
+selection authority.
 
-Fresh verification of exact head `61deb599c5fd7f68ca9c116e351476dd2efec833`
-completed the repository-owned gates but SonarQube Cloud remained RED with
-**Security Rating on New Code = B** where A is required and reported two annotations.
-The available connector does not expose the private issue payload, so this record does
-not invent annotation text.
+Sonar's JavaScript rule family classifies server-side request-forgery flows as
+Vulnerabilities. The exact annotation payload remains unavailable, so the correction is
+based on both the observable Security Rating evidence and the concrete cross-branch
+provider-authority weakness rather than on an invented scanner message.
 
-The same repository already carries FL032 and FL047: analyzer-visible synthetic
-credentials remain credential defects even when no real secret is present. Source review
-of the complete PR #450 new-code surface found that the new Python and Node egress tests
-still embedded fixed Bearer credential material, while the Python DSN fixture also used a
-fixed value in the password position. Those literals are unnecessary because the tests
-assert transport/authority semantics, not credential bytes.
+## Final root cause class
 
-The coherent correction removes fixed authentication/database credential material from
-both test runtimes: Python uses `secrets.token_urlsafe(...)` and Node uses
-`crypto.randomBytes(...)`; assertions reuse the generated opaque value without printing
-or persisting it. Public test identifiers, URLs, SHA markers and negative-target vectors
-remain deterministic. No production code is taught a test credential, no real secret is
-introduced, and no Sonar suppression, rule exclusion or quality-gate weakening is used.
+`CF_D_CONTAINER_CONTROLLED_PROVIDER_DESTINATION_AUTHORITY`
 
-This source correction is independently required security hygiene; it is not represented
-as proof that the inaccessible Sonar annotations are exactly these occurrences. The new
-head requires a fresh Sonar analysis. If Security Rating remains below A, the remaining
-annotation set must be treated as a new evidence-backed defect class rather than hidden by
-this change.
+The staging Container is allowed to request one bootstrap operation, but it must not
+select the external provider destination. Provider routing is a trusted Worker/platform
+responsibility. The target must be bound to the same staging PostgreSQL branch that is
+already accepted as the runtime data authority.
+
+## Coherent authority correction
+
+The complete failing block is now hardened end-to-end:
+
+1. `apps/api/cf_d_database_bootstrap.py` sends only the bounded OIDC assertion and exact
+   release SHA to `http://cf-d-neon-bootstrap.internal/`. It no longer sends a provider
+   target header and no longer queries PostgreSQL to choose an external destination.
+2. `Backend.outboundByHost` runs in the trusted Workers runtime and receives the Worker
+   bindings independently of the Container sandbox.
+3. The Worker accepts only the exact virtual HTTP hostname/root path, `POST`, bounded
+   Bearer shape, exact one-field JSON body, and exact current `SOURCE_SHA`. Any legacy
+   target-selection header is rejected.
+4. The Worker validates its own existing `OMNI_V10_POSTGRES_DSN` binding as the staging
+   role on a Frankfurt Neon endpoint with mandatory TLS connection parameters. No new
+   secret or management-plane authority is introduced.
+5. Using that already-required runtime database binding, the Worker performs the same
+   Neon SQL-over-HTTP protocol already used by the accepted source-controlled Function to
+   read `current_setting('neon.branch_id', true)`. The SQL endpoint is derived only from
+   the validated Worker runtime binding, never from the Container request.
+6. The returned branch ID is strictly validated, combined with the validated database
+   cell, and used to construct exactly that branch's `cfdprodbootstrap` HTTPS Function
+   origin. The Container cannot choose a branch, project, region, path, port or hostname.
+7. The Worker reconstructs the outbound provider request with only Authorization,
+   Accept, Content-Type and the exact source SHA body. Container-supplied Host, target or
+   arbitrary headers are not forwarded.
+8. Node behavioral tests execute the real policy and prove trusted branch resolution,
+   target-header rejection, route/method/SHA negatives, staging-role/Frankfurt/TLS DSN
+   negatives, and failed/malformed branch metadata fail-closed behavior.
+9. Python integration tests prove the staging FastAPI producer has no provider destination
+   authority and cannot query branch metadata while constructing the virtual request.
+10. Existing product internet policy is not globally disabled or widened. The change
+    supplies only the dedicated bootstrap bridge and retains existing product traffic.
+
+## Why this closes the defect class rather than silencing the analyzer
+
+The correction removes request-controlled provider selection instead of adding a Sonar
+suppression, excluding files, weakening the Quality Gate or teaching the scanner a magic
+allowlist comment. The external destination is derived from an already-required trusted
+Worker database binding plus authenticated database branch metadata. This is also a real
+least-authority improvement if the backend Container is compromised.
+
+No `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_ORG_ID`, fixed provider branch ID, committed
+DSN or provider credential is added. Neon management-plane authority remains absent from
+the bootstrap path.
+
+The new exact head requires a fresh complete verification cycle. If Sonar remains below
+A, the remaining annotation set must be treated as a new evidence-backed defect class;
+it must not be hidden by suppression or assumed to be equivalent to this correction.
 
 ## Blast radius and adjacent failure modes
 
@@ -137,7 +153,9 @@ Directly coupled surfaces reviewed:
 
 - staging-only CF-D bootstrap route;
 - Cloudflare Worker -> Container request restoration;
-- Container outbound network boundary;
+- Container outbound virtual-host boundary;
+- Worker runtime PostgreSQL binding;
+- Neon SQL-over-HTTP branch metadata lookup;
 - short-lived GitHub OIDC forwarding;
 - source-controlled Neon Function verifier/database role convergence;
 - production secret bootstrap/reuse gate;
@@ -147,38 +165,31 @@ Directly coupled surfaces reviewed:
 
 Adjacent modes addressed or preserved:
 
-- arbitrary URL/port/path/query redirection is rejected before Worker egress;
-- the internal target header is never forwarded upstream;
-- external caller headers cannot select a second product or tenant authority;
+- Container-selected arbitrary URL/port/path/query/branch routing is eliminated;
+- legacy target-selection input is rejected rather than ignored;
+- the Worker database binding must be staging-role, Frankfurt and TLS-required;
+- branch metadata must have one strict Neon branch ID and a valid DNS label size;
+- outbound Function request headers are reconstructed from a small allowlist;
 - provider response size remains bounded in the staging proxy;
-- redirects and environment proxy inheritance remain disabled;
-- malformed/failed provider responses remain fail-closed;
-- production mutation remains impossible before the bootstrap succeeds;
-- direct Real/broker authority remains unchanged.
+- redirects and environment proxy inheritance remain disabled at the Container boundary;
+- malformed/failed database metadata or provider responses remain fail-closed;
+- production mutation remains impossible before bootstrap success;
+- public multi-user and broker/Real authority remain unchanged.
 
-## Why preflight missed it
+## Permanent prevention rules
 
-The prior focused tests proved request construction, OIDC validation, bounded streaming,
-Windows DACL custody and function-source invariants, but the provider call itself was
-mocked. Staging `/healthz` proves the Worker/Container/PostgreSQL product path, not an
-otherwise-unused outbound hostname. The provider-deployment/source comparison was also
-not part of that deterministic test family.
+For future Container/provider integrations:
 
-The first repair preflight additionally relied on source-string assertions for the new
-Worker validation policy. Independent review correctly identified that as insufficient
-semantic coverage. The permanent rule is that a material egress allowlist/authority
-policy must have executable positive and negative tests in addition to source/governance
-guards.
-
-The later Sonar failure also confirms the older FL032/FL047 prevention rule applies to
-this recovery work: synthetic values occupying authentication or database-password roles
-must be generated at test runtime when exact bytes are irrelevant. Avoiding real secrets
-is necessary but is not sufficient credential hygiene for new source.
-
-For future Container integrations, a mocked HTTP client is insufficient evidence for a
-provider-specific outbound network boundary. The Cloudflare Worker/Container egress
-policy itself must be source-controlled and executable under deterministic tests when it
-is part of an acceptance path.
+- a mocked HTTP client is insufficient evidence for provider-specific outbound routing;
+- a Container must not select an external privileged provider destination merely because
+  a URL passes syntax/hostname validation;
+- when an outbound Worker has an existing trusted binding that can derive the exact
+  provider resource, derive authority from that binding rather than from request input;
+- material egress policy requires executable positive and negative tests;
+- synthetic authentication/database credentials whose exact bytes are irrelevant are
+  generated at test runtime rather than embedded as reusable literals;
+- analyzer RED is evidence to diagnose, never a reason to suppress a rule or weaken a
+  merge gate.
 
 ## Protected invariants
 

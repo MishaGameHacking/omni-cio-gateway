@@ -24,7 +24,6 @@ _MAX_PROVIDER_RESPONSE_BYTES = 32_768
 _PROVIDER_STREAM_CHUNK_BYTES = 8_192
 _PROVIDER_TIMEOUT_SECONDS = 20.0
 _EGRESS_ORIGIN = "http://cf-d-neon-bootstrap.internal/"
-_EGRESS_TARGET_HEADER = "X-Omni-Neon-Bootstrap-Target"
 
 
 def _provider_error(code: str, status_code: int = 502) -> JSONResponse:
@@ -143,7 +142,6 @@ def install_cf_d_database_bootstrap_route(
         return
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_CF_D_RELEASE_SHA_INVALID")
-    provider_origin = _bootstrap_origin(connection, runtime_dsn)
 
     @app.post(_BOOTSTRAP_PATH, include_in_schema=False)
     def bootstrap_production_database(request: Request) -> JSONResponse:
@@ -168,7 +166,6 @@ def install_cf_d_database_bootstrap_route(
                         "Authorization": authorization,
                         "Accept": "application/json",
                         "Content-Type": "application/json",
-                        _EGRESS_TARGET_HEADER: provider_origin,
                     },
                     json={"expected_sha": release_sha},
                 ) as response:
