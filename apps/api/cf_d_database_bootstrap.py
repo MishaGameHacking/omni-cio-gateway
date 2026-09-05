@@ -175,7 +175,6 @@ def install_cf_d_database_bootstrap_route(
         return
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_CF_D_RELEASE_SHA_INVALID")
-    _validate_staging_provider_context(connection, runtime_dsn)
 
     @app.post(_BOOTSTRAP_PATH, include_in_schema=False)
     def bootstrap_production_database(request: Request) -> JSONResponse:
@@ -186,6 +185,11 @@ def install_cf_d_database_bootstrap_route(
             authorization = _authorization(request)
         except RuntimeError:
             return _provider_error("CLOUDFLARE_CF_D_OIDC_REQUIRED", 401)
+
+        try:
+            _validate_staging_provider_context(connection, runtime_dsn)
+        except Exception:
+            return _provider_error("CLOUDFLARE_CF_D_STAGING_PROVIDER_CONTEXT_UNAVAILABLE")
 
         try:
             tls_context = _container_tls_context()

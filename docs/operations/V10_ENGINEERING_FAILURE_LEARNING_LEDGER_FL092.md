@@ -44,8 +44,8 @@ The correction changes the whole CF-D bootstrap transport block rather than supp
 4. `httpx` keeps `trust_env=False` and redirect following disabled; no environment proxy or external CA shortcut is introduced.
 5. The trusted Worker destination selector is a fixed `Map` from the two internal destination classes to exact URL-pattern/path policies, eliminating nullable/nested selection logic.
 6. Neon branch metadata is read through a bounded stream with an 8 KiB ceiling before UTF-8/JSON parsing; oversized, invalid or malformed bodies fail closed.
-7. The Python branch/cell derivation helpers are retained only as a staging startup consistency check. Their result is not forwarded to the Container request and cannot select the Worker/provider destination.
-8. Executable Node/Python regressions cover HTTPS-only virtual routing, forged-target rejection, oversized branch metadata, direct network-sink rejection and Cloudflare runtime CA fail-closed behavior.
+7. The Python branch/cell derivation helpers are retained only as a request-time staging consistency check after exact-SHA and OIDC validation. A transient or missing branch context returns a bounded provider error for that bootstrap request rather than aborting application startup. Their result is not forwarded to the Container request and cannot select the Worker/provider destination.
+8. Executable Node/Python regressions cover HTTPS-only virtual routing, forged-target rejection, oversized branch metadata, direct network-sink rejection, Cloudflare runtime CA fail-closed behavior and request-scoped branch-context failure without startup abort.
 
 ## Blast radius searched
 

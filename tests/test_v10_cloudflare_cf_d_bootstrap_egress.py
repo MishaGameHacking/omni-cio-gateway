@@ -59,6 +59,13 @@ class _Connection:
         return _Cursor()
 
 
+class _UnavailableConnection:
+    def execute(self, query: str) -> _Cursor:
+        if "neon.branch_id" not in query:
+            raise AssertionError(query)
+        raise RuntimeError("synthetic transient database failure")
+
+
 class _Response:
     status_code = 200
 
@@ -142,6 +149,31 @@ class CfDBootstrapEgressTests(unittest.TestCase):
         self.assertEqual(set(headers), {"Authorization", "Accept", "Content-Type"})
         self.assertIsInstance(_Client.instances[0].kwargs["verify"], ssl.SSLContext)
         self.assertFalse(bool(_Client.instances[0].kwargs["trust_env"]))
+
+    def test_transient_branch_context_failure_is_request_scoped_not_startup_fatal(self) -> None:
+        app = FastAPI()
+        bootstrap.install_cf_d_database_bootstrap_route(
+            app,
+            connection=_UnavailableConnection(),
+            runtime_dsn=STAGING_DSN,
+            release_sha=EXPECTED_SHA,
+            runtime_role="omni_cio_cloudflare_staging",
+        )
+
+        response = TestClient(app).post(
+            bootstrap._BOOTSTRAP_PATH,
+            headers={
+                "Authorization": _TEST_AUTHORIZATION,
+                "X-Omni-Expected-Sha": EXPECTED_SHA,
+            },
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json()["detail"],
+            "CLOUDFLARE_CF_D_STAGING_PROVIDER_CONTEXT_UNAVAILABLE",
+        )
+        self.assertEqual(_Client.calls, [])
 
     def test_cloudflare_runtime_requires_ephemeral_container_ca(self) -> None:
         app = FastAPI()
