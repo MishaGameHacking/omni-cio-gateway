@@ -360,10 +360,10 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
                 if path.name == production_name:
                     self.assertEqual(source.count("id: neon_authority"), 0)
                     self.assertEqual(source.count(conditional), 0)
-                    self.assertEqual(source.count(diagnostic), 2)
+                    self.assertEqual(source.count(diagnostic), 1)
                     self.assertEqual(
                         source.count('if [ "$neon_rc" -ne 0 ]; then'),
-                        2,
+                        1,
                     )
                     diagnostic_indexes = [
                         index
@@ -378,7 +378,7 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
                         for index in range(len(source))
                         if source.startswith(provision, index)
                     ]
-                    self.assertEqual(len(provision_indexes), 2)
+                    self.assertEqual(len(provision_indexes), 1)
                     for diagnostic_index, provision_index in zip(
                         diagnostic_indexes,
                         provision_indexes,

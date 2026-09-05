@@ -13,6 +13,9 @@ CANDIDATE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.y
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
 NEON_PROJECT_AUTHORITY_PROBE = "probe_provider_access_from_env()"
 NEON_PROVISION = "python -m scripts.provision_v10_cloudflare_neon_runtime"
+OIDC_PRODUCTION_BOOTSTRAP = (
+    "python -m scripts.bootstrap_v10_cloudflare_production_database_via_staging"
+)
 
 
 class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
@@ -48,43 +51,56 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             ),
         )
 
-    def test_production_neon_authority_is_conditional_on_database_bootstrap(self) -> None:
+    def test_production_neon_api_authority_is_only_staging_recovery_fallback(
+        self,
+    ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
-        self.assertEqual(source.count(NEON_PROJECT_AUTHORITY_PROBE), 2)
-        self.assertEqual(source.count(NEON_PROVISION), 2)
+        self.assertEqual(source.count(NEON_PROJECT_AUTHORITY_PROBE), 1)
+        self.assertEqual(source.count(NEON_PROVISION), 1)
 
         staging_secret_probe = source.index(
             "python -m scripts.probe_v10_cloudflare_staging_runtime_secret"
         )
+        provider_probe = source.index(NEON_PROJECT_AUTHORITY_PROBE)
+        staging_provision = source.index(NEON_PROVISION)
         production_secret_probe = source.index(
             "python -m scripts.manage_v10_cloudflare_production probe-runtime-secret"
         )
-        probe_indexes = [
-            index
-            for index in range(len(source))
-            if source.startswith(NEON_PROJECT_AUTHORITY_PROBE, index)
-        ]
-        provision_indexes = [
-            index
-            for index in range(len(source))
-            if source.startswith(NEON_PROVISION, index)
-        ]
+        oidc_bootstrap = source.index(OIDC_PRODUCTION_BOOTSTRAP)
 
-        self.assertEqual(len(probe_indexes), 2)
-        self.assertEqual(len(provision_indexes), 2)
-        self.assertLess(staging_secret_probe, probe_indexes[0])
-        self.assertLess(probe_indexes[0], provision_indexes[0])
-        self.assertLess(provision_indexes[0], production_secret_probe)
-        self.assertLess(production_secret_probe, probe_indexes[1])
-        self.assertLess(probe_indexes[1], provision_indexes[1])
+        self.assertLess(staging_secret_probe, provider_probe)
+        self.assertLess(provider_probe, staging_provision)
+        self.assertLess(staging_provision, production_secret_probe)
+        self.assertLess(production_secret_probe, oidc_bootstrap)
         self.assertIn(
             'if [ "$neon_rc" -ne 0 ]; then',
-            source[probe_indexes[0] : provision_indexes[0]],
+            source[provider_probe:staging_provision],
         )
+
+    def test_production_database_bootstrap_uses_oidc_not_neon_static_authority(
+        self,
+    ) -> None:
+        source = self._read(PRODUCTION_WORKFLOW)
+        self.assertIn("id-token: write", source)
+        start = source.index(
+            "      - name: Reuse production database secret or bootstrap it once"
+        )
+        end = source.index("\n      - name:", start + 1)
+        section = source[start:end]
+        self.assertIn(OIDC_PRODUCTION_BOOTSTRAP, section)
         self.assertIn(
-            'if [ "$neon_rc" -ne 0 ]; then',
-            source[probe_indexes[1] : provision_indexes[1]],
+            "STAGING_ORIGIN: ${{ steps.candidate.outputs.staging_url }}",
+            section,
         )
+        for forbidden in (
+            "NEON_API_KEY",
+            "NEON_ORG_ID",
+            "NEON_PROJECT_ID",
+            NEON_PROJECT_AUTHORITY_PROBE,
+            NEON_PROVISION,
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, section)
 
     def test_provider_readiness_cli_defers_neon_until_bootstrap_is_needed(self) -> None:
         output = StringIO()
