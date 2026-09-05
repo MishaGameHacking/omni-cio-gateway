@@ -33,7 +33,9 @@ class BootstrapStopped(RuntimeError):
 
 
 class _RejectRedirects(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+    def redirect_request(
+        self, req, fp, code, msg, headers, newurl
+    ):  # type: ignore[no-untyped-def]
         del req, fp, code, msg, headers, newurl
         return None
 
@@ -248,7 +250,10 @@ def run(expected_sha: str, origin: str) -> Path:
     token = _github_oidc_token()
     runtime_dsn = _bootstrap_runtime_dsn(safe_origin, safe_sha, token)
     _write_private_file(_output_file(), runtime_dsn)
-    print("CLOUDFLARE_CF_D_DATABASE_BOOTSTRAP=READY transport=GITHUB_OIDC_NEON_FUNCTION")
+    print(
+        "CLOUDFLARE_CF_D_DATABASE_BOOTSTRAP=READY "
+        "transport=GITHUB_OIDC_NEON_FUNCTION"
+    )
     return _output_file()
 
 
