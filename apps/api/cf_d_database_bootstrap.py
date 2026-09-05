@@ -189,7 +189,9 @@ def install_cf_d_database_bootstrap_route(
         try:
             _validate_staging_provider_context(connection, runtime_dsn)
         except Exception:
-            return _provider_error("CLOUDFLARE_CF_D_STAGING_PROVIDER_CONTEXT_UNAVAILABLE")
+            return _provider_error(
+                "CLOUDFLARE_CF_D_STAGING_PROVIDER_CONTEXT_UNAVAILABLE"
+            )
 
         try:
             tls_context = _container_tls_context()
