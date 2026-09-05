@@ -14,10 +14,18 @@ const FUNCTION_URL_PATTERN =
 const MAX_RUNTIME_DSN_BYTES = 8_192;
 const MAX_AUTHORIZATION_BYTES = 16_384;
 const MAX_REQUEST_BODY_BYTES = 4_096;
+const MAX_BRANCH_LOOKUP_RESPONSE_BYTES = 8_192;
 const BRANCH_LOOKUP_TIMEOUT_MS = 10_000;
 const BRANCH_LOOKUP_SQL = "SELECT current_setting('neon.branch_id', true)";
 const DATABASE_DESTINATION = "database";
 const FUNCTION_DESTINATION = "function";
+const DESTINATION_POLICIES = new Map([
+  [
+    DATABASE_DESTINATION,
+    { pattern: DATABASE_SQL_URL_PATTERN, expectedPath: "/sql" },
+  ],
+  [FUNCTION_DESTINATION, { pattern: FUNCTION_URL_PATTERN, expectedPath: "/" }],
+]);
 
 function stopped(code) {
   throw new Error(code);
@@ -92,7 +100,7 @@ async function validatedBootstrapInput(request, expectedSourceSha) {
     stopped("CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED");
   }
   if (
-    virtualUrl.protocol !== "http:" ||
+    virtualUrl.protocol !== "https:" ||
     virtualUrl.hostname !== CF_D_NEON_BOOTSTRAP_EGRESS_HOST ||
     virtualUrl.port !== "" ||
     virtualUrl.pathname !== "/" ||
@@ -146,13 +154,11 @@ function branchLookupRequest(runtimeDatabase) {
 
 function destinationUrl(request, destination) {
   const value = request.url;
-  const pattern =
-    destination === DATABASE_DESTINATION
-      ? DATABASE_SQL_URL_PATTERN
-      : destination === FUNCTION_DESTINATION
-        ? FUNCTION_URL_PATTERN
-        : null;
-  if (pattern === null || !pattern.test(value)) {
+  const policy = DESTINATION_POLICIES.get(destination);
+  if (policy === undefined) {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  if (!policy.pattern.test(value)) {
     stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
   }
 
@@ -162,14 +168,12 @@ function destinationUrl(request, destination) {
   } catch {
     stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
   }
-  const expectedPath =
-    destination === DATABASE_DESTINATION ? "/sql" : "/";
   if (
     url.protocol !== "https:" ||
     url.username !== "" ||
     url.password !== "" ||
     url.port !== "" ||
-    url.pathname !== expectedPath ||
+    url.pathname !== policy.expectedPath ||
     url.search !== "" ||
     url.hash !== ""
   ) {
@@ -182,6 +186,49 @@ export async function fetchCfDTrustedNeonRequest(request, destination) {
   const safeUrl = destinationUrl(request, destination);
   const safeRequest = new Request(safeUrl, request);
   return fetch(safeRequest);
+}
+
+async function boundedResponseText(response, maxBytes, tooLargeCode) {
+  if (response.body === null) {
+    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!(value instanceof Uint8Array)) {
+        stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+      }
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        try {
+          await reader.cancel();
+        } finally {
+          stopped(tooLargeCode);
+        }
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(body);
+  } catch {
+    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+  }
 }
 
 async function runtimeBranchId(runtimeDatabase) {
@@ -203,10 +250,22 @@ async function runtimeBranchId(runtimeDatabase) {
   if (!response.ok) {
     stopped("CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED");
   }
+
   let body;
   try {
-    body = await response.json();
-  } catch {
+    const bodyText = await boundedResponseText(
+      response,
+      MAX_BRANCH_LOOKUP_RESPONSE_BYTES,
+      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
+    );
+    body = JSON.parse(bodyText);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE"
+    ) {
+      throw error;
+    }
     stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
   }
   const rows = body?.rows;

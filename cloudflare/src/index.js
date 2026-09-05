@@ -1,4 +1,4 @@
-import { Container, ContainerProxy, getRandom } from "@cloudflare/containers";
+import { Container, getRandom } from "@cloudflare/containers";
 import { env as runtimeEnv } from "cloudflare:workers";
 import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
@@ -6,7 +6,7 @@ import {
 } from "./cf-d-neon-bootstrap-egress.js";
 import { SOURCE_SHA } from "./generated-build-info.js";
 
-export { ContainerProxy };
+export { ContainerProxy } from "@cloudflare/containers";
 
 const BACKEND_INSTANCE_COUNT = 1;
 const INTERNAL_HOST = "omni-cio.internal";
@@ -46,6 +46,7 @@ function backendEnvironment() {
 export class Backend extends Container {
   defaultPort = 8080;
   sleepAfter = "1m";
+  interceptHttps = true;
   envVars = backendEnvironment();
 }
 

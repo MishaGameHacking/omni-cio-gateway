@@ -21,7 +21,7 @@ const TEST_RUNTIME_DSN =
   `@${DATABASE_HOST}/neondb?sslmode=require`;
 
 function virtualRequest(options = {}) {
-  const url = options.url ?? `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/`;
+  const url = options.url ?? `https://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/`;
   const method = options.method ?? "POST";
   const headers = new Headers({
     Authorization: TEST_AUTHORIZATION,
@@ -45,6 +45,8 @@ function bindings(dsn = TEST_RUNTIME_DSN) {
 function networkDouble(options = {}) {
   const branchStatus = options.branchStatus ?? 200;
   const branchId = options.branchId ?? BRANCH_ID;
+  const branchBody =
+    options.branchBody ?? JSON.stringify({ rows: [[branchId]] });
   const functionStatus = options.functionStatus ?? 200;
   const calls = [];
   const fetcher = async (request) => {
@@ -60,7 +62,7 @@ function networkDouble(options = {}) {
         query: "SELECT current_setting('neon.branch_id', true)",
         params: [],
       });
-      return new Response(JSON.stringify({ rows: [[branchId]] }), {
+      return new Response(branchBody, {
         status: branchStatus,
         headers: { "content-type": "application/json" },
       });
@@ -135,11 +137,11 @@ test("CF-D preparation reconstructs a bounded provider request", async () => {
 test("CF-D virtual request cannot select an external target or broaden the route", async () => {
   const rejected = [
     virtualRequest({ method: "GET" }),
-    virtualRequest({ url: `https://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/` }),
-    virtualRequest({ url: "http://other.internal/" }),
-    virtualRequest({ url: `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}:8080/` }),
-    virtualRequest({ url: `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/path` }),
-    virtualRequest({ url: `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/?query=1` }),
+    virtualRequest({ url: `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/` }),
+    virtualRequest({ url: "https://other.internal/" }),
+    virtualRequest({ url: `https://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}:8443/` }),
+    virtualRequest({ url: `https://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/path` }),
+    virtualRequest({ url: `https://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/?query=1` }),
     virtualRequest({ legacyTarget: "https://example.com/" }),
     virtualRequest({ sha: "b".repeat(40) }),
   ];
@@ -183,7 +185,7 @@ test("CF-D Worker rejects non-staging or non-Frankfurt runtime database bindings
   }
 });
 
-test("CF-D Worker rejects failed or malformed branch metadata before Function egress", async () => {
+test("CF-D Worker rejects failed, oversized, or malformed branch metadata before Function egress", async () => {
   const failedLookup = networkDouble({ branchStatus: 503 });
   await withFetch(failedLookup.fetcher, () =>
     assertStopped(
@@ -196,6 +198,32 @@ test("CF-D Worker rejects failed or malformed branch metadata before Function eg
     ),
   );
   assert.equal(failedLookup.calls.length, 1);
+
+  const oversizedLookup = networkDouble({ branchBody: "x".repeat(8_193) });
+  await withFetch(oversizedLookup.fetcher, () =>
+    assertStopped(
+      prepareCfDNeonBootstrapRequest(
+        virtualRequest(),
+        bindings(),
+        EXPECTED_SHA,
+      ),
+      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
+    ),
+  );
+  assert.equal(oversizedLookup.calls.length, 1);
+
+  const invalidJsonLookup = networkDouble({ branchBody: "{" });
+  await withFetch(invalidJsonLookup.fetcher, () =>
+    assertStopped(
+      prepareCfDNeonBootstrapRequest(
+        virtualRequest(),
+        bindings(),
+        EXPECTED_SHA,
+      ),
+      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID",
+    ),
+  );
+  assert.equal(invalidJsonLookup.calls.length, 1);
 
   const malformedLookup = networkDouble({ branchId: "not-a-branch" });
   await withFetch(malformedLookup.fetcher, () =>

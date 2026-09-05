@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import secrets
+import ssl
 import unittest
 from unittest import mock
 from urllib.parse import urlencode, urlunsplit
@@ -45,9 +47,16 @@ PRODUCTION_DSN = _dsn(
 )
 
 
+class _Cursor:
+    def fetchone(self) -> tuple[str]:
+        return ("br-example1234",)
+
+
 class _Connection:
-    def execute(self, query: str):  # type: ignore[no-untyped-def]
-        raise AssertionError(f"Container bootstrap must not query provider target: {query}")
+    def execute(self, query: str) -> _Cursor:
+        if "neon.branch_id" not in query:
+            raise AssertionError(query)
+        return _Cursor()
 
 
 class _Response:
@@ -74,9 +83,11 @@ class _Stream:
 
 class _Client:
     calls: list[tuple[str, str, dict[str, str], dict[str, str]]] = []
+    instances: list[_Client] = []
 
     def __init__(self, **kwargs: object) -> None:
         self.kwargs = kwargs
+        self.instances.append(self)
 
     def __enter__(self) -> _Client:
         return self
@@ -99,6 +110,7 @@ class _Client:
 class CfDBootstrapEgressTests(unittest.TestCase):
     def setUp(self) -> None:
         _Client.calls.clear()
+        _Client.instances.clear()
 
     def test_staging_proxy_has_no_provider_destination_authority(self) -> None:
         app = FastAPI()
@@ -120,25 +132,63 @@ class CfDBootstrapEgressTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(_Client.calls), 1)
+        self.assertEqual(len(_Client.instances), 1)
         method, url, headers, payload = _Client.calls[0]
         self.assertEqual(method, "POST")
-        self.assertEqual(url, "http://cf-d-neon-bootstrap.internal/")
+        self.assertEqual(url, "https://cf-d-neon-bootstrap.internal/")
         self.assertEqual(payload, {"expected_sha": EXPECTED_SHA})
         self.assertEqual(headers["Authorization"], _TEST_AUTHORIZATION)
         self.assertNotIn("X-Omni-Neon-Bootstrap-Target", headers)
         self.assertEqual(set(headers), {"Authorization", "Accept", "Content-Type"})
+        self.assertIsInstance(_Client.instances[0].kwargs["verify"], ssl.SSLContext)
+        self.assertFalse(bool(_Client.instances[0].kwargs["trust_env"]))
+
+    def test_cloudflare_runtime_requires_ephemeral_container_ca(self) -> None:
+        app = FastAPI()
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"OMNI_V10_CLOUDFLARE_RUNTIME": "1"},
+                clear=False,
+            ),
+            mock.patch.object(
+                bootstrap,
+                "_CLOUDFLARE_CONTAINER_CA_FILE",
+                "/definitely/missing/cloudflare-container-ca.crt",
+            ),
+        ):
+            bootstrap.install_cf_d_database_bootstrap_route(
+                app,
+                connection=_Connection(),
+                runtime_dsn=STAGING_DSN,
+                release_sha=EXPECTED_SHA,
+                runtime_role="omni_cio_cloudflare_staging",
+            )
+            response = TestClient(app).post(
+                bootstrap._BOOTSTRAP_PATH,
+                headers={
+                    "Authorization": _TEST_AUTHORIZATION,
+                    "X-Omni-Expected-Sha": EXPECTED_SHA,
+                },
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json()["detail"],
+            "CLOUDFLARE_CF_D_EGRESS_TLS_UNAVAILABLE",
+        )
 
     def test_worker_exports_container_proxy_and_uses_guarded_bootstrap_executor(self) -> None:
         worker = WORKER_SOURCE.read_text(encoding="utf-8")
         required = (
-            "ContainerProxy",
-            "export { ContainerProxy };",
+            'export { ContainerProxy } from "@cloudflare/containers";',
             'from "./cf-d-neon-bootstrap-egress.js"',
             "CF_D_NEON_BOOTSTRAP_EGRESS_HOST",
             "fetchCfDNeonBootstrap",
             "Backend.outboundByHost",
             "SOURCE_SHA",
             "env",
+            "interceptHttps = true",
             "return await fetchCfDNeonBootstrap(request, env, SOURCE_SHA)",
         )
         for marker in required:
@@ -157,11 +207,15 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "Neon-Array-Mode",
             "DATABASE_SQL_URL_PATTERN",
             "FUNCTION_URL_PATTERN",
+            "DESTINATION_POLICIES",
             "fetchCfDTrustedNeonRequest",
             "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
+            "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
+            "MAX_BRANCH_LOOKUP_RESPONSE_BYTES",
             "eu-central-1\\.aws\\.neon\\.tech",
             'request.headers.has(LEGACY_TARGET_HEADER)',
             'request.method !== "POST"',
+            'virtualUrl.protocol !== "https:"',
             'url.protocol !== "https:"',
             'url.port !== ""',
             'url.search !== ""',
@@ -195,7 +249,7 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "trusted Worker resolves and invokes the Neon Function",
             "cannot select an external target",
             "non-staging or non-Frankfurt runtime database bindings",
-            "malformed branch metadata",
+            "oversized, or malformed branch metadata",
             "network sink rejects forged Neon destinations before fetch",
         ):
             with self.subTest(marker=marker):

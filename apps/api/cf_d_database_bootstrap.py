@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import json
+import os
 import re
+import ssl
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -23,7 +25,8 @@ _MAX_AUTHORIZATION_BYTES = 16_384
 _MAX_PROVIDER_RESPONSE_BYTES = 32_768
 _PROVIDER_STREAM_CHUNK_BYTES = 8_192
 _PROVIDER_TIMEOUT_SECONDS = 20.0
-_EGRESS_ORIGIN = "http://cf-d-neon-bootstrap.internal/"
+_EGRESS_ORIGIN = "https://cf-d-neon-bootstrap.internal/"
+_CLOUDFLARE_CONTAINER_CA_FILE = "/etc/cloudflare/certs/cloudflare-containers-ca.crt"
 
 
 def _provider_error(code: str, status_code: int = 502) -> JSONResponse:
@@ -73,6 +76,36 @@ def _bootstrap_origin(connection: Any, dsn: str) -> str:
     branch_id = _branch_id(connection)
     cell = _database_cell(dsn)
     return f"https://{branch_id}-{_FUNCTION_SLUG}.compute.{cell}/"
+
+
+def _validate_staging_provider_context(connection: Any, dsn: str) -> None:
+    origin = _bootstrap_origin(connection, dsn)
+    try:
+        parsed = urlsplit(origin)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("CLOUDFLARE_CF_D_STAGING_PROVIDER_CONTEXT_INVALID") from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.path != "/"
+        or parsed.query
+        or parsed.fragment
+        or not hostname.endswith(_NEON_REGION_SUFFIX)
+    ):
+        raise RuntimeError("CLOUDFLARE_CF_D_STAGING_PROVIDER_CONTEXT_INVALID")
+
+
+def _container_tls_context() -> ssl.SSLContext:
+    try:
+        return ssl.create_default_context(cafile=_CLOUDFLARE_CONTAINER_CA_FILE)
+    except OSError as exc:
+        if os.environ.get("OMNI_V10_CLOUDFLARE_RUNTIME", "").strip() == "1":
+            raise RuntimeError("CLOUDFLARE_CF_D_EGRESS_TLS_UNAVAILABLE") from exc
+        return ssl.create_default_context()
 
 
 def _runtime_dsn(payload: Mapping[str, object], release_sha: str) -> str:
@@ -142,6 +175,7 @@ def install_cf_d_database_bootstrap_route(
         return
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_CF_D_RELEASE_SHA_INVALID")
+    _validate_staging_provider_context(connection, runtime_dsn)
 
     @app.post(_BOOTSTRAP_PATH, include_in_schema=False)
     def bootstrap_production_database(request: Request) -> JSONResponse:
@@ -154,10 +188,16 @@ def install_cf_d_database_bootstrap_route(
             return _provider_error("CLOUDFLARE_CF_D_OIDC_REQUIRED", 401)
 
         try:
+            tls_context = _container_tls_context()
+        except RuntimeError:
+            return _provider_error("CLOUDFLARE_CF_D_EGRESS_TLS_UNAVAILABLE")
+
+        try:
             with httpx.Client(
                 timeout=_PROVIDER_TIMEOUT_SECONDS,
                 follow_redirects=False,
                 trust_env=False,
+                verify=tls_context,
             ) as client:
                 with client.stream(
                     "POST",
