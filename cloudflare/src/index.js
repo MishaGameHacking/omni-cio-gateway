@@ -2,7 +2,7 @@ import { Container, ContainerProxy, getRandom } from "@cloudflare/containers";
 import { env as runtimeEnv } from "cloudflare:workers";
 import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
-  prepareCfDNeonBootstrapRequest,
+  fetchCfDNeonBootstrap,
 } from "./cf-d-neon-bootstrap-egress.js";
 import { SOURCE_SHA } from "./generated-build-info.js";
 
@@ -64,13 +64,8 @@ function hardenedJson(payload, status = 200) {
 }
 
 async function proxyCfDNeonBootstrap(request, env) {
-  let providerRequest;
   try {
-    providerRequest = await prepareCfDNeonBootstrapRequest(
-      request,
-      env,
-      SOURCE_SHA,
-    );
+    return await fetchCfDNeonBootstrap(request, env, SOURCE_SHA);
   } catch (error) {
     const requestRejected =
       error instanceof Error &&
@@ -84,7 +79,6 @@ async function proxyCfDNeonBootstrap(request, env) {
       requestRejected ? 403 : 502,
     );
   }
-  return fetch(providerRequest);
 }
 
 Backend.outboundByHost = {
