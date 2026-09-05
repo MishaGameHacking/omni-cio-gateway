@@ -128,22 +128,23 @@ class CfDBootstrapEgressTests(unittest.TestCase):
         self.assertNotIn("X-Omni-Neon-Bootstrap-Target", headers)
         self.assertEqual(set(headers), {"Authorization", "Accept", "Content-Type"})
 
-    def test_worker_exports_container_proxy_and_uses_trusted_runtime_binding(self) -> None:
+    def test_worker_exports_container_proxy_and_uses_guarded_bootstrap_executor(self) -> None:
         worker = WORKER_SOURCE.read_text(encoding="utf-8")
         required = (
             "ContainerProxy",
             "export { ContainerProxy };",
             'from "./cf-d-neon-bootstrap-egress.js"',
             "CF_D_NEON_BOOTSTRAP_EGRESS_HOST",
-            "prepareCfDNeonBootstrapRequest",
+            "fetchCfDNeonBootstrap",
             "Backend.outboundByHost",
             "SOURCE_SHA",
             "env",
-            "return fetch(providerRequest)",
+            "return await fetchCfDNeonBootstrap(request, env, SOURCE_SHA)",
         )
         for marker in required:
             with self.subTest(marker=marker):
                 self.assertIn(marker, worker)
+        self.assertNotIn("return fetch(providerRequest)", worker)
 
     def test_egress_policy_derives_destination_from_staging_database_binding(self) -> None:
         source = EGRESS_SOURCE.read_text(encoding="utf-8")
@@ -154,9 +155,17 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "Neon-Connection-String",
             "Neon-Raw-Text-Output",
             "Neon-Array-Mode",
+            "DATABASE_SQL_URL_PATTERN",
+            "FUNCTION_URL_PATTERN",
+            "fetchCfDTrustedNeonRequest",
+            "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
             "eu-central-1\\.aws\\.neon\\.tech",
             'request.headers.has(LEGACY_TARGET_HEADER)',
             'request.method !== "POST"',
+            'url.protocol !== "https:"',
+            'url.port !== ""',
+            'url.search !== ""',
+            'url.hash !== ""',
             'redirect: "error"',
             'redirect: "manual"',
         )
@@ -181,11 +190,13 @@ class CfDBootstrapEgressTests(unittest.TestCase):
         self.assertIn("node --test", test_command)
         self.assertIn("tests/*.test.mjs", test_command)
         for marker in (
+            "fetchCfDNeonBootstrap",
             "prepareCfDNeonBootstrapRequest",
-            "trusted Worker resolves the Neon Function",
+            "trusted Worker resolves and invokes the Neon Function",
             "cannot select an external target",
             "non-staging or non-Frankfurt runtime database bindings",
             "malformed branch metadata",
+            "network sink rejects forged Neon destinations before fetch",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, node_test)
