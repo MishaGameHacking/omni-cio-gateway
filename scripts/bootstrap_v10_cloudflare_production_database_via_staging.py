@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
+import subprocess
 import sys
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -24,6 +26,70 @@ _MAX_OIDC_RESPONSE_BYTES = 65_536
 _MAX_BOOTSTRAP_RESPONSE_BYTES = 65_536
 _HTTP_TIMEOUT_SECONDS = 20.0
 _OUTPUT_FILENAME = "omni-cio-v10-cloudflare-production-dsn.txt"
+_WINDOWS_ACL_PATH_ENV = "OMNI_CIO_PRIVATE_FILE_PATH"
+_WINDOWS_ACL_TIMEOUT_SECONDS = 15.0
+_WINDOWS_CHILD_ENV_KEYS = (
+    "SystemRoot",
+    "WINDIR",
+    "SystemDrive",
+    "COMSPEC",
+    "PATH",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "PSModulePath",
+)
+_WINDOWS_PRIVATE_FILE_ACL_SCRIPT = r"""
+$ErrorActionPreference = "Stop"
+$target = [Environment]::GetEnvironmentVariable("OMNI_CIO_PRIVATE_FILE_PATH", "Process")
+if ([string]::IsNullOrWhiteSpace($target) -or -not (Test-Path -LiteralPath $target -PathType Leaf)) { exit 41 }
+
+$runnerSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+if ($null -eq $runnerSid) { exit 42 }
+$systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+$adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+$rights = [System.Security.AccessControl.FileSystemRights]::FullControl
+$allow = [System.Security.AccessControl.AccessControlType]::Allow
+$noneInheritance = [System.Security.AccessControl.InheritanceFlags]::None
+$nonePropagation = [System.Security.AccessControl.PropagationFlags]::None
+
+$acl = Get-Acl -LiteralPath $target -ErrorAction Stop
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($existingRule in @($acl.Access)) {
+    [void]$acl.RemoveAccessRuleSpecific($existingRule)
+}
+foreach ($sid in @($runnerSid, $systemSid, $adminsSid)) {
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $sid,
+        $rights,
+        $noneInheritance,
+        $nonePropagation,
+        $allow
+    )
+    [void]$acl.AddAccessRule($rule)
+}
+Set-Acl -LiteralPath $target -AclObject $acl -ErrorAction Stop
+
+$verified = Get-Acl -LiteralPath $target -ErrorAction Stop
+if (-not $verified.AreAccessRulesProtected) { exit 43 }
+$expected = @($runnerSid.Value, $systemSid.Value, $adminsSid.Value)
+$seen = @{}
+foreach ($rule in @($verified.Access)) {
+    if ($rule.IsInherited -or $rule.AccessControlType -ne $allow) { exit 44 }
+    try {
+        $sid = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])
+    }
+    catch [System.Security.Principal.IdentityNotMappedException] {
+        exit 45
+    }
+    if ($expected -notcontains $sid.Value) { exit 46 }
+    if (($rule.FileSystemRights -band $rights) -ne $rights) { exit 47 }
+    $seen[$sid.Value] = $true
+}
+foreach ($sidValue in $expected) {
+    if (-not $seen.ContainsKey($sidValue)) { exit 48 }
+}
+"""
 
 
 class BootstrapStopped(RuntimeError):
@@ -217,6 +283,74 @@ def _bootstrap_runtime_dsn(origin: str, expected_sha: str, oidc_token: str) -> s
     return _validate_runtime_payload(payload, expected_sha)
 
 
+def _powershell_executable() -> str:
+    executable = shutil.which("powershell.exe")
+    if executable:
+        return executable
+    system_root = os.environ.get("SystemRoot", "").strip()
+    if system_root:
+        candidate = (
+            Path(system_root)
+            / "System32"
+            / "WindowsPowerShell"
+            / "v1.0"
+            / "powershell.exe"
+        )
+        if candidate.is_file():
+            return str(candidate)
+    raise BootstrapStopped("CLOUDFLARE_CF_D_WINDOWS_ACL_TOOL_UNAVAILABLE")
+
+
+def _windows_acl_environment(path: Path) -> dict[str, str]:
+    environment = {
+        key: os.environ[key]
+        for key in _WINDOWS_CHILD_ENV_KEYS
+        if key in os.environ and os.environ[key]
+    }
+    environment[_WINDOWS_ACL_PATH_ENV] = str(path)
+    return environment
+
+
+def _harden_windows_private_file(path: Path) -> None:
+    try:
+        completed = subprocess.run(
+            [
+                _powershell_executable(),
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                _WINDOWS_PRIVATE_FILE_ACL_SCRIPT,
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=_WINDOWS_ACL_TIMEOUT_SECONDS,
+            env=_windows_acl_environment(path),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_ACL_HARDENING_FAILED") from exc
+    if completed.returncode != 0:
+        raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_ACL_HARDENING_FAILED")
+
+
+def _harden_posix_private_file(path: Path) -> None:
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        mode = stat.S_IMODE(path.stat().st_mode)
+    except OSError as exc:
+        raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_MODE_HARDENING_FAILED") from exc
+    if mode != stat.S_IRUSR | stat.S_IWUSR:
+        raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_MODE_HARDENING_FAILED")
+
+
+def _discard_private_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _write_private_file(path: Path, value: str) -> None:
     if path.is_symlink():
         raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_SYMLINK_FORBIDDEN")
@@ -224,22 +358,41 @@ def _write_private_file(path: Path, value: str) -> None:
     root = _runner_temp()
     if resolved.parent != root or resolved.name != _OUTPUT_FILENAME:
         raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_PATH_INVALID")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(resolved, flags, stat.S_IRUSR | stat.S_IWUSR)
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+        descriptor = os.open(resolved, flags, stat.S_IRUSR | stat.S_IWUSR)
+    except FileExistsError as exc:
+        raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_ALREADY_EXISTS") from exc
+    except OSError as exc:
+        raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_CREATE_FAILED") from exc
+
+    try:
+        if os.name == "nt":
+            _harden_windows_private_file(resolved)
+        else:
+            _harden_posix_private_file(resolved)
+        handle = os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
+        descriptor = -1
+        with handle:
             handle.write(value)
             handle.write("\n")
-    except Exception:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
+    except BootstrapStopped:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _discard_private_file(resolved)
         raise
-    try:
-        os.chmod(resolved, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+    except OSError as exc:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _discard_private_file(resolved)
+        raise BootstrapStopped("CLOUDFLARE_CF_D_DSN_WRITE_FAILED") from exc
 
 
 def run(expected_sha: str, origin: str) -> Path:

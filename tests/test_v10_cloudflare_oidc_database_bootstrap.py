@@ -285,18 +285,119 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.BootstrapStopped, "STAGING_ORIGIN_INVALID"):
             runner._validated_staging_origin("https://example.com/")
 
-    def test_runner_writes_dsn_only_to_fixed_private_runner_temp_file(self) -> None:
+    def test_runner_writes_dsn_only_after_platform_permissions_are_hardened(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with mock.patch.dict(
-                runner.os.environ, {"RUNNER_TEMP": str(root)}, clear=True
+                runner.os.environ, {"RUNNER_TEMP": str(root)}, clear=False
             ):
                 path = runner._output_file()
                 runner._write_private_file(path, VALID_PRODUCTION_DSN)
                 self.assertEqual(
                     path.read_text(encoding="utf-8").strip(), VALID_PRODUCTION_DSN
                 )
-                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                if runner.os.name != "nt":
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_runner_refuses_to_overwrite_preexisting_private_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.dict(
+                runner.os.environ, {"RUNNER_TEMP": str(root)}, clear=False
+            ):
+                path = runner._output_file()
+                path.write_text("preexisting-marker\n", encoding="utf-8")
+                with self.assertRaisesRegex(
+                    runner.BootstrapStopped, "DSN_ALREADY_EXISTS"
+                ):
+                    runner._write_private_file(path, VALID_PRODUCTION_DSN)
+                self.assertEqual(
+                    path.read_text(encoding="utf-8"), "preexisting-marker\n"
+                )
+
+    def test_runner_removes_empty_file_when_permission_hardening_fails(self) -> None:
+        helper_name = (
+            "_harden_windows_private_file"
+            if runner.os.name == "nt"
+            else "_harden_posix_private_file"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (
+                mock.patch.dict(
+                    runner.os.environ, {"RUNNER_TEMP": str(root)}, clear=False
+                ),
+                mock.patch.object(
+                    runner,
+                    helper_name,
+                    side_effect=runner.BootstrapStopped("synthetic-permission-failure"),
+                ),
+            ):
+                path = runner._output_file()
+                with self.assertRaisesRegex(
+                    runner.BootstrapStopped, "synthetic-permission-failure"
+                ):
+                    runner._write_private_file(path, VALID_PRODUCTION_DSN)
+                self.assertFalse(path.exists())
+
+    def test_windows_acl_hardening_uses_exact_sid_allowlist_and_minimal_env(
+        self,
+    ) -> None:
+        target = Path("C:/synthetic-runner-temp/private-dsn.txt")
+        completed = mock.Mock(returncode=0)
+        sensitive = "synthetic-oidc-request-token"
+        with (
+            mock.patch.dict(
+                runner.os.environ,
+                {
+                    "SystemRoot": "C:\\Windows",
+                    "PATH": "C:\\Windows\\System32",
+                    "ACTIONS_ID_TOKEN_REQUEST_TOKEN": sensitive,
+                },
+                clear=True,
+            ),
+            mock.patch.object(
+                runner, "_powershell_executable", return_value="powershell.exe"
+            ),
+            mock.patch.object(
+                runner.subprocess, "run", return_value=completed
+            ) as run_mock,
+        ):
+            runner._harden_windows_private_file(target)
+
+        command = run_mock.call_args.args[0]
+        script = command[-1]
+        self.assertIn("SetAccessRuleProtection($true, $false)", script)
+        self.assertIn('S-1-5-18', script)
+        self.assertIn('S-1-5-32-544', script)
+        self.assertIn("AreAccessRulesProtected", script)
+        self.assertNotIn(str(target), script)
+        environment = run_mock.call_args.kwargs["env"]
+        self.assertEqual(environment[runner._WINDOWS_ACL_PATH_ENV], str(target))
+        self.assertNotIn("ACTIONS_ID_TOKEN_REQUEST_TOKEN", environment)
+        self.assertNotIn(sensitive, repr(environment))
+        self.assertIs(run_mock.call_args.kwargs["stdout"], runner.subprocess.DEVNULL)
+        self.assertIs(run_mock.call_args.kwargs["stderr"], runner.subprocess.DEVNULL)
+        self.assertEqual(
+            run_mock.call_args.kwargs["timeout"], runner._WINDOWS_ACL_TIMEOUT_SECONDS
+        )
+
+    def test_windows_acl_hardening_fails_closed_on_acl_rejection(self) -> None:
+        target = Path("C:/synthetic-runner-temp/private-dsn.txt")
+        with (
+            mock.patch.object(
+                runner, "_powershell_executable", return_value="powershell.exe"
+            ),
+            mock.patch.object(
+                runner.subprocess, "run", return_value=mock.Mock(returncode=47)
+            ),
+        ):
+            with self.assertRaisesRegex(
+                runner.BootstrapStopped, "DSN_ACL_HARDENING_FAILED"
+            ):
+                runner._harden_windows_private_file(target)
 
     def test_neon_function_refreshes_jwks_once_on_unknown_kid(self) -> None:
         source = FUNCTION_SOURCE.read_text(encoding="utf-8")

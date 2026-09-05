@@ -90,6 +90,31 @@ The coherent correction batch therefore:
 
 Future authentication/provider bootstrap changes must include compile/static checks, focused positive/negative tests, `ruff check`, `ruff format --check`, secret-shape review and directly coupled transport/rotation failure-mode review before an exact-head verification batch is published.
 
+## Verification-batch follow-up — PR #449 exact head `4f3fac299e7104caf6156b0bc6d27ddbd069a9fb`
+
+The next exact-head authoritative batch proved the formatter correction but exposed a Windows-specific secret-file custody defect in the new bootstrap implementation and its regression assertion.
+
+Self-Hosted Windows CI run `33952214377`, authoritative job `101269010433`, passed PostgreSQL 18 rehearsal, repository/CI policy contracts, compile, Ruff correctness, Ruff formatting, mypy, protected `app:app` and the read-only release contract. The full Regression Shield then completed 2914 tests successfully before one focused CF-D test failed; branch-inclusive coverage remained above the required threshold at 62.20%.
+
+The failing test expected POSIX mode `0600` from `path.stat().st_mode` after `_write_private_file()`. On Windows the observed mode bits were `0666`. This is not a reason to relax the test: the implementation itself was relying on `os.open(..., 0600)` plus `os.chmod(..., 0600)` as if POSIX permission bits represented the Windows confidentiality boundary. They do not establish an NTFS DACL boundary, so the failure exposed a real platform-assumption gap in the production DSN custody path.
+
+Because pytest failed, dependency audit, SAST and tracked-content secret scanning in that authoritative job were skipped and are not PASS evidence. Exact head `4f3fac299e7104caf6156b0bc6d27ddbd069a9fb` is RED.
+
+The blast radius is limited to the new fixed `RUNNER_TEMP` production-DSN handoff file and its focused tests. No database role, OIDC claim validation, Cloudflare secret destination, provider authority, V9 runtime or broker authority is affected.
+
+The correction strengthens the custody boundary rather than weakening the assertion:
+
+- the output file is now created exclusively and refuses a pre-existing path instead of truncating it;
+- no DSN content is written until the platform-specific permission boundary has been applied and verified;
+- Windows uses a protected NTFS DACL through the existing repository `Set-Acl` / SID pattern, removes inherited and unexpected rules, and grants FullControl only to the current runner identity, LocalSystem and the built-in Administrators group;
+- the Windows ACL helper receives only a minimal non-secret child environment plus the fixed file path, suppresses subprocess output, uses bounded execution time and fails closed on any apply/verification error;
+- Unix-like hosts retain explicit `0600` mode enforcement and verification;
+- a permission-hardening failure removes the still-empty handoff file before returning failure;
+- deterministic regression tests cover the exact SID allowlist, inheritance protection, minimal environment, fail-closed ACL rejection, exclusive-create behavior and cleanup-before-secret-write semantics;
+- the authoritative Windows test now relies on the production ACL helper's own apply-and-verify result instead of treating POSIX mode bits as the Windows authority model.
+
+Future cross-platform secret-file tests must assert the operating system's actual access-control primitive. POSIX mode assertions remain valid on Unix-like systems; Windows confidentiality must be proven through an explicit protected DACL or an equivalent accepted Windows security descriptor.
+
 ## Security and authority invariants preserved
 
 - protected V9 `app:app` is unchanged;
