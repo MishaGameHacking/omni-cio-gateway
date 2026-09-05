@@ -240,10 +240,14 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "DATABASE_SQL_URL_PATTERN",
             "FUNCTION_URL_PATTERN",
             "DESTINATION_POLICIES",
+            "trustedDestinationUrl",
+            "exactCandidateDestination",
+            "forwardedHeaders",
             "fetchCfDTrustedNeonRequest",
             "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
             "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
             "MAX_BRANCH_LOOKUP_RESPONSE_BYTES",
+            "MAX_TRUSTED_REQUEST_BODY_BYTES",
             "eu-central-1\\.aws\\.neon\\.tech",
             'request.headers.has(LEGACY_TARGET_HEADER)',
             'request.method !== "POST"',
@@ -277,12 +281,13 @@ class CfDBootstrapEgressTests(unittest.TestCase):
         self.assertIn("tests/*.test.mjs", test_command)
         for marker in (
             "fetchCfDNeonBootstrap",
+            "fetchCfDTrustedNeonRequest",
             "prepareCfDNeonBootstrapRequest",
             "trusted Worker resolves and invokes the Neon Function",
             "cannot select an external target",
             "non-staging or non-Frankfurt runtime database bindings",
             "oversized, or malformed branch metadata",
-            "network sink rejects forged Neon destinations before fetch",
+            "network sink binds fetch to the independently trusted canonical destination",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, node_test)

@@ -15,6 +15,7 @@ const MAX_RUNTIME_DSN_BYTES = 8_192;
 const MAX_AUTHORIZATION_BYTES = 16_384;
 const MAX_REQUEST_BODY_BYTES = 4_096;
 const MAX_BRANCH_LOOKUP_RESPONSE_BYTES = 8_192;
+const MAX_TRUSTED_REQUEST_BODY_BYTES = 8_192;
 const BRANCH_LOOKUP_TIMEOUT_MS = 10_000;
 const BRANCH_LOOKUP_SQL = "SELECT current_setting('neon.branch_id', true)";
 const DATABASE_DESTINATION = "database";
@@ -22,9 +23,27 @@ const FUNCTION_DESTINATION = "function";
 const DESTINATION_POLICIES = new Map([
   [
     DATABASE_DESTINATION,
-    { pattern: DATABASE_SQL_URL_PATTERN, expectedPath: "/sql" },
+    {
+      pattern: DATABASE_SQL_URL_PATTERN,
+      expectedPath: "/sql",
+      redirect: "error",
+      forwardedHeaders: [
+        "content-type",
+        "neon-connection-string",
+        "neon-raw-text-output",
+        "neon-array-mode",
+      ],
+    },
   ],
-  [FUNCTION_DESTINATION, { pattern: FUNCTION_URL_PATTERN, expectedPath: "/" }],
+  [
+    FUNCTION_DESTINATION,
+    {
+      pattern: FUNCTION_URL_PATTERN,
+      expectedPath: "/",
+      redirect: "manual",
+      forwardedHeaders: ["authorization", "accept", "content-type"],
+    },
+  ],
 ]);
 
 function stopped(code) {
@@ -33,6 +52,14 @@ function stopped(code) {
 
 function encodedSize(value) {
   return new TextEncoder().encode(value).length;
+}
+
+function destinationPolicy(destination) {
+  const policy = DESTINATION_POLICIES.get(destination);
+  if (policy === undefined) {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  return policy;
 }
 
 function validatedRuntimeDatabase(bindings) {
@@ -137,8 +164,38 @@ async function validatedBootstrapInput(request, expectedSourceSha) {
   return { authorization, expectedSha: expectedSourceSha };
 }
 
-function branchLookupRequest(runtimeDatabase) {
-  return new Request(`https://${runtimeDatabase.hostname}/sql`, {
+function trustedDestinationUrl(value, destination) {
+  const policy = destinationPolicy(destination);
+  let url;
+  try {
+    url = value instanceof URL ? new URL(value.href) : new URL(value);
+  } catch {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.port !== "" ||
+    url.pathname !== policy.expectedPath ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    !policy.pattern.test(url.href)
+  ) {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  return new URL(`https://${url.hostname}${policy.expectedPath}`);
+}
+
+function databaseSqlUrl(runtimeDatabase) {
+  return trustedDestinationUrl(
+    new URL(`https://${runtimeDatabase.hostname}/sql`),
+    DATABASE_DESTINATION,
+  );
+}
+
+function branchLookupRequest(runtimeDatabase, expectedUrl) {
+  return new Request(expectedUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -152,39 +209,52 @@ function branchLookupRequest(runtimeDatabase) {
   });
 }
 
-function destinationUrl(request, destination) {
-  const value = request.url;
-  const policy = DESTINATION_POLICIES.get(destination);
-  if (policy === undefined) {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
-  }
-  if (!policy.pattern.test(value)) {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
-  }
-
-  let url;
+function exactCandidateDestination(request, expectedUrl) {
+  let candidate;
   try {
-    url = new URL(value);
+    candidate = new URL(request.url);
   } catch {
     stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
   }
-  if (
-    url.protocol !== "https:" ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.port !== "" ||
-    url.pathname !== policy.expectedPath ||
-    url.search !== "" ||
-    url.hash !== ""
-  ) {
+  if (candidate.href !== expectedUrl.href) {
     stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
   }
-  return value;
 }
 
-export async function fetchCfDTrustedNeonRequest(request, destination) {
-  const safeUrl = destinationUrl(request, destination);
-  const safeRequest = new Request(safeUrl, request);
+function forwardedHeaders(request, policy) {
+  const headers = new Headers();
+  for (const name of policy.forwardedHeaders) {
+    const value = request.headers.get(name);
+    if (value === null) {
+      stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    }
+    headers.set(name, value);
+  }
+  return headers;
+}
+
+export async function fetchCfDTrustedNeonRequest(
+  request,
+  expectedUrl,
+  destination,
+) {
+  const policy = destinationPolicy(destination);
+  const safeUrl = trustedDestinationUrl(expectedUrl, destination);
+  exactCandidateDestination(request, safeUrl);
+  if (request.method !== "POST") {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  const body = await request.arrayBuffer();
+  if (body.byteLength > MAX_TRUSTED_REQUEST_BODY_BYTES) {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  const safeRequest = new Request(safeUrl, {
+    method: "POST",
+    headers: forwardedHeaders(request, policy),
+    body,
+    redirect: policy.redirect,
+    signal: request.signal,
+  });
   return fetch(safeRequest);
 }
 
@@ -232,10 +302,13 @@ async function boundedResponseText(response, maxBytes, tooLargeCode) {
 }
 
 async function runtimeBranchId(runtimeDatabase) {
+  const expectedUrl = databaseSqlUrl(runtimeDatabase);
+  const request = branchLookupRequest(runtimeDatabase, expectedUrl);
   let response;
   try {
     response = await fetchCfDTrustedNeonRequest(
-      branchLookupRequest(runtimeDatabase),
+      request,
+      expectedUrl,
       DATABASE_DESTINATION,
     );
   } catch (error) {
@@ -289,11 +362,16 @@ async function runtimeBranchId(runtimeDatabase) {
   return branchId;
 }
 
-function bootstrapOrigin(runtimeDatabase, branchId) {
-  return `https://${branchId}-cfdprodbootstrap.compute.${runtimeDatabase.cell}.eu-central-1.aws.neon.tech/`;
+function bootstrapUrl(runtimeDatabase, branchId) {
+  return trustedDestinationUrl(
+    new URL(
+      `https://${branchId}-cfdprodbootstrap.compute.${runtimeDatabase.cell}.eu-central-1.aws.neon.tech/`,
+    ),
+    FUNCTION_DESTINATION,
+  );
 }
 
-export async function prepareCfDNeonBootstrapRequest(
+async function preparedCfDNeonBootstrapRequest(
   request,
   bindings,
   expectedSourceSha,
@@ -301,7 +379,8 @@ export async function prepareCfDNeonBootstrapRequest(
   const input = await validatedBootstrapInput(request, expectedSourceSha);
   const runtimeDatabase = validatedRuntimeDatabase(bindings);
   const branchId = await runtimeBranchId(runtimeDatabase);
-  const providerRequest = new Request(bootstrapOrigin(runtimeDatabase, branchId), {
+  const expectedUrl = bootstrapUrl(runtimeDatabase, branchId);
+  const providerRequest = new Request(expectedUrl, {
     method: "POST",
     headers: {
       authorization: input.authorization,
@@ -311,8 +390,20 @@ export async function prepareCfDNeonBootstrapRequest(
     body: JSON.stringify({ expected_sha: input.expectedSha }),
     redirect: "manual",
   });
-  destinationUrl(providerRequest, FUNCTION_DESTINATION);
-  return providerRequest;
+  return { providerRequest, expectedUrl };
+}
+
+export async function prepareCfDNeonBootstrapRequest(
+  request,
+  bindings,
+  expectedSourceSha,
+) {
+  const prepared = await preparedCfDNeonBootstrapRequest(
+    request,
+    bindings,
+    expectedSourceSha,
+  );
+  return prepared.providerRequest;
 }
 
 export async function fetchCfDNeonBootstrap(
@@ -320,10 +411,14 @@ export async function fetchCfDNeonBootstrap(
   bindings,
   expectedSourceSha,
 ) {
-  const providerRequest = await prepareCfDNeonBootstrapRequest(
+  const prepared = await preparedCfDNeonBootstrapRequest(
     request,
     bindings,
     expectedSourceSha,
   );
-  return fetchCfDTrustedNeonRequest(providerRequest, FUNCTION_DESTINATION);
+  return fetchCfDTrustedNeonRequest(
+    prepared.providerRequest,
+    prepared.expectedUrl,
+    FUNCTION_DESTINATION,
+  );
 }
