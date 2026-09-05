@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -20,14 +20,32 @@ FUNCTION_SOURCE = (
 
 
 EXPECTED_SHA = "a" * 40
-VALID_STAGING_DSN = (
-    "postgresql://omni_cio_cloudflare_staging:secret@"
-    "ep-example.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+_TEST_PASSWORD_MARKER = "synthetic-password-marker"
+
+
+def _postgres_uri(role: str, host: str, *, channel_binding: bool = False) -> str:
+    query = {"sslmode": "require"}
+    if channel_binding:
+        query["channel_binding"] = "require"
+    return urlunsplit(
+        (
+            "postgresql",
+            f"{role}:{_TEST_PASSWORD_MARKER}@{host}",
+            "/neondb",
+            urlencode(query),
+            "",
+        )
+    )
+
+
+VALID_STAGING_DSN = _postgres_uri(
+    "omni_cio_cloudflare_staging",
+    "ep-example.c-6.eu-central-1.aws.neon.tech",
 )
-VALID_PRODUCTION_DSN = (
-    "postgresql://omni_cio_cloudflare_prod:secret@"
-    "ep-example-pooler.c-6.eu-central-1.aws.neon.tech/neondb"
-    "?sslmode=require&channel_binding=require"
+VALID_PRODUCTION_DSN = _postgres_uri(
+    "omni_cio_cloudflare_prod",
+    "ep-example-pooler.c-6.eu-central-1.aws.neon.tech",
+    channel_binding=True,
 )
 
 
