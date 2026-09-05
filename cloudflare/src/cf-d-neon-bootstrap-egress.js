@@ -1,6 +1,7 @@
 export const CF_D_NEON_BOOTSTRAP_EGRESS_HOST = "cf-d-neon-bootstrap.internal";
 
 const RUNTIME_DSN_BINDING = "OMNI_V10_POSTGRES_DSN";
+const BOOTSTRAP_ORIGIN_BINDING = "OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN";
 const EXPECTED_STAGING_ROLE = "omni_cio_cloudflare_staging";
 const LEGACY_TARGET_HEADER = "x-omni-neon-bootstrap-target";
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
@@ -10,8 +11,9 @@ const RUNTIME_HOST_PATTERN =
 const DATABASE_SQL_URL_PATTERN =
   /^https:\/\/ep-[a-z0-9-]{4,60}(?:-pooler)?\.c-[a-z0-9]+\.eu-central-1\.aws\.neon\.tech\/sql$/;
 const FUNCTION_URL_PATTERN =
-  /^https:\/\/br-[a-z0-9-]{4,57}-cfdprodbootstrap\.compute\.c-[a-z0-9]+\.eu-central-1\.aws\.neon\.tech\/$/;
+  /^https:\/\/(br-[a-z0-9-]{4,57})-cfdprodbootstrap\.compute\.(c-[a-z0-9]+)\.eu-central-1\.aws\.neon\.tech\/$/;
 const MAX_RUNTIME_DSN_BYTES = 8_192;
+const MAX_BOOTSTRAP_ORIGIN_BYTES = 1_024;
 const MAX_AUTHORIZATION_BYTES = 16_384;
 const MAX_REQUEST_BODY_BYTES = 4_096;
 const MAX_BRANCH_LOOKUP_RESPONSE_BYTES = 8_192;
@@ -233,25 +235,25 @@ function forwardedHeaders(request, policy) {
   return headers;
 }
 
-export async function fetchCfDTrustedNeonRequest(
-  request,
-  expectedUrl,
-  destination,
-) {
-  const policy = destinationPolicy(destination);
-  const safeUrl = trustedDestinationUrl(expectedUrl, destination);
-  exactCandidateDestination(request, safeUrl);
-  if (request.method !== "POST") {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
-  }
+async function boundedRequestBody(request) {
   const body = await request.arrayBuffer();
   if (body.byteLength > MAX_TRUSTED_REQUEST_BODY_BYTES) {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  return body;
+}
+
+async function fetchRuntimeBranchLookup(runtimeDatabase, request) {
+  const policy = destinationPolicy(DATABASE_DESTINATION);
+  const safeUrl = databaseSqlUrl(runtimeDatabase);
+  exactCandidateDestination(request, safeUrl);
+  if (request.method !== "POST") {
     stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
   }
   const safeRequest = new Request(safeUrl, {
     method: "POST",
     headers: forwardedHeaders(request, policy),
-    body,
+    body: await boundedRequestBody(request),
     redirect: policy.redirect,
     signal: request.signal,
   });
@@ -306,11 +308,7 @@ async function runtimeBranchId(runtimeDatabase) {
   const request = branchLookupRequest(runtimeDatabase, expectedUrl);
   let response;
   try {
-    response = await fetchCfDTrustedNeonRequest(
-      request,
-      expectedUrl,
-      DATABASE_DESTINATION,
-    );
+    response = await fetchRuntimeBranchLookup(runtimeDatabase, request);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -362,25 +360,30 @@ async function runtimeBranchId(runtimeDatabase) {
   return branchId;
 }
 
-function bootstrapUrl(runtimeDatabase, branchId) {
-  return trustedDestinationUrl(
-    new URL(
-      `https://${branchId}-cfdprodbootstrap.compute.${runtimeDatabase.cell}.eu-central-1.aws.neon.tech/`,
-    ),
-    FUNCTION_DESTINATION,
-  );
+function trustedBootstrapContext(bindings, runtimeDatabase) {
+  const value = bindings?.[BOOTSTRAP_ORIGIN_BINDING];
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    encodedSize(value) > MAX_BOOTSTRAP_ORIGIN_BYTES
+  ) {
+    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID");
+  }
+  let safeUrl;
+  try {
+    safeUrl = trustedDestinationUrl(value, FUNCTION_DESTINATION);
+  } catch {
+    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID");
+  }
+  const match = FUNCTION_URL_PATTERN.exec(safeUrl.href);
+  if (match === null || match[2] !== runtimeDatabase.cell) {
+    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+  }
+  return { url: safeUrl, branchId: match[1] };
 }
 
-async function preparedCfDNeonBootstrapRequest(
-  request,
-  bindings,
-  expectedSourceSha,
-) {
-  const input = await validatedBootstrapInput(request, expectedSourceSha);
-  const runtimeDatabase = validatedRuntimeDatabase(bindings);
-  const branchId = await runtimeBranchId(runtimeDatabase);
-  const expectedUrl = bootstrapUrl(runtimeDatabase, branchId);
-  const providerRequest = new Request(expectedUrl, {
+function providerRequest(input, expectedUrl) {
+  return new Request(expectedUrl, {
     method: "POST",
     headers: {
       authorization: input.authorization,
@@ -390,7 +393,50 @@ async function preparedCfDNeonBootstrapRequest(
     body: JSON.stringify({ expected_sha: input.expectedSha }),
     redirect: "manual",
   });
-  return { providerRequest, expectedUrl };
+}
+
+async function preparedCfDNeonBootstrapRequest(
+  request,
+  bindings,
+  expectedSourceSha,
+) {
+  const input = await validatedBootstrapInput(request, expectedSourceSha);
+  const runtimeDatabase = validatedRuntimeDatabase(bindings);
+  const bootstrap = trustedBootstrapContext(bindings, runtimeDatabase);
+  const branchId = await runtimeBranchId(runtimeDatabase);
+  if (bootstrap.branchId !== branchId) {
+    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+  }
+  return {
+    providerRequest: providerRequest(input, bootstrap.url),
+    runtimeDatabase,
+    branchId,
+  };
+}
+
+async function fetchTrustedBootstrapRequest(
+  request,
+  bindings,
+  runtimeDatabase,
+  branchId,
+) {
+  const policy = destinationPolicy(FUNCTION_DESTINATION);
+  const bootstrap = trustedBootstrapContext(bindings, runtimeDatabase);
+  if (bootstrap.branchId !== branchId) {
+    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+  }
+  exactCandidateDestination(request, bootstrap.url);
+  if (request.method !== "POST") {
+    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+  }
+  const safeRequest = new Request(bootstrap.url, {
+    method: "POST",
+    headers: forwardedHeaders(request, policy),
+    body: await boundedRequestBody(request),
+    redirect: policy.redirect,
+    signal: request.signal,
+  });
+  return fetch(safeRequest);
 }
 
 export async function prepareCfDNeonBootstrapRequest(
@@ -416,9 +462,10 @@ export async function fetchCfDNeonBootstrap(
     bindings,
     expectedSourceSha,
   );
-  return fetchCfDTrustedNeonRequest(
+  return fetchTrustedBootstrapRequest(
     prepared.providerRequest,
-    prepared.expectedUrl,
-    FUNCTION_DESTINATION,
+    bindings,
+    prepared.runtimeDatabase,
+    prepared.branchId,
   );
 }

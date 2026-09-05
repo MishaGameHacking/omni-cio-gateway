@@ -20,6 +20,7 @@ WORKER_SOURCE = ROOT / "cloudflare/src/index.js"
 EGRESS_SOURCE = ROOT / "cloudflare/src/cf-d-neon-bootstrap-egress.js"
 NODE_TEST_SOURCE = ROOT / "apps/web/tests/cloudflare_cf_d_bootstrap_egress.test.mjs"
 WEB_PACKAGE = ROOT / "apps/web/package.json"
+RELEASE_CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
 EXPECTED_SHA = "a" * 40
 _TEST_VALUE_MARKER = secrets.token_urlsafe(32)
 _TEST_AUTHORIZATION = f"Bearer {secrets.token_urlsafe(32)}"
@@ -228,10 +229,11 @@ class CfDBootstrapEgressTests(unittest.TestCase):
                 self.assertIn(marker, worker)
         self.assertNotIn("return fetch(providerRequest)", worker)
 
-    def test_egress_policy_derives_destination_from_staging_database_binding(self) -> None:
+    def test_egress_policy_uses_secret_bound_function_origin_and_runtime_database_binding(self) -> None:
         source = EGRESS_SOURCE.read_text(encoding="utf-8")
         required = (
             'RUNTIME_DSN_BINDING = "OMNI_V10_POSTGRES_DSN"',
+            'BOOTSTRAP_ORIGIN_BINDING = "OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN"',
             'EXPECTED_STAGING_ROLE = "omni_cio_cloudflare_staging"',
             "current_setting('neon.branch_id', true)",
             "Neon-Connection-String",
@@ -241,9 +243,11 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "FUNCTION_URL_PATTERN",
             "DESTINATION_POLICIES",
             "trustedDestinationUrl",
-            "exactCandidateDestination",
-            "forwardedHeaders",
-            "fetchCfDTrustedNeonRequest",
+            "trustedBootstrapContext",
+            "fetchRuntimeBranchLookup",
+            "fetchTrustedBootstrapRequest",
+            "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID",
+            "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH",
             "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
             "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
             "MAX_BRANCH_LOOKUP_RESPONSE_BYTES",
@@ -269,9 +273,20 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "NEON_ORG_ID",
             "process.env",
             "console.log",
+            "export async function fetchCfDTrustedNeonRequest",
         ):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, source)
+
+    def test_release_contract_tracks_staging_bootstrap_origin_binding_fail_closed(self) -> None:
+        contract = json.loads(RELEASE_CONTRACT.read_text(encoding="utf-8"))
+        self.assertEqual(
+            contract["candidate"]["staging_bootstrap_origin_binding"],
+            "OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN",
+        )
+        self.assertFalse(
+            contract["fail_closed"]["missing_staging_bootstrap_origin_is_success"]
+        )
 
     def test_executable_node_regression_is_wired_into_product_web_test_command(self) -> None:
         node_test = NODE_TEST_SOURCE.read_text(encoding="utf-8")
@@ -281,13 +296,12 @@ class CfDBootstrapEgressTests(unittest.TestCase):
         self.assertIn("tests/*.test.mjs", test_command)
         for marker in (
             "fetchCfDNeonBootstrap",
-            "fetchCfDTrustedNeonRequest",
             "prepareCfDNeonBootstrapRequest",
-            "trusted Worker resolves and invokes the Neon Function",
+            "secret-bound same-branch Neon Function",
             "cannot select an external target",
             "non-staging or non-Frankfurt runtime database bindings",
+            "secret-bound Function origin matching database cell and branch",
             "oversized, or malformed branch metadata",
-            "network sink binds fetch to the independently trusted canonical destination",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, node_test)

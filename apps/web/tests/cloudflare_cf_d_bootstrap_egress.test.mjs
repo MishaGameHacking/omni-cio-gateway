@@ -5,7 +5,6 @@ import test from "node:test";
 import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
   fetchCfDNeonBootstrap,
-  fetchCfDTrustedNeonRequest,
   prepareCfDNeonBootstrapRequest,
 } from "../../../cloudflare/src/cf-d-neon-bootstrap-egress.js";
 
@@ -26,6 +25,7 @@ function virtualRequest(options = {}) {
   const headers = new Headers({
     Authorization: TEST_AUTHORIZATION,
     "Content-Type": "application/json",
+    "X-Untrusted-Forward": "must-not-leave-worker",
   });
   if (options.legacyTarget !== undefined) {
     headers.set("x-omni-neon-bootstrap-target", options.legacyTarget);
@@ -38,37 +38,14 @@ function virtualRequest(options = {}) {
   return new Request(url, init);
 }
 
-function bindings(dsn = TEST_RUNTIME_DSN) {
-  return { OMNI_V10_POSTGRES_DSN: dsn };
-}
-
-function databaseCandidate(url = DATABASE_SQL_URL) {
-  return new Request(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "Neon-Connection-String": TEST_RUNTIME_DSN,
-      "Neon-Raw-Text-Output": "true",
-      "Neon-Array-Mode": "true",
-    },
-    body: JSON.stringify({
-      query: "SELECT current_setting('neon.branch_id', true)",
-      params: [],
-    }),
-  });
-}
-
-function functionCandidate(url = EXPECTED_FUNCTION_ORIGIN) {
-  return new Request(url, {
-    method: "POST",
-    headers: {
-      Authorization: TEST_AUTHORIZATION,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "X-Untrusted-Forward": "must-not-leave-worker",
-    },
-    body: JSON.stringify({ expected_sha: EXPECTED_SHA }),
-  });
+function bindings(
+  dsn = TEST_RUNTIME_DSN,
+  origin = EXPECTED_FUNCTION_ORIGIN,
+) {
+  return {
+    OMNI_V10_POSTGRES_DSN: dsn,
+    OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN: origin,
+  };
 }
 
 function networkDouble(options = {}) {
@@ -102,6 +79,8 @@ function networkDouble(options = {}) {
       assert.equal(request.redirect, "manual");
       assert.equal(request.headers.get("authorization"), TEST_AUTHORIZATION);
       assert.equal(request.headers.get("x-untrusted-forward"), null);
+      assert.equal(request.headers.get("x-omni-neon-bootstrap-target"), null);
+      assert.equal(request.headers.get("host"), null);
       assert.deepEqual(await request.json(), { expected_sha: EXPECTED_SHA });
       return new Response(JSON.stringify({ status: "READY" }), {
         status: functionStatus,
@@ -131,7 +110,7 @@ async function assertStopped(promise, code) {
   });
 }
 
-test("CF-D trusted Worker resolves and invokes the Neon Function from its staging database binding", async () => {
+test("CF-D trusted Worker invokes only the secret-bound same-branch Neon Function", async () => {
   const network = networkDouble();
   const response = await withFetch(network.fetcher, () =>
     fetchCfDNeonBootstrap(virtualRequest(), bindings(), EXPECTED_SHA),
@@ -141,11 +120,9 @@ test("CF-D trusted Worker resolves and invokes the Neon Function from its stagin
   assert.equal(network.calls.length, 2);
   assert.equal(network.calls[0].url, DATABASE_SQL_URL);
   assert.equal(network.calls[1].url, EXPECTED_FUNCTION_ORIGIN);
-  assert.equal(network.calls[1].headers.get("x-omni-neon-bootstrap-target"), null);
-  assert.equal(network.calls[1].headers.get("host"), null);
 });
 
-test("CF-D preparation reconstructs a bounded provider request", async () => {
+test("CF-D preparation reconstructs a bounded provider request from secret custody", async () => {
   const network = networkDouble();
   const prepared = await withFetch(network.fetcher, () =>
     prepareCfDNeonBootstrapRequest(
@@ -160,6 +137,7 @@ test("CF-D preparation reconstructs a bounded provider request", async () => {
   assert.equal(prepared.method, "POST");
   assert.equal(prepared.redirect, "manual");
   assert.equal(prepared.headers.get("authorization"), TEST_AUTHORIZATION);
+  assert.equal(prepared.headers.get("x-untrusted-forward"), null);
   assert.equal(prepared.headers.get("x-omni-neon-bootstrap-target"), null);
   assert.equal(prepared.headers.get("host"), null);
   assert.deepEqual(await prepared.json(), { expected_sha: EXPECTED_SHA });
@@ -216,6 +194,68 @@ test("CF-D Worker rejects non-staging or non-Frankfurt runtime database bindings
   }
 });
 
+test("CF-D Worker requires a secret-bound Function origin matching database cell and branch", async () => {
+  const invalidBeforeLookup = [
+    undefined,
+    "https://example.com/",
+    `http://${BRANCH_ID}-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech/`,
+    `https://${BRANCH_ID}-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech:444/`,
+    `${EXPECTED_FUNCTION_ORIGIN}path`,
+    `${EXPECTED_FUNCTION_ORIGIN}?query=1`,
+  ];
+  for (const origin of invalidBeforeLookup) {
+    const network = networkDouble();
+    const currentBindings =
+      origin === undefined
+        ? { OMNI_V10_POSTGRES_DSN: TEST_RUNTIME_DSN }
+        : bindings(TEST_RUNTIME_DSN, origin);
+    await withFetch(network.fetcher, () =>
+      assertStopped(
+        prepareCfDNeonBootstrapRequest(
+          virtualRequest(),
+          currentBindings,
+          EXPECTED_SHA,
+        ),
+        "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID",
+      ),
+    );
+    assert.equal(network.calls.length, 0);
+  }
+
+  const wrongCell = networkDouble();
+  await withFetch(wrongCell.fetcher, () =>
+    assertStopped(
+      prepareCfDNeonBootstrapRequest(
+        virtualRequest(),
+        bindings(
+          TEST_RUNTIME_DSN,
+          `https://${BRANCH_ID}-cfdprodbootstrap.compute.c-9.eu-central-1.aws.neon.tech/`,
+        ),
+        EXPECTED_SHA,
+      ),
+      "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH",
+    ),
+  );
+  assert.equal(wrongCell.calls.length, 0);
+
+  const wrongBranch = networkDouble();
+  await withFetch(wrongBranch.fetcher, () =>
+    assertStopped(
+      prepareCfDNeonBootstrapRequest(
+        virtualRequest(),
+        bindings(
+          TEST_RUNTIME_DSN,
+          "https://br-other1234-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech/",
+        ),
+        EXPECTED_SHA,
+      ),
+      "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH",
+    ),
+  );
+  assert.equal(wrongBranch.calls.length, 1);
+  assert.equal(wrongBranch.calls[0].url, DATABASE_SQL_URL);
+});
+
 test("CF-D Worker rejects failed, oversized, or malformed branch metadata before Function egress", async () => {
   const failedLookup = networkDouble({ branchStatus: 503 });
   await withFetch(failedLookup.fetcher, () =>
@@ -268,82 +308,4 @@ test("CF-D Worker rejects failed, oversized, or malformed branch metadata before
     ),
   );
   assert.equal(malformedLookup.calls.length, 1);
-});
-
-test("CF-D network sink binds fetch to the independently trusted canonical destination", async () => {
-  const forgedDatabaseCandidates = [
-    databaseCandidate("https://example.com/sql"),
-    databaseCandidate(`http://${DATABASE_HOST}/sql`),
-    databaseCandidate(`https://${DATABASE_HOST}:444/sql`),
-    databaseCandidate(`https://${DATABASE_HOST}/other`),
-    databaseCandidate(`https://${DATABASE_HOST}/sql?query=1`),
-  ];
-  const forgedFunctionCandidates = [
-    functionCandidate("https://example.com/"),
-    functionCandidate(
-      `https://${BRANCH_ID}-other.compute.c-6.eu-central-1.aws.neon.tech/`,
-    ),
-    functionCandidate(
-      `https://${BRANCH_ID}-cfdprodbootstrap.compute.c-6.us-east-1.aws.neon.tech/`,
-    ),
-    functionCandidate(`${EXPECTED_FUNCTION_ORIGIN}path`),
-    functionCandidate(`${EXPECTED_FUNCTION_ORIGIN}?query=1`),
-    functionCandidate(`${EXPECTED_FUNCTION_ORIGIN}#fragment`),
-  ];
-  const rejectedNetwork = networkDouble();
-  await withFetch(rejectedNetwork.fetcher, async () => {
-    for (const request of forgedDatabaseCandidates) {
-      await assertStopped(
-        fetchCfDTrustedNeonRequest(
-          request,
-          new URL(DATABASE_SQL_URL),
-          "database",
-        ),
-        "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
-      );
-    }
-    for (const request of forgedFunctionCandidates) {
-      await assertStopped(
-        fetchCfDTrustedNeonRequest(
-          request,
-          new URL(EXPECTED_FUNCTION_ORIGIN),
-          "function",
-        ),
-        "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
-      );
-    }
-    await assertStopped(
-      fetchCfDTrustedNeonRequest(
-        databaseCandidate(),
-        new URL("https://example.com/sql"),
-        "database",
-      ),
-      "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
-    );
-    await assertStopped(
-      fetchCfDTrustedNeonRequest(
-        databaseCandidate(),
-        new URL(DATABASE_SQL_URL),
-        "unknown",
-      ),
-      "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
-    );
-  });
-  assert.equal(rejectedNetwork.calls.length, 0);
-
-  const acceptedNetwork = networkDouble();
-  const response = await withFetch(acceptedNetwork.fetcher, () =>
-    fetchCfDTrustedNeonRequest(
-      functionCandidate(),
-      new URL(EXPECTED_FUNCTION_ORIGIN),
-      "function",
-    ),
-  );
-  assert.equal(response.status, 200);
-  assert.equal(acceptedNetwork.calls.length, 1);
-  assert.equal(acceptedNetwork.calls[0].url, EXPECTED_FUNCTION_ORIGIN);
-  assert.equal(
-    acceptedNetwork.calls[0].headers.get("x-untrusted-forward"),
-    null,
-  );
 });
