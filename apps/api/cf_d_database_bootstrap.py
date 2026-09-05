@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
 import re
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -20,6 +21,7 @@ _NEON_CELL_PATTERN = re.compile(r"^c-[a-z0-9]+\.eu-central-1\.aws\.neon\.tech$")
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _MAX_AUTHORIZATION_BYTES = 16_384
 _MAX_PROVIDER_RESPONSE_BYTES = 32_768
+_PROVIDER_STREAM_CHUNK_BYTES = 8_192
 _PROVIDER_TIMEOUT_SECONDS = 20.0
 
 
@@ -118,6 +120,15 @@ def _authorization(request: Request) -> str:
     return f"Bearer {token}"
 
 
+def _read_provider_response(response: httpx.Response) -> bytes:
+    content = bytearray()
+    for chunk in response.iter_bytes(chunk_size=_PROVIDER_STREAM_CHUNK_BYTES):
+        if len(content) + len(chunk) > _MAX_PROVIDER_RESPONSE_BYTES:
+            raise RuntimeError("CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_TOO_LARGE")
+        content.extend(chunk)
+    return bytes(content)
+
+
 def install_cf_d_database_bootstrap_route(
     app: FastAPI,
     *,
@@ -148,7 +159,8 @@ def install_cf_d_database_bootstrap_route(
                 follow_redirects=False,
                 trust_env=False,
             ) as client:
-                response = client.post(
+                with client.stream(
+                    "POST",
                     provider_origin,
                     headers={
                         "Authorization": authorization,
@@ -156,18 +168,23 @@ def install_cf_d_database_bootstrap_route(
                         "Content-Type": "application/json",
                     },
                     json={"expected_sha": release_sha},
-                )
+                ) as response:
+                    if response.status_code != 200:
+                        return _provider_error(
+                            "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_REJECTED"
+                        )
+                    try:
+                        content = _read_provider_response(response)
+                    except RuntimeError:
+                        return _provider_error(
+                            "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_TOO_LARGE"
+                        )
         except httpx.HTTPError:
             return _provider_error("CLOUDFLARE_CF_D_NEON_BOOTSTRAP_UNAVAILABLE")
 
-        if response.status_code != 200:
-            return _provider_error("CLOUDFLARE_CF_D_NEON_BOOTSTRAP_REJECTED")
-        content = response.content
-        if len(content) > _MAX_PROVIDER_RESPONSE_BYTES:
-            return _provider_error("CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_TOO_LARGE")
         try:
-            payload = response.json()
-        except ValueError:
+            payload = json.loads(content.decode("utf-8"))
+        except (UnicodeError, ValueError):
             return _provider_error("CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_INVALID")
         if not isinstance(payload, dict):
             return _provider_error("CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_INVALID")

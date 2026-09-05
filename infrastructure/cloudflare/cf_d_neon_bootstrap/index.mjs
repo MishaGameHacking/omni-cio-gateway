@@ -100,9 +100,9 @@ function validateClaims(claims, expectedSha, nowSeconds = Math.floor(Date.now() 
   if (typeof claims.jti !== 'string' || claims.jti.length < 8 || claims.jti.length > 256) throw new Error('OIDC_JTI_INVALID');
 }
 
-async function loadJwks() {
+async function loadJwks(forceRefresh = false) {
   const now = Date.now();
-  if (jwksCache !== null && now < jwksExpiresAt) return jwksCache;
+  if (!forceRefresh && jwksCache !== null && now < jwksExpiresAt) return jwksCache;
   const response = await fetch(GITHUB_JWKS_URL, {
     method: 'GET',
     headers: { accept: 'application/json' },
@@ -119,6 +119,21 @@ async function loadJwks() {
   return jwksCache;
 }
 
+function matchingSigningKeys(keys, kid) {
+  return keys.filter((key) => key && key.kid === kid && key.kty === 'RSA');
+}
+
+async function signingKeyForKid(kid) {
+  let keys = await loadJwks();
+  let candidates = matchingSigningKeys(keys, kid);
+  if (candidates.length === 0) {
+    keys = await loadJwks(true);
+    candidates = matchingSigningKeys(keys, kid);
+  }
+  if (candidates.length !== 1) throw new Error('OIDC_SIGNING_KEY_INVALID');
+  return candidates[0];
+}
+
 async function verifyOidcToken(token, expectedSha) {
   if (typeof token !== 'string' || Buffer.byteLength(token, 'utf8') > MAX_TOKEN_BYTES) {
     throw new Error('OIDC_TOKEN_INVALID');
@@ -131,12 +146,10 @@ async function verifyOidcToken(token, expectedSha) {
   if (header.alg !== 'RS256' || header.typ !== 'JWT' || typeof header.kid !== 'string' || header.kid.length === 0) {
     throw new Error('OIDC_HEADER_INVALID');
   }
-  const keys = await loadJwks();
-  const candidates = keys.filter((key) => key && key.kid === header.kid && key.kty === 'RSA');
-  if (candidates.length !== 1) throw new Error('OIDC_SIGNING_KEY_INVALID');
+  const signingKey = await signingKeyForKid(header.kid);
   const key = await subtle.importKey(
     'jwk',
-    candidates[0],
+    signingKey,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false,
     ['verify'],

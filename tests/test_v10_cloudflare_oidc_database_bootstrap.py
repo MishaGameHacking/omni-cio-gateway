@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,9 +15,7 @@ import scripts.bootstrap_v10_cloudflare_production_database_via_staging as runne
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FUNCTION_SOURCE = (
-    ROOT / "infrastructure/cloudflare/cf_d_neon_bootstrap/index.mjs"
-)
+FUNCTION_SOURCE = ROOT / "infrastructure/cloudflare/cf_d_neon_bootstrap/index.mjs"
 
 
 EXPECTED_SHA = "a" * 40
@@ -67,24 +66,47 @@ class _Connection:
 
 
 class _Response:
-    status_code = 200
+    def __init__(
+        self,
+        payload: dict[str, object] | None = None,
+        *,
+        content: bytes | None = None,
+        status_code: int = 200,
+    ) -> None:
+        self.status_code = status_code
+        self.content = (
+            json.dumps(payload).encode("utf-8") if content is None else content
+        )
+        self.bytes_yielded = 0
 
-    def __init__(self, payload: dict[str, object]) -> None:
-        self._payload = payload
-        import json
+    def iter_bytes(self, chunk_size: int | None = None):  # type: ignore[no-untyped-def]
+        size = chunk_size or max(1, len(self.content))
+        for offset in range(0, len(self.content), size):
+            chunk = self.content[offset : offset + size]
+            self.bytes_yielded += len(chunk)
+            yield chunk
 
-        self.content = json.dumps(payload).encode("utf-8")
 
-    def json(self) -> dict[str, object]:
-        return self._payload
+class _StreamContext:
+    def __init__(self, response: _Response) -> None:
+        self.response = response
+
+    def __enter__(self) -> _Response:
+        return self.response
+
+    def __exit__(
+        self, exc_type, exc, traceback
+    ) -> None:  # type: ignore[no-untyped-def]
+        return None
 
 
 class _Client:
-    def __init__(self, payload: dict[str, object], **kwargs: object) -> None:
-        self.payload = payload
+    def __init__(self, response: _Response, **kwargs: object) -> None:
+        self.response = response
         self.kwargs = kwargs
         self.authorization = ""
         self.url = ""
+        self.streamed = False
 
     def __enter__(self) -> _Client:
         return self
@@ -94,13 +116,20 @@ class _Client:
     ) -> None:  # type: ignore[no-untyped-def]
         return None
 
-    def post(
-        self, url: str, *, headers: dict[str, str], json: dict[str, str]
-    ) -> _Response:
+    def stream(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        json: dict[str, str],
+    ) -> _StreamContext:
+        assert method == "POST"
         self.url = url
         self.authorization = headers["Authorization"]
+        self.streamed = True
         assert json == {"expected_sha": EXPECTED_SHA}
-        return _Response(self.payload)
+        return _StreamContext(self.response)
 
 
 class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
@@ -162,7 +191,7 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
         observed: list[_Client] = []
 
         def client_factory(**kwargs: object) -> _Client:
-            client = _Client(payload, **kwargs)
+            client = _Client(_Response(payload), **kwargs)
             observed.append(client)
             return client
 
@@ -186,8 +215,51 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["runtime_dsn"], VALID_PRODUCTION_DSN)
         self.assertEqual(len(observed), 1)
+        self.assertTrue(observed[0].streamed)
         self.assertEqual(observed[0].authorization, "Bearer synthetic.jwt.token")
         self.assertNotIn("synthetic.jwt.token", repr(response.headers))
+
+    def test_route_stops_streaming_when_provider_response_exceeds_budget(self) -> None:
+        raw = b"x" * (
+            proxy._MAX_PROVIDER_RESPONSE_BYTES
+            + (proxy._PROVIDER_STREAM_CHUNK_BYTES * 3)
+        )
+        provider_response = _Response(content=raw)
+        observed: list[_Client] = []
+
+        def client_factory(**kwargs: object) -> _Client:
+            client = _Client(provider_response, **kwargs)
+            observed.append(client)
+            return client
+
+        staging = FastAPI()
+        with mock.patch.object(proxy.httpx, "Client", side_effect=client_factory):
+            proxy.install_cf_d_database_bootstrap_route(
+                staging,
+                connection=_Connection(),
+                runtime_dsn=VALID_STAGING_DSN,
+                release_sha=EXPECTED_SHA,
+                runtime_role="omni_cio_cloudflare_staging",
+            )
+            response = TestClient(staging).post(
+                proxy._BOOTSTRAP_PATH,
+                headers={
+                    "Authorization": "Bearer synthetic.jwt.token",
+                    "X-Omni-Expected-Sha": EXPECTED_SHA,
+                },
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json()["detail"],
+            "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_TOO_LARGE",
+        )
+        self.assertEqual(len(observed), 1)
+        self.assertLess(provider_response.bytes_yielded, len(raw))
+        self.assertLessEqual(
+            provider_response.bytes_yielded,
+            proxy._MAX_PROVIDER_RESPONSE_BYTES + proxy._PROVIDER_STREAM_CHUNK_BYTES,
+        )
 
     def test_runner_accepts_only_github_oidc_request_host_and_custom_audience(
         self,
@@ -225,6 +297,18 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
                     path.read_text(encoding="utf-8").strip(), VALID_PRODUCTION_DSN
                 )
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_neon_function_refreshes_jwks_once_on_unknown_kid(self) -> None:
+        source = FUNCTION_SOURCE.read_text(encoding="utf-8")
+        start = source.index("async function signingKeyForKid(kid)")
+        end = source.index("async function verifyOidcToken", start)
+        section = source[start:end]
+        self.assertIn("if (candidates.length === 0)", section)
+        self.assertEqual(section.count("loadJwks(true)"), 1)
+        self.assertLess(
+            section.index("loadJwks(true)"),
+            section.index("if (candidates.length !== 1)"),
+        )
 
     def test_neon_function_source_enforces_oidc_and_least_privilege_markers(
         self,

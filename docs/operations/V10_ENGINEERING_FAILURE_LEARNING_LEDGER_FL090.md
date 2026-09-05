@@ -50,6 +50,8 @@ Deterministic tests and guards require that:
 - the route requires the exact release SHA and a bounded Bearer token, disables redirects/proxy inheritance and returns `Cache-Control: no-store`;
 - the Neon Function contains no provider IDs, management API keys, committed DSNs or credential logging;
 - OIDC verification is RS256/JWKS-based and checks the exact release authority claims rather than relying on the mutable/default `sub` format;
+- an unknown OIDC signing `kid` triggers at most one forced JWKS refresh before fail-closed rejection, so signing-key rotation does not leave a valid token blocked behind a still-live stale cache;
+- the staging proxy consumes the Neon Function response as a bounded stream and stops before buffering an oversized body;
 - only PostgreSQL 18 in the Frankfurt Neon region is accepted;
 - role/object ownership drift and privilege widening fail closed;
 - the runtime credential derivation is deterministic for the same owner credential;
@@ -63,6 +65,30 @@ Deterministic tests and guards require that:
 - Short-lived OIDC is only safe when the receiver verifies exact workflow provenance and source identity before mutation.
 - Bootstrap retries must be credential-idempotent. Replaying an otherwise valid short-lived assertion must not silently rotate a production database password to a new value.
 - Secret custody remains end-to-end: provider-injected owner credentials, OIDC assertions and generated runtime DSNs are process/private-file/provider-secret material only.
+
+## Verification-batch follow-up — PR #449 exact head `60935d37a54d35794277a993992a8781e71c480d`
+
+The first full exact-head verification batch exposed one deterministic preflight miss and two adjacent review findings before merge.
+
+Self-Hosted Windows CI run `33948910200`, authoritative job `101259879426`, reached `Run protected runtime static quality`. Ruff correctness passed, but `ruff format --check` rejected `scripts/bootstrap_v10_cloudflare_production_database_via_staging.py`. The job is therefore RED. Full pytest, dependency audit, SAST and tracked-content secret scanning after that fail-fast step were skipped and are not PASS evidence.
+
+The formatter defect was local in code shape but systemic in process: the focused preflight compiled and unit-tested the new bootstrap code without running the accepted formatter gate on every changed Python file. The correction applies the accepted Ruff formatting and this batch may not be treated as final until a fresh exact-head cycle runs.
+
+Independent PR review also identified two credible resilience gaps in the same new bootstrap path:
+
+1. a cached GitHub JWKS set with no matching token `kid` caused immediate rejection and did not perform one bounded cache-bypassing refetch, creating an avoidable transient failure during signing-key rotation;
+2. the staging proxy checked `_MAX_PROVIDER_RESPONSE_BYTES` only after `httpx` had buffered the complete provider response, so the size guard did not actually bound response-body memory use.
+
+The blast radius is limited to the new CF-D federated production-bootstrap path: the Neon Function OIDC verifier, the staging-only proxy route, their deterministic tests and the bootstrap CLI formatter surface. No V9 runtime, tenant model, broker authority, general Cloudflare release sequencing or staging static-Neon recovery authority is changed.
+
+The coherent correction batch therefore:
+
+- refreshes JWKS exactly once only when the cached set contains zero matching RSA keys for the requested `kid`, then preserves exact-one-key fail-closed validation;
+- streams the provider response through fixed-size chunks and aborts once the decoded byte budget is exceeded;
+- adds deterministic regression guards for the one-time JWKS refresh path and early oversized-response termination;
+- applies the exact Ruff formatting required by the authoritative gate.
+
+Future authentication/provider bootstrap changes must include compile/static checks, focused positive/negative tests, `ruff check`, `ruff format --check`, secret-shape review and directly coupled transport/rotation failure-mode review before an exact-head verification batch is published.
 
 ## Security and authority invariants preserved
 
