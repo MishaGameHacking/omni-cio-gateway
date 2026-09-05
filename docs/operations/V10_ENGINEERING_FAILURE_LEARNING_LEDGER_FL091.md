@@ -7,6 +7,7 @@ production database bootstrap after accepted main
 `2491ad5fb95321970d63e41ae36d3c30d04dbb3c`.
 
 Owning recovery thread: `#430`.
+Focused recovery PR: `#450`.
 
 This correction does not authorize public multi-user activation, Telegram/VK provider
 activation, broker write, Real execution or any new Work Package.
@@ -67,17 +68,40 @@ The failing block is hardened end-to-end rather than patching a single caller:
 2. `cloudflare/src/index.js` exports `ContainerProxy` and maps only that virtual hostname
    through `Backend.outboundByHost`, using the supported Cloudflare Containers outbound
    interception path.
-3. The trusted Worker egress handler accepts only `POST`, validates a bounded exact HTTPS
-   Neon Function target in the Frankfurt cell with the dedicated `cfdprodbootstrap`
-   function suffix, strips the internal target header, and forwards through Worker
-   `fetch()` with redirects disabled.
+3. `cloudflare/src/cf-d-neon-bootstrap-egress.js` owns the executable trusted-Worker
+   egress policy: `POST` only, bounded exact HTTPS Neon Function target in the Frankfurt
+   cell with the dedicated `cfdprodbootstrap` suffix, no userinfo/non-default port/path/
+   query/fragment, internal target/Host header stripping and manual redirect policy.
 4. The OIDC Bearer assertion remains short-lived and passes through only for the one
    bootstrap call. No Neon API key, project ID, organization ID or committed DSN is added.
 5. Existing product internet behavior is not globally disabled or broadened. The change
    only supplies the missing deterministic bridge for the dedicated bootstrap hostname.
-6. Deterministic regression tests prove the ContainerProxy export, virtual-host mapping,
-   strict target validation, header stripping, no long-lived Neon management bindings,
-   and the staging proxy's runtime-derived target handoff.
+6. The Python integration regression proves the staging FastAPI producer hands the
+   runtime-derived Function origin to the fixed Container virtual host.
+7. `apps/web/tests/cloudflare_cf_d_bootstrap_egress.test.mjs` executes the real extracted
+   Worker policy under Node and proves valid canonicalization plus negative method,
+   virtual-host, scheme, port, path, query, arbitrary-host, wrong-region, wrong-function,
+   userinfo and missing-target cases. It also proves the internal target and Host headers
+   are absent from the prepared provider request and the request body/authorization are
+   preserved.
+8. The existing product Web `node --test tests/*.test.ts tests/*.test.mjs` command makes
+   that executable regression part of the normal frontend verification lanes without a
+   new dependency or separate test runner.
+
+## Review correction batch
+
+PR #450 parent verification head `8b5b63f690e7a8f0ace4e114b2f2c8975d090b10`
+completed the repository CI batch successfully, but independent Files-changed review
+found that the first Worker security regression asserted source strings rather than
+executing the validation behavior.
+
+That review finding is valid. String-presence tests can survive a comparison inversion or
+other semantic regression. The correction therefore extracted the egress policy into a
+Worker-compatible pure module and added executable Node tests that call the actual policy
+functions. The Python guard now also verifies that the executable `.test.mjs` file is
+covered by the existing product Web test glob. All prior exact-head evidence is invalid
+for final acceptance after this correction batch; the new head requires a fresh complete
+verification cycle.
 
 ## Blast radius and adjacent failure modes
 
@@ -90,6 +114,7 @@ Directly coupled surfaces reviewed:
 - source-controlled Neon Function verifier/database role convergence;
 - production secret bootstrap/reuse gate;
 - existing staging and production Worker anchors;
+- product Web Node test wiring;
 - exact-main production release ordering and rollback boundary.
 
 Adjacent modes addressed or preserved:
@@ -111,10 +136,16 @@ mocked. Staging `/healthz` proves the Worker/Container/PostgreSQL product path, 
 otherwise-unused outbound hostname. The provider-deployment/source comparison was also
 not part of that deterministic test family.
 
+The first repair preflight additionally relied on source-string assertions for the new
+Worker validation policy. Independent review correctly identified that as insufficient
+semantic coverage. The permanent rule is that a material egress allowlist/authority
+policy must have executable positive and negative tests in addition to source/governance
+guards.
+
 For future Container integrations, a mocked HTTP client is insufficient evidence for a
 provider-specific outbound network boundary. The Cloudflare Worker/Container egress
-policy itself must be source-controlled and guarded when it is part of an acceptance
-path.
+policy itself must be source-controlled and executable under deterministic tests when it
+is part of an acceptance path.
 
 ## Protected invariants
 
