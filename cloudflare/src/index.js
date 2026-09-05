@@ -1,6 +1,12 @@
 import { Container, getRandom } from "@cloudflare/containers";
 import { env as runtimeEnv } from "cloudflare:workers";
+import {
+  CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
+  fetchCfDNeonBootstrap,
+} from "./cf-d-neon-bootstrap-egress.js";
 import { SOURCE_SHA } from "./generated-build-info.js";
+
+export { ContainerProxy } from "@cloudflare/containers";
 
 const BACKEND_INSTANCE_COUNT = 1;
 const INTERNAL_HOST = "omni-cio.internal";
@@ -40,6 +46,7 @@ function backendEnvironment() {
 export class Backend extends Container {
   defaultPort = 8080;
   sleepAfter = "1m";
+  interceptHttps = true;
   envVars = backendEnvironment();
 }
 
@@ -56,6 +63,28 @@ function hardenedJson(payload, status = 200) {
     },
   });
 }
+
+async function proxyCfDNeonBootstrap(request, env) {
+  try {
+    return await fetchCfDNeonBootstrap(request, env, SOURCE_SHA);
+  } catch (error) {
+    const requestRejected =
+      error instanceof Error &&
+      error.message === "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED";
+    return hardenedJson(
+      {
+        detail: requestRejected
+          ? "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED"
+          : "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_UNAVAILABLE",
+      },
+      requestRejected ? 403 : 502,
+    );
+  }
+}
+
+Backend.outboundByHost = {
+  [CF_D_NEON_BOOTSTRAP_EGRESS_HOST]: proxyCfDNeonBootstrap,
+};
 
 function routeIsBounded(url) {
   const query = url.search.startsWith("?") ? url.search.slice(1) : url.search;
