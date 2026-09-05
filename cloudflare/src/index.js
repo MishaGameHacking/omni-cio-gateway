@@ -1,5 +1,9 @@
 import { Container, ContainerProxy, getRandom } from "@cloudflare/containers";
 import { env as runtimeEnv } from "cloudflare:workers";
+import {
+  CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
+  prepareCfDNeonBootstrapRequest,
+} from "./cf-d-neon-bootstrap-egress.js";
 import { SOURCE_SHA } from "./generated-build-info.js";
 
 export { ContainerProxy };
@@ -15,11 +19,6 @@ const ALLOWED_DATABASE_RUNTIME_ROLES = new Set([
 ]);
 const MAX_ROUTE_PATH_LENGTH = 4096;
 const MAX_ROUTE_QUERY_LENGTH = 8192;
-const CF_D_NEON_BOOTSTRAP_EGRESS_HOST = "cf-d-neon-bootstrap.internal";
-const CF_D_NEON_BOOTSTRAP_TARGET_HEADER = "x-omni-neon-bootstrap-target";
-const CF_D_NEON_BOOTSTRAP_HOST_PATTERN =
-  /^br-[a-z0-9-]{4,57}-cfdprodbootstrap\.compute\.c-[a-z0-9]+\.eu-central-1\.aws\.neon\.tech$/;
-const MAX_CF_D_NEON_TARGET_BYTES = 512;
 
 function runtimeDatabaseRole(bindings) {
   const value = bindings[REQUIRED_DATABASE_ROLE_ENV_NAME];
@@ -64,71 +63,21 @@ function hardenedJson(payload, status = 200) {
   });
 }
 
-function validatedCfDNeonBootstrapTarget(value) {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    new TextEncoder().encode(value).length > MAX_CF_D_NEON_TARGET_BYTES
-  ) {
-    throw new Error("CLOUDFLARE_CF_D_NEON_TARGET_INVALID");
-  }
-  let target;
-  try {
-    target = new URL(value);
-  } catch {
-    throw new Error("CLOUDFLARE_CF_D_NEON_TARGET_INVALID");
-  }
-  const hostname = target.hostname.toLowerCase();
-  if (
-    target.protocol !== "https:" ||
-    target.username !== "" ||
-    target.password !== "" ||
-    target.port !== "" ||
-    target.pathname !== "/" ||
-    target.search !== "" ||
-    target.hash !== "" ||
-    !CF_D_NEON_BOOTSTRAP_HOST_PATTERN.test(hostname)
-  ) {
-    throw new Error("CLOUDFLARE_CF_D_NEON_TARGET_INVALID");
-  }
-  return `https://${hostname}/`;
-}
-
 async function proxyCfDNeonBootstrap(request) {
-  const virtualUrl = new URL(request.url);
-  if (
-    virtualUrl.protocol !== "http:" ||
-    virtualUrl.hostname !== CF_D_NEON_BOOTSTRAP_EGRESS_HOST ||
-    virtualUrl.port !== "" ||
-    virtualUrl.pathname !== "/" ||
-    virtualUrl.search !== "" ||
-    virtualUrl.hash !== "" ||
-    request.method !== "POST"
-  ) {
-    return hardenedJson({ detail: "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED" }, 403);
-  }
-
-  let targetUrl;
+  let providerRequest;
   try {
-    targetUrl = validatedCfDNeonBootstrapTarget(
-      request.headers.get(CF_D_NEON_BOOTSTRAP_TARGET_HEADER),
-    );
-  } catch {
-    return hardenedJson({ detail: "CLOUDFLARE_CF_D_NEON_TARGET_REJECTED" }, 403);
+    providerRequest = prepareCfDNeonBootstrapRequest(request);
+  } catch (error) {
+    const code =
+      error instanceof Error &&
+      /^(CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED|CLOUDFLARE_CF_D_NEON_TARGET_INVALID)$/.test(
+        error.message,
+      )
+        ? error.message
+        : "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED";
+    return hardenedJson({ detail: code }, 403);
   }
-
-  const headers = new Headers(request.headers);
-  headers.delete(CF_D_NEON_BOOTSTRAP_TARGET_HEADER);
-  headers.delete("host");
-  return fetch(
-    new Request(targetUrl, {
-      method: "POST",
-      headers,
-      body: request.body,
-      redirect: "manual",
-      duplex: "half",
-    }),
-  );
+  return fetch(providerRequest);
 }
 
 Backend.outboundByHost = {
