@@ -71,10 +71,14 @@ class _Client:
     def __enter__(self) -> _Client:
         return self
 
-    def __exit__(self, exc_type, exc, traceback) -> None:  # type: ignore[no-untyped-def]
+    def __exit__(
+        self, exc_type, exc, traceback
+    ) -> None:  # type: ignore[no-untyped-def]
         return None
 
-    def post(self, url: str, *, headers: dict[str, str], json: dict[str, str]) -> _Response:
+    def post(
+        self, url: str, *, headers: dict[str, str], json: dict[str, str]
+    ) -> _Response:
         self.url = url
         self.authorization = headers["Authorization"]
         assert json == {"expected_sha": EXPECTED_SHA}
@@ -102,7 +106,9 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
             "runtime_dsn": VALID_PRODUCTION_DSN,
             "source_sha": EXPECTED_SHA,
         }
-        self.assertEqual(proxy._runtime_dsn(payload, EXPECTED_SHA), VALID_PRODUCTION_DSN)
+        self.assertEqual(
+            proxy._runtime_dsn(payload, EXPECTED_SHA), VALID_PRODUCTION_DSN
+        )
         self.assertEqual(
             runner._validate_runtime_payload(payload, EXPECTED_SHA),
             VALID_PRODUCTION_DSN,
@@ -110,7 +116,9 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "BOOTSTRAP_SHA_MISMATCH"):
             proxy._runtime_dsn(payload, "b" * 40)
         insecure = dict(payload)
-        insecure["runtime_dsn"] = VALID_PRODUCTION_DSN.replace("sslmode=require", "sslmode=disable")
+        insecure["runtime_dsn"] = VALID_PRODUCTION_DSN.replace(
+            "sslmode=require", "sslmode=disable"
+        )
         with self.assertRaisesRegex(RuntimeError, "BOOTSTRAP_DSN_INVALID"):
             proxy._runtime_dsn(insecure, EXPECTED_SHA)
 
@@ -163,14 +171,18 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
         self.assertEqual(observed[0].authorization, "Bearer synthetic.jwt.token")
         self.assertNotIn("synthetic.jwt.token", repr(response.headers))
 
-    def test_runner_accepts_only_github_oidc_request_host_and_custom_audience(self) -> None:
+    def test_runner_accepts_only_github_oidc_request_host_and_custom_audience(
+        self,
+    ) -> None:
         url = runner._oidc_request_url(
             "https://pipelines.actions.githubusercontent.com/example?api-version=2.0"
         )
         parsed = urlsplit(url)
         self.assertEqual(parsed.hostname, "pipelines.actions.githubusercontent.com")
         self.assertEqual(parse_qs(parsed.query)["audience"], [runner._AUDIENCE])
-        with self.assertRaisesRegex(runner.BootstrapStopped, "GITHUB_OIDC_REQUEST_URL_INVALID"):
+        with self.assertRaisesRegex(
+            runner.BootstrapStopped, "GITHUB_OIDC_REQUEST_URL_INVALID"
+        ):
             runner._oidc_request_url("https://example.com/token")
 
     def test_runner_accepts_only_exact_staging_workers_dev_origin(self) -> None:
@@ -186,13 +198,19 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
     def test_runner_writes_dsn_only_to_fixed_private_runner_temp_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            with mock.patch.dict(runner.os.environ, {"RUNNER_TEMP": str(root)}, clear=True):
+            with mock.patch.dict(
+                runner.os.environ, {"RUNNER_TEMP": str(root)}, clear=True
+            ):
                 path = runner._output_file()
                 runner._write_private_file(path, VALID_PRODUCTION_DSN)
-                self.assertEqual(path.read_text(encoding="utf-8").strip(), VALID_PRODUCTION_DSN)
+                self.assertEqual(
+                    path.read_text(encoding="utf-8").strip(), VALID_PRODUCTION_DSN
+                )
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
-    def test_neon_function_source_enforces_oidc_and_least_privilege_markers(self) -> None:
+    def test_neon_function_source_enforces_oidc_and_least_privilege_markers(
+        self,
+    ) -> None:
         source = FUNCTION_SOURCE.read_text(encoding="utf-8")
         required = (
             "https://token.actions.githubusercontent.com",
