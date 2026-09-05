@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import secrets
 import unittest
 from unittest import mock
 from urllib.parse import urlencode, urlunsplit
@@ -18,7 +19,8 @@ EGRESS_SOURCE = ROOT / "cloudflare/src/cf-d-neon-bootstrap-egress.js"
 NODE_TEST_SOURCE = ROOT / "apps/web/tests/cloudflare_cf_d_bootstrap_egress.test.mjs"
 WEB_PACKAGE = ROOT / "apps/web/package.json"
 EXPECTED_SHA = "a" * 40
-_TEST_VALUE_MARKER = "synthetic-egress-value"
+_TEST_VALUE_MARKER = secrets.token_urlsafe(32)
+_TEST_AUTHORIZATION = f"Bearer {secrets.token_urlsafe(32)}"
 
 
 def _dsn(role: str, host: str) -> str:
@@ -118,7 +120,7 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             response = TestClient(app).post(
                 bootstrap._BOOTSTRAP_PATH,
                 headers={
-                    "Authorization": "Bearer synthetic.jwt.token",
+                    "Authorization": _TEST_AUTHORIZATION,
                     "X-Omni-Expected-Sha": EXPECTED_SHA,
                 },
             )
@@ -129,7 +131,7 @@ class CfDBootstrapEgressTests(unittest.TestCase):
         self.assertEqual(method, "POST")
         self.assertEqual(url, "http://cf-d-neon-bootstrap.internal/")
         self.assertEqual(payload, {"expected_sha": EXPECTED_SHA})
-        self.assertEqual(headers["Authorization"], "Bearer synthetic.jwt.token")
+        self.assertEqual(headers["Authorization"], _TEST_AUTHORIZATION)
         self.assertEqual(
             headers["X-Omni-Neon-Bootstrap-Target"],
             "https://br-example1234-cfdprodbootstrap.compute."

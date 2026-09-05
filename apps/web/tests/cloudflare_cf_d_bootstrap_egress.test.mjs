@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -11,13 +12,14 @@ import {
 const VALID_TARGET =
   "https://br-example1234-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech/";
 const EXPECTED_SHA = "a".repeat(40);
+const TEST_AUTHORIZATION = `Bearer ${randomBytes(32).toString("base64url")}`;
 
 function virtualRequest(options = {}) {
   const url = options.url ?? `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/`;
   const method = options.method ?? "POST";
   const target = Object.hasOwn(options, "target") ? options.target : VALID_TARGET;
   const headers = new Headers({
-    Authorization: "Bearer synthetic.jwt.token",
+    Authorization: TEST_AUTHORIZATION,
     "Content-Type": "application/json",
     Host: CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
   });
@@ -96,7 +98,7 @@ test("CF-D prepared provider request strips internal routing authority", async (
   assert.equal(prepared.url, VALID_TARGET);
   assert.equal(prepared.method, "POST");
   assert.equal(prepared.redirect, "manual");
-  assert.equal(prepared.headers.get("authorization"), "Bearer synthetic.jwt.token");
+  assert.equal(prepared.headers.get("authorization"), TEST_AUTHORIZATION);
   assert.equal(prepared.headers.get(CF_D_NEON_BOOTSTRAP_TARGET_HEADER), null);
   assert.equal(prepared.headers.get("host"), null);
   assert.deepEqual(await prepared.json(), { expected_sha: EXPECTED_SHA });

@@ -103,6 +103,34 @@ covered by the existing product Web test glob. All prior exact-head evidence is 
 for final acceptance after this correction batch; the new head requires a fresh complete
 verification cycle.
 
+## Exact-head security-analysis correction
+
+Fresh verification of exact head `61deb599c5fd7f68ca9c116e351476dd2efec833`
+completed the repository-owned gates but SonarQube Cloud remained RED with
+**Security Rating on New Code = B** where A is required and reported two annotations.
+The available connector does not expose the private issue payload, so this record does
+not invent annotation text.
+
+The same repository already carries FL032 and FL047: analyzer-visible synthetic
+credentials remain credential defects even when no real secret is present. Source review
+of the complete PR #450 new-code surface found that the new Python and Node egress tests
+still embedded fixed Bearer credential material, while the Python DSN fixture also used a
+fixed value in the password position. Those literals are unnecessary because the tests
+assert transport/authority semantics, not credential bytes.
+
+The coherent correction removes fixed authentication/database credential material from
+both test runtimes: Python uses `secrets.token_urlsafe(...)` and Node uses
+`crypto.randomBytes(...)`; assertions reuse the generated opaque value without printing
+or persisting it. Public test identifiers, URLs, SHA markers and negative-target vectors
+remain deterministic. No production code is taught a test credential, no real secret is
+introduced, and no Sonar suppression, rule exclusion or quality-gate weakening is used.
+
+This source correction is independently required security hygiene; it is not represented
+as proof that the inaccessible Sonar annotations are exactly these occurrences. The new
+head requires a fresh Sonar analysis. If Security Rating remains below A, the remaining
+annotation set must be treated as a new evidence-backed defect class rather than hidden by
+this change.
+
 ## Blast radius and adjacent failure modes
 
 Directly coupled surfaces reviewed:
@@ -141,6 +169,11 @@ Worker validation policy. Independent review correctly identified that as insuff
 semantic coverage. The permanent rule is that a material egress allowlist/authority
 policy must have executable positive and negative tests in addition to source/governance
 guards.
+
+The later Sonar failure also confirms the older FL032/FL047 prevention rule applies to
+this recovery work: synthetic values occupying authentication or database-password roles
+must be generated at test runtime when exact bytes are irrelevant. Avoiding real secrets
+is necessary but is not sufficient credential hygiene for new source.
 
 For future Container integrations, a mocked HTTP client is insufficient evidence for a
 provider-specific outbound network boundary. The Cloudflare Worker/Container egress
