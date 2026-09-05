@@ -51,7 +51,9 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             ),
         )
 
-    def test_production_neon_api_authority_is_only_staging_recovery_fallback(self) -> None:
+    def test_production_neon_api_authority_is_only_staging_recovery_fallback(
+        self,
+    ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
         self.assertEqual(source.count(NEON_PROJECT_AUTHORITY_PROBE), 1)
         self.assertEqual(source.count(NEON_PROVISION), 1)
@@ -75,7 +77,9 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             source[provider_probe:staging_provision],
         )
 
-    def test_production_database_bootstrap_uses_oidc_not_neon_static_authority(self) -> None:
+    def test_production_database_bootstrap_uses_oidc_not_neon_static_authority(
+        self,
+    ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
         self.assertIn("id-token: write", source)
         start = source.index(
