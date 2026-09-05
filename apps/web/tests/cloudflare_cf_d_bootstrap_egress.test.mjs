@@ -12,11 +12,10 @@ const VALID_TARGET =
   "https://br-example1234-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech/";
 const EXPECTED_SHA = "a".repeat(40);
 
-function virtualRequest({
-  url = `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/`,
-  method = "POST",
-  target = VALID_TARGET,
-} = {}) {
+function virtualRequest(options = {}) {
+  const url = options.url ?? `http://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/`;
+  const method = options.method ?? "POST";
+  const target = Object.hasOwn(options, "target") ? options.target : VALID_TARGET;
   const headers = new Headers({
     Authorization: "Bearer synthetic.jwt.token",
     "Content-Type": "application/json",
