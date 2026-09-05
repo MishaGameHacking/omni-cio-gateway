@@ -14,15 +14,18 @@ import apps.api.cf_d_database_bootstrap as bootstrap
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER_SOURCE = ROOT / "cloudflare/src/index.js"
+EGRESS_SOURCE = ROOT / "cloudflare/src/cf-d-neon-bootstrap-egress.js"
+NODE_TEST_SOURCE = ROOT / "apps/web/tests/cloudflare_cf_d_bootstrap_egress.test.mjs"
+WEB_PACKAGE = ROOT / "apps/web/package.json"
 EXPECTED_SHA = "a" * 40
-_TEST_CREDENTIAL = "synthetic-egress-credential"
+_TEST_VALUE_MARKER = "synthetic-egress-value"
 
 
 def _dsn(role: str, host: str) -> str:
     return urlunsplit(
         (
             "postgresql",
-            f"{role}:{_TEST_CREDENTIAL}@{host}",
+            f"{role}:{_TEST_VALUE_MARKER}@{host}",
             "/neondb",
             urlencode({"sslmode": "require"}),
             "",
@@ -133,17 +136,36 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "c-6.eu-central-1.aws.neon.tech/",
         )
 
-    def test_worker_exports_container_proxy_and_strict_target_bridge(self) -> None:
-        source = WORKER_SOURCE.read_text(encoding="utf-8")
+    def test_worker_exports_container_proxy_and_uses_extracted_egress_policy(self) -> None:
+        worker = WORKER_SOURCE.read_text(encoding="utf-8")
         required = (
             "ContainerProxy",
             "export { ContainerProxy };",
+            'from "./cf-d-neon-bootstrap-egress.js"',
+            "CF_D_NEON_BOOTSTRAP_EGRESS_HOST",
+            "prepareCfDNeonBootstrapRequest",
+            "Backend.outboundByHost",
+            "return fetch(providerRequest)",
+        )
+        for marker in required:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, worker)
+
+    def test_egress_policy_is_narrow_and_has_no_management_authority(self) -> None:
+        source = EGRESS_SOURCE.read_text(encoding="utf-8")
+        required = (
             'CF_D_NEON_BOOTSTRAP_EGRESS_HOST = "cf-d-neon-bootstrap.internal"',
             'CF_D_NEON_BOOTSTRAP_TARGET_HEADER = "x-omni-neon-bootstrap-target"',
-            "Backend.outboundByHost",
-            "validatedCfDNeonBootstrapTarget",
             "cfdprodbootstrap\\.compute\\.c-[a-z0-9]+\\.eu-central-1\\.aws\\.neon\\.tech",
-            'headers.delete(CF_D_NEON_BOOTSTRAP_TARGET_HEADER)',
+            'target.protocol !== "https:"',
+            'target.username !== ""',
+            'target.password !== ""',
+            'target.port !== ""',
+            'target.pathname !== "/"',
+            'target.search !== ""',
+            'target.hash !== ""',
+            'request.method !== "POST"',
+            "headers.delete(CF_D_NEON_BOOTSTRAP_TARGET_HEADER)",
             'headers.delete("host")',
             'redirect: "manual"',
         )
@@ -151,23 +173,40 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)
 
-        forbidden = (
+        for marker in (
             "NEON_API_KEY",
             "NEON_PROJECT_ID",
             "NEON_ORG_ID",
+            "process.env",
             "console.log",
-        )
-        for marker in forbidden:
+        ):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, source)
 
-    def test_worker_target_bridge_remains_narrow_and_non_secret(self) -> None:
-        source = WORKER_SOURCE.read_text(encoding="utf-8")
-        self.assertIn('target.protocol !== "https:"', source)
-        self.assertIn('target.pathname !== "/"', source)
-        self.assertIn('request.method !== "POST"', source)
-        self.assertNotIn("enableInternet = false", source)
-        self.assertNotIn("Authorization: Bearer", source)
+    def test_executable_node_regression_is_wired_into_product_web_test_command(self) -> None:
+        node_test = NODE_TEST_SOURCE.read_text(encoding="utf-8")
+        package = json.loads(WEB_PACKAGE.read_text(encoding="utf-8"))
+        test_command = package["scripts"]["test"]
+        self.assertIn("node --test", test_command)
+        self.assertIn("tests/*.test.mjs", test_command)
+        for marker in (
+            "prepareCfDNeonBootstrapRequest",
+            "validatedCfDNeonBootstrapTarget",
+            "CLOUDFLARE_CF_D_EGRESS_REQUEST_REJECTED",
+            "CLOUDFLARE_CF_D_NEON_TARGET_INVALID",
+            'prepared.headers.get("host"), null',
+            "await prepared.json()",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, node_test)
+
+    def test_bridge_does_not_disable_or_broaden_unrelated_container_network_policy(self) -> None:
+        worker = WORKER_SOURCE.read_text(encoding="utf-8")
+        egress = EGRESS_SOURCE.read_text(encoding="utf-8")
+        self.assertNotIn("enableInternet = false", worker)
+        self.assertNotIn("enableInternet = false", egress)
+        self.assertNotIn("Authorization: Bearer", worker)
+        self.assertNotIn("Authorization: Bearer", egress)
 
 
 if __name__ == "__main__":
