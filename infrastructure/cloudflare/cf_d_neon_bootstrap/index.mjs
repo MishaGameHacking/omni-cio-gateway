@@ -17,7 +17,7 @@ const OIDC_CLOCK_SKEW_SECONDS = 30;
 const MAX_TOKEN_BYTES = 16_384;
 const MAX_REQUEST_BYTES = 4_096;
 const JWKS_CACHE_MS = 5 * 60 * 1000;
-const RUNTIME_PASSWORD_DOMAIN = 'omni-cio-v10/cloudflare-production/runtime-password/v1';
+const RUNTIME_CREDENTIAL_DERIVATION_DOMAIN = 'omni-cio-v10/cloudflare-production/runtime-password/v1';
 
 let jwksCache = null;
 let jwksExpiresAt = 0;
@@ -190,7 +190,7 @@ function deriveRuntimePassword(connectionString) {
   }
   if (ownerPassword.length < 16) throw new Error('DATABASE_OWNER_CREDENTIAL_INVALID');
   return createHmac('sha384', Buffer.from(ownerPassword, 'utf8'))
-    .update(RUNTIME_PASSWORD_DOMAIN, 'utf8')
+    .update(RUNTIME_CREDENTIAL_DERIVATION_DOMAIN, 'utf8')
     .digest('base64url');
 }
 

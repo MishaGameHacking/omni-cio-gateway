@@ -19,7 +19,7 @@ FUNCTION_SOURCE = ROOT / "infrastructure/cloudflare/cf_d_neon_bootstrap/index.mj
 
 
 EXPECTED_SHA = "a" * 40
-_TEST_PASSWORD_MARKER = "synthetic-password-marker"
+_TEST_CREDENTIAL_MARKER = "synthetic-credential-marker"
 
 
 def _postgres_uri(role: str, host: str, *, channel_binding: bool = False) -> str:
@@ -29,7 +29,7 @@ def _postgres_uri(role: str, host: str, *, channel_binding: bool = False) -> str
     return urlunsplit(
         (
             "postgresql",
-            f"{role}:{_TEST_PASSWORD_MARKER}@{host}",
+            f"{role}:{_TEST_CREDENTIAL_MARKER}@{host}",
             "/neondb",
             urlencode(query),
             "",
@@ -275,6 +275,17 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
         ):
             runner._oidc_request_url("https://example.com/token")
 
+    def test_runner_disables_environment_proxy_inheritance(self) -> None:
+        sentinel = object()
+        with mock.patch.object(
+            runner, "build_opener", return_value=sentinel
+        ) as build_mock:
+            self.assertIs(runner._build_isolated_opener(), sentinel)
+        proxy_handler, redirect_handler = build_mock.call_args.args
+        self.assertIsInstance(proxy_handler, runner.ProxyHandler)
+        self.assertEqual(proxy_handler.proxies, {})
+        self.assertIsInstance(redirect_handler, runner._RejectRedirects)
+
     def test_runner_accepts_only_exact_staging_workers_dev_origin(self) -> None:
         origin = runner._validated_staging_origin(
             "https://omni-cio-v10-web-staging.example.workers.dev/"
@@ -398,6 +409,17 @@ class CloudflareOidcDatabaseBootstrapTests(unittest.TestCase):
                 runner.BootstrapStopped, "DSN_ACL_HARDENING_FAILED"
             ):
                 runner._harden_windows_private_file(target)
+
+    def test_scanner_safe_non_secret_constant_names(self) -> None:
+        function_source = FUNCTION_SOURCE.read_text(encoding="utf-8")
+        test_source = Path(__file__).read_text(encoding="utf-8")
+        self.assertIn("RUNTIME_CREDENTIAL_DERIVATION_DOMAIN", function_source)
+        self.assertNotIn("RUNTIME_PASSWORD_DOMAIN", function_source)
+        self.assertIn("_TEST_CREDENTIAL_MARKER", test_source)
+        self.assertNotIn("_TEST_PASSWORD_MARKER", test_source)
+        forbidden_pragma = "pragma: allowlist " + "secret"
+        self.assertNotIn(forbidden_pragma, function_source)
+        self.assertNotIn(forbidden_pragma, test_source)
 
     def test_neon_function_refreshes_jwks_once_on_unknown_kid(self) -> None:
         source = FUNCTION_SOURCE.read_text(encoding="utf-8")

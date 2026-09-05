@@ -12,7 +12,7 @@ import sys
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
 _AUDIENCE = "omni-cio-cf-d-production-database-bootstrap"
@@ -104,7 +104,11 @@ class _RejectRedirects(HTTPRedirectHandler):
         return None
 
 
-_OPENER = build_opener(_RejectRedirects())
+def _build_isolated_opener() -> Any:
+    return build_opener(ProxyHandler({}), _RejectRedirects())
+
+
+_OPENER = _build_isolated_opener()
 
 
 def _required_env(name: str) -> str:
