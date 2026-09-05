@@ -23,6 +23,8 @@ _MAX_AUTHORIZATION_BYTES = 16_384
 _MAX_PROVIDER_RESPONSE_BYTES = 32_768
 _PROVIDER_STREAM_CHUNK_BYTES = 8_192
 _PROVIDER_TIMEOUT_SECONDS = 20.0
+_EGRESS_ORIGIN = "http://cf-d-neon-bootstrap.internal/"
+_EGRESS_TARGET_HEADER = "X-Omni-Neon-Bootstrap-Target"
 
 
 def _provider_error(code: str, status_code: int = 502) -> JSONResponse:
@@ -161,11 +163,12 @@ def install_cf_d_database_bootstrap_route(
             ) as client:
                 with client.stream(
                     "POST",
-                    provider_origin,
+                    _EGRESS_ORIGIN,
                     headers={
                         "Authorization": authorization,
                         "Accept": "application/json",
                         "Content-Type": "application/json",
+                        _EGRESS_TARGET_HEADER: provider_origin,
                     },
                     json={"expected_sha": release_sha},
                 ) as response:
