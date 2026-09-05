@@ -10,6 +10,7 @@ from urllib.parse import unquote, unquote_to_bytes
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
+from apps.api.cf_d_database_bootstrap import install_cf_d_database_bootstrap_route
 from apps.api.hosted_preview import (
     PREVIEW_SESSION_POLICY,
     HostedPreviewServicesV1,
@@ -309,8 +310,9 @@ def create_app():
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_RELEASE_SHA_INVALID")
     runtime_role = _runtime_database_role()
+    runtime_dsn = _required_env(_DSN_ENV_NAME)
 
-    raw_connection = connect_postgres(_required_env(_DSN_ENV_NAME))
+    raw_connection = connect_postgres(runtime_dsn)
     _configure_long_lived_web_connection(raw_connection)
     connection = _SerializedWebConnection(raw_connection)
     _probe_cloudflare_database(
@@ -338,5 +340,12 @@ def create_app():
             provider_auth=None,
         ),
         trusted_edge_tls_terminated=False,
+    )
+    install_cf_d_database_bootstrap_route(
+        hosted_app,
+        connection=connection,
+        runtime_dsn=runtime_dsn,
+        release_sha=release_sha,
+        runtime_role=runtime_role,
     )
     return CloudflareEdgeRouteRestoreV1(hosted_app, release_sha=release_sha)
