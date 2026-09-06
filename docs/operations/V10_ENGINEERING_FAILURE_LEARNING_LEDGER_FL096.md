@@ -15,7 +15,7 @@ release then stopped before any production deploy at:
 
 with the sanitized evidence:
 
-- production database secret: `BOOTSTRAP_REQUIRED`;
+- production database binding state: `BOOTSTRAP_REQUIRED`;
 - CF-D staging bootstrap: `STOPPED`;
 - code: `CLOUDFLARE_CF_D_STAGING_BOOTSTRAP_FAILED`;
 - production Build, Custom Domain mutation, and live acceptance: not attempted;
