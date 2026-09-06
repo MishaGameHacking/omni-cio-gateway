@@ -6,15 +6,19 @@ import re
 import secrets
 import time
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
+from scripts.cloudflare_staging_secrets import (
+    delete_staging_secret,
+    put_staging_secret,
+    staging_secret_type,
+)
 
 
 _BOOTSTRAP_ORIGIN_BINDING = "OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN"
 _SYNC_TOKEN_BINDING = "OMNI_V10_CF_D_ORIGIN_SYNC_TOKEN"
 _CUSTODY_PATH = "/api/internal/v10/cf-d/bootstrap-origin-custody"
-_EXPECTED_WORKER = builds._STAGING_WORKER
 _STAGING_ORIGIN_PATTERN = re.compile(
     r"^https://omni-cio-v10-web-staging\."
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.workers\.dev/?$"
@@ -43,49 +47,6 @@ def _bootstrap_origin(value: object) -> str:
     ):
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID")
     return value
-
-
-def _secret_path(api: builds.CloudflareApi, name: str = "") -> str:
-    base = (
-        f"/accounts/{api.account_id}/workers/scripts/"
-        f"{quote(_EXPECTED_WORKER, safe='')}/secrets"
-    )
-    return f"{base}/{quote(name, safe='')}" if name else base
-
-
-def _put_secret(api: builds.CloudflareApi, name: str, value: str) -> None:
-    api.request(
-        "PUT",
-        _secret_path(api),
-        body={"name": name, "text": value, "type": "secret_text"},
-    )
-
-
-def _delete_secret(api: builds.CloudflareApi, name: str) -> None:
-    try:
-        api.request("DELETE", _secret_path(api, name))
-    except builds.BootstrapStopped as exc:
-        if exc.code == "CLOUDFLARE_API_HTTP_ERROR" and exc.status == 404:
-            return
-        raise
-
-
-def _listed_secrets(api: builds.CloudflareApi) -> dict[str, str]:
-    rows = builds._list(
-        api.request("GET", _secret_path(api)),
-        "CLOUDFLARE_STAGING_SECRETS_INVALID",
-    )
-    result: dict[str, str] = {}
-    for row in rows:
-        record = builds._object(row, "CLOUDFLARE_STAGING_SECRET_INVALID")
-        name = record.get("name")
-        secret_type = record.get("type")
-        if not isinstance(name, str) or not isinstance(secret_type, str):
-            raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_INVALID")
-        if name in result:
-            raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE")
-        result[name] = secret_type
-    return result
 
 
 def _read_response_body(response: Any) -> bytes:
@@ -174,22 +135,21 @@ def sync_bootstrap_origin_custody(
     token = secrets.token_hex(32)
     builds._mask(token)
     try:
-        _delete_secret(api, _SYNC_TOKEN_BINDING)
-        _put_secret(api, _SYNC_TOKEN_BINDING, token)
+        delete_staging_secret(api, _SYNC_TOKEN_BINDING)
+        put_staging_secret(api, _SYNC_TOKEN_BINDING, token)
         bootstrap_origin = _fetch_bootstrap_origin(staging_origin, sha, token)
     finally:
         try:
-            _delete_secret(api, _SYNC_TOKEN_BINDING)
+            delete_staging_secret(api, _SYNC_TOKEN_BINDING)
         except builds.BootstrapStopped:
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_CLEANUP_FAILED"
             ) from None
 
     builds._mask(bootstrap_origin)
-    _put_secret(api, _BOOTSTRAP_ORIGIN_BINDING, bootstrap_origin)
-    secrets_by_name = _listed_secrets(api)
-    if secrets_by_name.get(_BOOTSTRAP_ORIGIN_BINDING) != "secret_text":
+    put_staging_secret(api, _BOOTSTRAP_ORIGIN_BINDING, bootstrap_origin)
+    if staging_secret_type(api, _BOOTSTRAP_ORIGIN_BINDING) != "secret_text":
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_SECRET_MISSING")
-    if _SYNC_TOKEN_BINDING in secrets_by_name:
+    if staging_secret_type(api, _SYNC_TOKEN_BINDING) is not None:
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE")
     print("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_CUSTODY=READY")
