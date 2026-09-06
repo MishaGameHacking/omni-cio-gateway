@@ -1,4 +1,5 @@
 import { deriveCfDNeonBootstrapOrigin } from "./cf-d-neon-bootstrap-egress.js";
+import { hardenedJson } from "./hardened-response.js";
 
 export const CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH =
   "/api/internal/v10/cf-d/bootstrap-origin-custody";
@@ -11,20 +12,6 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const SYNC_TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 const SYNC_TOKEN_HEADER = "x-omni-cf-d-origin-sync-token";
 const EXPECTED_SHA_HEADER = "x-omni-expected-sha";
-
-function hardenedJson(payload, status) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
-      "cross-origin-opener-policy": "same-origin",
-      "referrer-policy": "no-referrer",
-      "x-content-type-options": "nosniff",
-    },
-  });
-}
 
 function equalFixedHex(left, right) {
   if (
