@@ -186,6 +186,8 @@ def _permanent_transport(kind: str) -> ToolchainBootstrapStopped:
 def _transport_failure(exc: OSError) -> RuntimeError:
     if isinstance(exc, ssl.SSLCertVerificationError):
         return _permanent_transport("TLS_CERTIFICATE")
+    if isinstance(exc, ssl.SSLEOFError):
+        return _transient_transport("TLS_EOF")
     if isinstance(exc, ssl.SSLError):
         return _permanent_transport("TLS")
     if isinstance(exc, TimeoutError):

@@ -207,6 +207,42 @@ class CloudflareDeliveryToolchainQualityTests(unittest.TestCase):
         open_request.assert_called_once()
         sleep.assert_not_called()
 
+    def test_download_retries_abrupt_tls_eof_then_succeeds(self) -> None:
+        response = self._response(b"payload")
+        failure = URLError(ssl.SSLEOFError(8, "abrupt TLS EOF"))
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=[failure, response],
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            payload = installer._download_npm_tarball()
+
+        self.assertEqual(payload, b"payload")
+        self.assertEqual(open_request.call_count, 2)
+        sleep.assert_called_once_with(15.0)
+
+    def test_download_does_not_retry_generic_tls_failure(self) -> None:
+        failure = URLError(ssl.SSLError(1, "TLS protocol failure"))
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=failure,
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"CLOUDFLARE_NPM_TRANSPORT_NON_RETRYABLE class=TLS",
+            ):
+                installer._download_npm_tarball()
+
+        open_request.assert_called_once()
+        sleep.assert_not_called()
+
     def test_download_retries_incomplete_read(self) -> None:
         response = self._response(b"payload")
         with (
