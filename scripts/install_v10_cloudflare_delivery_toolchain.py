@@ -203,9 +203,7 @@ def _http_failure(exc: HTTPError) -> RuntimeError:
     try:
         exc.close()
     except OSError:
-        return ToolchainBootstrapStopped(
-            "CLOUDFLARE_NPM_HTTP_RESPONSE_CLOSE_FAILED"
-        )
+        return ToolchainBootstrapStopped("CLOUDFLARE_NPM_HTTP_RESPONSE_CLOSE_FAILED")
     status = int(exc.code)
     if status in _REDIRECT_HTTP_STATUS:
         return ToolchainBootstrapStopped("CLOUDFLARE_NPM_REDIRECT_FORBIDDEN")
