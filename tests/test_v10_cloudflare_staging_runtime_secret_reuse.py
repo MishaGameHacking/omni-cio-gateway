@@ -135,7 +135,7 @@ class CloudflareStagingRuntimeSecretReuseTests(unittest.TestCase):
             with (
                 patch.object(builds, "_staging_dsn_file", return_value=dsn),
                 patch.object(gated, "_runtime_secret_present", return_value=True),
-                patch.object(builds, "_put_runtime_secret") as put_secret,
+                patch.object(gated, "put_staging_runtime_secret") as put_secret,
             ):
                 gated._sync_runtime_secret(api)
         put_secret.assert_not_called()
@@ -148,7 +148,7 @@ class CloudflareStagingRuntimeSecretReuseTests(unittest.TestCase):
             with (
                 patch.object(builds, "_staging_dsn_file", return_value=dsn),
                 patch.object(gated, "_runtime_secret_present") as present,
-                patch.object(builds, "_put_runtime_secret") as put_secret,
+                patch.object(gated, "put_staging_runtime_secret") as put_secret,
             ):
                 gated._sync_runtime_secret(api)
         put_secret.assert_called_once_with(api)

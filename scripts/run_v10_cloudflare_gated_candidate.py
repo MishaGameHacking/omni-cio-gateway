@@ -7,6 +7,7 @@ import sys
 from typing import Iterator
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
+from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
 from scripts.probe_v10_cloudflare_staging_runtime_secret import (
     _runtime_secret_present,
 )
@@ -72,7 +73,7 @@ def _sync_runtime_secret(api: builds.CloudflareApi) -> None:
     if candidate.is_symlink():
         raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_PATH_INVALID")
     if candidate.exists():
-        builds._put_runtime_secret(api)
+        put_staging_runtime_secret(api)
         return
     if _runtime_secret_present(api):
         print("CLOUDFLARE_STAGING_DATABASE_SECRET=REUSED")
