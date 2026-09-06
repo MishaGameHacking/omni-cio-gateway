@@ -382,6 +382,27 @@ function trustedBootstrapContext(bindings, runtimeDatabase) {
   return { url: safeUrl, branchId: match[1] };
 }
 
+export async function deriveCfDNeonBootstrapOrigin(bindings) {
+  const runtimeDatabase = validatedRuntimeDatabase(bindings);
+  const branchId = await runtimeBranchId(runtimeDatabase);
+  const safeUrl = trustedDestinationUrl(
+    new URL(
+      `https://${branchId}-cfdprodbootstrap.compute.${runtimeDatabase.cell}` +
+        ".eu-central-1.aws.neon.tech/",
+    ),
+    FUNCTION_DESTINATION,
+  );
+  const match = FUNCTION_URL_PATTERN.exec(safeUrl.href);
+  if (
+    match === null ||
+    match[1] !== branchId ||
+    match[2] !== runtimeDatabase.cell
+  ) {
+    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+  }
+  return safeUrl.href;
+}
+
 function providerRequest(input, expectedUrl) {
   return new Request(expectedUrl, {
     method: "POST",

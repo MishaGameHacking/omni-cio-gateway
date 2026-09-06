@@ -13,6 +13,9 @@ from scripts.probe_v10_cloudflare_staging_runtime_secret import (
 from scripts.quarantine_v10_cloudflare_staging_trigger import (
     quarantine_staging_autobuild,
 )
+from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import (
+    sync_bootstrap_origin_custody,
+)
 
 
 _GATED_AUTOBUILD_SENTINEL_BRANCH = "__omni_cf_c_manual_only__"
@@ -183,6 +186,11 @@ def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
             _, build_uuid = _prepare_candidate(api, sha)
             builds._wait_build(api, build_uuid, sha)
             url = builds._staging_url(api)
+            sync_bootstrap_origin_custody(
+                api,
+                staging_origin=url,
+                expected_sha=sha,
+            )
         except builds.BootstrapStopped as exc:
             primary = exc
 

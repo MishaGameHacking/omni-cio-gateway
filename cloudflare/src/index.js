@@ -1,10 +1,15 @@
 import { Container, getRandom } from "@cloudflare/containers";
 import { env as runtimeEnv } from "cloudflare:workers";
 import {
+  CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH,
+  handleCfDBootstrapOriginCustody,
+} from "./cf-d-bootstrap-origin-custody.js";
+import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
   fetchCfDNeonBootstrap,
 } from "./cf-d-neon-bootstrap-egress.js";
 import { SOURCE_SHA } from "./generated-build-info.js";
+import { hardenedJson } from "./hardened-response.js";
 
 export { ContainerProxy } from "@cloudflare/containers";
 
@@ -48,20 +53,6 @@ export class Backend extends Container {
   sleepAfter = "1m";
   interceptHttps = true;
   envVars = backendEnvironment();
-}
-
-function hardenedJson(payload, status = 200) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
-      "cross-origin-opener-policy": "same-origin",
-      "referrer-policy": "no-referrer",
-      "x-content-type-options": "nosniff",
-    },
-  });
 }
 
 async function proxyCfDNeonBootstrap(request, env) {
@@ -178,6 +169,9 @@ export default {
         public_multi_user_enabled: false,
         real_trading_enabled: false,
       });
+    }
+    if (url.pathname === CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH) {
+      return handleCfDBootstrapOriginCustody(request, env, SOURCE_SHA);
     }
     if (url.pathname === "/healthz" || url.pathname.startsWith("/api/")) {
       return proxyBackend(request, env, url);

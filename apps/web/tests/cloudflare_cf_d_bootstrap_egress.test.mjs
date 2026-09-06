@@ -3,6 +3,10 @@ import { randomBytes } from "node:crypto";
 import test from "node:test";
 
 import {
+  CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH,
+  handleCfDBootstrapOriginCustody,
+} from "../../../cloudflare/src/cf-d-bootstrap-origin-custody.js";
+import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
   fetchCfDNeonBootstrap,
   prepareCfDNeonBootstrapRequest,
@@ -18,6 +22,7 @@ const TEST_AUTHORIZATION = `Bearer ${randomBytes(32).toString("base64url")}`;
 const TEST_RUNTIME_DSN =
   `postgresql://omni_cio_cloudflare_staging:${randomBytes(32).toString("base64url")}` +
   `@${DATABASE_HOST}/neondb?sslmode=require`;
+const TEST_SYNC_TOKEN = "b".repeat(64);
 
 function virtualRequest(options = {}) {
   const url = options.url ?? `https://${CF_D_NEON_BOOTSTRAP_EGRESS_HOST}/`;
@@ -46,6 +51,30 @@ function bindings(
     OMNI_V10_POSTGRES_DSN: dsn,
     OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN: origin,
   };
+}
+
+function custodyBindings(overrides = {}) {
+  return {
+    ...bindings(),
+    OMNI_V10_POSTGRES_RUNTIME_ROLE: "omni_cio_cloudflare_staging",
+    OMNI_V10_CF_D_ORIGIN_SYNC_TOKEN: TEST_SYNC_TOKEN,
+    ...overrides,
+  };
+}
+
+function custodyRequest(options = {}) {
+  const headers = new Headers();
+  if (options.includeToken !== false) {
+    headers.set(
+      "x-omni-cf-d-origin-sync-token",
+      options.token ?? TEST_SYNC_TOKEN,
+    );
+  }
+  headers.set("x-omni-expected-sha", options.sha ?? EXPECTED_SHA);
+  return new Request(
+    `https://example.workers.dev${CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH}`,
+    { method: options.method ?? "POST", headers },
+  );
 }
 
 function networkDouble(options = {}) {
@@ -308,4 +337,82 @@ test("CF-D Worker rejects failed, oversized, or malformed branch metadata before
     ),
   );
   assert.equal(malformedLookup.calls.length, 1);
+});
+
+test("CF-D origin custody derives the exact same-cell function origin", async () => {
+  const network = networkDouble();
+  const response = await withFetch(network.fetcher, () =>
+    handleCfDBootstrapOriginCustody(
+      custodyRequest(),
+      custodyBindings(),
+      EXPECTED_SHA,
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    status: "READY",
+    source_sha: EXPECTED_SHA,
+    bootstrap_origin: EXPECTED_FUNCTION_ORIGIN,
+  });
+  assert.equal(network.calls.length, 1);
+});
+
+test("CF-D origin custody rejects unauthorized requests before egress", async () => {
+  const requests = [
+    custodyRequest({ token: "c".repeat(64) }),
+    custodyRequest({ sha: "d".repeat(40) }),
+    custodyRequest({ method: "GET" }),
+    custodyRequest({ includeToken: false }),
+  ];
+  for (const request of requests) {
+    const network = networkDouble();
+    const response = await withFetch(network.fetcher, () =>
+      handleCfDBootstrapOriginCustody(
+        request,
+        custodyBindings(),
+        EXPECTED_SHA,
+      ),
+    );
+    assert.equal(response.status, 403);
+    assert.equal(network.calls.length, 0);
+  }
+});
+
+test("CF-D origin custody is invisible outside the staging runtime role", async () => {
+  const network = networkDouble();
+  const response = await withFetch(network.fetcher, () =>
+    handleCfDBootstrapOriginCustody(
+      custodyRequest(),
+      custodyBindings({
+        OMNI_V10_POSTGRES_RUNTIME_ROLE: "omni_cio_cloudflare_prod",
+      }),
+      EXPECTED_SHA,
+    ),
+  );
+
+  assert.equal(response.status, 404);
+  assert.equal(network.calls.length, 0);
+});
+
+test("CF-D origin custody sanitizes failed or malformed branch proof", async () => {
+  for (const options of [
+    { branchStatus: 503 },
+    { branchId: "not-a-branch" },
+    { branchId: `br-${"a".repeat(57)}` },
+  ]) {
+    const network = networkDouble(options);
+    const response = await withFetch(network.fetcher, () =>
+      handleCfDBootstrapOriginCustody(
+        custodyRequest(),
+        custodyBindings(),
+        EXPECTED_SHA,
+      ),
+    );
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), {
+      detail: "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED",
+    });
+  }
 });
