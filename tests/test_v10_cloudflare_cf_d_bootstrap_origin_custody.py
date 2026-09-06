@@ -64,6 +64,31 @@ class _Api:
 
 
 class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
+    @staticmethod
+    def _run_sync(
+        api: _Api,
+        *,
+        fetch_error: builds.BootstrapStopped | None = None,
+    ) -> str:
+        fetch_options: dict[str, object]
+        if fetch_error is None:
+            fetch_options = {"return_value": _BOOTSTRAP_ORIGIN}
+        else:
+            fetch_options = {"side_effect": fetch_error}
+        output = StringIO()
+        with (
+            patch.object(custody.secrets, "token_hex", return_value=_SYNC_TOKEN),
+            patch.object(custody.builds, "_mask"),
+            patch.object(custody, "_fetch_bootstrap_origin", **fetch_options),
+            redirect_stdout(output),
+        ):
+            custody.sync_bootstrap_origin_custody(
+                cast(builds.CloudflareApi, api),
+                staging_origin=_STAGING_ORIGIN,
+                expected_sha=_EXPECTED_SHA,
+            )
+        return output.getvalue()
+
     def test_release_contract_requires_ephemeral_origin_custody(self) -> None:
         contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
         candidate = contract["candidate"]
@@ -143,23 +168,7 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
 
     def test_sync_removes_ephemeral_token_before_persisting_origin(self) -> None:
         api = _Api()
-        output = StringIO()
-        with (
-            patch.object(custody.secrets, "token_hex", return_value=_SYNC_TOKEN),
-            patch.object(custody.builds, "_mask"),
-            patch.object(
-                custody,
-                "_fetch_bootstrap_origin",
-                return_value=_BOOTSTRAP_ORIGIN,
-            ),
-            redirect_stdout(output),
-        ):
-            custody.sync_bootstrap_origin_custody(
-                cast(builds.CloudflareApi, api),
-                staging_origin=_STAGING_ORIGIN,
-                expected_sha=_EXPECTED_SHA,
-            )
-
+        log = self._run_sync(api)
         operations = [(method, body) for method, _path, body in api.calls]
         self.assertEqual(
             operations,
@@ -186,57 +195,31 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
                 ("GET", None),
             ],
         )
-        log = output.getvalue()
         self.assertIn("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_CUSTODY=READY", log)
         self.assertNotIn(_SYNC_TOKEN, log)
         self.assertNotIn(_BOOTSTRAP_ORIGIN, log)
 
     def test_fetch_failure_still_removes_ephemeral_token(self) -> None:
         api = _Api()
-        with (
-            patch.object(custody.secrets, "token_hex", return_value=_SYNC_TOKEN),
-            patch.object(custody.builds, "_mask"),
-            patch.object(
-                custody,
-                "_fetch_bootstrap_origin",
-                side_effect=builds.BootstrapStopped(
+        with self.assertRaisesRegex(
+            builds.BootstrapStopped,
+            "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE",
+        ):
+            self._run_sync(
+                api,
+                fetch_error=builds.BootstrapStopped(
                     "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE"
                 ),
-            ),
-        ):
-            with self.assertRaisesRegex(
-                builds.BootstrapStopped,
-                "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE",
-            ):
-                custody.sync_bootstrap_origin_custody(
-                    cast(builds.CloudflareApi, api),
-                    staging_origin=_STAGING_ORIGIN,
-                    expected_sha=_EXPECTED_SHA,
-                )
-
+            )
         self.assertEqual([call[0] for call in api.calls], ["DELETE", "PUT", "DELETE"])
 
     def test_cleanup_failure_blocks_persistent_origin_write(self) -> None:
         api = _Api(cleanup_failure=True)
-        with (
-            patch.object(custody.secrets, "token_hex", return_value=_SYNC_TOKEN),
-            patch.object(custody.builds, "_mask"),
-            patch.object(
-                custody,
-                "_fetch_bootstrap_origin",
-                return_value=_BOOTSTRAP_ORIGIN,
-            ),
+        with self.assertRaisesRegex(
+            builds.BootstrapStopped,
+            "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_CLEANUP_FAILED",
         ):
-            with self.assertRaisesRegex(
-                builds.BootstrapStopped,
-                "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_CLEANUP_FAILED",
-            ):
-                custody.sync_bootstrap_origin_custody(
-                    cast(builds.CloudflareApi, api),
-                    staging_origin=_STAGING_ORIGIN,
-                    expected_sha=_EXPECTED_SHA,
-                )
-
+            self._run_sync(api)
         self.assertEqual([call[0] for call in api.calls], ["DELETE", "PUT", "DELETE"])
 
     def test_origin_fetch_retries_only_bounded_transient_states(self) -> None:
