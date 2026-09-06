@@ -26,9 +26,7 @@ class _RecordingApi:
     token = "synthetic-token"
 
     def __init__(self) -> None:
-        self.calls: list[
-            tuple[str, str, object | None, frozenset[int]]
-        ] = []
+        self.calls: list[tuple[str, str, object | None, frozenset[int]]] = []
 
     def request(
         self,
@@ -107,12 +105,16 @@ class CloudflareWorkerSecretWriteStatusTests(unittest.TestCase):
             dsn_file = Path(temp_dir) / builds._STAGING_DSN_FILENAME
             dsn_file.write_text(_SYNTHETIC_DSN, encoding="utf-8")
             with (
-                patch.object(candidate.builds, "_staging_dsn_file", return_value=dsn_file),
+                patch.object(
+                    candidate.builds, "_staging_dsn_file", return_value=dsn_file
+                ),
                 patch.object(candidate, "put_staging_runtime_secret") as corrected_put,
                 patch.object(
                     candidate.builds,
                     "_put_runtime_secret",
-                    side_effect=AssertionError("legacy secret writer must stay inactive"),
+                    side_effect=AssertionError(
+                        "legacy secret writer must stay inactive"
+                    ),
                 ),
             ):
                 candidate._sync_runtime_secret(cast(builds.CloudflareApi, api))
