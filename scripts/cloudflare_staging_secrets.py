@@ -27,8 +27,7 @@ def staging_secret_type(api: builds.CloudflareApi, name: str) -> str | None:
         raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE")
     if not matches:
         return None
-    secret_type = matches[0].get("type")
-    if secret_type != "secret_text":
+    if matches[0].get("type") != "secret_text":
         raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_TYPE_DRIFT")
     return "secret_text"
 
