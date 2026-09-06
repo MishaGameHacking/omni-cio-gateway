@@ -1,6 +1,10 @@
 import { Container, getRandom } from "@cloudflare/containers";
 import { env as runtimeEnv } from "cloudflare:workers";
 import {
+  CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH,
+  handleCfDBootstrapOriginCustody,
+} from "./cf-d-bootstrap-origin-custody.js";
+import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
   fetchCfDNeonBootstrap,
 } from "./cf-d-neon-bootstrap-egress.js";
@@ -178,6 +182,9 @@ export default {
         public_multi_user_enabled: false,
         real_trading_enabled: false,
       });
+    }
+    if (url.pathname === CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH) {
+      return handleCfDBootstrapOriginCustody(request, env, SOURCE_SHA);
     }
     if (url.pathname === "/healthz" || url.pathname.startsWith("/api/")) {
       return proxyBackend(request, env, url);
