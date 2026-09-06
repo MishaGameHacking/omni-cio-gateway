@@ -4,9 +4,9 @@ from collections.abc import Mapping
 import os
 import sys
 from typing import TextIO
-from urllib.parse import quote
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
+from scripts.cloudflare_staging_secrets import staging_secret_type
 
 
 _RUNTIME_DSN_BINDING = "OMNI_V10_POSTGRES_DSN"
@@ -16,30 +16,7 @@ _PROVIDER_BLOCKED = 78
 
 
 def _runtime_secret_present(api: builds.CloudflareApi) -> bool:
-    try:
-        response = api.request(
-            "GET",
-            f"/accounts/{api.account_id}/workers/scripts/"
-            f"{quote(builds._STAGING_WORKER, safe='')}/secrets",
-        )
-    except builds.BootstrapStopped as exc:
-        if exc.status == 404:
-            return False
-        raise
-
-    rows = builds._list(response, "CLOUDFLARE_STAGING_SECRETS_INVALID")
-    matches = [
-        row
-        for row in rows
-        if isinstance(row, dict) and row.get("name") == _RUNTIME_DSN_BINDING
-    ]
-    if len(matches) > 1:
-        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE")
-    if not matches:
-        return False
-    if matches[0].get("type") != "secret_text":
-        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_TYPE_DRIFT")
-    return True
+    return staging_secret_type(api, _RUNTIME_DSN_BINDING) == "secret_text"
 
 
 def probe_runtime_secret(
