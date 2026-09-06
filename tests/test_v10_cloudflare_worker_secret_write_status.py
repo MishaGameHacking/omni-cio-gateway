@@ -15,9 +15,7 @@ import scripts.run_v10_cloudflare_gated_candidate as candidate
 
 
 _ACCOUNT_ID = "a" * 32
-_SYNTHETIC_DSN = (
-    "postgresql://omni_test:synthetic@example.invalid/neondb?sslmode=require"
-)
+_SYNTHETIC_DSN = "synthetic-runtime-dsn-value"
 _EXPECTED_WRITE_STATUSES = frozenset({200, 201})
 
 
