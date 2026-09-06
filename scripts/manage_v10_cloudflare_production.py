@@ -23,6 +23,7 @@ _ZONE_NAME_ENV = "CLOUDFLARE_ZONE_NAME"
 _ZONE_ID = re.compile(r"^[0-9a-f]{32}$")
 _RUNTIME_DSN_BINDING_MISSING = 10
 _PROVIDER_BLOCKED = 78
+_WORKER_SECRET_WRITE_SUCCESS = frozenset({200, 201})
 
 
 def _required(environ: Mapping[str, str], name: str) -> str:
@@ -109,6 +110,7 @@ def put_runtime_secret(environ: Mapping[str, str] | None = None) -> None:
         f"/accounts/{api.account_id}/workers/scripts/"
         f"{quote(_PRODUCTION_WORKER, safe='')}/secrets",
         body={"name": _RUNTIME_DSN_BINDING, "text": dsn, "type": "secret_text"},
+        expected=_WORKER_SECRET_WRITE_SUCCESS,
     )
     if not _runtime_secret_present(api):
         raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_SECRET_VERIFY_FAILED")
