@@ -5,6 +5,10 @@ from urllib.parse import quote
 import scripts.bootstrap_v10_cloudflare_builds as builds
 
 
+_WORKER_SECRET_WRITE_SUCCESS = frozenset({200, 201})
+_RUNTIME_DSN_BINDING = "OMNI_V10_POSTGRES_DSN"
+
+
 def _secret_path(api: builds.CloudflareApi, name: str = "") -> str:
     base = (
         f"/accounts/{api.account_id}/workers/scripts/"
@@ -37,7 +41,29 @@ def put_staging_secret(api: builds.CloudflareApi, name: str, value: str) -> None
         "PUT",
         _secret_path(api),
         body={"name": name, "text": value, "type": "secret_text"},
+        expected=_WORKER_SECRET_WRITE_SUCCESS,
     )
+
+
+def put_staging_runtime_secret(api: builds.CloudflareApi) -> None:
+    candidate = builds._staging_dsn_file()
+    if candidate.is_symlink():
+        raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_PATH_INVALID")
+    dsn_file = candidate.resolve()
+    if (
+        dsn_file.parent != builds._runner_temp_root()
+        or dsn_file.name != builds._STAGING_DSN_FILENAME
+    ):
+        raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_PATH_INVALID")
+    try:
+        runtime_dsn = dsn_file.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_UNREADABLE") from None
+    if not runtime_dsn or len(runtime_dsn) > 8192:
+        raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_INVALID")
+    builds._mask(runtime_dsn)
+    put_staging_secret(api, _RUNTIME_DSN_BINDING, runtime_dsn)
+    print("CLOUDFLARE_STAGING_DATABASE_SECRET=READY")
 
 
 def delete_staging_secret(api: builds.CloudflareApi, name: str) -> None:
