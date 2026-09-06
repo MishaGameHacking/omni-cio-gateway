@@ -9,6 +9,7 @@ import {
   fetchCfDNeonBootstrap,
 } from "./cf-d-neon-bootstrap-egress.js";
 import { SOURCE_SHA } from "./generated-build-info.js";
+import { hardenedJson } from "./hardened-response.js";
 
 export { ContainerProxy } from "@cloudflare/containers";
 
@@ -52,20 +53,6 @@ export class Backend extends Container {
   sleepAfter = "1m";
   interceptHttps = true;
   envVars = backendEnvironment();
-}
-
-function hardenedJson(payload, status = 200) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
-      "cross-origin-opener-policy": "same-origin",
-      "referrer-policy": "no-referrer",
-      "x-content-type-options": "nosniff",
-    },
-  });
 }
 
 async function proxyCfDNeonBootstrap(request, env) {
