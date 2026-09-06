@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import argparse
-from collections.abc import Mapping
 import http.client
 import json
-import os
 import re
 import secrets
-import sys
 import time
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -230,50 +226,3 @@ def sync_bootstrap_origin_custody(
     if _SYNC_TOKEN_BINDING in secrets_by_name:
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE")
     print("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_CUSTODY=READY")
-
-
-def run(
-    expected_sha: str,
-    staging_origin: str,
-    environ: Mapping[str, str] | None = None,
-) -> None:
-    environment = os.environ if environ is None else environ
-    token = environment.get("CLOUDFLARE_API_TOKEN", "").strip()
-    account_id = environment.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
-    if not token:
-        raise builds.BootstrapStopped("CLOUDFLARE_API_TOKEN_REQUIRED")
-    if not account_id:
-        raise builds.BootstrapStopped("CLOUDFLARE_ACCOUNT_ID_REQUIRED")
-    builds._mask(token)
-    sync_bootstrap_origin_custody(
-        builds.CloudflareApi(account_id, token),
-        staging_origin=staging_origin,
-        expected_sha=expected_sha,
-    )
-
-
-def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--expected-sha", required=True)
-    parser.add_argument("--origin", required=True)
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
-    try:
-        run(args.expected_sha, args.origin)
-    except builds.BootstrapStopped as exc:
-        fields = [
-            "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_CUSTODY=STOPPED",
-            f"code={exc.code}",
-        ]
-        if exc.status is not None:
-            fields.append(f"status={exc.status}")
-        print(" ".join(fields), file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
