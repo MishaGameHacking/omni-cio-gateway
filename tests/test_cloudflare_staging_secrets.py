@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, cast
 import unittest
+from typing import Any, cast
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
 import scripts.cloudflare_staging_secrets as staging_secrets
