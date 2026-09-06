@@ -5,6 +5,9 @@ from urllib.parse import quote
 import scripts.bootstrap_v10_cloudflare_builds as builds
 
 
+_SECRET_WRITE_SUCCESS = frozenset({200, 201})
+
+
 def _secret_path(api: builds.CloudflareApi, name: str = "") -> str:
     base = (
         f"/accounts/{api.account_id}/workers/scripts/"
@@ -37,6 +40,7 @@ def put_staging_secret(api: builds.CloudflareApi, name: str, value: str) -> None
         "PUT",
         _secret_path(api),
         body={"name": name, "text": value, "type": "secret_text"},
+        expected=_SECRET_WRITE_SUCCESS,
     )
 
 
