@@ -22,11 +22,7 @@ def staging_secret_type(api: builds.CloudflareApi, name: str) -> str | None:
         raise
 
     rows = builds._list(response, "CLOUDFLARE_STAGING_SECRETS_INVALID")
-    matches = [
-        row
-        for row in rows
-        if isinstance(row, dict) and row.get("name") == name
-    ]
+    matches = [row for row in rows if isinstance(row, dict) and row.get("name") == name]
     if len(matches) > 1:
         raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE")
     if not matches:
