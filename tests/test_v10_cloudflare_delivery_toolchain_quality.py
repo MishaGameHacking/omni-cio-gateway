@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import ast
+import errno
+from http.client import IncompleteRead
 import inspect
 import io
 from pathlib import Path
+import ssl
 import subprocess
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 
 import scripts.install_v10_cloudflare_delivery_toolchain as installer
@@ -29,20 +32,214 @@ class CloudflareDeliveryToolchainQualityTests(unittest.TestCase):
         member.size = len(payload)
         return cls._tarball(member, payload)
 
-    def test_download_normalizes_urllib_and_timeout_oserrors(self) -> None:
-        failures = (
-            URLError("offline"),
-            HTTPError(installer._NPM_TARBALL_URL, 503, "unavailable", None, None),
-            TimeoutError("timed out"),
+    @staticmethod
+    def _response(payload: bytes = b"npm") -> MagicMock:
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        response.geturl.return_value = installer._NPM_TARBALL_URL
+        response.read.return_value = payload
+        return response
+
+    def test_download_retries_transient_connection_then_succeeds(self) -> None:
+        response = self._response(b"payload")
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=[ConnectionResetError(errno.ECONNRESET, "reset"), response],
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            payload = installer._download_npm_tarball()
+
+        self.assertEqual(payload, b"payload")
+        self.assertEqual(open_request.call_count, 2)
+        sleep.assert_called_once_with(15.0)
+
+    def test_download_retries_retryable_http_then_succeeds(self) -> None:
+        response = self._response(b"payload")
+        transient = HTTPError(
+            installer._NPM_TARBALL_URL,
+            503,
+            "unavailable",
+            None,
+            None,
         )
-        for failure in failures:
-            with self.subTest(failure=type(failure).__name__):
-                with patch.object(installer._OPENER, "open", side_effect=failure):
-                    with self.assertRaisesRegex(
-                        RuntimeError,
-                        "CLOUDFLARE_NPM_DOWNLOAD_FAILED",
-                    ):
-                        installer._download_npm_tarball()
+        with (
+            patch.object(installer._OPENER, "open", side_effect=[transient, response]),
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            payload = installer._download_npm_tarball()
+
+        self.assertEqual(payload, b"payload")
+        sleep.assert_called_once_with(15.0)
+
+    def test_download_exhausts_transient_failures_with_bounded_backoff(self) -> None:
+        failures = [
+            HTTPError(
+                installer._NPM_TARBALL_URL,
+                503,
+                "unavailable",
+                None,
+                None,
+            )
+            for _ in range(installer._DOWNLOAD_ATTEMPTS)
+        ]
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=failures,
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"CLOUDFLARE_NPM_DOWNLOAD_RETRY_EXHAUSTED HTTP status=503 attempts=5",
+            ):
+                installer._download_npm_tarball()
+
+        self.assertEqual(open_request.call_count, 5)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [15.0, 30.0, 45.0, 60.0],
+        )
+
+    def test_download_retry_log_does_not_expose_exception_details(self) -> None:
+        response = self._response(b"payload")
+        stderr = io.StringIO()
+        failure = ConnectionResetError(errno.ECONNRESET, "sensitive-route-detail")
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=[failure, response],
+            ),
+            patch.object(installer.time, "sleep"),
+            patch.object(installer.sys, "stderr", stderr),
+        ):
+            payload = installer._download_npm_tarball()
+
+        self.assertEqual(payload, b"payload")
+        log = stderr.getvalue()
+        self.assertIn("TRANSPORT class=CONNECTION", log)
+        self.assertNotIn("sensitive-route-detail", log)
+        self.assertNotIn(installer._NPM_TARBALL_URL, log)
+
+    def test_download_http_retry_policy_is_explicit_and_bounded(self) -> None:
+        for status in (408, 429, 500, 503, 599):
+            with self.subTest(status=status):
+                self.assertTrue(installer._retryable_http_status(status))
+        for status in (400, 401, 403, 404, 499, 600):
+            with self.subTest(status=status):
+                self.assertFalse(installer._retryable_http_status(status))
+
+    def test_download_does_not_retry_permanent_http_failure(self) -> None:
+        failure = HTTPError(
+            installer._NPM_TARBALL_URL,
+            403,
+            "forbidden",
+            None,
+            None,
+        )
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=failure,
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"CLOUDFLARE_NPM_HTTP_STATUS_PERMANENT status=403",
+            ):
+                installer._download_npm_tarball()
+
+        open_request.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_download_does_not_retry_redirect(self) -> None:
+        failure = HTTPError(
+            installer._NPM_TARBALL_URL,
+            302,
+            "redirect",
+            None,
+            None,
+        )
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=failure,
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_NPM_REDIRECT_FORBIDDEN",
+            ):
+                installer._download_npm_tarball()
+
+        open_request.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_download_does_not_retry_tls_certificate_failure(self) -> None:
+        certificate_failure = ssl.SSLCertVerificationError(
+            1, "certificate verify failed"
+        )
+        failure = URLError(certificate_failure)
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=failure,
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"CLOUDFLARE_NPM_TRANSPORT_NON_RETRYABLE class=TLS_CERTIFICATE",
+            ):
+                installer._download_npm_tarball()
+
+        open_request.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_download_retries_incomplete_read(self) -> None:
+        response = self._response(b"payload")
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=[IncompleteRead(b"partial", 100), response],
+            ),
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            payload = installer._download_npm_tarball()
+
+        self.assertEqual(payload, b"payload")
+        sleep.assert_called_once_with(15.0)
+
+    def test_download_unknown_url_failure_is_non_retryable(self) -> None:
+        failure = URLError("offline")
+        with (
+            patch.object(
+                installer._OPENER,
+                "open",
+                side_effect=failure,
+            ) as open_request,
+            patch.object(installer.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"CLOUDFLARE_NPM_TRANSPORT_NON_RETRYABLE class=URL_ERROR",
+            ):
+                installer._download_npm_tarball()
+
+        open_request.assert_called_once()
+        sleep.assert_not_called()
 
     def test_extract_accepts_regular_cli_member(self) -> None:
         payload = self._regular_npm_tarball(b"console.log('npm')")

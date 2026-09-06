@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import hmac
+from http.client import HTTPException, IncompleteRead
 import io
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tarfile
+import time
+from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -88,6 +94,23 @@ _NPM_TARBALL_SHA512 = bytes(
     )
 )
 _DOWNLOAD_TIMEOUT_SECONDS = 45.0
+_DOWNLOAD_ATTEMPTS = 5
+_DOWNLOAD_BACKOFF_SECONDS = 15.0
+_DOWNLOAD_MAX_BACKOFF_SECONDS = 60.0
+_RETRYABLE_HTTP_STATUS = frozenset({408, 429})
+_REDIRECT_HTTP_STATUS = frozenset({301, 302, 303, 307, 308})
+_RETRYABLE_ERRNOS = frozenset(
+    value
+    for value in (
+        getattr(errno, "ECONNRESET", None),
+        getattr(errno, "ECONNREFUSED", None),
+        getattr(errno, "ECONNABORTED", None),
+        getattr(errno, "ETIMEDOUT", None),
+        getattr(errno, "ENETUNREACH", None),
+        getattr(errno, "EHOSTUNREACH", None),
+    )
+    if value is not None
+)
 _PROCESS_TIMEOUT_SECONDS = 600.0
 _MAX_TARBALL_BYTES = 8 * 1024 * 1024
 _MAX_UNPACKED_BYTES = 24 * 1024 * 1024
@@ -100,6 +123,12 @@ _VERSION_FLAG = "--version"
 
 class ToolchainBootstrapStopped(RuntimeError):
     pass
+
+
+class _TransientDownloadError(RuntimeError):
+    def __init__(self, safe_classification: str) -> None:
+        super().__init__(safe_classification)
+        self.safe_classification = safe_classification
 
 
 class _RejectRedirects(HTTPRedirectHandler):
@@ -140,12 +169,63 @@ def _node_executable() -> Path:
     return node
 
 
-def _download_npm_tarball() -> bytes:
-    request = Request(
-        _NPM_TARBALL_URL,
-        headers={"Accept": "application/octet-stream", "User-Agent": "omni-cio-v10-ci"},
-        method="GET",
+def _retryable_http_status(status: int) -> bool:
+    return status in _RETRYABLE_HTTP_STATUS or 500 <= status <= 599
+
+
+def _transient_transport(kind: str) -> _TransientDownloadError:
+    return _TransientDownloadError(f"TRANSPORT class={kind}")
+
+
+def _permanent_transport(kind: str) -> ToolchainBootstrapStopped:
+    return ToolchainBootstrapStopped(
+        f"CLOUDFLARE_NPM_TRANSPORT_NON_RETRYABLE class={kind}"
     )
+
+
+def _transport_failure(exc: OSError) -> RuntimeError:
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return _permanent_transport("TLS_CERTIFICATE")
+    if isinstance(exc, ssl.SSLError):
+        return _permanent_transport("TLS")
+    if isinstance(exc, TimeoutError):
+        return _transient_transport("TIMEOUT")
+    if isinstance(exc, ConnectionError) or exc.errno in _RETRYABLE_ERRNOS:
+        return _transient_transport("CONNECTION")
+    if isinstance(exc, socket.gaierror):
+        if exc.errno == getattr(socket, "EAI_AGAIN", None):
+            return _transient_transport("DNS_TEMPORARY")
+        return _permanent_transport("DNS_RESOLUTION")
+    return _permanent_transport("OSERROR")
+
+
+def _http_failure(exc: HTTPError) -> RuntimeError:
+    try:
+        exc.close()
+    except OSError:
+        return ToolchainBootstrapStopped(
+            "CLOUDFLARE_NPM_HTTP_RESPONSE_CLOSE_FAILED"
+        )
+    status = int(exc.code)
+    if status in _REDIRECT_HTTP_STATUS:
+        return ToolchainBootstrapStopped("CLOUDFLARE_NPM_REDIRECT_FORBIDDEN")
+    if _retryable_http_status(status):
+        return _TransientDownloadError(f"HTTP status={status}")
+    return ToolchainBootstrapStopped(
+        f"CLOUDFLARE_NPM_HTTP_STATUS_PERMANENT status={status}"
+    )
+
+
+def _url_failure(exc: URLError) -> RuntimeError:
+    reason = exc.reason
+    if isinstance(reason, OSError):
+        return _transport_failure(reason)
+    return ToolchainBootstrapStopped(
+        "CLOUDFLARE_NPM_TRANSPORT_NON_RETRYABLE class=URL_ERROR"
+    )
+
+
+def _download_npm_tarball_once(request: Request) -> bytes:
     try:
         with _OPENER.open(request, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response:
             if response.geturl() != _NPM_TARBALL_URL:
@@ -153,11 +233,48 @@ def _download_npm_tarball() -> bytes:
             payload = response.read(_MAX_TARBALL_BYTES + 1)
     except ToolchainBootstrapStopped:
         raise
+    except HTTPError as exc:
+        raise _http_failure(exc) from exc
+    except URLError as exc:
+        raise _url_failure(exc) from exc
+    except IncompleteRead as exc:
+        raise _transient_transport("INCOMPLETE_READ") from exc
+    except HTTPException as exc:
+        raise _permanent_transport("HTTP_PROTOCOL") from exc
     except OSError as exc:
-        raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_DOWNLOAD_FAILED") from exc
+        raise _transport_failure(exc) from exc
     if not payload or len(payload) > _MAX_TARBALL_BYTES:
         raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_SIZE_INVALID")
     return payload
+
+
+def _download_npm_tarball() -> bytes:
+    request = Request(
+        _NPM_TARBALL_URL,
+        headers={"Accept": "application/octet-stream", "User-Agent": "omni-cio-v10-ci"},
+        method="GET",
+    )
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            return _download_npm_tarball_once(request)
+        except _TransientDownloadError as exc:
+            if attempt == _DOWNLOAD_ATTEMPTS:
+                raise ToolchainBootstrapStopped(
+                    "CLOUDFLARE_NPM_DOWNLOAD_RETRY_EXHAUSTED "
+                    f"{exc.safe_classification} attempts={_DOWNLOAD_ATTEMPTS}"
+                ) from exc
+            delay = min(
+                _DOWNLOAD_BACKOFF_SECONDS * attempt,
+                _DOWNLOAD_MAX_BACKOFF_SECONDS,
+            )
+            print(
+                "CLOUDFLARE_NPM_DOWNLOAD_RETRY "
+                f"attempt={attempt}/{_DOWNLOAD_ATTEMPTS} "
+                f"{exc.safe_classification} delay_seconds={delay:g}",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+    raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_DOWNLOAD_RETRY_STATE_INVALID")
 
 
 def _verify_integrity(payload: bytes) -> None:
