@@ -15,8 +15,9 @@ _BOOTSTRAP_ORIGIN_BINDING = "OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN"
 _SYNC_TOKEN_BINDING = "OMNI_V10_CF_D_ORIGIN_SYNC_TOKEN"
 _CUSTODY_PATH = "/api/internal/v10/cf-d/bootstrap-origin-custody"
 _EXPECTED_WORKER = builds._STAGING_WORKER
-_STAGING_HOST_PATTERN = re.compile(
-    r"^omni-cio-v10-web-staging\.[a-z0-9-]{1,63}\.workers\.dev$"
+_STAGING_ORIGIN_PATTERN = re.compile(
+    r"^https://omni-cio-v10-web-staging\."
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.workers\.dev/?$"
 )
 _FUNCTION_ORIGIN_PATTERN = re.compile(
     r"^https://(br-[a-z0-9-]{4,57})-cfdprodbootstrap\.compute\."
@@ -27,26 +28,10 @@ _MAX_ORIGIN_BYTES = 1_024
 
 
 def _staging_origin(value: str) -> str:
-    try:
-        parsed = urlsplit(value.strip())
-        port = parsed.port
-    except ValueError:
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_STAGING_ORIGIN_INVALID"
-        ) from None
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or port is not None
-        or parsed.path not in {"", "/"}
-        or parsed.query
-        or parsed.fragment
-        or _STAGING_HOST_PATTERN.fullmatch(parsed.hostname) is None
-    ):
+    candidate = value.strip().lower()
+    if _STAGING_ORIGIN_PATTERN.fullmatch(candidate) is None:
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_STAGING_ORIGIN_INVALID")
-    return f"https://{parsed.hostname}"
+    return candidate.removesuffix("/")
 
 
 def _bootstrap_origin(value: object) -> str:
@@ -55,23 +40,6 @@ def _bootstrap_origin(value: object) -> str:
         or not value
         or len(value.encode("utf-8")) > _MAX_ORIGIN_BYTES
         or _FUNCTION_ORIGIN_PATTERN.fullmatch(value) is None
-    ):
-        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID")
-    try:
-        parsed = urlsplit(value)
-        port = parsed.port
-    except ValueError:
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID"
-        ) from None
-    if (
-        parsed.scheme != "https"
-        or parsed.username is not None
-        or parsed.password is not None
-        or port is not None
-        or parsed.path != "/"
-        or parsed.query
-        or parsed.fragment
     ):
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID")
     return value
@@ -133,8 +101,7 @@ def _fetch_bootstrap_origin_once(
     token: str,
 ) -> str:
     origin = _staging_origin(staging_origin)
-    parsed = urlsplit(origin)
-    hostname = parsed.hostname
+    hostname = urlsplit(origin).hostname
     if hostname is None:
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_STAGING_ORIGIN_INVALID")
     connection = http.client.HTTPSConnection(hostname, 443, timeout=20.0)
