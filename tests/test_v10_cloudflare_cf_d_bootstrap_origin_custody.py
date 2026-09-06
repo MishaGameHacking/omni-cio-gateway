@@ -183,6 +183,7 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
                     },
                 ),
                 ("GET", None),
+                ("GET", None),
             ],
         )
         log = output.getvalue()
