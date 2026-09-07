@@ -34,25 +34,43 @@ _MAX_RESPONSE_BYTES = 8_192
 _MAX_ORIGIN_BYTES = 1_024
 _RETRY_ATTEMPTS = 15
 _RETRY_DELAY_SECONDS = 2
+_ORIGIN_SYNC_UNAUTHORIZED = "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAUTHORIZED"
+_ORIGIN_SYNC_NOT_FOUND = "CLOUDFLARE_CF_D_ORIGIN_SYNC_NOT_FOUND"
+_ORIGIN_SYNC_DERIVATION_FAILED = "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED"
+_ORIGIN_SYNC_STAGING_NOT_READY = "CLOUDFLARE_CF_D_ORIGIN_SYNC_STAGING_NOT_READY"
+_ORIGIN_SYNC_UNAVAILABLE = "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE"
+_ORIGIN_SYNC_RESPONSE_INVALID = "CLOUDFLARE_CF_D_ORIGIN_SYNC_RESPONSE_INVALID"
+_SYNC_TOKEN_STALE = "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE"
+_PRE_CUSTODY_RELEASE_NOT_READY = "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_NOT_READY"
+_PRE_CUSTODY_RELEASE_SHA_MISMATCH = (
+    "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH"
+)
+_PRE_CUSTODY_RELEASE_UNAVAILABLE = "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_UNAVAILABLE"
+_PRE_CUSTODY_RELEASE_RESPONSE_INVALID = (
+    "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_RESPONSE_INVALID"
+)
+_PRE_CUSTODY_RELEASE_HTTP_STATUS_INVALID = (
+    "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_HTTP_STATUS_INVALID"
+)
 _ORIGIN_SYNC_STATUS_CODES = {
-    403: "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAUTHORIZED",
-    404: "CLOUDFLARE_CF_D_ORIGIN_SYNC_NOT_FOUND",
-    502: "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED",
-    503: "CLOUDFLARE_CF_D_ORIGIN_SYNC_STAGING_NOT_READY",
+    403: _ORIGIN_SYNC_UNAUTHORIZED,
+    404: _ORIGIN_SYNC_NOT_FOUND,
+    502: _ORIGIN_SYNC_DERIVATION_FAILED,
+    503: _ORIGIN_SYNC_STAGING_NOT_READY,
 }
 _ORIGIN_SYNC_RETRYABLE = frozenset(
     {
-        "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED",
-        "CLOUDFLARE_CF_D_ORIGIN_SYNC_STAGING_NOT_READY",
-        "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE",
+        _ORIGIN_SYNC_DERIVATION_FAILED,
+        _ORIGIN_SYNC_STAGING_NOT_READY,
+        _ORIGIN_SYNC_UNAVAILABLE,
     }
 )
 _RELEASE_RETRYABLE_HTTP = frozenset({404, 408, 429, 500, 502, 503, 504})
 _RELEASE_RETRYABLE_CODES = frozenset(
     {
-        "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_NOT_READY",
-        "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH",
-        "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_UNAVAILABLE",
+        _PRE_CUSTODY_RELEASE_NOT_READY,
+        _PRE_CUSTODY_RELEASE_SHA_MISMATCH,
+        _PRE_CUSTODY_RELEASE_UNAVAILABLE,
     }
 )
 
@@ -136,21 +154,17 @@ def _fetch_bootstrap_origin_once(
             )
         content_type = str(response.getheader("Content-Type", "")).lower()
         if "application/json" not in content_type:
-            raise builds.BootstrapStopped(
-                "CLOUDFLARE_CF_D_ORIGIN_SYNC_RESPONSE_INVALID"
-            )
+            raise builds.BootstrapStopped(_ORIGIN_SYNC_RESPONSE_INVALID)
         raw = _read_response_body(response)
     except builds.BootstrapStopped:
         raise
     except (TimeoutError, OSError, http.client.HTTPException):
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE"
-        ) from None
+        raise builds.BootstrapStopped(_ORIGIN_SYNC_UNAVAILABLE) from None
     finally:
         connection.close()
-    payload = _json_payload(raw, "CLOUDFLARE_CF_D_ORIGIN_SYNC_RESPONSE_INVALID")
+    payload = _json_payload(raw, _ORIGIN_SYNC_RESPONSE_INVALID)
     if payload.get("status") != "READY" or payload.get("source_sha") != expected_sha:
-        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_ORIGIN_SYNC_RESPONSE_INVALID")
+        raise builds.BootstrapStopped(_ORIGIN_SYNC_RESPONSE_INVALID)
     return _bootstrap_origin(payload.get("bootstrap_origin"))
 
 
@@ -163,6 +177,28 @@ def _fetch_bootstrap_origin(staging_origin: str, expected_sha: str, token: str) 
                 raise
             time.sleep(_RETRY_DELAY_SECONDS)
     raise AssertionError("bounded origin sync retry exhausted without terminal result")
+
+
+def _release_status_code(status: int) -> str:
+    if status in _RELEASE_RETRYABLE_HTTP:
+        return _PRE_CUSTODY_RELEASE_NOT_READY
+    return _PRE_CUSTODY_RELEASE_HTTP_STATUS_INVALID
+
+
+def _validated_release_payload(raw: bytes, expected_sha: str) -> None:
+    payload = _json_payload(raw, _PRE_CUSTODY_RELEASE_RESPONSE_INVALID)
+    protected_identity = (
+        payload.get("status") == "ok",
+        payload.get("platform") == "cloudflare",
+        payload.get("backend") == "container",
+        payload.get("static_assets") is True,
+        payload.get("public_multi_user_enabled") is False,
+        payload.get("real_trading_enabled") is False,
+    )
+    if not all(protected_identity):
+        raise builds.BootstrapStopped(_PRE_CUSTODY_RELEASE_RESPONSE_INVALID)
+    if payload.get("source_sha") != expected_sha:
+        raise builds.BootstrapStopped(_PRE_CUSTODY_RELEASE_SHA_MISMATCH)
 
 
 def _fetch_exact_release_once(staging_origin: str, expected_sha: str) -> None:
@@ -180,45 +216,18 @@ def _fetch_exact_release_once(staging_origin: str, expected_sha: str) -> None:
         response = connection.getresponse()
         status = int(response.status)
         if status != 200:
-            code = (
-                "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_NOT_READY"
-                if status in _RELEASE_RETRYABLE_HTTP
-                else "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_HTTP_STATUS_INVALID"
-            )
-            raise builds.BootstrapStopped(code, status=status)
+            raise builds.BootstrapStopped(_release_status_code(status), status=status)
         content_type = str(response.getheader("Content-Type", "")).lower()
         if "application/json" not in content_type:
-            raise builds.BootstrapStopped(
-                "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_RESPONSE_INVALID"
-            )
+            raise builds.BootstrapStopped(_PRE_CUSTODY_RELEASE_RESPONSE_INVALID)
         raw = _read_response_body(response)
     except builds.BootstrapStopped:
         raise
     except (TimeoutError, OSError, http.client.HTTPException):
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_UNAVAILABLE"
-        ) from None
+        raise builds.BootstrapStopped(_PRE_CUSTODY_RELEASE_UNAVAILABLE) from None
     finally:
         connection.close()
-    payload = _json_payload(
-        raw,
-        "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_RESPONSE_INVALID",
-    )
-    if (
-        payload.get("status") != "ok"
-        or payload.get("platform") != "cloudflare"
-        or payload.get("backend") != "container"
-        or payload.get("static_assets") is not True
-        or payload.get("public_multi_user_enabled") is not False
-        or payload.get("real_trading_enabled") is not False
-    ):
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_RESPONSE_INVALID"
-        )
-    if payload.get("source_sha") != expected_sha:
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH"
-        )
+    _validated_release_payload(raw, expected_sha)
 
 
 def assert_staging_exact_release(staging_origin: str, expected_sha: str) -> None:
@@ -234,7 +243,9 @@ def assert_staging_exact_release(staging_origin: str, expected_sha: str) -> None
             if exc.code not in _RELEASE_RETRYABLE_CODES or attempt == _RETRY_ATTEMPTS:
                 raise
             time.sleep(_RETRY_DELAY_SECONDS)
-    raise AssertionError("bounded exact release retry exhausted without terminal result")
+    raise AssertionError(
+        "bounded exact release retry exhausted without terminal result"
+    )
 
 
 @contextmanager
@@ -256,11 +267,9 @@ def bootstrap_origin_sync_token(api: builds.CloudflareApi) -> Iterator[str]:
         try:
             delete_staging_secret(api, _SYNC_TOKEN_BINDING)
             if staging_secret_type(api, _SYNC_TOKEN_BINDING) is not None:
-                raise builds.BootstrapStopped(
-                    "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE"
-                )
+                raise builds.BootstrapStopped(_SYNC_TOKEN_STALE)
         except builds.BootstrapStopped as exc:
-            if exc.code == "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE":
+            if exc.code == _SYNC_TOKEN_STALE:
                 raise
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_CLEANUP_FAILED"
@@ -288,11 +297,11 @@ def persist_bootstrap_origin_custody(
 
     origin = _bootstrap_origin(bootstrap_origin)
     if staging_secret_type(api, _SYNC_TOKEN_BINDING) is not None:
-        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE")
+        raise builds.BootstrapStopped(_SYNC_TOKEN_STALE)
     builds._mask(origin)
     put_staging_secret(api, _BOOTSTRAP_ORIGIN_BINDING, origin)
     if staging_secret_type(api, _BOOTSTRAP_ORIGIN_BINDING) != "secret_text":
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_SECRET_MISSING")
     if staging_secret_type(api, _SYNC_TOKEN_BINDING) is not None:
-        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE")
+        raise builds.BootstrapStopped(_SYNC_TOKEN_STALE)
     print("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_CUSTODY=READY")
