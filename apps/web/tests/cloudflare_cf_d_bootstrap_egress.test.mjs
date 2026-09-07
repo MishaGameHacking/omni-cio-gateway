@@ -10,6 +10,7 @@ import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
   fetchCfDNeonBootstrap,
   prepareCfDNeonBootstrapRequest,
+  sanitizedCfDDerivationFailureCode,
 } from "../../../cloudflare/src/cf-d-neon-bootstrap-egress.js";
 
 const EXPECTED_SHA = "a".repeat(40);
@@ -285,20 +286,34 @@ test("CF-D Worker requires a secret-bound Function origin matching database cell
   assert.equal(wrongBranch.calls[0].url, DATABASE_SQL_URL);
 });
 
-test("CF-D Worker rejects failed, oversized, or malformed branch metadata before Function egress", async () => {
-  const failedLookup = networkDouble({ branchStatus: 503 });
-  await withFetch(failedLookup.fetcher, () =>
-    assertStopped(
-      prepareCfDNeonBootstrapRequest(
-        virtualRequest(),
-        bindings(),
-        EXPECTED_SHA,
+test("CF-D Worker classifies branch HTTP failure without provider body leakage", async () => {
+  const cases = [
+    [401, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED"],
+    [403, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED"],
+    [404, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_FOUND"],
+    [503, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_READY"],
+    [418, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID"],
+  ];
+  for (const [branchStatus, code] of cases) {
+    const network = networkDouble({
+      branchStatus,
+      branchBody: JSON.stringify({ ignored: "provider-response-not-propagated" }),
+    });
+    await withFetch(network.fetcher, () =>
+      assertStopped(
+        prepareCfDNeonBootstrapRequest(
+          virtualRequest(),
+          bindings(),
+          EXPECTED_SHA,
+        ),
+        code,
       ),
-      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED",
-    ),
-  );
-  assert.equal(failedLookup.calls.length, 1);
+    );
+    assert.equal(network.calls.length, 1);
+  }
+});
 
+test("CF-D Worker rejects oversized or malformed branch metadata before Function egress", async () => {
   const oversizedLookup = networkDouble({ branchBody: "x".repeat(8_193) });
   await withFetch(oversizedLookup.fetcher, () =>
     assertStopped(
@@ -396,12 +411,61 @@ test("CF-D origin custody is invisible outside the staging runtime role", async 
   assert.equal(network.calls.length, 0);
 });
 
-test("CF-D origin custody sanitizes failed or malformed branch proof", async () => {
-  for (const options of [
-    { branchStatus: 503 },
-    { branchId: "not-a-branch" },
-    { branchId: `br-${"a".repeat(57)}` },
-  ]) {
+test("CF-D derivation sanitizer exposes only allowlisted diagnostic codes", () => {
+  const allowed = [
+    "CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID",
+    "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
+    "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED",
+    "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED",
+    "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_FOUND",
+    "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_READY",
+    "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID",
+    "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
+    "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID",
+    "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID",
+    "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH",
+  ];
+  for (const code of allowed) {
+    assert.equal(sanitizedCfDDerivationFailureCode(new Error(code)), code);
+  }
+  assert.equal(
+    sanitizedCfDDerivationFailureCode(new Error("UNTRUSTED_INTERNAL_DETAIL")),
+    "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED",
+  );
+  assert.equal(
+    sanitizedCfDDerivationFailureCode("UNTRUSTED_INTERNAL_DETAIL"),
+    "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED",
+  );
+});
+
+test("CF-D origin custody preserves sanitized branch failure classes", async () => {
+  const cases = [
+    [
+      { branchStatus: 403 },
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED",
+    ],
+    [
+      { branchStatus: 404 },
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_FOUND",
+    ],
+    [
+      { branchStatus: 503 },
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_READY",
+    ],
+    [
+      { branchStatus: 418 },
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID",
+    ],
+    [
+      { branchId: "not-a-branch" },
+      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID",
+    ],
+    [
+      { branchId: `br-${"a".repeat(57)}` },
+      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID",
+    ],
+  ];
+  for (const [options, detail] of cases) {
     const network = networkDouble(options);
     const response = await withFetch(network.fetcher, () =>
       handleCfDBootstrapOriginCustody(
@@ -411,8 +475,24 @@ test("CF-D origin custody sanitizes failed or malformed branch proof", async () 
       ),
     );
     assert.equal(response.status, 502);
-    assert.deepEqual(await response.json(), {
-      detail: "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED",
-    });
+    assert.deepEqual(await response.json(), { detail });
   }
+});
+
+test("CF-D origin custody classifies branch transport failure without detail leakage", async () => {
+  const response = await withFetch(
+    async () => {
+      throw new Error("SIMULATED_TRANSPORT_FAILURE");
+    },
+    () =>
+      handleCfDBootstrapOriginCustody(
+        custodyRequest(),
+        custodyBindings(),
+        EXPECTED_SHA,
+      ),
+  );
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), {
+    detail: "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED",
+  });
 });
