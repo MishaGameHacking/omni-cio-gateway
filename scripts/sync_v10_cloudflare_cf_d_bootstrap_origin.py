@@ -40,6 +40,19 @@ _ORIGIN_SYNC_DERIVATION_FAILED = "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED"
 _ORIGIN_SYNC_STAGING_NOT_READY = "CLOUDFLARE_CF_D_ORIGIN_SYNC_STAGING_NOT_READY"
 _ORIGIN_SYNC_UNAVAILABLE = "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE"
 _ORIGIN_SYNC_RESPONSE_INVALID = "CLOUDFLARE_CF_D_ORIGIN_SYNC_RESPONSE_INVALID"
+_RUNTIME_DATABASE_INVALID = "CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID"
+_NEON_DESTINATION_REJECTED = "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED"
+_NEON_BRANCH_LOOKUP_FAILED = "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED"
+_NEON_BRANCH_LOOKUP_UNAUTHORIZED = "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED"
+_NEON_BRANCH_LOOKUP_NOT_FOUND = "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_FOUND"
+_NEON_BRANCH_LOOKUP_NOT_READY = "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_READY"
+_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID = (
+    "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID"
+)
+_NEON_BRANCH_RESPONSE_TOO_LARGE = "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE"
+_NEON_BRANCH_RESPONSE_INVALID = "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID"
+_BOOTSTRAP_ORIGIN_INVALID = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID"
+_BOOTSTRAP_ORIGIN_MISMATCH = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH"
 _SYNC_TOKEN_STALE = "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE"
 _PRE_CUSTODY_RELEASE_NOT_READY = "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_NOT_READY"
 _PRE_CUSTODY_RELEASE_SHA_MISMATCH = "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH"
@@ -53,12 +66,27 @@ _PRE_CUSTODY_RELEASE_HTTP_STATUS_INVALID = (
 _ORIGIN_SYNC_STATUS_CODES = {
     403: _ORIGIN_SYNC_UNAUTHORIZED,
     404: _ORIGIN_SYNC_NOT_FOUND,
-    502: _ORIGIN_SYNC_DERIVATION_FAILED,
     503: _ORIGIN_SYNC_STAGING_NOT_READY,
 }
+_ORIGIN_SYNC_DERIVATION_CODES = frozenset(
+    {
+        _RUNTIME_DATABASE_INVALID,
+        _NEON_DESTINATION_REJECTED,
+        _NEON_BRANCH_LOOKUP_FAILED,
+        _NEON_BRANCH_LOOKUP_UNAUTHORIZED,
+        _NEON_BRANCH_LOOKUP_NOT_FOUND,
+        _NEON_BRANCH_LOOKUP_NOT_READY,
+        _NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID,
+        _NEON_BRANCH_RESPONSE_TOO_LARGE,
+        _NEON_BRANCH_RESPONSE_INVALID,
+        _BOOTSTRAP_ORIGIN_INVALID,
+        _BOOTSTRAP_ORIGIN_MISMATCH,
+    }
+)
 _ORIGIN_SYNC_RETRYABLE = frozenset(
     {
-        _ORIGIN_SYNC_DERIVATION_FAILED,
+        _NEON_BRANCH_LOOKUP_FAILED,
+        _NEON_BRANCH_LOOKUP_NOT_READY,
         _ORIGIN_SYNC_STAGING_NOT_READY,
         _ORIGIN_SYNC_UNAVAILABLE,
     }
@@ -121,6 +149,29 @@ def _origin_sync_status_code(status: int) -> str:
     )
 
 
+def _origin_sync_derivation_code(response: Any, status: int) -> str:
+    content_type = str(response.getheader("Content-Type", "")).lower()
+    if "application/json" not in content_type:
+        return _ORIGIN_SYNC_RESPONSE_INVALID
+    try:
+        raw = _read_response_body(response)
+        payload = _json_payload(raw, _ORIGIN_SYNC_RESPONSE_INVALID)
+    except builds.BootstrapStopped as exc:
+        raise builds.BootstrapStopped(exc.code, status=status) from None
+    detail = payload.get("detail")
+    if isinstance(detail, str) and detail in _ORIGIN_SYNC_DERIVATION_CODES:
+        return detail
+    if detail == _ORIGIN_SYNC_DERIVATION_FAILED:
+        return _ORIGIN_SYNC_DERIVATION_FAILED
+    return _ORIGIN_SYNC_DERIVATION_FAILED
+
+
+def _origin_sync_failure_code(response: Any, status: int) -> str:
+    if status == 502:
+        return _origin_sync_derivation_code(response, status)
+    return _origin_sync_status_code(status)
+
+
 def _fetch_bootstrap_origin_once(
     staging_origin: str,
     expected_sha: str,
@@ -147,7 +198,7 @@ def _fetch_bootstrap_origin_once(
         status = int(response.status)
         if status != 200:
             raise builds.BootstrapStopped(
-                _origin_sync_status_code(status),
+                _origin_sync_failure_code(response, status),
                 status=status,
             )
         content_type = str(response.getheader("Content-Type", "")).lower()
