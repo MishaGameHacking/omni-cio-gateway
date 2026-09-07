@@ -134,7 +134,9 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
             )
         return output.getvalue()
 
-    def test_release_contract_requires_version_bound_ephemeral_origin_custody(self) -> None:
+    def test_release_contract_requires_version_bound_ephemeral_origin_custody(
+        self,
+    ) -> None:
         contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
         candidate = contract["candidate"]
         self.assertEqual(
@@ -174,7 +176,9 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
             False,
         )
 
-    def test_gated_runner_arms_token_before_build_and_proves_custody_before_cleanup(self) -> None:
+    def test_gated_runner_arms_token_before_build_and_proves_custody_before_cleanup(
+        self,
+    ) -> None:
         source = _GATED_RUNNER_SOURCE.read_text(encoding="utf-8")
         markers = (
             "with bootstrap_origin_sync_token(api) as sync_token:",
@@ -248,7 +252,9 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
                 ):
                     custody._sync_token(value)
 
-    def test_lifecycle_arms_before_proof_and_removes_token_before_persisting_origin(self) -> None:
+    def test_lifecycle_arms_before_proof_and_removes_token_before_persisting_origin(
+        self,
+    ) -> None:
         api = _Api()
         log = self._run_lifecycle(api)
         operations = [(method, body) for method, _path, body in api.calls]
@@ -343,7 +349,9 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
                 self.assertEqual(raised.exception.status, status)
                 self.assertTrue(connection.closed)
 
-    def test_origin_fetch_retries_only_explicit_transient_or_rollout_states(self) -> None:
+    def test_origin_fetch_retries_only_explicit_transient_or_rollout_states(
+        self,
+    ) -> None:
         for code in custody._ORIGIN_SYNC_RETRYABLE:
             with self.subTest(code=code):
                 with (
