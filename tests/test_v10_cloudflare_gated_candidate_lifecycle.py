@@ -187,11 +187,9 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
 
     def test_terminal_build_failure_disarms_token_before_trigger_cleanup(self) -> None:
         events: list[str] = []
+        wait_error = builds.BootstrapStopped("CLOUDFLARE_STAGING_BUILD_FAILED")
         with self.assertRaisesRegex(RuntimeError, "CLOUDFLARE_STAGING_BUILD_FAILED"):
-            self._run_candidate(
-                events,
-                wait_error=builds.BootstrapStopped("CLOUDFLARE_STAGING_BUILD_FAILED"),
-            )
+            self._run_candidate(events, wait_error=wait_error)
         self.assertEqual(
             events,
             [
@@ -208,16 +206,14 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
         self,
     ) -> None:
         events: list[str] = []
+        release_error = builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH"
+        )
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH",
         ):
-            self._run_candidate(
-                events,
-                release_error=builds.BootstrapStopped(
-                    "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH"
-                ),
-            )
+            self._run_candidate(events, release_error=release_error)
         self.assertEqual(
             events,
             [
@@ -235,16 +231,14 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
 
     def test_custody_failure_disarms_token_and_does_not_persist_origin(self) -> None:
         events: list[str] = []
+        custody_error = builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE"
+        )
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE",
         ):
-            self._run_candidate(
-                events,
-                custody_error=builds.BootstrapStopped(
-                    "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE"
-                ),
-            )
+            self._run_candidate(events, custody_error=custody_error)
         self.assertEqual(
             events,
             [
@@ -263,7 +257,8 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
 
     def test_staging_deployment_requires_one_exact_100_percent_version(self) -> None:
         api = _DeploymentsApi([{"version_id": _VERSION_UUID, "percentage": 100}])
-        actual = gated._staging_active_version_id(cast(builds.CloudflareApi, api))
+        typed_api = cast(builds.CloudflareApi, api)
+        actual = gated._staging_active_version_id(typed_api)
         self.assertEqual(actual, _VERSION_UUID)
         self.assertEqual(len(api.calls), 1)
         self.assertIn("omni-cio-v10-web-staging/deployments", api.calls[0][1])
@@ -283,10 +278,9 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
         for versions in invalid:
             with self.subTest(versions=versions):
                 bad_api = _DeploymentsApi(list(versions))
+                typed_bad_api = cast(builds.CloudflareApi, bad_api)
                 with self.assertRaises(builds.BootstrapStopped):
-                    gated._staging_active_version_id(
-                        cast(builds.CloudflareApi, bad_api)
-                    )
+                    gated._staging_active_version_id(typed_bad_api)
 
 
 if __name__ == "__main__":
