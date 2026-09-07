@@ -103,12 +103,18 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
             ),
             patch.object(builds, "CloudflareApi", return_value=api),
             patch.object(gated, "_prepare_candidate", side_effect=prepare),
-            patch.object(gated, "bootstrap_origin_sync_token", side_effect=token_context),
+            patch.object(
+                gated, "bootstrap_origin_sync_token", side_effect=token_context
+            ),
             patch.object(gated, "_start_exact_manual_build", side_effect=start),
             patch.object(builds, "_wait_build", side_effect=wait),
             patch.object(builds, "_staging_url", side_effect=staging_url),
-            patch.object(gated, "fetch_bootstrap_origin_custody", side_effect=fetch_origin),
-            patch.object(gated, "persist_bootstrap_origin_custody", side_effect=persist),
+            patch.object(
+                gated, "fetch_bootstrap_origin_custody", side_effect=fetch_origin
+            ),
+            patch.object(
+                gated, "persist_bootstrap_origin_custody", side_effect=persist
+            ),
             patch.object(
                 gated,
                 "quarantine_staging_autobuild",
@@ -118,7 +124,9 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
         ):
             return gated.run(_EXPECTED_SHA)
 
-    def test_token_is_armed_before_exact_build_and_custody_proof_precedes_mutation(self) -> None:
+    def test_token_is_armed_before_exact_build_and_custody_proof_precedes_mutation(
+        self,
+    ) -> None:
         events: list[str] = []
         actual = self._run_candidate(events)
         self.assertEqual(actual, _STAGING_URL)
