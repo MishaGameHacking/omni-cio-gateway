@@ -35,7 +35,7 @@ class _Api:
         self.calls: list[tuple[str, str, object | None]] = []
         self.cleanup_failure = cleanup_failure
         self.delete_calls = 0
-        self.secret_types: dict[str, str] = {}
+        self.binding_types: dict[str, str] = {}
 
     def request(
         self,
@@ -52,21 +52,21 @@ class _Api:
             self.delete_calls += 1
             if self.cleanup_failure and self.delete_calls == 2:
                 raise builds.BootstrapStopped("CLOUDFLARE_API_NETWORK_ERROR")
-            self.secret_types.pop(path.rsplit("/", 1)[-1], None)
+            self.binding_types.pop(path.rsplit("/", 1)[-1], None)
             return None
         if method == "GET":
             return [
-                {"name": name, "type": secret_type}
-                for name, secret_type in self.secret_types.items()
+                {"name": name, "type": binding_type}
+                for name, binding_type in self.binding_types.items()
             ]
         if method == "PUT":
             if not isinstance(body, dict):
-                raise AssertionError("secret body must be a mapping")
+                raise AssertionError("binding body must be a mapping")
             name = body.get("name")
-            secret_type = body.get("type")
-            if not isinstance(name, str) or secret_type != "secret_text":
-                raise AssertionError("invalid secret body")
-            self.secret_types[name] = secret_type
+            binding_type = body.get("type")
+            if not isinstance(name, str) or binding_type != "secret_text":
+                raise AssertionError("invalid binding body")
+            self.binding_types[name] = binding_type
             return None
         raise AssertionError(f"unexpected request: {method} {path}")
 
@@ -332,8 +332,8 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
             [call[0] for call in api.calls],
             ["DELETE", "PUT", "GET", "DELETE", "GET"],
         )
-        self.assertNotIn(custody._SYNC_TOKEN_BINDING, api.secret_types)
-        self.assertNotIn(custody._BOOTSTRAP_ORIGIN_BINDING, api.secret_types)
+        self.assertNotIn(custody._SYNC_TOKEN_BINDING, api.binding_types)
+        self.assertNotIn(custody._BOOTSTRAP_ORIGIN_BINDING, api.binding_types)
 
     def test_cleanup_failure_blocks_persistent_origin_write(self) -> None:
         api = _Api(cleanup_failure=True)
@@ -346,7 +346,7 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
             [call[0] for call in api.calls],
             ["DELETE", "PUT", "GET", "DELETE"],
         )
-        self.assertNotIn(custody._BOOTSTRAP_ORIGIN_BINDING, api.secret_types)
+        self.assertNotIn(custody._BOOTSTRAP_ORIGIN_BINDING, api.binding_types)
 
     def test_pre_custody_release_requires_exact_sha_and_protected_flags(self) -> None:
         response = _HttpResponse(
