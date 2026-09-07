@@ -75,7 +75,7 @@ class CloudflareCfDOriginFailureClassificationTests(unittest.TestCase):
         non_json = _Response(502, raw=b"ignored", content_type="text/plain")
         self.assertEqual(
             custody._origin_sync_failure_code(non_json, 502),
-            custody._ORIGIN_SYNC_RESPONSE_INVALID,
+            custody._ORIGIN_SYNC_DERIVATION_FAILED,
         )
 
     def test_retry_policy_contains_only_explicit_transient_classes(self) -> None:
