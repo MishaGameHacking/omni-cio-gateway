@@ -83,31 +83,43 @@ The custody lifecycle is made version-bound:
 3. Verify the token binding exists before starting the Build, so the Build inherits the
    intended secret state.
 4. Start and wait for the exact-SHA gated staging Build.
-5. After Build success, perform only read/network operations until bootstrap-origin custody
-   is proved; no Worker secret mutation is allowed in this interval.
-6. Preserve sanitized HTTP failure classes (`403`, `404`, `502`, `503`, unexpected status)
-   and retry only the explicit bounded rollout/transient classes plus transport failure.
-7. Remove and verify absence of the ephemeral synchronization token on every success/failure
+5. Read the staging deployment and require exactly one active Worker version carrying
+   exactly 100% of traffic; split/ambiguous deployments fail closed.
+6. Probe the staging Worker's source-controlled `/api/v10/release` endpoint and require the
+   exact expected SHA plus the protected Cloudflare/container/static-assets and disabled
+   public-user/Real-trading flags before the custody route can be called. A bounded retry is
+   allowed only while the newly accepted exact Worker is still propagating/readiness is
+   transient.
+7. After the exact live-release proof, perform only read/network operations until
+   bootstrap-origin custody is proved; no Worker secret mutation is allowed in this
+   interval.
+8. Preserve sanitized HTTP failure classes (`403`, `404`, `502`, `503`, unexpected status).
+   Once the exact live release has been proven, `403` and `404` are permanent fail-closed
+   authentication/configuration classes and are not retried. Only explicitly bounded
+   derivation/readiness (`502`/`503`) and transport-unavailable states are retried.
+9. Remove and verify absence of the ephemeral synchronization token on every success/failure
    path before persisting the trusted bootstrap origin.
-8. Persist the trusted bootstrap origin only after successful same-SHA custody proof.
-9. Retain the existing following exact-SHA live staging acceptance, which re-proves the
-   final serving source/health/database state after the cleanup/persistent-secret mutations.
+10. Persist the trusted bootstrap origin only after successful same-SHA custody proof.
+11. Retain the existing following exact-SHA live staging acceptance, which re-proves the
+    final serving source/health/database state after the cleanup/persistent-secret mutations.
 
 This correction does not weaken exact SHA, TLS, token authentication, Frankfurt Neon
 same-branch/same-cell validation, trigger quarantine or any fail-closed gate.
 
 ## Permanent regression guards
 
-Deterministic tests now require:
+Deterministic tests and repository guards now require:
 
 - synchronization-token arm before exact manual Build start;
-- Build terminal success before custody proof;
-- no secret mutation between Build acceptance and custody proof;
+- Build terminal success before any custody proof;
+- one active staging version at exactly 100% before custody;
+- exact `/api/v10/release` SHA and protected release flags before custody;
+- no secret mutation between Build acceptance/release proof and custody proof;
 - token cleanup before persistent origin write;
-- cleanup on Build/custody failure and fail-closed cleanup failure;
+- cleanup on Build/release/custody failure and fail-closed cleanup failure;
 - exact 256-bit lowercase-hex token validation;
 - distinct sanitized `403`/`404`/`502`/`503`/unexpected-status classification;
-- bounded retry only for the explicit rollout/transient set;
+- no retry for proven-live `403`/`404`, with bounded retry only for explicit transient states;
 - machine-readable release-contract fields freezing the version-bound lifecycle;
 - existing post-custody exact-SHA live staging revalidation.
 
@@ -129,6 +141,8 @@ proof that the previously attested serving version remains authoritative.
   `https://developers.cloudflare.com/workers/versions-and-deployments/`
 - Cloudflare Workers — Secrets:
   `https://developers.cloudflare.com/workers/configuration/secrets/`
+- Cloudflare Workers — Version overrides:
+  `https://developers.cloudflare.com/workers/versions-and-deployments/version-overrides/`
 - Cloudflare changelog — A new, simpler REST API for Cloudflare Workers:
   `https://developers.cloudflare.com/changelog/post/2025-09-03-new-workers-api/`
 
