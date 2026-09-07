@@ -21,6 +21,7 @@ _BOOTSTRAP_ORIGIN_BINDING = "OMNI_V10_CF_D_NEON_BOOTSTRAP_ORIGIN"
 _SYNC_TOKEN_BINDING = "OMNI_V10_CF_D_ORIGIN_SYNC_TOKEN"
 _CUSTODY_PATH = "/api/internal/v10/cf-d/bootstrap-origin-custody"
 _RELEASE_PATH = "/api/v10/release"
+_JSON_MEDIA_TYPE = "application/json"
 _STAGING_ORIGIN_PATTERN = re.compile(
     r"^https://omni-cio-v10-web-staging\."
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.workers\.dev/?$"
@@ -151,7 +152,7 @@ def _origin_sync_status_code(status: int) -> str:
 
 def _origin_sync_derivation_code(response: Any, status: int) -> str:
     content_type = str(response.getheader("Content-Type", "")).lower()
-    if "application/json" not in content_type:
+    if _JSON_MEDIA_TYPE not in content_type:
         return _ORIGIN_SYNC_DERIVATION_FAILED
     try:
         raw = _read_response_body(response)
@@ -186,8 +187,8 @@ def _fetch_bootstrap_origin_once(
             _CUSTODY_PATH,
             body=b"{}",
             headers={
-                "accept": "application/json",
-                "content-type": "application/json",
+                "accept": _JSON_MEDIA_TYPE,
+                "content-type": _JSON_MEDIA_TYPE,
                 "x-omni-cf-d-origin-sync-token": token,
                 "x-omni-expected-sha": expected_sha,
             },
@@ -200,7 +201,7 @@ def _fetch_bootstrap_origin_once(
                 status=status,
             )
         content_type = str(response.getheader("Content-Type", "")).lower()
-        if "application/json" not in content_type:
+        if _JSON_MEDIA_TYPE not in content_type:
             raise builds.BootstrapStopped(_ORIGIN_SYNC_RESPONSE_INVALID)
         raw = _read_response_body(response)
     except builds.BootstrapStopped:
@@ -258,14 +259,14 @@ def _fetch_exact_release_once(staging_origin: str, expected_sha: str) -> None:
         connection.request(
             "GET",
             _RELEASE_PATH,
-            headers={"accept": "application/json"},
+            headers={"accept": _JSON_MEDIA_TYPE},
         )
         response = connection.getresponse()
         status = int(response.status)
         if status != 200:
             raise builds.BootstrapStopped(_release_status_code(status), status=status)
         content_type = str(response.getheader("Content-Type", "")).lower()
-        if "application/json" not in content_type:
+        if _JSON_MEDIA_TYPE not in content_type:
             raise builds.BootstrapStopped(_PRE_CUSTODY_RELEASE_RESPONSE_INVALID)
         raw = _read_response_body(response)
     except builds.BootstrapStopped:
