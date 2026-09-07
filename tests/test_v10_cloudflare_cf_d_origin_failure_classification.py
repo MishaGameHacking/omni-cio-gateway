@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -14,6 +15,12 @@ _SYNC_VALUE = "b" * 64
 _BOOTSTRAP_ORIGIN = (
     "https://br-example1234-cfdprodbootstrap.compute."
     "c-6.eu-central-1.aws.neon.tech/"
+)
+_ROOT = Path(__file__).resolve().parents[1]
+_CONTRACT = json.loads(
+    (
+        _ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
+    ).read_text(encoding="utf-8")
 )
 
 
@@ -45,6 +52,23 @@ class _Response:
 
 
 class CloudflareCfDOriginFailureClassificationTests(unittest.TestCase):
+    def test_release_contract_matches_control_plane_failure_taxonomy(self) -> None:
+        candidate = _CONTRACT["candidate"]
+        derivation_codes = candidate[
+            "staging_origin_sync_sanitized_derivation_codes"
+        ]
+        retryable_codes = candidate["staging_origin_sync_retryable_codes"]
+        self.assertEqual(len(derivation_codes), len(set(derivation_codes)))
+        self.assertEqual(len(retryable_codes), len(set(retryable_codes)))
+        self.assertEqual(
+            frozenset(derivation_codes),
+            custody._ORIGIN_SYNC_DERIVATION_CODES,
+        )
+        self.assertEqual(
+            frozenset(retryable_codes),
+            custody._ORIGIN_SYNC_RETRYABLE,
+        )
+
     def test_502_preserves_only_allowlisted_worker_derivation_codes(self) -> None:
         for code in custody._ORIGIN_SYNC_DERIVATION_CODES:
             with self.subTest(code=code):
