@@ -301,7 +301,7 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             "cannot select an external target",
             "non-staging or non-Frankfurt runtime database bindings",
             "secret-bound Function origin matching database cell and branch",
-            "oversized, or malformed branch metadata",
+            "oversized or malformed branch metadata",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, node_test)
