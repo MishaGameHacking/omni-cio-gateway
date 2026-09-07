@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from decimal import Decimal
 import subprocess
 import sys
 from typing import Iterator
+from urllib.parse import quote
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
 from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
@@ -15,6 +17,7 @@ from scripts.quarantine_v10_cloudflare_staging_trigger import (
     quarantine_staging_autobuild,
 )
 from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import (
+    assert_staging_exact_release,
     bootstrap_origin_sync_token,
     fetch_bootstrap_origin_custody,
     persist_bootstrap_origin_custody,
@@ -151,6 +154,50 @@ def _start_exact_manual_build(
     return build_uuid
 
 
+def _staging_active_version_id(api: builds.CloudflareApi) -> str:
+    payload = builds._object(
+        api.request(
+            "GET",
+            f"/accounts/{api.account_id}/workers/scripts/"
+            f"{quote(builds._STAGING_WORKER, safe='')}/deployments",
+        ),
+        "CLOUDFLARE_STAGING_DEPLOYMENTS_INVALID",
+    )
+    deployments = builds._list(
+        payload.get("deployments"),
+        "CLOUDFLARE_STAGING_DEPLOYMENTS_INVALID",
+    )
+    if not deployments:
+        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_ACTIVE_DEPLOYMENT_REQUIRED")
+    latest = builds._object(
+        deployments[0],
+        "CLOUDFLARE_STAGING_DEPLOYMENT_INVALID",
+    )
+    versions = builds._list(
+        latest.get("versions"),
+        "CLOUDFLARE_STAGING_DEPLOYMENT_VERSIONS_INVALID",
+    )
+    if len(versions) != 1:
+        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SPLIT_DEPLOYMENT_FORBIDDEN")
+    version = builds._object(
+        versions[0],
+        "CLOUDFLARE_STAGING_DEPLOYMENT_VERSION_INVALID",
+    )
+    percentage = version.get("percentage")
+    if (
+        isinstance(percentage, bool)
+        or not isinstance(percentage, (int, float))
+        or Decimal(str(percentage)) != Decimal("100")
+    ):
+        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SPLIT_DEPLOYMENT_FORBIDDEN")
+    version_id = builds._provider_uuid(
+        version.get("version_id"),
+        "CLOUDFLARE_STAGING_VERSION_ID_INVALID",
+    )
+    print("CLOUDFLARE_STAGING_DEPLOYMENT=EXACT_SINGLE_VERSION")
+    return version_id
+
+
 def _prepare_candidate(api: builds.CloudflareApi, sha: str) -> tuple[str, str]:
     builds._expected_sha(sha)
     api.request("GET", f"/accounts/{api.account_id}/builds/account/limits")
@@ -191,6 +238,8 @@ def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
                 print("CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL")
                 builds._wait_build(api, build_uuid, sha)
                 url = builds._staging_url(api)
+                _staging_active_version_id(api)
+                assert_staging_exact_release(url, sha)
                 bootstrap_origin = fetch_bootstrap_origin_custody(
                     staging_origin=url,
                     expected_sha=sha,
