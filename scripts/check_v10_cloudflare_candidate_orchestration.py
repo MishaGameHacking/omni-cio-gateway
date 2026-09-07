@@ -27,7 +27,11 @@ _GATED_STEP = (
     "- name: Configure Workers Builds and accept exact staging build (gated exact-SHA)"
 )
 _GATED_COMMAND = "python -m scripts.run_v10_cloudflare_gated_candidate"
+_GATED_TOKEN_ARM_MARKER = "with bootstrap_origin_sync_token(api) as sync_token:"
+_GATED_BUILD_START_MARKER = "build_uuid = _start_exact_manual_build("
 _GATED_WAIT_MARKER = "builds._wait_build(api, build_uuid, sha)"
+_GATED_CUSTODY_MARKER = "bootstrap_origin = fetch_bootstrap_origin_custody("
+_GATED_PERSIST_MARKER = "persist_bootstrap_origin_custody(api, bootstrap_origin)"
 _GATED_CLEANUP_MARKER = (
     "quarantine_staging_autobuild(api, expected_sha=sha, verify_head=False)"
 )
@@ -206,9 +210,16 @@ def _validate_gated_runner() -> None:
             'body={"branch": builds._BRANCH, "commit_hash": expected_sha}',
             "CLOUDFLARE_BUILD_SOURCE=GATED_MANUAL_EXACT_SHA",
             "CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL",
+            "bootstrap_origin_sync_token",
+            "fetch_bootstrap_origin_custody",
+            "persist_bootstrap_origin_custody",
             "quarantine_staging_autobuild",
             "CLOUDFLARE_GATED_CANDIDATE_CLEANUP_FAILED",
+            _GATED_TOKEN_ARM_MARKER,
+            _GATED_BUILD_START_MARKER,
             _GATED_WAIT_MARKER,
+            _GATED_CUSTODY_MARKER,
+            _GATED_PERSIST_MARKER,
             'builds._write_output("staging_url", url)',
             'builds._write_output("cloudflare_build_uuid", build_uuid)',
         ),
@@ -223,8 +234,23 @@ def _validate_gated_runner() -> None:
             "remove_staging_triggers",
             "CLOUDFLARE_GATED_TRIGGER=RETIRED",
             "continue-on-error",
+            "sync_bootstrap_origin_custody",
+            "put_staging_secret(",
+            "delete_staging_secret(",
         ),
         "CLOUDFLARE_ORCHESTRATION_AUTOBUILD_REUSE_FORBIDDEN",
+    )
+    _require_order(
+        source,
+        (
+            _GATED_TOKEN_ARM_MARKER,
+            _GATED_BUILD_START_MARKER,
+            _GATED_WAIT_MARKER,
+            _GATED_CUSTODY_MARKER,
+            _GATED_PERSIST_MARKER,
+            _GATED_CLEANUP_MARKER,
+        ),
+        "CLOUDFLARE_ORCHESTRATION_VERSION_BOUND_CUSTODY_ORDER_INVALID",
     )
     wait_index = source.find(_GATED_WAIT_MARKER)
     cleanup_index = source.find(_GATED_CLEANUP_MARKER)
