@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { sanitizedCfDDerivationFailureCode } from "../../../cloudflare/src/cf-d-neon-bootstrap-egress.js";
+import {
+  CF_D_SANITIZED_DERIVATION_FAILURE_CODES,
+  sanitizedCfDDerivationFailureCode,
+} from "../../../cloudflare/src/cf-d-neon-bootstrap-egress.js";
 
 const CONTRACT = JSON.parse(
   readFileSync(
@@ -17,11 +20,15 @@ const CANDIDATE = CONTRACT.candidate;
 const GENERIC_FAILURE = "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED";
 
 
-test("CF-D Worker accepts every contract-pinned sanitized derivation code", () => {
+test("CF-D Worker taxonomy exactly matches the release contract", () => {
   const codes = CANDIDATE.staging_origin_sync_sanitized_derivation_codes;
   assert.ok(Array.isArray(codes));
   assert.ok(codes.length > 0);
   assert.equal(new Set(codes).size, codes.length);
+  assert.deepEqual(
+    new Set(CF_D_SANITIZED_DERIVATION_FAILURE_CODES),
+    new Set(codes),
+  );
 
   for (const code of codes) {
     assert.equal(typeof code, "string");
