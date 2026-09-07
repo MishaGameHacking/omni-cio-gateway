@@ -78,23 +78,37 @@ class CloudflareCfDOriginFailureClassificationTests(unittest.TestCase):
                     code,
                 )
 
-        response = _Response(
-            502,
-            payload={"detail": "UNTRUSTED_INTERNAL_DETAIL"},
-        )
-        self.assertEqual(
-            custody._origin_sync_failure_code(response, 502),
-            custody._ORIGIN_SYNC_DERIVATION_FAILED,
-        )
+        for payload in (
+            {"detail": "UNTRUSTED_INTERNAL_DETAIL"},
+            {"status": "failure"},
+        ):
+            with self.subTest(payload=payload):
+                response = _Response(502, payload=payload)
+                self.assertEqual(
+                    custody._origin_sync_failure_code(response, 502),
+                    custody._ORIGIN_SYNC_DERIVATION_FAILED,
+                )
 
-    def test_502_malformed_or_non_json_body_fails_closed(self) -> None:
+    def test_502_untrusted_body_shapes_are_bounded_and_fail_closed(self) -> None:
         malformed = _Response(502, raw=b"{", content_type="application/json")
         with self.assertRaisesRegex(
             builds.BootstrapStopped,
             custody._ORIGIN_SYNC_RESPONSE_INVALID,
-        ) as raised:
+        ) as malformed_error:
             custody._origin_sync_failure_code(malformed, 502)
-        self.assertEqual(raised.exception.status, 502)
+        self.assertEqual(malformed_error.exception.status, 502)
+
+        oversized = _Response(
+            502,
+            raw=b"x" * (custody._MAX_RESPONSE_BYTES + 1),
+            content_type="application/json",
+        )
+        with self.assertRaisesRegex(
+            builds.BootstrapStopped,
+            "CLOUDFLARE_CF_D_ORIGIN_SYNC_RESPONSE_TOO_LARGE",
+        ) as oversized_error:
+            custody._origin_sync_failure_code(oversized, 502)
+        self.assertEqual(oversized_error.exception.status, 502)
 
         non_json = _Response(502, raw=b"ignored", content_type="text/plain")
         self.assertEqual(
