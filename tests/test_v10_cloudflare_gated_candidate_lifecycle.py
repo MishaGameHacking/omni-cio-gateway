@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator, cast
+from typing import Any, Iterator, cast
 import unittest
 from unittest.mock import patch
 
@@ -14,12 +14,36 @@ _WORKER_TAG = "a" * 32
 _ACCOUNT_ID = "b" * 32
 _TRIGGER_UUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 _BUILD_UUID = "11111111-2222-3333-4444-555555555555"
+_VERSION_UUID = "66666666-7777-8888-9999-aaaaaaaaaaaa"
 _STAGING_URL = "https://omni-cio-v10-web-staging.example.workers.dev"
 _BOOTSTRAP_ORIGIN = (
     "https://br-example1234-cfdprodbootstrap.compute."
     "c-6.eu-central-1.aws.neon.tech/"
 )
 _SYNC_TOKEN = "c" * 64
+
+
+class _DeploymentsApi:
+    account_id = _ACCOUNT_ID
+
+    def __init__(self, versions: list[dict[str, object]]) -> None:
+        self.versions = versions
+        self.calls: list[tuple[str, str]] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: object | None = None,
+        expected: frozenset[int] = frozenset({200}),
+        timeout: float = 30.0,
+    ) -> Any:
+        del body, expected, timeout
+        self.calls.append((method, path))
+        if method != "GET" or not path.endswith("/deployments"):
+            raise AssertionError(f"unexpected request: {method} {path}")
+        return {"deployments": [{"versions": self.versions}]}
 
 
 class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
@@ -36,6 +60,7 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
         events: list[str],
         *,
         wait_error: builds.BootstrapStopped | None = None,
+        release_error: builds.BootstrapStopped | None = None,
         custody_error: builds.BootstrapStopped | None = None,
     ) -> str:
         api = cast(builds.CloudflareApi, object())
@@ -76,6 +101,17 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
             events.append("url")
             return _STAGING_URL
 
+        def deployment(_api: builds.CloudflareApi) -> str:
+            events.append("deployment-proof")
+            return _VERSION_UUID
+
+        def release(staging_origin: str, expected_sha: str) -> None:
+            self.assertEqual(staging_origin, _STAGING_URL)
+            self.assertEqual(expected_sha, _EXPECTED_SHA)
+            events.append("release-proof")
+            if release_error is not None:
+                raise release_error
+
         def fetch_origin(*, staging_origin: str, expected_sha: str, token: str) -> str:
             self.assertEqual(staging_origin, _STAGING_URL)
             self.assertEqual(expected_sha, _EXPECTED_SHA)
@@ -109,6 +145,8 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
             patch.object(gated, "_start_exact_manual_build", side_effect=start),
             patch.object(builds, "_wait_build", side_effect=wait),
             patch.object(builds, "_staging_url", side_effect=staging_url),
+            patch.object(gated, "_staging_active_version_id", side_effect=deployment),
+            patch.object(gated, "assert_staging_exact_release", side_effect=release),
             patch.object(
                 gated, "fetch_bootstrap_origin_custody", side_effect=fetch_origin
             ),
@@ -138,6 +176,8 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
                 "start",
                 "wait",
                 "url",
+                "deployment-proof",
+                "release-proof",
                 "custody-proof",
                 "disarm-token",
                 "persist-origin",
@@ -164,6 +204,35 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
             ],
         )
 
+    def test_release_attestation_failure_stops_before_custody_and_disarms_token(
+        self,
+    ) -> None:
+        events: list[str] = []
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH",
+        ):
+            self._run_candidate(
+                events,
+                release_error=builds.BootstrapStopped(
+                    "CLOUDFLARE_CF_D_PRE_CUSTODY_RELEASE_SHA_MISMATCH"
+                ),
+            )
+        self.assertEqual(
+            events,
+            [
+                "prepare",
+                "arm-token",
+                "start",
+                "wait",
+                "url",
+                "deployment-proof",
+                "release-proof",
+                "disarm-token",
+                "cleanup-trigger",
+            ],
+        )
+
     def test_custody_failure_disarms_token_and_does_not_persist_origin(self) -> None:
         events: list[str] = []
         with self.assertRaisesRegex(
@@ -184,11 +253,40 @@ class CloudflareGatedCandidateLifecycleTests(unittest.TestCase):
                 "start",
                 "wait",
                 "url",
+                "deployment-proof",
+                "release-proof",
                 "custody-proof",
                 "disarm-token",
                 "cleanup-trigger",
             ],
         )
+
+    def test_staging_deployment_requires_one_exact_100_percent_version(self) -> None:
+        api = _DeploymentsApi([{"version_id": _VERSION_UUID, "percentage": 100}])
+        actual = gated._staging_active_version_id(cast(builds.CloudflareApi, api))
+        self.assertEqual(actual, _VERSION_UUID)
+        self.assertEqual(len(api.calls), 1)
+        self.assertIn("omni-cio-v10-web-staging/deployments", api.calls[0][1])
+
+        invalid = (
+            [],
+            [
+                {"version_id": _VERSION_UUID, "percentage": 50},
+                {
+                    "version_id": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+                    "percentage": 50,
+                },
+            ],
+            [{"version_id": _VERSION_UUID, "percentage": 99}],
+            [{"version_id": _VERSION_UUID, "percentage": True}],
+        )
+        for versions in invalid:
+            with self.subTest(versions=versions):
+                bad_api = _DeploymentsApi(list(versions))
+                with self.assertRaises(builds.BootstrapStopped):
+                    gated._staging_active_version_id(
+                        cast(builds.CloudflareApi, bad_api)
+                    )
 
 
 if __name__ == "__main__":
