@@ -15,7 +15,9 @@ from scripts.quarantine_v10_cloudflare_staging_trigger import (
     quarantine_staging_autobuild,
 )
 from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import (
-    sync_bootstrap_origin_custody,
+    bootstrap_origin_sync_token,
+    fetch_bootstrap_origin_custody,
+    persist_bootstrap_origin_custody,
 )
 
 
@@ -150,6 +152,7 @@ def _start_exact_manual_build(
 
 
 def _prepare_candidate(api: builds.CloudflareApi, sha: str) -> tuple[str, str]:
+    builds._expected_sha(sha)
     api.request("GET", f"/accounts/{api.account_id}/builds/account/limits")
     print("CLOUDFLARE_BUILDS_API=READY")
     token_id = builds._verify_token(api)
@@ -163,13 +166,7 @@ def _prepare_candidate(api: builds.CloudflareApi, sha: str) -> tuple[str, str]:
         connection_uuid=connection_uuid,
         build_token_uuid=build_token_uuid,
     )
-    build_uuid = _start_exact_manual_build(
-        api,
-        trigger_uuid=trigger_uuid,
-        expected_sha=sha,
-    )
-    print("CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL")
-    return worker_tag, build_uuid
+    return worker_tag, trigger_uuid
 
 
 def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
@@ -184,14 +181,22 @@ def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
     url: str | None = None
     with _candidate_source_branch(branch):
         try:
-            _, build_uuid = _prepare_candidate(api, sha)
-            builds._wait_build(api, build_uuid, sha)
-            url = builds._staging_url(api)
-            sync_bootstrap_origin_custody(
-                api,
-                staging_origin=url,
-                expected_sha=sha,
-            )
+            _, trigger_uuid = _prepare_candidate(api, sha)
+            with bootstrap_origin_sync_token(api) as sync_token:
+                build_uuid = _start_exact_manual_build(
+                    api,
+                    trigger_uuid=trigger_uuid,
+                    expected_sha=sha,
+                )
+                print("CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL")
+                builds._wait_build(api, build_uuid, sha)
+                url = builds._staging_url(api)
+                bootstrap_origin = fetch_bootstrap_origin_custody(
+                    staging_origin=url,
+                    expected_sha=sha,
+                    token=sync_token,
+                )
+            persist_bootstrap_origin_custody(api, bootstrap_origin)
         except builds.BootstrapStopped as exc:
             primary = exc
 
