@@ -30,6 +30,8 @@ _GATED_COMMAND = "python -m scripts.run_v10_cloudflare_gated_candidate"
 _GATED_TOKEN_ARM_MARKER = "with bootstrap_origin_sync_token(api) as sync_token:"
 _GATED_BUILD_START_MARKER = "build_uuid = _start_exact_manual_build("
 _GATED_WAIT_MARKER = "builds._wait_build(api, build_uuid, sha)"
+_GATED_DEPLOYMENT_MARKER = "_staging_active_version_id(api)"
+_GATED_RELEASE_PROOF_MARKER = "assert_staging_exact_release(url, sha)"
 _GATED_CUSTODY_MARKER = "bootstrap_origin = fetch_bootstrap_origin_custody("
 _GATED_PERSIST_MARKER = "persist_bootstrap_origin_custody(api, bootstrap_origin)"
 _GATED_CLEANUP_MARKER = (
@@ -211,13 +213,17 @@ def _validate_gated_runner() -> None:
             "CLOUDFLARE_BUILD_SOURCE=GATED_MANUAL_EXACT_SHA",
             "CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL",
             "bootstrap_origin_sync_token",
+            "assert_staging_exact_release",
             "fetch_bootstrap_origin_custody",
             "persist_bootstrap_origin_custody",
+            "CLOUDFLARE_STAGING_DEPLOYMENT=EXACT_SINGLE_VERSION",
             "quarantine_staging_autobuild",
             "CLOUDFLARE_GATED_CANDIDATE_CLEANUP_FAILED",
             _GATED_TOKEN_ARM_MARKER,
             _GATED_BUILD_START_MARKER,
             _GATED_WAIT_MARKER,
+            _GATED_DEPLOYMENT_MARKER,
+            _GATED_RELEASE_PROOF_MARKER,
             _GATED_CUSTODY_MARKER,
             _GATED_PERSIST_MARKER,
             'builds._write_output("staging_url", url)',
@@ -246,6 +252,8 @@ def _validate_gated_runner() -> None:
             _GATED_TOKEN_ARM_MARKER,
             _GATED_BUILD_START_MARKER,
             _GATED_WAIT_MARKER,
+            _GATED_DEPLOYMENT_MARKER,
+            _GATED_RELEASE_PROOF_MARKER,
             _GATED_CUSTODY_MARKER,
             _GATED_PERSIST_MARKER,
             _GATED_CLEANUP_MARKER,
