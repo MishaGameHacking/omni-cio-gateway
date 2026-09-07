@@ -91,9 +91,9 @@ The failure boundary is made both informative and fail-closed:
    provider body, provider identifier or target URL is reflected.
 4. Allow the Python control plane to read the bounded JSON `detail` only for the trusted
    custody endpoint and only when HTTP status is 502.
-5. Accept only the same source-controlled allowlist in Python. Unknown details collapse to
-   the generic class; malformed/non-JSON trusted responses fail closed as an invalid custody
-   response.
+5. Accept only the same source-controlled allowlist in Python. Unknown or non-JSON 502
+   responses collapse to the generic permanent class; malformed JSON fails closed as an
+   invalid custody response. None of these unknown-response classes is retry-authoritative.
 6. Retry only explicit transient classes: branch transport failure, branch not-ready,
    staging not-ready and control-plane transport unavailable.
 7. Fail permanent auth/config/proof/status/body/origin classes immediately without retry.
@@ -106,7 +106,7 @@ Deterministic JS/Python tests and the release-acceptance contract require:
 - a strict Worker-side safe-code allowlist with unknown-error collapse;
 - preserved sanitized custody detail for known branch failures;
 - strict Python-side safe-code allowlist for HTTP 502 custody errors;
-- malformed/non-JSON 502 responses to fail closed;
+- malformed JSON 502 responses to fail closed and non-JSON 502 responses to stay generic;
 - exact transient-only retry membership;
 - permanent authorization/configuration/proof failures to execute once and stop;
 - unknown derivation failures never to become accepted or retry-authoritative by default.
