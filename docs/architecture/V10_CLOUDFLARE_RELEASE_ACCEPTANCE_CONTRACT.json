@@ -20,6 +20,8 @@
     "staging_bootstrap_origin_custody_after_exact_build_success": true,
     "staging_bootstrap_origin_no_secret_mutation_between_build_and_custody": true,
     "staging_bootstrap_origin_persist_after_sync_token_cleanup": true,
+    "staging_pre_custody_single_active_version_required": true,
+    "staging_pre_custody_exact_sha_release_probe_required": true,
     "staging_post_custody_exact_sha_live_revalidation_required": true,
     "staging_origin_sync_http_status_classification_required": true,
     "staging_container_rollout_required": true,
