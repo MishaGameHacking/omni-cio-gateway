@@ -25,7 +25,26 @@
     "staging_post_custody_exact_sha_live_revalidation_required": true,
     "staging_origin_sync_http_status_classification_required": true,
     "staging_origin_sync_sanitized_derivation_code_required": true,
+    "staging_origin_sync_sanitized_derivation_codes": [
+      "CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID",
+      "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_FOUND",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_READY",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID",
+      "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID",
+      "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH"
+    ],
     "staging_origin_sync_retry_transient_derivation_only": true,
+    "staging_origin_sync_retryable_codes": [
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED",
+      "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_READY",
+      "CLOUDFLARE_CF_D_ORIGIN_SYNC_STAGING_NOT_READY",
+      "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAVAILABLE"
+    ],
     "staging_container_rollout_required": true,
     "non_production_versions_upload_is_candidate": false,
     "release_endpoint": "/api/v10/release",
