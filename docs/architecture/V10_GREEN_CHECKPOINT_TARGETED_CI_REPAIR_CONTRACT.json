@@ -1,0 +1,100 @@
+{
+  "schema": "omni-cio.v10.green-checkpoint-targeted-ci-repair.v1",
+  "status": "OWNER_APPROVED_EFFECTIVE_WHEN_PRESENT_ON_ACCEPTED_MAIN",
+  "amendment": 16,
+  "owner_decision_date": "2026-09-08",
+  "scope": "ALL_CURRENT_AND_FUTURE_REPOSITORY_DEVELOPMENT",
+  "checkpoint_states": [
+    "PENDING",
+    "RED_REPAIR_ONLY",
+    "TARGET_REPAIRED",
+    "CERTIFIED_GREEN",
+    "MAIN_RED_STOP"
+  ],
+  "core": {
+    "next_functional_checkpoint_requires_certified_green": true,
+    "known_red_may_be_carried_forward": false,
+    "repair_starts_immediately_on_material_red": true,
+    "must_wait_for_all_independent_jobs_before_starting_repair": false,
+    "root_cause_required": true,
+    "blast_radius_required": true,
+    "analogous_pattern_search_required": true,
+    "coupled_surface_review_required": true,
+    "adjacent_failure_review_required": true,
+    "regression_guard_required_for_reusable_defect_class": true
+  },
+  "same_sha_rerun": {
+    "allowed_only_when_source_unchanged": true,
+    "specific_failed_job_preferred": true,
+    "same_github_sha_and_ref_required": true,
+    "blind_repeat_until_green_forbidden": true
+  },
+  "code_repair": {
+    "changed_content_requires_replacement_sha": true,
+    "amend_preferred_for_same_logical_checkpoint_when_safe": true,
+    "repair_commit_allowed_when_history_rewrite_unsafe": true,
+    "repair_commit_does_not_authorize_new_feature_scope": true,
+    "old_final_evidence_stale_after_content_change": true,
+    "targeted_proof_before_full_certification_preferred": true,
+    "full_certification_required_before_next_checkpoint": true,
+    "protected_main_force_rewrite_allowed": false
+  },
+  "sonar_review": {
+    "quality_gate_pass_required_when_applicable": true,
+    "new_issues_default": 0,
+    "unresolved_new_security_hotspots": 0,
+    "material_new_reliability_security_maintainability_findings": 0,
+    "independent_review_findings_must_be_inspected": true,
+    "bot_approval_is_not_engineering_judgment": true
+  },
+  "green": {
+    "accepted_check_conclusions": ["success"],
+    "rejected_as_green": [
+      "failure",
+      "cancelled",
+      "queued",
+      "pending",
+      "in_progress",
+      "timed_out",
+      "action_required",
+      "stale",
+      "neutral",
+      "skipped"
+    ],
+    "exact_current_sha_only": true,
+    "zero_unresolved_blocking_review_threads": true,
+    "post_merge_regression_shield_required": true
+  },
+  "pr_lifecycle": {
+    "draft_to_ready_same_sha_does_not_automatically_invalidate_certification": true,
+    "state_dependent_applicable_checks_still_required": true,
+    "new_head_requires_fresh_evidence": true,
+    "squash_merge_required": true
+  },
+  "main": {
+    "post_merge_red_state": "MAIN_RED_STOP",
+    "ordinary_feature_progress_allowed_while_main_red": false,
+    "repair_via_focused_branch": true,
+    "main_amend_or_force_rewrite_allowed": false
+  },
+  "supersedes": {
+    "amendment_12_single_remote_publication_default": true,
+    "amendment_12_wait_all_before_ordinary_repair": true,
+    "amendment_12_batch_only_repair_default": true,
+    "expensive_ci_avoidance_as_primary_policy": true,
+    "mandatory_duplicate_ready_full_cycle_on_unchanged_sha": true
+  },
+  "preserves": {
+    "execution_unit_grouping": true,
+    "ordered_internal_milestones": true,
+    "mandatory_split_triggers": true,
+    "full_diff_review": true,
+    "root_cause_and_blast_radius": true,
+    "security_and_recovery_gates": true,
+    "protected_v9_app_app": true,
+    "public_multi_user_enabled": false,
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "broker_write": false
+  }
+}
