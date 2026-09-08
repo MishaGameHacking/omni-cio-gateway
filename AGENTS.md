@@ -111,6 +111,8 @@ The integrated branch uses the required Execution Ledger and GitHub System Updat
 
 ## 7. Green Checkpoint / targeted CI repair
 
+CI is an independent verifier and active checkpoint certifier; it does not replace engineering judgment, root-cause analysis or focused preflight.
+
 When Amendment 16 is accepted on protected `main`, it supersedes the old wait-all `HEAD FREEZE` / Single Remote Publication / batch-only repair defaults while preserving root-cause, exact-head, review, security, recovery and split-trigger laws.
 
 Canonical flow:
@@ -135,6 +137,8 @@ Rules:
 - Gitar/SAST/check annotations/review threads are active engineering evidence, not decoration;
 - unexpected reusable material RED still requires the Failure Learning Ledger;
 - `MAIN_RED_STOP`: an applicable post-merge RED on current `main` blocks ordinary feature progress until an accepted focused repair restores GREEN.
+
+Prefer bounded failure domains rather than one fragile monolith. Timeouts/deadlines, bounded retries, idempotency, backpressure/circuit breakers, durable checkpoints, health/readiness/freshness, restart/recovery and least-privilege boundaries remain required where applicable. Money/security authority fails closed.
 
 Canonical machine contract: `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`.
 Canonical runbook: `docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md`.
