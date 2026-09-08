@@ -20,7 +20,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until CF-D and capability-specific gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-Before any material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 current status, V10 Program Lock/Master Plan/Amendments Index, all applicable active amendments/contracts including Amendments 14/15, current V10 status, current execution-unit docs, open PR/issues and GitHub Actions.
+Before any material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 current status, V10 Program Lock/Master Plan/Amendments Index, all applicable active amendments/contracts including Amendments 14/15 and, when accepted, Amendment 16 Green Checkpoint / Targeted CI Repair, current V10 status, current execution-unit docs, open PR/issues and GitHub Actions.
 
 ## GitHub / Cloudflare authority
 
@@ -65,25 +65,39 @@ Governed by the **Integrated System Update Execution Law**. Every material chang
 
 Current Cloudflare execution unit is `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`. Its one-branch default never bypasses DB/migration, security/authority, dependency/toolchain, OWNER/provider, live/temporal, production-cutover, Real-money or reviewability split triggers.
 
-## Pre-CI Engineering Gate
+`INTEGRATION_READY` remains the final whole-update readiness state before final landing review. Under Amendment 16, earlier logical checkpoints may be published/certified, but no dependent functional checkpoint may build on them until they are `CERTIFIED_GREEN`.
 
-CI is an independent verifier, not the primary debugger.
+## Green Checkpoint / targeted CI repair
 
-Before publishing expensive verification:
+CI is an independent verifier and active checkpoint certifier; it is not a substitute for engineering judgment, root-cause analysis or focused preflight.
 
-- root-cause material defects;
-- determine blast radius;
-- inspect analogous patterns and directly coupled producers/consumers/config/workflows;
-- inspect adjacent failure modes;
-- add deterministic regression guards for reusable defect classes;
-- run cheap/focused preflight;
-- review the complete diff.
+Canonical flow after Amendment 16 acceptance:
 
-After publishing a verification head, HEAD FREEZE applies while safe independent checks finish. Collect findings by root cause and publish one coherent correction batch after preflight.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
-All applicable exact-head checks must be SUCCESS. `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN for an applicable gate.
+On any applicable RED or material review finding:
 
-New commit invalidates old final exact-head GREEN/review evidence.
+`CHECKPOINT_RED -> RED_REPAIR_ONLY -> root cause/blast radius -> targeted proof -> replacement SHA if content changed -> full exact-SHA certification -> CERTIFIED_GREEN`.
+
+Rules:
+
+- do not start unrelated feature work while current checkpoint is `PENDING`, `RED_REPAIR_ONLY` or otherwise uncertified;
+- begin diagnosis as soon as useful failure evidence exists; do not wait for every independent job merely to start ordinary repair;
+- still inspect relevant findings arriving from other jobs before finalizing the corrected checkpoint;
+- same-SHA rerun is only for unchanged source/config and an evidence-based transient/infrastructure-only failure; prefer rerunning only the failed job;
+- repeated identical transient failure becomes a workflow/infrastructure defect rather than an endless rerun loop;
+- source/config/test/governance change creates a replacement SHA and invalidates previous final evidence;
+- targeted proof verifies the reported defect; the replacement exact SHA still needs full applicable certification before new functional work;
+- Sonar Quality Gate must pass when applicable; default new-code issues = 0, unresolved new Security Hotspots = 0 and unresolved material new Reliability/Security/Maintainability findings = 0;
+- inspect Gitar, SAST/security, check annotations and review threads; bot approval never replaces engineering review;
+- `continue-on-error` must not manufacture required GREEN;
+- safety abort takes precedence for secret/private-data exposure, broker/Real reachability, destructive migration/provider mutation, uncontrolled spend or cross-tenant risk;
+- post-merge applicable RED on current `main` means `MAIN_RED_STOP`; ordinary feature progress pauses until an accepted focused repair restores GREEN;
+- protected `main` is never amended or force-rewritten.
+
+All applicable exact-head checks must be SUCCESS under Omni-CIO project policy. `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN for an applicable project gate.
+
+Any content-changing commit invalidates old final exact-head GREEN/review evidence.
 
 ## Files changed / review gate
 
@@ -94,10 +108,10 @@ Before merge:
 - Quality Gate success does not excuse non-zero Sonar issues/annotations/hotspots;
 - classify and fix/block material findings;
 - unresolved blocking threads = 0;
-- repeat Files changed/review after every correction commit;
+- repeat Files changed/review after every correction/replacement head;
 - bot approval never replaces engineering review.
 
-Squash merge only after fresh unchanged-head READY applicable checks actually succeed.
+Squash merge only after current exact head is `CERTIFIED_GREEN`. A DRAFT→READY state change with unchanged SHA does not by itself invalidate certification unless an applicable workflow/ruleset is intentionally state-dependent.
 
 OWNER product acceptance only after merge and required exact-main Regression Shield, except a genuinely non-delegable prerequisite.
 
