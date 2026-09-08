@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from http.client import IncompleteRead
 import io
 import json
 import unittest
 from unittest import mock
+from urllib.error import HTTPError
 from urllib.request import Request
 
 from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
     GENERIC_STAGING_BOOTSTRAP_FAILURE,
     NEON_FUNCTION_FAILURE_PREFIX,
     STAGING_BOOTSTRAP_REDIRECT_REJECTED,
+    STAGING_BOOTSTRAP_UNAVAILABLE,
 )
 import scripts.bootstrap_v10_cloudflare_production_database_via_staging as runner
 
@@ -27,6 +30,15 @@ class _DirectResponse:
 
     def __exit__(self, exc_type, exc, traceback) -> None:  # type: ignore[no-untyped-def]
         self._stream.close()
+        return None
+
+
+class _IncompleteReadBody:
+    def read(self, size: int = -1) -> bytes:
+        del size
+        raise IncompleteRead(b"partial", 100)
+
+    def close(self) -> None:
         return None
 
 
@@ -68,6 +80,32 @@ class CloudflareCfDDatabaseBootstrapDirectResponseClassificationTests(
             self._stopped_code(response),
             GENERIC_STAGING_BOOTSTRAP_FAILURE,
         )
+
+    def test_direct_incomplete_read_is_sanitized_as_transport_unavailable(self) -> None:
+        response = _DirectResponse(502, b"")
+        response.read = mock.Mock(side_effect=IncompleteRead(b"partial", 100))
+        self.assertEqual(
+            self._stopped_code(response),
+            STAGING_BOOTSTRAP_UNAVAILABLE,
+        )
+
+    def test_http_error_incomplete_read_is_sanitized_before_exception_escapes(self) -> None:
+        error = HTTPError(
+            "https://example.invalid/bootstrap",
+            502,
+            "synthetic",
+            None,
+            _IncompleteReadBody(),
+        )
+        opener = mock.Mock()
+        opener.open.side_effect = error
+        with mock.patch.object(runner, "_OPENER", opener):
+            with self.assertRaises(runner.BootstrapStopped) as stopped:
+                runner._request_staging_bootstrap_json(
+                    Request("https://example.invalid/bootstrap")
+                )
+        self.assertEqual(stopped.exception.code, STAGING_BOOTSTRAP_UNAVAILABLE)
+        self.assertNotIn("partial", str(stopped.exception))
 
 
 if __name__ == "__main__":
