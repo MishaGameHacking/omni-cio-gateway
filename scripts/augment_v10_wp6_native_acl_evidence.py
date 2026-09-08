@@ -14,6 +14,8 @@ from typing import Iterable
 SENTINEL_PATH = Path(
     r"C:\ProgramData\OmniCIO\secrets\execution\wp6-ci-deny-sentinel.txt"
 )
+RUNNER_ROOT = Path(r"C:\actions-runner")
+RUNNER_SERVICE_MARKER = RUNNER_ROOT / ".service"
 SE_FILE_OBJECT = 1
 DACL_SECURITY_INFORMATION = 0x00000004
 ACL_SIZE_INFORMATION_CLASS = 2
@@ -83,8 +85,12 @@ def resolve_identity_sids() -> IdentitySids:
 
     command = (
         "$ErrorActionPreference='Stop';"
-        "$services=@(Get-CimInstance Win32_Service | Where-Object { $_.Name -like 'actions.runner.*' });"
-        "if ($services.Count -ne 1) { throw 'runner-service-count' };"
+        "$marker='C:\\actions-runner\\.service';"
+        "if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'runner-service-marker-missing' };"
+        "$serviceName=(Get-Content -LiteralPath $marker -Raw -ErrorAction Stop).Trim();"
+        "if (-not $serviceName.StartsWith('actions.runner.', [System.StringComparison]::OrdinalIgnoreCase)) { throw 'runner-service-marker-invalid' };"
+        "$services=@(Get-CimInstance Win32_Service | Where-Object { $_.Name -eq $serviceName });"
+        "if ($services.Count -ne 1) { throw 'runner-service-binding' };"
         "$runnerSid=([System.Security.Principal.NTAccount]::new($services[0].StartName)).Translate("
         "[System.Security.Principal.SecurityIdentifier]).Value;"
         "$runtimeSid=(Get-LocalUser -Name 'omni-cio-runtime' -ErrorAction Stop).SID.Value;"
