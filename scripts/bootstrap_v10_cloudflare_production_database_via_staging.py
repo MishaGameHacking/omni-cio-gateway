@@ -218,16 +218,16 @@ def _request_json(request: Request, *, limit: int, failure_code: str) -> dict[st
     return _json_object(data, failure_code)
 
 
-def _staging_http_error_code(error: HTTPError) -> str:
+def _staging_response_error_code(status: object, response: Any) -> str:
     try:
-        status_code = int(error.code)
+        status_code = int(status)
     except (TypeError, ValueError):
         return GENERIC_STAGING_BOOTSTRAP_FAILURE
     if 300 <= status_code < 400:
         return STAGING_BOOTSTRAP_REDIRECT_REJECTED
     try:
         content = _read_limited(
-            error,
+            response,
             _MAX_STAGING_FAILURE_RESPONSE_BYTES,
             GENERIC_STAGING_BOOTSTRAP_FAILURE,
         )
@@ -236,17 +236,16 @@ def _staging_http_error_code(error: HTTPError) -> str:
     return classify_staging_bootstrap_failure(status_code, content)
 
 
+def _staging_http_error_code(error: HTTPError) -> str:
+    return _staging_response_error_code(error.code, error)
+
+
 def _request_staging_bootstrap_json(request: Request) -> dict[str, Any]:
     try:
         with _OPENER.open(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
             if response.status != 200:
-                content = _read_limited(
-                    response,
-                    _MAX_STAGING_FAILURE_RESPONSE_BYTES,
-                    GENERIC_STAGING_BOOTSTRAP_FAILURE,
-                )
                 raise BootstrapStopped(
-                    classify_staging_bootstrap_failure(response.status, content)
+                    _staging_response_error_code(response.status, response)
                 )
             data = _read_limited(
                 response,
