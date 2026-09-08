@@ -167,6 +167,15 @@ def main() -> int:
     _fail(repair.get("full_certification_required_before_next_checkpoint") is True, "replacement SHA full certification required", failures)
     _fail(repair.get("protected_main_force_rewrite_allowed") is False, "protected main rewrite must remain forbidden", failures)
 
+    targeted = payload.get("targeted_verifier", {})
+    _fail(targeted.get("workflow") == ".github/workflows/v10-targeted-repair.yml", "targeted verifier workflow mismatch", failures)
+    _fail(targeted.get("expected_sha_format") == "LOWERCASE_FULL_40_HEX", "targeted verifier SHA format mismatch", failures)
+    _fail(targeted.get("expected_sha_must_equal_dispatch_ref_head") is True, "targeted verifier must pin dispatch-ref head", failures)
+    _fail(targeted.get("exact_checkout_verified_before_and_after_lane") is True, "targeted verifier exact checkout proof missing", failures)
+    _fail(targeted.get("frontend_toolchain_authority") == "docs/architecture/V10_TOOLCHAIN_BASELINE.json", "targeted frontend toolchain authority mismatch", failures)
+    _fail(targeted.get("frontend_dependency_lifecycle_scripts_disabled") is True, "targeted frontend lifecycle scripts must stay disabled", failures)
+    _fail(targeted.get("workspace_cleanup_required") is True, "targeted verifier workspace cleanup required", failures)
+
     sonar = payload.get("sonar_review", {})
     _fail(sonar.get("quality_gate_pass_required_when_applicable") is True, "Sonar Quality Gate requirement missing", failures)
     _fail(sonar.get("new_issues_default") == 0, "Sonar new issues must default to zero", failures)
@@ -196,6 +205,9 @@ def main() -> int:
             "RED = REPAIR ONLY",
             "TARGETED RECHECK",
             "FULL CERTIFICATION",
+            ".github/workflows/v10-targeted-repair.yml",
+            "dispatch-ref head",
+            "V10_TOOLCHAIN_BASELINE.json",
         ),
         TARGETED_WORKFLOW: (
             "workflow_dispatch",
@@ -207,6 +219,7 @@ def main() -> int:
             'git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"',
             "V10_TOOLCHAIN_BASELINE.json",
             "Verify exact Node and npm baseline",
+            "--ignore-scripts --no-audit --no-fund",
             "git rev-parse HEAD",
         ),
     }
