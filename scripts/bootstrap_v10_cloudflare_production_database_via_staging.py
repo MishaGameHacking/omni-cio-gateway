@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
+from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
+    GENERIC_STAGING_BOOTSTRAP_FAILURE,
+    STAGING_BOOTSTRAP_REDIRECT_REJECTED,
+    STAGING_BOOTSTRAP_UNAVAILABLE,
+    classify_staging_bootstrap_failure,
+)
+
 
 _AUDIENCE = "omni-cio-cf-d-production-database-bootstrap"
 _STAGING_PATH = "/api/internal/v10/cf-d/production-database-bootstrap"
@@ -24,6 +32,7 @@ _NEON_REGION_SUFFIX = ".eu-central-1.aws.neon.tech"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _MAX_OIDC_RESPONSE_BYTES = 65_536
 _MAX_BOOTSTRAP_RESPONSE_BYTES = 65_536
+_MAX_STAGING_FAILURE_RESPONSE_BYTES = 8_192
 _HTTP_TIMEOUT_SECONDS = 20.0
 _OUTPUT_FILENAME = "omni-cio-v10-cloudflare-production-dsn.txt"
 _WINDOWS_ACL_PATH_ENV = "OMNI_CIO_PRIVATE_FILE_PATH"
@@ -210,6 +219,53 @@ def _request_json(request: Request, *, limit: int, failure_code: str) -> dict[st
     return _json_object(data, failure_code)
 
 
+def _staging_response_error_code(status: object, response: Any) -> str:
+    try:
+        status_code = int(status)
+    except (TypeError, ValueError):
+        return GENERIC_STAGING_BOOTSTRAP_FAILURE
+    if 300 <= status_code < 400:
+        return STAGING_BOOTSTRAP_REDIRECT_REJECTED
+    try:
+        content = _read_limited(
+            response,
+            _MAX_STAGING_FAILURE_RESPONSE_BYTES,
+            GENERIC_STAGING_BOOTSTRAP_FAILURE,
+        )
+    except BootstrapStopped:
+        return GENERIC_STAGING_BOOTSTRAP_FAILURE
+    except (HTTPException, OSError):
+        return STAGING_BOOTSTRAP_UNAVAILABLE
+    return classify_staging_bootstrap_failure(status_code, content)
+
+
+def _staging_http_error_code(error: HTTPError) -> str:
+    return _staging_response_error_code(error.code, error)
+
+
+def _request_staging_bootstrap_json(request: Request) -> dict[str, Any]:
+    try:
+        with _OPENER.open(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
+            if response.status != 200:
+                raise BootstrapStopped(
+                    _staging_response_error_code(response.status, response)
+                )
+            data = _read_limited(
+                response,
+                _MAX_BOOTSTRAP_RESPONSE_BYTES,
+                GENERIC_STAGING_BOOTSTRAP_FAILURE,
+            )
+    except HTTPError as exc:
+        try:
+            code = _staging_http_error_code(exc)
+        finally:
+            exc.close()
+        raise BootstrapStopped(code) from None
+    except (URLError, OSError, HTTPException):
+        raise BootstrapStopped(STAGING_BOOTSTRAP_UNAVAILABLE) from None
+    return _json_object(data, GENERIC_STAGING_BOOTSTRAP_FAILURE)
+
+
 def _github_oidc_token() -> str:
     request_url = _oidc_request_url(_required_env("ACTIONS_ID_TOKEN_REQUEST_URL"))
     request_token = _required_env("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
@@ -279,11 +335,7 @@ def _bootstrap_runtime_dsn(origin: str, expected_sha: str, oidc_token: str) -> s
         },
         method="POST",
     )
-    payload = _request_json(
-        request,
-        limit=_MAX_BOOTSTRAP_RESPONSE_BYTES,
-        failure_code="CLOUDFLARE_CF_D_STAGING_BOOTSTRAP_FAILED",
-    )
+    payload = _request_staging_bootstrap_json(request)
     return _validate_runtime_payload(payload, expected_sha)
 
 
