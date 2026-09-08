@@ -132,6 +132,7 @@ class CloudflareCfDOriginFailureClassificationTests(unittest.TestCase):
             custody._ORIGIN_SYNC_DERIVATION_FAILED,
             custody._RUNTIME_DATABASE_INVALID,
             custody._NEON_DESTINATION_REJECTED,
+            custody._NEON_BRANCH_REQUEST_INVALID,
             custody._NEON_BRANCH_LOOKUP_UNAUTHORIZED,
             custody._NEON_BRANCH_LOOKUP_NOT_FOUND,
             custody._NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID,
