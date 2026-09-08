@@ -12,6 +12,7 @@ CHECK = ROOT / "scripts/check_v10_green_checkpoint_ci_repair.py"
 CONTRACT = ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
 AMENDMENT = ROOT / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md"
 RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
+TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 
 
 class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
@@ -62,6 +63,12 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert sonar["new_issues_default"] == 0
         assert sonar["unresolved_new_security_hotspots"] == 0
         assert sonar["material_new_reliability_security_maintainability_findings"] == 0
+
+    def test_targeted_workflow_pins_exact_requested_sha(self) -> None:
+        workflow = TARGETED_WORKFLOW.read_text(encoding="utf-8")
+        assert "^[0-9a-fA-F]{40}$" in workflow
+        assert 'git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"' in workflow
+        assert 'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"' in workflow
 
     def test_amendment_and_runbook_express_operational_flow(self) -> None:
         amendment = AMENDMENT.read_text(encoding="utf-8")
