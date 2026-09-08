@@ -107,6 +107,8 @@ def main() -> int:
             "workflow_dispatch",
             "expected_sha",
             "lane",
+            "^[0-9a-fA-F]{40}$",
+            'git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"',
             "git rev-parse HEAD",
         ),
     }
