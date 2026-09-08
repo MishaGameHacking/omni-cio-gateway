@@ -33,13 +33,16 @@ class _DirectResponse:
         return None
 
 
-class _IncompleteReadBody:
+class _IncompleteDirectResponse(_DirectResponse):
     def read(self, size: int = -1) -> bytes:
         del size
         raise IncompleteRead(b"partial", 100)
 
-    def close(self) -> None:
-        return None
+
+class _IncompleteReadBody(io.BytesIO):
+    def read(self, size: int = -1) -> bytes:
+        del size
+        raise IncompleteRead(b"partial", 100)
 
 
 def _json_bytes(payload: object) -> bytes:
@@ -82,8 +85,7 @@ class CloudflareCfDDatabaseBootstrapDirectResponseClassificationTests(
         )
 
     def test_direct_incomplete_read_is_sanitized_as_transport_unavailable(self) -> None:
-        response = _DirectResponse(502, b"")
-        response.read = mock.Mock(side_effect=IncompleteRead(b"partial", 100))
+        response = _IncompleteDirectResponse(502, b"")
         self.assertEqual(
             self._stopped_code(response),
             STAGING_BOOTSTRAP_UNAVAILABLE,
