@@ -88,6 +88,9 @@ jobs:
       - name: Verify engineering governance contract
         run: python scripts/check_v10_engineering_governance.py
 
+      - name: Verify Green Checkpoint and targeted CI repair law
+        run: python scripts/check_v10_green_checkpoint_ci_repair.py
+
       - name: Verify Cloudflare platform and continuous release authority
         run: python scripts/check_v10_cloudflare_platform_authority.py
 
@@ -131,6 +134,7 @@ jobs:
         run: >-
           python -m py_compile
           scripts/check_v10_engineering_governance.py
+          scripts/check_v10_green_checkpoint_ci_repair.py
           scripts/check_v10_cloudflare_platform_authority.py
           scripts/check_v10_cloudflare_public_product_integrated.py
           scripts/check_v10_cloudflare_builds_verifier.py
@@ -156,6 +160,7 @@ jobs:
       - name: Run stdlib CI contract regression tests
         run: >-
           python -m unittest
+          tests.test_v10_green_checkpoint_ci_repair
           tests.test_v10_regression_shield
           tests.test_v10_ci_action_download_resilience
           tests.test_v10_release_provenance
