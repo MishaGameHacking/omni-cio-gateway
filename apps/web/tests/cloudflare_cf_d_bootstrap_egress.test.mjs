@@ -89,7 +89,7 @@ function networkDouble(options = {}) {
     calls.push(request);
     if (request.url === DATABASE_SQL_URL) {
       assert.equal(request.method, "POST");
-      assert.equal(request.redirect, "error");
+      assert.equal(request.redirect, "manual");
       assert.equal(
         request.headers.get("neon-connection-string"),
         TEST_RUNTIME_DSN,
@@ -288,6 +288,7 @@ test("CF-D Worker requires a secret-bound Function origin matching database cell
 
 test("CF-D Worker classifies branch HTTP failure without provider body leakage", async () => {
   const cases = [
+    [302, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID"],
     [401, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED"],
     [403, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED"],
     [404, "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_FOUND"],

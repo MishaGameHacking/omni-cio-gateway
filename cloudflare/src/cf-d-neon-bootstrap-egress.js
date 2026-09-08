@@ -76,7 +76,7 @@ const DESTINATION_POLICIES = new Map([
     {
       pattern: DATABASE_SQL_URL_PATTERN,
       expectedPath: "/sql",
-      redirect: "error",
+      redirect: "manual",
       forwardedHeaders: [
         "content-type",
         "neon-connection-string",
@@ -278,7 +278,7 @@ function branchLookupRequest(runtimeDatabase, expectedUrl) {
         "Neon-Array-Mode": "true",
       },
       body: JSON.stringify({ query: BRANCH_LOOKUP_SQL, params: [] }),
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(BRANCH_LOOKUP_TIMEOUT_MS),
     });
   } catch {

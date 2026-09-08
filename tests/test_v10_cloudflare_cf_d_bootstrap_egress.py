@@ -260,12 +260,12 @@ class CfDBootstrapEgressTests(unittest.TestCase):
             'url.port !== ""',
             'url.search !== ""',
             'url.hash !== ""',
-            'redirect: "error"',
             'redirect: "manual"',
         )
         for marker in required:
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)
+        self.assertNotIn('redirect: "error"', source)
 
         for marker in (
             "NEON_API_KEY",
