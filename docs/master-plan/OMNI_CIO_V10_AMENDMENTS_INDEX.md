@@ -89,71 +89,29 @@ Machine/governance companions:
 - `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12/13/14/15 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Amendment 13 changes only user-capability activation granularity and does not weaken exact-head/security/Real-money gates. Amendment 14 changes current/future V10 managed-platform authority without weakening V9 rollback or the same GREEN/review law. Amendment 15 changes only the delivery granularity of the already-selected Cloudflare implementation and preserves the same exact-head/review/security law.
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for later amendments except where Amendment 16 explicitly supersedes its expensive-CI deferral language. Root-cause, blast-radius, exact-head, security/recovery and merge requirements remain active.
 
 ### 9. Product User / Engineering Authority Boundary
 
 `OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`
 
-Locks the 2026-08-17/18 OWNER decision that:
-
-- PROJECT OWNER is not a special Omni-CIO product role;
-- PROJECT OWNER uses the same `OmniCIOUserAccount -> Tenant -> Session` path as every supported USER;
-- GitHub/cloud-provider/Windows/CI authority stays outside product identity;
-- WP22 `/system` is USER-facing diagnostics, not a cross-tenant OWNER/admin cabinet;
-- WP22A is interpreted as **External Web Access / Product Authentication Security Gate**;
-- Telegram and product-domain approval/negotiation are USER-scoped;
-- provider/edge identity must not silently mint/select an Omni-CIO tenant session.
-
-This amendment carries forward the valid intent of closed-unmerged PR #327; that PR itself is historical and not accepted authority.
+Locks the 2026-08-17/18 OWNER decision that PROJECT OWNER is an ordinary product USER on the same `OmniCIOUserAccount -> Tenant -> Session` path, while GitHub/cloud-provider/Windows/CI authority stays outside product identity.
 
 ### 10. Public Free Multi-User Hosted Runtime
 
 `OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`
 
-Machine-readable companion:
+Machine-readable companion: `../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`.
 
-`../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`
-
-Locks the 2026-08-18 OWNER launch direction:
-
-- final product is a public modern multi-user Web service reachable from ordinary Internet browsers/phones;
-- one account = one USER = one isolated tenant baseline;
-- public production must not depend on OWNER home public IP, Wi-Fi, router, LAN, cable/mobile uplink or Lenovo;
-- final production origin is an approved managed cloud runtime selected through the service-selection gate;
-- Lenovo remains engineering/self-hosted CI/controlled acceptance/recovery/rollback, not public production availability;
-- initial registered-user access is free: `BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`;
-- future monetization is `DEFERRED_OPTIONAL`, not part of initial access;
-- each USER enters/replaces/revokes their own tenant-scoped broker READ and optional TRADE credentials in authenticated Web settings;
-- no broker credential is global/shared across users or returned to the browser after submission;
-- READ/TRADE exact broker-account intersection and all Real-money safeguards remain fail-closed;
-- managed hosted tenant-private state/secret custody is allowed only after exact security/privacy/personal-data/broker/legal gates accept the design;
-- public multi-user is now the approved **target**, while `PUBLIC_MULTI_USER_ENABLED=false` remains the implementation default until the corrected WP22A/launch gates pass;
-- current T-Invest public-service terms remain a separate fail-closed broker gate: user-supplied tokens do not waive broker restrictions;
-- payment/KKT gates are not required merely for free access, but become applicable if monetization is later enabled.
-
-Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active. Amendment 13 later supersedes only the assumption that all normal user capabilities must wait for one monolithic final activation event. Amendment 14 later selects Cloudflare Workers Paid as the new-V10 managed application/edge/build target while preserving the no-home/public-hosting and security requirements recorded here.
+Locks the public modern multi-user Web target, managed-cloud production independent of OWNER home availability, free initial access, tenant-scoped broker credentials, fail-closed public activation and preserved broker/Real-money boundaries.
 
 ### 11. WP22A Technical Closeout / Public Production Activation Separation
 
 `OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`
 
-Machine-readable companion:
+Machine-readable companion: `../architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`.
 
-`../architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`
-
-Locks the 2026-08-24 OWNER sequencing correction that:
-
-- WP22A may close its complete technical External Web Access / Product Authentication Security Gate on the accepted hosted technical/synthetic boundary without first purchasing/applying final production infrastructure or provisioning OWNER-held production provider secrets;
-- exactly Telegram Login and VK ID remain the only human product-authentication protocols, and no OWNER/admin/developer/demo/preview/private session-minting bypass may exist in deployed product mode;
-- deterministic provider doubles are permitted only below deployed routing/network boundaries and may never become a human-accessible session issuer;
-- the technical gate still requires browser-bound durable pre-auth, provider mix-up/replay defenses, internal account/tenant/session composition, tenant/RLS negatives, browser/API security, abuse/capacity controls, recovery, rollback and exact release evidence;
-- final provider apply, real provider provisioning, production DNS/edge/public-user cutover, `PUBLIC_MULTI_USER_ENABLED=true` and production legal/operations acceptance remain a later independent fail-closed activation gate;
-- the accepted 2026-08-24 Cloud.ru/Render provider wording is historical and is superseded for new V10 provider selection by Amendment 14 without rewriting WP22A evidence;
-- public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, WP23 remains locked and protected V9 `app:app` rollback remains intact;
-- Amendment 11 changes sequencing only and does not weaken Amendments 9/10, mark WP22A complete or authorize the visual-refresh runtime by itself.
-
-Amendment 13 later decomposes the monolithic activation interpretation into capability-specific activation gates. Amendment 14 changes current/future provider authority only; neither amendment fabricates provider/legal/operations evidence or activates a capability by itself.
+Locks technical WP22A acceptance separately from later public-provider/user activation and preserves Telegram/VK-only human authentication plus all tenant/session/security/recovery requirements.
 
 ### 12. Integrated System Update Execution Law
 
@@ -167,55 +125,15 @@ Machine/governance companions:
 - `../../scripts/check_v10_integrated_system_update_governance.py`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks the 2026-08-26 OWNER delivery-discipline decision that:
-
-- each material change is either `FOCUSED_CHANGE` or `INTEGRATED_SYSTEM_UPDATE`;
-- an integrated update keeps ordered WP/increments as branch-local internal milestones while using one integrated branch and one final PR by default;
-- accepted V10 progress changes only after final squash merge plus required exact-main post-merge acceptance;
-- integrated work is not published for external verification before `INTEGRATION_READY`;
-- after a verification SHA is published, **HEAD FREEZE** applies while the safe independent verification batch reaches terminal state;
-- RED findings are consolidated and diagnosed by root cause/blast radius before one coherent correction batch; symptom-by-symptom CI iteration is not the default;
-- temporary verifier commits/PRs and `continue-on-error` fake GREEN are forbidden;
-- every integrated update has a branch Execution Ledger and GitHub-visible System Update dashboard, both explicitly non-authoritative for accepted progress;
-- mandatory split triggers preserve DB/migration sequencing, security/authority changes, dependency/toolchain boundaries, OWNER/provider actions, live/temporal evidence, production cutover, Real-money authority and reviewability;
-- the prepared first product integrated update is `WEB-VISUAL-INTEGRATED` with ordered `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` member milestones;
-- acceptance of Amendment 12 itself does **not** start product work: canonical post-acceptance state is `PRODUCT IMPLEMENTATION PAUSED`, `OWNER START REQUIRED`, and the exact command is `START V10 WEB VISUAL SYSTEM UPDATE`;
-- protected `app:app`, `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, broker write OFF, tenant isolation, secret exclusion, squash merge and exact-head SUCCESS-only policy remain unchanged at Amendment-12 acceptance.
-
-Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update. Amendment 13 later changes only the future activation granularity of completed user-facing capabilities; Amendment 14 uses its mandatory split triggers for provider/security authority, build integration, runtime compatibility and production cutover. Amendment 15 later supersedes only the four-separate-merge delivery granularity for the selected Cloudflare transition while preserving those ordered internal authority gates and all real split triggers.
+Locks `FOCUSED_CHANGE` / `INTEGRATED_SYSTEM_UPDATE`, ordered branch-local member milestones, one integrated branch/final PR by default, accepted-main-only progress, mandatory split triggers, working ledgers/dashboard and exact-main acceptance. Amendment 16 later supersedes only its Single Remote Publication, wait-all HEAD FREEZE and batch-only correction defaults; execution-unit grouping/order/split triggers remain active.
 
 ### 13. Live User Operability & Progressive Capability Activation
 
 `OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`
 
-Machine/governance companions:
+Machine/governance companions include `../architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, activation ledger/dashboard and governance guard.
 
-- `../architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`;
-- `../updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md`;
-- `.github/ISSUE_TEMPLATE/v10_capability_activation.yml` through repository root;
-- `../../scripts/check_v10_progressive_capability_activation.py`;
-- `.github/workflows/v10-engineering-governance.yml` through repository root.
-
-Locks the 2026-08-27 OWNER activation-policy decision that:
-
-- one canonical Omni-CIO Web is the ordinary real-user product surface; a second user-facing staging product is not required merely to test completed capability behavior;
-- engineering CI/provider doubles/Sandbox/Shadow remain allowed safety contours but never become an auth/tenant bypass or a second product;
-- implemented user-facing capabilities use exact states `IMPLEMENTED / LIVE_OPERABLE / BLOCKED_EXTERNAL / REAL_MONEY_AUTHORIZED`;
-- a capability whose own technical/security/external gates pass becomes `LIVE_OPERABLE` without waiting unrelated future blocks or final `V10.0.0`;
-- “V10 is not finished” is not a valid external blocker;
-- Telegram Login, VK ID and multi-user access may activate progressively after their own real-provider/runtime/privacy/capacity/monitoring gates;
-- T-Invest READ/live portfolio/positions/operations are independent of unfinished Real execution and may become `LIVE_OPERABLE` after real broker-terms/permission plus tenant secret-custody/security/privacy/live-connection acceptance;
-- a future tenant-scoped TRADE credential may be connected/validated after its own provisioning/security gate, but `TRADE credential connected != real broker submit authorized`;
-- execution eligibility remains `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`;
-- real broker submit requires `REAL_MONEY_AUTHORIZED` after Shadow/Sandbox, immutable plan, USER approval, drift/preflight, reconciliation, kill switches and actual broker permission;
-- transfer/withdrawal, margin/leverage and uncovered-short authority remain outside this activation freedom;
-- real-user operability and multi-user isolation become part of Definition of Done where live proof is possible;
-- emergency kill switches remain safety mechanisms, not permanent artificial locks after a capability's gates pass;
-- capability activation ledger/dashboard are working evidence only and never replace canonical current status;
-- Amendment 13 itself is governance-only: current `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and public T-Invest fail-closed state remain unchanged until later capability-specific gates actually accept a transition;
-- product implementation remains PAUSED and `START V10 WEB VISUAL SYSTEM UPDATE` remains required before WEB-VISUAL-INTEGRATED source work.
-
-Amendment 13 explicitly supersedes only conflicting **activation granularity/timing** wording in Amendments 10/11/12 and live guidance. It does not change Master Plan order/weights, fabricate provider/broker/legal/privacy evidence, authorize Real money, weaken tenant/security/recovery boundaries or start any product System Update. Amendment 14 later changes managed-platform/cost authority while preserving this capability-specific fail-closed activation law.
+Locks capability states `IMPLEMENTED / LIVE_OPERABLE / BLOCKED_EXTERNAL / REAL_MONEY_AUTHORIZED`, progressive user activation after owning gates, tenant isolation, independent READ capability and preserved Real-money authority.
 
 ### 14. Cloudflare Platform & Continuous Release Authority
 
@@ -227,25 +145,7 @@ Machine/governance companions:
 - `../../scripts/check_v10_cloudflare_platform_authority.py`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks the 2026-08-29 OWNER provider/release correction that:
-
-- GitHub remains engineering/source/review/provenance authority rank 1;
-- Cloudflare Workers Paid is platform rank 2 and the selected primary managed application/edge/build target for **new V10 work**;
-- Cloud.ru Evolution is no longer the selected new-V10 provider target;
-- Render is no longer an active new-V10 deployment, zero-charge attestation, hosted-release-alignment or recovery target;
-- accepted WP22A Render/Neon evidence remains historical technical evidence and protected V9 Render `app:app` remains intact;
-- Amendment 14 acceptance itself performs no Cloudflare deploy, DNS/domain mutation, API-token/secret creation, public-user activation or production cutover;
-- each accepted protected `main` SHA becomes a new product revision candidate, but promotion occurs only after exact-main post-merge and candidate acceptance gates;
-- production remains last-known-good and visibly out-of-sync when a newer `main` is not promotable;
-- public release identity uses event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA/Cloudflare version metadata without a source-code version-bump commit;
-- one canonical Web/product identity stack remains mandatory; Cloudflare Access/security never becomes Omni-CIO product identity;
-- existing React/Vite and FastAPI/PostgreSQL architecture is migrated by reuse/adapter preference, with Python Worker/native-dependency and PostgreSQL 18/Hyperdrive compatibility proved rather than assumed;
-- Workers Paid included build capacity may be used after the dedicated repository integration gate, while mutable limits must be revalidated and automatic paid overage/higher-plan expansion is forbidden without fresh OWNER approval;
-- portable verification targets Workers Builds after integration, while Windows/PowerShell/ACL/PostgreSQL-18-native semantics remain on trusted Lenovo runners until equivalent semantics are accepted;
-- the original mandatory split sequence is `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CLOUDFLARE-RUNTIME-COMPATIBILITY -> CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CLOUDFLARE-PUBLIC-CUTOVER`;
-- `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and WP23 lock remain unchanged by this governance amendment.
-
-Amendment 14 supersedes conflicting **current/future provider-selection, active Render release-target and monolithic public-release timing** wording in Amendments 8/10/11/13 and current guidance. It does not erase historical evidence, change Master Plan block weights/order, start WEB-VISUAL source work, fabricate external provider/legal evidence or authorize Real-money execution. Amendment 15 supersedes only the requirement to land the four Cloudflare implementation stages as four separately accepted main states; their order, internal gates, security/runtime/provider boundaries and continuous-release law remain active.
+Locks GitHub as engineering/source/review/provenance authority rank 1, Cloudflare Workers Paid as new-V10 managed application/edge/build platform rank 2, continuous exact-main candidate/release identity and preserved PostgreSQL/V9/security boundaries.
 
 ### 15. Cloudflare Public Product Integrated Delivery
 
@@ -257,24 +157,38 @@ Machine/governance companions:
 - `../../scripts/check_v10_cloudflare_public_product_integrated.py`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks the 2026-08-29 OWNER delivery correction that:
+Locks current Cloudflare implementation as one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` System Update with ordered `CF-A -> CF-B -> CF-C -> CF-D` internal milestones and preserved fail-closed provider/security/cutover boundaries.
 
-- current Cloudflare implementation is one `INTEGRATED_SYSTEM_UPDATE` named `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`;
-- default implementation branch is `system/cloudflare-public-product`;
-- one final PR is the default;
-- `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER` remains the mandatory internal order;
-- each internal milestone must pass its branch-local Exit Gate before dependent work begins;
-- separate protected-main merge/acceptance between CF-A…CF-D is not required;
-- any concrete Amendment-12 DB/security/dependency/OWNER/live/cutover/Real-money/reviewability split trigger still forces a stop/split;
-- prefer appropriate Cloudflare services over replaceable external infrastructure only when semantics, security, recovery and cost remain acceptable;
-- existing React/Vite targets Workers Static Assets, while Python Workers require dependency compatibility proof and Cloudflare Containers may be used only for a proven full-Linux/native runtime need;
-- D1 does not silently replace financial PostgreSQL; PostgreSQL/Neon 18/RLS may remain until an explicit equivalent migration is proved; Hyperdrive PG18 compatibility is not assumed;
-- active new-V10 Render code/config/dependencies are retired only after replacement parity plus consumer/recovery review; historical WP22A Render/Neon evidence and protected V9 Render `app:app` stay preserved;
-- GitHub remains engineering authority rank 1; no paid overage/higher-plan expansion is authorized by this amendment;
-- public capability activation remains evidence-based and fail-closed; broker write, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and WP23 lock remain unchanged;
-- `WEB-VISUAL-INTEGRATED` is excluded and still requires the exact separate OWNER command `START V10 WEB VISUAL SYSTEM UPDATE`.
+### 16. Green Checkpoint & Targeted CI Repair Law
 
-Amendment 15 supersedes only conflicting **Cloudflare implementation delivery granularity** from Amendment 14/current guidance. It does not weaken the internal order, candidate/public-cutover authority gates, continuous exact-main release law, protected V9 recovery, tenant/data/security rules or Real-money locks.
+`OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`;
+- `../operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md`;
+- `../../scripts/check_v10_green_checkpoint_ci_repair.py`;
+- `../../tests/test_v10_green_checkpoint_ci_repair.py`;
+- `.github/workflows/v10-targeted-repair.yml` through repository root;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-09-08 OWNER engineering-discipline decision that:
+
+- every published logical checkpoint must become `CERTIFIED_GREEN` before the next functional checkpoint begins;
+- any material RED immediately puts the branch in `RED_REPAIR_ONLY`; unrelated feature development is forbidden until repair certification;
+- diagnosis starts as soon as useful RED evidence exists and does not wait for all independent jobs merely to begin ordinary repair;
+- same-SHA targeted rerun is allowed only when repository source/config is unchanged and the failure is evidence-based transient/infrastructure-only;
+- GitHub specific-job rerun is preferred for that unchanged-SHA case;
+- code/config/test/governance repair necessarily creates a replacement SHA; old final evidence is stale;
+- the same logical checkpoint is repaired by amend/history replacement when safe, or a repair commit when rewrite is unsafe, but no new feature scope is allowed in `RED_REPAIR_ONLY`;
+- targeted recheck proves the reported defect; then the replacement exact SHA must receive full applicable certification before new functional work;
+- Sonar Quality Gate must pass when applicable, default new-code issues are zero, unresolved new Security Hotspots are zero and material changed-code findings are resolved;
+- `PENDING / RED_REPAIR_ONLY / TARGET_REPAIRED / CERTIFIED_GREEN / MAIN_RED_STOP` are the canonical checkpoint states;
+- DRAFT→READY does not automatically require duplicate full same-SHA certification unless an applicable state-dependent workflow/ruleset requires it;
+- post-merge RED on current `main` means `MAIN_RED_STOP` and blocks ordinary feature progress until an accepted focused repair restores GREEN;
+- root-cause, blast-radius, analogous-pattern, producer/consumer, adjacent-failure, regression-guard, SUCCESS-only merge, full review, squash, post-merge, security/recovery, tenant and broker/Real-money laws remain unchanged.
+
+Amendment 16 explicitly supersedes only conflicting CI cadence/publication/wait-all repair language in Amendments 8/12 and live guidance. It does not change execution-unit grouping, Master Plan order/weights, current Cloudflare authority, product scope, activation authority or financial/security boundaries.
 
 ## Draft/superseded planning material
 
@@ -289,7 +203,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13/14/15 for current product/public-hosting/delivery/activation/platform semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14/15/16 for current product/public-hosting/delivery/activation/platform/engineering semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
