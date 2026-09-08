@@ -73,6 +73,19 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert repair["full_certification_required_before_next_checkpoint"] is True
         assert repair["protected_main_force_rewrite_allowed"] is False
 
+    def test_targeted_verifier_contract_is_fail_closed(self) -> None:
+        targeted = self._contract()["targeted_verifier"]
+        assert isinstance(targeted, dict)
+        assert targeted["workflow"] == ".github/workflows/v10-targeted-repair.yml"
+        assert targeted["expected_sha_format"] == "LOWERCASE_FULL_40_HEX"
+        assert targeted["expected_sha_must_equal_dispatch_ref_head"] is True
+        assert targeted["exact_checkout_verified_before_and_after_lane"] is True
+        assert targeted["frontend_toolchain_authority"] == (
+            "docs/architecture/V10_TOOLCHAIN_BASELINE.json"
+        )
+        assert targeted["frontend_dependency_lifecycle_scripts_disabled"] is True
+        assert targeted["workspace_cleanup_required"] is True
+
     def test_sonar_new_code_is_clean_before_next_checkpoint(self) -> None:
         sonar = self._contract()["sonar_review"]
         assert isinstance(sonar, dict)
@@ -92,6 +105,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert "Verify exact Node and npm baseline" in workflow
         assert "$baseline.frontend.node" in workflow
         assert "$baseline.frontend.npm" in workflow
+        assert "--ignore-scripts --no-audit --no-fund" in workflow
 
     def test_live_guidance_uses_green_checkpoint_states(self) -> None:
         for path in LIVE_GUIDANCE:
@@ -126,6 +140,8 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             "RED = REPAIR ONLY",
             "TARGETED RECHECK",
             "FULL CERTIFICATION",
+            "dispatch-ref head",
+            "V10_TOOLCHAIN_BASELINE.json",
         ):
             assert marker in runbook
 
