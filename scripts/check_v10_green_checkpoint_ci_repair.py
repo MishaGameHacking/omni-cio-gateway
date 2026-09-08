@@ -11,6 +11,99 @@ CONTRACT = ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CON
 RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
 TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 
+LIVE_GUIDANCE_MARKERS: dict[Path, tuple[str, ...]] = {
+    ROOT / "AGENTS.md": (
+        "Green Checkpoint & Targeted CI Repair Law",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+        "MAIN_RED_STOP",
+    ),
+    ROOT / "CONTRIBUTING.md": (
+        "Green Checkpoint & Targeted CI Repair Law",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / "README.md": (
+        "Amendment 16 governs Green Checkpoint / targeted CI repair",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / ".github/copilot-instructions.md": (
+        "Green Checkpoint / targeted CI repair",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / "gpt/PROJECT_INSTRUCTIONS.md": (
+        "Green Checkpoint & Targeted CI Repair Law / Amendment 16",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / "gpt/NEW_CHAT_PROMPT.md": (
+        "Green Checkpoint & Targeted CI Repair Law / Amendment 16",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / "docs/master-plan/README.md": (
+        "Green Checkpoint / targeted CI repair",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md": (
+        "Green Checkpoint & Targeted CI Repair Law",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": (
+        "Green Checkpoint certification",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
+        "Green Checkpoint verification",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / ".github/pull_request_template.md": (
+        "Green Checkpoint / targeted CI repair",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+    ROOT / ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml": (
+        "Green Checkpoint / targeted repair evidence",
+        "RED_REPAIR_ONLY",
+        "CERTIFIED_GREEN",
+    ),
+}
+
+SUPERSEDED_OPERATIONAL_MARKERS: dict[Path, tuple[str, ...]] = {
+    ROOT / "CONTRIBUTING.md": ("## Pre-CI / HEAD FREEZE",),
+    ROOT / "README.md": (
+        "After a verification SHA is published, **HEAD FREEZE** applies",
+        "one published head -> HEAD FREEZE",
+    ),
+    ROOT / ".github/copilot-instructions.md": (
+        "After publishing a verification head, HEAD FREEZE applies",
+    ),
+    ROOT / "gpt/PROJECT_INSTRUCTIONS.md": ("\nHEAD FREEZE:\n",),
+    ROOT / "gpt/NEW_CHAT_PROMPT.md": ("\nHEAD FREEZE:\n",),
+    ROOT / "docs/master-plan/README.md": (
+        "Integrated work is published only after `INTEGRATION_READY`",
+        "After a verification SHA is published, `HEAD FREEZE` applies",
+    ),
+    ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md": (
+        "apply **HEAD FREEZE**",
+        "After a verification SHA is published, **HEAD FREEZE** applies",
+    ),
+    ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": (
+        "## 7. Verification batches / HEAD FREEZE",
+    ),
+    ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
+        "## 7. Verification batches / HEAD FREEZE",
+        "HEAD FREEZE begins after publication",
+    ),
+    ROOT / ".github/pull_request_template.md": ("## HEAD FREEZE / verification batch",),
+}
+
 REQUIRED_STATES = {
     "PENDING",
     "RED_REPAIR_ONLY",
@@ -78,6 +171,7 @@ def main() -> int:
     _fail(sonar.get("quality_gate_pass_required_when_applicable") is True, "Sonar Quality Gate requirement missing", failures)
     _fail(sonar.get("new_issues_default") == 0, "Sonar new issues must default to zero", failures)
     _fail(sonar.get("unresolved_new_security_hotspots") == 0, "Sonar hotspots must be zero", failures)
+    _fail(sonar.get("material_new_reliability_security_maintainability_findings") == 0, "material new Sonar findings must be zero", failures)
 
     green = payload.get("green", {})
     _fail(green.get("accepted_check_conclusions") == ["success"], "only success may be GREEN", failures)
@@ -117,6 +211,20 @@ def main() -> int:
         for marker in markers:
             _fail(marker in content, f"{path.relative_to(ROOT)} missing marker: {marker}", failures)
 
+    live_contents: dict[Path, str] = {}
+    for path, markers in LIVE_GUIDANCE_MARKERS.items():
+        content = _read(path, failures)
+        live_contents[path] = content
+        for marker in markers:
+            _fail(marker in content, f"{path.relative_to(ROOT)} missing live Green Checkpoint marker: {marker}", failures)
+
+    for path, markers in SUPERSEDED_OPERATIONAL_MARKERS.items():
+        content = live_contents.get(path)
+        if content is None:
+            content = _read(path, failures)
+        for marker in markers:
+            _fail(marker not in content, f"{path.relative_to(ROOT)} still contains superseded operational marker: {marker}", failures)
+
     if failures:
         print("V10 Green Checkpoint governance check failed:", file=sys.stderr)
         for failure in failures:
@@ -125,6 +233,7 @@ def main() -> int:
 
     print("V10 Green Checkpoint governance check passed.")
     print("Flow: CHECKPOINT -> VERIFY -> RED_REPAIR_ONLY -> TARGETED_RECHECK -> FULL_CERTIFICATION -> CERTIFIED_GREEN")
+    print("Live guidance: synchronized with Amendment 16")
     print("Next functional checkpoint requires CERTIFIED_GREEN.")
     return 0
 
