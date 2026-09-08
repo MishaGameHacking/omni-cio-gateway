@@ -287,6 +287,7 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
             operations,
             [
                 ("DELETE", None),
+                ("GET", None),
                 (
                     "PUT",
                     {
@@ -330,7 +331,7 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
             )
         self.assertEqual(
             [call[0] for call in api.calls],
-            ["DELETE", "PUT", "GET", "DELETE", "GET"],
+            ["DELETE", "GET", "PUT", "GET", "DELETE", "GET"],
         )
         self.assertNotIn(custody._SYNC_TOKEN_BINDING, api.binding_types)
         self.assertNotIn(custody._BOOTSTRAP_ORIGIN_BINDING, api.binding_types)
@@ -344,7 +345,7 @@ class CloudflareCfDBootstrapOriginCustodyTests(unittest.TestCase):
             self._run_lifecycle(api)
         self.assertEqual(
             [call[0] for call in api.calls],
-            ["DELETE", "PUT", "GET", "DELETE"],
+            ["DELETE", "GET", "PUT", "GET", "DELETE"],
         )
         self.assertNotIn(custody._BOOTSTRAP_ORIGIN_BINDING, api.binding_types)
 
