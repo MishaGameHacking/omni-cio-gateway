@@ -109,7 +109,7 @@ Do not start internal milestone N+1 before milestone N's branch-local Exit Gate 
 
 The integrated branch uses the required Execution Ledger and GitHub System Update dashboard. `INTEGRATION_READY` remains the final whole-update readiness state, but earlier published checkpoints may be certified under Amendment 16 when that later law is accepted.
 
-## 7. Green Checkpoint / targeted CI repair
+## 7. Green Checkpoint & Targeted CI Repair Law
 
 CI is an independent verifier and active checkpoint certifier; it does not replace engineering judgment, root-cause analysis or focused preflight.
 
@@ -196,7 +196,7 @@ Do not upgrade to `latest` by initiative. Use accepted versions/locks: `requirem
 
 Cloudflare migration preference remains `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite Web remains canonical source. FastAPI availability in Python Workers does not prove all CPython/native dependencies compatible; test them. Cloudflare Containers may be used only when CF-B proves a concrete full-Linux/native dependency need and cost/recovery semantics are acceptable. Neon/PostgreSQL 18 tenant/RLS authority remains until an explicit equivalent migration is proved; D1 is not an automatic replacement; Hyperdrive + PostgreSQL 18 compatibility must be proved.
+Existing React/Vite Web remains canonical source. FastAPI availability in Python Workers does not prove all CPython/native dependencies compatible; test them. Cloudflare Containers may be used only when CF-B proves a concrete full-Linux/native runtime need and cost/recovery semantics are acceptable. Neon/PostgreSQL 18 tenant/RLS authority remains until an explicit equivalent migration is proved; D1 is not an automatic replacement; Hyperdrive + PostgreSQL 18 compatibility must be proved.
 
 Prefer Cloudflare services over replaceable external infrastructure only when semantics are equivalent and recovery/security are not weakened. Do not adopt a Cloudflare feature merely because the paid plan includes it.
 
