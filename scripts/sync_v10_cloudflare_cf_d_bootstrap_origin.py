@@ -13,7 +13,7 @@ import scripts.bootstrap_v10_cloudflare_builds as builds
 from scripts.cloudflare_staging_secrets import (
     delete_staging_secret,
     put_staging_secret,
-    staging_secret_type,
+    wait_staging_secret_type,
 )
 
 
@@ -307,7 +307,7 @@ def bootstrap_origin_sync_token(api: builds.CloudflareApi) -> Iterator[str]:
     delete_staging_secret(api, _SYNC_TOKEN_BINDING)
     try:
         put_staging_secret(api, _SYNC_TOKEN_BINDING, token)
-        if staging_secret_type(api, _SYNC_TOKEN_BINDING) != "secret_text":
+        if not wait_staging_secret_type(api, _SYNC_TOKEN_BINDING, "secret_text"):
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_SECRET_MISSING"
             )
@@ -316,7 +316,7 @@ def bootstrap_origin_sync_token(api: builds.CloudflareApi) -> Iterator[str]:
     finally:
         try:
             delete_staging_secret(api, _SYNC_TOKEN_BINDING)
-            if staging_secret_type(api, _SYNC_TOKEN_BINDING) is not None:
+            if not wait_staging_secret_type(api, _SYNC_TOKEN_BINDING, None):
                 raise builds.BootstrapStopped(_SYNC_TOKEN_STALE)
         except builds.BootstrapStopped as exc:
             if exc.code == _SYNC_TOKEN_STALE:
@@ -346,12 +346,12 @@ def persist_bootstrap_origin_custody(
     """Persist the trusted Function origin only after the sync token is removed."""
 
     origin = _bootstrap_origin(bootstrap_origin)
-    if staging_secret_type(api, _SYNC_TOKEN_BINDING) is not None:
+    if not wait_staging_secret_type(api, _SYNC_TOKEN_BINDING, None):
         raise builds.BootstrapStopped(_SYNC_TOKEN_STALE)
     builds._mask(origin)
     put_staging_secret(api, _BOOTSTRAP_ORIGIN_BINDING, origin)
-    if staging_secret_type(api, _BOOTSTRAP_ORIGIN_BINDING) != "secret_text":
+    if not wait_staging_secret_type(api, _BOOTSTRAP_ORIGIN_BINDING, "secret_text"):
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_SECRET_MISSING")
-    if staging_secret_type(api, _SYNC_TOKEN_BINDING) is not None:
+    if not wait_staging_secret_type(api, _SYNC_TOKEN_BINDING, None):
         raise builds.BootstrapStopped(_SYNC_TOKEN_STALE)
     print("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_CUSTODY=READY")
