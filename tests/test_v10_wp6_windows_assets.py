@@ -36,6 +36,16 @@ def test_provisioning_refuses_local_system_and_does_not_reconfigure_runner() -> 
     assert "svc.cmd uninstall" not in text
 
 
+def test_runner_service_resolution_is_bound_to_reviewed_runner_root() -> None:
+    for path in (PROVISION, COLLECTOR):
+        text = path.read_text(encoding="utf-8")
+        assert '$runnerServiceMarker = Join-Path $runnerRoot ".service"' in text
+        assert "Get-Content -LiteralPath $runnerServiceMarker -Raw" in text
+        assert 'Where-Object { $_.Name -eq $serviceName }' in text
+        assert "bound to the reviewed runner root" in text
+        assert 'Where-Object { $_.Name -like "actions.runner.*" }' not in text
+
+
 def test_provisioning_hardens_runner_root_and_reviewed_config_with_backup() -> None:
     text = PROVISION.read_text(encoding="utf-8")
     for name in (".runner", ".credentials", ".credentials_rsaparams", ".service"):
