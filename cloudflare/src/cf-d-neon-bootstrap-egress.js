@@ -26,6 +26,8 @@ const ORIGIN_SYNC_DERIVATION_FAILED =
   "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED";
 const RUNTIME_DATABASE_INVALID = "CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID";
 const NEON_DESTINATION_REJECTED = "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED";
+const NEON_BRANCH_REQUEST_INVALID =
+  "CLOUDFLARE_CF_D_NEON_BRANCH_REQUEST_INVALID";
 const NEON_BRANCH_LOOKUP_FAILED = "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED";
 const NEON_BRANCH_LOOKUP_UNAUTHORIZED =
   "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED";
@@ -54,6 +56,7 @@ const BRANCH_LOOKUP_TRANSIENT_STATUSES = new Set([
 export const CF_D_SANITIZED_DERIVATION_FAILURE_CODES = Object.freeze([
   RUNTIME_DATABASE_INVALID,
   NEON_DESTINATION_REJECTED,
+  NEON_BRANCH_REQUEST_INVALID,
   NEON_BRANCH_LOOKUP_FAILED,
   NEON_BRANCH_LOOKUP_UNAUTHORIZED,
   NEON_BRANCH_LOOKUP_NOT_FOUND,
@@ -265,18 +268,32 @@ function databaseSqlUrl(runtimeDatabase) {
 }
 
 function branchLookupRequest(runtimeDatabase, expectedUrl) {
-  return new Request(expectedUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "Neon-Connection-String": runtimeDatabase.connectionString,
-      "Neon-Raw-Text-Output": "true",
-      "Neon-Array-Mode": "true",
-    },
-    body: JSON.stringify({ query: BRANCH_LOOKUP_SQL, params: [] }),
-    redirect: "error",
-    signal: AbortSignal.timeout(BRANCH_LOOKUP_TIMEOUT_MS),
-  });
+  try {
+    return new Request(expectedUrl.href, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Neon-Connection-String": runtimeDatabase.connectionString,
+        "Neon-Raw-Text-Output": "true",
+        "Neon-Array-Mode": "true",
+      },
+      body: JSON.stringify({ query: BRANCH_LOOKUP_SQL, params: [] }),
+      redirect: "error",
+      signal: AbortSignal.timeout(BRANCH_LOOKUP_TIMEOUT_MS),
+    });
+  } catch {
+    stopped(NEON_BRANCH_REQUEST_INVALID);
+  }
+}
+
+async function fetchRuntimeBranchLookup(runtimeDatabase) {
+  const safeUrl = databaseSqlUrl(runtimeDatabase);
+  const request = branchLookupRequest(runtimeDatabase, safeUrl);
+  try {
+    return await fetch(request);
+  } catch {
+    stopped(NEON_BRANCH_LOOKUP_FAILED);
+  }
 }
 
 function exactCandidateDestination(request, expectedUrl) {
@@ -309,23 +326,6 @@ async function boundedRequestBody(request) {
     stopped(NEON_DESTINATION_REJECTED);
   }
   return body;
-}
-
-async function fetchRuntimeBranchLookup(runtimeDatabase, request) {
-  const policy = destinationPolicy(DATABASE_DESTINATION);
-  const safeUrl = databaseSqlUrl(runtimeDatabase);
-  exactCandidateDestination(request, safeUrl);
-  if (request.method !== "POST") {
-    stopped(NEON_DESTINATION_REJECTED);
-  }
-  const safeRequest = new Request(safeUrl, {
-    method: "POST",
-    headers: forwardedHeaders(request, policy),
-    body: await boundedRequestBody(request),
-    redirect: policy.redirect,
-    signal: request.signal,
-  });
-  return fetch(safeRequest);
 }
 
 async function boundedResponseText(response, maxBytes, tooLargeCode) {
@@ -372,17 +372,7 @@ async function boundedResponseText(response, maxBytes, tooLargeCode) {
 }
 
 async function runtimeBranchId(runtimeDatabase) {
-  const expectedUrl = databaseSqlUrl(runtimeDatabase);
-  const request = branchLookupRequest(runtimeDatabase, expectedUrl);
-  let response;
-  try {
-    response = await fetchRuntimeBranchLookup(runtimeDatabase, request);
-  } catch (error) {
-    if (error instanceof Error && error.message === NEON_DESTINATION_REJECTED) {
-      throw error;
-    }
-    stopped(NEON_BRANCH_LOOKUP_FAILED);
-  }
+  const response = await fetchRuntimeBranchLookup(runtimeDatabase);
   if (!response.ok) {
     stopped(branchLookupFailureCode(response.status));
   }
