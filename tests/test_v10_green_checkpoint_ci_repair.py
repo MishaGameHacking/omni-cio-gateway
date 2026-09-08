@@ -45,6 +45,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         )
         assert completed.returncode == 0, completed.stderr or completed.stdout
         assert "Live guidance: synchronized with Amendment 16" in completed.stdout
+        assert "Targeted verifier: exact dispatch head + accepted frontend toolchain enforced" in completed.stdout
         assert "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
 
     def test_red_checkpoint_blocks_next_functional_checkpoint(self) -> None:
@@ -80,11 +81,17 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert sonar["unresolved_new_security_hotspots"] == 0
         assert sonar["material_new_reliability_security_maintainability_findings"] == 0
 
-    def test_targeted_workflow_pins_exact_requested_sha(self) -> None:
+    def test_targeted_workflow_pins_exact_requested_sha_and_toolchain(self) -> None:
         workflow = TARGETED_WORKFLOW.read_text(encoding="utf-8")
-        assert "^[0-9a-fA-F]{40}$" in workflow
+        assert "^[0-9a-f]{40}$" in workflow
+        assert "DISPATCH_HEAD: ${{ github.sha }}" in workflow
+        assert 'if [ "$EXPECTED_HEAD" != "$DISPATCH_HEAD" ]; then' in workflow
         assert 'git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"' in workflow
         assert 'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"' in workflow
+        assert "V10_TOOLCHAIN_BASELINE.json" in workflow
+        assert "Verify exact Node and npm baseline" in workflow
+        assert "$baseline.frontend.node" in workflow
+        assert "$baseline.frontend.npm" in workflow
 
     def test_live_guidance_uses_green_checkpoint_states(self) -> None:
         for path in LIVE_GUIDANCE:
