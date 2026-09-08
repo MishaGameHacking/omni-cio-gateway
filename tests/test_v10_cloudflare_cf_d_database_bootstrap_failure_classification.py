@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import re
+import secrets
 import unittest
 from unittest import mock
 from urllib.error import HTTPError, URLError
@@ -84,6 +85,10 @@ class _ProviderClient:
 
 def _json_bytes(payload: object) -> bytes:
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+
+def _synthetic_authorization() -> str:
+    return "Bearer " + secrets.token_urlsafe(32)
 
 
 def _http_error(status: int, content: bytes) -> HTTPError:
@@ -218,10 +223,11 @@ class CloudflareCfDDatabaseBootstrapFailureClassificationTests(unittest.TestCase
             _json_bytes({"status": "BLOCKED", "code": code}),
         )
         client = _ProviderClient(response)
+        authorization = _synthetic_authorization()
         with mock.patch.object(proxy.httpx, "Client", return_value=client):
             with self.assertRaises(proxy._BootstrapRouteStopped) as error:
                 proxy._fetch_bootstrap_response(
-                    "Bearer synthetic.jwt.token",
+                    authorization,
                     _EXPECTED_SHA,
                     proxy._secure_tls_context(),
                 )
@@ -230,7 +236,7 @@ class CloudflareCfDDatabaseBootstrapFailureClassificationTests(unittest.TestCase
             f"{NEON_FUNCTION_FAILURE_PREFIX}{code}",
         )
         self.assertEqual(error.exception.status_code, 502)
-        self.assertNotIn("synthetic.jwt.token", str(error.exception))
+        self.assertNotIn(authorization, str(error.exception))
         self.assertEqual(client.method, "POST")
         self.assertEqual(client.json, {"expected_sha": _EXPECTED_SHA})
 
@@ -246,7 +252,7 @@ class CloudflareCfDDatabaseBootstrapFailureClassificationTests(unittest.TestCase
         ):
             with self.assertRaises(proxy._BootstrapRouteStopped) as error:
                 proxy._fetch_bootstrap_response(
-                    "Bearer synthetic.jwt.token",
+                    _synthetic_authorization(),
                     _EXPECTED_SHA,
                     proxy._secure_tls_context(),
                 )
