@@ -201,8 +201,12 @@ def main() -> int:
             "workflow_dispatch",
             "expected_sha",
             "lane",
-            "^[0-9a-fA-F]{40}$",
+            "^[0-9a-f]{40}$",
+            "DISPATCH_HEAD",
+            "expected_sha must equal the workflow-dispatch ref head",
             'git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"',
+            "V10_TOOLCHAIN_BASELINE.json",
+            "Verify exact Node and npm baseline",
             "git rev-parse HEAD",
         ),
     }
@@ -234,6 +238,7 @@ def main() -> int:
     print("V10 Green Checkpoint governance check passed.")
     print("Flow: CHECKPOINT -> VERIFY -> RED_REPAIR_ONLY -> TARGETED_RECHECK -> FULL_CERTIFICATION -> CERTIFIED_GREEN")
     print("Live guidance: synchronized with Amendment 16")
+    print("Targeted verifier: exact dispatch head + accepted frontend toolchain enforced")
     print("Next functional checkpoint requires CERTIFIED_GREEN.")
     return 0
 
