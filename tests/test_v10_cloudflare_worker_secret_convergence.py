@@ -206,9 +206,10 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         self._assert_method_counts(exhausted, put=1, delete=0, get=attempts)
         self.assertEqual(exhausted_sleep.call_count, attempts - 1)
 
-    def test_malformed_staging_secret_state_is_not_retried(self) -> None:
-        duplicate = {"name": custody._SYNC_TOKEN_BINDING, "type": "secret_text"}
-        api = _SecretApi([[duplicate, duplicate]])
+    def test_staging_list_404_does_not_prove_secret_absence(self) -> None:
+        api = _SecretApi(
+            [builds.BootstrapStopped("CLOUDFLARE_API_HTTP_ERROR", status=404)]
+        )
         with (
             patch.object(secret_state.time, "sleep") as sleep,
             self.assertRaises(builds.BootstrapStopped) as raised,
@@ -218,7 +219,52 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
                 custody._SYNC_TOKEN_BINDING,
                 None,
             )
-        self.assertEqual(raised.exception.code, "CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE")
+        self.assertEqual(
+            (raised.exception.code, raised.exception.status),
+            ("CLOUDFLARE_API_HTTP_ERROR", 404),
+        )
+        self._assert_method_counts(api, put=0, delete=0, get=1)
+        sleep.assert_not_called()
+
+    def test_malformed_and_duplicate_staging_state_are_not_retried(self) -> None:
+        target = {"name": custody._SYNC_TOKEN_BINDING, "type": "secret_text"}
+        cases = (
+            (
+                "malformed-row",
+                [target, {"name": "UNRELATED_SECRET"}],
+                "CLOUDFLARE_STAGING_SECRETS_INVALID",
+            ),
+            (
+                "duplicate-target",
+                [target, target],
+                "CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE",
+            ),
+        )
+        for label, response, expected_code in cases:
+            with self.subTest(label=label):
+                api = _SecretApi([response])
+                with (
+                    patch.object(secret_state.time, "sleep") as sleep,
+                    self.assertRaises(builds.BootstrapStopped) as raised,
+                ):
+                    staging_secrets.wait_staging_secret_type(
+                        cast(builds.CloudflareApi, api),
+                        custody._SYNC_TOKEN_BINDING,
+                        "secret_text",
+                    )
+                self.assertEqual(raised.exception.code, expected_code)
+                self._assert_method_counts(api, put=0, delete=0, get=1)
+                sleep.assert_not_called()
+
+    def test_malformed_production_secret_state_is_not_retried(self) -> None:
+        binding = production._RUNTIME_DSN_BINDING
+        api = _SecretApi([[{"name": binding, "type": "secret_text"}, None]])
+        with (
+            patch.object(secret_state.time, "sleep") as sleep,
+            self.assertRaises(builds.BootstrapStopped) as raised,
+        ):
+            production._wait_runtime_secret_present(cast(builds.CloudflareApi, api))
+        self.assertEqual(raised.exception.code, "CLOUDFLARE_PRODUCTION_SECRETS_INVALID")
         self._assert_method_counts(api, put=0, delete=0, get=1)
         sleep.assert_not_called()
 

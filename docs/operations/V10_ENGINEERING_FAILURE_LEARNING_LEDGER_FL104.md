@@ -74,6 +74,14 @@ secret transitions:
 - production `OMNI_V10_POSTGRES_DSN` first-time PUT -> one immediate presence proof before
   production Build/promotion.
 
+The adjacent reader review also found two fail-closed policy gaps that belong to the same
+state-proof boundary. The legacy pre-anchor staging probe intentionally maps a script-secret
+LIST `404` to "bootstrap required" so an absent staging Worker can be anchored. Reusing that
+tolerant read in post-mutation convergence would let a provider `404` prove secret absence
+or become a retryable mismatch. Separately, staging and production readers filtered out
+malformed list rows before matching, which could convert an invalid provider listing into an
+apparently absent or present target state.
+
 The legacy `_put_runtime_secret()` helper in `bootstrap_v10_cloudflare_builds.py` remains
 outside the active candidate path; the accepted candidate guard already requires the active
 path to use `put_staging_runtime_secret()` instead. It is not reactivated by this defect fix.
@@ -98,6 +106,15 @@ control-plane reads:
   code such as `CLOUDFLARE_CF_D_ORIGIN_SYNC_TOKEN_STALE` or
   `CLOUDFLARE_PRODUCTION_SECRET_VERIFY_FAILED`.
 
+Post-mutation staging convergence uses a strict script-secret LIST reader: a LIST `404`
+propagates as the provider/read failure it is and cannot prove target-secret absence. The
+separate pre-anchor bootstrap probe keeps its existing policy that interprets LIST `404` as
+bootstrap-required before a staging Worker exists. Successful `200` secret listings are
+validated row-by-row before matching; every row must be an object with non-empty string
+`name` and `type` fields. The same complete-list validation is used for production secret
+state. Unrelated valid secret types remain allowed; the target binding must still be
+`secret_text`.
+
 The same read-only convergence law now protects custody-token presence/absence, persistent
 bootstrap-origin presence, first-time staging runtime-secret presence and first-time
 production runtime-secret presence.
@@ -116,9 +133,12 @@ Deterministic tests now require:
   `CLOUDFLARE_PRODUCTION_SECRET_VERIFY_FAILED`;
 - staging and production runtime-secret writes each occur exactly once while state reads may
   repeat;
-- malformed/duplicate staging secret state fails immediately and is not retried;
+- a staging LIST `404` during convergence fails immediately and cannot prove absence;
+- malformed and duplicate staging secret state fails immediately and is not retried;
+- malformed production secret state fails immediately and is not retried;
 - provider/read exceptions propagate immediately rather than becoming successful
   convergence;
+- the pre-anchor staging bootstrap probe still treats an absent Worker as bootstrap-required;
 - the machine release contract freezes the shared attempt/delay bounds, read-only rule and
   prohibition on mutation replay.
 
@@ -135,6 +155,12 @@ version ordering was correct. Future provider-control-plane doubles must disting
 "mutation accepted" from "new state already visible to a subsequent read" whenever the
 provider operation is deployment/version coupled.
 
+A second lesson is that bootstrap discovery policy and post-mutation proof policy are not
+interchangeable. A tolerant read that is correct before an external object exists must not
+be reused as proof that a mutation on an already-required object converged. Provider-list
+validation must also occur before target filtering so malformed unrelated rows cannot be
+silently discarded from an authority-bearing state observation.
+
 ## Future prevention rule
 
 For external control planes, a successful mutation response proves only the contract of that
@@ -142,6 +168,11 @@ mutation endpoint. Do not infer immediate read-after-write/read-after-delete vis
 unless current first-party documentation explicitly guarantees it or an accepted runtime
 contract proves it. When later steps require the new state, use bounded read-only
 convergence; never blindly replay a mutation to manufacture convergence.
+
+Keep discovery/bootstrap tolerance separate from post-mutation authority proof. A provider
+status or malformed response that is acceptable only to decide whether bootstrap is needed
+must remain an immediate failure once the workflow is proving convergence on an object that
+must already exist.
 
 ## First-party provider references reviewed
 
@@ -151,6 +182,8 @@ convergence; never blindly replay a mutation to manufacture convergence.
   `https://developers.cloudflare.com/workers/versions-and-deployments/`
 - Cloudflare Wrangler — Workers / secret commands:
   `https://developers.cloudflare.com/workers/wrangler/commands/workers/`
+- Cloudflare Workers API — List script secrets:
+  `https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/secrets/methods/list/`
 - Cloudflare Workers changelog — newer versions/deployments API model:
   `https://developers.cloudflare.com/changelog/post/2025-09-03-new-workers-api/`
 
