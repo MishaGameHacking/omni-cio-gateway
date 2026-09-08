@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: v10-engineering-governance-${{ github.event.pull_request.number || github.ref }}
@@ -85,6 +86,13 @@ jobs:
           if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 10
           echo Governance exact head: %ACTUAL_HEAD%
 
+      - name: Fail fast on exact-head Sonar findings
+        if: github.event_name == 'pull_request'
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check_v10_pr_external_review_gate.py
+
       - name: Verify engineering governance contract
         run: python scripts/check_v10_engineering_governance.py
 
@@ -135,6 +143,7 @@ jobs:
           python -m py_compile
           scripts/check_v10_engineering_governance.py
           scripts/check_v10_green_checkpoint_ci_repair.py
+          scripts/check_v10_pr_external_review_gate.py
           scripts/check_v10_cloudflare_platform_authority.py
           scripts/check_v10_cloudflare_public_product_integrated.py
           scripts/check_v10_cloudflare_builds_verifier.py
@@ -161,6 +170,7 @@ jobs:
         run: >-
           python -m unittest
           tests.test_v10_green_checkpoint_ci_repair
+          tests.test_v10_pr_external_review_gate
           tests.test_v10_regression_shield
           tests.test_v10_ci_action_download_resilience
           tests.test_v10_release_provenance
