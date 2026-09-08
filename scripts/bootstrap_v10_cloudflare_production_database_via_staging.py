@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -233,6 +234,8 @@ def _staging_response_error_code(status: object, response: Any) -> str:
         )
     except BootstrapStopped:
         return GENERIC_STAGING_BOOTSTRAP_FAILURE
+    except (HTTPException, OSError):
+        return STAGING_BOOTSTRAP_UNAVAILABLE
     return classify_staging_bootstrap_failure(status_code, content)
 
 
@@ -258,7 +261,7 @@ def _request_staging_bootstrap_json(request: Request) -> dict[str, Any]:
         finally:
             exc.close()
         raise BootstrapStopped(code) from None
-    except (URLError, OSError):
+    except (URLError, OSError, HTTPException):
         raise BootstrapStopped(STAGING_BOOTSTRAP_UNAVAILABLE) from None
     return _json_object(data, GENERIC_STAGING_BOOTSTRAP_FAILURE)
 
