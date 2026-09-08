@@ -14,6 +14,21 @@ AMENDMENT = ROOT / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_
 RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
 TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 
+LIVE_GUIDANCE = (
+    ROOT / "AGENTS.md",
+    ROOT / "CONTRIBUTING.md",
+    ROOT / "README.md",
+    ROOT / ".github/copilot-instructions.md",
+    ROOT / "gpt/PROJECT_INSTRUCTIONS.md",
+    ROOT / "gpt/NEW_CHAT_PROMPT.md",
+    ROOT / "docs/master-plan/README.md",
+    ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md",
+    ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md",
+    ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md",
+    ROOT / ".github/pull_request_template.md",
+    ROOT / ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml",
+)
+
 
 class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
     def _contract(self) -> dict[str, object]:
@@ -29,6 +44,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             timeout=30,
         )
         assert completed.returncode == 0, completed.stderr or completed.stdout
+        assert "Live guidance: synchronized with Amendment 16" in completed.stdout
         assert "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
 
     def test_red_checkpoint_blocks_next_functional_checkpoint(self) -> None:
@@ -69,6 +85,24 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert "^[0-9a-fA-F]{40}$" in workflow
         assert 'git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"' in workflow
         assert 'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"' in workflow
+
+    def test_live_guidance_uses_green_checkpoint_states(self) -> None:
+        for path in LIVE_GUIDANCE:
+            content = path.read_text(encoding="utf-8")
+            assert "RED_REPAIR_ONLY" in content, path
+            assert "CERTIFIED_GREEN" in content, path
+
+    def test_superseded_wait_all_operational_sections_are_removed(self) -> None:
+        forbidden_by_path = {
+            ROOT / "CONTRIBUTING.md": "## Pre-CI / HEAD FREEZE",
+            ROOT / ".github/pull_request_template.md": "## HEAD FREEZE / verification batch",
+            ROOT / "gpt/PROJECT_INSTRUCTIONS.md": "\nHEAD FREEZE:\n",
+            ROOT / "gpt/NEW_CHAT_PROMPT.md": "\nHEAD FREEZE:\n",
+            ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": "## 7. Verification batches / HEAD FREEZE",
+            ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": "## 7. Verification batches / HEAD FREEZE",
+        }
+        for path, marker in forbidden_by_path.items():
+            assert marker not in path.read_text(encoding="utf-8"), path
 
     def test_amendment_and_runbook_express_operational_flow(self) -> None:
         amendment = AMENDMENT.read_text(encoding="utf-8")
