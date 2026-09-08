@@ -54,7 +54,14 @@
     "unresolved_new_security_hotspots": 0,
     "material_new_reliability_security_maintainability_findings": 0,
     "independent_review_findings_must_be_inspected": true,
-    "bot_approval_is_not_engineering_judgment": true
+    "bot_approval_is_not_engineering_judgment": true,
+    "authoritative_merge_gate_enforces_exact_head": true,
+    "authoritative_workflow": ".github/workflows/self-hosted-windows-smoke.yml",
+    "required_check_name": "V10 authoritative merge gate",
+    "external_review_guard": "scripts/check_v10_pr_external_review_gate.py",
+    "github_checks_permission": "read",
+    "bounded_wait_required": true,
+    "annotation_count_must_be_zero": true
   },
   "green": {
     "accepted_check_conclusions": ["success"],
