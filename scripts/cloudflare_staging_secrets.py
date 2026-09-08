@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
+from scripts.cloudflare_worker_secret_state import wait_for_secret_state
 
 
 _WORKER_SECRET_WRITE_SUCCESS = frozenset({200, 201})
@@ -36,6 +37,17 @@ def staging_secret_type(api: builds.CloudflareApi, name: str) -> str | None:
     return "secret_text"
 
 
+def wait_staging_secret_type(
+    api: builds.CloudflareApi,
+    name: str,
+    expected_type: str | None,
+) -> bool:
+    return wait_for_secret_state(
+        lambda: staging_secret_type(api, name),
+        expected_type,
+    )
+
+
 def put_staging_secret(api: builds.CloudflareApi, name: str, value: str) -> None:
     api.request(
         "PUT",
@@ -63,6 +75,8 @@ def put_staging_runtime_secret(api: builds.CloudflareApi) -> None:
         raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_INVALID")
     builds._mask(runtime_dsn)
     put_staging_secret(api, _RUNTIME_DSN_BINDING, runtime_dsn)
+    if not wait_staging_secret_type(api, _RUNTIME_DSN_BINDING, "secret_text"):
+        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_DATABASE_SECRET_VERIFY_FAILED")
     print("CLOUDFLARE_STAGING_DATABASE_SECRET=READY")
 
 
