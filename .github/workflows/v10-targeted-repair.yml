@@ -50,14 +50,19 @@ jobs:
         shell: bash
         env:
           EXPECTED_HEAD: ${{ inputs.expected_sha }}
+          DISPATCH_HEAD: ${{ github.sha }}
           GITHUB_TOKEN: ${{ github.token }}
           GIT_TERMINAL_PROMPT: "0"
           GCM_INTERACTIVE: "0"
         run: |
           set -euo pipefail
-          if [[ ! "$EXPECTED_HEAD" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "expected_sha must be exactly 40 hexadecimal characters" >&2
+          if [[ ! "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "expected_sha must be exactly 40 lowercase hexadecimal characters" >&2
             exit 11
+          fi
+          if [ "$EXPECTED_HEAD" != "$DISPATCH_HEAD" ]; then
+            echo "expected_sha must equal the workflow-dispatch ref head" >&2
+            exit 12
           fi
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           git init .
@@ -109,14 +114,19 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           python scripts\check_v10_documentation_consistency.py
 
-      - name: Bootstrap exact Node and npm
+      - name: Verify exact Node and npm baseline
         if: startsWith(inputs.lane, 'frontend-')
         run: |
           if not exist "C:\Program Files\nodejs\node.exe" exit /b 20
           if not exist "C:\Program Files\nodejs\npm.cmd" exit /b 21
+          powershell.exe -NoProfile -NonInteractive -Command "$baseline=Get-Content -LiteralPath 'docs\architecture\V10_TOOLCHAIN_BASELINE.json' -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop; $node=(& 'C:\Program Files\nodejs\node.exe' -p 'process.version' | Out-String).Trim(); $npm=(& 'C:\Program Files\nodejs\npm.cmd' --version | Out-String).Trim(); Write-Host ('node ' + $node); Write-Host ('npm ' + $npm); if ($node -ne ('v' + $baseline.frontend.node)) { exit 22 }; if ($npm -ne $baseline.frontend.npm) { exit 23 }"
+          if errorlevel 1 exit /b %errorlevel%
           >>"%GITHUB_PATH%" echo C:\Program Files\nodejs
-          cd apps\web
-          call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
+
+      - name: Reproduce exact frontend dependencies
+        if: startsWith(inputs.lane, 'frontend-')
+        working-directory: apps/web
+        run: call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
 
       - name: Frontend typecheck
         if: inputs.lane == 'frontend-type'
