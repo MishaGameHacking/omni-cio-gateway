@@ -12,6 +12,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import httpx
 
+from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
+    classify_neon_bootstrap_provider_failure,
+)
+
 
 _BOOTSTRAP_PATH = "/api/internal/v10/cf-d/production-database-bootstrap"
 _FUNCTION_SLUG = "cfdprodbootstrap"
@@ -224,16 +228,20 @@ def _fetch_bootstrap_response(
                 },
                 json={"expected_sha": release_sha},
             ) as response:
-                if response.status_code != 200:
-                    raise _BootstrapRouteStopped(
-                        "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_REJECTED"
-                    )
                 try:
-                    return _read_provider_response(response)
+                    content = _read_provider_response(response)
                 except RuntimeError as exc:
                     raise _BootstrapRouteStopped(
                         "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_RESPONSE_TOO_LARGE"
                     ) from exc
+                if response.status_code != 200:
+                    raise _BootstrapRouteStopped(
+                        classify_neon_bootstrap_provider_failure(
+                            response.status_code,
+                            content,
+                        )
+                    )
+                return content
     except _BootstrapRouteStopped:
         raise
     except httpx.HTTPError as exc:
