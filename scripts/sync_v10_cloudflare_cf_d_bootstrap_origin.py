@@ -305,6 +305,8 @@ def bootstrap_origin_sync_token(api: builds.CloudflareApi) -> Iterator[str]:
     token = secrets.token_hex(32)
     builds._mask(token)
     delete_staging_secret(api, _SYNC_TOKEN_BINDING)
+    if not wait_staging_secret_type(api, _SYNC_TOKEN_BINDING, None):
+        raise builds.BootstrapStopped(_SYNC_TOKEN_STALE)
     try:
         put_staging_secret(api, _SYNC_TOKEN_BINDING, token)
         if not wait_staging_secret_type(api, _SYNC_TOKEN_BINDING, "secret_text"):

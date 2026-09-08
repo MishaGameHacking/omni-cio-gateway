@@ -76,7 +76,9 @@ def put_staging_runtime_secret(api: builds.CloudflareApi) -> None:
     builds._mask(runtime_dsn)
     put_staging_secret(api, _RUNTIME_DSN_BINDING, runtime_dsn)
     if not wait_staging_secret_type(api, _RUNTIME_DSN_BINDING, "secret_text"):
-        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_DATABASE_SECRET_VERIFY_FAILED")
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_STAGING_DATABASE_SECRET_VERIFY_FAILED"
+        )
     print("CLOUDFLARE_STAGING_DATABASE_SECRET=READY")
 
 

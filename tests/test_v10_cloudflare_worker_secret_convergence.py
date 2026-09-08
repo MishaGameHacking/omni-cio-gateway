@@ -86,6 +86,8 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
     ) -> None:
         api = _SecretApi(
             [
+                _secret_row(custody._SYNC_TOKEN_BINDING),
+                [],
                 [],
                 _secret_row(custody._SYNC_TOKEN_BINDING),
                 _secret_row(custody._SYNC_TOKEN_BINDING),
@@ -104,14 +106,45 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
 
         self.assertEqual(api.method_count("PUT"), 1)
         self.assertEqual(api.method_count("DELETE"), 2)
-        self.assertEqual(api.method_count("GET"), 4)
-        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(api.method_count("GET"), 6)
+        self.assertEqual(sleep.call_count, 3)
+
+    def test_sync_token_preclear_exhaustion_stays_fail_closed_without_put(self) -> None:
+        api = _SecretApi(
+            [
+                _secret_row(custody._SYNC_TOKEN_BINDING)
+                for _ in range(secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS)
+            ]
+        )
+        with (
+            patch.object(custody.secrets, "token_hex", return_value=_SYNC_TOKEN),
+            patch.object(custody.builds, "_mask"),
+            patch.object(secret_state.time, "sleep") as sleep,
+            self.assertRaises(builds.BootstrapStopped) as raised,
+        ):
+            with custody.bootstrap_origin_sync_token(cast(builds.CloudflareApi, api)):
+                pass
+
+        self.assertEqual(raised.exception.code, custody._SYNC_TOKEN_STALE)
+        self.assertEqual(api.method_count("PUT"), 0)
+        self.assertEqual(api.method_count("DELETE"), 1)
+        self.assertEqual(
+            api.method_count("GET"),
+            secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS,
+        )
+        self.assertEqual(
+            sleep.call_count,
+            secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS - 1,
+        )
 
     def test_sync_token_cleanup_exhaustion_stays_fail_closed_without_redelete(
         self,
     ) -> None:
         api = _SecretApi(
-            [_secret_row(custody._SYNC_TOKEN_BINDING)]
+            [
+                [],
+                _secret_row(custody._SYNC_TOKEN_BINDING),
+            ]
             + [
                 _secret_row(custody._SYNC_TOKEN_BINDING)
                 for _ in range(secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS)
@@ -131,7 +164,7 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         self.assertEqual(api.method_count("DELETE"), 2)
         self.assertEqual(
             api.method_count("GET"),
-            secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS + 1,
+            secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS + 2,
         )
         self.assertEqual(
             sleep.call_count,
