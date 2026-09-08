@@ -22,6 +22,51 @@ const BRANCH_LOOKUP_TIMEOUT_MS = 10_000;
 const BRANCH_LOOKUP_SQL = "SELECT current_setting('neon.branch_id', true)";
 const DATABASE_DESTINATION = "database";
 const FUNCTION_DESTINATION = "function";
+const ORIGIN_SYNC_DERIVATION_FAILED =
+  "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED";
+const RUNTIME_DATABASE_INVALID = "CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID";
+const NEON_DESTINATION_REJECTED = "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED";
+const NEON_BRANCH_LOOKUP_FAILED = "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED";
+const NEON_BRANCH_LOOKUP_UNAUTHORIZED =
+  "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_UNAUTHORIZED";
+const NEON_BRANCH_LOOKUP_NOT_FOUND =
+  "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_FOUND";
+const NEON_BRANCH_LOOKUP_NOT_READY =
+  "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_NOT_READY";
+const NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID =
+  "CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID";
+const NEON_BRANCH_RESPONSE_TOO_LARGE =
+  "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE";
+const NEON_BRANCH_RESPONSE_INVALID =
+  "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID";
+const BOOTSTRAP_ORIGIN_INVALID = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID";
+const BOOTSTRAP_ORIGIN_MISMATCH = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH";
+const BRANCH_LOOKUP_TRANSIENT_STATUSES = new Set([
+  408,
+  423,
+  425,
+  429,
+  500,
+  502,
+  503,
+  504,
+]);
+export const CF_D_SANITIZED_DERIVATION_FAILURE_CODES = Object.freeze([
+  RUNTIME_DATABASE_INVALID,
+  NEON_DESTINATION_REJECTED,
+  NEON_BRANCH_LOOKUP_FAILED,
+  NEON_BRANCH_LOOKUP_UNAUTHORIZED,
+  NEON_BRANCH_LOOKUP_NOT_FOUND,
+  NEON_BRANCH_LOOKUP_NOT_READY,
+  NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID,
+  NEON_BRANCH_RESPONSE_TOO_LARGE,
+  NEON_BRANCH_RESPONSE_INVALID,
+  BOOTSTRAP_ORIGIN_INVALID,
+  BOOTSTRAP_ORIGIN_MISMATCH,
+]);
+const SAFE_DERIVATION_FAILURE_CODES = new Set(
+  CF_D_SANITIZED_DERIVATION_FAILURE_CODES,
+);
 const DESTINATION_POLICIES = new Map([
   [
     DATABASE_DESTINATION,
@@ -56,10 +101,33 @@ function encodedSize(value) {
   return new TextEncoder().encode(value).length;
 }
 
+function branchLookupFailureCode(status) {
+  if (status === 401 || status === 403) {
+    return NEON_BRANCH_LOOKUP_UNAUTHORIZED;
+  }
+  if (status === 404) {
+    return NEON_BRANCH_LOOKUP_NOT_FOUND;
+  }
+  if (BRANCH_LOOKUP_TRANSIENT_STATUSES.has(status)) {
+    return NEON_BRANCH_LOOKUP_NOT_READY;
+  }
+  return NEON_BRANCH_LOOKUP_HTTP_STATUS_INVALID;
+}
+
+export function sanitizedCfDDerivationFailureCode(error) {
+  if (
+    error instanceof Error &&
+    SAFE_DERIVATION_FAILURE_CODES.has(error.message)
+  ) {
+    return error.message;
+  }
+  return ORIGIN_SYNC_DERIVATION_FAILED;
+}
+
 function destinationPolicy(destination) {
   const policy = DESTINATION_POLICIES.get(destination);
   if (policy === undefined) {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
   return policy;
 }
@@ -71,14 +139,14 @@ function validatedRuntimeDatabase(bindings) {
     value.length === 0 ||
     encodedSize(value) > MAX_RUNTIME_DSN_BYTES
   ) {
-    stopped("CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID");
+    stopped(RUNTIME_DATABASE_INVALID);
   }
 
   let databaseUrl;
   try {
     databaseUrl = new URL(value);
   } catch {
-    stopped("CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID");
+    stopped(RUNTIME_DATABASE_INVALID);
   }
   const hostname = databaseUrl.hostname.toLowerCase().replace(/\.$/, "");
   const hostMatch = RUNTIME_HOST_PATTERN.exec(hostname);
@@ -96,7 +164,7 @@ function validatedRuntimeDatabase(bindings) {
     channelBinding.length > 1 ||
     (channelBinding.length === 1 && channelBinding[0] !== "require")
   ) {
-    stopped("CLOUDFLARE_CF_D_RUNTIME_DATABASE_INVALID");
+    stopped(RUNTIME_DATABASE_INVALID);
   }
   return {
     connectionString: value,
@@ -172,7 +240,7 @@ function trustedDestinationUrl(value, destination) {
   try {
     url = value instanceof URL ? new URL(value.href) : new URL(value);
   } catch {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
   if (
     url.protocol !== "https:" ||
@@ -184,7 +252,7 @@ function trustedDestinationUrl(value, destination) {
     url.hash !== "" ||
     !policy.pattern.test(url.href)
   ) {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
   return new URL(`https://${url.hostname}${policy.expectedPath}`);
 }
@@ -216,10 +284,10 @@ function exactCandidateDestination(request, expectedUrl) {
   try {
     candidate = new URL(request.url);
   } catch {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
   if (candidate.href !== expectedUrl.href) {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
 }
 
@@ -228,7 +296,7 @@ function forwardedHeaders(request, policy) {
   for (const name of policy.forwardedHeaders) {
     const value = request.headers.get(name);
     if (value === null) {
-      stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+      stopped(NEON_DESTINATION_REJECTED);
     }
     headers.set(name, value);
   }
@@ -238,7 +306,7 @@ function forwardedHeaders(request, policy) {
 async function boundedRequestBody(request) {
   const body = await request.arrayBuffer();
   if (body.byteLength > MAX_TRUSTED_REQUEST_BODY_BYTES) {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
   return body;
 }
@@ -248,7 +316,7 @@ async function fetchRuntimeBranchLookup(runtimeDatabase, request) {
   const safeUrl = databaseSqlUrl(runtimeDatabase);
   exactCandidateDestination(request, safeUrl);
   if (request.method !== "POST") {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
   const safeRequest = new Request(safeUrl, {
     method: "POST",
@@ -262,7 +330,7 @@ async function fetchRuntimeBranchLookup(runtimeDatabase, request) {
 
 async function boundedResponseText(response, maxBytes, tooLargeCode) {
   if (response.body === null) {
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+    stopped(NEON_BRANCH_RESPONSE_INVALID);
   }
   const reader = response.body.getReader();
   const chunks = [];
@@ -274,7 +342,7 @@ async function boundedResponseText(response, maxBytes, tooLargeCode) {
         break;
       }
       if (!(value instanceof Uint8Array)) {
-        stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+        stopped(NEON_BRANCH_RESPONSE_INVALID);
       }
       totalBytes += value.byteLength;
       if (totalBytes > maxBytes) {
@@ -299,7 +367,7 @@ async function boundedResponseText(response, maxBytes, tooLargeCode) {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(body);
   } catch {
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+    stopped(NEON_BRANCH_RESPONSE_INVALID);
   }
 }
 
@@ -310,16 +378,13 @@ async function runtimeBranchId(runtimeDatabase) {
   try {
     response = await fetchRuntimeBranchLookup(runtimeDatabase, request);
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message === "CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED"
-    ) {
+    if (error instanceof Error && error.message === NEON_DESTINATION_REJECTED) {
       throw error;
     }
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED");
+    stopped(NEON_BRANCH_LOOKUP_FAILED);
   }
   if (!response.ok) {
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_LOOKUP_FAILED");
+    stopped(branchLookupFailureCode(response.status));
   }
 
   let body;
@@ -327,17 +392,14 @@ async function runtimeBranchId(runtimeDatabase) {
     const bodyText = await boundedResponseText(
       response,
       MAX_BRANCH_LOOKUP_RESPONSE_BYTES,
-      "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE",
+      NEON_BRANCH_RESPONSE_TOO_LARGE,
     );
     body = JSON.parse(bodyText);
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message === "CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_TOO_LARGE"
-    ) {
+    if (error instanceof Error && error.message === NEON_BRANCH_RESPONSE_TOO_LARGE) {
       throw error;
     }
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+    stopped(NEON_BRANCH_RESPONSE_INVALID);
   }
   const rows = body?.rows;
   if (
@@ -347,15 +409,15 @@ async function runtimeBranchId(runtimeDatabase) {
     rows[0].length !== 1 ||
     typeof rows[0][0] !== "string"
   ) {
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+    stopped(NEON_BRANCH_RESPONSE_INVALID);
   }
   const branchId = rows[0][0].trim().toLowerCase();
   if (!BRANCH_ID_PATTERN.test(branchId)) {
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+    stopped(NEON_BRANCH_RESPONSE_INVALID);
   }
   const functionLabel = `${branchId}-cfdprodbootstrap`;
   if (functionLabel.length > 63) {
-    stopped("CLOUDFLARE_CF_D_NEON_BRANCH_RESPONSE_INVALID");
+    stopped(NEON_BRANCH_RESPONSE_INVALID);
   }
   return branchId;
 }
@@ -367,17 +429,17 @@ function trustedBootstrapContext(bindings, runtimeDatabase) {
     value.length === 0 ||
     encodedSize(value) > MAX_BOOTSTRAP_ORIGIN_BYTES
   ) {
-    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID");
+    stopped(BOOTSTRAP_ORIGIN_INVALID);
   }
   let safeUrl;
   try {
     safeUrl = trustedDestinationUrl(value, FUNCTION_DESTINATION);
   } catch {
-    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_INVALID");
+    stopped(BOOTSTRAP_ORIGIN_INVALID);
   }
   const match = FUNCTION_URL_PATTERN.exec(safeUrl.href);
   if (match === null || match[2] !== runtimeDatabase.cell) {
-    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+    stopped(BOOTSTRAP_ORIGIN_MISMATCH);
   }
   return { url: safeUrl, branchId: match[1] };
 }
@@ -398,7 +460,7 @@ export async function deriveCfDNeonBootstrapOrigin(bindings) {
     match[1] !== branchId ||
     match[2] !== runtimeDatabase.cell
   ) {
-    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+    stopped(BOOTSTRAP_ORIGIN_MISMATCH);
   }
   return safeUrl.href;
 }
@@ -426,7 +488,7 @@ async function preparedCfDNeonBootstrapRequest(
   const bootstrap = trustedBootstrapContext(bindings, runtimeDatabase);
   const branchId = await runtimeBranchId(runtimeDatabase);
   if (bootstrap.branchId !== branchId) {
-    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+    stopped(BOOTSTRAP_ORIGIN_MISMATCH);
   }
   return {
     providerRequest: providerRequest(input, bootstrap.url),
@@ -444,11 +506,11 @@ async function fetchTrustedBootstrapRequest(
   const policy = destinationPolicy(FUNCTION_DESTINATION);
   const bootstrap = trustedBootstrapContext(bindings, runtimeDatabase);
   if (bootstrap.branchId !== branchId) {
-    stopped("CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_MISMATCH");
+    stopped(BOOTSTRAP_ORIGIN_MISMATCH);
   }
   exactCandidateDestination(request, bootstrap.url);
   if (request.method !== "POST") {
-    stopped("CLOUDFLARE_CF_D_NEON_DESTINATION_REJECTED");
+    stopped(NEON_DESTINATION_REJECTED);
   }
   const safeRequest = new Request(bootstrap.url, {
     method: "POST",

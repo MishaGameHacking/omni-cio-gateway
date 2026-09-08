@@ -1,4 +1,7 @@
-import { deriveCfDNeonBootstrapOrigin } from "./cf-d-neon-bootstrap-egress.js";
+import {
+  deriveCfDNeonBootstrapOrigin,
+  sanitizedCfDDerivationFailureCode,
+} from "./cf-d-neon-bootstrap-egress.js";
 import { hardenedJson } from "./hardened-response.js";
 
 export const CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH =
@@ -71,9 +74,9 @@ export async function handleCfDBootstrapOriginCustody(
       },
       200,
     );
-  } catch {
+  } catch (error) {
     return hardenedJson(
-      { detail: "CLOUDFLARE_CF_D_ORIGIN_SYNC_DERIVATION_FAILED" },
+      { detail: sanitizedCfDDerivationFailureCode(error) },
       502,
     );
   }
