@@ -39,6 +39,15 @@
     "full_certification_required_before_next_checkpoint": true,
     "protected_main_force_rewrite_allowed": false
   },
+  "targeted_verifier": {
+    "workflow": ".github/workflows/v10-targeted-repair.yml",
+    "expected_sha_format": "LOWERCASE_FULL_40_HEX",
+    "expected_sha_must_equal_dispatch_ref_head": true,
+    "exact_checkout_verified_before_and_after_lane": true,
+    "frontend_toolchain_authority": "docs/architecture/V10_TOOLCHAIN_BASELINE.json",
+    "frontend_dependency_lifecycle_scripts_disabled": true,
+    "workspace_cleanup_required": true
+  },
   "sonar_review": {
     "quality_gate_pass_required_when_applicable": true,
     "new_issues_default": 0,
