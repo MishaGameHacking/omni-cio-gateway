@@ -113,24 +113,30 @@ def classify_neon_bootstrap_provider_failure(status_code: int, content: bytes) -
     if payload is None:
         return NEON_BOOTSTRAP_REJECTED
 
-    detail = payload.get("detail")
-    if isinstance(detail, str) and WORKER_FAILURE_STATUS_BY_CODE.get(detail) == status_code:
-        return detail
+    if set(payload) == {"detail"}:
+        detail = payload.get("detail")
+        if (
+            isinstance(detail, str)
+            and WORKER_FAILURE_STATUS_BY_CODE.get(detail) == status_code
+        ):
+            return detail
+        return NEON_BOOTSTRAP_REJECTED
 
-    provider_status = payload.get("status")
-    provider_code = payload.get("code")
-    if (
-        provider_status == "BLOCKED"
-        and isinstance(provider_code, str)
-        and NEON_FUNCTION_FAILURE_STATUS_BY_CODE.get(provider_code) == status_code
-    ):
-        return f"{NEON_FUNCTION_FAILURE_PREFIX}{provider_code}"
+    if set(payload) == {"status", "code"}:
+        provider_status = payload.get("status")
+        provider_code = payload.get("code")
+        if (
+            provider_status == "BLOCKED"
+            and isinstance(provider_code, str)
+            and NEON_FUNCTION_FAILURE_STATUS_BY_CODE.get(provider_code) == status_code
+        ):
+            return f"{NEON_FUNCTION_FAILURE_PREFIX}{provider_code}"
     return NEON_BOOTSTRAP_REJECTED
 
 
 def classify_staging_bootstrap_failure(status_code: int, content: bytes) -> str:
     payload = _json_object(content)
-    if payload is None:
+    if payload is None or set(payload) != {"detail"}:
         return GENERIC_STAGING_BOOTSTRAP_FAILURE
     detail = payload.get("detail")
     if (
