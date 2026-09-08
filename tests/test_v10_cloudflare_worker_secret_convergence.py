@@ -60,7 +60,9 @@ class _SecretApi:
 
 
 class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
-    def test_read_only_helper_waits_for_delayed_state_without_hiding_errors(self) -> None:
+    def test_read_only_helper_waits_for_delayed_state_without_hiding_errors(
+        self,
+    ) -> None:
         reader = Mock(side_effect=[False, False, True])
         with patch.object(secret_state.time, "sleep") as sleep:
             self.assertTrue(secret_state.wait_for_secret_state(reader, True))
@@ -79,7 +81,9 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         self.assertEqual(failing_reader.call_count, 1)
         failing_sleep.assert_not_called()
 
-    def test_sync_token_presence_and_cleanup_allow_bounded_visibility_delay(self) -> None:
+    def test_sync_token_presence_and_cleanup_allow_bounded_visibility_delay(
+        self,
+    ) -> None:
         api = _SecretApi(
             [
                 [],
@@ -103,7 +107,9 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         self.assertEqual(api.method_count("GET"), 4)
         self.assertEqual(sleep.call_count, 2)
 
-    def test_sync_token_cleanup_exhaustion_stays_fail_closed_without_redelete(self) -> None:
+    def test_sync_token_cleanup_exhaustion_stays_fail_closed_without_redelete(
+        self,
+    ) -> None:
         api = _SecretApi(
             [_secret_row(custody._SYNC_TOKEN_BINDING)]
             + [
@@ -182,7 +188,9 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         self.assertEqual(api.method_count("GET"), 2)
         self.assertEqual(sleep.call_count, 1)
 
-    def test_production_runtime_secret_exhaustion_preserves_existing_red_code(self) -> None:
+    def test_production_runtime_secret_exhaustion_preserves_existing_red_code(
+        self,
+    ) -> None:
         api = _SecretApi(
             [[] for _ in range(secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS)]
         )
@@ -246,8 +254,14 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
         candidate = contract["candidate"]
         cutover = contract["cutover"]
-        self.assertIs(candidate["staging_worker_secret_state_convergence_required"], True)
-        self.assertIs(candidate["staging_worker_secret_state_convergence_read_only"], True)
+        self.assertIs(
+            candidate["staging_worker_secret_state_convergence_required"],
+            True,
+        )
+        self.assertIs(
+            candidate["staging_worker_secret_state_convergence_read_only"],
+            True,
+        )
         self.assertIs(
             candidate["staging_worker_secret_mutation_repeat_for_convergence_allowed"],
             False,
@@ -261,10 +275,12 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
             secret_state._SECRET_STATE_CONVERGENCE_DELAY_SECONDS,
         )
         self.assertIs(
-            cutover["production_database_secret_state_convergence_required"], True
+            cutover["production_database_secret_state_convergence_required"],
+            True,
         )
         self.assertIs(
-            cutover["production_database_secret_state_convergence_read_only"], True
+            cutover["production_database_secret_state_convergence_read_only"],
+            True,
         )
         self.assertIs(
             cutover[
