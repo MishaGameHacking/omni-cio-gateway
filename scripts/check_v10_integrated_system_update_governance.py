@@ -17,7 +17,8 @@ PATHS = {
     / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md",
     "green_checkpoint_contract": ROOT
     / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json",
-    "ledger": ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md",
+    "ledger": ROOT
+    / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md",
     "wp_template": ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md",
     "pr_template": ROOT / ".github/pull_request_template.md",
     "issue_template": ROOT / ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml",
@@ -305,7 +306,9 @@ def validate_rules(payload: dict[str, Any], failures: list[str]) -> None:
         section = mapping_section(payload, section_name, failures)
         validate_boolean_values(section, keys, False, section_name, failures)
     publication = mapping_section(payload, "publication", failures)
-    validate_boolean_values(publication, TRUE_PUBLICATION, True, "publication", failures)
+    validate_boolean_values(
+        publication, TRUE_PUBLICATION, True, "publication", failures
+    )
     amendment_16 = mapping_section(payload, "amendment_16_supersession", failures)
     validate_boolean_values(
         amendment_16,
