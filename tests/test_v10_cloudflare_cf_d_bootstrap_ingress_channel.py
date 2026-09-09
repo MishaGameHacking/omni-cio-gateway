@@ -10,9 +10,12 @@ import scripts.bootstrap_v10_cloudflare_production_database_via_staging as runne
 _EXPECTED_SHA = "a" * 40
 _TEST_OIDC = "synthetic_header.synthetic_claims.synthetic_signature"
 _TEST_DSN = (
-    "postgresql://omni_cio_cloudflare_prod:synthetic-credential-marker@"
-    "ep-example-pooler.eu-central-1.aws.neon.tech/neondb?"
-    "sslmode=require&channel_binding=require"
+    "postgresql://"
+    + "omni_cio_cloudflare_prod"
+    + ":"
+    + "synthetic-credential-marker"
+    + "@ep-example-pooler.eu-central-1.aws.neon.tech/neondb?"
+    + "sslmode=require&channel_binding=require"
 )
 
 
