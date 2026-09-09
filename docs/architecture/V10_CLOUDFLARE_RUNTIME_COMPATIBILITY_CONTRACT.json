@@ -58,6 +58,10 @@
     "database_secret_absence_returns_503_before_container_start": true,
     "runtime_database_role_source_controlled": true,
     "runtime_database_role_validated_at_worker_and_container": true,
+    "container_image_source_sha_baked": true,
+    "container_image_source_sha_matches_runtime_release_sha": true,
+    "container_image_source_probe_exact_sha_required": true,
+    "container_image_source_path": "/api/internal/v10/cloudflare/container-source",
     "telegram_vk_provider_auth_enabled": false,
     "public_multi_user_enabled": false,
     "broker_write": false,
@@ -78,6 +82,7 @@
     "exact_source_sha_generated_before_build": true,
     "release_endpoint": "/api/v10/release",
     "container_rollout": "immediate",
+    "container_rollout_completion_is_not_assumed_from_deploy_success": true,
     "dashboard_vars_preserved": true
   },
   "exit_gate": {
