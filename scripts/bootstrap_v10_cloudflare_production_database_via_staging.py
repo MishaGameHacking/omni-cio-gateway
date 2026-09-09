@@ -20,6 +20,7 @@ from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
     STAGING_BOOTSTRAP_REDIRECT_REJECTED,
     STAGING_BOOTSTRAP_UNAVAILABLE,
     classify_staging_bootstrap_failure,
+    staging_unclassified_http_failure_code,
 )
 
 
@@ -243,12 +244,19 @@ def _staging_http_error_code(error: HTTPError) -> str:
     return _staging_response_error_code(error.code, error)
 
 
+def _staging_boundary_failure_code(status: object, response: Any) -> str:
+    code = _staging_response_error_code(status, response)
+    if code != GENERIC_STAGING_BOOTSTRAP_FAILURE:
+        return code
+    return staging_unclassified_http_failure_code(status)
+
+
 def _request_staging_bootstrap_json(request: Request) -> dict[str, Any]:
     try:
         with _OPENER.open(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
             if response.status != 200:
                 raise BootstrapStopped(
-                    _staging_response_error_code(response.status, response)
+                    _staging_boundary_failure_code(response.status, response)
                 )
             data = _read_limited(
                 response,
@@ -257,7 +265,7 @@ def _request_staging_bootstrap_json(request: Request) -> dict[str, Any]:
             )
     except HTTPError as exc:
         try:
-            code = _staging_http_error_code(exc)
+            code = _staging_boundary_failure_code(exc.code, exc)
         finally:
             exc.close()
         raise BootstrapStopped(code) from None

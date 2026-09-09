@@ -12,6 +12,8 @@ STAGING_BOOTSTRAP_UNAVAILABLE: Final = "CLOUDFLARE_CF_D_STAGING_BOOTSTRAP_UNAVAI
 STAGING_BOOTSTRAP_REDIRECT_REJECTED: Final = (
     "CLOUDFLARE_CF_D_STAGING_BOOTSTRAP_REDIRECT_REJECTED"
 )
+STAGING_OUTER_FAILURE_PREFIX: Final = "CLOUDFLARE_CF_D_STAGING_OUTER_"
+STAGING_UNCLASSIFIED_HTTP_PREFIX: Final = "CLOUDFLARE_CF_D_STAGING_HTTP_"
 
 NEON_FUNCTION_FAILURE_STATUS_BY_CODE: Final = MappingProxyType(
     {
@@ -88,9 +90,65 @@ STAGING_ROUTE_FAILURE_STATUS_BY_CODE: Final = MappingProxyType(
         },
     }
 )
+
+# These are source-controlled application/edge failures that can happen before the
+# exact CF-D route gets authority. Preserve only the code, never raw provider bodies.
+STAGING_OUTER_FAILURE_STATUS_BY_DETAIL: Final = MappingProxyType(
+    {
+        "HTTPS_REQUIRED": 403,
+        "SESSION_LOOKUP_UNAVAILABLE": 503,
+        "RATE_LIMITED": 429,
+        "ORIGIN_REQUIRED": 403,
+        "FETCH_METADATA_REJECTED": 403,
+        "CSRF_REJECTED": 403,
+        "CLOUDFLARE_EDGE_ROUTE_REJECTED": 404,
+        "INTERNAL_ERROR": 500,
+    }
+)
+
+# If the body is not source-controlled/allowlisted, retain only the bounded HTTP
+# status class. This makes a repeated MAIN_RED_STOP actionable without reflecting
+# Cloudflare/provider HTML, request IDs, headers, tokens, or private payloads.
+STAGING_UNCLASSIFIED_HTTP_STATUSES: Final = frozenset(
+    {
+        400,
+        401,
+        403,
+        404,
+        405,
+        408,
+        409,
+        413,
+        415,
+        422,
+        429,
+        500,
+        501,
+        502,
+        503,
+        504,
+        520,
+        521,
+        522,
+        523,
+        524,
+        525,
+        526,
+        530,
+    }
+)
+
 STAGING_BOOTSTRAP_FAILURE_CODES: Final = frozenset(
     {
         *STAGING_ROUTE_FAILURE_STATUS_BY_CODE,
+        *(
+            f"{STAGING_OUTER_FAILURE_PREFIX}{detail}"
+            for detail in STAGING_OUTER_FAILURE_STATUS_BY_DETAIL
+        ),
+        *(
+            f"{STAGING_UNCLASSIFIED_HTTP_PREFIX}{status}_UNCLASSIFIED"
+            for status in STAGING_UNCLASSIFIED_HTTP_STATUSES
+        ),
         GENERIC_STAGING_BOOTSTRAP_FAILURE,
         STAGING_BOOTSTRAP_UNAVAILABLE,
         STAGING_BOOTSTRAP_REDIRECT_REJECTED,
@@ -139,9 +197,20 @@ def classify_staging_bootstrap_failure(status_code: int, content: bytes) -> str:
     if payload is None or set(payload) != {"detail"}:
         return GENERIC_STAGING_BOOTSTRAP_FAILURE
     detail = payload.get("detail")
-    if (
-        isinstance(detail, str)
-        and STAGING_ROUTE_FAILURE_STATUS_BY_CODE.get(detail) == status_code
-    ):
+    if not isinstance(detail, str):
+        return GENERIC_STAGING_BOOTSTRAP_FAILURE
+    if STAGING_ROUTE_FAILURE_STATUS_BY_CODE.get(detail) == status_code:
         return detail
+    if STAGING_OUTER_FAILURE_STATUS_BY_DETAIL.get(detail) == status_code:
+        return f"{STAGING_OUTER_FAILURE_PREFIX}{detail}"
     return GENERIC_STAGING_BOOTSTRAP_FAILURE
+
+
+def staging_unclassified_http_failure_code(status_code: object) -> str:
+    try:
+        normalized = int(status_code)
+    except (TypeError, ValueError):
+        return GENERIC_STAGING_BOOTSTRAP_FAILURE
+    if normalized not in STAGING_UNCLASSIFIED_HTTP_STATUSES:
+        return GENERIC_STAGING_BOOTSTRAP_FAILURE
+    return f"{STAGING_UNCLASSIFIED_HTTP_PREFIX}{normalized}_UNCLASSIFIED"
