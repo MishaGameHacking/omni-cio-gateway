@@ -11,6 +11,7 @@ $secretSentinel = "C:\ProgramData\OmniCIO\secrets\execution\wp6-ci-deny-sentinel
 $executionRoot = Split-Path -Parent $secretSentinel
 $runnerRoot = "C:\actions-runner"
 $runnerConfig = Join-Path $runnerRoot ".runner"
+$runnerServiceMarker = Join-Path $runnerRoot ".service"
 $runnerSensitiveNames = @(".runner", ".credentials", ".credentials_rsaparams", ".service")
 
 function Get-AccountClass {
@@ -177,14 +178,25 @@ function Get-RunnerSensitivePaths {
     )
 }
 
-$runnerServices = @(
-    Get-CimInstance Win32_Service |
-        Where-Object { $_.Name -like "actions.runner.*" }
-)
-if ($runnerServices.Count -ne 1) {
-    throw "Expected exactly one GitHub Actions runner service; found $($runnerServices.Count)."
+function Get-RunnerServiceSafe {
+    if (-not (Test-Path -LiteralPath $runnerServiceMarker -PathType Leaf)) {
+        throw "Fail-closed: reviewed runner root has no .service ownership marker."
+    }
+    $serviceName = (Get-Content -LiteralPath $runnerServiceMarker -Raw -ErrorAction Stop).Trim()
+    if (-not $serviceName.StartsWith("actions.runner.", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Fail-closed: reviewed runner .service marker is not a GitHub Actions runner service."
+    }
+    $services = @(
+        Get-CimInstance Win32_Service |
+            Where-Object { $_.Name -eq $serviceName }
+    )
+    if ($services.Count -ne 1) {
+        throw "Expected exactly one GitHub Actions runner service bound to the reviewed runner root; found $($services.Count)."
+    }
+    return $services[0]
 }
-$runnerService = $runnerServices[0]
+
+$runnerService = Get-RunnerServiceSafe
 $runnerClass = Get-AccountClass -StartName $runnerService.StartName
 $runnerSid = Get-AccountSidValue -AccountName $runnerService.StartName
 $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()

@@ -18,7 +18,7 @@ This ledger is mandatory for `INTEGRATED_SYSTEM_UPDATE` work. It records branch-
 
 ## 2. Member milestones — ordered
 
-Use the owning architecture/dependency order. Do not mark a later member `IN_PROGRESS` before every required predecessor is `DONE`.
+Use the owning architecture/dependency order. Do not mark a later member `IN_PROGRESS` before every required predecessor is `DONE` and the current published logical checkpoint is `CERTIFIED_GREEN`.
 
 | Order | Member WP/increment | State (`DONE/IN_PROGRESS/TODO/BLOCKED`) | Branch-local Exit evidence | Notes |
 |---:|---|---|---|---|
@@ -31,6 +31,9 @@ Internal milestone `DONE` is branch-local implementation progress only. It does 
 ## 3. Current execution state
 
 - Current exact work item:
+- Current logical checkpoint ID:
+- Current checkpoint exact SHA:
+- Current checkpoint state: `PENDING` / `RED_REPAIR_ONLY` / `TARGET_REPAIRED` / `CERTIFIED_GREEN`
 - Next exact action:
 - Blockers:
 - Known defects:
@@ -40,6 +43,7 @@ Internal milestone `DONE` is branch-local implementation progress only. It does 
 ## 4. Integration-ready preflight
 
 - [ ] Every required member milestone is complete.
+- [ ] Current published checkpoint is `CERTIFIED_GREEN`.
 - [ ] Known focused/preflight failures are fixed.
 - [ ] Complete changed surface reviewed.
 - [ ] Directly coupled producers/consumers/config/workflows reviewed.
@@ -52,6 +56,8 @@ Internal milestone `DONE` is branch-local implementation progress only. It does 
 - [ ] Mandatory split triggers evaluated below.
 - [ ] Ledger state may be marked `INTEGRATION_READY`.
 
+`INTEGRATION_READY` is the final whole-update readiness state before final landing review. Earlier meaningful checkpoints may be published/certified under Amendment 16.
+
 Preflight commands/evidence:
 
 ```text
@@ -60,7 +66,7 @@ Preflight commands/evidence:
 
 ## 5. Mandatory split-trigger review
 
-Record `CLEAR`, `TRIGGERED` or `N/A` with evidence. A triggered item requires a documented split before publication.
+Record `CLEAR`, `TRIGGERED` or `N/A` with evidence. A triggered item requires a documented split at the owning boundary.
 
 | Trigger | State | Evidence / consequence |
 |---|---|---|
@@ -88,44 +94,58 @@ Split decision: `NO_SPLIT_REQUIRED` / describe approved split and evidence.
 - [ ] No paid/provider/public mutation occurs without exact OWNER authority.
 - [ ] Deterministic Core remains financial truth authority.
 
-## 7. Verification batches / HEAD FREEZE
+## 7. Green Checkpoint certification
 
-After publishing a verification SHA, freeze that head while safe independent checks reach terminal state. Do not push a symptom-by-symptom fix while the current safe batch is still producing findings.
+Each meaningful published checkpoint follows:
 
-### Batch N
+`CHECKPOINT -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT FUNCTIONAL CHECKPOINT`
 
-- Verification SHA:
+Any material RED immediately changes the checkpoint state to `RED_REPAIR_ONLY`; unrelated feature work stops. Begin root-cause/blast-radius diagnosis as soon as useful evidence exists. Relevant findings from other independent checks must still be inspected before the corrected checkpoint is finalized.
+
+### Checkpoint N
+
+- Logical checkpoint ID:
+- Exact SHA:
 - Published at:
 - DRAFT/READY state:
+- Checkpoint state:
 - Applicable workflows/checks:
-- Sonar/Gitar/security/browser evidence:
+- Sonar Quality Gate / new issues / hotspots:
+- Gitar/SAST/security/browser/review evidence:
 - Terminal conclusions:
 - Safety-abort required: NO / describe
-- Consolidated findings:
+- Material findings:
 
 ```text
 
 ```
 
-## 8. Root-cause inventory and correction batch
+Only `CERTIFIED_GREEN` permits the next functional checkpoint or dependent member milestone.
+
+## 8. Root-cause inventory and targeted repair
 
 For every material defect class:
 
-| Finding / class | Root cause | Blast radius / analogous locations | Coupled surfaces | Adjacent failure modes | Why preflight missed it | Permanent guard | Correction |
+| Finding / class | Root cause | Blast radius / analogous locations | Coupled surfaces | Adjacent failure modes | Why preflight missed it | Permanent guard | Repair |
 |---|---|---|---|---|---|---|---|
 |  |  |  |  |  |  |  |  |
 
-Correction-batch rule:
+Repair law:
 
-`all safe findings collected -> systemic hardening -> one coherent correction batch -> full focused/local preflight -> one new published head -> fresh complete verification`
+`material RED -> RED_REPAIR_ONLY -> systemic diagnosis -> smallest canonical targeted proof -> replacement SHA if repository content changed -> full exact-SHA recertification -> CERTIFIED_GREEN`
 
-- Correction batch SHA:
+Same-SHA rerun is allowed only for unchanged source/config plus an evidence-based transient/infrastructure-only failure; prefer rerunning only the specific failed job. Repeated identical failure is not retried until lucky GREEN.
+
+- Same-SHA rerun used: YES/NO + reason/evidence
+- Targeted proof command/run:
+- Targeted proof result:
+- Replacement SHA, if content changed:
 - Prior final evidence invalidated: YES/NO
-- Full focused preflight after correction:
+- Full exact-SHA recertification result:
 
 ## 9. Main-drift record
 
-Before `INTEGRATION_READY`, re-check accepted `main`.
+Before final `INTEGRATION_READY` / landing review, re-check accepted `main`.
 
 - New accepted-main SHA (if changed):
 - Intersects this update: YES/NO
@@ -135,26 +155,27 @@ Before `INTEGRATION_READY`, re-check accepted `main`.
 
 ## 10. Final lifecycle
 
+- [ ] All required internal member milestones complete in dependency order
+- [ ] Current exact head `CERTIFIED_GREEN`
 - [ ] `INTEGRATION_READY`
-- [ ] First coherent implementation head published
 - [ ] DRAFT PR opened
-- [ ] DRAFT applicable exact-head checks all `success`
+- [ ] All applicable exact-head project checks `success`
+- [ ] Sonar/new-code requirements satisfied when applicable
 - [ ] Independent review complete
-- [ ] Consolidated correction batch complete, if required
-- [ ] Fresh exact-head verification complete after final commit
-- [ ] READY
-- [ ] Fresh READY applicable checks all `success`
-- [ ] Unresolved blocking review threads = 0
-- [ ] Full final diff reviewed
+- [ ] Zero unresolved blocking review threads
+- [ ] Full final Files changed/manual diff review complete
+- [ ] Any content-changing repair has fresh exact-head CI/review evidence
+- [ ] READY transition completed without head change, or any state-dependent applicable checks completed `success`
 - [ ] Squash merge
 - [ ] Exact new `main` SHA recorded
 - [ ] Regression Shield / owning post-merge gates all `success`
-- [ ] Accepted status transition recorded in canonical current status
+- [ ] Accepted status transition recorded when program progress/authority actually changes
 
 ## 11. Handoff
 
 - Exact accepted/main or current head SHA:
 - Current update/member milestone:
+- Current checkpoint state:
 - What is complete:
 - Checks actually run:
 - CI state:

@@ -1,0 +1,168 @@
+name: V10 Targeted Repair Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact current branch checkpoint SHA to verify
+        required: true
+        type: string
+      lane:
+        description: Canonical targeted repair lane
+        required: true
+        type: choice
+        options:
+          - ruff
+          - format
+          - mypy
+          - pytest
+          - governance
+          - repository-guards
+          - frontend-type
+          - frontend-lint
+          - frontend-test
+          - frontend-build
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-targeted-repair-${{ inputs.expected_sha }}-${{ inputs.lane }}
+  cancel-in-progress: false
+
+jobs:
+  targeted:
+    name: Targeted repair / ${{ inputs.lane }}
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Expose installed Git Bash
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact requested checkpoint
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_sha }}
+          DISPATCH_HEAD: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          if [[ ! "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "expected_sha must be exactly 40 lowercase hexadecimal characters" >&2
+            exit 11
+          fi
+          if [ "$EXPECTED_HEAD" != "$DISPATCH_HEAD" ]; then
+            echo "expected_sha must equal the workflow-dispatch ref head" >&2
+            exit 12
+          fi
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - name: Bootstrap protected Python
+        if: ${{ !startsWith(inputs.lane, 'frontend-') }}
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Ruff lint
+        if: inputs.lane == 'ruff'
+        run: python -m ruff check .
+
+      - name: Ruff format check
+        if: inputs.lane == 'format'
+        run: python -m ruff format --check .
+
+      - name: Mypy
+        if: inputs.lane == 'mypy'
+        run: python -m mypy
+
+      - name: Pytest and coverage
+        if: inputs.lane == 'pytest'
+        run: python -m pytest -q --cov --cov-branch --cov-fail-under=60
+
+      - name: Governance guards
+        if: inputs.lane == 'governance'
+        run: |
+          python scripts\check_v10_engineering_governance.py
+          if errorlevel 1 exit /b %errorlevel%
+          python scripts\check_v10_green_checkpoint_ci_repair.py
+          if errorlevel 1 exit /b %errorlevel%
+          python scripts\check_v10_integrated_system_update_governance.py
+
+      - name: Repository guards
+        if: inputs.lane == 'repository-guards'
+        run: |
+          python scripts\check_ci_security_baseline.py
+          if errorlevel 1 exit /b %errorlevel%
+          python scripts\check_repository_layout.py
+          if errorlevel 1 exit /b %errorlevel%
+          python scripts\check_v10_repository_boundaries.py
+          if errorlevel 1 exit /b %errorlevel%
+          python scripts\check_v10_documentation_consistency.py
+
+      - name: Verify exact Node and npm baseline
+        if: startsWith(inputs.lane, 'frontend-')
+        run: |
+          if not exist "C:\Program Files\nodejs\node.exe" exit /b 20
+          if not exist "C:\Program Files\nodejs\npm.cmd" exit /b 21
+          powershell.exe -NoProfile -NonInteractive -Command "$baseline=Get-Content -LiteralPath 'docs\architecture\V10_TOOLCHAIN_BASELINE.json' -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop; $node=(& 'C:\Program Files\nodejs\node.exe' -p 'process.version' | Out-String).Trim(); $npm=(& 'C:\Program Files\nodejs\npm.cmd' --version | Out-String).Trim(); Write-Host ('node ' + $node); Write-Host ('npm ' + $npm); if ($node -ne ('v' + $baseline.frontend.node)) { exit 22 }; if ($npm -ne $baseline.frontend.npm) { exit 23 }"
+          if errorlevel 1 exit /b %errorlevel%
+          >>"%GITHUB_PATH%" echo C:\Program Files\nodejs
+
+      - name: Reproduce exact frontend dependencies
+        if: startsWith(inputs.lane, 'frontend-')
+        working-directory: apps/web
+        run: call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
+
+      - name: Frontend typecheck
+        if: inputs.lane == 'frontend-type'
+        working-directory: apps/web
+        run: call "C:\Program Files\nodejs\npm.cmd" run typecheck
+
+      - name: Frontend lint
+        if: inputs.lane == 'frontend-lint'
+        working-directory: apps/web
+        run: call "C:\Program Files\nodejs\npm.cmd" run lint
+
+      - name: Frontend tests
+        if: inputs.lane == 'frontend-test'
+        working-directory: apps/web
+        run: call "C:\Program Files\nodejs\npm.cmd" test
+
+      - name: Frontend build
+        if: inputs.lane == 'frontend-build'
+        working-directory: apps/web
+        run: call "C:\Program Files\nodejs\npm.cmd" run build
+
+      - name: Verify exact checkpoint did not move inside job
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - name: Clean workspace
+        if: always()
+        shell: bash
+        run: |
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi

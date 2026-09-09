@@ -12,6 +12,9 @@ SCRIPT = ROOT / "scripts/check_v10_integrated_system_update_governance.py"
 CONTRACT = (
     ROOT / "docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json"
 )
+GREEN_CONTRACT = (
+    ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
+)
 LEDGER = ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md"
 ISSUE_TEMPLATE = ROOT / ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
@@ -19,6 +22,10 @@ STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 
 def _contract() -> dict[str, object]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
+
+
+def _green_contract() -> dict[str, object]:
+    return json.loads(GREEN_CONTRACT.read_text(encoding="utf-8"))
 
 
 class IntegratedSystemUpdateGovernanceTests(unittest.TestCase):
@@ -36,7 +43,7 @@ class IntegratedSystemUpdateGovernanceTests(unittest.TestCase):
             "Execution units: FOCUSED_CHANGE / INTEGRATED_SYSTEM_UPDATE"
             in completed.stdout
         )
-        assert "Verification: HEAD FREEZE" in completed.stdout
+        assert "Verification: Green Checkpoint immediate repair" in completed.stdout
         assert (
             "Product implementation: PAUSED until exact OWNER START"
             in completed.stdout
@@ -62,34 +69,43 @@ class IntegratedSystemUpdateGovernanceTests(unittest.TestCase):
         }
         assert all(integrated[key] is True for key in required_true)
 
-    def test_publication_and_verification_are_batch_oriented(self) -> None:
+    def test_publication_and_verification_follow_green_checkpoint_supersession(self) -> None:
         payload = _contract()
         publication = payload["publication"]
         verification = payload["verification"]
+        supersession = payload["amendment_16_supersession"]
         assert isinstance(publication, dict)
         assert isinstance(verification, dict)
+        assert isinstance(supersession, dict)
 
-        assert all(
-            publication[key] is True
-            for key in (
-                "publish_after_integration_ready",
-                "temporary_verifier_commits_forbidden",
-                "one_coherent_implementation_head_default",
-            )
-        )
-        assert all(
-            verification[key] is True
-            for key in (
-                "head_freeze_after_external_verification",
-                "observe_safe_findings_before_fix",
-                "root_cause_before_correction",
-                "batch_correction_default",
-                "continue_on_error_to_fake_green_forbidden",
-                "exact_head_success_only",
-                "new_commit_invalidates_prior_final_green",
-                "safety_abort_overrides_diagnostic_completeness",
-            )
-        )
+        assert publication["publish_after_integration_ready"] is False
+        assert publication["checkpoint_publication_allowed_before_integration_ready"] is True
+        assert publication["temporary_verifier_commits_forbidden"] is True
+        assert publication["one_coherent_implementation_head_default"] is False
+        assert publication["green_checkpoint_required_before_next_functional_checkpoint"] is True
+
+        assert verification["head_freeze_after_external_verification"] is False
+        assert verification["observe_safe_findings_before_fix"] is False
+        assert verification["batch_correction_default"] is False
+        assert verification["immediate_repair_on_material_red"] is True
+        assert verification["root_cause_before_correction"] is True
+        assert verification["targeted_recheck_before_full_recertification_preferred"] is True
+        assert verification["full_recertification_before_next_functional_checkpoint"] is True
+        assert verification["continue_on_error_to_fake_green_forbidden"] is True
+        assert verification["exact_head_success_only"] is True
+        assert verification["new_commit_invalidates_prior_final_green"] is True
+        assert verification["safety_abort_overrides_diagnostic_completeness"] is True
+
+        assert supersession["single_remote_publication_default_superseded"] is True
+        assert supersession["wait_all_head_freeze_superseded"] is True
+        assert supersession["batch_only_repair_default_superseded"] is True
+        assert supersession["integration_ready_remains_final_whole_update_gate"] is True
+
+        green = _green_contract()
+        core = green["core"]
+        assert isinstance(core, dict)
+        assert core["next_functional_checkpoint_requires_certified_green"] is True
+        assert core["must_wait_for_all_independent_jobs_before_starting_repair"] is False
 
     def test_split_triggers_cover_real_acceptance_boundaries(self) -> None:
         assert set(_contract()["split_triggers"]) == {

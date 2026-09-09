@@ -106,6 +106,15 @@ def test_profile_augmentation_replaces_only_acl_derived_fields(tmp_path) -> None
     assert updated["boundaries"]["keep"] == "boundary"
 
 
+def test_native_probe_binds_runner_identity_to_reviewed_root_service_marker() -> None:
+    text = native_acl.Path(native_acl.__file__).read_text(encoding="utf-8")
+    assert "RUNNER_SERVICE_MARKER = RUNNER_ROOT / \".service\"" in text
+    assert "$marker='C:\\\\actions-runner\\\\.service'" in text
+    assert "Get-Content -LiteralPath $marker -Raw" in text
+    assert "Where-Object { $_.Name -eq $serviceName }" in text
+    assert "Where-Object { $_.Name -like 'actions.runner.*' }" not in text
+
+
 def test_native_probe_has_no_identity_value_logging() -> None:
     text = native_acl.Path(native_acl.__file__).read_text(encoding="utf-8")
     assert "print(identities" not in text

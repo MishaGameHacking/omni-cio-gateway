@@ -276,6 +276,37 @@ Locks the 2026-08-29 OWNER delivery correction that:
 
 Amendment 15 supersedes only conflicting **Cloudflare implementation delivery granularity** from Amendment 14/current guidance. It does not weaken the internal order, candidate/public-cutover authority gates, continuous exact-main release law, protected V9 recovery, tenant/data/security rules or Real-money locks.
 
+### 16. Green Checkpoint & Targeted CI Repair Law
+
+`OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`;
+- `../operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md`;
+- `../../scripts/check_v10_green_checkpoint_ci_repair.py`;
+- `../../tests/test_v10_green_checkpoint_ci_repair.py`;
+- `.github/workflows/v10-targeted-repair.yml` through repository root;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-09-08 OWNER engineering-discipline decision that:
+
+- every published logical checkpoint must become `CERTIFIED_GREEN` before the next functional checkpoint begins;
+- any material RED immediately puts the branch in `RED_REPAIR_ONLY`; unrelated feature development is forbidden until repair certification;
+- diagnosis starts as soon as useful RED evidence exists and does not wait for all independent jobs merely to begin ordinary repair;
+- same-SHA targeted rerun is allowed only when repository source/config is unchanged and the failure is evidence-based transient/infrastructure-only;
+- GitHub specific-job rerun is preferred for that unchanged-SHA case;
+- code/config/test/governance repair necessarily creates a replacement SHA; old final evidence is stale;
+- the same logical checkpoint is repaired by amend/history replacement when safe, or a repair commit when rewrite is unsafe, but no new feature scope is allowed in `RED_REPAIR_ONLY`;
+- targeted recheck proves the reported defect; then the replacement exact SHA must receive full applicable certification before new functional work;
+- Sonar Quality Gate must pass when applicable, default new-code issues are zero, unresolved new Security Hotspots are zero and material changed-code findings are resolved;
+- `PENDING / RED_REPAIR_ONLY / TARGET_REPAIRED / CERTIFIED_GREEN / MAIN_RED_STOP` are the canonical checkpoint states;
+- DRAFT→READY does not automatically require duplicate full same-SHA certification unless an applicable state-dependent workflow/ruleset requires it;
+- post-merge RED on current `main` means `MAIN_RED_STOP` and blocks ordinary feature progress until an accepted focused repair restores GREEN;
+- root-cause, blast-radius, analogous-pattern, producer/consumer, adjacent-failure, regression-guard, SUCCESS-only merge, full review, squash, post-merge, security/recovery, tenant and broker/Real-money laws remain unchanged.
+
+Amendment 16 explicitly supersedes only conflicting CI cadence/publication/wait-all repair language in Amendments 8/12 and live guidance. It does not change execution-unit grouping, Master Plan order/weights, current Cloudflare authority, product scope, activation authority or financial/security boundaries.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -289,7 +320,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13/14/15 for current product/public-hosting/delivery/activation/platform semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14/15/16 for current product/public-hosting/delivery/activation/platform/engineering semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;

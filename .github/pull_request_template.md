@@ -15,6 +15,7 @@
 ## Integrated System Update law
 
 Canonical law: `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`.
+Canonical current verification supersession: `docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md`.
 
 Для `FOCUSED_CHANGE` отметьте неприменимое как N/A. Для `INTEGRATED_SYSTEM_UPDATE`:
 
@@ -24,14 +25,17 @@ Canonical law: `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION
 - [ ] Ledger/dashboard содержат `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
 - [ ] Все required member milestones branch-local PASS в dependency order.
 - [ ] Mandatory split triggers проверены: DB/migration ordering, security/authority transition, dependency/toolchain boundary, OWNER/provider action, live/temporal evidence, production cutover, Real-money authority, reviewability limit.
-- [ ] `INTEGRATION_READY` установлен только после полного internal preflight и full-diff review.
-- [ ] Первый опубликованный implementation head является одним coherent completed head; temporary verifier commits/PRs не использовались.
+- [ ] `INTEGRATION_READY` используется как final whole-update readiness state перед final landing review.
+- [ ] Temporary verifier commits/PRs не использовались.
+- [ ] Каждый опубликованный logical checkpoint стал `CERTIFIED_GREEN` до следующего functional checkpoint/dependent milestone.
 
 Execution Ledger / dashboard:
 
 ```text
 ledger path:
 dashboard issue:
+current checkpoint SHA:
+checkpoint state:
 INTEGRATION_READY: PASS/FAIL/N/A
 ```
 
@@ -83,7 +87,7 @@ real-money boundary:
 - [ ] Не создаётся duplicate Gateway/Web/Telegram/AI/scheduler/database/broker/execution stack.
 - [ ] Если scope materially изменился, существует OWNER-approved amendment, а не chat-only решение.
 
-## Pre-CI engineering gate
+## Focused preflight / root-cause engineering gate
 
 ### Root cause / blast radius
 
@@ -102,9 +106,9 @@ real-money boundary:
 - [ ] Проверены разумные adjacent failure modes: invalid/missing/stale/duplicate/timeout/restart/auth/recovery по применимости.
 - [ ] Для material unexpected RED обновлён `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`, если урок переносим на будущие WP.
 
-### Cheap/focused checks before expensive CI
+### Focused checks before checkpoint publication
 
-- [ ] Full branch diff против accepted `main` просмотрен **до** запуска финального CI.
+- [ ] Full changed surface против accepted `main` просмотрен до публикации checkpoint.
 - [ ] Format/lint/type/compile preflight пройден по применимому scope.
 - [ ] Focused positive + negative tests пройдены.
 - [ ] Schema/migration/Terraform/PowerShell/config validation пройдена, если применимо.
@@ -113,7 +117,7 @@ real-money boundary:
 - [ ] External GitHub Actions pinned на full immutable commit SHA.
 - [ ] Secret/private-data leakage проверена.
 - [ ] Rollback/recovery consequence проверен.
-- [ ] Нет известного preflight failure, который намеренно оставлен для обнаружения длинным CI.
+- [ ] Нет известного preflight failure, который намеренно оставлен для CI.
 
 Краткое preflight evidence:
 
@@ -121,32 +125,46 @@ real-money boundary:
 commands / focused results / reviewed official dependency state
 ```
 
-## HEAD FREEZE / verification batch
+## Green Checkpoint / targeted CI repair
 
-После публикации verification SHA head заморожен, пока безопасные независимые applicable checks не достигнут terminal state. Первый обычный RED не является поводом немедленно пушить новый symptom-fix commit.
+Canonical law: `docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md`.
+Canonical contract: `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`.
 
-- [ ] Safe batch наблюдался до терминального состояния всех доступных независимых checks.
-- [ ] Собран один consolidated finding inventory из Actions/Windows/Sonar/Gitar/SAST/browser/owning gates.
-- [ ] Findings сгруппированы по root cause / defect class.
-- [ ] `continue-on-error` не использован для fake GREEN.
-- [ ] Если продолжение могло раскрыть secret/private data, достичь broker/Real path, сделать destructive migration/provider mutation, uncontrolled spend или cross-tenant exposure — применён safety abort вместо ожидания.
+Flow:
 
-Consolidated finding inventory:
+`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`
+
+On RED:
+
+`CHECKPOINT_RED -> RED_REPAIR_ONLY -> root cause/blast radius -> targeted proof -> replacement SHA if content changed -> full exact-SHA certification -> CERTIFIED_GREEN`
+
+- [ ] Current logical checkpoint ID and exact SHA recorded.
+- [ ] Any applicable RED/material review finding immediately changed state to `RED_REPAIR_ONLY`; unrelated feature work stopped.
+- [ ] Diagnosis began as soon as useful RED evidence existed; no wait-all requirement was used merely to delay ordinary repair.
+- [ ] Relevant findings that arrived from other independent checks before repair finalization were inspected.
+- [ ] Same-SHA rerun, if used, was only for unchanged source/config plus evidence-based transient/infrastructure-only failure; specific failed job was preferred.
+- [ ] Repeated identical transient failure was not blindly rerun until lucky GREEN.
+- [ ] Any content-changing repair created a replacement SHA and prior final CI/review evidence was treated as stale.
+- [ ] The reported defect was proved with the smallest canonical targeted check before/full alongside recertification.
+- [ ] Final replacement exact SHA received full applicable certification before any next functional checkpoint.
+- [ ] `continue-on-error` was not used to manufacture required GREEN.
+- [ ] Safety abort took priority where continued execution could expose secret/private data, broker/Real reachability, destructive migration/provider mutation, uncontrolled spend or cross-tenant risk.
+
+Checkpoint evidence:
 
 ```text
-verification SHA:
-terminal checks:
-findings/root-cause groups:
-safety abort: NO / reason
+logical checkpoint:
+exact SHA:
+state: PENDING / RED_REPAIR_ONLY / TARGET_REPAIRED / CERTIFIED_GREEN
+material RED/finding:
+root cause / blast radius:
+same-SHA rerun evidence: N/A / reason
+targeted proof:
+replacement SHA: N/A / SHA
+full recertification:
 ```
 
-Correction batch, если нужен:
-
-```text
-all safe findings collected -> systemic hardening -> one coherent correction batch -> full focused preflight -> one new head -> fresh verification
-```
-
-Любой новый commit инвалидирует прежнее final exact-head GREEN evidence.
+Любой content-changing commit инвалидирует прежнее final exact-head GREEN и review evidence.
 
 ### Files changed / independent review evidence
 
@@ -159,7 +177,7 @@ all safe findings collected -> systemic hardening -> one coherent correction bat
 - [ ] Реальные correctness/maintainability/diagnostic/security/review-quality defects исправлены; bot approval не использован как замена engineering judgment.
 - [ ] Unresolved blocking review threads = 0.
 - [ ] Выполнен финальный manual engineering diff review, даже если bots/findings отсутствуют.
-- [ ] После любого correction commit прежние GREEN и review evidence признаны stale; на новом exact head повторены Files changed + applicable bot/security review.
+- [ ] После любого content-changing repair прежние GREEN и review evidence признаны stale; на новом exact head повторены Files changed + applicable bot/security review.
 
 ```text
 HEAD SHA:
@@ -167,7 +185,7 @@ Files changed reviewed on HEAD: YES/NO
 review sources inspected:
 material findings / dispositions:
 final manual engineering diff review: PASS/FAIL
-fresh after correction commit: YES/NO/N/A
+fresh after content-changing repair: YES/NO/N/A
 ```
 
 ## Fault isolation / degraded behavior
@@ -219,16 +237,18 @@ NONE / verified official starting URL + exact bounded action + expected non-secr
 - [ ] Новый provider/runtime не создаёт competing second Web/API/private-state stack.
 - [ ] Paid/provider mutation имеет exact OWNER authority и cost revalidation, если применимо.
 
-## Exact-head GREEN merge gate
+## Exact-head CERTIFIED_GREEN merge gate
 
-**All applicable exact-head checks = SUCCESS.**
+**All applicable exact-head project checks = SUCCESS.**
 
-Project policy is stricter than generic GitHub semantics: applicable `skipped`, `neutral`, `cancelled`, `pending`, `queued`, `in_progress` or infrastructure/billing `failure` are **not GREEN**.
+Project policy is stricter than generic GitHub semantics: applicable `skipped`, `neutral`, `cancelled`, `pending`, `queued`, `in_progress`, `timed_out`, `action_required`, `stale` or infrastructure/billing `failure` are **not GREEN**.
 
 - [ ] Проверен exact current PR head SHA.
+- [ ] Current checkpoint state = `CERTIFIED_GREEN`.
 - [ ] Все применимые V10 workflows реально запустились.
 - [ ] Все применимые checks завершились `success`.
-- [ ] Неприменимые workflows не висят misleading skipped/cancelled checks; routing/trigger исправлен по необходимости.
+- [ ] Sonar Quality Gate PASS when applicable; default new issues = 0; unresolved new Security Hotspots = 0; unresolved material new Reliability/Security/Maintainability findings = 0.
+- [ ] Неприменимые workflows имеют truthful applicability routing и не используются как fake GREEN.
 - [ ] Старые GREEN runs предыдущего SHA не используются как final evidence.
 - [ ] Full diff reviewed after final code change.
 - [ ] Files changed / independent review evidence выше относится к этому же exact HEAD.
@@ -239,10 +259,14 @@ Final exact-head evidence:
 
 ```text
 HEAD SHA:
+checkpoint state: CERTIFIED_GREEN
 workflow/run IDs:
 all applicable conclusions: success
+Sonar QG/new issues/hotspots:
 review threads: 0
 ```
+
+DRAFT→READY при неизменном SHA сам по себе не инвалидирует сертификацию, если ни один applicable workflow/ruleset не зависит от этого transition. Любой новый content-changing commit требует fresh evidence.
 
 ## OWNER participation / real-user operability
 
@@ -261,22 +285,23 @@ NONE / exact prerequisite only; no secrets
 ## Контракты / документация / learning
 
 - [ ] Обновлены canonical docs/contracts; competing source of truth не создан.
-- [ ] WP/execution-unit contract отражает pre-CI, negative tests, rollback, internal milestone gates, progressive capability-state decision where applicable and final acceptance boundary.
+- [ ] WP/execution-unit contract отражает focused preflight, negative tests, Green Checkpoint/targeted repair, rollback, internal milestone gates, progressive capability-state decision where applicable and final acceptance boundary.
 - [ ] Failure Learning Ledger обновлён, если неожиданный RED выявил reusable process/technical lesson.
 - [ ] Current status изменяется только из accepted evidence; integrated member/capability working checkboxes не повышают accepted percentage.
 - [ ] Исторические PR/issues не выдаются за current authority.
 
 ## Merge / после merge
 
-- [ ] Normal closure: PR будет закрыт squash merge только после полного GREEN exact-head gate.
+- [ ] Normal closure: PR будет закрыт squash merge только после полного exact-head `CERTIFIED_GREEN` gate.
 - [ ] Exact new `main` SHA будет проверен после merge.
-- [ ] Required post-merge Regression Shield должен быть GREEN до следующего major System Update и до capability activation when its owning law requires that evidence.
+- [ ] Required post-merge Regression Shield и owning gates должны быть GREEN до принятия изменения.
+- [ ] Applicable post-merge RED на current main означает `MAIN_RED_STOP`; ordinary feature progress запрещён до accepted focused repair.
 - [ ] Capability state becomes accepted only from exact-main evidence; merge alone does not imply `LIVE_OPERABLE` or `REAL_MONEY_AUTHORIZED`.
 - [ ] Если OWNER/live-user acceptance найдёт defect: новый authorized `FOCUSED_CHANGE` или correction path; direct patch в `main` запрещён.
 - [ ] Известен rollback/recovery path.
 
 ## Следующий milestone / System Update
 
-- [ ] Следующий member milestone внутри того же authorized integrated update начинается только после branch-local predecessor Exit evidence.
+- [ ] Следующий functional checkpoint/member milestone внутри того же authorized integrated update начинается только после `CERTIFIED_GREEN` текущего published checkpoint и branch-local predecessor Exit evidence.
 - [ ] Следующий **major System Update** остаётся LOCKED до полного integrated Exit Gate, merge, exact-main post-merge acceptance и canonical status transition.
 - [ ] Capability activation не используется для ложного unlock следующего implementation WP/System Update.

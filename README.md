@@ -16,10 +16,11 @@ Repository-front-door snapshot of accepted/current program authority:
 - default integrated implementation branch is `system/cloudflare-public-product`; one final PR is the default, but each internal milestone must pass before dependent work begins;
 - prepared product System Update remains **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G / OWNER START REQUIRED** and is not executed inside the Cloudflare public-product update;
 - exact product START required before visual implementation: `START V10 WEB VISUAL SYSTEM UPDATE`;
-- Amendment 12 still governs execution-unit law and mandatory split triggers;
+- Amendment 12 still governs execution-unit law and mandatory split triggers except where later Amendment 16 supersedes verification publication/cadence rules;
 - Amendment 13 still governs progressive capability activation without waiting for all of V10;
 - Amendment 14 selects GitHub as engineering authority rank 1 and Cloudflare Workers Paid as new-V10 application/edge/build platform rank 2;
 - Amendment 15 changes only the delivery granularity of the four Cloudflare implementation stages into one integrated update and does not weaken their runtime/security/candidate/cutover gates;
+- Amendment 16 governs Green Checkpoint / targeted CI repair: no next functional checkpoint is allowed until the current exact checkpoint is `CERTIFIED_GREEN`;
 - historical WP22A Render/Neon hosted evidence remains evidence, while Render is retired from active **new V10** deployment/attestation/release-alignment authority;
 - Cloud.ru Evolution is no longer the selected provider target for new V10 work;
 - WP23+ remains locked;
@@ -67,9 +68,9 @@ Amendment 15 explicitly authorizes `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` as an 
 
 For integrated work, internal milestones remain mandatory but are branch-local only. Accepted progress changes only after the complete integrated PR is squash-merged and required exact-main post-merge verification is GREEN.
 
-Before first external final-verification publication, the integrated branch must reach `INTEGRATION_READY`: all member milestones complete, known preflight defects fixed, full diff/coupled surfaces reviewed, regression guards present and mandatory split triggers cleared.
+`INTEGRATION_READY` remains the final whole-update readiness state before final landing review. Amendment 16 permits earlier logical checkpoint publication and certification; every such checkpoint must become `CERTIFIED_GREEN` before the next functional checkpoint or dependent milestone begins.
 
-After a verification SHA is published, **HEAD FREEZE** applies while safe independent checks reach terminal state. Findings are consolidated and grouped by root cause/blast radius before one coherent correction batch. Temporary verifier commits/PRs and `continue-on-error` fake GREEN are forbidden. A new commit invalidates prior final exact-head evidence.
+On material RED, the branch immediately enters `RED_REPAIR_ONLY`: start root-cause/blast-radius repair as soon as useful evidence exists, use same-SHA rerun only for proved unchanged-source transient infrastructure failure, and use a replacement SHA plus targeted proof and full exact-SHA recertification when repository content changes. Temporary verifier commits/PRs and `continue-on-error` fake GREEN remain forbidden.
 
 Every `INTEGRATED_SYSTEM_UPDATE` uses:
 
@@ -134,6 +135,9 @@ Real execution is not enabled by this planning direction. Exact same-tenant READ
 | Need | Canonical source |
 |---|---|
 | Mandatory engineering rules | `AGENTS.md` |
+| Green Checkpoint / targeted CI repair law | `docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md` |
+| Green Checkpoint machine contract | `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json` |
+| Green Checkpoint runbook | `docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md` |
 | Documentation authority/lifecycle | `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md` |
 | Long-lived project context | `knowledge/00_PROJECT_MASTER_CONTEXT.md` |
 | Current V9 runtime/applied state | `knowledge/16_CURRENT_PROGRAM_STATUS.md` |
@@ -176,7 +180,7 @@ This is the protected V9 production/recovery baseline, not current new-V10 provi
 
 Use the current execution unit from accepted authority:
 
-`restore authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> root-cause/blast-radius + coupled-surface preflight -> implementation/internal milestones -> INTEGRATION_READY when applicable -> one published head -> HEAD FREEZE -> all applicable exact-head checks SUCCESS -> independent review -> coherent correction batch if required -> fresh final exact-head verification -> READY GREEN -> zero blockers -> squash merge -> exact-main post-merge verification -> status -> next authorized execution unit`.
+`restore authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> one logical checkpoint -> focused preflight/root-cause/blast-radius/coupled-surface review -> publish exact checkpoint SHA -> CI + Sonar + independent review -> RED_REPAIR_ONLY on any material RED -> targeted proof -> replacement SHA if content changed -> full exact-SHA recertification -> CERTIFIED_GREEN -> next functional checkpoint -> final Files changed/review -> squash merge -> exact-main post-merge verification -> status -> next authorized execution unit`.
 
 Do not start Telegram, AI, Real execution or later packages out of sequence. Do not call RED, skipped, queued or pending GREEN. Do not synthesize OWNER physical evidence. Do not create a second Web App/repository/Core/broker stack.
 
@@ -186,7 +190,7 @@ WP22A technical closeout is accepted only through its own dedicated technical-cl
 
 ## Protected V9 boundaries
 
-V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14/15, an internal milestone, AI output, a GitHub merge or Cloudflare deployment is never broker-submit authorization.
+V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14/15/16, an internal milestone, AI output, a GitHub merge or Cloudflare deployment is never broker-submit authorization.
 
 ## Recovery / safety
 
