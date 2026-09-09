@@ -81,6 +81,23 @@ class CloudflareLiveReleaseTests(unittest.TestCase):
             sha,
         )
 
+    def test_verify_container_source_accepts_exact_baked_sha(self) -> None:
+        sha = "a" * 40
+        verifier.verify_container_source(
+            {"status": "ok", "image_source_sha": sha},
+            sha,
+        )
+
+    def test_verify_container_source_rejects_image_drift(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_RELEASE_CONTAINER_IMAGE_SHA_MISMATCH",
+        ):
+            verifier.verify_container_source(
+                {"status": "ok", "image_source_sha": "b" * 40},
+                "a" * 40,
+            )
+
     def test_verify_health_accepts_exact_payload(self) -> None:
         sha = "a" * 40
         verifier.verify_health(
