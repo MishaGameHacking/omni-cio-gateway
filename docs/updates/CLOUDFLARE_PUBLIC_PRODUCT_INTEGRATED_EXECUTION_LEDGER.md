@@ -20,7 +20,8 @@ the newest accepted-main evidence chain and accepted amendments.
   current status
 - GitHub dashboard issue: `#412`
 - Final integrated DRAFT PR: `#413`
-- Governing contracts: Amendments 12, 14 and 15 plus the integrated-update,
+- Governing contracts: Amendments 12, 14, 15 and, for subsequent checkpoints after its
+  acceptance, Amendment 16, plus the integrated-update, Green Checkpoint,
   Cloudflare-platform, Cloudflare-public-product and release-acceptance contracts
 
 ## 2. Member milestones — ordered
@@ -35,6 +36,9 @@ the newest accepted-main evidence chain and accepted amendments.
 Internal milestone `DONE` is branch-local implementation progress only. It does not
 advance accepted V10 percentage, change `main`, unlock another major update, activate
 public multi-user access or authorize broker/Real execution.
+
+After Amendment 16 acceptance, no dependent functional checkpoint may build on a
+published checkpoint until that exact checkpoint is `CERTIFIED_GREEN`.
 
 ## 3. Current execution state
 
@@ -91,8 +95,12 @@ public multi-user access or authorize broker/Real execution.
 - [x] Security/authority/secret/recovery consequences reviewed.
 - [x] Mandatory split triggers evaluated below.
 - [ ] New CF-D source batch focused checks pass.
-- [ ] Fresh new-head DRAFT checks/reviews all conclude `success`.
+- [ ] Fresh new-head checkpoint becomes `CERTIFIED_GREEN`.
 - [ ] Ledger may be marked `INTEGRATION_READY`.
+
+`INTEGRATION_READY` remains the final whole-update readiness state before final landing
+review. Amendment 16 changes checkpoint verification cadence, not this final integrated
+readiness boundary.
 
 CF-D focused preflight is designed to include:
 
@@ -144,25 +152,32 @@ an explicit post-merge timing/authority boundary.
   only for isolated candidate acceptance.
 - [x] Deterministic Core remains financial truth authority.
 
-## 7. Verification batches / HEAD FREEZE
+## 7. Green Checkpoint verification
+
+Historical checkpoint evidence below remains historical evidence. For any subsequent
+head after Amendment 16 acceptance, the branch follows the Green Checkpoint law.
 
 ### Accepted parent checkpoint before CF-D source batch
 
 - Verification SHA: `bf26ffcaaf1753c2b8b364990be5685f3019e458`
-- DRAFT/READY state: DRAFT.
-- Terminal conclusions: all current exact-head GitHub Actions runs `success`, including
+- Historical DRAFT state: DRAFT.
+- Terminal conclusions: all then-current exact-head GitHub Actions runs `success`, including
   Cloudflare Provider Readiness and Candidate Deployment; Sonar Quality Gate passed;
   Semgrep and Gitar passed; unresolved blocking review threads = 0.
 - CF-C provider acceptance: PASS.
 - Production promotion: NOT PERFORMED.
-- Prior final evidence invalidated by this CF-D source commit: YES.
+- Prior final evidence invalidated by the later CF-D source commit: YES.
 
-### CF-D source batch
+### Subsequent CF-D logical checkpoint
 
-- Verification SHA: assigned when the coherent source batch is published.
-- DRAFT/READY state: DRAFT / HEAD FREEZE begins after publication.
-- Applicable checks: full fresh exact-head repository workflows plus independent review.
-- Terminal conclusions: PENDING until publication and verification.
+- Logical checkpoint ID: CF-D source/release checkpoint.
+- Exact SHA: record the current branch head when published.
+- State: `PENDING` / `RED_REPAIR_ONLY` / `TARGET_REPAIRED` / `CERTIFIED_GREEN`.
+- Applicable checks: full current exact-head project gates plus Sonar and independent review.
+- Material RED response: immediately enter `RED_REPAIR_ONLY`; no unrelated feature scope.
+- Same-SHA rerun: only for unchanged source/config and proved transient infrastructure failure.
+- Content-changing repair: targeted proof -> replacement SHA -> full exact-SHA recertification.
+- Next dependent work: forbidden until `CERTIFIED_GREEN`.
 
 ## 8. CF-D root-cause inventory and permanent hardening
 
@@ -188,13 +203,15 @@ an explicit post-merge timing/authority boundary.
 
 ## 10. Final lifecycle
 
-- [ ] `INTEGRATION_READY`
+- [ ] Current exact CF-D checkpoint `CERTIFIED_GREEN`.
+- [ ] `INTEGRATION_READY`.
 - [x] Integrated implementation branch and DRAFT PR exist.
 - [x] CF-A branch-local DONE.
 - [x] CF-B branch-local DONE.
 - [x] CF-C branch-local real provider acceptance DONE on parent exact head.
 - [ ] CF-D source/release boundary complete and exact-head verified.
-- [ ] Fresh unchanged-head READY verification all `success`.
+- [ ] Independent review / Files changed complete with zero blockers.
+- [ ] READY transition; any intentionally state-dependent applicable checks conclude `success`.
 - [ ] Squash merge into protected `main`.
 - [ ] Exact-new-main Regression Shield and every applicable post-merge gate `success`.
 - [ ] Exact-main isolated staging rehearsal passes post-merge.
@@ -211,11 +228,10 @@ an explicit post-merge timing/authority boundary.
 - Current milestone: CF-D source/release boundary.
 - What is complete: CF-A, CF-B, real CF-C staging acceptance and all parent exact-head
   source/review checks.
-- What remains: publish one coherent CF-D source batch, fresh exact-head DRAFT review/CI,
-  mark `INTEGRATION_READY`, fresh READY cycle, squash merge, exact-main post-merge gates,
-  gated production cutover, live/custom-domain/public-path acceptance and status closeout.
-- Next lawful action after source publication: observe all applicable exact-head checks to
-  terminal state under HEAD FREEZE; do not call the branch GREEN while any applicable
-  check is failed, pending, queued, cancelled, skipped or neutral.
+- What remains: current CF-D branch must adopt Amendment 16 for every subsequent head
+  after Amendment 16 acceptance; any material RED means immediate `RED_REPAIR_ONLY`,
+  targeted repair proof and full replacement-SHA certification before dependent work.
+- Next lawful action: restore current accepted `main`, reconcile the actual current CF-D
+  branch/PR evidence, and certify its current logical checkpoint under Amendment 16.
 
 This document is not a competing current-status authority.

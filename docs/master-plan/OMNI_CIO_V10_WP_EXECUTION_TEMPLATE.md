@@ -12,6 +12,8 @@ Amendment 12 / Integrated System Update Execution Law adds two valid execution u
 
 Amendment 13 / Live User Operability & Progressive Capability Activation Law additionally requires every user-facing execution unit to distinguish accepted implementation from live-user capability activation. Completed user-facing capability must not wait for unrelated later blocks after all gates that actually own that capability are accepted.
 
+Amendment 16 / Green Checkpoint & Targeted CI Repair Law requires every published logical checkpoint to become `CERTIFIED_GREEN` before the next functional checkpoint or dependent milestone begins. Material RED immediately means `RED_REPAIR_ONLY`; changed repository content requires a replacement SHA, targeted proof and full exact-SHA recertification.
+
 ## 1. Execution-unit / WP identity
 
 - Execution unit: `FOCUSED_CHANGE` / `INTEGRATED_SYSTEM_UPDATE`
@@ -26,6 +28,7 @@ Amendment 13 / Live User Operability & Progressive Capability Activation Law add
 - GitHub System Update dashboard issue, if integrated:
 - User-facing capability IDs affected, if any:
 - Capability Activation Ledger/dashboard required: YES/NO + reason
+- Current Green Checkpoint state: `PENDING` / `RED_REPAIR_ONLY` / `TARGET_REPAIRED` / `CERTIFIED_GREEN` / `MAIN_RED_STOP`
 
 For `INTEGRATED_SYSTEM_UPDATE`, a member milestone may become branch-local `DONE` only after its own internal Exit criteria pass. That state does not advance accepted V10 progress, change `main`, unlock a later major update, authorize public production or authorize broker/Real execution.
 
@@ -47,9 +50,9 @@ State the one concrete outcome of this execution unit and, for an integrated upd
 
 List exact prerequisite contracts, files, data fixtures, runtime capabilities and CI gates.
 
-### 4.1 Pre-CI readiness
+### 4.1 Focused preflight / checkpoint readiness
 
-Define what must be proven **before** an expensive full CI cycle is considered justified:
+Define what must be proven **before each logical checkpoint is published for CI/review certification**:
 
 - cheap deterministic checks;
 - focused positive/negative tests;
@@ -62,11 +65,11 @@ Define what must be proven **before** an expensive full CI cycle is considered j
 - directly coupled producer/consumer/config/workflow review;
 - analogous-pattern search where material;
 - reasonable adjacent failure-mode review;
-- full branch diff review.
+- full changed-surface review appropriate to the checkpoint.
 
-Known preflight failures must be fixed before triggering the full exact-head gate.
+Known preflight failures must be fixed before publishing the checkpoint. CI is an independent verifier and active checkpoint certifier; it does not replace engineering judgment or focused preflight.
 
-For `INTEGRATED_SYSTEM_UPDATE`, external publication/verification is forbidden until every required member milestone is complete, mandatory split triggers are clear and the Execution Ledger marks `INTEGRATION_READY`.
+For `INTEGRATED_SYSTEM_UPDATE`, `INTEGRATION_READY` remains the final whole-update readiness state before final landing review. Earlier meaningful checkpoints may be published and certified under Amendment 16, but the next functional checkpoint or dependent milestone may not begin until the current published checkpoint is `CERTIFIED_GREEN`.
 
 ### 4.2 OWNER-only prerequisite / handoff contract
 
@@ -221,9 +224,9 @@ At minimum cover applicable cases:
 - broker READ/TRADE account mismatch for broker capability;
 - live capability temporary safety suspension/kill-switch truthfulness where applicable.
 
-### 12.1 Root-cause / blast-radius plan
+### 12.1 Root-cause / blast-radius / targeted-repair plan
 
-For any material defect discovered during this WP/member milestone, define the review method before retrying full CI:
+For any material defect discovered during this WP/member milestone, define the review method before finalizing a repair:
 
 - root cause;
 - repository-wide analogous pattern search;
@@ -235,7 +238,9 @@ For any material defect discovered during this WP/member milestone, define the r
 
 Do not assume a one-line failing location means a one-line defect class.
 
-For an externally published integrated head, apply **HEAD FREEZE** while safe independent checks reach terminal state. Build one consolidated finding inventory, group findings by root cause/defect class, then produce one coherent correction batch rather than one CI cycle per symptom.
+On the first useful material RED, immediately mark the current logical checkpoint `RED_REPAIR_ONLY` and stop unrelated feature work. Begin systemic diagnosis without waiting merely for every independent job to finish. Findings that arrive from other relevant checks before finalizing the repair must still be inspected and incorporated where applicable.
+
+If repository source/config is unchanged and the failure is evidence-based transient/infrastructure-only, prefer same-SHA rerun of the specific failed job. If repository content changes, prior final evidence is stale: prove the reported defect with the smallest canonical targeted check, publish a replacement SHA, then fully certify that exact replacement SHA before any next functional checkpoint.
 
 ## 13. Observability
 
@@ -282,37 +287,48 @@ For `INTEGRATED_SYSTEM_UPDATE`, record `CLEAR`, `TRIGGERED` or `N/A` with eviden
 7. Real-money authority;
 8. reviewability limit.
 
-WP numbering alone is not a split trigger. A triggered boundary must be documented in the Execution Ledger and split before publication.
+WP numbering alone is not a split trigger. A triggered boundary must be documented in the Execution Ledger and split at the owning boundary.
 
 `INTEGRATION_READY`: PASS/FAIL
 
-## 15. CI routing / verification batches
+`INTEGRATION_READY` is the final whole-update readiness state. It is not a prohibition on earlier Green Checkpoint verification.
 
-- Cheap/focused preflight commands:
+## 15. CI routing / Green Checkpoint certification
+
+- Focused preflight commands:
 - Fast hosted checks:
 - Hosted clean-room compatibility required: YES/NO + reason
 - Lenovo authoritative checks:
 - GPU AI eval required: YES/NO + reason
 - Release/recovery matrix required: YES/NO + reason
-- Full exact-head CI may start only after pre-CI readiness: PASS/FAIL
-- For integrated work, Ledger `INTEGRATION_READY`: PASS/FAIL
+- Current checkpoint exact SHA:
+- Current checkpoint state: `PENDING` / `RED_REPAIR_ONLY` / `TARGET_REPAIRED` / `CERTIFIED_GREEN`
+- For integrated work, final Ledger `INTEGRATION_READY`: PASS/FAIL
 
-Project GREEN definition for an applicable gate is `success` only. `skipped`, `neutral`, `cancelled`, pending/in-progress states and infrastructure/billing failures do not count as GREEN merge evidence.
+Project GREEN definition for an applicable gate is `success` only. `skipped`, `neutral`, `cancelled`, queued/pending/in-progress states, timeouts, action-required states and infrastructure/billing failures do not count as GREEN under Omni-CIO project policy.
 
-If a workflow is not applicable, route/trigger it so it does not appear as a misleading skipped/cancelled gate.
+If a workflow is not applicable, route/trigger it so its contract produces truthful applicability evidence rather than treating a misleading failure/cancellation as GREEN.
 
-Any commit after final GREEN invalidates prior final evidence and requires the applicable exact-head cycle again.
+Any content-changing commit after final GREEN invalidates prior final exact-head CI and review evidence and requires certification of the new exact head.
 
-After a verification SHA is published, **HEAD FREEZE** applies while the safe verification batch is observed. `continue-on-error` must never be used to manufacture GREEN. Safety abort takes precedence if continued execution could expose secrets/private data, reach broker/Real authority, perform destructive migration/provider mutation, create uncontrolled spend or expose another tenant.
+On material RED, enter `RED_REPAIR_ONLY` immediately. `continue-on-error` must never be used to manufacture GREEN. Safety abort takes precedence if continued execution could expose secrets/private data, reach broker/Real authority, perform destructive migration/provider mutation, create uncontrolled spend or expose another tenant.
 
-Verification batch record:
+Checkpoint certification record:
 
+- logical checkpoint ID:
 - exact SHA:
+- state:
 - DRAFT/READY:
 - applicable checks and terminal conclusions:
-- consolidated findings:
-- root-cause groups:
-- correction batch SHA, if required:
+- Sonar Quality Gate/new issues/hotspots:
+- independent findings reviewed:
+- root-cause/blast-radius summary if RED:
+- same-SHA rerun reason/evidence, if used:
+- targeted proof command/run and result, if repaired:
+- replacement SHA, if content changed:
+- full exact-SHA recertification: PASS/FAIL
+
+Only `CERTIFIED_GREEN` permits the next functional checkpoint or dependent milestone.
 
 ### 15.1 Files changed / independent review evidence
 
@@ -327,7 +343,7 @@ For every published PR head, record evidence for the **same exact SHA**:
 - final manual engineering diff review performed even when independent tools report no findings;
 - unresolved blocking review threads = 0.
 
-Any correction commit invalidates both prior final GREEN evidence **and** prior review evidence. The new exact head requires fresh Files changed + review evidence before merge.
+Any correction/replacement head invalidates both prior final GREEN evidence **and** prior review evidence when repository content changed. The new exact head requires fresh Files changed + review evidence before merge.
 
 Review record:
 
@@ -337,7 +353,7 @@ Review record:
 - material findings/dispositions:
 - unresolved blocking review threads:
 - final manual engineering diff review: PASS/FAIL
-- fresh after correction commit: YES/NO/N/A
+- fresh after content-changing repair: YES/NO/N/A
 
 ## 16. Rollback/recovery
 
@@ -353,13 +369,14 @@ For an integrated member milestone, branch-local PASS is not accepted-main compl
 
 Final merge/normal PR closure requires:
 
-- current exact head;
-- all applicable checks actually ran and concluded `success`;
+- current exact head is `CERTIFIED_GREEN`;
+- all applicable checks actually ran and concluded `success` under project policy;
+- Sonar Quality Gate and new-code findings satisfy the applicable Amendment-16 contract;
 - full diff review;
 - complete exact-head GitHub Files changed review;
 - applicable inline/check/Sonar/Gitar/SAST/other code-security review outputs inspected and material findings dispositioned;
 - final manual engineering diff review after the last code change;
-- fresh Files changed + independent review evidence after any correction commit;
+- fresh Files changed + independent review evidence after any content-changing repair;
 - zero unresolved blocking review threads;
 - no unresolved P0/P1 blocker;
 - required security/recovery evidence;
@@ -431,7 +448,7 @@ Do not store secrets/private payloads in the ledger.
 
 Name the next authorized member milestone or next major System Update and the exact evidence that unlocks it.
 
-A later member milestone inside the same authorized integrated update may begin after its required predecessor branch-local Exit criteria pass. A later **major System Update** remains locked until the current integrated PR is merged, required exact-main Regression Shield/owning gates pass, any required OWNER acceptance completes and canonical status transitions from accepted evidence.
+A later functional checkpoint/member milestone inside the same authorized integrated update may begin only after the current published logical checkpoint is `CERTIFIED_GREEN` and its required predecessor branch-local Exit criteria pass. A later **major System Update** remains locked until the current integrated PR is merged, required exact-main Regression Shield/owning gates pass, any required OWNER acceptance completes and canonical status transitions from accepted evidence.
 
 Capability activation is separate from Master Plan sequencing: a capability already implemented and accepted may move through its Amendment-13 activation gate without falsely unlocking a later implementation WP/System Update, while an unimplemented later capability remains locked by the plan.
 

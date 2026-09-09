@@ -44,13 +44,13 @@ Before material work restore from current GitHub `main`, not chat memory:
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-9. all applicable active amendments, especially Amendments 8–15;
+9. all applicable active amendments, especially Amendments 8–16;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. owning execution-unit contracts/runbooks/ledgers;
 13. exact `main`, recent commits, open PR/issues and GitHub Actions.
 
-Key current authority includes Amendments 14/15, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json` and `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json`. Old chat/screenshots/stale PR text/provider dashboard state never override accepted GitHub authority.
+Key current authority includes Amendments 14/15 plus the later Green Checkpoint / Targeted CI Repair law when accepted, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` and `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`. Old chat/screenshots/stale PR text/provider dashboard state never override accepted GitHub authority.
 
 ## 4. GitHub #1 / Cloudflare #2
 
@@ -107,33 +107,64 @@ Ordered internal milestones:
 
 Do not start internal milestone N+1 before milestone N's branch-local Exit Gate is satisfied. Amendment 15 removes only the requirement to merge each of these four stages separately; it does not remove their order or fail-closed boundaries.
 
-The integrated branch uses the required Execution Ledger and GitHub System Update dashboard. Do not publish final external verification until `INTEGRATION_READY`.
+The integrated branch uses the required Execution Ledger and GitHub System Update dashboard. `INTEGRATION_READY` remains the final whole-update readiness state, but earlier published checkpoints may be certified under Amendment 16 when that later law is accepted.
 
-## 7. Pre-CI / root cause
+## 7. Green Checkpoint & Targeted CI Repair Law
 
-CI is an independent verifier, not the normal interactive debugger.
+CI is an independent verifier and active checkpoint certifier; it does not replace engineering judgment, root-cause analysis or focused preflight.
 
-Before fixing a material defect: find root cause, determine blast radius, search analogous patterns, inspect coupled producers/consumers/config/workflows, inspect adjacent failure modes, add deterministic regression guards where reusable, run cheap/focused preflight and review the complete diff.
+When Amendment 16 is accepted on protected `main`, it supersedes the old wait-all `HEAD FREEZE` / Single Remote Publication / batch-only repair defaults while preserving root-cause, exact-head, review, security, recovery and split-trigger laws.
 
-Do not patch systemic defects symptom-by-symptom. After publishing a verification SHA, HEAD FREEZE applies while the safe independent batch reaches terminal state. Consolidate findings by root cause before one coherent correction batch.
+Canonical flow:
 
-Unexpected material RED after declared readiness requires a reusable lesson in `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
-Prefer bounded failure domains rather than one fragile monolith. Consider timeouts/deadlines, bounded retries, idempotency, backpressure/circuit breaker, durable checkpoints, health/readiness/freshness, restart/recovery and least-privilege boundaries. Money/security authority fails closed.
+If any applicable check or material review finding is RED:
+
+`CHECKPOINT_RED -> RED_REPAIR_ONLY -> root cause -> targeted proof -> replacement SHA if content changed -> full certification -> CERTIFIED_GREEN`.
+
+Rules:
+
+- the next functional checkpoint is forbidden until the current checkpoint is `CERTIFIED_GREEN`;
+- start diagnosis/repair immediately when useful RED evidence appears; do not wait for every independent job merely to begin repair;
+- other independent jobs may continue and their findings must still be inspected;
+- source unchanged + proved transient/infrastructure failure -> prefer re-running only the specific failed GitHub Actions job on the same SHA;
+- source/config/test/governance content changed -> old final evidence is stale; update the same logical checkpoint, publish a replacement SHA, run targeted proof, then fully certify that exact replacement SHA before new feature work;
+- `git commit --amend` creates a replacement commit/SHA; it does not mutate an immutable existing commit;
+- never force-rewrite protected `main` or shared history merely to preserve a one-commit appearance;
+- repeated identical “transient” RED is an infrastructure/workflow defect, not a reason for blind reruns;
+- Sonar Quality Gate must pass when applicable; default new-code requirement is 0 new issues, 0 unresolved new Security Hotspots and 0 unresolved material Reliability/Security/Maintainability findings;
+- Gitar/SAST/check annotations/review threads are active engineering evidence, not decoration;
+- unexpected reusable material RED still requires the Failure Learning Ledger;
+- `MAIN_RED_STOP`: an applicable post-merge RED on current `main` blocks ordinary feature progress until an accepted focused repair restores GREEN.
+
+Prefer bounded failure domains rather than one fragile monolith. Timeouts/deadlines, bounded retries, idempotency, backpressure/circuit breakers, durable checkpoints, health/readiness/freshness, restart/recovery and least-privilege boundaries remain required where applicable. Money/security authority fails closed.
+
+Canonical machine contract: `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`.
+Canonical runbook: `docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md`.
+Targeted verifier: `.github/workflows/v10-targeted-repair.yml`.
 
 ## 8. Git / PR lifecycle
 
 Never develop directly in `main`.
 
-`fresh accepted main -> branch -> authorized implementation -> deterministic guards -> cheap preflight -> complete diff -> DRAFT PR -> applicable exact-head DRAFT SUCCESS -> Files changed + independent review -> zero blockers -> unchanged READY -> fresh applicable READY SUCCESS -> squash merge -> exact-new-main Regression Shield/owning post-merge SUCCESS -> accepted`.
+Normal checkpoint lifecycle:
+
+`fresh accepted main -> branch -> authorized logical checkpoint -> focused preflight -> publish exact checkpoint -> CI/Sonar/review -> RED_REPAIR_ONLY if needed -> targeted repair proof -> exact replacement full certification -> CERTIFIED_GREEN -> next checkpoint`.
+
+Final landing lifecycle:
+
+`current exact head CERTIFIED_GREEN -> complete Files changed + independent review -> zero blockers -> squash merge -> exact-new-main Regression Shield/owning post-merge SUCCESS -> accepted`.
+
+A DRAFT→READY state change does not by itself invalidate same-SHA certification unless an applicable workflow/ruleset is intentionally state-dependent and requires a fresh run. Any content-changing commit creates a new exact head and invalidates previous final evidence.
 
 Project law: every **applicable** exact-head V10 check must actually execute and conclude `success`.
 
-`failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN for an applicable gate. New commit invalidates prior final exact-head GREEN/review evidence.
+`failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN for an applicable gate.
 
 ### Changed-files + independent code-review merge gate
 
-Before merge inspect **all** Files changed, inline review threads, annotations and applicable Sonar/Gitar/SAST/security/code-review outputs; classify material findings; unresolved blocking review threads = 0; perform final manual engineering diff review. Bot approval is supporting evidence only. After a correction commit repeat Files changed + review on the new exact head.
+Before merge inspect **all** Files changed, inline review threads, annotations and applicable Sonar/Gitar/SAST/security/code-review outputs; classify material findings; unresolved blocking review threads = 0; perform final manual engineering diff review. Bot approval is supporting evidence only. After a correction/replacement head repeat Files changed + review on the new exact head.
 
 ## 9. Testing baseline
 
@@ -144,6 +175,7 @@ python scripts/check_ci_security_baseline.py
 python scripts/check_repository_layout.py
 python scripts/check_v10_repository_boundaries.py
 python scripts/check_v10_engineering_governance.py
+python scripts/check_v10_green_checkpoint_ci_repair.py
 python scripts/check_v10_cloudflare_platform_authority.py
 python scripts/check_v10_cloudflare_public_product_integrated.py
 python scripts/check_v10_documentation_consistency.py
@@ -164,7 +196,7 @@ Do not upgrade to `latest` by initiative. Use accepted versions/locks: `requirem
 
 Cloudflare migration preference remains `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite Web remains canonical source. FastAPI availability in Python Workers does not prove all CPython/native dependencies compatible; test them. Cloudflare Containers may be used only when CF-B proves a concrete full-Linux/native dependency need and cost/recovery semantics are acceptable. Neon/PostgreSQL 18 tenant/RLS authority remains until an explicit equivalent migration is proved; D1 is not an automatic replacement; Hyperdrive + PostgreSQL 18 compatibility must be proved.
+Existing React/Vite Web remains canonical source. FastAPI availability in Python Workers does not prove all CPython/native dependencies compatible; test them. Cloudflare Containers may be used only when CF-B proves a concrete full-Linux/native runtime need and cost/recovery semantics are acceptable. Neon/PostgreSQL 18 tenant/RLS authority remains until an explicit equivalent migration is proved; D1 is not an automatic replacement; Hyperdrive + PostgreSQL 18 compatibility must be proved.
 
 Prefer Cloudflare services over replaceable external infrastructure only when semantics are equivalent and recovery/security are not weakened. Do not adopt a Cloudflare feature merely because the paid plan includes it.
 

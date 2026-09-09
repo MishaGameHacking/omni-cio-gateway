@@ -17,8 +17,8 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` для V9;
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12, 13, 14 и 15;
-9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` и остальные owning contracts;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12, 13, 14, 15 и 16;
+9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` и остальные owning contracts;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. current execution-unit architecture/security/recovery/runbooks/ledgers;
@@ -86,27 +86,41 @@ Governed by the **Integrated System Update Execution Law**. Every material chang
 
 Mandatory split triggers include migration/DB ordering, security/authority transition, dependency/toolchain boundary, non-delegable OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit. Amendment 15 does not remove them.
 
-Publication of an `INTEGRATED_SYSTEM_UPDATE` requires reaching `INTEGRATION_READY` before final external verification is published.
+`INTEGRATION_READY` remains the final whole-update readiness state for an `INTEGRATED_SYSTEM_UPDATE`, but Amendment 16 permits and requires earlier checkpoint certification while work progresses.
 
 For integrated updates maintain the branch Execution Ledger and GitHub System Update dashboard with `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`. Internal milestone PASS never changes accepted progress by itself.
 
-## Pre-CI / HEAD FREEZE
+## Green Checkpoint & Targeted CI Repair Law
 
-CI is an independent verifier, not the primary interactive debugger.
+CI is an independent verifier and active checkpoint certifier. Fast CI is used whenever a logical checkpoint needs proof; CI cost/time is not a reason to carry uncertainty forward.
 
-Before publishing expensive verification:
+Canonical flow:
 
-- establish root cause for material defects;
-- determine blast radius;
-- inspect analogous locations and directly coupled producers/consumers/config/workflows;
-- inspect adjacent failure modes;
-- add deterministic regression guards for reusable defect classes;
-- run cheap/focused preflight;
-- inspect the complete diff.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
-After a verification SHA is published, **HEAD FREEZE** applies while safe independent checks reach terminal state. Consolidate findings by root cause and publish one coherent correction batch only after focused/local preflight.
+Any material RED immediately changes branch mode to `RED_REPAIR_ONLY`. The next functional checkpoint is forbidden until the current checkpoint is repaired and fully certified.
 
-Any new commit invalidates prior final exact-head GREEN and review evidence. `continue-on-error` must never manufacture required GREEN.
+When RED appears:
+
+1. begin root-cause diagnosis immediately when useful evidence exists; do not wait for every independent job merely to start ordinary repair;
+2. determine blast radius, analogous patterns, coupled producers/consumers/config/workflows and adjacent failure modes;
+3. fix the defect class and add/strengthen deterministic regression coverage;
+4. if source/config is unchanged and the failure is proven transient/infrastructure-only, prefer re-running only the specific failed GitHub Actions job on the same SHA;
+5. if source/config/test/governance content changes, the repair necessarily has a replacement SHA; old final evidence is stale;
+6. run the smallest canonical targeted recheck proving the reported defect is fixed;
+7. fully certify the final replacement exact SHA before beginning the next functional checkpoint.
+
+`git commit --amend` creates a replacement commit/SHA; it does not mutate an existing SHA. Never force-rewrite protected `main` or shared history merely to preserve a one-commit appearance.
+
+Repeated identical “transient” failure becomes an infrastructure/workflow defect and must not be blindly retried until GREEN.
+
+For changed code, applicable Sonar Quality Gate must pass; default new-code requirement is 0 new issues, 0 unresolved new Security Hotspots and 0 unresolved material Reliability/Security/Maintainability findings. Gitar/SAST/check annotations and review threads must also be inspected.
+
+Only `CERTIFIED_GREEN` permits the next functional checkpoint. An applicable post-merge RED on current `main` means `MAIN_RED_STOP` and blocks ordinary feature development until an accepted focused repair restores GREEN.
+
+Canonical law: `docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md`.
+Canonical runbook: `docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md`.
+Canonical targeted verifier: `.github/workflows/v10-targeted-repair.yml`.
 
 ## Files changed / independent code-review gate
 
@@ -121,27 +135,34 @@ Any new commit invalidates prior final exact-head GREEN and review evidence. `co
 
 **Bot approval is supporting evidence**, not a replacement for engineering judgment. Manual review also does not replace applicable CI/security gates.
 
-После любого correction commit обязательны **fresh Files changed + review evidence** на новом exact head.
+После любого replacement/correction head обязательны **fresh Files changed + review evidence** на новом exact head.
 
 ## PR lifecycle
 
 Никогда не разрабатывайте напрямую в `main`.
 
+Checkpoint lifecycle:
+
 1. fresh accepted `main`;
 2. focused/integrated branch;
-3. exact authorized scope;
-4. deterministic tests/guards;
-5. cheap/focused preflight;
-6. complete diff/coupled-surface review;
-7. DRAFT PR;
-8. all applicable exact-head DRAFT checks actually `success`;
-9. independent review + Files changed;
-10. zero blocking threads;
-11. unchanged head -> READY;
-12. fresh applicable READY checks actually `success`;
-13. squash merge;
-14. exact-new-main Regression Shield + owning post-merge gates;
-15. accepted status transition only after post-merge success.
+3. one authorized logical checkpoint;
+4. deterministic tests/guards + focused preflight;
+5. publish exact checkpoint SHA;
+6. CI + Sonar + applicable independent review;
+7. any RED -> `RED_REPAIR_ONLY` and immediate targeted repair;
+8. source change -> replacement SHA + targeted proof + full exact-SHA certification;
+9. only `CERTIFIED_GREEN` -> next functional checkpoint allowed.
+
+Final landing lifecycle:
+
+1. final exact head `CERTIFIED_GREEN`;
+2. complete Files changed + independent review;
+3. zero blocking threads/findings;
+4. squash merge;
+5. exact-new-main Regression Shield + owning post-merge gates;
+6. accepted status transition only after post-merge success.
+
+DRAFT→READY by itself does not invalidate same-SHA certification unless an applicable workflow/ruleset is intentionally state-dependent. Any content-changing head requires fresh evidence.
 
 `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN for an applicable gate.
 
@@ -213,6 +234,7 @@ python scripts/check_ci_security_baseline.py
 python scripts/check_repository_layout.py
 python scripts/check_v10_repository_boundaries.py
 python scripts/check_v10_engineering_governance.py
+python scripts/check_v10_green_checkpoint_ci_repair.py
 python scripts/check_v10_cloudflare_platform_authority.py
 python scripts/check_v10_cloudflare_public_product_integrated.py
 python scripts/check_v10_documentation_consistency.py

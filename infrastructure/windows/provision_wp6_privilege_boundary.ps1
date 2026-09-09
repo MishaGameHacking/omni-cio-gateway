@@ -18,6 +18,7 @@ $sentinelPath = Join-Path $executionRoot "wp6-ci-deny-sentinel.txt"
 $sentinelText = "OMNI-CIO-WP6-NON-SECRET-ACL-SENTINEL-v1"
 $runnerRoot = "C:\actions-runner"
 $runnerConfig = Join-Path $runnerRoot ".runner"
+$runnerServiceMarker = Join-Path $runnerRoot ".service"
 $runnerSensitiveNames = @(".runner", ".credentials", ".credentials_rsaparams", ".service")
 
 function Assert-Administrator {
@@ -29,12 +30,19 @@ function Assert-Administrator {
 }
 
 function Get-RunnerServiceSafe {
+    if (-not (Test-Path -LiteralPath $runnerServiceMarker -PathType Leaf)) {
+        throw "Fail-closed: reviewed runner root has no .service ownership marker."
+    }
+    $serviceName = (Get-Content -LiteralPath $runnerServiceMarker -Raw -ErrorAction Stop).Trim()
+    if (-not $serviceName.StartsWith("actions.runner.", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Fail-closed: reviewed runner .service marker is not a GitHub Actions runner service."
+    }
     $services = @(
         Get-CimInstance Win32_Service |
-            Where-Object { $_.Name -like "actions.runner.*" }
+            Where-Object { $_.Name -eq $serviceName }
     )
     if ($services.Count -ne 1) {
-        throw "Expected exactly one GitHub Actions runner service; found $($services.Count)."
+        throw "Expected exactly one GitHub Actions runner service bound to the reviewed runner root; found $($services.Count)."
     }
     return $services[0]
 }
@@ -378,6 +386,7 @@ Assert-RoleOwnership -Name $runtimeName -Marker $runtimeMarker
 Assert-RoleOwnership -Name $executionName -Marker $executionMarker
 
 Write-Host "WP6 privilege provisioning preflight: PASS" -ForegroundColor Green
+Write-Host "Runner service bound to reviewed runner root: YES"
 Write-Host "Runner account class: $runnerClass"
 Write-Host "Runner sensitive config files found: $($runnerSensitivePaths.Count)"
 Write-Host "Real secret values used: NO"

@@ -18,17 +18,18 @@
 5. knowledge/16_CURRENT_PROGRAM_STATUS.md — protected V9 runtime baseline.
 6. docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md.
 7. docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md.
-8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law, Cloudflare Platform Authority and Cloudflare Public Product Integrated Delivery.
+8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law, Cloudflare Platform Authority, Cloudflare Public Product Integrated Delivery and Green Checkpoint & Targeted CI Repair Law.
 9. docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json.
-10. docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json.
-11. docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json.
-12. docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json when accepted.
-13. docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md.
-14. knowledge/17_V10_CURRENT_PROGRAM_STATUS.md — единственный current V10 progress/current-next execution ledger.
-15. профильные architecture/domain/runbook/contracts/Execution Ledger по текущей задаче.
-16. Если задача касается applied GPT/V9 recovery — gpt/SETUP_INDEX.md и связанные V9 recovery files.
+10. docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json and docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md when Amendment 16 is accepted.
+11. docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json.
+12. docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json.
+13. docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json when accepted.
+14. docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md.
+15. knowledge/17_V10_CURRENT_PROGRAM_STATUS.md — единственный current V10 progress/current-next execution ledger.
+16. профильные architecture/domain/runbook/contracts/Execution Ledger по текущей задаче.
+17. Если задача касается applied GPT/V9 recovery — gpt/SETUP_INDEX.md и связанные V9 recovery files.
 
-Затем проверь actual main SHA, open PR/issues, required exact-head CI/security, post-merge Regression Shield и authorized current execution unit.
+Затем проверь actual main SHA, open PR/issues, applicable exact-head CI/security, post-merge Regression Shield и authorized current execution unit.
 
 Current accepted/convenience state after Amendment 15 acceptance:
 - WP0–WP22A COMPLETE; accepted implementation progress 54%;
@@ -80,29 +81,37 @@ Integrated System Update Execution Law:
 - integrated work uses one branch and one final PR by default; internal milestone PASS is branch-local only;
 - accepted progress changes only after complete squash merge and required exact-main post-merge acceptance;
 - every integrated update keeps a branch Execution Ledger and GitHub System Update dashboard marked `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`;
-- do not publish an integrated implementation head for final external verification before `INTEGRATION_READY`;
+- `INTEGRATION_READY` remains the final whole-update readiness state before final landing review, not a ban on earlier checkpoint certification;
 - mandatory split triggers remain active.
 
-HEAD FREEZE:
-- after publishing a verification SHA, hold that head while safe independent applicable checks reach terminal state;
-- do not push one fix for the first failing symptom;
-- collect all available Actions/Windows/Sonar/Gitar/SAST/browser/owning-gate findings;
-- Quality Gate success is not enough: inspect non-zero Sonar issues, annotations and security hotspots explicitly;
-- group findings by root cause/defect class and establish blast radius, analogous patterns, coupled surfaces and adjacent failure modes;
-- add permanent regression guards and publish one coherent correction batch after full local/focused preflight;
+Green Checkpoint & Targeted CI Repair Law / Amendment 16:
+- canonical flow is `WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`;
+- the next functional checkpoint or dependent milestone is forbidden until the current published checkpoint is `CERTIFIED_GREEN`;
+- any applicable CI failure or material review finding moves the branch immediately to `RED_REPAIR_ONLY`; unrelated feature scope stops;
+- start root-cause/blast-radius diagnosis as soon as useful RED evidence exists; do not wait for every independent job merely to begin ordinary repair;
+- still inspect findings that arrive from other independent jobs before finalizing the replacement checkpoint;
+- same-SHA rerun is allowed only when repository source/config is unchanged and a transient/infrastructure-only failure is evidence-based; prefer rerunning only the failed job;
+- repeated identical transient classification is forbidden; treat it as infrastructure/workflow defect;
+- if source/config/test/governance content changes, old final evidence is stale and the repair needs a replacement SHA;
+- run the smallest canonical targeted proof first, then obtain full applicable certification on the final replacement exact SHA before new functional work;
+- Sonar Quality Gate must pass when applicable; default new-code issues = 0, unresolved new Security Hotspots = 0, unresolved material Reliability/Security/Maintainability findings = 0;
+- inspect Gitar/SAST/check annotations/review threads; bot approval is supporting evidence only;
 - safety abort takes priority if continued execution risks secret/private-data exposure, broker/Real reachability, destructive migration/provider mutation, uncontrolled spend or cross-tenant exposure;
-- any new commit invalidates prior final exact-head GREEN evidence;
-- `continue-on-error` may never manufacture required GREEN.
+- only `success` counts as GREEN for an applicable project gate; failure/cancelled/queued/pending/in_progress/timed_out/action_required/stale/neutral/skipped are not GREEN under project policy;
+- post-merge applicable RED on current main means `MAIN_RED_STOP`; ordinary feature progress pauses until an accepted focused repair restores GREEN;
+- protected main is never amended or force-rewritten.
 
 Engineering invariants:
 - significant changes only through authorized branch + PR; never direct main;
 - root cause/blast radius before material fix;
-- CI is independent verifier, not primary debugger;
-- run cheap/focused preflight before expensive exact-head CI;
-- inspect full diff before final CI and before merge;
-- every applicable exact-head check must actually run and conclude success; failure/cancelled/queued/pending/neutral/skipped are not GREEN evidence;
+- CI is an independent verifier and active checkpoint certifier, not a substitute for engineering judgment or focused preflight;
+- run focused preflight before publishing a checkpoint;
+- inspect full diff before final certification and before merge;
+- every applicable exact-head check must actually run and conclude success under Omni-CIO project policy;
 - infrastructure/billing/provider failures are classified truthfully but applicable RED blocks merge;
-- squash-only merge after exact-head GREEN and zero unresolved blocking review threads;
+- squash-only merge after exact-head `CERTIFIED_GREEN` and zero unresolved blocking review threads;
+- DRAFT→READY with unchanged head does not by itself invalidate exact-SHA certification unless an applicable state-dependent workflow/ruleset requires a fresh run;
+- any content-changing commit creates a new exact head and invalidates previous final evidence;
 - post-merge Regression Shield/owning audits must pass before status advancement/OWNER product acceptance where required;
 - do not weaken tests/lint/type/security/Regression Shield to make a PR green;
 - later major System Updates do not start early;

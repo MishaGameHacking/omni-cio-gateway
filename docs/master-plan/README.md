@@ -30,7 +30,10 @@ Accepted amendment discovery:
 - `OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md` — public global browser product, managed-cloud production, no OWNER-home production dependency, free initial access and tenant-scoped broker credentials;
 - `OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md` — separates complete WP22A technical acceptance from later production activation;
 - `OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md` — Amendment 12, Integrated System Update Execution Law; changes delivery granularity while preserving dependency order, safety and accepted-main progress semantics;
-- `../architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json` — machine-readable Amendment-12 execution-unit contract;
+- `OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md` — Amendment 16, current Green Checkpoint / targeted CI repair cadence that supersedes conflicting wait-all/Single Remote Publication/batch-only defaults while preserving execution order and safety;
+- `../architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json` — machine-readable execution-unit contract with Amendment-16 supersession fields;
+- `../architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json` — machine-readable Amendment-16 checkpoint/repair contract;
+- `../operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md` — operational checkpoint/targeted-repair runbook;
 - `../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json` — machine-readable public launch direction;
 - `../architecture/V10_AI_CORTEX_CONTRACT.json` and other machine-readable companions — executable/validated policy where defined;
 - `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance.
@@ -45,7 +48,7 @@ The synchronized Master Plan Markdown/PDF pair must not be edited independently.
 
 ## V10 delivery sequence and lifecycle
 
-The canonical dependency/Block/WP sequence remains defined by `OMNI_CIO_V10_MASTER_PLAN.md`. Amendment 12 changes **delivery granularity**, not dependency order.
+The canonical dependency/Block/WP sequence remains defined by `OMNI_CIO_V10_MASTER_PLAN.md`. Amendment 12 changes **delivery granularity**, not dependency order. Amendment 16 changes verification cadence/publication/repair timing, not dependency order or accepted-main progress semantics.
 
 Every material change uses exactly one execution unit:
 
@@ -54,7 +57,9 @@ Every material change uses exactly one execution unit:
 
 For integrated work, member milestones retain their own scope/contracts/tests/internal Exit criteria but may be completed branch-locally before the single final integrated PR. Accepted percentage and next-major-update authority change only after complete squash merge plus required exact-main post-merge acceptance.
 
-Integrated work is published only after `INTEGRATION_READY`. After a verification SHA is published, `HEAD FREEZE` applies while safe independent checks reach terminal state; findings are consolidated by root cause and corrected in coherent batches rather than one CI run per symptom.
+`INTEGRATION_READY` remains the final whole-update readiness state before final landing review. Earlier logical checkpoints may be published under Amendment 16, but every published checkpoint must become `CERTIFIED_GREEN` before the next functional checkpoint or dependent milestone begins.
+
+Any applicable RED or material review finding immediately puts the branch in `RED_REPAIR_ONLY`. Diagnosis starts as soon as useful evidence exists; unchanged-source transient infrastructure failures may use specific-job same-SHA rerun, while repository-content repair requires a replacement SHA, targeted proof and full exact-SHA recertification. Temporary verifier commits/PRs and fake GREEN remain forbidden.
 
 Every integrated update uses `../updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` and the repository System Update dashboard issue template. Those working records must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
 
@@ -78,8 +83,8 @@ The accepted amendments clarify implementation without changing block weights/or
 - final public V10 production must be hosted independently of OWNER home infrastructure; Lenovo remains engineering/CI/recovery;
 - initial public USER access is free; future monetization is deferred optional scope;
 - broker READ/optional TRADE credentials belong only to the authenticated tenant's `BrokerConnection`;
-- CI is verifier rather than primary debugger, and every applicable exact-head merge gate must conclude SUCCESS;
-- Amendment 12 never weakens exact-head, squash, recovery, public-production, broker or Real-money gates.
+- CI is an independent verifier and active checkpoint certifier; focused preflight remains mandatory and every applicable exact-head project gate must conclude SUCCESS;
+- Amendment 16 requires `CERTIFIED_GREEN` before the next functional checkpoint and does not weaken exact-head, squash, recovery, public-production, broker or Real-money gates.
 
 ## Prepared visual System Update
 
@@ -117,7 +122,7 @@ For current V10 development:
 2. `../../AGENTS.md`;
 3. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 4. synchronized `OMNI_CIO_V10_MASTER_PLAN.md` + PDF + SHA manifest;
-5. `OMNI_CIO_V10_AMENDMENTS_INDEX.md` + accepted active amendments;
+5. `OMNI_CIO_V10_AMENDMENTS_INDEX.md` + accepted active amendments, with later explicit amendments controlling conflicts;
 6. machine-readable contracts;
 7. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for dynamic progress/current-next execution authority;
 8. accepted V10 architecture/ADR/current execution-unit contracts;
@@ -140,6 +145,6 @@ V10 development does not silently remove V9 safety boundaries:
 
 ## Further-change rule
 
-V10 work proceeds through the execution unit authorized by current status. `FOCUSED_CHANGE` remains focused and reviewable. `INTEGRATED_SYSTEM_UPDATE` keeps ordered internal milestones, complete preflight, `INTEGRATION_READY`, HEAD FREEZE verification batches, consolidated root-cause correction batches, all applicable exact-head SUCCESS, zero blocking review threads, squash merge and required post-merge verification.
+V10 work proceeds through the execution unit authorized by current status. `FOCUSED_CHANGE` remains focused and reviewable. `INTEGRATED_SYSTEM_UPDATE` keeps ordered internal milestones, focused preflight, final `INTEGRATION_READY`, Green Checkpoint certification before dependent work, immediate `RED_REPAIR_ONLY` on material failure, targeted repair proof, full exact-SHA recertification, all applicable exact-head SUCCESS, zero blocking review threads, squash merge and required post-merge verification.
 
 New material scope is accepted only through the amendment process. V11/competing programs remain prohibited until V10 final acceptance.

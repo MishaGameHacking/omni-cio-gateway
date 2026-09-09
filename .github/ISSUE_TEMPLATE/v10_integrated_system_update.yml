@@ -8,7 +8,7 @@ body:
       value: |
         **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 
-        Use this only for an `INTEGRATED_SYSTEM_UPDATE` explicitly authorized by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Accepted progress remains in the canonical status file on protected `main`. Do not paste secrets, private portfolio payloads, full account IDs or provider credentials.
+        Use this only for an `INTEGRATED_SYSTEM_UPDATE` explicitly authorized by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Accepted progress remains in the canonical status file on protected `main`. Apply Amendment 16 Green Checkpoint certification to every published logical checkpoint. Do not paste secrets, private portfolio payloads, full account IDs or provider credentials.
   - type: input
     id: update_id
     attributes:
@@ -34,7 +34,7 @@ body:
     id: milestones
     attributes:
       label: Ordered member milestones
-      description: Keep states as DONE / IN_PROGRESS / TODO / BLOCKED and preserve dependency order.
+      description: Keep states as DONE / IN_PROGRESS / TODO / BLOCKED, preserve dependency order, and do not start dependent work until the current published checkpoint is CERTIFIED_GREEN.
       value: |
         - [ ] 1. TODO —
         - [ ] 2. TODO —
@@ -44,9 +44,12 @@ body:
   - type: textarea
     id: execution_state
     attributes:
-      label: Current exact work item / next action / blockers / known defects
+      label: Current exact work item / checkpoint / next action / blockers / known defects
       value: |
         Current exact work item:
+        Current logical checkpoint:
+        Current exact SHA:
+        Checkpoint state: PENDING / RED_REPAIR_ONLY / TARGET_REPAIRED / CERTIFIED_GREEN
         Next exact action:
         Blockers: NONE
         Known defects: NONE
@@ -55,8 +58,8 @@ body:
   - type: textarea
     id: preflight
     attributes:
-      label: Internal focused / preflight evidence
-      description: Record local/focused tests, full-diff review, coupled-surface review and INTEGRATION_READY evidence.
+      label: Focused preflight / INTEGRATION_READY evidence
+      description: Record focused tests, full changed-surface review, coupled-surface review and final whole-update INTEGRATION_READY evidence. Earlier checkpoints may be certified before INTEGRATION_READY.
     validations:
       required: true
   - type: textarea
@@ -90,16 +93,21 @@ body:
         - label: Tenant isolation and secret/private-data exclusion from GitHub/CI/artifacts remain fail-closed.
           required: true
   - type: textarea
-    id: verification_batches
+    id: green_checkpoints
     attributes:
-      label: Verification batches / exact SHAs / consolidated findings
-      description: Freeze each published head while safe checks finish. Group findings by root cause before the next correction batch.
+      label: Green Checkpoint / targeted repair evidence
+      description: Any material RED immediately means RED_REPAIR_ONLY. Same-SHA rerun is only for unchanged-source proved transient failure; content-changing repair requires targeted proof, replacement SHA and full exact-SHA recertification.
       value: |
-        Verification SHA:
-        DRAFT/READY:
+        Logical checkpoint:
+        Exact SHA:
+        State: PENDING / RED_REPAIR_ONLY / TARGET_REPAIRED / CERTIFIED_GREEN
         Applicable checks and terminal conclusions:
-        Consolidated findings/root causes:
-        Correction batch:
+        Sonar QG / new issues / hotspots:
+        Independent findings / root-cause groups:
+        Same-SHA rerun evidence: N/A / reason
+        Targeted proof: N/A / command or run
+        Replacement SHA: N/A / SHA
+        Full recertification: PASS / FAIL / PENDING
     validations:
       required: true
   - type: textarea
@@ -107,14 +115,14 @@ body:
     attributes:
       label: Final lifecycle
       value: |
+        - [ ] All required member milestones complete in dependency order
+        - [ ] Current exact head CERTIFIED_GREEN
         - [ ] INTEGRATION_READY
-        - [ ] DRAFT exact-head applicable checks all success
-        - [ ] Independent review complete
-        - [ ] Fresh final exact-head verification complete
-        - [ ] READY exact-head applicable checks all success
+        - [ ] Independent review / Files changed complete
         - [ ] Zero unresolved blocking threads
+        - [ ] READY transition complete; any state-dependent applicable checks success
         - [ ] Squash merge
         - [ ] Exact-new-main Regression Shield / owning post-merge gates success
-        - [ ] Canonical current status updated from accepted evidence
+        - [ ] Canonical current status updated only if accepted progress/authority actually changes
     validations:
       required: true

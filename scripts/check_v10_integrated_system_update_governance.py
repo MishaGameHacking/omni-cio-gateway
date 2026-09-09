@@ -13,6 +13,10 @@ PATHS = {
     "index": ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md",
     "contract": ROOT
     / "docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json",
+    "green_checkpoint_amendment": ROOT
+    / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md",
+    "green_checkpoint_contract": ROOT
+    / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json",
     "ledger": ROOT
     / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md",
     "wp_template": ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md",
@@ -33,7 +37,9 @@ FOCUSED_CHANGE = "FOCUSED_CHANGE"
 INTEGRATED_SYSTEM_UPDATE = "INTEGRATED_SYSTEM_UPDATE"
 INTEGRATED_UPDATE_LAW = "Integrated System Update Execution Law"
 INTEGRATION_READY = "INTEGRATION_READY"
-HEAD_FREEZE = "HEAD FREEZE"
+GREEN_CHECKPOINT_LAW = "Green Checkpoint & Targeted CI Repair Law"
+CERTIFIED_GREEN = "CERTIFIED_GREEN"
+RED_REPAIR_ONLY = "RED_REPAIR_ONLY"
 PRODUCT_IMPLEMENTATION_PAUSED = "PRODUCT IMPLEMENTATION PAUSED"
 WEB_VISUAL_INTEGRATED = "WEB-VISUAL-INTEGRATED"
 OWNER_START_REQUIRED = "OWNER START REQUIRED"
@@ -53,21 +59,15 @@ TRUE_RULES = {
         "next_major_update_locked_until_acceptance",
         "only_one_product_integrated_update_active_by_default",
     ),
-    "publication": (
-        "publish_after_integration_ready",
-        "temporary_verifier_commits_forbidden",
-        "one_coherent_implementation_head_default",
-        "second_published_head_requires_correction_batch_base_sync_or_split_reason",
-    ),
     "verification": (
-        "head_freeze_after_external_verification",
-        "observe_safe_findings_before_fix",
+        "immediate_repair_on_material_red",
         "root_cause_before_correction",
         "blast_radius_before_correction",
         "analogous_pattern_search_before_correction",
         "coupled_producer_consumer_review_before_correction",
         "adjacent_failure_mode_review_before_correction",
-        "batch_correction_default",
+        "targeted_recheck_before_full_recertification_preferred",
+        "full_recertification_before_next_functional_checkpoint",
         "continue_on_error_to_fake_green_forbidden",
         "exact_head_success_only",
         "new_commit_invalidates_prior_final_green",
@@ -80,6 +80,31 @@ TRUE_RULES = {
         "product_scope_preserved",
     ),
 }
+
+FALSE_RULES = {
+    "publication": (
+        "publish_after_integration_ready",
+        "one_coherent_implementation_head_default",
+    ),
+    "verification": (
+        "head_freeze_after_external_verification",
+        "observe_safe_findings_before_fix",
+        "batch_correction_default",
+    ),
+}
+
+TRUE_PUBLICATION = (
+    "checkpoint_publication_allowed_before_integration_ready",
+    "temporary_verifier_commits_forbidden",
+    "green_checkpoint_required_before_next_functional_checkpoint",
+)
+
+TRUE_AMENDMENT_16_SUPERSESSION = (
+    "single_remote_publication_default_superseded",
+    "wait_all_head_freeze_superseded",
+    "batch_only_repair_default_superseded",
+    "integration_ready_remains_final_whole_update_gate",
+)
 
 FALSE_PROTECTED = (
     "trading_methods",
@@ -112,41 +137,42 @@ SURFACE_MARKERS = {
     "amendment": (
         f"{INTEGRATED_UPDATE_LAW} / Amendment 12",
         "Single Remote Publication Default",
-        HEAD_FREEZE,
+        "HEAD FREEZE",
         "Systemic diagnosis and batch-correction law",
         PRODUCT_IMPLEMENTATION_PAUSED,
         OWNER_START_COMMAND,
     ),
+    "green_checkpoint_amendment": (
+        f"{GREEN_CHECKPOINT_LAW} / Amendment 16",
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+        "Same-SHA targeted rerun",
+    ),
     "index": (
         INTEGRATED_UPDATE_LAW,
+        GREEN_CHECKPOINT_LAW,
         "OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md",
-        "V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json",
+        "OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md",
     ),
     "ledger": (
         BRANCH_LEDGER_BANNER,
         "Mandatory split-trigger review",
-        f"Verification batches / {HEAD_FREEZE}",
-        "Root-cause inventory and correction batch",
     ),
     "wp_template": (
         "Execution unit",
         INTEGRATED_SYSTEM_UPDATE,
         INTEGRATION_READY,
-        HEAD_FREEZE,
         "mandatory split review",
     ),
     "pr_template": (
         "Execution unit",
         INTEGRATION_READY,
-        HEAD_FREEZE,
-        "consolidated finding inventory",
         "System Update dashboard",
     ),
     "issue_template": (
         "V10 Integrated System Update Dashboard",
         BRANCH_LEDGER_BANNER,
         "Mandatory split-trigger review",
-        "Verification batches / exact SHAs / consolidated findings",
     ),
     "status": (
         PRODUCT_IMPLEMENTATION_PAUSED,
@@ -157,16 +183,12 @@ SURFACE_MARKERS = {
     ),
     "agents": (
         INTEGRATED_UPDATE_LAW,
+        GREEN_CHECKPOINT_LAW,
         FOCUSED_CHANGE,
         INTEGRATED_SYSTEM_UPDATE,
-        HEAD_FREEZE,
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
         OWNER_START_COMMAND,
-    ),
-    "contributing": (
-        INTEGRATED_UPDATE_LAW,
-        INTEGRATION_READY,
-        HEAD_FREEZE,
-        "correction batch",
     ),
     "readme": (
         WEB_VISUAL_INTEGRATED,
@@ -178,24 +200,9 @@ SURFACE_MARKERS = {
         PRODUCT_IMPLEMENTATION_PAUSED,
         OWNER_START_REQUIRED,
     ),
-    "copilot": (
-        INTEGRATED_UPDATE_LAW,
-        INTEGRATED_SYSTEM_UPDATE,
-        HEAD_FREEZE,
-    ),
-    "project_instructions": (
-        INTEGRATED_UPDATE_LAW,
-        INTEGRATED_SYSTEM_UPDATE,
-        HEAD_FREEZE,
-    ),
-    "new_chat": (
-        INTEGRATED_UPDATE_LAW,
-        INTEGRATED_SYSTEM_UPDATE,
-        HEAD_FREEZE,
-    ),
     "workflow": (
         "python scripts/check_v10_integrated_system_update_governance.py",
-        "scripts/check_v10_integrated_system_update_governance.py",
+        "python scripts/check_v10_green_checkpoint_ci_repair.py",
     ),
 }
 
@@ -214,16 +221,16 @@ def read_surface(name: str, failures: list[str]) -> str:
         return ""
 
 
-def load_contract(failures: list[str]) -> dict[str, Any]:
-    raw = read_surface("contract", failures)
+def load_json_surface(name: str, failures: list[str]) -> dict[str, Any]:
+    raw = read_surface(name, failures)
     if not raw:
         return {}
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        failures.append(f"invalid integrated-update contract JSON: {exc}")
+        failures.append(f"invalid JSON in {PATHS[name].relative_to(ROOT)}: {exc}")
         return {}
-    fail_unless(isinstance(payload, dict), "contract root must be an object", failures)
+    fail_unless(isinstance(payload, dict), f"{name} root must be an object", failures)
     return payload if isinstance(payload, dict) else {}
 
 
@@ -291,10 +298,35 @@ def validate_authority(payload: dict[str, Any], failures: list[str]) -> None:
     )
 
 
-def validate_true_rules(payload: dict[str, Any], failures: list[str]) -> None:
+def validate_rules(payload: dict[str, Any], failures: list[str]) -> None:
     for section_name, keys in TRUE_RULES.items():
         section = mapping_section(payload, section_name, failures)
         validate_boolean_values(section, keys, True, section_name, failures)
+    for section_name, keys in FALSE_RULES.items():
+        section = mapping_section(payload, section_name, failures)
+        validate_boolean_values(section, keys, False, section_name, failures)
+    publication = mapping_section(payload, "publication", failures)
+    validate_boolean_values(
+        publication, TRUE_PUBLICATION, True, "publication", failures
+    )
+    amendment_16 = mapping_section(payload, "amendment_16_supersession", failures)
+    validate_boolean_values(
+        amendment_16,
+        TRUE_AMENDMENT_16_SUPERSESSION,
+        True,
+        "amendment_16_supersession",
+        failures,
+    )
+    validate_expected_values(
+        amendment_16,
+        {
+            "law": "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md",
+            "contract": "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json",
+            "runbook": "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md",
+        },
+        "amendment_16_supersession",
+        failures,
+    )
 
 
 def validate_ledgers(payload: dict[str, Any], failures: list[str]) -> None:
@@ -361,7 +393,7 @@ def validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
         failures,
     )
     validate_authority(payload, failures)
-    validate_true_rules(payload, failures)
+    validate_rules(payload, failures)
     validate_ledgers(payload, failures)
     fail_unless(
         set(payload.get("split_triggers", [])) == EXPECTED_SPLIT_TRIGGERS,
@@ -369,6 +401,26 @@ def validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
         failures,
     )
     validate_protected_invariants(payload, failures)
+
+
+def validate_green_checkpoint_contract(failures: list[str]) -> None:
+    payload = load_json_surface("green_checkpoint_contract", failures)
+    fail_unless(
+        payload.get("schema") == "omni-cio.v10.green-checkpoint-targeted-ci-repair.v1",
+        "Green Checkpoint contract schema mismatch",
+        failures,
+    )
+    core = mapping_section(payload, "core", failures)
+    fail_unless(
+        core.get("next_functional_checkpoint_requires_certified_green") is True,
+        "Green Checkpoint must block next functional checkpoint until certified",
+        failures,
+    )
+    fail_unless(
+        core.get("must_wait_for_all_independent_jobs_before_starting_repair") is False,
+        "Green Checkpoint repair must not wait for all independent jobs",
+        failures,
+    )
 
 
 def validate_surfaces(failures: list[str]) -> None:
@@ -384,7 +436,8 @@ def validate_surfaces(failures: list[str]) -> None:
 
 def main() -> int:
     failures: list[str] = []
-    validate_contract(load_contract(failures), failures)
+    validate_contract(load_json_surface("contract", failures), failures)
+    validate_green_checkpoint_contract(failures)
     validate_surfaces(failures)
 
     if failures:
@@ -395,8 +448,10 @@ def main() -> int:
 
     print("V10 integrated-system-update governance check passed.")
     print(f"Execution units: {FOCUSED_CHANGE} / {INTEGRATED_SYSTEM_UPDATE}")
-    print(f"Publication: {INTEGRATION_READY} before external verification")
-    print(f"Verification: {HEAD_FREEZE} + consolidated root-cause correction batches")
+    print(
+        "Verification: Green Checkpoint immediate repair + targeted proof + "
+        "full exact-SHA recertification"
+    )
     print("Accepted progress: main/post-merge only")
     print("Product implementation: PAUSED until exact OWNER START")
     return 0
