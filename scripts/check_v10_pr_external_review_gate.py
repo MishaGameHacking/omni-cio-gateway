@@ -21,6 +21,8 @@ GITHUB_API_HOST = "api.github.com"
 GITHUB_API_ROOT = f"https://{GITHUB_API_HOST}"
 ZERO_NEW_ISSUES = re.compile(r"\[(\d+) New issues\]")
 ZERO_HOTSPOTS = re.compile(r"\[(\d+) Security Hotspots\]")
+NEW_ISSUES_ZERO_FAILURE = "new issues must be 0"
+HOTSPOTS_ZERO_FAILURE = "Security Hotspots must be 0"
 API_VERSION = "2022-11-28"
 DEFAULT_ATTEMPTS = 25
 DEFAULT_DELAY_SECONDS = 5
@@ -103,9 +105,9 @@ def _validate_sonar_run(run: dict[str, Any]) -> list[str]:
     summary = output.get("summary")
     summary = summary if isinstance(summary, str) else ""
 
-    for pattern, label, failure_label in (
-        (ZERO_NEW_ISSUES, "new-issues metric", "new issues"),
-        (ZERO_HOTSPOTS, "Security-Hotspots metric", "Security Hotspots"),
+    for pattern, label, failure_message in (
+        (ZERO_NEW_ISSUES, "new-issues metric", NEW_ISSUES_ZERO_FAILURE),
+        (ZERO_HOTSPOTS, "Security-Hotspots metric", HOTSPOTS_ZERO_FAILURE),
     ):
         try:
             value = _metric(summary, pattern, label)
@@ -114,7 +116,7 @@ def _validate_sonar_run(run: dict[str, Any]) -> list[str]:
         else:
             if value != 0:
                 failures.append(
-                    f"{SONAR_EXACT_HEAD} {failure_label} must be 0, got {value}"
+                    f"{SONAR_EXACT_HEAD} {failure_message}, got {value}"
                 )
 
     annotations_count = output.get(ANNOTATIONS_COUNT_KEY)
