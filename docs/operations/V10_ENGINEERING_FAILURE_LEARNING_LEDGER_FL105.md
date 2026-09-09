@@ -6,23 +6,25 @@ Authority: Amendment 8 + Amendment 12 + proposed Amendment 16
 
 ## Symptom / failing gates
 
-During exact-head certification of PR #471, `V10 Engineering Governance` exposed two successive fail-closed defects after the new Green Checkpoint law itself and exact-head Sonar review had already passed:
+During exact-head certification of PR #471, fail-closed verification exposed three repository-content defects while the Green Checkpoint repair loop was being exercised:
 
 1. `check_v10_green_checkpoint_ci_repair.py` rejected `scripts/check_v10_pr_external_review_gate.py` because the deterministic guard required literal zero-finding markers while the reviewed Sonar gate had been refactored to construct those failure messages dynamically.
 2. After that repair, `check_v10_cloudflare_candidate_delivery.py` rejected the current Cloudflare branch Execution Ledger because its coupled ledger guard still required the superseded `HEAD FREEZE` marker instead of Amendment-16 Green Checkpoint state markers.
+3. After restoring static Sonar markers, `Self-Hosted Windows CI` rejected the replacement checkpoint because the final one-line failure-message edit had not been passed through canonical Ruff formatting before publication.
 
-Neither failure authorized a same-SHA blind rerun. Both were repository-content defects and therefore required replacement SHAs and fresh certification.
+None of these failures authorized a same-SHA blind rerun. Each was a repository-content defect and therefore required a replacement SHA and fresh certification.
 
 ## Root cause
 
 `GOVERNANCE_SUPERSESSION_PRODUCER_CONSUMER_DRIFT`
 
-The Amendment-16 update correctly changed canonical governance producers — machine contracts, live guidance, templates, runbooks and central governance checks — but the first implementation pass did not completely bind every downstream deterministic consumer to the new representation.
+The Amendment-16 update correctly changed canonical governance producers — machine contracts, live guidance, templates, runbooks and central governance checks — but the first implementation pass did not completely bind every downstream deterministic consumer to the new representation. A later repair also proved that replacement-head publication must repeat the cheap formatting preflight after every content edit, even when the semantic change is one line.
 
-The two sub-classes were:
+The defect sub-classes were:
 
 - **static-marker drift**: a guard asserted source evidence by literal marker while the producer generated the same semantic message from a variable;
-- **superseded-consumer drift**: a pre-existing Cloudflare candidate guard consumed the branch Execution Ledger and still encoded the old `HEAD FREEZE` vocabulary.
+- **superseded-consumer drift**: a pre-existing Cloudflare candidate guard consumed the branch Execution Ledger and still encoded the old `HEAD FREEZE` vocabulary;
+- **post-repair preflight drift**: a content repair was semantically correct but was published without re-running the canonical formatter check on the touched Python file.
 
 ## Blast radius / analogous search
 
@@ -33,6 +35,7 @@ Reviewed surfaces included:
 - `scripts/check_v10_integrated_system_update_governance.py` historical Amendment-12 marker validation;
 - `scripts/check_v10_cloudflare_candidate_delivery.py` as a live consumer of the active Cloudflare ledger;
 - exact-head Sonar enforcement and its tests;
+- Ruff formatting on all changed Python governance/check/test surfaces;
 - repository search for remaining `HEAD FREEZE` references, distinguishing historical amendment evidence from active operational consumers.
 
 Historical Amendment-12 text is preserved as historical authority evidence. Active live guidance/consumers must follow Amendment 16 once it is accepted.
@@ -41,12 +44,15 @@ Historical Amendment-12 text is preserved as historical authority evidence. Acti
 
 The first preflight concentrated on the new law's owning files and live-guidance surfaces. It did not execute every already-existing downstream guard that parses those surfaces before the first exact-head governance cycle. The Sonar-message refactor also preserved runtime semantics but unintentionally removed the exact static source marker consumed by the new self-check.
 
-This is precisely the class of failure the Green Checkpoint law is intended to surface before dependent work proceeds.
+The later formatting RED happened because the replacement edit was published after semantic review but before the cheap `ruff format --check` was repeated on the touched file. A replacement SHA is a new checkpoint and must repeat applicable cheap preflight rather than inheriting it from the prior SHA.
+
+These failures are precisely the classes the Green Checkpoint law is intended to surface before dependent work proceeds.
 
 ## Corrective change
 
 - Keep explicit static zero-finding message constants in `check_v10_pr_external_review_gate.py` while retaining the exact same fail-closed Sonar semantics.
 - Update `check_v10_cloudflare_candidate_delivery.py` to require `Green Checkpoint verification`, `RED_REPAIR_ONLY` and `CERTIFIED_GREEN` from the active Cloudflare branch ledger instead of the superseded `HEAD FREEZE` marker.
+- Apply canonical Ruff formatting to the Sonar review guard before publishing the replacement checkpoint.
 - Preserve all CF-C/CF-D provider, secret, tenant, rollback, production and broker/Real-money authority guards unchanged.
 - Treat every content repair as a replacement checkpoint SHA; prior final evidence is stale.
 
@@ -55,6 +61,7 @@ This is precisely the class of failure the Green Checkpoint law is intended to s
 - `V10 Engineering Governance` executes the Green Checkpoint guard and the Cloudflare candidate-delivery guard in the same exact-head job.
 - `check_v10_green_checkpoint_ci_repair.py` verifies active guidance has Amendment-16 markers and rejects known superseded operational markers.
 - `tests/test_v10_cloudflare_candidate_provider.py::test_repository_candidate_contract_is_valid` executes the candidate guard against the real repository ledger.
+- `Self-Hosted Windows CI` runs canonical Ruff lint/format and mypy before protected runtime tests/security.
 - Exact-head Sonar enforcement still requires Quality Gate success, zero new issues, zero Security Hotspots and zero annotations/new findings.
 
 ## Future prevention rule
@@ -63,6 +70,8 @@ A governance supersession must audit **both producers and consumers** before pub
 
 If a source guard relies on literal source evidence, keep that evidence static and explicit or replace the check with a semantic executable assertion. Do not allow a formatting/refactor-only change to silently invalidate the machine governance contract.
 
+After **every** content-changing repair, repeat the smallest applicable canonical format/lint/type or parser preflight on the touched surface before publishing the replacement SHA. A one-line repair does not inherit preflight evidence from the prior SHA.
+
 ## Dependency / tooling knowledge change
 
-Marker-based governance validators are interface consumers. Their expected vocabulary is part of the repository contract and must be migrated together with the documents or ledgers they parse.
+Marker-based governance validators are interface consumers. Their expected vocabulary is part of the repository contract and must be migrated together with the documents or ledgers they parse. Formatter conformance is likewise part of the exact-head repository contract, not a cosmetic post-processing step.
