@@ -7,8 +7,13 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-AMENDMENT = ROOT / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md"
-CONTRACT = ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
+AMENDMENT = (
+    ROOT
+    / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md"
+)
+CONTRACT = (
+    ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
+)
 RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
 TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 AUTHORITATIVE_WORKFLOW = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
@@ -19,6 +24,9 @@ TARGET_REPAIRED = "TARGET_REPAIRED"
 CERTIFIED_GREEN = "CERTIFIED_GREEN"
 MAIN_RED_STOP = "MAIN_RED_STOP"
 SUCCESS = "success"
+GREEN_CHECKPOINT_LAW = "Green Checkpoint & Targeted CI Repair Law"
+GREEN_CHECKPOINT_AMENDMENT = f"{GREEN_CHECKPOINT_LAW} / Amendment 16"
+GREEN_CHECKPOINT_REPAIR = "Green Checkpoint / targeted CI repair"
 
 CORE_SECTION = "core"
 SAME_SHA_SECTION = "same_sha_rerun"
@@ -35,13 +43,13 @@ AUTHORITATIVE_CHECK_NAME = "V10 authoritative merge gate"
 
 LIVE_GUIDANCE_MARKERS: dict[Path, tuple[str, ...]] = {
     ROOT / "AGENTS.md": (
-        "Green Checkpoint & Targeted CI Repair Law",
+        GREEN_CHECKPOINT_LAW,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
         MAIN_RED_STOP,
     ),
     ROOT / "CONTRIBUTING.md": (
-        "Green Checkpoint & Targeted CI Repair Law",
+        GREEN_CHECKPOINT_LAW,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
     ),
@@ -51,27 +59,27 @@ LIVE_GUIDANCE_MARKERS: dict[Path, tuple[str, ...]] = {
         CERTIFIED_GREEN,
     ),
     ROOT / ".github/copilot-instructions.md": (
-        "Green Checkpoint / targeted CI repair",
+        GREEN_CHECKPOINT_REPAIR,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
     ),
     ROOT / "gpt/PROJECT_INSTRUCTIONS.md": (
-        "Green Checkpoint & Targeted CI Repair Law / Amendment 16",
+        GREEN_CHECKPOINT_AMENDMENT,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
     ),
     ROOT / "gpt/NEW_CHAT_PROMPT.md": (
-        "Green Checkpoint & Targeted CI Repair Law / Amendment 16",
+        GREEN_CHECKPOINT_AMENDMENT,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
     ),
     ROOT / "docs/master-plan/README.md": (
-        "Green Checkpoint / targeted CI repair",
+        GREEN_CHECKPOINT_REPAIR,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
     ),
     ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md": (
-        "Green Checkpoint & Targeted CI Repair Law",
+        GREEN_CHECKPOINT_LAW,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
     ),
@@ -86,7 +94,7 @@ LIVE_GUIDANCE_MARKERS: dict[Path, tuple[str, ...]] = {
         CERTIFIED_GREEN,
     ),
     ROOT / ".github/pull_request_template.md": (
-        "Green Checkpoint / targeted CI repair",
+        GREEN_CHECKPOINT_REPAIR,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
     ),
@@ -333,9 +341,7 @@ def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     _validate_green_and_main(payload, failures)
 
 
-def _validate_markers(
-    path: Path, markers: tuple[str, ...], failures: list[str]
-) -> str:
+def _validate_markers(path: Path, markers: tuple[str, ...], failures: list[str]) -> str:
     content = _read(path, failures)
     for marker in markers:
         _fail(
@@ -349,7 +355,7 @@ def _validate_markers(
 def _validate_static_surfaces(failures: list[str]) -> None:
     surfaces = {
         AMENDMENT: (
-            "Green Checkpoint & Targeted CI Repair Law / Amendment 16",
+            GREEN_CHECKPOINT_AMENDMENT,
             RED_REPAIR_ONLY,
             TARGET_REPAIRED,
             CERTIFIED_GREEN,
@@ -425,7 +431,9 @@ def main() -> int:
         "FULL_CERTIFICATION -> CERTIFIED_GREEN"
     )
     print("Live guidance: synchronized with Amendment 16")
-    print("Targeted verifier: exact dispatch head + accepted frontend toolchain enforced")
+    print(
+        "Targeted verifier: exact dispatch head + accepted frontend toolchain enforced"
+    )
     print("Required merge gate: exact-head Sonar zero-issue enforcement enabled")
     print("Next functional checkpoint requires CERTIFIED_GREEN.")
     return 0
