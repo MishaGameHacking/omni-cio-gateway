@@ -111,7 +111,10 @@ def _validate_contract_runtime(contract: dict[str, Any]) -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_PAID_OVERAGE_FORBIDDEN")
     if release.get("worker_name") != "omni-cio-v10-web":
         raise RuntimeError("CLOUDFLARE_RUNTIME_WORKER_NAME_INVALID")
-    if release.get("container_rollout_completion_is_not_assumed_from_deploy_success") is not True:
+    if (
+        release.get("container_rollout_completion_is_not_assumed_from_deploy_success")
+        is not True
+    ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_ROLLOUT_PROOF_REQUIRED")
 
 
@@ -307,7 +310,7 @@ def _validate_runtime() -> None:
         "expected_runtime_role=runtime_role",
         "provider_auth=None",
         "trusted_edge_tls_terminated=False",
-        'generated_cloudflare_source_sha.txt',
+        "generated_cloudflare_source_sha.txt",
         '"CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_REQUIRED"',
         '"CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_INVALID"',
         '"CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_DRIFT"',
