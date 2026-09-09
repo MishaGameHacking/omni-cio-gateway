@@ -26,6 +26,7 @@ from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
 
 _AUDIENCE = "omni-cio-cf-d-production-database-bootstrap"
 _STAGING_PATH = "/api/internal/v10/cf-d/production-database-bootstrap"
+_STAGING_OIDC_HEADER = "X-Omni-GitHub-OIDC"
 _PRODUCTION_ROLE = "omni_cio_cloudflare_prod"
 _EXPECTED_STAGING_PREFIX = "omni-cio-v10-web-staging."
 _WORKERS_DEV_SUFFIX = ".workers.dev"
@@ -352,7 +353,7 @@ def _bootstrap_runtime_dsn(origin: str, expected_sha: str, oidc_token: str) -> s
         f"{origin}{_STAGING_PATH}",
         data=body,
         headers={
-            "Authorization": f"Bearer {oidc_token}",
+            _STAGING_OIDC_HEADER: oidc_token,
             "X-Omni-Expected-Sha": expected_sha,
             "Accept": "application/json",
             "Content-Type": "application/json",
