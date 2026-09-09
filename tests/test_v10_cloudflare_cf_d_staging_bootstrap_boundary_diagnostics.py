@@ -80,9 +80,10 @@ class CloudflareCfDStagingBootstrapBoundaryDiagnosticsTests(unittest.TestCase):
         status = STAGING_OUTER_FAILURE_STATUS_BY_DETAIL[detail]
         opener = mock.Mock()
         opener.open.side_effect = _http_error(status, _json_bytes({"detail": detail}))
+        request = _request()
         with mock.patch.object(runner, "_OPENER", opener):
             with self.assertRaises(runner.BootstrapStopped) as stopped:
-                runner._request_staging_bootstrap_json(_request())
+                runner._request_staging_bootstrap_json(request)
         self.assertEqual(
             stopped.exception.code,
             f"{STAGING_OUTER_FAILURE_PREFIX}{detail}",
@@ -99,21 +100,26 @@ class CloudflareCfDStagingBootstrapBoundaryDiagnosticsTests(unittest.TestCase):
             with self.subTest(status=status):
                 opener = mock.Mock()
                 opener.open.side_effect = _http_error(status, content)
+                request = _request()
                 with mock.patch.object(runner, "_OPENER", opener):
                     with self.assertRaises(runner.BootstrapStopped) as stopped:
-                        runner._request_staging_bootstrap_json(_request())
+                        runner._request_staging_bootstrap_json(request)
                 self.assertEqual(
                     stopped.exception.code,
                     f"{STAGING_UNCLASSIFIED_HTTP_PREFIX}{status}_UNCLASSIFIED",
                 )
-                self.assertNotIn(content.decode("utf-8", errors="ignore"), str(stopped.exception))
+                self.assertNotIn(
+                    content.decode("utf-8", errors="ignore"),
+                    str(stopped.exception),
+                )
 
     def test_unsupported_unknown_status_remains_generic(self) -> None:
         opener = mock.Mock()
         opener.open.side_effect = _http_error(418, b"synthetic detail")
+        request = _request()
         with mock.patch.object(runner, "_OPENER", opener):
             with self.assertRaises(runner.BootstrapStopped) as stopped:
-                runner._request_staging_bootstrap_json(_request())
+                runner._request_staging_bootstrap_json(request)
         self.assertEqual(stopped.exception.code, GENERIC_STAGING_BOOTSTRAP_FAILURE)
 
 
