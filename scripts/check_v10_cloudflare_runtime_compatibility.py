@@ -16,9 +16,13 @@ CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RUNTIME_COMPATIBILITY_CONTRA
 WRANGLER = ROOT / "wrangler.jsonc"
 WORKER = ROOT / "cloudflare/src/index.js"
 DOCKERFILE = ROOT / "Dockerfile.cloudflare"
+DOCKERIGNORE = ROOT / ".dockerignore"
 RUNTIME = ROOT / "apps/api/cloudflare_runtime.py"
+BUILD_INFO = ROOT / "scripts/write_v10_cloudflare_build_info.py"
 WEB_CONFIG = ROOT / "apps/web/vite.config.ts"
 _RUNTIME_ROLE_BINDING = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
+_CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
+_CONTAINER_SOURCE_FILE = "apps/api/generated_cloudflare_source_sha.txt"
 
 
 def _read(path: Path) -> str:
@@ -107,6 +111,11 @@ def _validate_contract_runtime(contract: dict[str, Any]) -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_PAID_OVERAGE_FORBIDDEN")
     if release.get("worker_name") != "omni-cio-v10-web":
         raise RuntimeError("CLOUDFLARE_RUNTIME_WORKER_NAME_INVALID")
+    if (
+        release.get("container_rollout_completion_is_not_assumed_from_deploy_success")
+        is not True
+    ):
+        raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_ROLLOUT_PROOF_REQUIRED")
 
 
 def _validate_contract_security(contract: dict[str, Any]) -> None:
@@ -125,6 +134,9 @@ def _validate_contract_security(contract: dict[str, Any]) -> None:
         "database_secret_absence_returns_503_before_container_start",
         "runtime_database_role_source_controlled",
         "runtime_database_role_validated_at_worker_and_container",
+        "container_image_source_sha_baked",
+        "container_image_source_sha_matches_runtime_release_sha",
+        "container_image_source_probe_exact_sha_required",
     )
     for key in expected_true:
         if security.get(key) is not True:
@@ -134,6 +146,8 @@ def _validate_contract_security(contract: dict[str, Any]) -> None:
         != "https://omni-cio.internal/_omni/cloudflare-proxy"
     ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_TRANSPORT_URL_INVALID")
+    if security.get("container_image_source_path") != _CONTAINER_SOURCE_PATH:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_SOURCE_PATH_INVALID")
     expected_false = (
         "telegram_vk_provider_auth_enabled",
         "public_multi_user_enabled",
@@ -228,6 +242,18 @@ def _validate_worker() -> None:
     )
 
 
+def _validate_build_info() -> None:
+    build_info = _read(BUILD_INFO)
+    _require_markers(
+        build_info,
+        (
+            'CONTAINER_OUTPUT = ROOT / "apps/api/generated_cloudflare_source_sha.txt"',
+            'CONTAINER_OUTPUT.write_text(f"{source_sha}\\n", encoding="ascii")',
+        ),
+        "CLOUDFLARE_RUNTIME_CONTAINER_SOURCE_BUILD_INFO_MISSING",
+    )
+
+
 def _validate_dockerfile() -> None:
     dockerfile = _read(DOCKERFILE)
     _require_markers(
@@ -236,6 +262,7 @@ def _validate_dockerfile() -> None:
             "FROM python:3.14.6-slim-bookworm",
             "RUN npm ci --ignore-scripts --prefix apps/web",
             "python -m pip install --require-hashes -r requirements.txt",
+            "RUN test -s apps/api/generated_cloudflare_source_sha.txt",
             "USER omni",
             "apps.api.cloudflare_runtime:create_app",
         ),
@@ -245,6 +272,12 @@ def _validate_dockerfile() -> None:
         dockerfile,
         ("--proxy-headers", "--forwarded-allow-ips"),
         "CLOUDFLARE_RUNTIME_PROXY_HEADER_TRUST_FORBIDDEN",
+    )
+    dockerignore = _read(DOCKERIGNORE)
+    _forbid_markers(
+        dockerignore,
+        (_CONTAINER_SOURCE_FILE,),
+        "CLOUDFLARE_RUNTIME_CONTAINER_SOURCE_IGNORED",
     )
 
 
@@ -277,6 +310,12 @@ def _validate_runtime() -> None:
         "expected_runtime_role=runtime_role",
         "provider_auth=None",
         "trusted_edge_tls_terminated=False",
+        "generated_cloudflare_source_sha.txt",
+        '"CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_REQUIRED"',
+        '"CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_INVALID"',
+        '"CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_DRIFT"',
+        '_CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"',
+        "_install_container_source_route(hosted_app, image_source_sha)",
     )
     _require_markers(runtime, required, "CLOUDFLARE_RUNTIME_FASTAPI_GUARD_MISSING")
     _forbid_markers(
@@ -306,6 +345,7 @@ def validate() -> None:
     _validate_contract_security(contract)
     _validate_wrangler(contract)
     _validate_worker()
+    _validate_build_info()
     _validate_dockerfile()
     _validate_runtime()
     _validate_web_config()
@@ -320,6 +360,7 @@ def main() -> int:
     print("V10 Cloudflare runtime compatibility contract passed.")
     print("Frontend: Workers Static Assets")
     print("Backend: Cloudflare Container / Python 3.14.6")
+    print("Container source identity: BAKED + EXACT-SHA LIVE PROBE REQUIRED")
     print("Dependency install lifecycle scripts: DISABLED")
     print("Streaming request bodies: EXPLICIT HALF-DUPLEX")
     print("Incoming forwarded headers: STRIPPED; UVICORN TRUST DISABLED")

@@ -48,6 +48,7 @@ test-results/
 playwright-report/
 *.egg-info/
 cloudflare/src/generated-build-info.js
+apps/api/generated_cloudflare_source_sha.txt
 
 # Ephemeral CI dependency projections — generated at runtime, never commit
 windows-*requirements*.txt
