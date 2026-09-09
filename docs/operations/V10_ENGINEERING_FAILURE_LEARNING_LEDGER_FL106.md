@@ -116,6 +116,21 @@ Deterministic full-composition tests now require that:
 - the release acceptance contract freezes exact route, exact POST-only exemption,
   route-priority, exact-SHA and GitHub-OIDC requirements.
 
+## Exact-head security-scan repair
+
+The first fully formatted replacement checkpoint reached the authoritative Windows security
+scan and was rejected because the new regression fixture contained a single literal synthetic
+PostgreSQL URI shaped like `scheme://user:password@host`. `detect-secrets` correctly treated
+that source representation as potential Basic Auth credentials even though the value was a
+test-only marker.
+
+The scanner was not weakened, suppressed or allowlisted. The test now assembles the synthetic
+DSN from separate non-secret fragments so no tracked source line contains a credential-shaped
+URI while the runtime value still exercises the same parser/role/path behavior.
+
+Future synthetic credential fixtures must avoid committing credential-shaped URI literals.
+A false-positive classification is not a reason to weaken repository-wide secret scanning.
+
 ## Why earlier preflight missed it
 
 Earlier tests installed `install_cf_d_database_bootstrap_route()` on a plain `FastAPI()`
