@@ -41,6 +41,10 @@ class CloudflareCfDStagingBootstrapDiagnosticContractTests(unittest.TestCase):
         self.assertIs(contract["provider_identifier_reflection_allowed"], False)
         self.assertIs(contract["unknown_failure_retryable"], False)
         self.assertIs(contract["unsupported_unknown_status_remains_generic"], True)
+        self.assertIs(
+            contract["oversized_or_unreadable_failure_body_status_fallback_allowed"],
+            False,
+        )
         self.assertIs(contract["redirect_classification_preserved"], True)
         self.assertIs(contract["transport_classification_preserved"], True)
         self.assertIs(

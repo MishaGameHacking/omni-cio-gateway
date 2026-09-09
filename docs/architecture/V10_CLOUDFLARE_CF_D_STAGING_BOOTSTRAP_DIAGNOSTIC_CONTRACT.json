@@ -45,6 +45,7 @@
   "provider_identifier_reflection_allowed": false,
   "unknown_failure_retryable": false,
   "unsupported_unknown_status_remains_generic": true,
+  "oversized_or_unreadable_failure_body_status_fallback_allowed": false,
   "redirect_classification_preserved": true,
   "transport_classification_preserved": true,
   "existing_endpoint_specific_failure_taxonomy_preserved": true
