@@ -27,6 +27,7 @@ _SECURE_WEB_BUILD = (
     "python scripts/write_v10_cloudflare_build_info.py && "
     "npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
 )
+_CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -107,6 +108,10 @@ def _validate_candidate(candidate: dict[str, Any]) -> None:
         "staging_deploy_command": "npm run cloudflare:deploy:staging",
         "staging_database_binding": "OMNI_V10_POSTGRES_DSN",
         "staging_container_rollout_required": True,
+        "staging_container_image_source_probe_required": True,
+        "staging_container_image_source_path": _CONTAINER_SOURCE_PATH,
+        "staging_container_image_source_exact_sha_required": True,
+        "staging_container_image_source_probe_before_production_bootstrap_required": True,
         "non_production_versions_upload_is_candidate": False,
     }
     _require_values(candidate, expected, "CLOUDFLARE_RELEASE_CANDIDATE")
@@ -148,6 +153,8 @@ def _validate_cutover(cutover: dict[str, Any]) -> None:
         "stale_production_build_quarantine_before_snapshot_required": True,
         "unknown_production_trigger_fails_closed": True,
         "container_rollout_required": True,
+        "production_container_image_source_probe_required": True,
+        "production_container_image_source_exact_sha_required": True,
         "custom_domain_required": True,
         "custom_domain_suffix": ".ru",
         "production_database_binding": "OMNI_V10_POSTGRES_DSN",
@@ -178,6 +185,9 @@ def _validate_live(live: dict[str, Any]) -> None:
         "release_static_assets": True,
         "public_multi_user_enabled": False,
         "real_trading_enabled": False,
+        "container_source_endpoint": _CONTAINER_SOURCE_PATH,
+        "container_source_status": "ok",
+        "container_image_source_sha_exact": True,
         "health_status": "ok",
         "health_database": "READY",
     }
@@ -280,6 +290,9 @@ def _validate_live_verifier() -> None:
             "OMNI_V10_CLOUDFLARE_CUSTOM_HOST",
             "ipaddress.ip_address(hostname)",
             'hostname.endswith(".workers.dev")',
+            '_CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"',
+            "verify_container_source",
+            "CLOUDFLARE_RELEASE_CONTAINER_IMAGE_SHA_MISMATCH",
             "CLOUDFLARE_RELEASE_HEALTH_SHA_MISMATCH",
             "CLOUDFLARE_RELEASE_DATABASE_NOT_READY",
             "_MAX_BYTES = 65_536",
@@ -311,8 +324,10 @@ def _validate_live_probe() -> None:
             "--max-redirs 0",
             "--max-filesize 65536",
             '"${origin}/api/v10/release"',
+            '"${origin}/api/internal/v10/cloudflare/container-source"',
             '"${origin}/healthz"',
             "check_v10_cloudflare_live_release.py release",
+            "check_v10_cloudflare_live_release.py container-source",
             "check_v10_cloudflare_live_release.py health",
         ),
         "CLOUDFLARE_RELEASE_PROBE_GUARD_MISSING",
@@ -438,6 +453,7 @@ def main() -> int:
         return 1
     print("V10 Cloudflare CF-C/CF-D release acceptance contract passed.")
     print("Candidate: isolated staging Worker + Container exact-SHA rollout")
+    print("Container image source: exact-SHA serving probe required before bootstrap")
     print("Production: post-merge exact-main gated Workers Build only")
     print("Direct Cloudflare Git production auto-deploy: FORBIDDEN")
     print("Production workers.dev: DISABLED; canonical .ru Custom Domain required")
