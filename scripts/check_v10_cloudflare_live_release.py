@@ -13,6 +13,7 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _ORIGIN_ENV = "OMNI_V10_CLOUDFLARE_ORIGIN"
 _CUSTOM_HOST_ENV = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
+_CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
 
 
 def _idna_hostname(value: str) -> str:
@@ -115,6 +116,14 @@ def verify_release(payload: Mapping[str, Any], expected_sha: str) -> None:
             raise RuntimeError(f"CLOUDFLARE_RELEASE_{key.upper()}_INVALID")
 
 
+def verify_container_source(payload: Mapping[str, Any], expected_sha: str) -> None:
+    sha = _expected_sha(expected_sha)
+    if payload.get("status") != "ok":
+        raise RuntimeError("CLOUDFLARE_RELEASE_CONTAINER_SOURCE_INVALID")
+    if payload.get("image_source_sha") != sha:
+        raise RuntimeError("CLOUDFLARE_RELEASE_CONTAINER_IMAGE_SHA_MISMATCH")
+
+
 def verify_health(payload: Mapping[str, Any], expected_sha: str) -> None:
     sha = _expected_sha(expected_sha)
     if payload.get("status") != "ok":
@@ -131,13 +140,19 @@ def main(argv: list[str] | None = None) -> int:
         if args == ["origin"]:
             print(_configured_origin(os.environ))
             return 0
-        if len(args) != 2 or args[0] not in {"release", "health"}:
+        if len(args) != 2 or args[0] not in {
+            "release",
+            "container-source",
+            "health",
+        }:
             raise RuntimeError("CLOUDFLARE_RELEASE_USAGE_INVALID")
         mode = args[0]
         sha = _expected_sha(args[1])
         payload = _stdin_json()
         if mode == "release":
             verify_release(payload, sha)
+        elif mode == "container-source":
+            verify_container_source(payload, sha)
         else:
             verify_health(payload, sha)
     except RuntimeError as exc:
