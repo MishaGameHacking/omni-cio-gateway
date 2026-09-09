@@ -20,6 +20,7 @@ _CONTRACT = _ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRAC
 _RELEASE_SHA = "a" * 40
 _HOSTNAME = "omni-cio.example.com"
 _STAGING_ROLE = "omni_cio_cloudflare_staging"
+# Keep the tracked fixture free of any Basic-Auth-shaped credential literal.
 _STAGING_DSN = "".join(
     (
         "postgresql://",
