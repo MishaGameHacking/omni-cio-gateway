@@ -9,10 +9,15 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS = ROOT / "AGENTS.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
-AMENDMENT = ROOT / "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md"
+AMENDMENT = (
+    ROOT
+    / "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md"
+)
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 CONTRACT = ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
-PUBLIC_CONTRACT = ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+PUBLIC_CONTRACT = (
+    ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+)
 LEDGER = ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
 OWNER_STANDARD = ROOT / "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
 COPILOT_POLICY = ROOT / ".github/instructions/owner-handoff-and-runtime.instructions.md"
@@ -22,6 +27,7 @@ WP_TEMPLATE = ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
 SUCCESS = "success"
+GREEN_CHECKPOINT_LAW = "Green Checkpoint & Targeted CI Repair Law"
 REJECTED_GREEN_CONCLUSIONS = {
     "failure",
     "cancelled",
@@ -52,13 +58,13 @@ SURFACE_MARKERS: dict[Path, tuple[str, ...]] = {
         "bounded failure domains rather than one fragile monolith",
         "WP22A — External Web Access / Product Authentication Security Gate",
         "managed-cloud production runtime",
-        "Green Checkpoint & Targeted CI Repair Law",
+        GREEN_CHECKPOINT_LAW,
     ),
     CONTRIBUTING: (
         "Files changed / independent code-review gate",
         "Bot approval is supporting evidence",
         "fresh Files changed + review evidence",
-        "Green Checkpoint & Targeted CI Repair Law",
+        GREEN_CHECKPOINT_LAW,
     ),
     AMENDMENT: (
         "Mandatory pre-CI engineering gate",
@@ -73,7 +79,7 @@ SURFACE_MARKERS: dict[Path, tuple[str, ...]] = {
         "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json",
         "V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md",
         "Public Free Multi-User Hosted Runtime",
-        "Green Checkpoint & Targeted CI Repair Law",
+        GREEN_CHECKPOINT_LAW,
     ),
     LEDGER: (
         "FL-001",
@@ -238,12 +244,16 @@ def _validate_merge_gate(data: dict[str, Any], failures: list[str]) -> None:
     rejected_set = set(rejected) if isinstance(rejected, list) else set()
     missing = REJECTED_GREEN_CONCLUSIONS - rejected_set
     if missing:
-        failures.append(f"merge_gate rejected-as-GREEN set incomplete: {sorted(missing)}")
+        failures.append(
+            f"merge_gate rejected-as-GREEN set incomplete: {sorted(missing)}"
+        )
     outputs = merge_gate.get("review_outputs")
     output_set = set(outputs) if isinstance(outputs, list) else set()
     missing_outputs = REQUIRED_REVIEW_OUTPUTS - output_set
     if missing_outputs:
-        failures.append(f"merge_gate review outputs incomplete: {sorted(missing_outputs)}")
+        failures.append(
+            f"merge_gate review outputs incomplete: {sorted(missing_outputs)}"
+        )
 
 
 def _validate_owner(data: dict[str, Any], failures: list[str]) -> None:
@@ -418,7 +428,9 @@ def main() -> int:
     print("Exact-head changed-files + independent review: enforced")
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
     print("OWNER handoff: direct official link + bounded action contract enforced")
-    print("V10 public runtime: Cloudflare Workers Paid target after owning cutover gate")
+    print(
+        "V10 public runtime: Cloudflare Workers Paid target after owning cutover gate"
+    )
     print("Failure-learning and bounded fault-isolation contracts: enforced")
     return 0
 
