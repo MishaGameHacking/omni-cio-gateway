@@ -227,8 +227,8 @@ class CloudflareRuntimeCompatibilityTests(unittest.TestCase):
 
     def test_guard_rejects_container_source_file_build_check_removal(self) -> None:
         dockerfile = guard.DOCKERFILE.read_text(encoding="utf-8").replace(
-            "RUN test -s apps/api/generated_cloudflare_source_sha.txt\n",
-            "",
+            "RUN test -s apps/api/generated_cloudflare_source_sha.txt",
+            "RUN true # container source check removed",
         )
         with tempfile.TemporaryDirectory() as temporary:
             candidate = Path(temporary) / "Dockerfile.cloudflare"
