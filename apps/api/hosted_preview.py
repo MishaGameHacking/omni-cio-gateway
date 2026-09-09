@@ -22,6 +22,7 @@ from apps.api.app import (
     _SerializedWebConnection,
     _configure_long_lived_web_connection,
 )
+from apps.api.cf_d_database_bootstrap import CF_D_DATABASE_BOOTSTRAP_PATH
 from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth
 from omni_cio.persistence.migration import connect_postgres
 from omni_cio.web.browser_security_v1 import (
@@ -309,6 +310,14 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
 
     def _mutation_error(self, request: Request, *, api_path: bool) -> Response | None:
         if request.method in _SAFE_METHODS:
+            return None
+        if (
+            request.method == "POST"
+            and request.url.path == CF_D_DATABASE_BOOTSTRAP_PATH
+        ):
+            # This is an engineering/release server-to-server mutation. Browser
+            # Origin/Fetch-Metadata/CSRF is not its authority; the route enforces
+            # exact-source binding and GitHub OIDC after global admission controls.
             return None
         if _origin_hostname(request.headers.get("origin", "")) != self._hostname:
             return _safe_error("ORIGIN_REQUIRED", 403, api_path=api_path)
