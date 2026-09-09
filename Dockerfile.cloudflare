@@ -19,6 +19,7 @@ RUN python -m pip install --require-hashes -r requirements.txt
 COPY apps ./apps
 COPY omni_cio ./omni_cio
 COPY --from=web-build /build/apps/web/dist ./apps/web/dist
+RUN test -s apps/api/generated_cloudflare_source_sha.txt
 
 RUN chown -R omni:omni /app
 USER omni
