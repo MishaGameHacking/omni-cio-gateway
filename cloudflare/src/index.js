@@ -8,6 +8,12 @@ import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
   fetchCfDNeonBootstrap,
 } from "./cf-d-neon-bootstrap-egress.js";
+import {
+  CF_D_GITHUB_OIDC_HEADER,
+  CF_D_PRODUCTION_DATABASE_BOOTSTRAP_PATH,
+  cfDProductionBootstrapIngressFailure,
+  prepareCfDProductionBootstrapIngress,
+} from "./cf-d-production-bootstrap-ingress.js";
 import { SOURCE_SHA } from "./generated-build-info.js";
 import { hardenedJson } from "./hardened-response.js";
 
@@ -101,6 +107,7 @@ function backendRequest(request, routeUrl) {
   headers.delete("x-omni-route-query");
   headers.delete("x-omni-edge-provider");
   headers.delete("x-omni-source-sha");
+  headers.delete(CF_D_GITHUB_OIDC_HEADER);
   if (!clientIp) {
     throw new Error("CLOUDFLARE_CLIENT_IP_MISSING");
   }
@@ -156,6 +163,19 @@ async function proxyBackend(request, env, routeUrl) {
   }
 }
 
+async function proxyCfDProductionDatabaseBootstrap(request, env, routeUrl) {
+  try {
+    const trustedRequest = prepareCfDProductionBootstrapIngress(
+      request,
+      SOURCE_SHA,
+    );
+    return await proxyBackend(trustedRequest, env, routeUrl);
+  } catch (error) {
+    const failure = cfDProductionBootstrapIngressFailure(error);
+    return hardenedJson({ detail: failure.detail }, failure.status);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -172,6 +192,9 @@ export default {
     }
     if (url.pathname === CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH) {
       return handleCfDBootstrapOriginCustody(request, env, SOURCE_SHA);
+    }
+    if (url.pathname === CF_D_PRODUCTION_DATABASE_BOOTSTRAP_PATH) {
+      return proxyCfDProductionDatabaseBootstrap(request, env, url);
     }
     if (url.pathname === "/healthz" || url.pathname.startsWith("/api/")) {
       return proxyBackend(request, env, url);
