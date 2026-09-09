@@ -207,9 +207,13 @@ def classify_staging_bootstrap_failure(status_code: int, content: bytes) -> str:
 
 
 def staging_unclassified_http_failure_code(status_code: object) -> str:
-    try:
+    if isinstance(status_code, bool):
+        return GENERIC_STAGING_BOOTSTRAP_FAILURE
+    if isinstance(status_code, int):
+        normalized = status_code
+    elif isinstance(status_code, str) and status_code.isascii() and status_code.isdecimal():
         normalized = int(status_code)
-    except (TypeError, ValueError):
+    else:
         return GENERIC_STAGING_BOOTSTRAP_FAILURE
     if normalized not in STAGING_UNCLASSIFIED_HTTP_STATUSES:
         return GENERIC_STAGING_BOOTSTRAP_FAILURE
