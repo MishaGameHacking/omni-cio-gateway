@@ -13,6 +13,10 @@ from urllib.parse import quote, urlencode
 import scripts.bootstrap_v10_cloudflare_builds as builds
 import scripts.provision_v10_cloudflare_neon_runtime as runtime
 from scripts.check_v10_cloudflare_live_release import _hostname
+from scripts.cloudflare_worker_secret_state import (
+    script_secret_type,
+    wait_for_secret_state,
+)
 
 
 _PRODUCTION_WORKER = "omni-cio-v10-web"
@@ -49,18 +53,18 @@ def _runtime_secret_present(api: builds.CloudflareApi) -> bool:
         ),
         "CLOUDFLARE_PRODUCTION_SECRETS_INVALID",
     )
-    matches = [
-        row
-        for row in rows
-        if isinstance(row, dict) and row.get("name") == _RUNTIME_DSN_BINDING
-    ]
-    if len(matches) > 1:
-        raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_SECRET_NOT_UNIQUE")
-    if not matches:
-        return False
-    if matches[0].get("type") != "secret_text":
-        raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_SECRET_TYPE_DRIFT")
-    return True
+    secret_type = script_secret_type(
+        rows,
+        _RUNTIME_DSN_BINDING,
+        invalid_code="CLOUDFLARE_PRODUCTION_SECRETS_INVALID",
+        not_unique_code="CLOUDFLARE_PRODUCTION_SECRET_NOT_UNIQUE",
+        type_drift_code="CLOUDFLARE_PRODUCTION_SECRET_TYPE_DRIFT",
+    )
+    return secret_type is not None
+
+
+def _wait_runtime_secret_present(api: builds.CloudflareApi) -> bool:
+    return wait_for_secret_state(lambda: _runtime_secret_present(api), True)
 
 
 def probe_runtime_secret(
@@ -112,7 +116,7 @@ def put_runtime_secret(environ: Mapping[str, str] | None = None) -> None:
         body={"name": _RUNTIME_DSN_BINDING, "text": dsn, "type": "secret_text"},
         expected=_WORKER_SECRET_WRITE_SUCCESS,
     )
-    if not _runtime_secret_present(api):
+    if not _wait_runtime_secret_present(api):
         raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_SECRET_VERIFY_FAILED")
     print("CLOUDFLARE_PRODUCTION_DATABASE_SECRET=READY")
 

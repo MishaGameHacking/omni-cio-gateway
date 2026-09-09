@@ -85,6 +85,11 @@ class CloudflareWorkerSecretWriteStatusTests(unittest.TestCase):
             with (
                 patch.dict(os.environ, {"RUNNER_TEMP": temp_dir}, clear=False),
                 patch.object(builds, "_mask"),
+                patch.object(
+                    staging_secrets,
+                    "wait_staging_secret_type",
+                    return_value=True,
+                ),
             ):
                 staging_secrets.put_staging_runtime_secret(
                     cast(builds.CloudflareApi, api)

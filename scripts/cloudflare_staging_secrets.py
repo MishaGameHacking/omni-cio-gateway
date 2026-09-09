@@ -3,6 +3,10 @@ from __future__ import annotations
 from urllib.parse import quote
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
+from scripts.cloudflare_worker_secret_state import (
+    script_secret_type,
+    wait_for_secret_state,
+)
 
 
 _WORKER_SECRET_WRITE_SUCCESS = frozenset({200, 201})
@@ -17,23 +21,38 @@ def _secret_path(api: builds.CloudflareApi, name: str = "") -> str:
     return f"{base}/{quote(name, safe='')}" if name else base
 
 
+def _strict_staging_secret_type(api: builds.CloudflareApi, name: str) -> str | None:
+    rows = builds._list(
+        api.request("GET", _secret_path(api)),
+        "CLOUDFLARE_STAGING_SECRETS_INVALID",
+    )
+    return script_secret_type(
+        rows,
+        name,
+        invalid_code="CLOUDFLARE_STAGING_SECRETS_INVALID",
+        not_unique_code="CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE",
+        type_drift_code="CLOUDFLARE_STAGING_SECRET_TYPE_DRIFT",
+    )
+
+
 def staging_secret_type(api: builds.CloudflareApi, name: str) -> str | None:
     try:
-        response = api.request("GET", _secret_path(api))
+        return _strict_staging_secret_type(api, name)
     except builds.BootstrapStopped as exc:
         if exc.status == 404:
             return None
         raise
 
-    rows = builds._list(response, "CLOUDFLARE_STAGING_SECRETS_INVALID")
-    matches = [row for row in rows if isinstance(row, dict) and row.get("name") == name]
-    if len(matches) > 1:
-        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_NOT_UNIQUE")
-    if not matches:
-        return None
-    if matches[0].get("type") != "secret_text":
-        raise builds.BootstrapStopped("CLOUDFLARE_STAGING_SECRET_TYPE_DRIFT")
-    return "secret_text"
+
+def wait_staging_secret_type(
+    api: builds.CloudflareApi,
+    name: str,
+    expected_type: str | None,
+) -> bool:
+    return wait_for_secret_state(
+        lambda: _strict_staging_secret_type(api, name),
+        expected_type,
+    )
 
 
 def put_staging_secret(api: builds.CloudflareApi, name: str, value: str) -> None:
@@ -63,6 +82,10 @@ def put_staging_runtime_secret(api: builds.CloudflareApi) -> None:
         raise builds.BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_INVALID")
     builds._mask(runtime_dsn)
     put_staging_secret(api, _RUNTIME_DSN_BINDING, runtime_dsn)
+    if not wait_staging_secret_type(api, _RUNTIME_DSN_BINDING, "secret_text"):
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_STAGING_DATABASE_SECRET_VERIFY_FAILED"
+        )
     print("CLOUDFLARE_STAGING_DATABASE_SECRET=READY")
 
 
