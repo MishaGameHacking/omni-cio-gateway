@@ -25,8 +25,11 @@ curl_flags=(
 curl "${curl_flags[@]}" "${origin}/api/v10/release" \
   | python scripts/check_v10_cloudflare_live_release.py release "$sha"
 
+curl "${curl_flags[@]}" "${origin}/api/internal/v10/cloudflare/container-source" \
+  | python scripts/check_v10_cloudflare_live_release.py container-source "$sha"
+
 curl "${curl_flags[@]}" "${origin}/healthz" \
   | python scripts/check_v10_cloudflare_live_release.py health "$sha"
 
 echo "Cloudflare live release accepted: ${origin}"
-echo "Exact source SHA: ${sha}"
+echo "Exact Worker + Container source SHA: ${sha}"
