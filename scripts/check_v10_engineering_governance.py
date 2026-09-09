@@ -218,12 +218,13 @@ def _validate_pre_ci(data: dict[str, Any], failures: list[str]) -> None:
 
 def _validate_merge_gate(data: dict[str, Any], failures: list[str]) -> None:
     merge_gate = _section(data, "merge_gate", failures)
+    if merge_gate.get("accepted_check_conclusions") != [SUCCESS]:
+        failures.append("merge_gate accepts conclusions other than success")
     _expect_values(
         merge_gate,
         {
             "exact_head_only": True,
             "all_applicable_checks_must_run": True,
-            "accepted_check_conclusions": [SUCCESS],
             "infrastructure_failure_blocks_merge": True,
             "billing_failure_blocks_merge": True,
             "new_commit_invalidates_final_green_evidence": True,
@@ -242,17 +243,17 @@ def _validate_merge_gate(data: dict[str, Any], failures: list[str]) -> None:
     )
     rejected = merge_gate.get("rejected_as_green")
     rejected_set = set(rejected) if isinstance(rejected, list) else set()
-    missing = REJECTED_GREEN_CONCLUSIONS - rejected_set
-    if missing:
-        failures.append(
-            f"merge_gate rejected-as-GREEN set incomplete: {sorted(missing)}"
-        )
+    for required in sorted(REJECTED_GREEN_CONCLUSIONS - rejected_set):
+        failures.append(f"merge_gate must reject {required!r} as GREEN evidence")
+
     outputs = merge_gate.get("review_outputs")
-    output_set = set(outputs) if isinstance(outputs, list) else set()
-    missing_outputs = REQUIRED_REVIEW_OUTPUTS - output_set
-    if missing_outputs:
+    if not isinstance(outputs, list):
+        failures.append("merge_gate.review_outputs must be a list")
+        return
+    output_set = {item for item in outputs if isinstance(item, str)}
+    for required in sorted(REQUIRED_REVIEW_OUTPUTS - output_set):
         failures.append(
-            f"merge_gate review outputs incomplete: {sorted(missing_outputs)}"
+            f"merge_gate.review_outputs missing required source: {required}"
         )
 
 
@@ -267,6 +268,9 @@ def _validate_owner(data: dict[str, Any], failures: list[str]) -> None:
         "owner_participation",
         failures,
     )
+
+
+def _validate_owner_handoff(data: dict[str, Any], failures: list[str]) -> None:
     _expect_values(
         _section(data, "owner_handoff", failures),
         {
@@ -287,7 +291,7 @@ def _validate_owner(data: dict[str, Any], failures: list[str]) -> None:
     )
 
 
-def _validate_runtime(data: dict[str, Any], failures: list[str]) -> None:
+def _validate_runtime_hosting(data: dict[str, Any], failures: list[str]) -> None:
     _expect_values(
         _section(data, "runtime_hosting", failures),
         {
@@ -319,7 +323,7 @@ def _validate_runtime(data: dict[str, Any], failures: list[str]) -> None:
     )
 
 
-def _validate_public_runtime(failures: list[str]) -> None:
+def _validate_public_runtime_contract(failures: list[str]) -> None:
     data = _load_json(PUBLIC_CONTRACT, failures)
     checks = {
         "product_target": {
@@ -364,7 +368,9 @@ def _validate_public_runtime(failures: list[str]) -> None:
     )
 
 
-def _validate_failure_and_protected(data: dict[str, Any], failures: list[str]) -> None:
+def _validate_failure_and_protected_invariants(
+    data: dict[str, Any], failures: list[str]
+) -> None:
     _expect_values(
         _section(data, "failure_learning", failures),
         {
@@ -399,22 +405,23 @@ def _validate_failure_and_protected(data: dict[str, Any], failures: list[str]) -
     )
 
 
-def _validate_contract(failures: list[str]) -> None:
+def validate_contract(failures: list[str]) -> None:
     data = _load_json(CONTRACT, failures)
     if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v5":
         failures.append("engineering quality contract schema mismatch")
     _validate_pre_ci(data, failures)
     _validate_merge_gate(data, failures)
     _validate_owner(data, failures)
-    _validate_runtime(data, failures)
-    _validate_public_runtime(failures)
-    _validate_failure_and_protected(data, failures)
+    _validate_owner_handoff(data, failures)
+    _validate_runtime_hosting(data, failures)
+    _validate_public_runtime_contract(failures)
+    _validate_failure_and_protected_invariants(data, failures)
 
 
 def main() -> int:
     failures: list[str] = []
     _validate_markers(failures)
-    _validate_contract(failures)
+    validate_contract(failures)
 
     if failures:
         print("V10 engineering governance check failed:", file=sys.stderr)
