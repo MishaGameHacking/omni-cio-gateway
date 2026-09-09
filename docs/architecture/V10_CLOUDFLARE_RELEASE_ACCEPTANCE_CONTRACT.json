@@ -102,6 +102,13 @@
     "production_database_secret_state_convergence_delay_seconds": 2,
     "production_database_bootstrap_failure_classification_required": true,
     "production_database_bootstrap_endpoint_specific_classifier_required": true,
+    "production_database_bootstrap_route": "/api/internal/v10/cf-d/production-database-bootstrap",
+    "production_database_bootstrap_server_to_server_browser_mutation_exemption": true,
+    "production_database_bootstrap_browser_mutation_exemption_exact_method": "POST",
+    "production_database_bootstrap_browser_mutation_exemption_exact_path_only": true,
+    "production_database_bootstrap_route_priority_before_api_catchall_required": true,
+    "production_database_bootstrap_exact_sha_required": true,
+    "production_database_bootstrap_github_oidc_required": true,
     "production_database_bootstrap_oidc_token_helper_contract_must_remain_generic": true,
     "production_database_bootstrap_function_failure_prefix": "CLOUDFLARE_CF_D_NEON_FUNCTION_",
     "production_database_bootstrap_function_failure_codes": [
