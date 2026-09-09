@@ -147,11 +147,10 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
     def test_sync_token_preclear_exhaustion_stays_fail_closed_without_put(self) -> None:
         attempts = secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS
         api = _SecretApi([_secret_row(custody._SYNC_TOKEN_BINDING)] * attempts)
+        typed_api = cast(builds.CloudflareApi, api)
         with _token_patches() as sleep:
             with self.assertRaises(builds.BootstrapStopped) as raised:
-                with custody.bootstrap_origin_sync_token(
-                    cast(builds.CloudflareApi, api)
-                ):
+                with custody.bootstrap_origin_sync_token(typed_api):
                     pass
         self.assertEqual(raised.exception.code, custody._SYNC_TOKEN_STALE)
         self._assert_method_counts(api, put=0, delete=1, get=attempts)
@@ -163,11 +162,10 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         attempts = secret_state._SECRET_STATE_CONVERGENCE_ATTEMPTS
         token = _secret_row(custody._SYNC_TOKEN_BINDING)
         api = _SecretApi([[], token] + [token] * attempts)
+        typed_api = cast(builds.CloudflareApi, api)
         with _token_patches() as sleep:
             with self.assertRaises(builds.BootstrapStopped) as raised:
-                with custody.bootstrap_origin_sync_token(
-                    cast(builds.CloudflareApi, api)
-                ):
+                with custody.bootstrap_origin_sync_token(typed_api):
                     pass
         self.assertEqual(raised.exception.code, custody._SYNC_TOKEN_STALE)
         self._assert_method_counts(api, put=1, delete=2, get=attempts + 2)
@@ -210,12 +208,13 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         api = _SecretApi(
             [builds.BootstrapStopped("CLOUDFLARE_API_HTTP_ERROR", status=404)]
         )
+        typed_api = cast(builds.CloudflareApi, api)
         with (
             patch.object(secret_state.time, "sleep") as sleep,
             self.assertRaises(builds.BootstrapStopped) as raised,
         ):
             staging_secrets.wait_staging_secret_type(
-                cast(builds.CloudflareApi, api),
+                typed_api,
                 custody._SYNC_TOKEN_BINDING,
                 None,
             )
@@ -243,12 +242,13 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
         for label, response, expected_code in cases:
             with self.subTest(label=label):
                 api = _SecretApi([response])
+                typed_api = cast(builds.CloudflareApi, api)
                 with (
                     patch.object(secret_state.time, "sleep") as sleep,
                     self.assertRaises(builds.BootstrapStopped) as raised,
                 ):
                     staging_secrets.wait_staging_secret_type(
-                        cast(builds.CloudflareApi, api),
+                        typed_api,
                         custody._SYNC_TOKEN_BINDING,
                         "secret_text",
                     )
@@ -259,11 +259,12 @@ class CloudflareWorkerSecretConvergenceTests(unittest.TestCase):
     def test_malformed_production_secret_state_is_not_retried(self) -> None:
         binding = production._RUNTIME_DSN_BINDING
         api = _SecretApi([[{"name": binding, "type": "secret_text"}, None]])
+        typed_api = cast(builds.CloudflareApi, api)
         with (
             patch.object(secret_state.time, "sleep") as sleep,
             self.assertRaises(builds.BootstrapStopped) as raised,
         ):
-            production._wait_runtime_secret_present(cast(builds.CloudflareApi, api))
+            production._wait_runtime_secret_present(typed_api)
         self.assertEqual(raised.exception.code, "CLOUDFLARE_PRODUCTION_SECRETS_INVALID")
         self._assert_method_counts(api, put=0, delete=0, get=1)
         sleep.assert_not_called()
