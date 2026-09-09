@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 import ipaddress
 import os
+from pathlib import Path
 import re
 from typing import Any
 from urllib.parse import unquote, unquote_to_bytes
 
+from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
@@ -25,6 +27,8 @@ from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 
 _INTERNAL_HOST = "omni-cio.internal"
 _INTERNAL_PROXY_PATH = "/_omni/cloudflare-proxy"
+_CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
+_CONTAINER_SOURCE_FILE = Path(__file__).with_name("generated_cloudflare_source_sha.txt")
 _DSN_ENV_NAME = "OMNI_V10_POSTGRES_DSN"
 _RUNTIME_ROLE_ENV_NAME = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _ALLOWED_RUNTIME_ROLES = frozenset(
@@ -65,6 +69,38 @@ def _runtime_database_role() -> str:
     if role not in _ALLOWED_RUNTIME_ROLES:
         raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_ROLE_INVALID")
     return role
+
+
+def _container_image_source_sha(path: Path = _CONTAINER_SOURCE_FILE) -> str:
+    try:
+        value = path.read_text(encoding="ascii").strip().lower()
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_REQUIRED") from exc
+    if _SHA_PATTERN.fullmatch(value) is None:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_INVALID")
+    return value
+
+
+def _install_container_source_route(app: Any, image_source_sha: str) -> None:
+    if _SHA_PATTERN.fullmatch(image_source_sha) is None:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_INVALID")
+
+    def container_source() -> JSONResponse:
+        return JSONResponse(
+            {
+                "status": "ok",
+                "image_source_sha": image_source_sha,
+            }
+        )
+
+    app.add_api_route(
+        _CONTAINER_SOURCE_PATH,
+        container_source,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    installed_route = app.router.routes.pop()
+    app.router.routes.insert(0, installed_route)
 
 
 def _probe_cloudflare_runtime_database(
@@ -309,6 +345,9 @@ def create_app():
     release_sha = _release_sha(_required_env("OMNI_V10_RELEASE_SHA"))
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_RELEASE_SHA_INVALID")
+    image_source_sha = _container_image_source_sha()
+    if image_source_sha != release_sha:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_DRIFT")
     runtime_role = _runtime_database_role()
     runtime_dsn = _required_env(_DSN_ENV_NAME)
 
@@ -348,4 +387,5 @@ def create_app():
         release_sha=release_sha,
         runtime_role=runtime_role,
     )
+    _install_container_source_route(hosted_app, image_source_sha)
     return CloudflareEdgeRouteRestoreV1(hosted_app, release_sha=release_sha)
