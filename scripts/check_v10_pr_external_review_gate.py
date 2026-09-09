@@ -115,9 +115,7 @@ def _validate_sonar_run(run: dict[str, Any]) -> list[str]:
             failures.append(str(exc))
         else:
             if value != 0:
-                failures.append(
-                    f"{SONAR_EXACT_HEAD} {failure_message}, got {value}"
-                )
+                failures.append(f"{SONAR_EXACT_HEAD} {failure_message}, got {value}")
 
     annotations_count = output.get(ANNOTATIONS_COUNT_KEY)
     if annotations_count != 0:
