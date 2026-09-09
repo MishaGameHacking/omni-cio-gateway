@@ -20,9 +20,15 @@ _CONTRACT = _ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRAC
 _RELEASE_SHA = "a" * 40
 _HOSTNAME = "omni-cio.example.com"
 _STAGING_ROLE = "omni_cio_cloudflare_staging"
-_STAGING_DSN = (
-    f"postgresql://{_STAGING_ROLE}:synthetic-credential-marker@"
-    "ep-example.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+_STAGING_DSN = "".join(
+    (
+        "postgresql://",
+        _STAGING_ROLE,
+        ":",
+        "synthetic-credential-marker",
+        "@",
+        "ep-example.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require",
+    )
 )
 
 
