@@ -6,7 +6,7 @@ import re
 import sys
 import time
 from typing import Any
-from urllib.error import HTTPError, URLError
+from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -37,7 +37,9 @@ def _is_github_api_url(url: str) -> bool:
 
 def _github_json(url: str, token: str) -> Any:
     if not _is_github_api_url(url):
-        raise ReviewGateError("GitHub review-gate URL is outside the fixed HTTPS API host")
+        raise ReviewGateError(
+            "GitHub review-gate URL is outside the fixed HTTPS API host"
+        )
     request = Request(
         url,
         headers={
@@ -50,7 +52,7 @@ def _github_json(url: str, token: str) -> Any:
     try:
         with urlopen(request, timeout=20) as response:  # nosec B310 -- HTTPS host validated above
             return json.load(response)
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise ReviewGateError(f"GitHub review-gate request failed: {exc}") from exc
 
 
@@ -111,7 +113,9 @@ def _validate_sonar_run(run: dict[str, Any]) -> list[str]:
             failures.append(str(exc))
         else:
             if value != 0:
-                failures.append(f"{SONAR_EXACT_HEAD} {failure_label} must be 0, got {value}")
+                failures.append(
+                    f"{SONAR_EXACT_HEAD} {failure_label} must be 0, got {value}"
+                )
 
     annotations_count = output.get(ANNOTATIONS_COUNT_KEY)
     if annotations_count != 0:
@@ -147,7 +151,9 @@ def _annotation_lines(run: dict[str, Any], token: str) -> list[str]:
 
 def _wait_for_sonar(repository: str, head_sha: str, token: str) -> dict[str, Any]:
     attempts = int(os.environ.get("V10_SONAR_GATE_ATTEMPTS", str(DEFAULT_ATTEMPTS)))
-    delay = int(os.environ.get("V10_SONAR_GATE_DELAY_SECONDS", str(DEFAULT_DELAY_SECONDS)))
+    delay = int(
+        os.environ.get("V10_SONAR_GATE_DELAY_SECONDS", str(DEFAULT_DELAY_SECONDS))
+    )
     for attempt in range(1, attempts + 1):
         payload = _github_json(_check_runs_url(repository, head_sha), token)
         run = _find_exact_sonar_run(payload, head_sha)
@@ -155,7 +161,9 @@ def _wait_for_sonar(repository: str, head_sha: str, token: str) -> dict[str, Any
             return run
         if attempt < attempts:
             time.sleep(delay)
-    raise ReviewGateError(f"{SONAR_EXACT_HEAD} check did not complete within bounded wait")
+    raise ReviewGateError(
+        f"{SONAR_EXACT_HEAD} check did not complete within bounded wait"
+    )
 
 
 def _validated_environment() -> tuple[str, str, str] | None:
@@ -166,7 +174,10 @@ def _validated_environment() -> tuple[str, str, str] | None:
         print(f"{EXTERNAL_GATE_FAILED}: invalid GITHUB_REPOSITORY", file=sys.stderr)
         return None
     if re.fullmatch(r"[0-9a-f]{40}", head_sha) is None:
-        print(f"{EXTERNAL_GATE_FAILED}: EXPECTED_HEAD must be lowercase full SHA", file=sys.stderr)
+        print(
+            f"{EXTERNAL_GATE_FAILED}: EXPECTED_HEAD must be lowercase full SHA",
+            file=sys.stderr,
+        )
         return None
     if not token:
         print(f"{EXTERNAL_GATE_FAILED}: GitHub token unavailable", file=sys.stderr)
@@ -176,7 +187,9 @@ def _validated_environment() -> tuple[str, str, str] | None:
 
 def main() -> int:
     if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
-        print("External review gate: pull_request-only; current event is not applicable.")
+        print(
+            "External review gate: pull_request-only; current event is not applicable."
+        )
         return 0
 
     environment = _validated_environment()
@@ -201,7 +214,9 @@ def main() -> int:
         return 1
 
     print(f"External review gate passed for exact head {head_sha}.")
-    print("Sonar: Quality Gate success; new issues=0; Security Hotspots=0; annotations=0.")
+    print(
+        "Sonar: Quality Gate success; new issues=0; Security Hotspots=0; annotations=0."
+    )
     return 0
 
 
