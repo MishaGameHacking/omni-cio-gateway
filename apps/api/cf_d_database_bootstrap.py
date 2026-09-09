@@ -17,7 +17,8 @@ from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
 )
 
 
-_BOOTSTRAP_PATH = "/api/internal/v10/cf-d/production-database-bootstrap"
+CF_D_DATABASE_BOOTSTRAP_PATH = "/api/internal/v10/cf-d/production-database-bootstrap"
+_BOOTSTRAP_PATH = CF_D_DATABASE_BOOTSTRAP_PATH
 _FUNCTION_SLUG = "cfdprodbootstrap"
 _PRODUCTION_ROLE = "omni_cio_cloudflare_prod"
 _STAGING_ROLE = "omni_cio_cloudflare_staging"
@@ -296,7 +297,6 @@ def install_cf_d_database_bootstrap_route(
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_CF_D_RELEASE_SHA_INVALID")
 
-    @app.post(_BOOTSTRAP_PATH, include_in_schema=False)
     def bootstrap_production_database(request: Request) -> JSONResponse:
         try:
             authorization = _validated_request_authorization(request, release_sha)
@@ -311,3 +311,15 @@ def install_cf_d_database_bootstrap_route(
         except _BootstrapRouteStopped as exc:
             return _provider_error(exc.code, exc.status_code)
         return _ready_response(dsn, release_sha)
+
+    app.add_api_route(
+        CF_D_DATABASE_BOOTSTRAP_PATH,
+        bootstrap_production_database,
+        methods=["POST"],
+        include_in_schema=False,
+    )
+    # The hosted Web app already owns a generic /api/{path:path} fail-closed route.
+    # Internal release-authority endpoints must be ordered before that catch-all or
+    # they are unreachable even though they are present in the route table.
+    installed_route = app.router.routes.pop()
+    app.router.routes.insert(0, installed_route)
