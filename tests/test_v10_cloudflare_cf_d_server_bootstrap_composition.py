@@ -19,8 +19,9 @@ _ROOT = Path(__file__).resolve().parents[1]
 _CONTRACT = _ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
 _RELEASE_SHA = "a" * 40
 _HOSTNAME = "omni-cio.example.com"
+_STAGING_ROLE = "omni_cio_cloudflare_staging"
 _STAGING_DSN = (
-    "postgresql://omni_cio_cloudflare_staging:synthetic-credential-marker@"
+    f"postgresql://{_STAGING_ROLE}:synthetic-credential-marker@"
     "ep-example.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require"
 )
 
@@ -69,7 +70,7 @@ def _composed_app(web_dist: Path) -> Any:
         connection=object(),
         runtime_dsn=_STAGING_DSN,
         release_sha=_RELEASE_SHA,
-        runtime_role="omni_cio_cloudflare_staging",
+        runtime_role=_STAGING_ROLE,
     )
     return app
 
