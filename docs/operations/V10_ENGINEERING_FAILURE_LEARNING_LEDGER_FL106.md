@@ -120,9 +120,9 @@ Deterministic full-composition tests now require that:
 
 The first fully formatted replacement checkpoint reached the authoritative Windows security
 scan and was rejected because the new regression fixture contained a single literal synthetic
-PostgreSQL URI shaped like `scheme://user:password@host`. `detect-secrets` correctly treated
-that source representation as potential Basic Auth credentials even though the value was a
-test-only marker.
+PostgreSQL URI with inline username/password authority. `detect-secrets` correctly treated
+that credential-shaped source representation as potential Basic Auth credentials even though
+the value was a test-only marker.
 
 The scanner was not weakened, suppressed or allowlisted. The test now assembles the synthetic
 DSN from separate non-secret fragments so no tracked source line contains a credential-shaped
