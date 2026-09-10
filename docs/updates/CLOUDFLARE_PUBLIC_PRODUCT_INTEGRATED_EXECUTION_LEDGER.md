@@ -47,27 +47,29 @@ by this repair batch completes full exact-head certification.
 
 The immediately preceding head is:
 
-`c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`
+`902fca16fb83b1d72dd8a2ff9b8edabf3fe7a8ee`
 
-Its authoritative Windows merge-gate run `34452823345` proved all of the following
-before stopping:
+Its verification batch completed with one shared documentation-compatibility root cause:
 
-- repository/CI policy contracts: PASS;
-- PostgreSQL 18 runtime-role rehearsal: PASS;
-- compile: PASS;
-- Ruff check and format check: PASS;
-- mypy: PASS;
-- full protected regression suite: PASS (`3042` tests plus subtests);
-- branch coverage: PASS (`62.2%`, threshold `>=60%`);
-- dependency audit: PASS;
-- SAST: PASS;
-- exact-head Sonar Quality Gate through the independent governance lane: PASS.
+- Self-Hosted Windows CI run `34456420839` failed in the protected regression suite
+  because `scripts/check_v10_cloudflare_candidate_delivery.py` could not find the exact
+  machine-consumed `Green Checkpoint verification` ledger marker;
+- V10 Engineering Governance run `34456420931` failed at the same Green Checkpoint
+  governance boundary for the same missing marker;
+- the protected Windows batch had already passed dependency installation, PostgreSQL 18
+  rehearsal, lock verification, repository/CI policy, compile, Ruff, formatter, mypy,
+  stable `app:app` and read-only release checks;
+- the regression suite otherwise reported `3040` passed tests and `62.2%` branch
+  coverage, above the required `60%` threshold;
+- all other observed exact-head PR workflows completed `success`;
+- exact-head Cloudflare staging Workers Build completed `success`;
+- exact-head Sonar passed before the governance marker check.
 
-The one deterministic RED finding was the tracked-content `detect-secrets` Secret
-Keyword hit on a non-secret source-marker constant in
-`tests/test_v10_cloudflare_staging_secret_reuse_preflight.py`. FL114 records the defect
-class and prevention law. This repair renames the marker semantically and does not
-suppress or weaken scanning.
+FL115 records the root cause: the ledger refresh renamed the existing canonical heading
+from `Green Checkpoint verification` to the human-equivalent `Green Checkpoint history`.
+This correction restores the exact compatibility marker and keeps the stronger refreshed
+evidence below it. No governance consumer, test, security check or authority boundary is
+weakened.
 
 The exact replacement SHA is recorded in PR/dashboard evidence after publication because
 a tracked document cannot truthfully self-reference the commit that contains itself.
@@ -81,6 +83,7 @@ a tracked document cannot truthfully self-reference the commit that contains its
 | Direct-bootstrap boundary needed stronger custody constraints | Initial direct handoff retained too much destination material and test fixtures resembled credentials | Persist only bounded branch/cell descriptor in restricted `RUNNER_TEMP`; derive hostname locally; use runtime-generated synthetic fixtures. FL112. |
 | TLS trust policy implicit to static analysis | Secure runtime defaults were not explicit enough to prove the minimum protocol policy | Explicit `PROTOCOL_TLS_CLIENT`, minimum TLS 1.2, default server-auth trust roots, hostname verification and certificate requirement. FL113. |
 | Secret scanner marker-name collision | Non-secret command marker used credential-shaped variable naming | Rename to runtime-binding marker semantics; retain mandatory tracked-content scan unchanged. FL114. |
+| Execution-ledger machine marker dropped during refresh | Human-equivalent heading rename broke exact source-controlled governance consumers | Restore canonical `Green Checkpoint verification` marker; retain strict candidate/Green Checkpoint guards unchanged. FL115. |
 | Direct Git production deployment could race governance | Provider Git deployment could promote before exact-main post-merge gates finish | Direct Git production auto-deploy forbidden; release begins only from gated post-merge authority. |
 | Current-main drift during release | Long release could target superseded `main` | Exact current-main recheck before candidate and immediately before production promotion. |
 | Persistent Build trigger could bypass release gate | Normal production branch trigger reintroduces auto-deploy | Temporary sentinel-gated exact-SHA manual trigger only; terminal quarantine; unknown trigger authority fails closed. |
@@ -141,13 +144,14 @@ Split decision: `NO_ADDITIONAL_BRANCH_SPLIT_REQUIRED`.
 - [x] Production `workers.dev` exposure remains disabled.
 - [x] Deterministic Core remains financial truth authority.
 
-## 8. Green Checkpoint history
+## 8. Green Checkpoint verification
 
 - `0be132372afa902368b4176ee0700f5b68d75903`: stable staging authority reuse; real Provider Readiness and CF-C candidate SUCCESS.
 - `0ce9fbb49ebd5c235b5fd102e0e50ff0c6407490`: direct release-control bootstrap implementation; deterministic module wiring defect found before provider mutation.
 - `6caa7bf80946c0a4f3e7627087b66c3ce2d37a78`: wiring repair; real Provider Readiness and staging Worker + Container acceptance SUCCESS; later formatter/Sonar findings superseded final certification.
 - `3da2e1c2b9d3f866a45007ca6fbdd7aaefddde50`: custody/security hardening; Sonar identified explicit TLS-policy and cognitive-complexity findings.
 - `c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`: explicit TLS policy + decomposition; Sonar/governance SUCCESS, protected merge gate RED only at FL114 tracked-content scan finding.
+- `902fca16fb83b1d72dd8a2ff9b8edabf3fe7a8ee`: FL114 marker repair + ledger refresh; all observed non-owning workflows and real staging build SUCCESS, owning Windows/Governance RED on the shared FL115 ledger-marker compatibility defect.
 - Replacement checkpoint: exact SHA recorded externally after publication; state `PENDING_FULL_RECERTIFICATION` until every applicable exact-head gate reaches terminal SUCCESS.
 
 Every earlier exact-head result is historical after a content-changing repair.
@@ -188,10 +192,10 @@ Every earlier exact-head result is historical after a content-changing repair.
 
 - Accepted main/base: `6b28198550adc09a001de8779df900b13caa5c42`.
 - Current PR: `#478`.
-- Pre-repair RED head: `c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`.
+- Pre-repair RED head: `902fca16fb83b1d72dd8a2ff9b8edabf3fe7a8ee`.
 - Current milestone: CF-D final exact-head certification and post-merge public cutover.
 - Completed: CF-A, CF-B, real CF-C, CF-D source path, direct control-plane bootstrap architecture, provider target custody, explicit TLS policy, rollback/domain/release guards.
-- Current repair: FL114 non-secret test-marker naming collision; no scanner suppression or gate weakening.
+- Current repair: FL115 restores the canonical machine-consumed Green Checkpoint marker without weakening strict consumers.
 - Next lawful action after publication: full replacement-SHA exact-head certification; no unrelated feature work while RED.
 - Post-certification action: READY -> squash merge -> exact-new-main gates -> gated CF-D production release/live acceptance.
 
