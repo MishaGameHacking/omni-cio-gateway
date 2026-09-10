@@ -160,6 +160,25 @@ def test_direct_function_request_derives_https_host_and_forwards_only_oidc() -> 
     assert observed["closed"] is True
 
 
+def test_direct_failure_preserves_only_bounded_unknown_http_status() -> None:
+    for status in (400, 401, 403, 404, 408, 429, 500, 502, 503, 504, 530):
+        assert direct._direct_failure_code(status, b"<untrusted-provider-body>") == (
+            f"{direct._DIRECT_UNCLASSIFIED_HTTP_PREFIX}{status}_UNCLASSIFIED"
+        )
+
+    source_controlled = json.dumps(
+        {"status": "BLOCKED", "code": "OIDC_AUDIENCE_INVALID"},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert direct._direct_failure_code(403, source_controlled) == (
+        "CLOUDFLARE_CF_D_NEON_FUNCTION_OIDC_AUDIENCE_INVALID"
+    )
+    assert direct._direct_failure_code(302, b"untrusted redirect") == direct._DIRECT_REDIRECT
+    assert direct._direct_failure_code(599, b"untrusted") == (
+        "CLOUDFLARE_CF_D_NEON_BOOTSTRAP_REJECTED"
+    )
+
+
 def test_main_candidate_hands_target_without_logging_it() -> None:
     source = CANDIDATE_RUNNER.read_text(encoding="utf-8")
     assert 'if branch == "main":' in source
