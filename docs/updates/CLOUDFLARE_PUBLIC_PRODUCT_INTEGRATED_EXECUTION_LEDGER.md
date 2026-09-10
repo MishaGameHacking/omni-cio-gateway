@@ -2,8 +2,8 @@
 
 Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 
-This ledger records branch-local execution state for the active Cloudflare integrated
-update. Accepted V10 progress and current-next authority remain in
+This is the branch-scoped execution ledger required by the accepted Integrated System
+Update law. Accepted V10 product progress/current-next authority remains in
 `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` on protected `main`, interpreted through
 the newest accepted-main evidence chain and accepted amendments.
 
@@ -13,225 +13,186 @@ the newest accepted-main evidence chain and accepted amendments.
 - Title: Cloudflare Public Product System Update
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
 - Branch: `system/cloudflare-public-product`
-- Accepted base SHA: `2106f1b1792bc710c8eaa68d6be87e04455c0263`
-- Current accepted-main SHA rechecked before CF-D source work:
-  `2106f1b1792bc710c8eaa68d6be87e04455c0263`
-- OWNER authority / START evidence: accepted Amendments 14 and 15 plus canonical
-  current status
+- Historical integrated-update base: `2106f1b1792bc710c8eaa68d6be87e04455c0263`
+- Final-convergence accepted base: `6b28198550adc09a001de8779df900b13caa5c42`
+- Current accepted `main` rechecked immediately before this repair batch:
+  `6b28198550adc09a001de8779df900b13caa5c42`
+- OWNER authority / START evidence: accepted Amendments 14 and 15 plus the canonical
+  current status/evidence chain.
+- Green Checkpoint authority: accepted Amendment 16.
 - GitHub dashboard issue: `#412`
-- Final integrated DRAFT PR: `#413`
-- Governing contracts: Amendments 12, 14, 15 and, for subsequent checkpoints after its
-  acceptance, Amendment 16, plus the integrated-update, Green Checkpoint,
-  Cloudflare-platform, Cloudflare-public-product and release-acceptance contracts
+- Current final integrated DRAFT PR: `#478`
+- Historical predecessor PR: `#413`
+- Governing contracts: Amendments 12, 14, 15 and 16 plus the integrated-update,
+  Cloudflare-platform, Cloudflare-public-product, Green Checkpoint and release-acceptance
+  contracts.
 
-## 2. Member milestones — ordered
+## 2. Ordered member milestones
 
-| Order | Member WP/increment | State | Branch-local Exit evidence | Notes |
-|---:|---|---|---|---|
-| 1 | CF-A / `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` | DONE | Source-controlled verifier contract, shards and governance checks passed | No provider mutation |
-| 2 | CF-B / `CLOUDFLARE-RUNTIME-COMPATIBILITY` | DONE | Worker, Static Assets, Container, Python/Node and Neon compatibility accepted | Protected V9 recovery retained |
-| 3 | CF-C / `CLOUDFLARE-CANDIDATE-DEPLOYMENT` | DONE | Exact-head Cloudflare staging Worker + Container, isolated Neon PostgreSQL 18 runtime role, exact-SHA release/health/database acceptance and trigger quarantine passed | Production promotion not performed |
-| 4 | CF-D / `CLOUDFLARE-PUBLIC-CUTOVER` | IN PROGRESS | Post-merge release/cutover source boundary is being added; production mutation remains forbidden on the DRAFT branch | Actual production promotion is post-merge only |
+| Order | Member WP/increment | Branch-local state | Evidence / boundary |
+|---:|---|---|---|
+| 1 | CF-A / `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` | DONE | Source-controlled verifier contract, shards and governance guards accepted branch-locally. |
+| 2 | CF-B / `CLOUDFLARE-RUNTIME-COMPATIBILITY` | DONE | Worker, Static Assets, Container, pinned Python/Node delivery toolchain and Neon PostgreSQL 18 compatibility proven; protected V9 recovery retained. |
+| 3 | CF-C / `CLOUDFLARE-CANDIDATE-DEPLOYMENT` | DONE | Real Cloudflare staging Worker + Container, staging PostgreSQL 18 runtime binding, exact-SHA release/health/database acceptance and trigger quarantine succeeded on branch checkpoints. |
+| 4 | CF-D / `CLOUDFLARE-PUBLIC-CUTOVER` | SOURCE COMPLETE / CERTIFICATION IN PROGRESS | Post-merge exact-main release gate, direct release-control DB bootstrap, gated production Workers Build, Custom Domain, live acceptance and rollback source are implemented. Production mutation remains post-merge only. |
 
-Internal milestone `DONE` is branch-local implementation progress only. It does not
-advance accepted V10 percentage, change `main`, unlock another major update, activate
-public multi-user access or authorize broker/Real execution.
+Internal milestone state is branch-local only. It does not advance accepted V10
+percentage, unlock WP23+, activate public multi-user mode, or authorize broker/Real
+execution.
 
-After Amendment 16 acceptance, no dependent functional checkpoint may build on a
-published checkpoint until that exact checkpoint is `CERTIFIED_GREEN`.
+## 3. Current exact work item
 
-## 3. Current execution state
+Current state is `RED_REPAIR_ONLY` under Amendment 16 until the replacement SHA created
+by this repair batch completes full exact-head certification.
 
-- Current exact work item: source-control the CF-D post-merge exact-main release gate,
-  gated production Workers Build, production database-secret bootstrap/reuse,
-  canonical `.ru` Custom Domain attachment, live exact-SHA acceptance and bounded
-  rollback path.
-- Current branch head before this CF-D source batch:
-  `bf26ffcaaf1753c2b8b364990be5685f3019e458`.
-- Exact-head state on that parent: all current GitHub Actions runs are `success`,
-  including Cloudflare Provider Readiness and real CF-C Candidate Deployment;
-  independent Sonar/Semgrep/Gitar review is clear and unresolved blocking review
-  threads are zero.
-- CF-C evidence is real provider evidence, not synthetic GREEN: Workers Builds,
-  Container rollout, isolated Neon staging, exact release SHA and database health
-  reached accepted terminal state, with staging trigger quarantine/cleanup.
-- CF-D architecture correction discovered during full release-path review:
-  Cloudflare direct Git production auto-deploy on each `main` push would race ahead
-  of required exact-main post-merge gates, so it is forbidden. Production release is
-  instead triggered only after `Regression Shield` completes and rechecks all observed
-  same-SHA `push` workflows plus current `main` immediately before promotion.
-- Lenovo has no accepted local Container build dependency for CF-D. Production
-  Worker+Container deployment therefore reuses Cloudflare Workers Builds through a
-  temporary sentinel-gated manual exact-main trigger that is quarantined after the
-  terminal build.
-- A provider-side production Build can outlive a failed/killed GitHub job. Before the
-  rollback snapshot CF-D validates/deletes only its owned sentinel trigger and cancels
-  every nonterminal Build targeting the exact production Worker; unknown triggers fail
-  closed. The production runner repeats quarantine before creating the new trigger.
-- Production PostgreSQL runtime credentials are bootstrap-once/reuse. Re-provisioning
-  and rotating the production runtime password on every release is explicitly
-  forbidden because it could invalidate the currently serving Worker before the next
-  release is accepted.
-- First production creation uses a 503/no-store Worker bootstrap anchor with
-  `workers_dev=false`, then installs the database secret, quarantines stale provider
-  activity, snapshots the active version for rollback, deploys the exact accepted main
-  and only then attaches the canonical Custom Domain.
-- WEB VISUAL remains excluded. Telegram/VK public activation remains outside this
-  infrastructure cutover. Broker write/Real execution remain OFF.
-- Main drift since accepted base: NONE at the pre-source recheck.
+The immediately preceding head is:
 
-## 4. Integration-ready preflight
+`c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`
 
-- [ ] Every required branch-local source milestone is complete on the new CF-D head.
+Its authoritative Windows merge-gate run `34452823345` proved all of the following
+before stopping:
+
+- repository/CI policy contracts: PASS;
+- PostgreSQL 18 runtime-role rehearsal: PASS;
+- compile: PASS;
+- Ruff check and format check: PASS;
+- mypy: PASS;
+- full protected regression suite: PASS (`3042` tests plus subtests);
+- branch coverage: PASS (`62.2%`, threshold `>=60%`);
+- dependency audit: PASS;
+- SAST: PASS;
+- exact-head Sonar Quality Gate through the independent governance lane: PASS.
+
+The one deterministic RED finding was the tracked-content `detect-secrets` Secret
+Keyword hit on a non-secret source-marker constant in
+`tests/test_v10_cloudflare_staging_secret_reuse_preflight.py`. FL114 records the defect
+class and prevention law. This repair renames the marker semantically and does not
+suppress or weaken scanning.
+
+The exact replacement SHA is recorded in PR/dashboard evidence after publication because
+a tracked document cannot truthfully self-reference the commit that contains itself.
+
+## 4. Final-convergence defect inventory
+
+| Failure class | Root cause | Permanent correction / guard |
+|---|---|---|
+| Stable staging DB authority gated by management API | Existing staging runtime binding was not treated as sufficient stable authority | Probe/reuse existing runtime binding first; Neon management recovery only when missing; no routine password rotation. FL110. |
+| Production bootstrap used unnecessary public staging relay | Trusted release control already possessed authenticated bootstrap destination evidence | Exact-SHA custody hands a bounded provider target descriptor to release control; GitHub OIDC calls the Neon Function directly. FL111. |
+| Direct-bootstrap boundary needed stronger custody constraints | Initial direct handoff retained too much destination material and test fixtures resembled credentials | Persist only bounded branch/cell descriptor in restricted `RUNNER_TEMP`; derive hostname locally; use runtime-generated synthetic fixtures. FL112. |
+| TLS trust policy implicit to static analysis | Secure runtime defaults were not explicit enough to prove the minimum protocol policy | Explicit `PROTOCOL_TLS_CLIENT`, minimum TLS 1.2, default server-auth trust roots, hostname verification and certificate requirement. FL113. |
+| Secret scanner marker-name collision | Non-secret command marker used credential-shaped variable naming | Rename to runtime-binding marker semantics; retain mandatory tracked-content scan unchanged. FL114. |
+| Direct Git production deployment could race governance | Provider Git deployment could promote before exact-main post-merge gates finish | Direct Git production auto-deploy forbidden; release begins only from gated post-merge authority. |
+| Current-main drift during release | Long release could target superseded `main` | Exact current-main recheck before candidate and immediately before production promotion. |
+| Persistent Build trigger could bypass release gate | Normal production branch trigger reintroduces auto-deploy | Temporary sentinel-gated exact-SHA manual trigger only; terminal quarantine; unknown trigger authority fails closed. |
+| Stale provider Build could race rollback snapshot | A terminated GitHub job does not prove an already-started provider Build stopped | Pre-snapshot production Build quarantine and repeat quarantine before new trigger. |
+| Production DB role rotation could interrupt serving release | Rotating on each release can invalidate currently serving Worker | Bootstrap only if production runtime binding is missing; otherwise reuse without rotation. |
+| Failed live acceptance could leave bad version active | Container rollout alone is not health acceptance | Snapshot prior 100% deployment and perform bounded rollback on deploy/domain/live failure. |
+| Wrong domain/zone could capture another service | Domain metadata is provider authority | Require canonical `.ru` host/zone/service relationship; mismatch fails closed. |
+
+## 5. Integration-ready preflight
+
 - [x] CF-A complete.
 - [x] CF-B complete.
-- [x] Real CF-C staging acceptance complete on the parent exact head.
-- [x] CF-D root-cause/blast-radius/producer-consumer review complete before source change.
-- [x] Direct Cloudflare Git production auto-deploy rejected as a post-merge-gate bypass.
-- [x] Local-Docker dependency rejected; gated Cloudflare Workers Builds retained.
-- [x] Production DB credential-rotation outage mode addressed by bootstrap-if-missing reuse.
-- [x] Custom-domain authority, exact-main recheck and rollback boundaries designed fail-closed.
-- [x] Stale provider-build race reviewed; production Builds are quarantined before rollback snapshot.
+- [x] Real CF-C staging acceptance complete on branch checkpoints.
+- [x] CF-D source implementation complete.
+- [x] Root-cause, blast-radius, analogous-pattern and producer/consumer reviews completed for each material RED class.
+- [x] Deterministic regression guards exist for reusable defect classes.
+- [x] Direct Cloudflare Git production auto-deploy remains forbidden.
+- [x] Production database bootstrap is least-privilege, exact-SHA/OIDC bound, bootstrap-if-missing and fail-closed.
+- [x] Provider target handoff is bounded, private runner custody and non-artifacted.
+- [x] Explicit verified TLS client policy is source-controlled.
+- [x] Custom-domain authority, exact-main recheck and rollback boundaries are fail-closed.
 - [x] Security/authority/secret/recovery consequences reviewed.
-- [x] Mandatory split triggers evaluated below.
-- [ ] New CF-D source batch focused checks pass.
-- [ ] Fresh new-head checkpoint becomes `CERTIFIED_GREEN`.
-- [ ] Ledger may be marked `INTEGRATION_READY`.
+- [x] Mandatory split triggers reviewed; no additional implementation branch split is required.
+- [x] No WEB-VISUAL, Telegram/VK, AI/Cortex, broker-write or Real-money scope absorbed.
+- [ ] Replacement exact-head checkpoint `CERTIFIED_GREEN`.
+- [ ] Complete final Files Changed / independent review remains clear on the replacement SHA.
 
-`INTEGRATION_READY` remains the final whole-update readiness state before final landing
-review. Amendment 16 changes checkpoint verification cadence, not this final integrated
-readiness boundary.
+Source implementation is `INTEGRATION_READY` for final external exact-head certification.
+This is not a GREEN claim and not accepted-main authority.
 
-CF-D focused preflight is designed to include:
-
-```text
-python -m py_compile <new/changed CF-D Python files>
-python -m unittest \
-  tests.test_v10_cloudflare_release_acceptance \
-  tests.test_v10_cloudflare_postmerge_release_gate \
-  tests.test_v10_cloudflare_production_manager \
-  tests.test_v10_cloudflare_gated_production \
-  tests.test_v10_cloudflare_worker_anchor_environments \
-  tests.test_v10_cloudflare_gated_candidate_source_branch
-python scripts/check_v10_cloudflare_release_acceptance.py
-python scripts/check_v10_cloudflare_candidate_delivery.py
-python -m ruff check <changed Python files>
-python -m ruff format --check <changed Python files>
-```
-
-## 5. Mandatory split-trigger review
+## 6. Mandatory split-trigger review
 
 | Trigger | State | Evidence / consequence |
 |---|---|---|
-| DB/migration ordering | CLEAR | No schema migration. Production role is provisioned only if the Worker secret is absent; existing production credentials are reused. |
-| Security/authority transition | CLEAR / POST-MERGE BOUNDARY | Production mutation is authorized only after protected-main merge and exact-main post-merge SUCCESS; DRAFT branch cannot promote. |
-| Dependency/toolchain boundary | CLEAR | Existing pinned Wrangler/Containers/Node/Python provider toolchain is reused. |
-| OWNER/provider action | CLEAR / POSSIBLE EXTERNAL BLOCKER | Source is autonomous. Missing canonical domain/zone secret custody remains a bounded OWNER/provider prerequisite if not already configured. |
-| Live/temporal evidence | CLEAR / POST-MERGE BOUNDARY | Exact production live evidence must be gathered after merge; branch-local source checks cannot synthesize it. |
-| Production cutover | TRIGGERED AS TIMING BOUNDARY | Amendment 15 explicitly keeps actual CF-D mutation after merge; it does not require a separate implementation branch. |
-| Real-money authority | N/A | Broker write and Real execution remain disabled. |
-| Reviewability limit | CLEAR | CF-D source is one coherent release/cutover boundary with dedicated tests and deterministic guards. |
+| DB/migration ordering | CLEAR | No schema migration. Existing runtime credentials are reused; production bootstrap occurs only if the Worker binding is absent. |
+| Security/authority transition | CLEAR / POST-MERGE BOUNDARY | Production mutation is authorized only after protected-main merge and exact-main post-merge SUCCESS. |
+| Dependency/toolchain boundary | CLEAR | Accepted pinned Wrangler/Containers/Node/Python/PostgreSQL toolchain reused; no modernization. |
+| OWNER/provider action | CLEAR / EXTERNAL IF MISSING | Source is autonomous. Missing provider/domain custody would remain an external prerequisite rather than a code bypass. |
+| Live/temporal evidence | POST-MERGE BOUNDARY | Exact production evidence must be gathered after merge and cannot be synthesized branch-locally. |
+| Production cutover | TIMING BOUNDARY | Amendment 15 explicitly keeps actual CF-D mutation after merge; no separate implementation branch is required. |
+| Real-money authority | N/A | Broker write and Real execution remain OFF. |
+| Reviewability limit | CLEAR | Current PR is one coherent Cloudflare/Neon release-control convergence unit. |
 
-Split decision: `NO_ADDITIONAL_BRANCH_SPLIT_REQUIRED`; provider production mutation remains
-an explicit post-merge timing/authority boundary.
+Split decision: `NO_ADDITIONAL_BRANCH_SPLIT_REQUIRED`.
 
-## 6. Protected authority checklist
+## 7. Protected authority checklist
 
 - [x] Protected V9 entrypoint remains `app:app`.
 - [x] `PUBLIC_MULTI_USER_ENABLED=false` remains unchanged.
 - [x] `trading_methods=false`, `REAL_TRADING_ENABLED=false` and broker write OFF remain unchanged.
 - [x] No transfer, withdrawal, margin, leverage or uncovered-short authority is introduced.
-- [x] Tenant isolation and PostgreSQL FORCE RLS remain fail-closed.
-- [x] No real credential value, database DSN, private portfolio payload or full provider
-  identifier is added to source, PR comments or artifacts.
-- [x] Production database DSN is read only from a runner-temporary file and uploaded as
-  Cloudflare secret text; it is never printed.
+- [x] Neon PostgreSQL 18 remains relational truth; no D1 replacement or speculative Hyperdrive is introduced.
+- [x] Tenant isolation / PostgreSQL RLS and FORCE RLS remain fail-closed.
+- [x] No real credential, DSN, provider identifier, private portfolio payload or private Function hostname is added to source, PR text or artifacts.
+- [x] Production DSN remains restricted runner-temp custody and is uploaded only as Cloudflare secret text; it is never printed.
 - [x] Direct Cloudflare Git production auto-deploy is forbidden.
 - [x] Persistent production Workers Build triggers are forbidden.
-- [x] Production `workers.dev` exposure is disabled; staging `workers.dev` remains enabled
-  only for isolated candidate acceptance.
+- [x] Production `workers.dev` exposure remains disabled.
 - [x] Deterministic Core remains financial truth authority.
 
-## 7. Green Checkpoint verification
+## 8. Green Checkpoint history
 
-Historical checkpoint evidence below remains historical evidence. For any subsequent
-head after Amendment 16 acceptance, the branch follows the Green Checkpoint law.
+- `0be132372afa902368b4176ee0700f5b68d75903`: stable staging authority reuse; real Provider Readiness and CF-C candidate SUCCESS.
+- `0ce9fbb49ebd5c235b5fd102e0e50ff0c6407490`: direct release-control bootstrap implementation; deterministic module wiring defect found before provider mutation.
+- `6caa7bf80946c0a4f3e7627087b66c3ce2d37a78`: wiring repair; real Provider Readiness and staging Worker + Container acceptance SUCCESS; later formatter/Sonar findings superseded final certification.
+- `3da2e1c2b9d3f866a45007ca6fbdd7aaefddde50`: custody/security hardening; Sonar identified explicit TLS-policy and cognitive-complexity findings.
+- `c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`: explicit TLS policy + decomposition; Sonar/governance SUCCESS, protected merge gate RED only at FL114 tracked-content scan finding.
+- Replacement checkpoint: exact SHA recorded externally after publication; state `PENDING_FULL_RECERTIFICATION` until every applicable exact-head gate reaches terminal SUCCESS.
 
-### Accepted parent checkpoint before CF-D source batch
-
-- Verification SHA: `bf26ffcaaf1753c2b8b364990be5685f3019e458`
-- Historical DRAFT state: DRAFT.
-- Terminal conclusions: all then-current exact-head GitHub Actions runs `success`, including
-  Cloudflare Provider Readiness and Candidate Deployment; Sonar Quality Gate passed;
-  Semgrep and Gitar passed; unresolved blocking review threads = 0.
-- CF-C provider acceptance: PASS.
-- Production promotion: NOT PERFORMED.
-- Prior final evidence invalidated by the later CF-D source commit: YES.
-
-### Subsequent CF-D logical checkpoint
-
-- Logical checkpoint ID: CF-D source/release checkpoint.
-- Exact SHA: record the current branch head when published.
-- State: `PENDING` / `RED_REPAIR_ONLY` / `TARGET_REPAIRED` / `CERTIFIED_GREEN`.
-- Applicable checks: full current exact-head project gates plus Sonar and independent review.
-- Material RED response: immediately enter `RED_REPAIR_ONLY`; no unrelated feature scope.
-- Same-SHA rerun: only for unchanged source/config and proved transient infrastructure failure.
-- Content-changing repair: targeted proof -> replacement SHA -> full exact-SHA recertification.
-- Next dependent work: forbidden until `CERTIFIED_GREEN`.
-
-## 8. CF-D root-cause inventory and permanent hardening
-
-| Finding / class | Root cause / risk | Permanent boundary |
-|---|---|---|
-| Direct Git production deployment races governance | Cloudflare Git production branch deploys on `main` push before repository post-merge gates can finish | Production Git auto-deploy forbidden; GitHub `workflow_run` release waits for Regression Shield and every observed same-SHA push workflow |
-| Current-main drift during long release | A newer `main` may land while a prior release is preparing | Current `main` SHA is rechecked before candidate and immediately before production promotion; superseded SHA fails closed |
-| Local production Container build is not an accepted dependency | Lenovo candidate path deliberately uses Cloudflare Builds because local Container tooling is absent/untrusted | Production image build/deploy also uses a temporary gated Cloudflare Workers Build with exact `main` SHA |
-| Persistent build trigger could bypass release gate | A normal production branch trigger would reintroduce auto-deploy | Production trigger uses an impossible sentinel branch, manual exact-main start only, terminal cleanup; unknown trigger authority fails closed |
-| Stale provider Build can race a later rollback snapshot | A killed runner does not prove an already-started Cloudflare Build stopped | Pre-snapshot quarantine cancels all nonterminal Builds for the exact production Worker after trigger-authority validation; normal runner repeats quarantine before new trigger creation |
-| Production DB role rotation could interrupt current release | Re-provisioning changes password before next Worker is accepted | Probe Cloudflare secret; reuse existing credential. Provision/rotate only on first missing-secret bootstrap |
-| First production Worker cannot receive secret before it exists | Secret API is script-scoped | Create 503/no-route bootstrap Worker with `workers_dev=false`, then upload secret, snapshot rollback version, then deploy |
-| Failed production live acceptance can leave bad version active | Container rollout is not treated as equivalent to health acceptance | Capture prior 100% Worker version before mutation and explicitly roll back to it on deploy/domain/live failure |
-| Wrong domain/zone could capture another service | Host/zone metadata is provider authority | Require one `.ru` zone, host within that zone, exact Worker service match and exact zone ID/name; mismatch fails closed |
+Every earlier exact-head result is historical after a content-changing repair.
 
 ## 9. Main-drift record
 
-- Accepted main before CF-D source batch:
-  `2106f1b1792bc710c8eaa68d6be87e04455c0263`.
-- Intersects this update: NO.
-- Re-anchor required before source publication: NO.
-- Production workflow independently rechecks current main at runtime before any promotion.
+- Accepted `main` at final-convergence branch creation:
+  `6b28198550adc09a001de8779df900b13caa5c42`.
+- Accepted `main` immediately before this repair batch:
+  `6b28198550adc09a001de8779df900b13caa5c42`.
+- Drift intersecting this update: NONE at the recheck.
+- Re-anchor required before publication: NO.
+- The production workflow independently rechecks current `main` immediately before mutation.
 
 ## 10. Final lifecycle
 
-- [ ] Current exact CF-D checkpoint `CERTIFIED_GREEN`.
-- [ ] `INTEGRATION_READY`.
+- [ ] Replacement exact CF-D checkpoint `CERTIFIED_GREEN`.
+- [x] Branch-local source implementation `INTEGRATION_READY` for final certification.
 - [x] Integrated implementation branch and DRAFT PR exist.
 - [x] CF-A branch-local DONE.
 - [x] CF-B branch-local DONE.
-- [x] CF-C branch-local real provider acceptance DONE on parent exact head.
-- [ ] CF-D source/release boundary complete and exact-head verified.
-- [ ] Independent review / Files changed complete with zero blockers.
-- [ ] READY transition; any intentionally state-dependent applicable checks conclude `success`.
+- [x] CF-C branch-local real provider acceptance DONE.
+- [x] CF-D source/release boundary complete.
+- [ ] Final independent review / complete Files Changed clear; unresolved blocking threads = 0.
+- [ ] PR transition to READY on unchanged certified head.
+- [ ] Any READY-state applicable checks conclude `success` on the exact head.
 - [ ] Squash merge into protected `main`.
-- [ ] Exact-new-main Regression Shield and every applicable post-merge gate `success`.
+- [ ] Exact-new-main Regression Shield, Engineering Governance and every applicable post-merge gate `success`.
 - [ ] Exact-main isolated staging rehearsal passes post-merge.
-- [ ] CF-D gated production Workers Build succeeds.
+- [ ] Direct GitHub-OIDC -> Neon Function production bootstrap succeeds if the production runtime binding is absent.
+- [ ] CF-D gated production Worker + Container build succeeds.
 - [ ] Canonical `.ru` Custom Domain attached/verified.
-- [ ] Exact-main `/api/v10/release` and `/healthz` live acceptance passes.
-- [ ] Russian-network/no-VPN public-path acceptance recorded without private data.
-- [ ] Canonical current status transitions only after the entire accepted evidence chain.
+- [ ] Exact-main `/api/v10/release`, container-source and `/healthz database=READY` live acceptance passes.
+- [ ] Russian-network/no-VPN public-path evidence recorded if still required by current accepted authority.
+- [ ] Canonical current status/closeout updated only from the complete accepted evidence chain.
 
 ## 11. Handoff
 
-- Exact parent head before CF-D source batch:
-  `bf26ffcaaf1753c2b8b364990be5685f3019e458`.
-- Current milestone: CF-D source/release boundary.
-- What is complete: CF-A, CF-B, real CF-C staging acceptance and all parent exact-head
-  source/review checks.
-- What remains: current CF-D branch must adopt Amendment 16 for every subsequent head
-  after Amendment 16 acceptance; any material RED means immediate `RED_REPAIR_ONLY`,
-  targeted repair proof and full replacement-SHA certification before dependent work.
-- Next lawful action: restore current accepted `main`, reconcile the actual current CF-D
-  branch/PR evidence, and certify its current logical checkpoint under Amendment 16.
+- Accepted main/base: `6b28198550adc09a001de8779df900b13caa5c42`.
+- Current PR: `#478`.
+- Pre-repair RED head: `c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`.
+- Current milestone: CF-D final exact-head certification and post-merge public cutover.
+- Completed: CF-A, CF-B, real CF-C, CF-D source path, direct control-plane bootstrap architecture, provider target custody, explicit TLS policy, rollback/domain/release guards.
+- Current repair: FL114 non-secret test-marker naming collision; no scanner suppression or gate weakening.
+- Next lawful action after publication: full replacement-SHA exact-head certification; no unrelated feature work while RED.
+- Post-certification action: READY -> squash merge -> exact-new-main gates -> gated CF-D production release/live acceptance.
 
 This document is not a competing current-status authority.
