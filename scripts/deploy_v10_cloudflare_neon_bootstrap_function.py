@@ -31,7 +31,9 @@ _SOURCE_ROOT = builds._REPO_ROOT / "infrastructure/cloudflare/cf_d_neon_bootstra
 _SOURCE = _SOURCE_ROOT / "index.mjs"
 _WRAPPER_SOURCE = _SOURCE_ROOT / "provenance_wrapper.mjs"
 _WRAPPER_DIGEST_PLACEHOLDER = b"__OMNI_CIO_CF_D_SOURCE_BUNDLE_SHA256__"
-_PROVENANCE_PATH = "/__omni-cio/source-provenance"
+_PROVENANCE_PATH = "/"
+_PROVENANCE_HEADER = "X-Omni-Source-Provenance"
+_PROVENANCE_HEADER_VALUE = "v1"
 _PROJECT_NAME = "omni-cio-v10-preview-frankfurt"
 _REGION = "aws-eu-central-1"
 _JSON_MEDIA_TYPE = "application/json"
@@ -412,7 +414,11 @@ def _probe_source_provenance(
         connection.request(
             "GET",
             _PROVENANCE_PATH,
-            headers={"Accept": _JSON_MEDIA_TYPE, "User-Agent": _USER_AGENT},
+            headers={
+                "Accept": _JSON_MEDIA_TYPE,
+                "User-Agent": _USER_AGENT,
+                _PROVENANCE_HEADER: _PROVENANCE_HEADER_VALUE,
+            },
         )
         response = connection.getresponse()
         status = int(response.status)
