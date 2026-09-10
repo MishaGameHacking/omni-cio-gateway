@@ -202,3 +202,19 @@ def test_success_payload_validation_is_body_authoritative() -> None:
         "Authorization": f"Bearer {oidc_token}",
         "Content-Type": "application/json",
     }
+
+
+def test_success_response_still_requires_strict_json_object_body() -> None:
+    target = direct._target_from_origin(ORIGIN)
+    oidc_token = ".".join(secrets.token_urlsafe(18) for _ in range(3))
+
+    for body in (b"<untrusted-html>", b"[]"):
+        connection = _Connection(_Response(200, body))
+        with mock.patch.object(direct, "_direct_connection", return_value=connection):
+            try:
+                direct._request_direct_bootstrap_json(target, EXPECTED_SHA, oidc_token)
+            except legacy.BootstrapStopped as exc:
+                assert exc.code == direct._DIRECT_RESPONSE_INVALID
+            else:
+                raise AssertionError("invalid HTTP 200 body was accepted")
+        assert connection.closed is True
