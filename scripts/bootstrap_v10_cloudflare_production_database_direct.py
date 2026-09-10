@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 import scripts.bootstrap_v10_cloudflare_production_database_via_staging as legacy
 from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
     NEON_BOOTSTRAP_REJECTED,
+    STAGING_UNCLASSIFIED_HTTP_STATUSES as _BOUNDED_UNCLASSIFIED_HTTP_STATUSES,
     classify_neon_bootstrap_provider_failure,
 )
 from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import _FUNCTION_ORIGIN_PATTERN
@@ -35,6 +36,7 @@ _DIRECT_UNAVAILABLE = "CLOUDFLARE_CF_D_NEON_FUNCTION_UNAVAILABLE"
 _DIRECT_REDIRECT = "CLOUDFLARE_CF_D_NEON_FUNCTION_REDIRECT_REJECTED"
 _DIRECT_RESPONSE_INVALID = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_INVALID"
 _DIRECT_RESPONSE_TOO_LARGE = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_TOO_LARGE"
+_DIRECT_UNCLASSIFIED_HTTP_PREFIX = "CLOUDFLARE_CF_D_DIRECT_HTTP_"
 
 
 class BootstrapFunctionTarget(NamedTuple):
@@ -194,7 +196,12 @@ def read_bootstrap_origin_handoff() -> BootstrapFunctionTarget:
 def _direct_failure_code(status: int, body: bytes) -> str:
     if 300 <= status < 400:
         return _DIRECT_REDIRECT
-    return classify_neon_bootstrap_provider_failure(status, body)
+    classified = classify_neon_bootstrap_provider_failure(status, body)
+    if classified != NEON_BOOTSTRAP_REJECTED:
+        return classified
+    if status in _BOUNDED_UNCLASSIFIED_HTTP_STATUSES:
+        return f"{_DIRECT_UNCLASSIFIED_HTTP_PREFIX}{status}_UNCLASSIFIED"
+    return NEON_BOOTSTRAP_REJECTED
 
 
 def _read_direct_response(response: Any, limit: int, code: str) -> bytes:
