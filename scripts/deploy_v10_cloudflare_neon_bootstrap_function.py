@@ -5,6 +5,7 @@ import hashlib
 import http.client
 import io
 import json
+from pathlib import Path
 import re
 import ssl
 import subprocess
@@ -303,7 +304,7 @@ def _preexisting(
     return active_id
 
 
-def _read_source(path: Any, marker: bytes, code: str) -> bytes:
+def _read_source(path: Path, marker: bytes, code: str) -> bytes:
     if path.is_symlink() or not path.is_file():
         raise builds.BootstrapStopped(code)
     try:
