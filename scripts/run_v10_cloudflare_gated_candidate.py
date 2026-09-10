@@ -9,7 +9,9 @@ from typing import Iterator
 from urllib.parse import quote
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
-from scripts.cloudflare_cf_d_direct_bootstrap import write_bootstrap_origin_handoff
+from scripts.bootstrap_v10_cloudflare_production_database_direct import (
+    write_bootstrap_origin_handoff,
+)
 from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
 from scripts.probe_v10_cloudflare_staging_runtime_secret import (
     _runtime_secret_present,
