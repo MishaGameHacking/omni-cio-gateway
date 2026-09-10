@@ -36,7 +36,13 @@ _HTTP_TIMEOUT = 20.0
 _DEPLOY_TIMEOUT = 130.0
 _POLL = 2.0
 _USER_AGENT = "omni-cio-v10-cf-d-neon-function-deploy/1"
-_DEPLOY_STATES = frozenset({"pending", "building", "completed", "failed"})
+_STATE_PENDING = "pending"
+_STATE_BUILDING = "building"
+_STATE_COMPLETED = "completed"
+_STATE_FAILED = "failed"
+_DEPLOY_STATES = frozenset(
+    {_STATE_PENDING, _STATE_BUILDING, _STATE_COMPLETED, _STATE_FAILED}
+)
 _GET_FAILURE_BY_STATUS = {
     401: "API_KEY_INVALID",
     403: "API_KEY_INSUFFICIENT",
@@ -279,8 +285,8 @@ def _preexisting(
     )
     if (
         current_id != active_id
-        or current_status != "completed"
-        or active_status != "completed"
+        or current_status != _STATE_COMPLETED
+        or active_status != _STATE_COMPLETED
     ):
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PREEXISTING_STATE_NOT_READY"
@@ -360,7 +366,7 @@ def _deploy(token: str, project_id: str, branch_id: str, sha: str) -> str:
         deployment,
         "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RESPONSE_INVALID",
     )
-    if state == "failed":
+    if state == _STATE_FAILED:
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_FAILED")
     return deployment_id
 
@@ -388,14 +394,14 @@ def _wait(
                 raise builds.BootstrapStopped(
                     "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE"
                 )
-            if current_state == "failed":
+            if current_state == _STATE_FAILED:
                 raise builds.BootstrapStopped(
                     "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_FAILED"
                 )
             if (
-                current_state == "completed"
+                current_state == _STATE_COMPLETED
                 and active_id == deployment_id
-                and active_state == "completed"
+                and active_state == _STATE_COMPLETED
             ):
                 print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
                 return
