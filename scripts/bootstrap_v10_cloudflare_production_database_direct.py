@@ -1,91 +1,81 @@
 from __future__ import annotations
 
 import argparse
-from http.client import HTTPException
+import http.client
 import json
 import os
 from pathlib import Path
-import re
+import ssl
 import stat
 import sys
-from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request
+from typing import Any, NamedTuple
 
+import scripts.bootstrap_v10_cloudflare_production_database_via_staging as legacy
 from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
     NEON_BOOTSTRAP_REJECTED,
+    NEON_FUNCTION_FAILURE_PREFIX,
     classify_neon_bootstrap_provider_failure,
 )
-import scripts.bootstrap_v10_cloudflare_production_database_via_staging as legacy
+from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import _FUNCTION_ORIGIN_PATTERN
 
 
+_JSON_MEDIA_TYPE = "application/json"
 _BOOTSTRAP_ORIGIN_FILENAME = "omni-cio-v10-cloudflare-bootstrap-origin.txt"
-_FUNCTION_ORIGIN_PATTERN = re.compile(
-    r"^https://br-[a-z0-9-]{4,57}-cfdprodbootstrap\.compute\."
-    r"c-[a-z0-9]+\.eu-central-1\.aws\.neon\.tech/$"
+_MAX_TARGET_DESCRIPTOR_BYTES = 256
+_MAX_DIRECT_RESPONSE_BYTES = 65_536
+_MAX_DIRECT_FAILURE_BYTES = 8_192
+_HTTP_TIMEOUT_SECONDS = 20.0
+_ORIGIN_HANDOFF_INVALID = "CLOUDFLARE_CF_D_BOOTSTRAP_TARGET_HANDOFF_INVALID"
+_ORIGIN_HANDOFF_TOO_LARGE = "CLOUDFLARE_CF_D_BOOTSTRAP_TARGET_HANDOFF_TOO_LARGE"
+_ORIGIN_HANDOFF_ALREADY_EXISTS = (
+    "CLOUDFLARE_CF_D_BOOTSTRAP_TARGET_HANDOFF_ALREADY_EXISTS"
 )
-_MAX_BOOTSTRAP_ORIGIN_BYTES = 1_024
-_MAX_FAILURE_RESPONSE_BYTES = 8_192
-_DIRECT_BOOTSTRAP_UNAVAILABLE = "CLOUDFLARE_CF_D_DIRECT_BOOTSTRAP_UNAVAILABLE"
-_DIRECT_BOOTSTRAP_REDIRECT_REJECTED = (
-    "CLOUDFLARE_CF_D_DIRECT_BOOTSTRAP_REDIRECT_REJECTED"
-)
-_DIRECT_BOOTSTRAP_RESPONSE_TOO_LARGE = (
-    "CLOUDFLARE_CF_D_DIRECT_BOOTSTRAP_RESPONSE_TOO_LARGE"
-)
-_DIRECT_BOOTSTRAP_RESPONSE_INVALID = "CLOUDFLARE_CF_D_DIRECT_BOOTSTRAP_RESPONSE_INVALID"
-_ORIGIN_HANDOFF_INVALID = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_INVALID"
-_ORIGIN_HANDOFF_PATH_INVALID = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_PATH_INVALID"
-_ORIGIN_HANDOFF_SYMLINK_FORBIDDEN = (
-    "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_SYMLINK_FORBIDDEN"
-)
-_ORIGIN_HANDOFF_ALREADY_EXISTS = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_ALREADY_EXISTS"
-_ORIGIN_HANDOFF_CREATE_FAILED = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_CREATE_FAILED"
-_ORIGIN_HANDOFF_PERMISSION_FAILED = (
-    "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_PERMISSION_FAILED"
-)
-_ORIGIN_HANDOFF_WRITE_FAILED = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_WRITE_FAILED"
-_ORIGIN_HANDOFF_READ_FAILED = "CLOUDFLARE_CF_D_BOOTSTRAP_ORIGIN_HANDOFF_READ_FAILED"
+_ORIGIN_HANDOFF_CREATE_FAILED = "CLOUDFLARE_CF_D_BOOTSTRAP_TARGET_HANDOFF_CREATE_FAILED"
+_ORIGIN_HANDOFF_WRITE_FAILED = "CLOUDFLARE_CF_D_BOOTSTRAP_TARGET_HANDOFF_WRITE_FAILED"
+_DIRECT_UNAVAILABLE = "CLOUDFLARE_CF_D_NEON_FUNCTION_UNAVAILABLE"
+_DIRECT_REDIRECT = "CLOUDFLARE_CF_D_NEON_FUNCTION_REDIRECT_REJECTED"
+_DIRECT_RESPONSE_INVALID = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_INVALID"
+_DIRECT_RESPONSE_TOO_LARGE = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_TOO_LARGE"
 
 
-def _bootstrap_origin_path() -> Path:
-    return legacy._runner_temp() / _BOOTSTRAP_ORIGIN_FILENAME
+class BootstrapFunctionTarget(NamedTuple):
+    branch_id: str
+    cell: str
 
 
-def _validated_bootstrap_origin(value: object) -> str:
-    if not isinstance(value, str):
+def _target_from_origin(value: object) -> BootstrapFunctionTarget:
+    if not isinstance(value, str) or not value:
         raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
     candidate = value.strip().lower()
-    if (
-        not candidate
-        or len(candidate.encode("utf-8")) > _MAX_BOOTSTRAP_ORIGIN_BYTES
-        or _FUNCTION_ORIGIN_PATTERN.fullmatch(candidate) is None
-    ):
+    match = _FUNCTION_ORIGIN_PATTERN.fullmatch(candidate)
+    if match is None:
         raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
-    return candidate
+    return BootstrapFunctionTarget(branch_id=match.group(1), cell=match.group(2))
 
 
-def _exact_origin_path(path: Path) -> Path:
-    if path.is_symlink():
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_SYMLINK_FORBIDDEN)
-    resolved = path.resolve()
-    root = legacy._runner_temp()
-    if resolved.parent != root or resolved.name != _BOOTSTRAP_ORIGIN_FILENAME:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_PATH_INVALID)
-    return resolved
+def _target_from_components(branch_id: object, cell: object) -> BootstrapFunctionTarget:
+    if not isinstance(branch_id, str) or not isinstance(cell, str):
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
+    origin = (
+        f"https://{branch_id}-cfdprodbootstrap.compute.{cell}."
+        "eu-central-1.aws.neon.tech/"
+    )
+    target = _target_from_origin(origin)
+    if target.branch_id != branch_id or target.cell != cell:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
+    return target
 
 
-def _harden_origin_file(path: Path) -> None:
-    try:
-        if os.name == "nt":
-            legacy._harden_windows_private_file(path)
-            return
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-        mode = stat.S_IMODE(path.stat().st_mode)
-    except (OSError, legacy.BootstrapStopped):
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_PERMISSION_FAILED) from None
-    if mode != stat.S_IRUSR | stat.S_IWUSR:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_PERMISSION_FAILED)
+def _bootstrap_hostname(target: BootstrapFunctionTarget) -> str:
+    validated = _target_from_components(target.branch_id, target.cell)
+    return (
+        f"{validated.branch_id}-cfdprodbootstrap.compute.{validated.cell}."
+        "eu-central-1.aws.neon.tech"
+    )
+
+
+def _origin_handoff_file() -> Path:
+    return legacy._runner_temp() / _BOOTSTRAP_ORIGIN_FILENAME
 
 
 def _discard_origin_handoff(path: Path) -> None:
@@ -95,23 +85,55 @@ def _discard_origin_handoff(path: Path) -> None:
         pass
 
 
+def _validate_handoff_path(path: Path) -> Path:
+    if path.is_symlink():
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
+    resolved = path.resolve()
+    root = legacy._runner_temp()
+    if resolved.parent != root or resolved.name != _BOOTSTRAP_ORIGIN_FILENAME:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
+    return resolved
+
+
+def _target_descriptor(target: BootstrapFunctionTarget) -> str:
+    return json.dumps(
+        {"branch_id": target.branch_id, "cell": target.cell},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def write_bootstrap_origin_handoff(value: str) -> Path:
-    origin = _validated_bootstrap_origin(value)
-    path = _exact_origin_path(_bootstrap_origin_path())
+    """Persist only a validated provider target descriptor for the same release job.
+
+    The public HTTPS URL is deliberately not persisted. The release-control process
+    reconstructs the exact Neon Function hostname from these validated non-URL fields.
+    """
+
+    target = _target_from_origin(value)
+    payload = _target_descriptor(target)
+    encoded = payload.encode("utf-8")
+    if len(encoded) > _MAX_TARGET_DESCRIPTOR_BYTES:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_TOO_LARGE)
+
+    path = _validate_handoff_path(_origin_handoff_file())
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags, stat.S_IRUSR | stat.S_IWUSR)
-    except FileExistsError:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_ALREADY_EXISTS) from None
-    except OSError:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_CREATE_FAILED) from None
+    except FileExistsError as exc:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_ALREADY_EXISTS) from exc
+    except OSError as exc:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_CREATE_FAILED) from exc
 
     try:
-        _harden_origin_file(path)
+        if os.name == "nt":
+            legacy._harden_windows_private_file(path)
+        else:
+            legacy._harden_posix_private_file(path)
         handle = os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
         descriptor = -1
         with handle:
-            handle.write(origin)
+            handle.write(payload)
             handle.write("\n")
     except legacy.BootstrapStopped:
         if descriptor >= 0:
@@ -121,104 +143,131 @@ def write_bootstrap_origin_handoff(value: str) -> Path:
                 pass
         _discard_origin_handoff(path)
         raise
-    except OSError:
+    except OSError as exc:
         if descriptor >= 0:
             try:
                 os.close(descriptor)
             except OSError:
                 pass
         _discard_origin_handoff(path)
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_WRITE_FAILED) from None
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_WRITE_FAILED) from exc
     return path
 
 
-def read_bootstrap_origin_handoff() -> str:
-    path = _exact_origin_path(_bootstrap_origin_path())
+def read_bootstrap_origin_handoff() -> BootstrapFunctionTarget:
+    path = _validate_handoff_path(_origin_handoff_file())
+    if not path.is_file():
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
     try:
-        if not path.is_file() or path.stat().st_size > _MAX_BOOTSTRAP_ORIGIN_BYTES + 2:
-            raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
-        if os.name != "nt" and stat.S_IMODE(path.stat().st_mode) != 0o600:
-            raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_PERMISSION_FAILED)
-        value = path.read_text(encoding="utf-8")
+        if path.stat().st_size > _MAX_TARGET_DESCRIPTOR_BYTES:
+            raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_TOO_LARGE)
+        raw = path.read_bytes()
     except legacy.BootstrapStopped:
         raise
-    except (OSError, UnicodeError):
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_READ_FAILED) from None
-    if value.count("\n") > 1 or "\r" in value:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
-    return _validated_bootstrap_origin(value)
-
-
-def _direct_failure_code(status: int, response: Any) -> str:
-    if 300 <= status < 400:
-        return _DIRECT_BOOTSTRAP_REDIRECT_REJECTED
+    except OSError as exc:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID) from exc
+    if len(raw) > _MAX_TARGET_DESCRIPTOR_BYTES:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_TOO_LARGE)
     try:
-        content = legacy._read_limited(
-            response,
-            _MAX_FAILURE_RESPONSE_BYTES,
-            _DIRECT_BOOTSTRAP_RESPONSE_TOO_LARGE,
-        )
-    except legacy.BootstrapStopped as exc:
-        return exc.code
-    except (HTTPException, OSError):
-        return _DIRECT_BOOTSTRAP_UNAVAILABLE
-    code = classify_neon_bootstrap_provider_failure(status, content)
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID) from exc
+    if not isinstance(payload, dict) or set(payload) != {"branch_id", "cell"}:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_INVALID)
+    return _target_from_components(payload.get("branch_id"), payload.get("cell"))
+
+
+def _direct_failure_code(status: int, body: bytes) -> str:
+    if 300 <= status < 400:
+        return _DIRECT_REDIRECT
+    code = classify_neon_bootstrap_provider_failure(status, body)
     if code == NEON_BOOTSTRAP_REJECTED:
         return NEON_BOOTSTRAP_REJECTED
+    if code.startswith(NEON_FUNCTION_FAILURE_PREFIX):
+        return code
     return code
 
 
-def _request_direct_bootstrap_json(request: Request) -> dict[str, Any]:
+def _read_direct_response(response: Any, limit: int, code: str) -> bytes:
     try:
-        with legacy._OPENER.open(request, timeout=legacy._HTTP_TIMEOUT_SECONDS) as response:
-            if response.status != 200:
-                raise legacy.BootstrapStopped(
-                    _direct_failure_code(int(response.status), response)
-                )
-            data = legacy._read_limited(
-                response,
-                legacy._MAX_BOOTSTRAP_RESPONSE_BYTES,
-                _DIRECT_BOOTSTRAP_RESPONSE_TOO_LARGE,
-            )
-    except HTTPError as exc:
-        try:
-            code = _direct_failure_code(int(exc.code), exc)
-        finally:
-            exc.close()
-        raise legacy.BootstrapStopped(code) from None
-    except (URLError, OSError, HTTPException):
-        raise legacy.BootstrapStopped(_DIRECT_BOOTSTRAP_UNAVAILABLE) from None
-    return legacy._json_object(data, _DIRECT_BOOTSTRAP_RESPONSE_INVALID)
+        return legacy._read_limited(response, limit, code)
+    except legacy.BootstrapStopped:
+        raise
+    except (OSError, http.client.HTTPException) as exc:
+        raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE) from exc
 
 
-def _bootstrap_runtime_dsn_direct(
-    bootstrap_origin: str,
+def _request_direct_bootstrap_json(
+    target: BootstrapFunctionTarget,
     expected_sha: str,
     oidc_token: str,
-) -> str:
+) -> dict[str, Any]:
+    hostname = _bootstrap_hostname(target)
     body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
     )
-    request = Request(
-        bootstrap_origin,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {oidc_token}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    context = ssl.create_default_context()
+    if not context.check_hostname or context.verify_mode != ssl.CERT_REQUIRED:
+        raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE)
+    connection = http.client.HTTPSConnection(
+        hostname,
+        443,
+        timeout=_HTTP_TIMEOUT_SECONDS,
+        context=context,
     )
-    payload = _request_direct_bootstrap_json(request)
+    try:
+        connection.request(
+            "POST",
+            "/",
+            body=body,
+            headers={
+                "Authorization": f"Bearer {oidc_token}",
+                "Accept": _JSON_MEDIA_TYPE,
+                "Content-Type": _JSON_MEDIA_TYPE,
+            },
+        )
+        response = connection.getresponse()
+        status = int(response.status)
+        if status != 200:
+            failure_body = _read_direct_response(
+                response,
+                _MAX_DIRECT_FAILURE_BYTES,
+                NEON_BOOTSTRAP_REJECTED,
+            )
+            raise legacy.BootstrapStopped(_direct_failure_code(status, failure_body))
+        content_type = str(response.getheader("Content-Type", "")).lower()
+        if _JSON_MEDIA_TYPE not in content_type:
+            raise legacy.BootstrapStopped(_DIRECT_RESPONSE_INVALID)
+        response_body = _read_direct_response(
+            response,
+            _MAX_DIRECT_RESPONSE_BYTES,
+            _DIRECT_RESPONSE_TOO_LARGE,
+        )
+    except legacy.BootstrapStopped:
+        raise
+    except (OSError, http.client.HTTPException) as exc:
+        raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE) from exc
+    finally:
+        connection.close()
+    return legacy._json_object(response_body, _DIRECT_RESPONSE_INVALID)
+
+
+def _bootstrap_runtime_dsn_direct(
+    target: BootstrapFunctionTarget,
+    expected_sha: str,
+    oidc_token: str,
+) -> str:
+    payload = _request_direct_bootstrap_json(target, expected_sha, oidc_token)
     return legacy._validate_runtime_payload(payload, expected_sha)
 
 
 def run(expected_sha: str) -> Path:
     safe_sha = legacy._validated_sha(expected_sha)
-    bootstrap_origin = read_bootstrap_origin_handoff()
+    target = read_bootstrap_origin_handoff()
     token = legacy._github_oidc_token()
-    runtime_dsn = _bootstrap_runtime_dsn_direct(bootstrap_origin, safe_sha, token)
+    runtime_dsn = _bootstrap_runtime_dsn_direct(target, safe_sha, token)
     legacy._write_private_file(legacy._output_file(), runtime_dsn)
+    _discard_origin_handoff(_origin_handoff_file())
     print(
         "CLOUDFLARE_CF_D_DATABASE_BOOTSTRAP=READY "
         "transport=GITHUB_OIDC_DIRECT_NEON_FUNCTION"

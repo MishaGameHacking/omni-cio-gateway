@@ -22,28 +22,31 @@ The final convergence architecture requires release/bootstrap orchestration to r
 
 ## Correction
 
-The exact derived Function origin is now handed from the already-authorized staging custody step to the same release job through one fixed restricted `RUNNER_TEMP` file:
+The already-authorized staging custody step continues to validate the exact derived Function origin. For an exact-main release, it now reduces that origin to the minimum validated target descriptor (`branch_id` and `cell`) and hands only that descriptor to the same release job through one fixed restricted `RUNNER_TEMP` file:
 
 - fixed filename only;
+- exact JSON keys only;
+- no complete URL in the handoff;
 - no symlink;
 - exclusive creation;
 - POSIX 0600 or the existing hardened Windows ACL path;
-- bounded exact Neon Function hostname validation;
+- values must reconstruct through the single canonical Neon Function-origin pattern;
 - never printed;
 - never a GitHub output;
 - never an artifact;
 - deterministic cleanup.
 
-For the one-time production database bootstrap, the release control plane now sends the existing short-lived GitHub OIDC assertion directly to that exact HTTPS Function origin. The Function retains the existing exact repository/main/workflow/SHA/runner/time/RS256 validation and performs the existing least-privilege PostgreSQL role/grant/RLS convergence. The resulting production DSN keeps the existing restricted temporary-file custody before Cloudflare Secret convergence.
+For the one-time production database bootstrap, the release control plane reconstructs the single allowed Neon Function hostname from those validated components and source-controlled suffixes, then sends the existing short-lived GitHub OIDC assertion through `http.client.HTTPSConnection` on port 443 with the default certificate-validating TLS context and fixed `/` request target. The Function retains the existing exact repository/main/workflow/SHA/runner/time/RS256 validation and performs the existing least-privilege PostgreSQL role/grant/RLS convergence. The resulting production DSN keeps the existing restricted temporary-file custody before Cloudflare Secret convergence.
 
 The former public staging relay remains source-present only until the direct path is proven by exact-main production acceptance. It is no longer the active production bootstrap transport. After real acceptance and consumer proof, the legacy relay and its now-unused Worker/Container responsibilities are eligible for removal in the final cleanup checkpoint.
 
 ## Security properties preserved
 
 - no static Neon management credential is added to the production bootstrap;
-- no provider identifier or private Function hostname is logged or stored in GitHub metadata;
-- redirects remain rejected;
-- environment proxy inheritance remains disabled through the existing isolated opener;
+- no provider identifier or private Function URL is logged or stored in GitHub metadata;
+- a complete dynamic network URL is not accepted by the direct release bootstrap;
+- the request target is fixed and TLS hostname verification is required;
+- inherited proxy/redirect URL routing is not used by the direct transport;
 - failure bodies remain bounded and only source-controlled Function classes cross the trust boundary;
 - unknown failures remain fail-closed and non-retryable;
 - production role remains least privilege with no SUPERUSER/CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS authority;
@@ -51,7 +54,7 @@ The former public staging relay remains source-present only until the direct pat
 
 ## Prevention law
 
-Before introducing an internal/public relay for release-control data, prove that the relay adds a distinct required security authority. If the terminal verifier can be called directly by the trusted release control plane with equal or stronger authentication and narrower exposure, prefer the direct bounded control-plane path.
+Before introducing an internal/public relay for release-control data, prove that the relay adds a distinct required security authority. If the terminal verifier can be called directly by the trusted release control plane with equal or stronger authentication and narrower exposure, prefer the direct bounded control-plane path. The direct path must carry the minimum validated target identity and must not broaden that identity back into an arbitrary network destination.
 
 ## Protected invariants
 

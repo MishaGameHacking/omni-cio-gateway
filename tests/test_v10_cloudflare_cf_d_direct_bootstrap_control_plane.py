@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import secrets
 import tempfile
 from unittest import mock
-from urllib.request import Request
 
 import scripts.bootstrap_v10_cloudflare_production_database_direct as direct
 import scripts.bootstrap_v10_cloudflare_production_database_via_staging as legacy
@@ -15,70 +15,146 @@ WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
 CANDIDATE_RUNNER = ROOT / "scripts/run_v10_cloudflare_gated_candidate.py"
 CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
 EXPECTED_SHA = "a" * 40
-OIDC = "synthetic_header.synthetic_claims.synthetic_signature"
 ORIGIN = (
     "https://br-example1234-cfdprodbootstrap.compute."
     "c-6.eu-central-1.aws.neon.tech/"
 )
-PRODUCTION_DSN = (
-    "postgresql://omni_cio_cloudflare_prod:synthetic-credential-marker@"
-    "ep-example-pooler.c-6.eu-central-1.aws.neon.tech/neondb?"
-    "sslmode=require&channel_binding=require"
-)
 
 
-def test_direct_bootstrap_origin_handoff_is_exact_private_runner_file() -> None:
+def _oidc_token() -> str:
+    return ".".join(secrets.token_urlsafe(18) for _ in range(3))
+
+
+def _production_dsn() -> str:
+    credential = secrets.token_urlsafe(32)
+    return (
+        "postgresql://omni_cio_cloudflare_prod:"
+        f"{credential}@ep-example-pooler.c-6.eu-central-1.aws.neon.tech/neondb?"
+        "sslmode=require&channel_binding=require"
+    )
+
+
+def test_direct_bootstrap_handoff_persists_only_validated_target_descriptor() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        with mock.patch.dict(legacy.os.environ, {"RUNNER_TEMP": str(root)}, clear=False):
+        with mock.patch.dict(
+            legacy.os.environ, {"RUNNER_TEMP": str(root)}, clear=False
+        ):
             path = direct.write_bootstrap_origin_handoff(ORIGIN)
             assert path == root.resolve() / direct._BOOTSTRAP_ORIGIN_FILENAME
-            assert direct.read_bootstrap_origin_handoff() == ORIGIN
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            assert payload == {"branch_id": "br-example1234", "cell": "c-6"}
+            assert "https://" not in path.read_text(encoding="utf-8")
+            assert ".neon.tech" not in path.read_text(encoding="utf-8")
+            expected_target = direct.BootstrapFunctionTarget(
+                branch_id="br-example1234",
+                cell="c-6",
+            )
+            assert direct.read_bootstrap_origin_handoff() == expected_target
             if legacy.os.name != "nt":
                 assert path.stat().st_mode & 0o777 == 0o600
             direct._discard_origin_handoff(path)
             assert not path.exists()
 
 
-def test_direct_bootstrap_origin_rejects_arbitrary_network_target() -> None:
+def test_direct_bootstrap_target_rejects_arbitrary_network_destination() -> None:
     for value in (
         "https://example.com/",
-        "http://br-example1234-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech/",
-        "https://br-example1234-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech/path",
+        (
+            "http://br-example1234-cfdprodbootstrap.compute.c-6."
+            "eu-central-1.aws.neon.tech/"
+        ),
+        (
+            "https://br-example1234-cfdprodbootstrap.compute.c-6."
+            "eu-central-1.aws.neon.tech/path"
+        ),
     ):
         try:
-            direct._validated_bootstrap_origin(value)
+            direct._target_from_origin(value)
         except legacy.BootstrapStopped as exc:
             assert exc.code == direct._ORIGIN_HANDOFF_INVALID
         else:
-            raise AssertionError("untrusted bootstrap origin accepted")
+            raise AssertionError("untrusted bootstrap destination accepted")
 
 
-def test_direct_function_request_uses_standard_oidc_only_at_function_boundary() -> None:
-    observed: list[Request] = []
+def test_direct_function_request_derives_https_host_and_forwards_only_oidc() -> None:
+    target = direct._target_from_origin(ORIGIN)
+    oidc = _oidc_token()
+    production_dsn = _production_dsn()
+    observed: dict[str, object] = {}
 
-    def fake_request(request: Request) -> dict[str, object]:
-        observed.append(request)
-        return {
-            "status": "READY",
-            "runtime_role": "omni_cio_cloudflare_prod",
-            "runtime_dsn": PRODUCTION_DSN,
-            "source_sha": EXPECTED_SHA,
-        }
+    class Response:
+        status = 200
 
-    with mock.patch.object(direct, "_request_direct_bootstrap_json", side_effect=fake_request):
-        result = direct._bootstrap_runtime_dsn_direct(ORIGIN, EXPECTED_SHA, OIDC)
+        def getheader(self, name: str, default: str = "") -> str:
+            if name.lower() == "content-type":
+                return "application/json"
+            return default
 
-    assert result == PRODUCTION_DSN
-    assert len(observed) == 1
-    request = observed[0]
-    assert request.full_url == ORIGIN
-    assert request.get_header("Authorization") == f"Bearer {OIDC}"
-    assert request.get_header("X-omni-github-oidc") is None
-    assert OIDC not in request.full_url
+        def read(self, size: int = -1) -> bytes:
+            payload = {
+                "status": "READY",
+                "runtime_role": "omni_cio_cloudflare_prod",
+                "runtime_dsn": production_dsn,
+                "source_sha": EXPECTED_SHA,
+            }
+            return json.dumps(payload).encode("utf-8")[:size]
+
+    class Connection:
+        def __init__(
+            self,
+            host: str,
+            port: int,
+            *,
+            timeout: float,
+            context: object,
+        ) -> None:
+            observed["host"] = host
+            observed["port"] = port
+            observed["timeout"] = timeout
+            observed["context"] = context
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes,
+            headers: dict[str, str],
+        ) -> None:
+            observed["method"] = method
+            observed["path"] = path
+            observed["body"] = body
+            observed["headers"] = headers
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            observed["closed"] = True
+
+    with mock.patch.object(direct.http.client, "HTTPSConnection", Connection):
+        result = direct._bootstrap_runtime_dsn_direct(target, EXPECTED_SHA, oidc)
+
+    assert result == production_dsn
+    assert observed["host"] == (
+        "br-example1234-cfdprodbootstrap.compute.c-6.eu-central-1.aws.neon.tech"
+    )
+    assert observed["port"] == 443
+    assert observed["method"] == "POST"
+    assert observed["path"] == "/"
+    headers = observed["headers"]
+    assert isinstance(headers, dict)
+    assert headers == {
+        "Authorization": f"Bearer {oidc}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    assert oidc not in str(observed["host"])
+    assert observed["closed"] is True
 
 
-def test_main_candidate_hands_origin_to_release_control_plane_without_logging_it() -> None:
+def test_main_candidate_hands_target_without_logging_it() -> None:
     source = CANDIDATE_RUNNER.read_text(encoding="utf-8")
     assert 'if branch == "main":' in source
     assert "write_bootstrap_origin_handoff(bootstrap_origin)" in source
@@ -88,10 +164,15 @@ def test_main_candidate_hands_origin_to_release_control_plane_without_logging_it
 
 def test_production_release_uses_direct_function_not_public_staging_relay() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
-    start = source.index("      - name: Reuse production database secret or bootstrap it once")
+    start = source.index(
+        "      - name: Reuse production database secret or bootstrap it once"
+    )
     end = source.index("\n      - name:", start + 1)
     section = source[start:end]
-    assert "python -m scripts.bootstrap_v10_cloudflare_production_database_direct" in section
+    direct_command = (
+        "python -m scripts.bootstrap_v10_cloudflare_production_database_direct"
+    )
+    assert direct_command in section
     assert "bootstrap_v10_cloudflare_production_database_via_staging" not in section
     assert "STAGING_ORIGIN" not in section
     assert "--origin" not in section
@@ -102,13 +183,29 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     candidate = contract["candidate"]
     cutover = contract["cutover"]
-    assert candidate["staging_bootstrap_origin_private_control_plane_handoff_for_main"] is True
+    assert (
+        candidate["staging_bootstrap_origin_private_control_plane_handoff_for_main"]
+        is True
+    )
     assert cutover["production_database_bootstrap_active_transport"] == (
         "GITHUB_OIDC_DIRECT_NEON_FUNCTION"
     )
     assert cutover["production_database_bootstrap_public_staging_relay_active"] is False
     assert cutover["production_database_bootstrap_function_origin_custody"] == (
-        "RESTRICTED_RUNNER_TEMP"
+        "RESTRICTED_RUNNER_TEMP_TARGET_DESCRIPTOR"
     )
     assert cutover["production_database_bootstrap_function_origin_logged"] is False
     assert cutover["production_database_bootstrap_function_origin_artifacted"] is False
+    assert cutover["production_database_bootstrap_target_descriptor_fields"] == [
+        "branch_id",
+        "cell",
+    ]
+    assert (
+        cutover["production_database_bootstrap_target_descriptor_full_url_allowed"]
+        is False
+    )
+    assert cutover["production_database_bootstrap_dynamic_url_handoff_allowed"] is False
+    assert (
+        cutover["production_database_bootstrap_tls_hostname_verification_required"]
+        is True
+    )
