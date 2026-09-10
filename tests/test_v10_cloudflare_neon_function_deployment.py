@@ -55,7 +55,7 @@ def _function_state(
 
 def _required_env(name: str) -> str:
     if name == "NEON_API_KEY":
-        return "synthetic-secret-token"
+        return "synthetic-provider-fixture"
     if name == "NEON_PROJECT_ID":
         return _PROJECT_ID
     if name == "NEON_ORG_ID":
@@ -269,14 +269,14 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             ):
                 deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
         deploy.assert_called_once_with(
-            "synthetic-secret-token",
+            "synthetic-provider-fixture",
             _PROJECT_ID,
             _BRANCH_ID,
             _EXPECTED_SHA,
             archive,
         )
         wait.assert_called_once_with(
-            "synthetic-secret-token",
+            "synthetic-provider-fixture",
             _PROJECT_ID,
             _BRANCH_ID,
             "6",
@@ -351,7 +351,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
 
         with mock.patch.object(deployer, "_request", side_effect=request):
             deployment_id = deployer._deploy(
-                "synthetic-secret-token",
+                "synthetic-provider-fixture",
                 _PROJECT_ID,
                 _BRANCH_ID,
                 _EXPECTED_SHA,
@@ -366,7 +366,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         )
         self.assertIn("multipart/form-data", str(observed["content_type"]))
         self.assertNotIn(
-            b"synthetic-secret-token",
+            b"synthetic-provider-fixture",
             cast(bytes, observed["body"]),
         )
 
@@ -381,7 +381,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_API_KEY_INSUFFICIENT",
             ):
                 deployer._deploy(
-                    "synthetic-secret-token",
+                    "synthetic-provider-fixture",
                     _PROJECT_ID,
                     _BRANCH_ID,
                     _EXPECTED_SHA,
