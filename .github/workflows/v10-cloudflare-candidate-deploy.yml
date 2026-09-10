@@ -69,8 +69,35 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
 
+      - name: Probe reusable staging runtime secret before Neon management API
+        id: staging_secret
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          set +e
+          python -m scripts.probe_v10_cloudflare_staging_runtime_secret
+          secret_rc=$?
+          set -e
+          case "$secret_rc" in
+            0)
+              echo "bootstrap_required=false" >> "$GITHUB_OUTPUT"
+              echo "CLOUDFLARE_STAGING_DATABASE_ROLE=UNCHANGED"
+              ;;
+            10)
+              echo "bootstrap_required=true" >> "$GITHUB_OUTPUT"
+              echo "CLOUDFLARE_STAGING_DATABASE_RECOVERY=REQUIRED"
+              ;;
+            *)
+              exit "$secret_rc"
+              ;;
+          esac
+
       - name: Verify Neon exact-project read authority before provider mutation
         id: neon_authority
+        if: ${{ steps.staging_secret.outputs.bootstrap_required == 'true' }}
         shell: bash
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
@@ -125,6 +152,7 @@ jobs:
           python -c "import importlib.metadata as m; expected={'psycopg':'3.3.4','psycopg-binary':'3.3.4','typing-extensions':'4.16.0','tzdata':'2026.3'}; actual={name:m.version(name) for name in expected}; assert actual == expected, actual"
 
       - name: Provision isolated Neon staging runtime role
+        if: ${{ steps.staging_secret.outputs.bootstrap_required == 'true' }}
         shell: bash
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
