@@ -13,6 +13,9 @@ from scripts.bootstrap_v10_cloudflare_production_database_direct import (
     write_bootstrap_origin_handoff,
 )
 from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
+from scripts.deploy_v10_cloudflare_neon_bootstrap_function import (
+    deploy_exact_main_bootstrap_function_if_required,
+)
 from scripts.probe_v10_cloudflare_staging_runtime_secret import (
     _runtime_secret_present,
 )
@@ -251,6 +254,8 @@ def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
                 if branch == "main":
                     write_bootstrap_origin_handoff(bootstrap_origin)
             persist_bootstrap_origin_custody(api, bootstrap_origin)
+            if branch == "main":
+                deploy_exact_main_bootstrap_function_if_required(api, sha)
         except builds.BootstrapStopped as exc:
             primary = exc
 
