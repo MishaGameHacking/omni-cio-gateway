@@ -14,7 +14,7 @@ PRODUCTION_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-releas
 NEON_PROJECT_AUTHORITY_PROBE = "probe_provider_access_from_env()"
 NEON_PROVISION = "python -m scripts.provision_v10_cloudflare_neon_runtime"
 OIDC_PRODUCTION_BOOTSTRAP = (
-    "python -m scripts.bootstrap_v10_cloudflare_production_database_via_staging"
+    "python -m scripts.bootstrap_v10_cloudflare_production_database_direct"
 )
 
 
@@ -77,7 +77,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             source[provider_probe:staging_provision],
         )
 
-    def test_production_database_bootstrap_uses_oidc_not_neon_static_authority(
+    def test_production_database_bootstrap_uses_direct_oidc_not_static_neon_authority(
         self,
     ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
@@ -88,10 +88,9 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         end = source.index("\n      - name:", start + 1)
         section = source[start:end]
         self.assertIn(OIDC_PRODUCTION_BOOTSTRAP, section)
-        self.assertIn(
-            "STAGING_ORIGIN: ${{ steps.candidate.outputs.staging_url }}",
-            section,
-        )
+        self.assertIn("omni-cio-v10-cloudflare-bootstrap-origin.txt", section)
+        self.assertNotIn("STAGING_ORIGIN", section)
+        self.assertNotIn("--origin", section)
         for forbidden in (
             "NEON_API_KEY",
             "NEON_ORG_ID",

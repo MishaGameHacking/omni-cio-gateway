@@ -9,6 +9,9 @@ from typing import Iterator
 from urllib.parse import quote
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
+from scripts.bootstrap_v10_cloudflare_production_database_direct import (
+    write_bootstrap_origin_handoff,
+)
 from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
 from scripts.probe_v10_cloudflare_staging_runtime_secret import (
     _runtime_secret_present,
@@ -245,6 +248,8 @@ def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
                     expected_sha=sha,
                     token=sync_token,
                 )
+                if branch == "main":
+                    write_bootstrap_origin_handoff(bootstrap_origin)
             persist_bootstrap_origin_custody(api, bootstrap_origin)
         except builds.BootstrapStopped as exc:
             primary = exc
