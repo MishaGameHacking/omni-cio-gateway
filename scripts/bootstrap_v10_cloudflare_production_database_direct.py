@@ -257,9 +257,8 @@ def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
         )
         response = connection.getresponse()
         status = int(response.status)
-        content_type = str(response.getheader("Content-Type", "")).lower()
-        if _JSON_MEDIA_TYPE not in content_type:
-            raise legacy.BootstrapStopped(_DIRECT_RESPONSE_INVALID)
+        if 300 <= status < 400:
+            raise legacy.BootstrapStopped(_DIRECT_REDIRECT)
         response_body = _read_direct_response(
             response,
             _MAX_DIRECT_FAILURE_BYTES,
@@ -295,15 +294,14 @@ def _request_direct_bootstrap_json(
         response = connection.getresponse()
         status = int(response.status)
         if status != 200:
+            if 300 <= status < 400:
+                raise legacy.BootstrapStopped(_DIRECT_REDIRECT)
             failure_body = _read_direct_response(
                 response,
                 _MAX_DIRECT_FAILURE_BYTES,
                 NEON_BOOTSTRAP_REJECTED,
             )
             raise legacy.BootstrapStopped(_direct_failure_code(status, failure_body))
-        content_type = str(response.getheader("Content-Type", "")).lower()
-        if _JSON_MEDIA_TYPE not in content_type:
-            raise legacy.BootstrapStopped(_DIRECT_RESPONSE_INVALID)
         response_body = _read_direct_response(
             response,
             _MAX_DIRECT_RESPONSE_BYTES,
