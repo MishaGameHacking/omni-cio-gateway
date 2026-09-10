@@ -310,14 +310,22 @@ def _read_source(path: Any, marker: bytes, code: str) -> bytes:
         source = path.read_bytes()
     except OSError:
         raise builds.BootstrapStopped(code) from None
-    if not source or len(source) > _MAX_SOURCE or b"\x00" in source or marker not in source:
+    if (
+        not source
+        or len(source) > _MAX_SOURCE
+        or b"\x00" in source
+        or marker not in source
+    ):
         raise builds.BootstrapStopped(code)
     return source
 
 
 def _source_bundle_digest(wrapper_template: bytes, handler: bytes) -> str:
     digest = hashlib.sha256()
-    for name, source in ((b"index.mjs", wrapper_template), (b"handler.mjs", handler)):
+    for name, source in (
+        (b"index.mjs", wrapper_template),
+        (b"handler.mjs", handler),
+    ):
         digest.update(len(name).to_bytes(2, "big"))
         digest.update(name)
         digest.update(len(source).to_bytes(8, "big"))
@@ -372,10 +380,14 @@ def _provenance_response(
     raw: bytes,
     expected_digest: str,
 ) -> bool:
-    if not content_type.lower().split(";", 1)[0].strip() == "application/json":
+    media_type = content_type.lower().split(";", 1)[0].strip()
+    if media_type != "application/json":
         raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID, status=status)
     payload = _json(raw, _SOURCE_PROVENANCE_INVALID)
-    if status == 405 and payload == {"status": "BLOCKED", "code": "METHOD_NOT_ALLOWED"}:
+    if status == 405 and payload == {
+        "status": "BLOCKED",
+        "code": "METHOD_NOT_ALLOWED",
+    }:
         return False
     if status != 200 or set(payload) != {"status", "source_sha256"}:
         raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID, status=status)
