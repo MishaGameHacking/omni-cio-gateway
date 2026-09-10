@@ -369,11 +369,6 @@ def _deployment_bundle() -> tuple[bytes, str]:
     return payload, source_digest
 
 
-def _archive() -> bytes:
-    archive, _ = _deployment_bundle()
-    return archive
-
-
 def _provenance_response(
     status: int,
     content_type: str,
