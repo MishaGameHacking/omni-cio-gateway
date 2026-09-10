@@ -339,12 +339,13 @@ def test_direct_tls_policy_is_explicit_and_does_not_use_generic_context() -> Non
     assert "ssl.create_default_context()" not in source
 
 
-def test_neon_function_preserves_legacy_authorization_and_accepts_dedicated_ingress() -> None:
+def test_neon_function_preserves_legacy_authorization_and_rejects_any_dual_ingress() -> None:
     source = FUNCTION_SOURCE.read_text(encoding="utf-8")
     assert "const DIRECT_OIDC_HEADER = 'x-omni-github-oidc';" in source
     assert "request.headers.get(DIRECT_OIDC_HEADER)" in source
     assert "request.headers.get('authorization')" in source
-    assert "directToken !== null && authorization !== ''" in source
+    assert "directToken !== null && authorization !== null" in source
+    assert "authorization === null || !authorization.startsWith('Bearer ')" in source
     assert "return { error: 'OIDC_HEADER_INVALID', token: '' };" in source
     assert "oidcTokenFromRequest(request)" in source
 
