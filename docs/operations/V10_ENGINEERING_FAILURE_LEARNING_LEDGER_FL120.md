@@ -41,11 +41,12 @@ The release order becomes:
 1. verify exact checkout and existing runtime-secret state;
 2. derive the exact Function target from restricted custody;
 3. build the deterministic expected Function bundle and digest;
-4. perform a strict TLS/no-redirect/bounded public provenance probe;
-5. if the exact digest is already active, reuse it without any Neon Management API write;
-6. if the legacy handler or a different valid digest is active, classify source drift and require the existing least-privilege API credential to perform the Function deployment;
-7. after any deployment, require current+active completed state and re-probe the exact digest before OIDC mint/bootstrap continues;
-8. malformed provenance, redirects, oversized responses, transport failures, deployment races, API rejection or post-deploy digest mismatch remain fail-closed.
+4. use the existing least-privilege credential only for read-only project/default-branch/Function-state validation and require a completed `current == active` deployment snapshot;
+5. perform a strict TLS/no-redirect/bounded public provenance probe;
+6. if the exact digest is active, re-read the Function state and reuse it only when the same completed deployment identity is still current+active, without any Neon Management API write;
+7. if the legacy handler or a different valid digest is active, classify source drift and require the existing least-privilege API credential to perform the Function deployment;
+8. after any deployment, require current+active completed state and re-probe the exact digest before OIDC mint/bootstrap continues;
+9. malformed provenance, redirects, oversized responses, transport failures, deployment races, API rejection or post-deploy digest mismatch remain fail-closed.
 
 ## Regression guard
 
@@ -55,7 +56,8 @@ The release order becomes:
 - digest binding across wrapper template and handler;
 - exact digest acceptance and legacy/different-source drift classification;
 - malformed/untrusted provenance rejection;
-- zero Neon API credential access when exact source is already active;
+- exact-source reuse performs stable read-state validation but no Function deployment write;
+- exact-source reuse rejects a changed deployment identity across the provenance probe;
 - explicit HTTP 403 Function-write authority classification;
 - returned deployment identity/current-active race protection;
 - runtime-secret reuse and candidate ordering;
@@ -63,4 +65,4 @@ The release order becomes:
 
 ## Reuse rule
 
-Provider credential presence is not provider capability authority. A release must require the narrow capability only when the desired state actually needs that mutation. When immutable/exact runtime state can be independently proven, reuse it; when provenance is absent, malformed or stale, fail closed or require the explicitly authorized mutation. Never widen provider authority merely to make CI or deployment GREEN.
+Provider credential presence is not provider capability authority. A release must require the narrow capability only when the desired state actually needs that mutation. When immutable/exact runtime state can be independently proven, reuse it; when provenance is absent, malformed or stale, fail closed or require the explicitly authorized mutation. Exact-source reuse still requires bounded read-only state validation so provenance cannot be accepted across a concurrent Function deployment. Never widen provider authority merely to make CI or deployment GREEN.
