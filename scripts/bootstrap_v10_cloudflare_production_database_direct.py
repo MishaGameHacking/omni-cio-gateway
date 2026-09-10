@@ -37,6 +37,8 @@ _DIRECT_REDIRECT = "CLOUDFLARE_CF_D_NEON_FUNCTION_REDIRECT_REJECTED"
 _DIRECT_RESPONSE_INVALID = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_INVALID"
 _DIRECT_RESPONSE_TOO_LARGE = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_TOO_LARGE"
 _DIRECT_UNCLASSIFIED_HTTP_PREFIX = "CLOUDFLARE_CF_D_DIRECT_HTTP_"
+_DIRECT_USER_AGENT = "omni-cio-v10-cf-d-bootstrap/1"
+_DIRECT_PREFLIGHT_EXPECTED_FAILURE = "CLOUDFLARE_CF_D_NEON_FUNCTION_METHOD_NOT_ALLOWED"
 
 
 class BootstrapFunctionTarget(NamedTuple):
@@ -222,32 +224,73 @@ def _direct_tls_context() -> ssl.SSLContext:
     return context
 
 
+def _direct_connection(target: BootstrapFunctionTarget) -> http.client.HTTPSConnection:
+    return http.client.HTTPSConnection(
+        _bootstrap_hostname(target),
+        443,
+        timeout=_HTTP_TIMEOUT_SECONDS,
+        context=_direct_tls_context(),
+    )
+
+
+def _direct_headers(*, oidc_token: str | None = None) -> dict[str, str]:
+    headers = {
+        "Accept": _JSON_MEDIA_TYPE,
+        "User-Agent": _DIRECT_USER_AGENT,
+    }
+    if oidc_token is not None:
+        headers["Authorization"] = f"Bearer {oidc_token}"
+        headers["Content-Type"] = _JSON_MEDIA_TYPE
+    return headers
+
+
+def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
+    """Prove the exact source-controlled Function handler before minting GitHub OIDC."""
+
+    connection = _direct_connection(target)
+    try:
+        connection.request(
+            "GET",
+            "/",
+            body=None,
+            headers=_direct_headers(),
+        )
+        response = connection.getresponse()
+        status = int(response.status)
+        content_type = str(response.getheader("Content-Type", "")).lower()
+        if _JSON_MEDIA_TYPE not in content_type:
+            raise legacy.BootstrapStopped(_DIRECT_RESPONSE_INVALID)
+        response_body = _read_direct_response(
+            response,
+            _MAX_DIRECT_FAILURE_BYTES,
+            _DIRECT_RESPONSE_TOO_LARGE,
+        )
+        failure = _direct_failure_code(status, response_body)
+        if failure != _DIRECT_PREFLIGHT_EXPECTED_FAILURE:
+            raise legacy.BootstrapStopped(failure)
+    except legacy.BootstrapStopped:
+        raise
+    except (OSError, http.client.HTTPException) as exc:
+        raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE) from exc
+    finally:
+        connection.close()
+
+
 def _request_direct_bootstrap_json(
     target: BootstrapFunctionTarget,
     expected_sha: str,
     oidc_token: str,
 ) -> dict[str, Any]:
-    hostname = _bootstrap_hostname(target)
     body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
     )
-    context = _direct_tls_context()
-    connection = http.client.HTTPSConnection(
-        hostname,
-        443,
-        timeout=_HTTP_TIMEOUT_SECONDS,
-        context=context,
-    )
+    connection = _direct_connection(target)
     try:
         connection.request(
             "POST",
             "/",
             body=body,
-            headers={
-                "Authorization": f"Bearer {oidc_token}",
-                "Accept": _JSON_MEDIA_TYPE,
-                "Content-Type": _JSON_MEDIA_TYPE,
-            },
+            headers=_direct_headers(oidc_token=oidc_token),
         )
         response = connection.getresponse()
         status = int(response.status)
@@ -287,6 +330,7 @@ def _bootstrap_runtime_dsn_direct(
 def run(expected_sha: str) -> Path:
     safe_sha = legacy._validated_sha(expected_sha)
     target = read_bootstrap_origin_handoff()
+    _preflight_direct_function(target)
     token = legacy._github_oidc_token()
     runtime_dsn = _bootstrap_runtime_dsn_direct(target, safe_sha, token)
     legacy._write_private_file(legacy._output_file(), runtime_dsn)

@@ -78,6 +78,130 @@ def test_direct_bootstrap_target_rejects_arbitrary_network_destination() -> None
             raise AssertionError("untrusted bootstrap destination accepted")
 
 
+def test_direct_function_preflight_requires_exact_source_controlled_rejection() -> None:
+    target = direct._target_from_origin(ORIGIN)
+    observed: dict[str, object] = {}
+
+    class Response:
+        status = 405
+
+        def getheader(self, name: str, default: str = "") -> str:
+            if name.lower() == "content-type":
+                return "application/json; charset=utf-8"
+            return default
+
+        def read(self, size: int = -1) -> bytes:
+            payload = json.dumps(
+                {"status": "BLOCKED", "code": "METHOD_NOT_ALLOWED"},
+                separators=(",", ":"),
+            ).encode("utf-8")
+            return payload[:size]
+
+    class Connection:
+        def __init__(
+            self,
+            host: str,
+            port: int,
+            *,
+            timeout: float,
+            context: object,
+        ) -> None:
+            observed["host"] = host
+            observed["port"] = port
+            observed["timeout"] = timeout
+            observed["context"] = context
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes | None,
+            headers: dict[str, str],
+        ) -> None:
+            observed["method"] = method
+            observed["path"] = path
+            observed["body"] = body
+            observed["headers"] = headers
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            observed["closed"] = True
+
+    with mock.patch.object(direct.http.client, "HTTPSConnection", Connection):
+        direct._preflight_direct_function(target)
+
+    assert observed["method"] == "GET"
+    assert observed["path"] == "/"
+    assert observed["body"] is None
+    assert observed["headers"] == {
+        "Accept": "application/json",
+        "User-Agent": direct._DIRECT_USER_AGENT,
+    }
+    assert "Authorization" not in observed["headers"]
+    assert observed["closed"] is True
+
+
+def test_direct_function_preflight_blocks_provider_edge_before_oidc_mint() -> None:
+    target = direct._target_from_origin(ORIGIN)
+
+    class Response:
+        status = 403
+
+        def getheader(self, name: str, default: str = "") -> str:
+            if name.lower() == "content-type":
+                return "application/json"
+            return default
+
+        def read(self, size: int = -1) -> bytes:
+            return b'{"provider":"untrusted"}'[:size]
+
+    class Connection:
+        def __init__(
+            self,
+            host: str,
+            port: int,
+            *,
+            timeout: float,
+            context: object,
+        ) -> None:
+            del host, port, timeout, context
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: bytes | None,
+            headers: dict[str, str],
+        ) -> None:
+            assert method == "GET"
+            assert path == "/"
+            assert body is None
+            assert "Authorization" not in headers
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            pass
+
+    with (
+        mock.patch.object(direct, "read_bootstrap_origin_handoff", return_value=target),
+        mock.patch.object(direct.http.client, "HTTPSConnection", Connection),
+        mock.patch.object(legacy, "_github_oidc_token") as oidc_token,
+    ):
+        try:
+            direct.run(EXPECTED_SHA)
+        except legacy.BootstrapStopped as exc:
+            assert exc.code == "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
+        else:
+            raise AssertionError("provider edge rejection was accepted")
+        oidc_token.assert_not_called()
+
+
 def test_direct_function_request_derives_https_host_and_forwards_only_oidc() -> None:
     target = direct._target_from_origin(ORIGIN)
     oidc = _oidc_token()
@@ -147,8 +271,9 @@ def test_direct_function_request_derives_https_host_and_forwards_only_oidc() -> 
     headers = observed["headers"]
     assert isinstance(headers, dict)
     assert headers == {
-        "Authorization": f"Bearer {oidc}",
         "Accept": "application/json",
+        "User-Agent": direct._DIRECT_USER_AGENT,
+        "Authorization": f"Bearer {oidc}",
         "Content-Type": "application/json",
     }
     assert oidc not in str(observed["host"])
@@ -243,3 +368,10 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         is True
     )
     assert cutover["production_database_bootstrap_tls_minimum_version"] == "TLSv1.2"
+    assert cutover["production_database_bootstrap_function_preflight_required"] is True
+    assert cutover["production_database_bootstrap_function_preflight_method"] == "GET"
+    assert cutover["production_database_bootstrap_function_preflight_expected_failure"] == (
+        "CLOUDFLARE_CF_D_NEON_FUNCTION_METHOD_NOT_ALLOWED"
+    )
+    assert cutover["production_database_bootstrap_oidc_mint_after_preflight_required"] is True
+    assert cutover["production_database_bootstrap_fixed_user_agent_required"] is True
