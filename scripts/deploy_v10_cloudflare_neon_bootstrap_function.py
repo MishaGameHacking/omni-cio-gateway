@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.client
 import io
 import json
+from pathlib import Path
 import re
 import ssl
 import subprocess
@@ -25,17 +27,24 @@ _API_HOST = "console.neon.tech"
 _API_PREFIX = "/api/v2"
 _SLUG = "cfdprodbootstrap"
 _RUNTIME = "nodejs24"
-_SOURCE = builds._REPO_ROOT / "infrastructure/cloudflare/cf_d_neon_bootstrap/index.mjs"
+_SOURCE_ROOT = builds._REPO_ROOT / "infrastructure/cloudflare/cf_d_neon_bootstrap"
+_SOURCE = _SOURCE_ROOT / "index.mjs"
+_WRAPPER_SOURCE = _SOURCE_ROOT / "provenance_wrapper.mjs"
+_WRAPPER_DIGEST_PLACEHOLDER = b"__OMNI_CIO_CF_D_SOURCE_BUNDLE_SHA256__"
+_PROVENANCE_PATH = "/__omni-cio/source-provenance"
 _PROJECT_NAME = "omni-cio-v10-preview-frankfurt"
 _REGION = "aws-eu-central-1"
+_JSON_MEDIA_TYPE = "application/json"
 _ID = re.compile(r"^[a-z0-9-]{1,60}$")
 _BRANCH_ID = re.compile(r"^br-[a-z0-9-]{4,57}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_SOURCE = 512 * 1024
 _MAX_RESPONSE = 64 * 1024
+_MAX_PROVENANCE_RESPONSE = 2 * 1024
 _HTTP_TIMEOUT = 20.0
 _DEPLOY_TIMEOUT = 130.0
 _POLL = 2.0
-_USER_AGENT = "omni-cio-v10-cf-d-neon-function-deploy/1"
+_USER_AGENT = "omni-cio-v10-cf-d-neon-function-deploy/2"
 _STATE_PENDING = "pending"
 _STATE_BUILDING = "building"
 _STATE_COMPLETED = "completed"
@@ -48,6 +57,8 @@ _GET_FAILURE_BY_STATUS = {
     403: "API_KEY_INSUFFICIENT",
     404: "TARGET_NOT_FOUND",
 }
+_SOURCE_PROVENANCE_INVALID = "CLOUDFLARE_CF_D_NEON_FUNCTION_PROVENANCE_INVALID"
+_SOURCE_PROVENANCE_UNAVAILABLE = "CLOUDFLARE_CF_D_NEON_FUNCTION_PROVENANCE_UNAVAILABLE"
 
 
 def _required_id(name: str) -> str:
@@ -101,7 +112,7 @@ def _request(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PATH_INVALID"
         )
     headers = {
-        "Accept": "application/json",
+        "Accept": _JSON_MEDIA_TYPE,
         "Authorization": f"Bearer {token}",
         "User-Agent": _USER_AGENT,
     }
@@ -294,34 +305,136 @@ def _preexisting(
     return active_id
 
 
-def _archive() -> bytes:
-    if _SOURCE.is_symlink() or not _SOURCE.is_file():
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_SOURCE_INVALID"
-        )
+def _read_source(path: Path, marker: bytes, code: str) -> bytes:
+    if path.is_symlink() or not path.is_file():
+        raise builds.BootstrapStopped(code)
     try:
-        source = _SOURCE.read_bytes()
+        source = path.read_bytes()
     except OSError:
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_SOURCE_UNREADABLE"
-        ) from None
+        raise builds.BootstrapStopped(code) from None
     if (
         not source
         or len(source) > _MAX_SOURCE
         or b"\x00" in source
-        or b"oidcTokenFromRequest" not in source
+        or marker not in source
     ):
+        raise builds.BootstrapStopped(code)
+    return source
+
+
+def _source_bundle_digest(wrapper_template: bytes, handler: bytes) -> str:
+    digest = hashlib.sha256()
+    for name, source in (
+        (b"index.mjs", wrapper_template),
+        (b"handler.mjs", handler),
+    ):
+        digest.update(len(name).to_bytes(2, "big"))
+        digest.update(name)
+        digest.update(len(source).to_bytes(8, "big"))
+        digest.update(source)
+    return digest.hexdigest()
+
+
+def _deployment_bundle() -> tuple[bytes, str]:
+    handler = _read_source(
+        _SOURCE,
+        b"oidcTokenFromRequest",
+        "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_SOURCE_INVALID",
+    )
+    wrapper_template = _read_source(
+        _WRAPPER_SOURCE,
+        _WRAPPER_DIGEST_PLACEHOLDER,
+        "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRAPPER_INVALID",
+    )
+    if wrapper_template.count(_WRAPPER_DIGEST_PLACEHOLDER) != 1:
         raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_SOURCE_INVALID"
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRAPPER_INVALID"
         )
+    source_digest = _source_bundle_digest(wrapper_template, handler)
+    rendered_wrapper = wrapper_template.replace(
+        _WRAPPER_DIGEST_PLACEHOLDER,
+        source_digest.encode("ascii"),
+    )
     buffer = io.BytesIO()
-    info = zipfile.ZipInfo("index.mjs", (1980, 1, 1, 0, 0, 0))
-    info.create_system = 3
-    info.external_attr = 0o600 << 16
-    info.compress_type = zipfile.ZIP_DEFLATED
-    with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr(info, source)
-    return buffer.getvalue()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, source in (("index.mjs", rendered_wrapper), ("handler.mjs", handler)):
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = 0o600 << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, source)
+    payload = buffer.getvalue()
+    if not payload or len(payload) > (2 * _MAX_SOURCE) + 64 * 1024:
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_ARCHIVE_INVALID"
+        )
+    return payload, source_digest
+
+
+def _provenance_response(
+    status: int,
+    content_type: str,
+    raw: bytes,
+    expected_digest: str,
+) -> bool:
+    media_type = content_type.lower().split(";", 1)[0].strip()
+    if media_type != _JSON_MEDIA_TYPE:
+        raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID, status=status)
+    payload = _json(raw, _SOURCE_PROVENANCE_INVALID)
+    if status == 405 and payload == {
+        "status": "BLOCKED",
+        "code": "METHOD_NOT_ALLOWED",
+    }:
+        return False
+    if status != 200 or set(payload) != {"status", "source_sha256"}:
+        raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID, status=status)
+    digest = payload.get("source_sha256")
+    if payload.get("status") != "READY" or not isinstance(digest, str):
+        raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID, status=status)
+    if _SHA256.fullmatch(digest) is None:
+        raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID, status=status)
+    return digest == expected_digest
+
+
+def _probe_source_provenance(
+    target: BootstrapFunctionTarget,
+    expected_digest: str,
+) -> bool:
+    if _SHA256.fullmatch(expected_digest) is None:
+        raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID)
+    connection = http.client.HTTPSConnection(
+        _bootstrap_hostname(target),
+        443,
+        timeout=_HTTP_TIMEOUT,
+        context=_tls_context(),
+    )
+    try:
+        connection.request(
+            "GET",
+            _PROVENANCE_PATH,
+            headers={"Accept": _JSON_MEDIA_TYPE, "User-Agent": _USER_AGENT},
+        )
+        response = connection.getresponse()
+        status = int(response.status)
+        if 300 <= status < 400:
+            raise builds.BootstrapStopped(
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_REDIRECT_REJECTED",
+                status=status,
+            )
+        raw = response.read(_MAX_PROVENANCE_RESPONSE + 1)
+        if len(raw) > _MAX_PROVENANCE_RESPONSE:
+            raise builds.BootstrapStopped(
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_PROVENANCE_RESPONSE_TOO_LARGE",
+                status=status,
+            )
+        content_type = response.getheader("content-type", "")
+        return _provenance_response(status, content_type, raw, expected_digest)
+    except builds.BootstrapStopped:
+        raise
+    except (OSError, http.client.HTTPException):
+        raise builds.BootstrapStopped(_SOURCE_PROVENANCE_UNAVAILABLE) from None
+    finally:
+        connection.close()
 
 
 def _multipart(archive: bytes, sha: str) -> tuple[bytes, str]:
@@ -343,8 +456,14 @@ def _multipart(archive: bytes, sha: str) -> tuple[bytes, str]:
     return head + archive + tail, f"multipart/form-data; boundary={boundary}"
 
 
-def _deploy(token: str, project_id: str, branch_id: str, sha: str) -> str:
-    body, content_type = _multipart(_archive(), sha)
+def _deploy(
+    token: str,
+    project_id: str,
+    branch_id: str,
+    sha: str,
+    archive: bytes,
+) -> str:
+    body, content_type = _multipart(archive, sha)
     status, raw = _request(
         "POST",
         f"{_function_path(project_id, branch_id)}/deployments",
@@ -353,8 +472,9 @@ def _deploy(token: str, project_id: str, branch_id: str, sha: str) -> str:
         content_type=content_type,
     )
     if status not in {200, 201, 202}:
+        suffix = _GET_FAILURE_BY_STATUS.get(status, "DEPLOY_REJECTED")
         raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_REJECTED",
+            f"CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_{suffix}",
             status=status,
         )
     payload = _json(
@@ -419,7 +539,6 @@ def _wait(
             active_id=active_id,
             active_state=active_state,
         ):
-            print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
             return
         if time.monotonic() >= deadline:
             raise builds.BootstrapStopped(
@@ -428,17 +547,35 @@ def _wait(
         time.sleep(_POLL)
 
 
-def deploy_exact_main_bootstrap_function(expected_sha: str) -> None:
+def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
     sha = _assert_exact_head(expected_sha)
+    target = read_bootstrap_origin_handoff()
+    archive, source_digest = _deployment_bundle()
     token = builds._required_env("NEON_API_KEY")
     project_id = _required_id("NEON_PROJECT_ID")
     org_id = _required_id("NEON_ORG_ID")
-    target = read_bootstrap_origin_handoff()
     _validate_project(token, project_id, org_id)
     branch_id = _exact_branch(token, project_id, target)
     previous_id = _preexisting(_function(token, project_id, branch_id), target)
-    deployment_id = _deploy(token, project_id, branch_id, sha)
+
+    if _probe_source_provenance(target, source_digest):
+        confirmed_id = _preexisting(_function(token, project_id, branch_id), target)
+        if confirmed_id != previous_id:
+            raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
+        print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_EXACT_SOURCE_READY")
+        return False
+
+    deployment_id = _deploy(token, project_id, branch_id, sha, archive)
     _wait(token, project_id, branch_id, previous_id, deployment_id)
+    if not _probe_source_provenance(target, source_digest):
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROVENANCE_MISMATCH"
+        )
+    confirmed_id = _preexisting(_function(token, project_id, branch_id), target)
+    if confirmed_id != deployment_id:
+        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
+    print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
+    return True
 
 
 def deploy_exact_main_bootstrap_function_if_required(
@@ -456,8 +593,7 @@ def deploy_exact_main_bootstrap_function_if_required(
     if ready:
         print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_RUNTIME_SECRET_READY")
         return False
-    deploy_exact_main_bootstrap_function(expected_sha)
-    return True
+    return deploy_exact_main_bootstrap_function(expected_sha)
 
 
 def main(argv: list[str] | None = None) -> int:
