@@ -13,6 +13,7 @@ const EXPECTED_WORKFLOW_REF = `${EXPECTED_REPOSITORY}/.github/workflows/v10-clou
 const EXPECTED_ROLE = 'omni_cio_cloudflare_prod';
 const EXPECTED_DATABASE_SCHEMA = 'omni_cio_v10';
 const EXPECTED_NEON_SUFFIX = '.eu-central-1.aws.neon.tech';
+const DIRECT_OIDC_HEADER = 'x-omni-github-oidc';
 const OIDC_CLOCK_SKEW_SECONDS = 30;
 const MAX_TOKEN_BYTES = 16_384;
 const MAX_REQUEST_BYTES = 4_096;
@@ -407,12 +408,36 @@ async function readRequestJson(request) {
   return body;
 }
 
+function oidcTokenFromRequest(request) {
+  const directToken = request.headers.get(DIRECT_OIDC_HEADER);
+  const authorization = request.headers.get('authorization');
+  if (directToken !== null && authorization !== null) {
+    return { error: 'OIDC_HEADER_INVALID', token: '' };
+  }
+  if (directToken !== null) {
+    const token = directToken.trim();
+    if (token.length === 0 || /\s/.test(token)) {
+      return { error: 'OIDC_TOKEN_INVALID', token: '' };
+    }
+    return { error: null, token };
+  }
+  if (authorization === null || !authorization.startsWith('Bearer ')) {
+    return { error: 'OIDC_REQUIRED', token: '' };
+  }
+  const token = authorization.slice(7).trim();
+  if (token.length === 0 || /\s/.test(token)) {
+    return { error: 'OIDC_TOKEN_INVALID', token: '' };
+  }
+  return { error: null, token };
+}
+
 export default {
   async fetch(request) {
     if (request.method !== 'POST') return fail('METHOD_NOT_ALLOWED', 405);
-    const authorization = request.headers.get('authorization') || '';
-    if (!authorization.startsWith('Bearer ')) return fail('OIDC_REQUIRED', 401);
-    const token = authorization.slice(7).trim();
+    const ingress = oidcTokenFromRequest(request);
+    if (ingress.error === 'OIDC_REQUIRED') return fail('OIDC_REQUIRED', 401);
+    if (ingress.error !== null) return fail(ingress.error, 403);
+    const token = ingress.token;
 
     let body;
     try {
@@ -435,6 +460,7 @@ export default {
 };
 
 export {
+  DIRECT_OIDC_HEADER,
   EXPECTED_AUDIENCE,
   EXPECTED_REPOSITORY,
   EXPECTED_ROLE,
@@ -443,5 +469,6 @@ export {
   connectionMetadata,
   decimalClaim,
   deriveRuntimePassword,
+  oidcTokenFromRequest,
   validateClaims,
 };

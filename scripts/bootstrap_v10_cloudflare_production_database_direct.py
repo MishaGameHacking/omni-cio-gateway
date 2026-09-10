@@ -38,7 +38,12 @@ _DIRECT_RESPONSE_INVALID = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_INVALID"
 _DIRECT_RESPONSE_TOO_LARGE = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_TOO_LARGE"
 _DIRECT_UNCLASSIFIED_HTTP_PREFIX = "CLOUDFLARE_CF_D_DIRECT_HTTP_"
 _DIRECT_USER_AGENT = "omni-cio-v10-cf-d-bootstrap/1"
+_DIRECT_OIDC_HEADER = "X-Omni-GitHub-OIDC"
+_DIRECT_INGRESS_PROBE_TOKEN = "omni-cio-cf-d-oidc-ingress-probe"
 _DIRECT_PREFLIGHT_EXPECTED_FAILURE = "CLOUDFLARE_CF_D_NEON_FUNCTION_METHOD_NOT_ALLOWED"
+_DIRECT_INGRESS_PREFLIGHT_EXPECTED_FAILURE = (
+    "CLOUDFLARE_CF_D_NEON_FUNCTION_OIDC_TOKEN_INVALID"
+)
 
 
 class BootstrapFunctionTarget(NamedTuple):
@@ -239,7 +244,7 @@ def _direct_headers(*, oidc_token: str | None = None) -> dict[str, str]:
         "User-Agent": _DIRECT_USER_AGENT,
     }
     if oidc_token is not None:
-        headers["Authorization"] = f"Bearer {oidc_token}"
+        headers[_DIRECT_OIDC_HEADER] = oidc_token
         headers["Content-Type"] = _JSON_MEDIA_TYPE
     return headers
 
@@ -266,6 +271,43 @@ def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
         )
         failure = _direct_failure_code(status, response_body)
         if failure != _DIRECT_PREFLIGHT_EXPECTED_FAILURE:
+            raise legacy.BootstrapStopped(failure)
+    except legacy.BootstrapStopped:
+        raise
+    except (OSError, http.client.HTTPException) as exc:
+        raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE) from exc
+    finally:
+        connection.close()
+
+
+def _preflight_direct_oidc_ingress(
+    target: BootstrapFunctionTarget,
+    expected_sha: str,
+) -> None:
+    """Prove POST plus dedicated OIDC header reaches the handler without a credential."""
+
+    body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    connection = _direct_connection(target)
+    try:
+        connection.request(
+            "POST",
+            "/",
+            body=body,
+            headers=_direct_headers(oidc_token=_DIRECT_INGRESS_PROBE_TOKEN),
+        )
+        response = connection.getresponse()
+        status = int(response.status)
+        if 300 <= status < 400:
+            raise legacy.BootstrapStopped(_DIRECT_REDIRECT)
+        response_body = _read_direct_response(
+            response,
+            _MAX_DIRECT_FAILURE_BYTES,
+            _DIRECT_RESPONSE_TOO_LARGE,
+        )
+        failure = _direct_failure_code(status, response_body)
+        if failure != _DIRECT_INGRESS_PREFLIGHT_EXPECTED_FAILURE:
             raise legacy.BootstrapStopped(failure)
     except legacy.BootstrapStopped:
         raise
@@ -329,6 +371,7 @@ def run(expected_sha: str) -> Path:
     safe_sha = legacy._validated_sha(expected_sha)
     target = read_bootstrap_origin_handoff()
     _preflight_direct_function(target)
+    _preflight_direct_oidc_ingress(target, safe_sha)
     token = legacy._github_oidc_token()
     runtime_dsn = _bootstrap_runtime_dsn_direct(target, safe_sha, token)
     legacy._write_private_file(legacy._output_file(), runtime_dsn)
