@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import secrets
+import ssl
 import tempfile
 from unittest import mock
 
@@ -151,6 +152,11 @@ def test_direct_function_request_derives_https_host_and_forwards_only_oidc() -> 
         "Content-Type": "application/json",
     }
     assert oidc not in str(observed["host"])
+    context = observed["context"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.check_hostname is True
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
     assert observed["closed"] is True
 
 
@@ -177,6 +183,14 @@ def test_production_release_uses_direct_function_not_public_staging_relay() -> N
     assert "STAGING_ORIGIN" not in section
     assert "--origin" not in section
     assert "omni-cio-v10-cloudflare-bootstrap-origin.txt" in section
+
+
+def test_direct_tls_policy_is_explicit_and_does_not_use_generic_context() -> None:
+    source = Path(direct.__file__).read_text(encoding="utf-8")
+    assert "ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)" in source
+    assert "context.minimum_version = ssl.TLSVersion.TLSv1_2" in source
+    assert "context.load_default_certs(ssl.Purpose.SERVER_AUTH)" in source
+    assert "ssl.create_default_context()" not in source
 
 
 def test_direct_bootstrap_transport_is_machine_readable() -> None:
@@ -209,3 +223,4 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         cutover["production_database_bootstrap_tls_hostname_verification_required"]
         is True
     )
+    assert cutover["production_database_bootstrap_tls_minimum_version"] == "TLSv1.2"

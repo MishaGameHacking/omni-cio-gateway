@@ -120,6 +120,7 @@
     "production_database_bootstrap_target_descriptor_full_url_allowed": false,
     "production_database_bootstrap_dynamic_url_handoff_allowed": false,
     "production_database_bootstrap_tls_hostname_verification_required": true,
+    "production_database_bootstrap_tls_minimum_version": "TLSv1.2",
     "production_database_bootstrap_function_origin_logged": false,
     "production_database_bootstrap_function_origin_artifacted": false,
     "production_database_bootstrap_legacy_relay_retained_until_direct_live_proof": true,

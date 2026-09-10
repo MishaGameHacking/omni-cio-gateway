@@ -13,7 +13,6 @@ from typing import Any, NamedTuple
 import scripts.bootstrap_v10_cloudflare_production_database_via_staging as legacy
 from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
     NEON_BOOTSTRAP_REJECTED,
-    NEON_FUNCTION_FAILURE_PREFIX,
     classify_neon_bootstrap_provider_failure,
 )
 from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import _FUNCTION_ORIGIN_PATTERN
@@ -103,6 +102,58 @@ def _target_descriptor(target: BootstrapFunctionTarget) -> str:
     )
 
 
+def _validated_target_descriptor(target: BootstrapFunctionTarget) -> str:
+    payload = _target_descriptor(target)
+    if len(payload.encode("utf-8")) > _MAX_TARGET_DESCRIPTOR_BYTES:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_TOO_LARGE)
+    return payload
+
+
+def _open_origin_handoff(path: Path) -> int:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        return os.open(path, flags, stat.S_IRUSR | stat.S_IWUSR)
+    except FileExistsError as exc:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_ALREADY_EXISTS) from exc
+    except OSError as exc:
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_CREATE_FAILED) from exc
+
+
+def _close_descriptor(descriptor: int) -> None:
+    if descriptor < 0:
+        return
+    try:
+        os.close(descriptor)
+    except OSError:
+        pass
+
+
+def _harden_origin_handoff(path: Path) -> None:
+    if os.name == "nt":
+        legacy._harden_windows_private_file(path)
+    else:
+        legacy._harden_posix_private_file(path)
+
+
+def _write_origin_handoff(path: Path, payload: str) -> None:
+    descriptor = _open_origin_handoff(path)
+    try:
+        _harden_origin_handoff(path)
+        handle = os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
+        descriptor = -1
+        with handle:
+            handle.write(payload)
+            handle.write("\n")
+    except legacy.BootstrapStopped:
+        _close_descriptor(descriptor)
+        _discard_origin_handoff(path)
+        raise
+    except OSError as exc:
+        _close_descriptor(descriptor)
+        _discard_origin_handoff(path)
+        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_WRITE_FAILED) from exc
+
+
 def write_bootstrap_origin_handoff(value: str) -> Path:
     """Persist only a validated provider target descriptor for the same release job.
 
@@ -111,46 +162,9 @@ def write_bootstrap_origin_handoff(value: str) -> Path:
     """
 
     target = _target_from_origin(value)
-    payload = _target_descriptor(target)
-    encoded = payload.encode("utf-8")
-    if len(encoded) > _MAX_TARGET_DESCRIPTOR_BYTES:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_TOO_LARGE)
-
+    payload = _validated_target_descriptor(target)
     path = _validate_handoff_path(_origin_handoff_file())
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags, stat.S_IRUSR | stat.S_IWUSR)
-    except FileExistsError as exc:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_ALREADY_EXISTS) from exc
-    except OSError as exc:
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_CREATE_FAILED) from exc
-
-    try:
-        if os.name == "nt":
-            legacy._harden_windows_private_file(path)
-        else:
-            legacy._harden_posix_private_file(path)
-        handle = os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
-        descriptor = -1
-        with handle:
-            handle.write(payload)
-            handle.write("\n")
-    except legacy.BootstrapStopped:
-        if descriptor >= 0:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
-        _discard_origin_handoff(path)
-        raise
-    except OSError as exc:
-        if descriptor >= 0:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
-        _discard_origin_handoff(path)
-        raise legacy.BootstrapStopped(_ORIGIN_HANDOFF_WRITE_FAILED) from exc
+    _write_origin_handoff(path, payload)
     return path
 
 
@@ -180,12 +194,7 @@ def read_bootstrap_origin_handoff() -> BootstrapFunctionTarget:
 def _direct_failure_code(status: int, body: bytes) -> str:
     if 300 <= status < 400:
         return _DIRECT_REDIRECT
-    code = classify_neon_bootstrap_provider_failure(status, body)
-    if code == NEON_BOOTSTRAP_REJECTED:
-        return NEON_BOOTSTRAP_REJECTED
-    if code.startswith(NEON_FUNCTION_FAILURE_PREFIX):
-        return code
-    return code
+    return classify_neon_bootstrap_provider_failure(status, body)
 
 
 def _read_direct_response(response: Any, limit: int, code: str) -> bytes:
@@ -197,6 +206,15 @@ def _read_direct_response(response: Any, limit: int, code: str) -> bytes:
         raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE) from exc
 
 
+def _direct_tls_context() -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_default_certs(ssl.Purpose.SERVER_AUTH)
+    if not context.check_hostname or context.verify_mode != ssl.CERT_REQUIRED:
+        raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE)
+    return context
+
+
 def _request_direct_bootstrap_json(
     target: BootstrapFunctionTarget,
     expected_sha: str,
@@ -206,9 +224,7 @@ def _request_direct_bootstrap_json(
     body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
     )
-    context = ssl.create_default_context()
-    if not context.check_hostname or context.verify_mode != ssl.CERT_REQUIRED:
-        raise legacy.BootstrapStopped(_DIRECT_UNAVAILABLE)
+    context = _direct_tls_context()
     connection = http.client.HTTPSConnection(
         hostname,
         443,
