@@ -229,6 +229,58 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
         deploy.assert_not_called()
 
+    def test_post_deploy_provenance_rechecks_active_deployment_identity(self) -> None:
+        archive = b"PK synthetic"
+        digest = "a" * 64
+        with (
+            mock.patch.object(
+                deployer,
+                "_assert_exact_head",
+                return_value=_EXPECTED_SHA,
+            ),
+            mock.patch.object(
+                deployer,
+                "read_bootstrap_origin_handoff",
+                return_value=_TARGET,
+            ),
+            mock.patch.object(
+                deployer,
+                "_deployment_bundle",
+                return_value=(archive, digest),
+            ),
+            mock.patch.object(builds, "_required_env", side_effect=_required_env),
+            mock.patch.object(deployer, "_validate_project"),
+            mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
+            mock.patch.object(deployer, "_function", return_value={}),
+            mock.patch.object(deployer, "_preexisting", side_effect=["6", "8"]),
+            mock.patch.object(
+                deployer,
+                "_probe_source_provenance",
+                side_effect=[False, True],
+            ),
+            mock.patch.object(deployer, "_deploy", return_value="7") as deploy,
+            mock.patch.object(deployer, "_wait") as wait,
+        ):
+            with self.assertRaisesRegex(
+                builds.BootstrapStopped,
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE",
+            ):
+                deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
+        deploy.assert_called_once_with(
+            "synthetic-secret-token",
+            _PROJECT_ID,
+            _BRANCH_ID,
+            _EXPECTED_SHA,
+            archive,
+        )
+        wait.assert_called_once_with(
+            "synthetic-secret-token",
+            _PROJECT_ID,
+            _BRANCH_ID,
+            "6",
+            "7",
+        )
+
     def test_target_branch_requires_exact_default_handoff_branch(self) -> None:
         payload = {
             "branches": [
