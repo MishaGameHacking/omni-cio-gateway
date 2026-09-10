@@ -551,16 +551,20 @@ def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
     sha = _assert_exact_head(expected_sha)
     target = read_bootstrap_origin_handoff()
     archive, source_digest = _deployment_bundle()
-    if _probe_source_provenance(target, source_digest):
-        print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_EXACT_SOURCE_READY")
-        return False
-
     token = builds._required_env("NEON_API_KEY")
     project_id = _required_id("NEON_PROJECT_ID")
     org_id = _required_id("NEON_ORG_ID")
     _validate_project(token, project_id, org_id)
     branch_id = _exact_branch(token, project_id, target)
     previous_id = _preexisting(_function(token, project_id, branch_id), target)
+
+    if _probe_source_provenance(target, source_digest):
+        confirmed_id = _preexisting(_function(token, project_id, branch_id), target)
+        if confirmed_id != previous_id:
+            raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
+        print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_EXACT_SOURCE_READY")
+        return False
+
     deployment_id = _deploy(token, project_id, branch_id, sha, archive)
     _wait(token, project_id, branch_id, previous_id, deployment_id)
     if not _probe_source_provenance(target, source_digest):
