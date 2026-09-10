@@ -54,11 +54,13 @@ def _function_state(
 
 
 def _required_env(name: str) -> str:
-    return {
-        "NEON_API_KEY": "synthetic-secret-token",
-        "NEON_PROJECT_ID": _PROJECT_ID,
-        "NEON_ORG_ID": _ORG_ID,
-    }[name]
+    if name == "NEON_API_KEY":
+        return "synthetic-secret-token"
+    if name == "NEON_PROJECT_ID":
+        return _PROJECT_ID
+    if name == "NEON_ORG_ID":
+        return _ORG_ID
+    raise KeyError(name)
 
 
 class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
