@@ -2,46 +2,40 @@
 
 ## Failure class
 
-`CF_D_DIRECT_NEON_FUNCTION_FRONTDOOR_403_BEFORE_HANDLER`
+`CF_D_DIRECT_BOOTSTRAP_EXPLICIT_TLS_AND_COMPLEXITY_REPAIR`
 
-## Exact-main evidence
+## Exact-head evidence
 
-After PR #479 was accepted into `main`, exact main `256fd5e` completed the required post-merge push workflows and the Cloudflare staging Worker + Container rehearsal successfully. The production release then stopped at the one-time production database bootstrap with the bounded failure `CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED` before any production promotion occurred.
+PR #478 exact replacement head `3da2e1c2b9d3f866a45007ca6fbdd7aaefddde50` remained `RED_REPAIR_ONLY`. The exact-head V10 Engineering Governance job consumed SonarQube Cloud findings and reported two concrete annotations in `scripts/bootstrap_v10_cloudflare_production_database_direct.py`:
 
-The same exact accepted source was redeployed to the existing Neon Function through the connected provider control plane and the failed release job was rerun without changing GitHub source. The second attempt reached the same bounded `403` class at the same boundary. Neon Function telemetry for both failure windows contained no handler invocation. This rules out source drift and handler-level OIDC validation as the immediate failure location: the request is being rejected at the provider HTTPS front door before the source-controlled Function handler executes.
+1. line 209: `Use a stronger protocol, or upgrade to Python 3.10+ which uses secure defaults.`
+2. line 106: `Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.`
 
-No provider response body, Function URL, branch/project identifier, OIDC token, database credential or request identifier is recorded here.
+SonarQube Cloud therefore rated Security on New Code `D` where `A` is required. The first annotation is security-significant and the second is maintainability-significant; both are blocking under the exact-head zero-findings law.
 
-## Root-cause and adjacent defect review
+The previous exact head also established that the authoritative Windows static-quality lane rejects a non-canonical Ruff format. No suppression, exclusion or Quality Gate change is authorized.
 
-The direct bootstrap client used an explicit TLS-verifying `http.client.HTTPSConnection` with a fixed host, port and `/` path, but sent no stable application `User-Agent` and had no non-credentialed provenance probe before minting the privileged GitHub OIDC token. Consequently, a provider-front-door rejection could only be observed after the privileged request had already been prepared, and the source-controlled handler could not be distinguished from an upstream provider edge by a positive preflight contract.
+## Root cause
 
-The provider-side reason for the `403` body is not claimed because the body is intentionally not reflected and Neon Function telemetry proves only that the handler was not invoked. The correction therefore addresses the proven architectural gap rather than guessing an undocumented provider rule.
+The direct release-control bootstrap used `ssl.create_default_context()`. The accepted Python runtime provides secure defaults, but the privileged transport policy was implicit in a convenience constructor and the independent analyzer could not prove the intended protocol floor from source. A release-control network boundary should not rely on version-sensitive implicit protocol policy when an explicit client TLS contract is available.
 
-Blast radius is bounded to the CF-D one-time production database bootstrap transport. Staging product traffic, Cloudflare Workers Builds, normal PostgreSQL runtime access, protected V9 `app:app`, broker authority and Real execution are unchanged.
+Separately, `write_bootstrap_origin_handoff()` combined descriptor validation, exclusive file creation, OS-specific hardening, stream conversion, write, descriptor cleanup and failure mapping in one function. The behavior was correct in intent but exceeded the repository's accepted Cognitive Complexity threshold and made the custody lifecycle harder to audit.
 
 ## Correction
 
-The direct bootstrap path now performs a credential-free Function provenance preflight before requesting GitHub OIDC:
+The transport now creates an explicit `ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)`, sets `minimum_version = ssl.TLSVersion.TLSv1_2`, loads default server-authentication roots and verifies that hostname checking and `CERT_REQUIRED` remain active before the connection is created. The exact destination is still reconstructed only from the validated branch/cell descriptor, port remains 443, and the request path remains `/`.
 
-- the client sends `GET /` to the already validated exact Function target over the same certificate-validating TLS connection policy;
-- it supplies a fixed source-controlled `User-Agent` and `Accept: application/json` header, with no `Authorization` header and no request body;
-- the preflight succeeds only when the source-controlled handler returns the exact allowlisted `405` / `METHOD_NOT_ALLOWED` failure contract;
-- every other response remains fail-closed through the existing bounded provider classification and raw provider bodies remain unreflected;
-- GitHub OIDC is minted only after that exact handler provenance preflight succeeds;
-- the subsequent privileged `POST /` uses the same fixed `User-Agent` while preserving exact-SHA OIDC validation, TLS hostname verification, response bounds and redirect rejection.
+The handoff writer is decomposed into narrow helpers for descriptor-size validation, exclusive descriptor creation, descriptor closing, OS-specific permission hardening and protected payload writing. `write_bootstrap_origin_handoff()` now orchestrates those helpers without carrying the lower-level exception/cleanup branching itself. Error classes, exclusive-create semantics, no-symlink custody, hardened ACL/POSIX mode and deterministic cleanup are unchanged.
 
-## Permanent regression / guard
-
-Deterministic tests require the exact preflight method/path/headers, prove that no OIDC token is minted when the provider edge returns the observed unclassified `403`, verify the privileged request header set, and bind the behavior into the machine-readable Cloudflare release-acceptance contract.
+The machine-readable release contract now freezes `TLSv1.2` as the minimum direct-bootstrap protocol and tests assert the explicit client TLS context, certificate validation and hostname verification.
 
 ## Prevention law
 
-1. A privileged provider Function call must establish credential-free handler provenance when a deterministic non-mutating source-controlled response is available.
-2. Privileged credentials must not be minted or transmitted until that provenance check passes.
-3. Direct control-plane HTTP clients must send a stable source-controlled client identity header when provider front-door policy can distinguish anonymous generic clients; the header is metadata only and never substitutes for authentication.
-4. Provider-front-door failures without handler telemetry must not be misclassified as handler/OIDC defects. Preserve only bounded status taxonomy and fix proven transport/provenance gaps first.
-5. Same-SHA reruns are allowed only after a concrete external-provider correction. Repeating the same failure after an unchanged-source provider redeploy requires a focused source repair rather than another retry.
+1. Privileged outbound release-control transports must encode protocol purpose and minimum TLS version explicitly in source.
+2. Certificate validation and hostname verification are mandatory and must be machine-testable.
+3. Security-sensitive custody functions must remain small enough that creation, hardening, write and cleanup branches are independently auditable.
+4. Independent Sonar annotations are blocking even when runtime defaults are believed to be safe; source must make the security contract provable to the verifier.
+5. No finding is closed by suppression, exclusion, severity change or Quality Gate weakening.
 
 ## Protected invariants
 
