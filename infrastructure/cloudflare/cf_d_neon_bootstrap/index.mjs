@@ -410,8 +410,8 @@ async function readRequestJson(request) {
 
 function oidcTokenFromRequest(request) {
   const directToken = request.headers.get(DIRECT_OIDC_HEADER);
-  const authorization = request.headers.get('authorization') || '';
-  if (directToken !== null && authorization !== '') {
+  const authorization = request.headers.get('authorization');
+  if (directToken !== null && authorization !== null) {
     return { error: 'OIDC_HEADER_INVALID', token: '' };
   }
   if (directToken !== null) {
@@ -421,7 +421,7 @@ function oidcTokenFromRequest(request) {
     }
     return { error: null, token };
   }
-  if (!authorization.startsWith('Bearer ')) {
+  if (authorization === null || !authorization.startsWith('Bearer ')) {
     return { error: 'OIDC_REQUIRED', token: '' };
   }
   const token = authorization.slice(7).trim();
