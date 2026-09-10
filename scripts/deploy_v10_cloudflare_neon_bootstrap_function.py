@@ -371,6 +371,28 @@ def _deploy(token: str, project_id: str, branch_id: str, sha: str) -> str:
     return deployment_id
 
 
+def _deployment_ready_or_wait(
+    *,
+    previous_id: str,
+    deployment_id: str,
+    current_id: str,
+    current_state: str,
+    active_id: str,
+    active_state: str,
+) -> bool:
+    if current_id == previous_id and active_id == previous_id:
+        return False
+    if current_id != deployment_id or active_id not in {previous_id, deployment_id}:
+        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
+    if current_state == _STATE_FAILED:
+        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_FAILED")
+    return (
+        current_state == _STATE_COMPLETED
+        and active_id == deployment_id
+        and active_state == _STATE_COMPLETED
+    )
+
+
 def _wait(
     token: str,
     project_id: str,
@@ -389,24 +411,16 @@ def _wait(
             function.get("active_deployment"),
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_ACTIVE_STATE_INVALID",
         )
-        if current_id == deployment_id:
-            if active_id not in {previous_id, deployment_id}:
-                raise builds.BootstrapStopped(
-                    "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE"
-                )
-            if current_state == _STATE_FAILED:
-                raise builds.BootstrapStopped(
-                    "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_FAILED"
-                )
-            if (
-                current_state == _STATE_COMPLETED
-                and active_id == deployment_id
-                and active_state == _STATE_COMPLETED
-            ):
-                print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
-                return
-        elif current_id != previous_id or active_id != previous_id:
-            raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
+        if _deployment_ready_or_wait(
+            previous_id=previous_id,
+            deployment_id=deployment_id,
+            current_id=current_id,
+            current_state=current_state,
+            active_id=active_id,
+            active_state=active_state,
+        ):
+            print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
+            return
         if time.monotonic() >= deadline:
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_TIMEOUT"
