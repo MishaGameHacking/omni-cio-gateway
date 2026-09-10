@@ -571,6 +571,9 @@ def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROVENANCE_MISMATCH"
         )
+    confirmed_id = _preexisting(_function(token, project_id, branch_id), target)
+    if confirmed_id != deployment_id:
+        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
     print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
     return True
 
