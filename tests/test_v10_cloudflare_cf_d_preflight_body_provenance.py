@@ -167,6 +167,62 @@ def test_preflight_rejects_redirect_without_consuming_body() -> None:
     assert code == direct._DIRECT_REDIRECT
 
 
+def test_direct_oidc_ingress_preflight_proves_custom_header_before_oidc_mint() -> None:
+    response = _Response(
+        403,
+        json.dumps(
+            {"status": "BLOCKED", "code": "OIDC_TOKEN_INVALID"},
+            separators=(",", ":"),
+        ).encode("utf-8"),
+    )
+    connection = _Connection(response)
+    target = direct._target_from_origin(ORIGIN)
+
+    with mock.patch.object(direct, "_direct_connection", return_value=connection):
+        direct._preflight_direct_oidc_ingress(target, EXPECTED_SHA)
+
+    assert connection.requests == [
+        (
+            "POST",
+            "/",
+            json.dumps({"expected_sha": EXPECTED_SHA}, separators=(",", ":")).encode(
+                "utf-8"
+            ),
+            {
+                "Accept": "application/json",
+                "User-Agent": direct._DIRECT_USER_AGENT,
+                direct._DIRECT_OIDC_HEADER: direct._DIRECT_INGRESS_PROBE_TOKEN,
+                "Content-Type": "application/json",
+            },
+        )
+    ]
+    assert "Authorization" not in connection.requests[0][3]
+    assert connection.closed is True
+
+
+def test_direct_oidc_ingress_preflight_failure_cannot_mint_real_oidc() -> None:
+    target = direct._target_from_origin(ORIGIN)
+    with (
+        mock.patch.object(direct, "read_bootstrap_origin_handoff", return_value=target),
+        mock.patch.object(direct, "_preflight_direct_function"),
+        mock.patch.object(
+            direct,
+            "_preflight_direct_oidc_ingress",
+            side_effect=legacy.BootstrapStopped(
+                "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
+            ),
+        ),
+        mock.patch.object(legacy, "_github_oidc_token") as oidc_token,
+    ):
+        try:
+            direct.run(EXPECTED_SHA)
+        except legacy.BootstrapStopped as exc:
+            assert exc.code == "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
+        else:
+            raise AssertionError("failed ingress provenance was accepted")
+        oidc_token.assert_not_called()
+
+
 def test_success_payload_validation_is_body_authoritative() -> None:
     payload = {
         "status": "READY",
@@ -199,9 +255,10 @@ def test_success_payload_validation_is_body_authoritative() -> None:
     assert connection.requests[0][3] == {
         "Accept": "application/json",
         "User-Agent": direct._DIRECT_USER_AGENT,
-        "Authorization": f"Bearer {oidc_token}",
+        direct._DIRECT_OIDC_HEADER: oidc_token,
         "Content-Type": "application/json",
     }
+    assert "Authorization" not in connection.requests[0][3]
 
 
 def test_success_response_still_requires_strict_json_object_body() -> None:
