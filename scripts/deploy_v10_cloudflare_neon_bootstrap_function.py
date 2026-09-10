@@ -34,6 +34,7 @@ _WRAPPER_DIGEST_PLACEHOLDER = b"__OMNI_CIO_CF_D_SOURCE_BUNDLE_SHA256__"
 _PROVENANCE_PATH = "/__omni-cio/source-provenance"
 _PROJECT_NAME = "omni-cio-v10-preview-frankfurt"
 _REGION = "aws-eu-central-1"
+_JSON_MEDIA_TYPE = "application/json"
 _ID = re.compile(r"^[a-z0-9-]{1,60}$")
 _BRANCH_ID = re.compile(r"^br-[a-z0-9-]{4,57}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -111,7 +112,7 @@ def _request(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PATH_INVALID"
         )
     headers = {
-        "Accept": "application/json",
+        "Accept": _JSON_MEDIA_TYPE,
         "Authorization": f"Bearer {token}",
         "User-Agent": _USER_AGENT,
     }
@@ -377,7 +378,7 @@ def _provenance_response(
     expected_digest: str,
 ) -> bool:
     media_type = content_type.lower().split(";", 1)[0].strip()
-    if media_type != "application/json":
+    if media_type != _JSON_MEDIA_TYPE:
         raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID, status=status)
     payload = _json(raw, _SOURCE_PROVENANCE_INVALID)
     if status == 405 and payload == {
@@ -411,7 +412,7 @@ def _probe_source_provenance(
         connection.request(
             "GET",
             _PROVENANCE_PATH,
-            headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+            headers={"Accept": _JSON_MEDIA_TYPE, "User-Agent": _USER_AGENT},
         )
         response = connection.getresponse()
         status = int(response.status)
