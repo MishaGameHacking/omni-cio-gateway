@@ -18,7 +18,7 @@ function provenanceResponse() {
 }
 
 export default {
-  async fetch(request) {
+  fetch(request) {
     const url = new URL(request.url);
     if (
       request.method === 'GET' &&
