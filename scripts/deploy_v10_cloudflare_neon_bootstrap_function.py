@@ -37,6 +37,11 @@ _DEPLOY_TIMEOUT = 130.0
 _POLL = 2.0
 _USER_AGENT = "omni-cio-v10-cf-d-neon-function-deploy/1"
 _DEPLOY_STATES = frozenset({"pending", "building", "completed", "failed"})
+_GET_FAILURE_BY_STATUS = {
+    401: "API_KEY_INVALID",
+    403: "API_KEY_INSUFFICIENT",
+    404: "TARGET_NOT_FOUND",
+}
 
 
 def _required_id(name: str) -> str:
@@ -49,12 +54,16 @@ def _required_id(name: str) -> str:
 def _assert_exact_head(expected_sha: str) -> str:
     sha = builds._expected_sha(expected_sha)
     try:
-        actual = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=builds._REPO_ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip().lower()
+        actual = (
+            subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=builds._REPO_ROOT,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            .strip()
+            .lower()
+        )
     except (OSError, subprocess.CalledProcessError):
         raise builds.BootstrapStopped("CLOUDFLARE_GIT_HEAD_UNAVAILABLE") from None
     if actual != sha:
@@ -139,15 +148,7 @@ def _json(raw: bytes, code: str) -> dict[str, Any]:
 def _get(path: str, token: str, code: str) -> dict[str, Any]:
     status, raw = _request("GET", path, token)
     if status != 200:
-        suffix = (
-            "API_KEY_INVALID"
-            if status == 401
-            else "API_KEY_INSUFFICIENT"
-            if status == 403
-            else "TARGET_NOT_FOUND"
-            if status == 404
-            else "API_REJECTED"
-        )
+        suffix = _GET_FAILURE_BY_STATUS.get(status, "API_REJECTED")
         raise builds.BootstrapStopped(
             f"CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_{suffix}",
             status=status,
@@ -229,7 +230,9 @@ def _deployment(value: object, code: str) -> tuple[str, str]:
     if not isinstance(value, dict):
         raise builds.BootstrapStopped(code)
     raw_id = value.get("id")
-    valid_integer = isinstance(raw_id, int) and not isinstance(raw_id, bool) and raw_id > 0
+    valid_integer = (
+        isinstance(raw_id, int) and not isinstance(raw_id, bool) and raw_id > 0
+    )
     valid_text = (
         isinstance(raw_id, str)
         and raw_id.isascii()
@@ -358,9 +361,7 @@ def _deploy(token: str, project_id: str, branch_id: str, sha: str) -> str:
         "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RESPONSE_INVALID",
     )
     if state == "failed":
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_FAILED"
-        )
+        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_FAILED")
     return deployment_id
 
 
@@ -399,9 +400,7 @@ def _wait(
                 print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
                 return
         elif current_id != previous_id or active_id != previous_id:
-            raise builds.BootstrapStopped(
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE"
-            )
+            raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
         if time.monotonic() >= deadline:
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_TIMEOUT"
