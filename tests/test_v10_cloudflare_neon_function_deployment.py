@@ -53,23 +53,110 @@ def _function_state(
 
 
 class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
-    def test_archive_is_deterministic_single_root_entry(self) -> None:
-        source = b"export default { fetch() {} }; oidcTokenFromRequest"
-        source_path = mock.Mock()
-        source_path.is_symlink.return_value = False
-        source_path.is_file.return_value = True
-        source_path.read_bytes.return_value = source
-        with mock.patch.object(deployer, "_SOURCE", source_path):
-            first = deployer._archive()
-            second = deployer._archive()
+    def test_archive_is_deterministic_and_binds_wrapper_plus_handler(self) -> None:
+        handler = b"export default { fetch() {} }; oidcTokenFromRequest"
+        wrapper = (
+            b"import handler from './handler.mjs';\n"
+            b"const digest = '__OMNI_CIO_CF_D_SOURCE_BUNDLE_SHA256__';\n"
+        )
+        handler_path = mock.Mock()
+        handler_path.is_symlink.return_value = False
+        handler_path.is_file.return_value = True
+        handler_path.read_bytes.return_value = handler
+        wrapper_path = mock.Mock()
+        wrapper_path.is_symlink.return_value = False
+        wrapper_path.is_file.return_value = True
+        wrapper_path.read_bytes.return_value = wrapper
+        with (
+            mock.patch.object(deployer, "_SOURCE", handler_path),
+            mock.patch.object(deployer, "_WRAPPER_SOURCE", wrapper_path),
+        ):
+            first, first_digest = deployer._deployment_bundle()
+            second, second_digest = deployer._deployment_bundle()
         self.assertEqual(first, second)
+        self.assertEqual(first_digest, second_digest)
+        self.assertRegex(first_digest, r"^[0-9a-f]{64}$")
         with zipfile.ZipFile(io.BytesIO(first), "r") as archive:
-            self.assertEqual(archive.namelist(), ["index.mjs"])
-            self.assertEqual(
-                archive.getinfo("index.mjs").date_time,
-                (1980, 1, 1, 0, 0, 0),
+            self.assertEqual(archive.namelist(), ["index.mjs", "handler.mjs"])
+            for name in archive.namelist():
+                self.assertEqual(
+                    archive.getinfo(name).date_time,
+                    (1980, 1, 1, 0, 0, 0),
+                )
+            rendered = archive.read("index.mjs")
+            self.assertIn(first_digest.encode("ascii"), rendered)
+            self.assertNotIn(deployer._WRAPPER_DIGEST_PLACEHOLDER, rendered)
+            self.assertEqual(archive.read("handler.mjs"), handler)
+
+    def test_provenance_accepts_exact_digest_and_marks_legacy_handler_stale(self) -> None:
+        digest = "b" * 64
+        exact = json.dumps(
+            {"status": "READY", "source_sha256": digest},
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.assertTrue(
+            deployer._provenance_response(200, "application/json", exact, digest)
+        )
+        stale = json.dumps(
+            {"status": "READY", "source_sha256": "c" * 64},
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.assertFalse(
+            deployer._provenance_response(200, "application/json", stale, digest)
+        )
+        legacy = b'{"status":"BLOCKED","code":"METHOD_NOT_ALLOWED"}'
+        self.assertFalse(
+            deployer._provenance_response(405, "application/json", legacy, digest)
+        )
+
+    def test_provenance_rejects_untrusted_or_malformed_response(self) -> None:
+        digest = "d" * 64
+        for status, content_type, body in (
+            (200, "text/html", b"<html>provider</html>"),
+            (200, "application/json", b'{"status":"READY"}'),
+            (403, "application/json", b'{"provider":"blocked"}'),
+        ):
+            with self.assertRaisesRegex(
+                builds.BootstrapStopped,
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_PROVENANCE_INVALID",
+            ):
+                deployer._provenance_response(
+                    status,
+                    content_type,
+                    body,
+                    digest,
+                )
+
+    def test_exact_source_reuse_requires_no_neon_api_write_authority(self) -> None:
+        archive = b"PK synthetic"
+        digest = "e" * 64
+        with (
+            mock.patch.object(
+                deployer,
+                "_assert_exact_head",
+                return_value=_EXPECTED_SHA,
+            ),
+            mock.patch.object(
+                deployer,
+                "read_bootstrap_origin_handoff",
+                return_value=_TARGET,
+            ),
+            mock.patch.object(
+                deployer,
+                "_deployment_bundle",
+                return_value=(archive, digest),
+            ),
+            mock.patch.object(
+                deployer,
+                "_probe_source_provenance",
+                return_value=True,
+            ),
+            mock.patch.object(builds, "_required_env") as required_env,
+        ):
+            self.assertFalse(
+                deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
             )
-            self.assertEqual(archive.read("index.mjs"), source)
+        required_env.assert_not_called()
 
     def test_target_branch_requires_exact_default_handoff_branch(self) -> None:
         payload = {
@@ -137,19 +224,13 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             )
             return 201, response
 
-        with (
-            mock.patch.object(deployer, "_request", side_effect=request),
-            mock.patch.object(
-                deployer,
-                "_archive",
-                return_value=b"PK synthetic",
-            ),
-        ):
+        with mock.patch.object(deployer, "_request", side_effect=request):
             deployment_id = deployer._deploy(
                 "synthetic-secret-token",
                 _PROJECT_ID,
                 _BRANCH_ID,
                 _EXPECTED_SHA,
+                b"PK synthetic",
             )
         self.assertEqual(deployment_id, "7")
         self.assertEqual(observed["method"], "POST")
@@ -163,6 +244,24 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             b"synthetic-secret-token",
             cast(bytes, observed["body"]),
         )
+
+    def test_deploy_403_is_explicit_function_write_authority_failure(self) -> None:
+        with mock.patch.object(
+            deployer,
+            "_request",
+            return_value=(403, b'{"provider":"redacted"}'),
+        ):
+            with self.assertRaisesRegex(
+                builds.BootstrapStopped,
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_API_KEY_INSUFFICIENT",
+            ):
+                deployer._deploy(
+                    "synthetic-secret-token",
+                    _PROJECT_ID,
+                    _BRANCH_ID,
+                    _EXPECTED_SHA,
+                    b"PK synthetic",
+                )
 
     def test_wait_accepts_only_returned_deployment_and_rejects_race(self) -> None:
         sequence = [
@@ -234,18 +333,32 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         self.assertLess(persist, deploy)
         self.assertIn('if branch == "main":', source[persist:deploy])
 
-    def test_release_contract_requires_function_deploy_before_oidc(self) -> None:
+    def test_release_contract_requires_provenance_before_conditional_deploy(self) -> None:
         contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
         cutover = contract["cutover"]
         self.assertIs(
             cutover[
                 "production_database_bootstrap_function_exact_main_deploy_required"
             ],
+            False,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_exact_source_provenance_required"
+            ],
             True,
         )
         self.assertEqual(
             cutover["production_database_bootstrap_function_source"],
             "infrastructure/cloudflare/cf_d_neon_bootstrap/index.mjs",
+        )
+        self.assertEqual(
+            cutover["production_database_bootstrap_function_provenance_wrapper"],
+            "infrastructure/cloudflare/cf_d_neon_bootstrap/provenance_wrapper.mjs",
+        )
+        self.assertEqual(
+            cutover["production_database_bootstrap_function_provenance_path"],
+            deployer._PROVENANCE_PATH,
         )
         self.assertEqual(
             cutover["production_database_bootstrap_function_runtime"],
@@ -262,6 +375,18 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 "production_database_bootstrap_function_create_if_missing_allowed"
             ],
             False,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_write_only_on_source_drift"
+            ],
+            True,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_exact_source_reuse_without_api_write_allowed"
+            ],
+            True,
         )
         self.assertIs(
             cutover[
