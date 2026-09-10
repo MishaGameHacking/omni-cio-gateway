@@ -22,6 +22,7 @@ _CONTRACT = (
 )
 _EXPECTED_SHA = "a" * 40
 _PROJECT_ID = "billowing-smoke-00000000"
+_ORG_ID = "org-example1234"
 _BRANCH_ID = "br-example1234"
 _TARGET = BootstrapFunctionTarget(branch_id=_BRANCH_ID, cell="c-6")
 _FUNCTION_URL = (
@@ -50,6 +51,14 @@ def _function_state(
             "runtime": "nodejs24",
         },
     }
+
+
+def _required_env(name: str) -> str:
+    return {
+        "NEON_API_KEY": "synthetic-secret-token",
+        "NEON_PROJECT_ID": _PROJECT_ID,
+        "NEON_ORG_ID": _ORG_ID,
+    }[name]
 
 
 class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
@@ -127,9 +136,15 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                     digest,
                 )
 
-    def test_exact_source_reuse_requires_no_neon_api_write_authority(self) -> None:
+    def test_exact_source_reuse_requires_stable_read_state_but_no_write(self) -> None:
         archive = b"PK synthetic"
         digest = "e" * 64
+        function = _function_state(
+            current_id=6,
+            current_status="completed",
+            active_id=6,
+            active_status="completed",
+        )
         with (
             mock.patch.object(
                 deployer,
@@ -146,17 +161,73 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 "_deployment_bundle",
                 return_value=(archive, digest),
             ),
+            mock.patch.object(builds, "_required_env", side_effect=_required_env),
+            mock.patch.object(deployer, "_validate_project"),
+            mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
+            mock.patch.object(deployer, "_function", return_value=function) as function_read,
             mock.patch.object(
                 deployer,
                 "_probe_source_provenance",
                 return_value=True,
             ),
-            mock.patch.object(builds, "_required_env") as required_env,
+            mock.patch.object(deployer, "_deploy") as deploy,
         ):
             self.assertFalse(
                 deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
             )
-        required_env.assert_not_called()
+        self.assertEqual(function_read.call_count, 2)
+        deploy.assert_not_called()
+
+    def test_exact_source_reuse_rejects_deployment_race(self) -> None:
+        archive = b"PK synthetic"
+        digest = "f" * 64
+        sequence = [
+            _function_state(
+                current_id=6,
+                current_status="completed",
+                active_id=6,
+                active_status="completed",
+            ),
+            _function_state(
+                current_id=7,
+                current_status="completed",
+                active_id=7,
+                active_status="completed",
+            ),
+        ]
+        with (
+            mock.patch.object(
+                deployer,
+                "_assert_exact_head",
+                return_value=_EXPECTED_SHA,
+            ),
+            mock.patch.object(
+                deployer,
+                "read_bootstrap_origin_handoff",
+                return_value=_TARGET,
+            ),
+            mock.patch.object(
+                deployer,
+                "_deployment_bundle",
+                return_value=(archive, digest),
+            ),
+            mock.patch.object(builds, "_required_env", side_effect=_required_env),
+            mock.patch.object(deployer, "_validate_project"),
+            mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
+            mock.patch.object(deployer, "_function", side_effect=sequence),
+            mock.patch.object(
+                deployer,
+                "_probe_source_provenance",
+                return_value=True,
+            ),
+            mock.patch.object(deployer, "_deploy") as deploy,
+        ):
+            with self.assertRaisesRegex(
+                builds.BootstrapStopped,
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE",
+            ):
+                deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
+        deploy.assert_not_called()
 
     def test_target_branch_requires_exact_default_handoff_branch(self) -> None:
         payload = {
