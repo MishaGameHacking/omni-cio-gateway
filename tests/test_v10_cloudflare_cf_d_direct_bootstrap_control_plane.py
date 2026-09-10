@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
 CANDIDATE_RUNNER = ROOT / "scripts/run_v10_cloudflare_gated_candidate.py"
 CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
+FUNCTION_SOURCE = ROOT / "infrastructure/cloudflare/cf_d_neon_bootstrap/index.mjs"
 EXPECTED_SHA = "a" * 40
 ORIGIN = (
     "https://br-example1234-cfdprodbootstrap.compute."
@@ -273,9 +274,10 @@ def test_direct_function_request_derives_https_host_and_forwards_only_oidc() -> 
     assert headers == {
         "Accept": "application/json",
         "User-Agent": direct._DIRECT_USER_AGENT,
-        "Authorization": f"Bearer {oidc}",
+        direct._DIRECT_OIDC_HEADER: oidc,
         "Content-Type": "application/json",
     }
+    assert "Authorization" not in headers
     assert oidc not in str(observed["host"])
     context = observed["context"]
     assert isinstance(context, ssl.SSLContext)
@@ -337,6 +339,16 @@ def test_direct_tls_policy_is_explicit_and_does_not_use_generic_context() -> Non
     assert "ssl.create_default_context()" not in source
 
 
+def test_neon_function_preserves_legacy_authorization_and_accepts_dedicated_ingress() -> None:
+    source = FUNCTION_SOURCE.read_text(encoding="utf-8")
+    assert "const DIRECT_OIDC_HEADER = 'x-omni-github-oidc';" in source
+    assert "request.headers.get(DIRECT_OIDC_HEADER)" in source
+    assert "request.headers.get('authorization')" in source
+    assert "directToken !== null && authorization !== ''" in source
+    assert "return { error: 'OIDC_HEADER_INVALID', token: '' };" in source
+    assert "oidcTokenFromRequest(request)" in source
+
+
 def test_direct_bootstrap_transport_is_machine_readable() -> None:
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     candidate = contract["candidate"]
@@ -373,5 +385,15 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
     assert cutover["production_database_bootstrap_function_preflight_expected_failure"] == (
         "CLOUDFLARE_CF_D_NEON_FUNCTION_METHOD_NOT_ALLOWED"
     )
+    assert cutover["production_database_bootstrap_direct_oidc_header"] == (
+        direct._DIRECT_OIDC_HEADER
+    )
+    assert cutover["production_database_bootstrap_direct_authorization_header_allowed"] is False
+    assert cutover["production_database_bootstrap_direct_ingress_preflight_required"] is True
+    assert cutover["production_database_bootstrap_direct_ingress_preflight_method"] == "POST"
+    assert cutover["production_database_bootstrap_direct_ingress_preflight_expected_failure"] == (
+        direct._DIRECT_INGRESS_PREFLIGHT_EXPECTED_FAILURE
+    )
+    assert cutover["production_database_bootstrap_function_legacy_authorization_fallback_retained"] is True
     assert cutover["production_database_bootstrap_oidc_mint_after_preflight_required"] is True
     assert cutover["production_database_bootstrap_fixed_user_agent_required"] is True
