@@ -302,7 +302,7 @@ def _preflight_direct_oidc_ingress(
 ) -> None:
     """Prove POST plus dedicated OIDC header reaches the handler without a credential."""
 
-    body = json.jumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
+    body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
     )
     connection = _direct_connection(target)
