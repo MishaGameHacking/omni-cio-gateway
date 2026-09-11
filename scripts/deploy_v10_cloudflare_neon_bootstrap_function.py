@@ -91,7 +91,7 @@ def _deploy_api_key(read_token: str) -> str:
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRITE_API_KEY_REQUIRED"
         )
     builds._mask(token)
-    if hmac.compare_digest(token, read_token):
+    if hmac.compare_digest(token.encode("utf-8"), read_token.encode("utf-8")):
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_AUTHORITY_NOT_SEPARATED"
         )
@@ -607,9 +607,7 @@ def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROVENANCE_MISMATCH"
         )
-    confirmed_id = _preexisting(
-        _function(read_token, project_id, branch_id), target
-    )
+    confirmed_id = _preexisting(_function(read_token, project_id, branch_id), target)
     if confirmed_id != deployment_id:
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
     print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
