@@ -115,6 +115,8 @@
     "production_database_bootstrap_function_source": "infrastructure/cloudflare/cf_d_neon_bootstrap/index.mjs",
     "production_database_bootstrap_function_provenance_wrapper": "infrastructure/cloudflare/cf_d_neon_bootstrap/provenance_wrapper.mjs",
     "production_database_bootstrap_function_provenance_path": "/",
+    "production_database_bootstrap_function_provenance_query": "omni_source_provenance=v1",
+    "production_database_bootstrap_function_provenance_query_primary": true,
     "production_database_bootstrap_function_provenance_method": "GET",
     "production_database_bootstrap_function_provenance_header": "X-Omni-Source-Provenance",
     "production_database_bootstrap_function_provenance_header_value": "v1",
