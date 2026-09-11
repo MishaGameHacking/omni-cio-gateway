@@ -5,6 +5,7 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
+import scripts.bootstrap_v10_cloudflare_production_database_direct as direct
 import scripts.deploy_v10_cloudflare_neon_bootstrap_function as deployer
 from scripts.bootstrap_v10_cloudflare_production_database_direct import (
     BootstrapFunctionTarget,
@@ -66,6 +67,21 @@ class CloudflareNeonFunctionProvenanceIngressTests(unittest.TestCase):
             },
         )
         connection.close.assert_called_once_with()
+
+    def test_wrapper_accepts_standard_user_agent_as_transport_fallback(self) -> None:
+        source = _WRAPPER.read_text(encoding="utf-8")
+        self.assertIn(
+            "const SOURCE_PROVENANCE_USER_AGENT = "
+            "'omni-cio-v10-cf-d-neon-function-deploy/2';",
+            source,
+        )
+        self.assertIn(
+            "request.headers.get('user-agent') === SOURCE_PROVENANCE_USER_AGENT",
+            source,
+        )
+        self.assertIn("function hasProvenanceDiscriminator(request)", source)
+        self.assertIn("hasProvenanceDiscriminator(request)", source)
+        self.assertNotEqual(deployer._USER_AGENT, direct._DIRECT_USER_AGENT)
 
     def test_wrapper_intercepts_only_exact_root_provenance_tuple(self) -> None:
         source = _WRAPPER.read_text(encoding="utf-8")
