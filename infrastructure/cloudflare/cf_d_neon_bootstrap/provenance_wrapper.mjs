@@ -4,6 +4,7 @@ const SOURCE_BUNDLE_SHA256 = '__OMNI_CIO_CF_D_SOURCE_BUNDLE_SHA256__';
 const SOURCE_PROVENANCE_PATH = '/';
 const SOURCE_PROVENANCE_HEADER = 'x-omni-source-provenance';
 const SOURCE_PROVENANCE_HEADER_VALUE = 'v1';
+const SOURCE_PROVENANCE_USER_AGENT = 'omni-cio-v10-cf-d-neon-function-deploy/2';
 
 function provenanceResponse() {
   return new Response(
@@ -19,12 +20,19 @@ function provenanceResponse() {
   );
 }
 
+function hasProvenanceDiscriminator(request) {
+  return (
+    request.headers.get(SOURCE_PROVENANCE_HEADER) === SOURCE_PROVENANCE_HEADER_VALUE ||
+    request.headers.get('user-agent') === SOURCE_PROVENANCE_USER_AGENT
+  );
+}
+
 function isProvenanceRequest(request, url) {
   return (
     request.method === 'GET' &&
     url.pathname === SOURCE_PROVENANCE_PATH &&
     url.search === '' &&
-    request.headers.get(SOURCE_PROVENANCE_HEADER) === SOURCE_PROVENANCE_HEADER_VALUE
+    hasProvenanceDiscriminator(request)
   );
 }
 
@@ -42,5 +50,7 @@ export {
   SOURCE_PROVENANCE_HEADER,
   SOURCE_PROVENANCE_HEADER_VALUE,
   SOURCE_PROVENANCE_PATH,
+  SOURCE_PROVENANCE_USER_AGENT,
+  hasProvenanceDiscriminator,
   isProvenanceRequest,
 };
