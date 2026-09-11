@@ -338,10 +338,10 @@ def _request_direct_bootstrap_json(
     expected_sha: str,
     oidc_token: str,
 ) -> dict[str, Any]:
-    body = json.jumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
+    body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
     )
-    connection = _direct_connection_target)
+    connection = _direct_connection(target)
     try:
         connection.request(
             "POST",
