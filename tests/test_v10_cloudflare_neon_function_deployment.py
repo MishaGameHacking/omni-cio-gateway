@@ -166,19 +166,25 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             mock.patch.object(builds, "_required_env", side_effect=_required_env),
             mock.patch.object(deployer, "_validate_project"),
             mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
-            mock.patch.object(deployer, "_function", return_value=function) as function_read,
+            mock.patch.object(
+                deployer,
+                "_function",
+                return_value=function,
+            ) as function_read,
             mock.patch.object(
                 deployer,
                 "_probe_source_provenance",
                 return_value=True,
             ),
             mock.patch.object(deployer, "_deploy") as deploy,
+            mock.patch.object(deployer, "_deploy_api_key") as deploy_key,
         ):
             self.assertFalse(
                 deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
             )
         self.assertEqual(function_read.call_count, 2)
         deploy.assert_not_called()
+        deploy_key.assert_not_called()
 
     def test_exact_source_reuse_rejects_deployment_race(self) -> None:
         archive = b"PK synthetic"
@@ -262,6 +268,11 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             ),
             mock.patch.object(deployer, "_deploy", return_value="7") as deploy,
             mock.patch.object(deployer, "_wait") as wait,
+            mock.patch.dict(
+                deployer.os.environ,
+                {deployer._DEPLOY_API_KEY_ENV: "synthetic-deploy-fixture"},
+                clear=False,
+            ),
         ):
             with self.assertRaisesRegex(
                 builds.BootstrapStopped,
@@ -269,7 +280,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             ):
                 deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
         deploy.assert_called_once_with(
-            "synthetic-provider-fixture",
+            "synthetic-deploy-fixture",
             _PROJECT_ID,
             _BRANCH_ID,
             _EXPECTED_SHA,
@@ -378,7 +389,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 builds.BootstrapStopped,
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_API_KEY_INSUFFICIENT",
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRITE_API_KEY_INSUFFICIENT",
             ):
                 deployer._deploy(
                     "synthetic-provider-fixture",
@@ -387,6 +398,46 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                     _EXPECTED_SHA,
                     b"PK synthetic",
                 )
+
+    def test_deploy_write_authority_is_required_only_after_source_drift(self) -> None:
+        with mock.patch.dict(
+            deployer.os.environ,
+            {deployer._DEPLOY_API_KEY_ENV: ""},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(
+                builds.BootstrapStopped,
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRITE_API_KEY_REQUIRED",
+            ):
+                deployer._deploy_api_key("synthetic-read-fixture")
+
+    def test_deploy_write_authority_must_be_separate_from_read_authority(self) -> None:
+        token = "synthetic-shared-fixture"
+        with mock.patch.dict(
+            deployer.os.environ,
+            {deployer._DEPLOY_API_KEY_ENV: token},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(
+                builds.BootstrapStopped,
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_AUTHORITY_NOT_SEPARATED",
+            ):
+                deployer._deploy_api_key(token)
+
+    def test_deploy_write_authority_is_masked_before_use(self) -> None:
+        with (
+            mock.patch.dict(
+                deployer.os.environ,
+                {deployer._DEPLOY_API_KEY_ENV: "synthetic-deploy-fixture"},
+                clear=False,
+            ),
+            mock.patch.object(builds, "_mask") as mask,
+        ):
+            self.assertEqual(
+                deployer._deploy_api_key("synthetic-read-fixture"),
+                "synthetic-deploy-fixture",
+            )
+        mask.assert_called_once_with("synthetic-deploy-fixture")
 
     def test_wait_accepts_only_returned_deployment_and_rejects_race(self) -> None:
         sequence = [
@@ -536,6 +587,30 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 "production_database_bootstrap_function_provider_identifier_logging_allowed"
             ],
             False,
+        )
+        self.assertEqual(
+            cutover[
+                "production_database_bootstrap_function_read_api_key_binding"
+            ],
+            deployer._READ_API_KEY_ENV,
+        )
+        self.assertEqual(
+            cutover[
+                "production_database_bootstrap_function_deploy_api_key_binding"
+            ],
+            deployer._DEPLOY_API_KEY_ENV,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_read_write_authority_separation_required"
+            ],
+            True,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_deploy_api_key_required_only_on_source_drift"
+            ],
+            True,
         )
 
 
