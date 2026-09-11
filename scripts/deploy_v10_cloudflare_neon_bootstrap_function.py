@@ -32,6 +32,8 @@ _SOURCE = _SOURCE_ROOT / "index.mjs"
 _WRAPPER_SOURCE = _SOURCE_ROOT / "provenance_wrapper.mjs"
 _WRAPPER_DIGEST_PLACEHOLDER = b"__OMNI_CIO_CF_D_SOURCE_BUNDLE_SHA256__"
 _PROVENANCE_PATH = "/"
+_PROVENANCE_QUERY = "omni_source_provenance=v1"
+_PROVENANCE_TARGET = f"{_PROVENANCE_PATH}?{_PROVENANCE_QUERY}"
 _PROVENANCE_HEADER = "X-Omni-Source-Provenance"
 _PROVENANCE_HEADER_VALUE = "v1"
 _PROJECT_NAME = "omni-cio-v10-preview-frankfurt"
@@ -413,7 +415,7 @@ def _probe_source_provenance(
     try:
         connection.request(
             "GET",
-            _PROVENANCE_PATH,
+            _PROVENANCE_TARGET,
             headers={
                 "Accept": _JSON_MEDIA_TYPE,
                 "User-Agent": _USER_AGENT,

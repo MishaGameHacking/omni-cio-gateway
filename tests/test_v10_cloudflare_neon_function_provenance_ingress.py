@@ -24,7 +24,7 @@ _TARGET = BootstrapFunctionTarget(branch_id="br-example1234", cell="c-6")
 
 
 class CloudflareNeonFunctionProvenanceIngressTests(unittest.TestCase):
-    def test_probe_uses_canonical_root_with_exact_no_secret_header(self) -> None:
+    def test_probe_uses_canonical_root_query_with_no_secret_headers(self) -> None:
         digest = "a" * 64
         body = json.dumps(
             {"status": "READY", "source_sha256": digest},
@@ -59,16 +59,22 @@ class CloudflareNeonFunctionProvenanceIngressTests(unittest.TestCase):
         )
         connection.request.assert_called_once_with(
             "GET",
-            "/",
+            "/?omni_source_provenance=v1",
             headers={
                 "Accept": "application/json",
                 "User-Agent": deployer._USER_AGENT,
                 "X-Omni-Source-Provenance": "v1",
             },
         )
+        self.assertEqual(deployer._PROVENANCE_PATH, "/")
+        self.assertEqual(deployer._PROVENANCE_QUERY, "omni_source_provenance=v1")
+        self.assertEqual(
+            deployer._PROVENANCE_TARGET,
+            f"{deployer._PROVENANCE_PATH}?{deployer._PROVENANCE_QUERY}",
+        )
         connection.close.assert_called_once_with()
 
-    def test_wrapper_accepts_standard_user_agent_as_transport_fallback(self) -> None:
+    def test_wrapper_retains_header_and_standard_user_agent_fallback(self) -> None:
         source = _WRAPPER.read_text(encoding="utf-8")
         self.assertIn(
             "const SOURCE_PROVENANCE_USER_AGENT = "
@@ -79,33 +85,37 @@ class CloudflareNeonFunctionProvenanceIngressTests(unittest.TestCase):
             "request.headers.get('user-agent') === SOURCE_PROVENANCE_USER_AGENT",
             source,
         )
-        self.assertIn("function hasProvenanceDiscriminator(request)", source)
-        self.assertIn("hasProvenanceDiscriminator(request)", source)
+        self.assertIn("function hasHeaderProvenanceDiscriminator(request)", source)
+        self.assertIn("hasHeaderProvenanceDiscriminator(request)", source)
         self.assertNotEqual(deployer._USER_AGENT, direct._DIRECT_USER_AGENT)
 
-    def test_wrapper_intercepts_only_exact_root_provenance_tuple(self) -> None:
+    def test_wrapper_intercepts_exact_root_query_without_header_dependency(self) -> None:
         source = _WRAPPER.read_text(encoding="utf-8")
         required = (
             "const SOURCE_PROVENANCE_PATH = '/';",
+            "const SOURCE_PROVENANCE_QUERY = '?omni_source_provenance=v1';",
             "const SOURCE_PROVENANCE_HEADER = 'x-omni-source-provenance';",
             "const SOURCE_PROVENANCE_HEADER_VALUE = 'v1';",
             "request.method === 'GET'",
             "url.pathname === SOURCE_PROVENANCE_PATH",
-            "url.search === ''",
-            "request.headers.get(SOURCE_PROVENANCE_HEADER) === "
-            "SOURCE_PROVENANCE_HEADER_VALUE",
+            "url.search === SOURCE_PROVENANCE_QUERY",
+            "url.search === '' && hasHeaderProvenanceDiscriminator(request)",
             "return handler.fetch(request);",
         )
         for marker in required:
             self.assertIn(marker, source)
         self.assertNotIn("/__omni-cio/source-provenance", source)
 
-    def test_release_contract_freezes_canonical_root_ingress(self) -> None:
+    def test_release_contract_freezes_canonical_root_query_ingress(self) -> None:
         contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
         cutover = contract["cutover"]
         self.assertEqual(
             cutover["production_database_bootstrap_function_provenance_path"],
             deployer._PROVENANCE_PATH,
+        )
+        self.assertEqual(
+            cutover["production_database_bootstrap_function_provenance_query"],
+            deployer._PROVENANCE_QUERY,
         )
         self.assertEqual(
             cutover["production_database_bootstrap_function_provenance_method"],
@@ -120,6 +130,12 @@ class CloudflareNeonFunctionProvenanceIngressTests(unittest.TestCase):
                 "production_database_bootstrap_function_provenance_header_value"
             ],
             deployer._PROVENANCE_HEADER_VALUE,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_provenance_query_primary"
+            ],
+            True,
         )
         self.assertIs(
             cutover[
