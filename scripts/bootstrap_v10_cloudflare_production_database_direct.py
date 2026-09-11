@@ -249,8 +249,20 @@ def _direct_headers(*, oidc_token: str | None = None) -> dict[str, str]:
     return headers
 
 
+def _direct_provenance_ready(response_body: bytes) -> bool:
+    payload = legacy._json_object(response_body, _DIRECT_RESPONSE_INVALID)
+    digest = payload.get("source_sha256")
+    return (
+        set(payload) == {"status", "source_sha256"}
+        and payload.get("status") == "READY"
+        and isinstance(digest, str)
+        and len(digest) == 64
+        and all(character in "0123456789abcdef" for character in digest)
+    )
+
+
 def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
-    """Prove the exact source-controlled Function handler before minting GitHub OIDC."""
+    """Prove source-controlled Function ingress before minting GitHub OIDC."""
 
     connection = _direct_connection(target)
     try:
@@ -269,6 +281,10 @@ def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
             _MAX_DIRECT_FAILURE_BYTES,
             _DIRECT_RESPONSE_TOO_LARGE,
         )
+        if status == 200:
+            if _direct_provenance_ready(response_body):
+                return
+            raise legacy.BootstrapStopped(_DIRECT_RESPONSE_INVALID)
         failure = _direct_failure_code(status, response_body)
         if failure != _DIRECT_PREFLIGHT_EXPECTED_FAILURE:
             raise legacy.BootstrapStopped(failure)
@@ -286,7 +302,7 @@ def _preflight_direct_oidc_ingress(
 ) -> None:
     """Prove POST plus dedicated OIDC header reaches the handler without a credential."""
 
-    body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
+    body = json.jumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
     )
     connection = _direct_connection(target)
@@ -322,10 +338,10 @@ def _request_direct_bootstrap_json(
     expected_sha: str,
     oidc_token: str,
 ) -> dict[str, Any]:
-    body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
+    body = json.jumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
     )
-    connection = _direct_connection(target)
+    connection = _direct_connection_target)
     try:
         connection.request(
             "POST",
