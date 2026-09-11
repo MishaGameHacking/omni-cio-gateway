@@ -63,10 +63,10 @@ class CloudflareNeonFunctionProvenanceIngressTests(unittest.TestCase):
             headers={
                 "Accept": "application/json",
                 "User-Agent": deployer._USER_AGENT,
-                deployer._PROVENANCE_HEADER: deployer._PROVENANCE_HEADER_VALUE,
             },
         )
         self.assertEqual(deployer._PROVENANCE_PATH, "/")
+        self.assertEqual(deployer._PROVENANCE_TARGET, "/")
         connection.close.assert_called_once_with()
 
     def test_wrapper_reserves_all_get_root_requests_for_read_only_provenance(self) -> None:
@@ -152,6 +152,16 @@ class CloudflareNeonFunctionProvenanceIngressTests(unittest.TestCase):
         self.assertEqual(
             cutover["production_database_bootstrap_function_provenance_method"],
             "GET",
+        )
+        self.assertEqual(
+            cutover["production_database_bootstrap_function_provenance_query"],
+            "",
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_provenance_query_primary"
+            ],
+            False,
         )
         self.assertIs(
             cutover[
