@@ -82,11 +82,10 @@ function exactObject(value, keys) {
   if (value === null || Array.isArray(value) || typeof value !== "object") {
     return false;
   }
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
+  const actual = Object.keys(value);
   return (
-    actual.length === expected.length &&
-    actual.every((key, index) => key === expected[index])
+    actual.length === keys.length &&
+    keys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
   );
 }
 
