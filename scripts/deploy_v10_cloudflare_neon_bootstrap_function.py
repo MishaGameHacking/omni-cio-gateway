@@ -22,6 +22,9 @@ from scripts.bootstrap_v10_cloudflare_production_database_direct import (
     _bootstrap_hostname,
     read_bootstrap_origin_handoff,
 )
+from scripts.neon_function_invocation_credential import (
+    function_invocation_credential,
+)
 
 
 _API_HOST = "console.neon.tech"
@@ -48,7 +51,7 @@ _MAX_PROVENANCE_RESPONSE = 2 * 1024
 _HTTP_TIMEOUT = 20.0
 _DEPLOY_TIMEOUT = 130.0
 _POLL = 2.0
-_USER_AGENT = "omni-cio-v10-cf-d-neon-function-deploy/3"
+_USER_AGENT = "omni-cio-v10-cf-d-neon-function-deploy/4"
 _STATE_PENDING = "pending"
 _STATE_BUILDING = "building"
 _STATE_COMPLETED = "completed"
@@ -191,8 +194,6 @@ def _validate_project(token: str, project_id: str, org_id: str) -> None:
     path = f"{_API_PREFIX}/projects/{quote(project_id, safe='')}"
     status, raw = _request("GET", path, token)
     if status in {403, 404}:
-        # Project-scoped Neon keys have historically had endpoint-specific
-        # visibility. Exact branch + Function proof below remains mandatory.
         print("CLOUDFLARE_CF_D_NEON_FUNCTION_PROJECT_METADATA=DEFERRED")
         return
     if status != 200:
@@ -417,8 +418,11 @@ def _provenance_response(
 def _probe_source_provenance(
     target: BootstrapFunctionTarget,
     expected_digest: str,
+    invocation_token: str,
 ) -> bool:
     if _SHA256.fullmatch(expected_digest) is None:
+        raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID)
+    if not invocation_token or not invocation_token.isascii():
         raise builds.BootstrapStopped(_SOURCE_PROVENANCE_INVALID)
     connection = http.client.HTTPSConnection(
         _bootstrap_hostname(target),
@@ -432,6 +436,7 @@ def _probe_source_provenance(
             _PROVENANCE_TARGET,
             headers={
                 "Accept": _JSON_MEDIA_TYPE,
+                "Authorization": f"Bearer {invocation_token}",
                 "User-Agent": _USER_AGENT,
             },
         )
@@ -568,17 +573,25 @@ def _wait(
         time.sleep(_POLL)
 
 
+def _stable_preexisting_id(
+    project_token: str,
+    project_id: str,
+    branch_id: str,
+    target: BootstrapFunctionTarget,
+    expected_id: str,
+) -> None:
+    confirmed_id = _preexisting(
+        _function(project_token, project_id, branch_id),
+        target,
+    )
+    if confirmed_id != expected_id:
+        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
+
+
 def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
     sha = _assert_exact_head(expected_sha)
     target = read_bootstrap_origin_handoff()
     archive, source_digest = _deployment_bundle()
-
-    # The normal/reuse path is credential-free. Management authority is loaded
-    # only after exact-source drift is proven by the canonical Function ingress.
-    if _probe_source_provenance(target, source_digest):
-        print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_EXACT_SOURCE_READY")
-        return False
-
     project_token = _deploy_api_key()
     project_id = _required_id("NEON_PROJECT_ID")
     org_id = _required_id("NEON_ORG_ID")
@@ -589,31 +602,60 @@ def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
         target,
     )
 
-    # Recheck immediately before the non-idempotent POST. If another bounded
-    # actor converged the exact source while we established management state,
-    # accept only if the active deployment identity stayed stable.
-    if _probe_source_provenance(target, source_digest):
+    with function_invocation_credential(
+        project_token,
+        project_id,
+        branch_id,
+    ) as invocation_token:
+        if _probe_source_provenance(target, source_digest, invocation_token):
+            _stable_preexisting_id(
+                project_token,
+                project_id,
+                branch_id,
+                target,
+                previous_id,
+            )
+            print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_EXACT_SOURCE_READY")
+            return False
+
+        if _probe_source_provenance(target, source_digest, invocation_token):
+            _stable_preexisting_id(
+                project_token,
+                project_id,
+                branch_id,
+                target,
+                previous_id,
+            )
+            print(
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY="
+                "SKIPPED_CONCURRENT_EXACT_SOURCE"
+            )
+            return False
+
+        deployment_id = _deploy(
+            project_token,
+            project_id,
+            branch_id,
+            sha,
+            archive,
+        )
+        _wait(
+            project_token,
+            project_id,
+            branch_id,
+            previous_id,
+            deployment_id,
+        )
+        if not _probe_source_provenance(target, source_digest, invocation_token):
+            raise builds.BootstrapStopped(
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROVENANCE_MISMATCH"
+            )
         confirmed_id = _preexisting(
             _function(project_token, project_id, branch_id),
             target,
         )
-        if confirmed_id != previous_id:
+        if confirmed_id != deployment_id:
             raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
-        print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_CONCURRENT_EXACT_SOURCE")
-        return False
-
-    deployment_id = _deploy(project_token, project_id, branch_id, sha, archive)
-    _wait(project_token, project_id, branch_id, previous_id, deployment_id)
-    if not _probe_source_provenance(target, source_digest):
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROVENANCE_MISMATCH"
-        )
-    confirmed_id = _preexisting(
-        _function(project_token, project_id, branch_id),
-        target,
-    )
-    if confirmed_id != deployment_id:
-        raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
     print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")
     return True
 
