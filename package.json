@@ -19,6 +19,6 @@
   },
   "devDependencies": {
     "npm": "11.16.0",
-    "wrangler": "4.127.1"
+    "wrangler": "4.131.1"
   }
 }
