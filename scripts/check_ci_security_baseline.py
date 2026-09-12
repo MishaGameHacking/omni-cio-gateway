@@ -24,6 +24,9 @@ SECRET_SCAN_EXCLUDE_PATTERN = (
 )
 GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
 _SENSITIVE_WORD = "sec" + "ret"
+_BINDING_FRAGMENT = "api" + "_key"
+_NEON_READ_ENV = "NEON_" + _BINDING_FRAGMENT.upper()
+_NEON_DEPLOY_ENV = "NEON_FUNCTION_DEPLOY_" + _BINDING_FRAGMENT.upper()
 _WP7_PUBLIC_PYTHON_SHA256 = "".join(
     (
         "14B3",
@@ -169,6 +172,12 @@ APPROVED_KEYWORD_LINES = {
             f'"ci_{_SENSITIVE_WORD}_data_access": false,',
         }
     ),
+    "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json": frozenset(
+        {
+            f'"production_database_bootstrap_function_read_{_BINDING_FRAGMENT}_binding": "{_NEON_READ_ENV}",',
+            f'"production_database_bootstrap_function_deploy_{_BINDING_FRAGMENT}_binding": "{_NEON_DEPLOY_ENV}",',
+        }
+    ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
         {
             f'${_SENSITIVE_WORD}Sentinel = "C:\\ProgramData\\OmniCIO\\{_SENSITIVE_WORD}s\\execution\\wp6-ci-deny-sentinel.txt"'
@@ -177,6 +186,17 @@ APPROVED_KEYWORD_LINES = {
     "scripts/assess_v10_wp6_identity_profile.py": frozenset(
         {
             f'if boundaries["runner_execution_{_SENSITIVE_WORD}_read"] != "ACCESS_DENIED":'
+        }
+    ),
+    "scripts/deploy_v10_cloudflare_neon_bootstrap_function.py": frozenset(
+        {
+            f'_READ_{_BINDING_FRAGMENT.upper()}_ENV = "{_NEON_READ_ENV}"',
+            f'_DEPLOY_{_BINDING_FRAGMENT.upper()}_ENV = "{_NEON_DEPLOY_ENV}"',
+        }
+    ),
+    "tests/test_v10_cloudflare_neon_function_deployment.py": frozenset(
+        {
+            f'{{deployer._DEPLOY_{_BINDING_FRAGMENT.upper()}_ENV: "synthetic-deploy-fixture"}},'
         }
     ),
     "tests/test_v10_wp6_identity_profile.py": frozenset(
