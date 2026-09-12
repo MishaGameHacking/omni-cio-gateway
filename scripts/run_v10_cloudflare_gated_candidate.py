@@ -13,7 +13,7 @@ from scripts.bootstrap_v10_cloudflare_production_database_direct import (
     write_bootstrap_origin_handoff,
 )
 from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
-from scripts.deploy_v10_cloudflare_neon_bootstrap_function import (
+from scripts.reuse_v10_cloudflare_neon_bootstrap_function_source import (
     deploy_exact_main_bootstrap_function_if_required,
 )
 from scripts.probe_v10_cloudflare_staging_runtime_secret import (
