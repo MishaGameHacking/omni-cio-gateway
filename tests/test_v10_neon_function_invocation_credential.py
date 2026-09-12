@@ -70,6 +70,15 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             _BRANCH_ID,
         )
 
+    @staticmethod
+    def _revoke_with_reconciliation() -> None:
+        invoke._revoke_with_reconciliation(
+            _PROJECT_TOKEN,
+            _PROJECT_ID,
+            _BRANCH_ID,
+            _TOKEN_ID,
+        )
+
     def test_issue_requests_only_function_invoke_scope_and_masks_token(self) -> None:
         observed: dict[str, object] = {}
 
@@ -180,9 +189,12 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             credential = self._issue_credential()
 
         self.assertEqual(credential.token_id, _TOKEN_ID)
-        self.assertEqual([method for method, _ in observed], ["GET", "DELETE", "POST"])
+        self.assertEqual(
+            [method for method, _ in observed],
+            ["GET", "DELETE", "POST"],
+        )
 
-    def test_stale_managed_scope_drift_fails_closed_without_delete(self) -> None:
+    def test_stale_scope_drift_fails_closed_without_delete(self) -> None:
         list_response = json.dumps(
             {
                 "credentials": [
@@ -205,7 +217,7 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             self._cleanup_managed_credentials()
         request.assert_called_once()
 
-    def test_ambiguous_create_is_reconciled_and_release_stays_failed(self) -> None:
+    def test_ambiguous_create_reconciles_and_stays_failed(self) -> None:
         ambiguous = builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_UNAVAILABLE"
         )
@@ -297,12 +309,12 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             _TOKEN_ID,
         )
 
-    def test_context_revoke_failure_is_fail_closed(self) -> None:
+    def test_context_revoke_failure_reconciles_and_stays_failed(self) -> None:
         credential = invoke.FunctionInvocationCredential(
             token_id=_TOKEN_ID,
             api_token=_INVOKE_TOKEN,
         )
-        cleanup = builds.BootstrapStopped(
+        revoke_failure = builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_REVOKE_REJECTED"
         )
         with (
@@ -314,13 +326,85 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             mock.patch.object(
                 invoke,
                 "revoke_function_invocation_credential",
-                side_effect=cleanup,
+                side_effect=revoke_failure,
             ),
+            mock.patch.object(
+                invoke,
+                "cleanup_managed_function_invocation_credentials",
+                return_value=0,
+            ) as reconcile,
         ):
             with self.assertRaises(builds.BootstrapStopped) as raised:
                 self._raise_inside_invocation_context()
-        self.assertIs(raised.exception, cleanup)
+
+        self.assertIs(raised.exception, revoke_failure)
         self.assertIsInstance(raised.exception.__context__, RuntimeError)
+        reconcile.assert_called_once_with(
+            _PROJECT_TOKEN,
+            _PROJECT_ID,
+            _BRANCH_ID,
+        )
+
+    def test_ambiguous_revoke_reconciles_and_stays_failed(self) -> None:
+        ambiguous = builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_UNAVAILABLE"
+        )
+        stale_response = json.dumps(
+            {"credentials": [_managed_meta()]},
+            separators=(",", ":"),
+        ).encode("utf-8")
+        calls: list[str] = []
+
+        def request(
+            method: str,
+            path: str,
+            token: str,
+            *,
+            body: bytes | None = None,
+        ) -> tuple[int, bytes]:
+            del path, token, body
+            calls.append(method)
+            if calls == ["DELETE"]:
+                raise ambiguous
+            if method == "GET":
+                return 200, stale_response
+            if method == "DELETE":
+                return 204, b""
+            raise AssertionError(method)
+
+        with (
+            mock.patch.object(invoke, "_request", side_effect=request),
+            self.assertRaises(builds.BootstrapStopped) as raised,
+        ):
+            self._revoke_with_reconciliation()
+
+        self.assertIs(raised.exception, ambiguous)
+        self.assertEqual(calls, ["DELETE", "GET", "DELETE"])
+
+    def test_revoke_reconciliation_failure_remains_blocking(self) -> None:
+        primary = builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_UNAVAILABLE"
+        )
+        secondary = builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_LIST_REJECTED"
+        )
+        with (
+            mock.patch.object(
+                invoke,
+                "revoke_function_invocation_credential",
+                side_effect=primary,
+            ),
+            mock.patch.object(
+                invoke,
+                "cleanup_managed_function_invocation_credentials",
+                side_effect=secondary,
+            ),
+            self.assertRaises(builds.BootstrapStopped) as raised,
+        ):
+            self._revoke_with_reconciliation()
+
+        self.assertIs(raised.exception, secondary)
+        self.assertIs(raised.exception.__context__, primary)
 
     def test_revoke_is_idempotent_for_missing_provider_credential(self) -> None:
         for status in (204, 404):
