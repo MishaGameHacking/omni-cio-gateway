@@ -102,7 +102,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, section)
 
-    def test_function_deploy_write_authority_is_scoped_to_candidate_step(self) -> None:
+    def test_function_project_authority_is_scoped_to_candidate_step(self) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
         start = source.index(
             "      - name: Rehearse exact accepted main on isolated staging "
@@ -114,8 +114,11 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             "NEON_FUNCTION_DEPLOY_API_KEY: "
             "${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
         )
+        recovery_alias = "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
         self.assertIn(binding, candidate)
+        self.assertIn(recovery_alias, candidate)
         self.assertEqual(source.count(binding), 1)
+        self.assertEqual(source.count(recovery_alias), 1)
         self.assertNotIn("echo $NEON_FUNCTION_DEPLOY_API_KEY", source)
 
     def test_provider_readiness_cli_defers_neon_until_bootstrap_is_needed(self) -> None:
@@ -171,7 +174,13 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertIn("CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED", report)
 
     def test_neon_preflight_uses_only_runtime_secret_bindings(self) -> None:
-        for path in (CANDIDATE_WORKFLOW, PRODUCTION_WORKFLOW):
+        expected_bindings = {
+            CANDIDATE_WORKFLOW: "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}",
+            PRODUCTION_WORKFLOW: (
+                "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
+            ),
+        }
+        for path, authority_binding in expected_bindings.items():
             with self.subTest(path=path.name):
                 source = self._read(path)
                 probe_indexes = [
@@ -186,10 +195,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
                     self.assertGreaterEqual(section_start, 0)
                     self.assertGreater(section_end, probe_index)
                     section = source[section_start:section_end]
-                    self.assertIn(
-                        "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}",
-                        section,
-                    )
+                    self.assertIn(authority_binding, section)
                     self.assertIn(
                         "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}",
                         section,
