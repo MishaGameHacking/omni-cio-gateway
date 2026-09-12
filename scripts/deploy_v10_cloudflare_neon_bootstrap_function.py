@@ -670,9 +670,7 @@ def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
         with function_invocation_credential(
             project_token, project_id, branch_id
         ) as invocation_token:
-            if _probe_source_provenance(
-                target, source_digest, invocation_token
-            ):
+            if _probe_source_provenance(target, source_digest, invocation_token):
                 print(
                     "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY="
                     "SKIPPED_EXACT_SOURCE_READY_AUTHENTICATED"
