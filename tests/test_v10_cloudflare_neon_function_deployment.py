@@ -629,7 +629,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                     "without_management_api_required"
                 )
             ],
-            True,
+            False,
         )
         self.assertIs(
             cutover[
@@ -653,55 +653,19 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             cutover["production_database_bootstrap_function_invoke_credential_scope"],
             "functions:invoke",
         )
-        self.assertEqual(
-            cutover[
-                "production_database_bootstrap_function_invoke_credential_binding"
-            ],
-            "NEON_FUNCTION_INVOKE_API_TOKEN",
-        )
-        self.assertIs(
-            cutover[
-                "production_database_bootstrap_function_invoke_credential_preprovisioned"
-            ],
-            True,
-        )
-        self.assertIs(
-            cutover[
-                "production_database_bootstrap_function_invoke_credential_exact_branch_scoped_required"
-            ],
-            True,
-        )
-        self.assertEqual(
-            cutover[
-                "production_database_bootstrap_function_invoke_credential_secret_custody"
-            ],
-            "GITHUB_ACTIONS_SECRET",
-        )
         self.assertIs(
             cutover["production_database_bootstrap_function_invoke_credential_ephemeral"],
-            False,
+            True,
         )
         self.assertIs(
             cutover[
                 "production_database_bootstrap_function_invoke_credential_persistence_allowed"
-            ],
-            True,
-        )
-        self.assertIs(
-            cutover[
-                "production_database_bootstrap_function_invoke_credential_dynamic_management_api_crud_allowed"
             ],
             False,
         )
         self.assertIs(
             cutover[
                 "production_database_bootstrap_function_invoke_credential_revoke_after_use_required"
-            ],
-            False,
-        )
-        self.assertIs(
-            cutover[
-                "production_database_bootstrap_function_invoke_credential_rotation_required"
             ],
             True,
         )
@@ -775,7 +739,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                     "only_on_source_drift"
                 )
             ],
-            True,
+            False,
         )
         self.assertIs(
             cutover[

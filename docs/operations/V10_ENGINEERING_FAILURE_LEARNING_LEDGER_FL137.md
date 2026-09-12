@@ -4,78 +4,79 @@
 
 - Work unit: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / CF-D`
 - State at discovery: `MAIN_RED_STOP`
-- Failure class: `CF_D_PROJECT_SCOPED_MANAGEMENT_KEY_CANNOT_OWN_BRANCH_INVOKE_CREDENTIAL_LIFECYCLE`
-- Scope: exact-main Neon Function ingress authority for source provenance and direct production bootstrap
+- Failure class: `CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_NON_DELEGABLE_CUSTODY_DEADLOCK`
+- Scope: production-database bootstrap authority and the directly coupled exact-main staging compatibility path
 
 ## Observed failure
 
-Exact accepted `main` `3842572f759d7e2d289b44023d23f4eb69b6645c` completed the complete required exact-main push batch with terminal `success`, including Regression Shield and V10 Engineering Governance. Automatic `V10 Cloudflare Production Release` #52 / run `34721127791` then passed the exact-main post-merge gate, Cloudflare provider readiness, Workers Builds authority, Containers registry authority, pinned delivery toolchain installation, hashed control-plane dependency installation, staging database-secret reuse, staging Worker-anchor reuse, stale-build quarantine, exact-SHA staging build, exact single-version staging deployment, exact release probe and bootstrap-origin custody.
+Accepted main `3842572f759d7e2d289b44023d23f4eb69b6645c` reached Production Release #52 after the complete exact-main post-merge push gate, Cloudflare provider/build/container/toolchain readiness, staging runtime-secret reuse, staging Worker reuse, exact-SHA Build, exact single-version staging deployment, release proof and bootstrap-origin custody.
 
-The release then stopped fail-closed with:
+The staging rehearsal then stopped fail-closed with:
 
 `CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_PROJECT_API_KEY_INSUFFICIENT status=403`
 
-Production database bootstrap, production promotion, Custom Domain mutation and live acceptance did not execute. Cleanup/quarantine completed successfully.
+Production database bootstrap, production promotion, custom-domain mutation and live acceptance did not execute. Cleanup/quarantine completed.
 
-No API key value, Function invocation token, provider identifier, database credential, OIDC token, account identifier or private payload is recorded here.
+No API key, branch credential token, Function URL, account identifier, database credential, OIDC token or private payload is recorded here.
 
 ## Root cause
 
-PR #499 correctly moved authenticated exact-source proof ahead of unrelated project/branch/Function metadata reads. That correction exposed the next exact authority boundary: `scripts/neon_function_invocation_credential.py` attempted to list/create/revoke branch service credentials through the Neon Management API using `NEON_FUNCTION_DEPLOY_API_KEY` before returning a temporary `functions:invoke` token.
+The accepted Function-ingress recovery design attempted to create/list/revoke a branch-scoped `functions:invoke` credential through Neon Management API using the existing project-scoped `NEON_FUNCTION_DEPLOY_API_KEY`.
 
-Live run #52 proves that the currently protected project-scoped management authority is insufficient for that branch credential-management transaction. The release therefore never reached authenticated Function provenance. This is not evidence that the exact Function source, default branch, Cloudflare staging candidate, PostgreSQL runtime or GitHub OIDC contract is invalid.
+That capability assumption is false for the bounded project credential. Neon documents project-scoped keys as one-project/member-level authority, and the current Neon CLI documents that a project-scoped key cannot mint more keys. Live Release #52 independently proved the boundary with a sanitized provider `403` before any Function invocation could occur.
 
-Provider state was rechecked without recording identifiers: the exact default branch remained ready, and no active release-managed `functions:invoke` credential remained. Current Neon API documentation exposes `functions:invoke` as a branch-scoped service-credential scope, while current project-scoped API-key guidance explicitly limits key-minting authority. Broadening the release management key to organization/admin authority only to manufacture an invocation credential would violate least privilege and is not an accepted repair.
+The proposed static-secret workaround was also not an acceptable permanent authority model. The current Neon Console for the exact branch does not expose `functions:invoke` when creating a credential, and an issued credential secret is returned only at creation/reveal custody boundaries. Our connected GitHub authority cannot safely take such a newly issued provider secret and write it into Actions repository-secret custody without exposing the value to an intermediate channel. Broadening release authority to organization/admin solely to mint an invocation token would violate least privilege.
+
+The systemic defect was therefore architectural: production database availability had become dependent on a Function invocation credential whose creation required broader authority than the release was allowed to possess, despite an already accepted project-scoped PostgreSQL 18 runtime provisioner being able to perform the same database convergence without that credential layer.
 
 ## Permanent correction
 
-- Separate Function invocation custody from Neon management authority.
-- Pre-provision exactly one branch-scoped service credential with exactly `functions:invoke` for the canonical bootstrap Function boundary.
-- Store only its secret value in GitHub Actions repository-secret custody as `NEON_FUNCTION_INVOKE_API_TOKEN`; never source-control, log, artifact, summarize or echo it.
-- Load and mask that invocation secret only after the already-classified unauthenticated pre-handler `403` proves outer Function ingress authentication is required.
-- Keep the first unauthenticated exact-source provenance attempt unchanged; a real exact-digest `200 READY` remains credential-free reuse.
-- Keep authenticated provenance TLS-verified, redirect-free, bounded and exact-digest matched. A missing, malformed, revoked, wrong-branch, wrong-scope or provider-rejected invocation secret remains RED.
-- Remove all branch credential list/create/revoke operations from the release helper. Release code must not gain organization/admin authority merely to mint another credential.
-- Keep `NEON_FUNCTION_DEPLOY_API_KEY` as the bounded project-scoped management/deploy authority for genuine Function source drift/convergence only.
-- Remove management/deploy authority from the direct production database-bootstrap workflow step; that step receives only Cloudflare authority, the invocation-only outer token and GitHub OIDC authority.
-- Keep inner `X-Omni-GitHub-OIDC` mandatory and fully source-controlled. The outer invocation token only crosses Neon Function ingress; it never replaces GitHub OIDC application authorization.
-- Rotate/revoke the pre-provisioned invocation credential through the provider/GitHub secret-custody procedure when required. Release execution itself performs no credential CRUD.
+- Keep `NEON_FUNCTION_DEPLOY_API_KEY` bounded to the exact Neon project; do not broaden it to organization/admin authority.
+- Remove `NEON_FUNCTION_INVOKE_API_TOKEN` as an active production-release prerequisite.
+- Keep the normal production-secret reuse path Cloudflare-only: it must not receive Neon authority when the existing `OMNI_V10_POSTGRES_DSN` secret is already ready.
+- After the production Worker anchor exists, probe the production runtime secret with Cloudflare authority only.
+- Only when the protected production runtime secret is genuinely missing, expose the existing project-scoped Neon authority to the already accepted `scripts.provision_v10_cloudflare_neon_runtime` path, aliasing it to the provisioner's canonical `NEON_API_KEY` binding for that bounded step.
+- Run the provisioner with `--environment production` and the exact accepted main SHA. Preserve PostgreSQL 18 verification, canonical migrations, least-privilege `omni_cio_cloudflare_prod`, negative membership/ownership checks, grants, tenant RLS/FORCE RLS verification and private runner-temp DSN custody.
+- Write the resulting DSN into the production Worker secret through the existing Cloudflare production manager, then independently re-probe the Cloudflare secret in a step that has no Neon credentials.
+- Keep the legacy Neon Function/OIDC implementation in the repository as a retained inactive component. Its TLS, exact-source, bounded-response, OIDC and provider-classification tests remain guards against accidental regression if that transport is deliberately reactivated later.
+- The exact-main staging compatibility adapter must no longer make Function provenance/deployment authority a predecessor of staging acceptance. If the production runtime secret is absent, it records a bounded deferral to the project-scoped production bootstrap that runs after the production Worker anchor is established.
 
 ## Blast radius and adjacent review
 
-Directly coupled surfaces reviewed:
+Directly coupled surfaces reviewed and corrected:
 
-- `scripts/neon_function_invocation_credential.py`;
-- `scripts/reuse_v10_cloudflare_neon_bootstrap_function_source.py`;
-- `scripts/deploy_v10_cloudflare_neon_bootstrap_function.py`;
-- `scripts/bootstrap_v10_cloudflare_production_database_direct.py`;
 - `.github/workflows/v10-cloudflare-production-release.yml`;
+- `scripts/reuse_v10_cloudflare_neon_bootstrap_function_source.py`;
+- `scripts/provision_v10_cloudflare_neon_runtime.py` as the accepted producer now reused for production;
+- `scripts/manage_v10_cloudflare_production.py` as the existing Cloudflare secret writer/verifier;
 - `docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json`;
-- Function source/provenance/direct-bootstrap and workflow-custody regression tests;
-- current Neon branch service-credential and project-scoped API-key behavior.
+- Function/direct-bootstrap control-plane regressions and Neon authority-preflight regressions.
 
-The existing call shape used by source-reuse/direct-bootstrap/deployer code is retained through a compatibility context manager, but it no longer loads or mutates management authority. Real Function source drift still enters the existing hardened deployer, which owns exact project/branch/Function identity, deployment-race and active/current completed-state checks.
+The production runtime provisioner already accepts `production`, enforces the canonical PostgreSQL 18 project, applies migrations, converges the least-privilege runtime role, verifies RLS/FORCE RLS, writes only a protected runner-temp DSN, and does not log or artifact that DSN. This repair therefore reuses an accepted migration path instead of adding a second broker, database, scheduler, Gateway or secret-custody stack.
 
-No independent defect is proven in production Worker promotion, database bootstrap SQL/RLS logic, Custom Domain attachment or live release acceptance because run #52 stopped before those gates. They remain unchanged and must execute successfully after this repair is accepted.
+Downstream CF-D gates remain unchanged: stale production Builds quarantine, rollback snapshot, exact-current-main recheck, gated production Workers Build, canonical Custom Domain attachment, exact-SHA live release/health/database acceptance and bounded rollback.
+
+No evidence from Release #52 proves an independent defect in those downstream gates.
 
 ## Permanent regression / guard
 
 Deterministic coverage requires:
 
-- invocation-secret loading to fail closed when missing or malformed and to mask the accepted secret immediately;
-- the invocation helper source to contain no branch `/credentials` management API path and no create/revoke/cleanup lifecycle;
-- the legacy project-authority adapter to load no management secret for exact-source reuse/direct bootstrap;
-- staging candidate rehearsal to receive management/deploy authority and invocation authority as separate secret bindings;
-- direct production database bootstrap to receive the invocation-only secret but no Neon management/deploy key or protected project selector;
-- the release contract to require pre-provisioned exact-branch `functions:invoke` custody, forbid broader scopes and dynamic credential CRUD, and preserve rotation/revocation as an external custody operation;
-- exact-source reuse without Management API access to remain allowed while genuine source drift still requires the project-scoped deploy key;
-- all existing exact-digest, TLS, redirect, bounded-response, deployment-race, GitHub-OIDC, PostgreSQL/RLS, rollback and live-acceptance guards to remain intact;
-- full exact-head CI, Sonar/security/review certification before merge and a fresh exact-main Production Release afterward.
+- production runtime-secret reuse to complete without exposing any Neon management or Function invocation secret;
+- missing production runtime secret to select the project-scoped Neon runtime provisioner only after the production Worker anchor exists;
+- the production bootstrap step to use the exact project-scoped release credential, `NEON_ORG_ID` and `NEON_PROJECT_ID`, and to reject provider-authority failures fail-closed;
+- the runtime provisioner to continue requiring exact SHA, PostgreSQL 18, migrations, least-privilege role attributes, no memberships/ownership, canonical grants and RLS/FORCE RLS;
+- the DSN to remain runner-temp only, never logged, artifacted or persisted outside the Cloudflare secret binding;
+- a separate Cloudflare-only confirmation step to prove the target runtime secret after mutation;
+- `NEON_FUNCTION_INVOKE_API_TOKEN` to be absent from the active production workflow;
+- the exact-main staging compatibility adapter to perform no active Function invocation/deployment dependency;
+- legacy Function security tests to remain intact while the transport is inactive;
+- all exact-head CI, security, Sonar/review and exact-main post-merge certification gates to remain mandatory.
 
 ## Prevention law
 
-A credential that can mutate one provider resource is not automatically authorized to mint subordinate credentials. Do not solve a least-privilege authorization failure by widening a release key to organization/admin scope when a narrower pre-provisioned capability exists. Separate long-lived secret custody from runtime authority: persist the narrowest reusable capability in an approved secret store, expose it only to the exact step that needs it, and keep independent application authorization inside the invoked service.
+Do not introduce a credential-minting dependency merely to reach a provider transport when an accepted narrower project-scoped path already satisfies the required state transition. A release must first prove whether mutation is needed, then expose the narrowest authority only to the bounded mutation step, and independently verify the resulting state without retaining that authority. A secret that cannot be created and transferred through an auditable non-disclosing custody path is not an acceptable unattended production prerequisite.
 
 ## Protected invariants
 
-Unchanged: protected V9 `app:app`; `PUBLIC_MULTI_USER_ENABLED=false`; PostgreSQL 18 + RLS/FORCE RLS; broker write OFF; `trading_methods=false`; `REAL_TRADING_ENABLED=false`; transfer/withdrawal/margin/leverage/uncovered-short remain OFF/FORBIDDEN; WP23+, WEB-VISUAL, Telegram and AI/Cortex remain out of scope.
+Unchanged: protected V9 `app:app`; `PUBLIC_MULTI_USER_ENABLED=false`; PostgreSQL 18 + RLS/FORCE RLS; `trading_methods=false`; `REAL_TRADING_ENABLED=false`; broker write, transfer, withdrawal, margin, leverage and uncovered short remain OFF/FORBIDDEN; WP23+, WEB-VISUAL, Telegram and AI/Cortex remain out of scope.

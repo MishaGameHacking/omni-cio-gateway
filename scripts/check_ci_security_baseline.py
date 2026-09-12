@@ -176,7 +176,6 @@ APPROVED_KEYWORD_LINES = {
         {
             f'"production_database_bootstrap_function_read_{_BINDING_FRAGMENT}_binding": "{_NEON_READ_ENV}",',
             f'"production_database_bootstrap_function_deploy_{_BINDING_FRAGMENT}_binding": "{_NEON_DEPLOY_ENV}",',
-            f'"production_database_bootstrap_function_invoke_credential_{_SENSITIVE_WORD}_custody": "GITHUB_ACTIONS_{_SENSITIVE_WORD.upper()}",',
         }
     ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
