@@ -141,7 +141,7 @@ def _request(
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_REQUEST_INVALID"
             )
-        headers["Content-Type"] = content_type
+        headers["Content-Type"] = _JSON_MEDIA_TYPE if content_type is None else content_type
         headers["Content-Length"] = str(len(body))
     connection = http.client.HTTPSConnection(
         _API_HOST,
