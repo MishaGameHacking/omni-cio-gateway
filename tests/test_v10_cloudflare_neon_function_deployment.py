@@ -627,7 +627,51 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                     "without_management_api_required"
                 )
             ],
+            False,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_unauthenticated_provenance_attempt_required"
+            ],
             True,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_unauthenticated_403_is_provenance_success"
+            ],
+            False,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_unauthenticated_403_requires_scoped_invoke_retry"
+            ],
+            True,
+        )
+        self.assertEqual(
+            cutover["production_database_bootstrap_function_invoke_credential_scope"],
+            "functions:invoke",
+        )
+        self.assertIs(
+            cutover["production_database_bootstrap_function_invoke_credential_ephemeral"],
+            True,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_invoke_credential_persistence_allowed"
+            ],
+            False,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_invoke_credential_revoke_after_use_required"
+            ],
+            True,
+        )
+        self.assertIs(
+            cutover[
+                "production_database_bootstrap_function_invoke_credential_broader_scopes_allowed"
+            ],
+            False,
         )
         self.assertIs(
             cutover[
@@ -693,7 +737,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                     "only_on_source_drift"
                 )
             ],
-            True,
+            False,
         )
         self.assertIs(
             cutover[

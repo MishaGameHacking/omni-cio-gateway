@@ -16,6 +16,11 @@ NEON_PROVISION = "python -m scripts.provision_v10_cloudflare_neon_runtime"
 OIDC_PRODUCTION_BOOTSTRAP = (
     "python -m scripts.bootstrap_v10_cloudflare_production_database_direct"
 )
+FUNCTION_DEPLOY_BINDING = (
+    "NEON_FUNCTION_DEPLOY_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
+)
+FUNCTION_PROJECT_BINDING = "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}"
+RECOVERY_ALIAS_BINDING = "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
 
 
 class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
@@ -29,6 +34,12 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             readiness._CLOUDFLARE_AUTHORITY_ENV: "synthetic-cf-token",
             readiness._CLOUDFLARE_ACCOUNT_ENV: "a" * 32,
         }
+
+    @staticmethod
+    def _workflow_step(source: str, name: str) -> str:
+        start = source.index(f"      - name: {name}")
+        end = source.index("\n      - name:", start + 1)
+        return source[start:end]
 
     def _assert_probe_precedes(self, source: str, markers: tuple[str, ...]) -> None:
         self.assertEqual(source.count(NEON_PROJECT_AUTHORITY_PROBE), 1)
@@ -77,48 +88,47 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             source[provider_probe:staging_provision],
         )
 
-    def test_production_database_bootstrap_uses_direct_oidc_not_static_neon_authority(
+    def test_production_database_bootstrap_uses_inner_oidc_and_bounded_invoke_authority(
         self,
     ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
         self.assertIn("id-token: write", source)
-        start = source.index(
-            "      - name: Reuse production database secret or bootstrap it once"
+        section = self._workflow_step(
+            source,
+            "Reuse production database secret or bootstrap it once",
         )
-        end = source.index("\n      - name:", start + 1)
-        section = source[start:end]
         self.assertIn(OIDC_PRODUCTION_BOOTSTRAP, section)
         self.assertIn("omni-cio-v10-cloudflare-bootstrap-origin.txt", section)
+        self.assertIn(FUNCTION_DEPLOY_BINDING, section)
+        self.assertIn(FUNCTION_PROJECT_BINDING, section)
         self.assertNotIn("STAGING_ORIGIN", section)
         self.assertNotIn("--origin", section)
-        for forbidden in (
-            "NEON_API_KEY",
-            "NEON_FUNCTION_DEPLOY_API_KEY",
-            "NEON_ORG_ID",
-            "NEON_PROJECT_ID",
-            NEON_PROJECT_AUTHORITY_PROBE,
-            NEON_PROVISION,
-        ):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, section)
+        self.assertNotIn(RECOVERY_ALIAS_BINDING, section)
+        self.assertNotIn("NEON_ORG_ID:", section)
+        self.assertNotIn(NEON_PROJECT_AUTHORITY_PROBE, section)
+        self.assertNotIn(NEON_PROVISION, section)
+        self.assertNotIn("vars.NEON_", section)
+        self.assertNotIn("echo $NEON", section)
 
-    def test_function_project_authority_is_scoped_to_candidate_step(self) -> None:
+    def test_function_project_authority_is_scoped_to_two_required_steps(self) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
-        start = source.index(
-            "      - name: Rehearse exact accepted main on isolated staging "
-            "Worker and Container"
+        candidate = self._workflow_step(
+            source,
+            "Rehearse exact accepted main on isolated staging Worker and Container",
         )
-        end = source.index("\n      - name:", start + 1)
-        candidate = source[start:end]
-        binding = (
-            "NEON_FUNCTION_DEPLOY_API_KEY: "
-            "${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
+        production_bootstrap = self._workflow_step(
+            source,
+            "Reuse production database secret or bootstrap it once",
         )
-        recovery_alias = "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
-        self.assertIn(binding, candidate)
-        self.assertIn(recovery_alias, candidate)
-        self.assertEqual(source.count(binding), 1)
-        self.assertEqual(source.count(recovery_alias), 1)
+
+        self.assertIn(FUNCTION_DEPLOY_BINDING, candidate)
+        self.assertIn(FUNCTION_PROJECT_BINDING, candidate)
+        self.assertIn(RECOVERY_ALIAS_BINDING, candidate)
+        self.assertIn(FUNCTION_DEPLOY_BINDING, production_bootstrap)
+        self.assertIn(FUNCTION_PROJECT_BINDING, production_bootstrap)
+        self.assertNotIn(RECOVERY_ALIAS_BINDING, production_bootstrap)
+        self.assertEqual(source.count(FUNCTION_DEPLOY_BINDING), 2)
+        self.assertEqual(source.count(RECOVERY_ALIAS_BINDING), 1)
         self.assertNotIn("echo $NEON_FUNCTION_DEPLOY_API_KEY", source)
 
     def test_provider_readiness_cli_defers_neon_until_bootstrap_is_needed(self) -> None:
@@ -176,9 +186,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
     def test_neon_preflight_uses_only_runtime_secret_bindings(self) -> None:
         expected_bindings = {
             CANDIDATE_WORKFLOW: "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}",
-            PRODUCTION_WORKFLOW: (
-                "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
-            ),
+            PRODUCTION_WORKFLOW: RECOVERY_ALIAS_BINDING,
         }
         for path, authority_binding in expected_bindings.items():
             with self.subTest(path=path.name):
@@ -200,10 +208,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
                         "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}",
                         section,
                     )
-                    self.assertIn(
-                        "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}",
-                        section,
-                    )
+                    self.assertIn(FUNCTION_PROJECT_BINDING, section)
                     self.assertNotIn("vars.NEON_", section)
                     self.assertNotIn("echo $NEON", section)
 

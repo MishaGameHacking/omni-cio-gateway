@@ -189,17 +189,26 @@ def test_direct_function_preflight_blocks_provider_edge_before_oidc_mint() -> No
         def close(self) -> None:
             pass
 
+    fallback_unavailable = legacy.BootstrapStopped(
+        "NEON_FUNCTION_DEPLOY_API_KEY_REQUIRED"
+    )
     with (
         mock.patch.object(direct, "read_bootstrap_origin_handoff", return_value=target),
         mock.patch.object(direct.http.client, "HTTPSConnection", Connection),
+        mock.patch.object(
+            direct,
+            "project_invocation_authority_from_env",
+            side_effect=fallback_unavailable,
+        ) as invocation_authority,
         mock.patch.object(legacy, "_github_oidc_token") as oidc_token,
     ):
         try:
             direct.run(EXPECTED_SHA)
         except legacy.BootstrapStopped as exc:
-            assert exc.code == "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
+            assert exc is fallback_unavailable
         else:
             raise AssertionError("provider edge rejection was accepted")
+        invocation_authority.assert_called_once_with()
         oidc_token.assert_not_called()
 
 
@@ -389,7 +398,11 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
     assert cutover["production_database_bootstrap_direct_oidc_header"] == (
         direct._DIRECT_OIDC_HEADER
     )
-    assert cutover["production_database_bootstrap_direct_authorization_header_allowed"] is False
+    assert cutover["production_database_bootstrap_direct_authorization_header_allowed"] is True
+    assert cutover["production_database_bootstrap_direct_authorization_role"] == (
+        "NEON_FUNCTION_INVOKE_ONLY"
+    )
+    assert cutover["production_database_bootstrap_direct_inner_github_oidc_required"] is True
     assert cutover["production_database_bootstrap_direct_ingress_preflight_required"] is True
     assert cutover["production_database_bootstrap_direct_ingress_preflight_method"] == "POST"
     assert cutover["production_database_bootstrap_direct_ingress_preflight_expected_failure"] == (

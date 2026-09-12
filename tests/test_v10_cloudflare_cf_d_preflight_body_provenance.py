@@ -120,18 +120,27 @@ def test_preflight_preserves_provider_status_before_oidc_mint() -> None:
             content_type="text/html",
         )
     )
+    fallback_unavailable = legacy.BootstrapStopped(
+        "NEON_FUNCTION_DEPLOY_API_KEY_REQUIRED"
+    )
 
     with (
         mock.patch.object(direct, "read_bootstrap_origin_handoff", return_value=target),
         mock.patch.object(direct, "_direct_connection", return_value=connection),
+        mock.patch.object(
+            direct,
+            "project_invocation_authority_from_env",
+            side_effect=fallback_unavailable,
+        ) as invocation_authority,
         mock.patch.object(legacy, "_github_oidc_token") as oidc_token,
     ):
         try:
             direct.run(EXPECTED_SHA)
         except legacy.BootstrapStopped as exc:
-            assert exc.code == "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
+            assert exc is fallback_unavailable
         else:
             raise AssertionError("provider edge rejection was accepted")
+        invocation_authority.assert_called_once_with()
         oidc_token.assert_not_called()
 
 
@@ -202,6 +211,9 @@ def test_direct_oidc_ingress_preflight_proves_custom_header_before_oidc_mint() -
 
 def test_direct_oidc_ingress_preflight_failure_cannot_mint_real_oidc() -> None:
     target = direct._target_from_origin(ORIGIN)
+    fallback_unavailable = legacy.BootstrapStopped(
+        "NEON_FUNCTION_DEPLOY_API_KEY_REQUIRED"
+    )
     with (
         mock.patch.object(direct, "read_bootstrap_origin_handoff", return_value=target),
         mock.patch.object(direct, "_preflight_direct_function"),
@@ -212,14 +224,20 @@ def test_direct_oidc_ingress_preflight_failure_cannot_mint_real_oidc() -> None:
                 "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
             ),
         ),
+        mock.patch.object(
+            direct,
+            "project_invocation_authority_from_env",
+            side_effect=fallback_unavailable,
+        ) as invocation_authority,
         mock.patch.object(legacy, "_github_oidc_token") as oidc_token,
     ):
         try:
             direct.run(EXPECTED_SHA)
         except legacy.BootstrapStopped as exc:
-            assert exc.code == "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
+            assert exc is fallback_unavailable
         else:
             raise AssertionError("failed ingress provenance was accepted")
+        invocation_authority.assert_called_once_with()
         oidc_token.assert_not_called()
 
 
