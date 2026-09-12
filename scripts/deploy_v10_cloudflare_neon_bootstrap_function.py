@@ -141,7 +141,7 @@ def _request(
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_REQUEST_INVALID"
             )
-        headers["Content-Type"] = _JSON_MEDIA_TYPE if content_type is None else content_type
+        headers["Content-Type"] = content_type
         headers["Content-Length"] = str(len(body))
     connection = http.client.HTTPSConnection(
         _API_HOST,
@@ -245,7 +245,9 @@ def _exact_branch(
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID"
             )
         defaults = [
-            row for row in rows if isinstance(row, dict) and row.get("default") is True
+            row
+            for row in rows
+            if isinstance(row, dict) and row.get("default") is True
         ]
         if len(defaults) != 1:
             raise builds.BootstrapStopped(
