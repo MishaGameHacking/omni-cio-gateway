@@ -37,13 +37,14 @@ Current Neon API reference exposes the narrower idempotent exact-resource endpoi
 
 `GET /api/v2/projects/{project_id}/branches/{branch_id}`
 
-The exact response can prove the custodied branch identity, default designation and ready state without enumerating the project branch collection. This is a least-privilege control-flow defect, not evidence that the canonical project, branch or Function is missing.
+The exact response can prove the custodied branch identity, project binding, default designation and ready state without enumerating the project branch collection. This is a least-privilege control-flow defect, not evidence that the canonical project, branch or Function is missing.
 
 ## Permanent correction
 
 - Replace the broad branch collection read in the Function convergence path with the exact branch resource request derived from the already validated custody descriptor.
 - Preserve strict branch-id validation before constructing the provider path.
-- Accept only the custodied branch id, `default=true` and `current_state=ready`; when provider `project_id` is present it must match the configured project exactly.
+- Require the documented exact-resource response envelope and accept only the custodied branch id, exact configured `project_id`, `default=true` and `current_state=ready`.
+- Reject collection-shaped or otherwise malformed responses instead of carrying compatibility with the superseded broad-list request.
 - Keep project metadata 403/404 deferral bounded to the existing endpoint-specific rule; do not reinterpret a provider 403 as success.
 - Keep exact Function binding, active/current completed deployment equality, deterministic source digest, TLS hostname/certificate verification, no redirects and bounded responses unchanged.
 - Keep the ephemeral `functions:invoke` credential issuance/revocation and authenticated provenance retry unchanged and downstream of exact branch/Function proof.
@@ -68,15 +69,15 @@ Deterministic coverage requires:
 
 - the Function convergence source to contain no `/branches?limit=100` collection read;
 - exact branch proof to call `/projects/{project_id}/branches/{branch_id}` using the custodied branch id;
-- provider project-id mismatch, non-default branch and non-ready branch state to fail closed;
-- the pre-existing compatibility test for exact default branch identity to remain passing;
+- collection-shaped response, provider project-id mismatch or omission, non-default branch and non-ready branch state to fail closed;
+- the pre-existing default-branch regression to use the documented exact-resource response envelope;
 - all existing Function provenance, invocation-credential lifecycle, deployment-race, OIDC and cleanup tests to remain unchanged and passing;
 - full exact-head lint/type/tests/security/Sonar/review certification before merge;
 - fresh exact-main post-merge workflows and a new automatic Production Release before acceptance.
 
 ## Prevention law
 
-When an exact provider resource identifier has already crossed a validated custody boundary, downstream authorization checks must prefer the exact idempotent resource endpoint over collection enumeration. Do not require broader collection-read authority merely to rediscover an identifier already held under stronger provenance. Exact-resource narrowing must still validate the returned identity/state and must never convert authorization failures into success.
+When an exact provider resource identifier has already crossed a validated custody boundary, downstream authorization checks must prefer the exact idempotent resource endpoint over collection enumeration. Do not require broader collection-read authority merely to rediscover an identifier already held under stronger provenance. Exact-resource narrowing must still validate the documented response shape, returned identity/state and project binding, and must never convert authorization failures into success.
 
 ## Protected invariants
 
