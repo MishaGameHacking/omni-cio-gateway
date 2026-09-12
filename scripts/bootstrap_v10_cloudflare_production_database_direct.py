@@ -10,11 +10,16 @@ import stat
 import sys
 from typing import Any, NamedTuple
 
+import scripts.bootstrap_v10_cloudflare_builds as builds
 import scripts.bootstrap_v10_cloudflare_production_database_via_staging as legacy
 from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
     NEON_BOOTSTRAP_REJECTED,
     STAGING_UNCLASSIFIED_HTTP_STATUSES as _BOUNDED_UNCLASSIFIED_HTTP_STATUSES,
     classify_neon_bootstrap_provider_failure,
+)
+from scripts.neon_function_invocation_credential import (
+    function_invocation_credential,
+    project_invocation_authority_from_env,
 )
 from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import _FUNCTION_ORIGIN_PATTERN
 
@@ -37,13 +42,14 @@ _DIRECT_REDIRECT = "CLOUDFLARE_CF_D_NEON_FUNCTION_REDIRECT_REJECTED"
 _DIRECT_RESPONSE_INVALID = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_INVALID"
 _DIRECT_RESPONSE_TOO_LARGE = "CLOUDFLARE_CF_D_NEON_FUNCTION_RESPONSE_TOO_LARGE"
 _DIRECT_UNCLASSIFIED_HTTP_PREFIX = "CLOUDFLARE_CF_D_DIRECT_HTTP_"
-_DIRECT_USER_AGENT = "omni-cio-v10-cf-d-bootstrap/1"
+_DIRECT_USER_AGENT = "omni-cio-v10-cf-d-bootstrap/2"
 _DIRECT_OIDC_HEADER = "X-Omni-GitHub-OIDC"
 _DIRECT_INGRESS_PROBE_TOKEN = "omni-cio-cf-d-oidc-ingress-probe"
 _DIRECT_PREFLIGHT_EXPECTED_FAILURE = "CLOUDFLARE_CF_D_NEON_FUNCTION_METHOD_NOT_ALLOWED"
 _DIRECT_INGRESS_PREFLIGHT_EXPECTED_FAILURE = (
     "CLOUDFLARE_CF_D_NEON_FUNCTION_OIDC_TOKEN_INVALID"
 )
+_DIRECT_PROVIDER_AUTH_REQUIRED = "CLOUDFLARE_CF_D_DIRECT_HTTP_403_UNCLASSIFIED"
 
 
 class BootstrapFunctionTarget(NamedTuple):
@@ -164,11 +170,7 @@ def _write_origin_handoff(path: Path, payload: str) -> None:
 
 
 def write_bootstrap_origin_handoff(value: str) -> Path:
-    """Persist only a validated provider target descriptor for the same release job.
-
-    The public HTTPS URL is deliberately not persisted. The release-control process
-    reconstructs the exact Neon Function hostname from these validated non-URL fields.
-    """
+    """Persist only a validated provider target descriptor for the same release job."""
 
     target = _target_from_origin(value)
     payload = _validated_target_descriptor(target)
@@ -238,11 +240,17 @@ def _direct_connection(target: BootstrapFunctionTarget) -> http.client.HTTPSConn
     )
 
 
-def _direct_headers(*, oidc_token: str | None = None) -> dict[str, str]:
+def _direct_headers(
+    *,
+    oidc_token: str | None = None,
+    invocation_token: str | None = None,
+) -> dict[str, str]:
     headers = {
         "Accept": _JSON_MEDIA_TYPE,
         "User-Agent": _DIRECT_USER_AGENT,
     }
+    if invocation_token is not None:
+        headers["Authorization"] = f"Bearer {invocation_token}"
     if oidc_token is not None:
         headers[_DIRECT_OIDC_HEADER] = oidc_token
         headers["Content-Type"] = _JSON_MEDIA_TYPE
@@ -261,7 +269,10 @@ def _direct_provenance_ready(response_body: bytes) -> bool:
     )
 
 
-def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
+def _preflight_direct_function(
+    target: BootstrapFunctionTarget,
+    invocation_token: str | None = None,
+) -> None:
     """Prove source-controlled Function ingress before minting GitHub OIDC."""
 
     connection = _direct_connection(target)
@@ -270,7 +281,7 @@ def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
             "GET",
             "/",
             body=None,
-            headers=_direct_headers(),
+            headers=_direct_headers(invocation_token=invocation_token),
         )
         response = connection.getresponse()
         status = int(response.status)
@@ -299,8 +310,9 @@ def _preflight_direct_function(target: BootstrapFunctionTarget) -> None:
 def _preflight_direct_oidc_ingress(
     target: BootstrapFunctionTarget,
     expected_sha: str,
+    invocation_token: str | None = None,
 ) -> None:
-    """Prove POST plus dedicated OIDC header reaches the handler without a credential."""
+    """Prove POST plus dedicated OIDC header reaches the source-controlled handler."""
 
     body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
@@ -311,7 +323,10 @@ def _preflight_direct_oidc_ingress(
             "POST",
             "/",
             body=body,
-            headers=_direct_headers(oidc_token=_DIRECT_INGRESS_PROBE_TOKEN),
+            headers=_direct_headers(
+                oidc_token=_DIRECT_INGRESS_PROBE_TOKEN,
+                invocation_token=invocation_token,
+            ),
         )
         response = connection.getresponse()
         status = int(response.status)
@@ -337,6 +352,7 @@ def _request_direct_bootstrap_json(
     target: BootstrapFunctionTarget,
     expected_sha: str,
     oidc_token: str,
+    invocation_token: str | None = None,
 ) -> dict[str, Any]:
     body = json.dumps({"expected_sha": expected_sha}, separators=(",", ":")).encode(
         "utf-8"
@@ -347,7 +363,10 @@ def _request_direct_bootstrap_json(
             "POST",
             "/",
             body=body,
-            headers=_direct_headers(oidc_token=oidc_token),
+            headers=_direct_headers(
+                oidc_token=oidc_token,
+                invocation_token=invocation_token,
+            ),
         )
         response = connection.getresponse()
         status = int(response.status)
@@ -378,18 +397,31 @@ def _bootstrap_runtime_dsn_direct(
     target: BootstrapFunctionTarget,
     expected_sha: str,
     oidc_token: str,
+    invocation_token: str | None = None,
 ) -> str:
-    payload = _request_direct_bootstrap_json(target, expected_sha, oidc_token)
+    payload = _request_direct_bootstrap_json(
+        target,
+        expected_sha,
+        oidc_token,
+        invocation_token,
+    )
     return legacy._validate_runtime_payload(payload, expected_sha)
 
 
-def run(expected_sha: str) -> Path:
-    safe_sha = legacy._validated_sha(expected_sha)
-    target = read_bootstrap_origin_handoff()
-    _preflight_direct_function(target)
-    _preflight_direct_oidc_ingress(target, safe_sha)
+def _run_direct_bootstrap(
+    target: BootstrapFunctionTarget,
+    safe_sha: str,
+    invocation_token: str | None,
+) -> Path:
+    _preflight_direct_function(target, invocation_token)
+    _preflight_direct_oidc_ingress(target, safe_sha, invocation_token)
     token = legacy._github_oidc_token()
-    runtime_dsn = _bootstrap_runtime_dsn_direct(target, safe_sha, token)
+    runtime_dsn = _bootstrap_runtime_dsn_direct(
+        target,
+        safe_sha,
+        token,
+        invocation_token,
+    )
     legacy._write_private_file(legacy._output_file(), runtime_dsn)
     _discard_origin_handoff(_origin_handoff_file())
     print(
@@ -397,6 +429,24 @@ def run(expected_sha: str) -> Path:
         "transport=GITHUB_OIDC_DIRECT_NEON_FUNCTION"
     )
     return legacy._output_file()
+
+
+def run(expected_sha: str) -> Path:
+    safe_sha = legacy._validated_sha(expected_sha)
+    target = read_bootstrap_origin_handoff()
+    try:
+        return _run_direct_bootstrap(target, safe_sha, None)
+    except legacy.BootstrapStopped as exc:
+        if exc.code != _DIRECT_PROVIDER_AUTH_REQUIRED:
+            raise
+
+    project_token, project_id = project_invocation_authority_from_env()
+    with function_invocation_credential(
+        project_token,
+        project_id,
+        target.branch_id,
+    ) as invocation_token:
+        return _run_direct_bootstrap(target, safe_sha, invocation_token)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
