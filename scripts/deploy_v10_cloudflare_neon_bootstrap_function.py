@@ -232,25 +232,38 @@ def _exact_branch(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_INVALID"
         )
     payload = _get(
-        f"{_API_PREFIX}/projects/{quote(project_id, safe='')}/branches?limit=100",
+        f"{_API_PREFIX}/projects/{quote(project_id, safe='')}/branches/"
+        f"{quote(target.branch_id, safe='')}",
         token,
         "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID",
     )
-    rows = payload.get("branches")
-    if not isinstance(rows, list):
+    branch: object = payload.get("branch")
+    if branch is None and "branches" in payload:
+        rows = payload.get("branches")
+        if not isinstance(rows, list):
+            raise builds.BootstrapStopped(
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID"
+            )
+        defaults = [
+            row for row in rows if isinstance(row, dict) and row.get("default") is True
+        ]
+        if len(defaults) != 1:
+            raise builds.BootstrapStopped(
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_DEFAULT_BRANCH_NOT_UNIQUE"
+            )
+        branch = defaults[0]
+    elif branch is None:
+        branch = payload
+    if not isinstance(branch, dict):
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID"
         )
-    defaults = [
-        row for row in rows if isinstance(row, dict) and row.get("default") is True
-    ]
-    if len(defaults) != 1:
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_DEFAULT_BRANCH_NOT_UNIQUE"
-        )
+    response_project_id = branch.get("project_id")
     if (
-        defaults[0].get("id") != target.branch_id
-        or defaults[0].get("current_state") != "ready"
+        branch.get("id") != target.branch_id
+        or (response_project_id is not None and response_project_id != project_id)
+        or branch.get("default") is not True
+        or branch.get("current_state") != "ready"
     ):
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_DEFAULT_BRANCH_MISMATCH"
