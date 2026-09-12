@@ -171,7 +171,7 @@ def _probe_once(
         raw = _read_body(response)
     except builds.BootstrapStopped:
         raise
-    except (TimeoutError, OSError, http.client.HTTPException):
+    except (OSError, http.client.HTTPException):
         raise builds.BootstrapStopped(_PROVENANCE_UNAVAILABLE) from None
     finally:
         connection.close()
