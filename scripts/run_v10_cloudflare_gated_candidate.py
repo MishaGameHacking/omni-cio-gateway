@@ -10,11 +10,16 @@ from urllib.parse import quote
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
 from scripts.bootstrap_v10_cloudflare_production_database_direct import (
+    BootstrapFunctionTarget,
     write_bootstrap_origin_handoff,
 )
 from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
+import scripts.deploy_v10_cloudflare_neon_bootstrap_function as function_deployer
 from scripts.deploy_v10_cloudflare_neon_bootstrap_function import (
     deploy_exact_main_bootstrap_function_if_required,
+)
+from scripts.probe_v10_cloudflare_neon_function_provenance_via_staging import (
+    probe_exact_source_via_staging,
 )
 from scripts.probe_v10_cloudflare_staging_runtime_secret import (
     _runtime_secret_present,
@@ -77,6 +82,38 @@ def _candidate_source_branch(branch: str) -> Iterator[None]:
         yield
     finally:
         builds._BRANCH = previous
+
+
+@contextmanager
+def _candidate_provenance_transport(
+    *,
+    staging_origin: str,
+    expected_sha: str,
+    sync_token: str,
+) -> Iterator[None]:
+    """Bind Function provenance to the exact-SHA staging Worker for one CLI run.
+
+    Direct runner-to-Function ingress can fail before the Function runtime. The exact
+    staging Worker already owns bounded same-branch Neon egress and the short-lived
+    custody token, so only the no-secret source digest proof is adapted here. Function
+    deployment state and mutation remain owned by the project-scoped provider API.
+    """
+
+    previous = function_deployer._probe_source_provenance
+
+    def probe(_target: BootstrapFunctionTarget, expected_digest: str) -> bool:
+        return probe_exact_source_via_staging(
+            staging_origin=staging_origin,
+            expected_sha=expected_sha,
+            token=sync_token,
+            expected_digest=expected_digest,
+        )
+
+    function_deployer._probe_source_provenance = probe
+    try:
+        yield
+    finally:
+        function_deployer._probe_source_provenance = previous
 
 
 def _sync_runtime_secret(api: builds.CloudflareApi) -> None:
@@ -253,9 +290,13 @@ def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
                 )
                 if branch == "main":
                     write_bootstrap_origin_handoff(bootstrap_origin)
+                    with _candidate_provenance_transport(
+                        staging_origin=url,
+                        expected_sha=sha,
+                        sync_token=sync_token,
+                    ):
+                        deploy_exact_main_bootstrap_function_if_required(api, sha)
             persist_bootstrap_origin_custody(api, bootstrap_origin)
-            if branch == "main":
-                deploy_exact_main_bootstrap_function_if_required(api, sha)
         except builds.BootstrapStopped as exc:
             primary = exc
 
