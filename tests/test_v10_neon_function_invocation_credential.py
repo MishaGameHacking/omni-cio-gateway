@@ -65,12 +65,24 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             raise RuntimeError("boom")
 
     @staticmethod
-    def _issue_credential() -> invoke.FunctionInvocationCredential:
-        return invoke.issue_function_invocation_credential(
-            _PROJECT_TOKEN,
-            _PROJECT_ID,
-            _BRANCH_ID,
-        )
+    def _issue_credential(
+        *,
+        run_id: str = "",
+        run_attempt: str = "",
+    ) -> invoke.FunctionInvocationCredential:
+        with mock.patch.dict(
+            invoke.os.environ,
+            {
+                "GITHUB_RUN_ID": run_id,
+                "GITHUB_RUN_ATTEMPT": run_attempt,
+            },
+            clear=False,
+        ):
+            return invoke.issue_function_invocation_credential(
+                _PROJECT_TOKEN,
+                _PROJECT_ID,
+                _BRANCH_ID,
+            )
 
     @staticmethod
     def _cleanup_managed_credentials() -> int:
@@ -109,13 +121,8 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
         with (
             mock.patch.object(invoke, "_request", side_effect=request),
             mock.patch.object(builds, "_mask") as mask,
-            mock.patch.dict(
-                invoke.os.environ,
-                {"GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1"},
-                clear=True,
-            ),
         ):
-            credential = self._issue_credential()
+            credential = self._issue_credential(run_id="123", run_attempt="1")
 
         self.assertEqual(credential.token_id, _TOKEN_ID)
         self.assertEqual(credential.api_token, _INVOKE_TOKEN)
