@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import http.client
 import io
 import json
+import os
 from pathlib import Path
 import re
 import ssl
@@ -32,10 +34,9 @@ _SOURCE = _SOURCE_ROOT / "index.mjs"
 _WRAPPER_SOURCE = _SOURCE_ROOT / "provenance_wrapper.mjs"
 _WRAPPER_DIGEST_PLACEHOLDER = b"__OMNI_CIO_CF_D_SOURCE_BUNDLE_SHA256__"
 _PROVENANCE_PATH = "/"
-_PROVENANCE_QUERY = "omni_source_provenance=v1"
-_PROVENANCE_TARGET = f"{_PROVENANCE_PATH}?{_PROVENANCE_QUERY}"
-_PROVENANCE_HEADER = "X-Omni-Source-Provenance"
-_PROVENANCE_HEADER_VALUE = "v1"
+_PROVENANCE_TARGET = _PROVENANCE_PATH
+_READ_API_KEY_ENV = "NEON_API_KEY"
+_DEPLOY_API_KEY_ENV = "NEON_FUNCTION_DEPLOY_API_KEY"
 _PROJECT_NAME = "omni-cio-v10-preview-frankfurt"
 _REGION = "aws-eu-central-1"
 _JSON_MEDIA_TYPE = "application/json"
@@ -61,6 +62,11 @@ _GET_FAILURE_BY_STATUS = {
     403: "API_KEY_INSUFFICIENT",
     404: "TARGET_NOT_FOUND",
 }
+_DEPLOY_FAILURE_BY_STATUS = {
+    401: "WRITE_API_KEY_INVALID",
+    403: "WRITE_API_KEY_INSUFFICIENT",
+    404: "TARGET_NOT_FOUND",
+}
 _SOURCE_PROVENANCE_INVALID = "CLOUDFLARE_CF_D_NEON_FUNCTION_PROVENANCE_INVALID"
 _SOURCE_PROVENANCE_UNAVAILABLE = "CLOUDFLARE_CF_D_NEON_FUNCTION_PROVENANCE_UNAVAILABLE"
 
@@ -70,6 +76,26 @@ def _required_id(name: str) -> str:
     if _ID.fullmatch(value) is None:
         raise builds.BootstrapStopped(f"{name}_INVALID")
     return value
+
+
+def _read_api_key() -> str:
+    token = builds._required_env(_READ_API_KEY_ENV)
+    builds._mask(token)
+    return token
+
+
+def _deploy_api_key(read_token: str) -> str:
+    token = os.environ.get(_DEPLOY_API_KEY_ENV, "").strip()
+    if not token:
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRITE_API_KEY_REQUIRED"
+        )
+    builds._mask(token)
+    if hmac.compare_digest(token.encode("utf-8"), read_token.encode("utf-8")):
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_AUTHORITY_NOT_SEPARATED"
+        )
+    return token
 
 
 def _assert_exact_head(expected_sha: str) -> str:
@@ -419,7 +445,6 @@ def _probe_source_provenance(
             headers={
                 "Accept": _JSON_MEDIA_TYPE,
                 "User-Agent": _USER_AGENT,
-                _PROVENANCE_HEADER: _PROVENANCE_HEADER_VALUE,
             },
         )
         response = connection.getresponse()
@@ -480,7 +505,7 @@ def _deploy(
         content_type=content_type,
     )
     if status not in {200, 201, 202}:
-        suffix = _GET_FAILURE_BY_STATUS.get(status, "DEPLOY_REJECTED")
+        suffix = _DEPLOY_FAILURE_BY_STATUS.get(status, "DEPLOY_REJECTED")
         raise builds.BootstrapStopped(
             f"CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_{suffix}",
             status=status,
@@ -559,27 +584,30 @@ def deploy_exact_main_bootstrap_function(expected_sha: str) -> bool:
     sha = _assert_exact_head(expected_sha)
     target = read_bootstrap_origin_handoff()
     archive, source_digest = _deployment_bundle()
-    token = builds._required_env("NEON_API_KEY")
+    read_token = _read_api_key()
     project_id = _required_id("NEON_PROJECT_ID")
     org_id = _required_id("NEON_ORG_ID")
-    _validate_project(token, project_id, org_id)
-    branch_id = _exact_branch(token, project_id, target)
-    previous_id = _preexisting(_function(token, project_id, branch_id), target)
+    _validate_project(read_token, project_id, org_id)
+    branch_id = _exact_branch(read_token, project_id, target)
+    previous_id = _preexisting(_function(read_token, project_id, branch_id), target)
 
     if _probe_source_provenance(target, source_digest):
-        confirmed_id = _preexisting(_function(token, project_id, branch_id), target)
+        confirmed_id = _preexisting(
+            _function(read_token, project_id, branch_id), target
+        )
         if confirmed_id != previous_id:
             raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
         print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=SKIPPED_EXACT_SOURCE_READY")
         return False
 
-    deployment_id = _deploy(token, project_id, branch_id, sha, archive)
-    _wait(token, project_id, branch_id, previous_id, deployment_id)
+    deploy_token = _deploy_api_key(read_token)
+    deployment_id = _deploy(deploy_token, project_id, branch_id, sha, archive)
+    _wait(read_token, project_id, branch_id, previous_id, deployment_id)
     if not _probe_source_provenance(target, source_digest):
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROVENANCE_MISMATCH"
         )
-    confirmed_id = _preexisting(_function(token, project_id, branch_id), target)
+    confirmed_id = _preexisting(_function(read_token, project_id, branch_id), target)
     if confirmed_id != deployment_id:
         raise builds.BootstrapStopped("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_RACE")
     print("CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=EXACT_MAIN_READY")

@@ -93,6 +93,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertNotIn("--origin", section)
         for forbidden in (
             "NEON_API_KEY",
+            "NEON_FUNCTION_DEPLOY_API_KEY",
             "NEON_ORG_ID",
             "NEON_PROJECT_ID",
             NEON_PROJECT_AUTHORITY_PROBE,
@@ -100,6 +101,22 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, section)
+
+    def test_function_deploy_write_authority_is_scoped_to_candidate_step(self) -> None:
+        source = self._read(PRODUCTION_WORKFLOW)
+        start = source.index(
+            "      - name: Rehearse exact accepted main on isolated staging "
+            "Worker and Container"
+        )
+        end = source.index("\n      - name:", start + 1)
+        candidate = source[start:end]
+        binding = (
+            "NEON_FUNCTION_DEPLOY_API_KEY: "
+            "${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
+        )
+        self.assertIn(binding, candidate)
+        self.assertEqual(source.count(binding), 1)
+        self.assertNotIn("echo $NEON_FUNCTION_DEPLOY_API_KEY", source)
 
     def test_provider_readiness_cli_defers_neon_until_bootstrap_is_needed(self) -> None:
         output = StringIO()
