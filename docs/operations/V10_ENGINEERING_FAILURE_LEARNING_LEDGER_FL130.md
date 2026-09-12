@@ -9,17 +9,17 @@
 
 ## Discovery evidence
 
-During the pre-merge adjacent-failure review of PR #496, the current official Neon credential API contract was checked directly. The provider documents branch credential issuance as a non-idempotent `POST` and explicitly warns that a request may commit even when the client receives no response. The same API exposes a read-only credential metadata list and an idempotent revoke endpoint.
+During the pre-merge adjacent-failure review of PR #496, the current official Neon credential API contract was checked directly. The provider documents branch credential issuance as a non-idempotent `POST` and explicitly warns that a request may commit even when the client receives no response. The same API exposes a read-only credential metadata list and a credential revoke endpoint that is explicitly documented as idempotent for this resource.
 
-The first PR implementation correctly revoked every credential whose successful issuance returned a usable `token_id`, but an ambiguous transport failure during issuance could leave a successfully created credential unknown to the caller. That contradicted the PR's own ephemeral/no-persistence/revoke-after-use contract even though the normal success/failure context-manager path was correct.
+The first PR implementation correctly revoked every credential whose successful issuance returned a usable `token_id`, but an ambiguous transport failure during issuance could leave a successfully created credential unknown to the caller. A second adjacent case exists on revocation: even though this credential-specific DELETE is provider-documented as idempotent, a lost response still leaves the caller unable to prove whether the first revoke reached the provider unless state is reconciled. Either gap would contradict the PR's ephemeral/no-persistence/revoke-after-use contract.
 
 No production secret, credential identifier, Function URL, account identifier or private provider payload is recorded here.
 
 ## Root cause
 
-The initial implementation treated credential issuance like an ordinary request/response operation. It did not distinguish a definite provider rejection from an ambiguous non-idempotent create where server commit and client observation can diverge.
+The initial implementation treated credential issuance and revocation like ordinary request/response operations. It did not distinguish a definite provider rejection from an ambiguous create where server commit and client observation can diverge, and it did not explicitly reconcile a lost revoke response.
 
-The defect was in credential custody, not in the Neon Function ingress fallback itself. Retrying the same `POST` would be unsafe because it could create another credential.
+The defect was in credential custody, not in the Neon Function ingress fallback itself. Retrying the create `POST` would be unsafe because it could create another credential. Credential-specific revoke may be repeated only because that exact Neon endpoint is explicitly idempotent.
 
 ## Blast radius and adjacent review
 
@@ -30,6 +30,7 @@ The review covered the complete lifecycle introduced by PR #496:
 - exact-scope/branch/principal validation;
 - Function ingress use;
 - normal and exceptional revocation;
+- ambiguous create and ambiguous revoke outcomes;
 - provider list/revoke semantics;
 - current and subsequent workflow attempts.
 
@@ -41,7 +42,9 @@ The credential helper now owns a deterministic managed-name namespace and reconc
 
 Issuance is attempted exactly once. Definite 401/403/404 provider rejection is returned directly. For any failure where create may have committed — transport loss, malformed/oversized response, redirect or unclassified create response — a `finally` reconciliation lists the branch metadata and revokes any exact managed credential before propagating the original failure. The create request is never blindly retried.
 
-A later release attempt also performs the same reconciliation before minting its own credential, so a stale exact managed credential from a prior ambiguous attempt is removed before any new authority is issued.
+Normal credential exit revokes the exact returned token. If that revoke does not produce a trusted terminal result, the helper immediately reconciles the managed namespace through the read-only list endpoint and repeats only the credential-specific idempotent revoke for exact managed entries. The release remains failed even when reconciliation succeeds; cleanup is not reinterpreted as release success. If reconciliation itself fails, that failure also remains blocking.
+
+A later release attempt performs the same namespace reconciliation before minting its own credential, so a stale exact managed credential from a prior ambiguous attempt is removed before any new authority is issued.
 
 ## Regression guard
 
@@ -50,14 +53,15 @@ Focused tests require:
 - exact `functions:invoke` scope and immediate token masking;
 - stale exact managed credentials are revoked before a new create;
 - managed-name scope drift fails closed without automatic deletion;
-- ambiguous create is reconciled by list + idempotent revoke and the release still fails rather than treating recovery as success;
+- ambiguous create is reconciled by list + credential-specific idempotent revoke and the release still fails rather than treating recovery as success;
 - normal-use and exceptional-use credentials are revoked;
-- revoke failure remains blocking;
+- ambiguous revoke is reconciled and remains a failed release;
+- reconciliation failure remains blocking and preserves exception context;
 - explicit provider authorization failure remains classified and is not converted into a retry loop.
 
 ## Prevention law
 
-For every new provider mutation, classify the HTTP operation as idempotent or non-idempotent before publishing the checkpoint. A non-idempotent mutation whose authority object can outlive the process must have deterministic custody reconciliation for the lost-response case; blind retry is forbidden.
+For every new provider mutation, classify the HTTP operation and the exact endpoint's idempotency contract before publishing the checkpoint. A non-idempotent mutation whose authority object can outlive the process must have deterministic custody reconciliation for the lost-response case; blind retry is forbidden. An operation may be repeated for reconciliation only when that exact provider endpoint is explicitly documented as idempotent.
 
 ## Protected invariants
 
