@@ -13,9 +13,9 @@ def _reuse_exact_source(expected_sha: str) -> bool:
 
     Bootstrap-origin custody already binds the target branch/cell to the exact staging
     release. When Neon rejects unauthenticated Function ingress, the only additional
-    capability required to prove source reuse is a short-lived branch-scoped
-    ``functions:invoke`` credential. Project/branch/Function metadata reads remain part
-    of the mutation/convergence path and are deliberately not predecessors of this
+    capability required to prove source reuse is the pre-provisioned branch-scoped
+    ``functions:invoke`` secret. Project/branch/Function metadata reads remain part of
+    the mutation/convergence path and are deliberately not predecessors of this
     read-only exact-source proof.
     """
 

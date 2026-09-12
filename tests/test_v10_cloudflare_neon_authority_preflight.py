@@ -19,6 +19,9 @@ OIDC_PRODUCTION_BOOTSTRAP = (
 FUNCTION_DEPLOY_BINDING = (
     "NEON_FUNCTION_DEPLOY_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
 )
+FUNCTION_INVOKE_BINDING = (
+    "NEON_FUNCTION_INVOKE_API_TOKEN: ${{ secrets.NEON_FUNCTION_INVOKE_API_TOKEN }}"
+)
 FUNCTION_PROJECT_BINDING = "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}"
 RECOVERY_ALIAS_BINDING = "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
 
@@ -88,7 +91,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             source[provider_probe:staging_provision],
         )
 
-    def test_production_database_bootstrap_uses_inner_oidc_and_bounded_invoke_authority(
+    def test_production_database_bootstrap_uses_inner_oidc_and_invoke_only_outer_secret(
         self,
     ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
@@ -99,8 +102,9 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         )
         self.assertIn(OIDC_PRODUCTION_BOOTSTRAP, section)
         self.assertIn("omni-cio-v10-cloudflare-bootstrap-origin.txt", section)
-        self.assertIn(FUNCTION_DEPLOY_BINDING, section)
-        self.assertIn(FUNCTION_PROJECT_BINDING, section)
+        self.assertIn(FUNCTION_INVOKE_BINDING, section)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, section)
+        self.assertNotIn(FUNCTION_PROJECT_BINDING, section)
         self.assertNotIn("STAGING_ORIGIN", section)
         self.assertNotIn("--origin", section)
         self.assertNotIn(RECOVERY_ALIAS_BINDING, section)
@@ -110,7 +114,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertNotIn("vars.NEON_", section)
         self.assertNotIn("echo $NEON", section)
 
-    def test_function_project_authority_is_scoped_to_two_required_steps(self) -> None:
+    def test_function_management_and_invocation_authority_are_separated(self) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
         candidate = self._workflow_step(
             source,
@@ -124,12 +128,16 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertIn(FUNCTION_DEPLOY_BINDING, candidate)
         self.assertIn(FUNCTION_PROJECT_BINDING, candidate)
         self.assertIn(RECOVERY_ALIAS_BINDING, candidate)
-        self.assertIn(FUNCTION_DEPLOY_BINDING, production_bootstrap)
-        self.assertIn(FUNCTION_PROJECT_BINDING, production_bootstrap)
+        self.assertIn(FUNCTION_INVOKE_BINDING, candidate)
+        self.assertIn(FUNCTION_INVOKE_BINDING, production_bootstrap)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, production_bootstrap)
+        self.assertNotIn(FUNCTION_PROJECT_BINDING, production_bootstrap)
         self.assertNotIn(RECOVERY_ALIAS_BINDING, production_bootstrap)
-        self.assertEqual(source.count(FUNCTION_DEPLOY_BINDING), 2)
+        self.assertEqual(source.count(FUNCTION_DEPLOY_BINDING), 1)
+        self.assertEqual(source.count(FUNCTION_INVOKE_BINDING), 2)
         self.assertEqual(source.count(RECOVERY_ALIAS_BINDING), 1)
         self.assertNotIn("echo $NEON_FUNCTION_DEPLOY_API_KEY", source)
+        self.assertNotIn("echo $NEON_FUNCTION_INVOKE_API_TOKEN", source)
 
     def test_provider_readiness_cli_defers_neon_until_bootstrap_is_needed(self) -> None:
         output = StringIO()

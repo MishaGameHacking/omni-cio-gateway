@@ -145,6 +145,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}
           NEON_FUNCTION_DEPLOY_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}
+          NEON_FUNCTION_INVOKE_API_TOKEN: ${{ secrets.NEON_FUNCTION_INVOKE_API_TOKEN }}
           NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
         run: |
@@ -257,8 +258,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          NEON_FUNCTION_DEPLOY_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}
-          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_FUNCTION_INVOKE_API_TOKEN: ${{ secrets.NEON_FUNCTION_INVOKE_API_TOKEN }}
         run: |
           set -euo pipefail
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-production-dsn.txt"
