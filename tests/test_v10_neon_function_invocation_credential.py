@@ -89,7 +89,9 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             _TOKEN_ID,
         )
 
-    def test_issue_requests_only_function_invoke_scope_and_masks_all_secrets(self) -> None:
+    def test_issue_requests_only_function_invoke_scope_and_masks_all_secrets(
+        self,
+    ) -> None:
         observed: dict[str, object] = {}
 
         def request(
@@ -154,7 +156,9 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             ):
                 self._issue_credential()
 
-    def test_invalid_created_response_masks_secrets_and_revokes_known_token(self) -> None:
+    def test_invalid_created_response_masks_secrets_and_revokes_known_token(
+        self,
+    ) -> None:
         calls: list[str] = []
 
         def request(
