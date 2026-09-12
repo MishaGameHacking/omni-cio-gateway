@@ -283,6 +283,28 @@ def revoke_function_invocation_credential(
         raise builds.BootstrapStopped(f"{_FAILURE_PREFIX}{suffix}", status=status)
 
 
+def _revoke_with_reconciliation(
+    project_token: str,
+    project_id: str,
+    branch_id: str,
+    token_id: str,
+) -> None:
+    try:
+        revoke_function_invocation_credential(
+            project_token,
+            project_id,
+            branch_id,
+            token_id,
+        )
+    except builds.BootstrapStopped as primary:
+        cleanup_managed_function_invocation_credentials(
+            project_token,
+            project_id,
+            branch_id,
+        )
+        raise primary
+
+
 @contextmanager
 def function_invocation_credential(
     project_token: str,
@@ -297,7 +319,7 @@ def function_invocation_credential(
     try:
         yield credential.api_token
     finally:
-        revoke_function_invocation_credential(
+        _revoke_with_reconciliation(
             project_token,
             project_id,
             branch_id,
