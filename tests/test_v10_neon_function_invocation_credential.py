@@ -16,6 +16,15 @@ _TOKEN_ID = "nak_live_0123456789abcdef0123456789abcdef"
 
 
 class NeonFunctionInvocationCredentialTests(unittest.TestCase):
+    @staticmethod
+    def _raise_inside_invocation_context() -> None:
+        with invoke.function_invocation_credential(
+            _PROJECT_TOKEN,
+            _PROJECT_ID,
+            _BRANCH_ID,
+        ):
+            raise RuntimeError("boom")
+
     def test_issue_requests_only_function_invoke_scope_and_masks_token(self) -> None:
         response = json.dumps(
             {
@@ -155,20 +164,40 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
                 invoke,
                 "revoke_function_invocation_credential",
             ) as revoke,
-            self.assertRaisesRegex(RuntimeError, "boom"),
         ):
-            with invoke.function_invocation_credential(
-                _PROJECT_TOKEN,
-                _PROJECT_ID,
-                _BRANCH_ID,
-            ):
-                raise RuntimeError("boom")
+            with self.assertRaisesRegex(RuntimeError, "boom"):
+                self._raise_inside_invocation_context()
         revoke.assert_called_once_with(
             _PROJECT_TOKEN,
             _PROJECT_ID,
             _BRANCH_ID,
             _TOKEN_ID,
         )
+
+    def test_context_revoke_failure_is_fail_closed(self) -> None:
+        credential = invoke.FunctionInvocationCredential(
+            token_id=_TOKEN_ID,
+            api_token=_INVOKE_TOKEN,
+        )
+        cleanup = builds.BootstrapStopped(
+            "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_REVOKE_REJECTED"
+        )
+        with (
+            mock.patch.object(
+                invoke,
+                "issue_function_invocation_credential",
+                return_value=credential,
+            ),
+            mock.patch.object(
+                invoke,
+                "revoke_function_invocation_credential",
+                side_effect=cleanup,
+            ),
+        ):
+            with self.assertRaises(builds.BootstrapStopped) as raised:
+                self._raise_inside_invocation_context()
+        self.assertIs(raised.exception, cleanup)
+        self.assertIsInstance(raised.exception.__context__, RuntimeError)
 
     def test_revoke_is_idempotent_for_missing_provider_credential(self) -> None:
         for status in (204, 404):
