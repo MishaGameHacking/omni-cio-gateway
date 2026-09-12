@@ -85,6 +85,7 @@ class CloudflareNeonExactSourceReuseTests(unittest.TestCase):
             "CLOUDFLARE_PRODUCTION_SECRETS_INVALID",
             status=403,
         )
+        api = self._api()
         with (
             mock.patch(
                 "scripts.manage_v10_cloudflare_production._runtime_secret_present",
@@ -97,7 +98,7 @@ class CloudflareNeonExactSourceReuseTests(unittest.TestCase):
                 "CLOUDFLARE_PRODUCTION_SECRETS_INVALID",
             ):
                 reuse.deploy_exact_main_bootstrap_function_if_required(
-                    self._api(),
+                    api,
                     _EXPECTED_SHA,
                 )
 
