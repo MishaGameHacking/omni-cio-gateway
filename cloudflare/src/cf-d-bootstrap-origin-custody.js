@@ -2,10 +2,16 @@ import {
   deriveCfDNeonBootstrapOrigin,
   sanitizedCfDDerivationFailureCode,
 } from "./cf-d-neon-bootstrap-egress.js";
+import {
+  fetchCfDNeonFunctionProvenance,
+  sanitizedCfDNeonFunctionProvenanceFailureCode,
+} from "./cf-d-neon-function-provenance.js";
 import { hardenedJson } from "./hardened-response.js";
 
 export const CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH =
   "/api/internal/v10/cf-d/bootstrap-origin-custody";
+export const CF_D_FUNCTION_PROVENANCE_CUSTODY_PATH =
+  "/api/internal/v10/cf-d/function-source-provenance-custody";
 export const CF_D_ORIGIN_SYNC_TOKEN_BINDING =
   "OMNI_V10_CF_D_ORIGIN_SYNC_TOKEN";
 
@@ -50,12 +56,16 @@ function authorizedRequest(request, bindings, expectedSourceSha) {
   );
 }
 
+function unavailableOutsideStaging(bindings) {
+  return bindings?.[RUNTIME_ROLE_BINDING] !== EXPECTED_STAGING_ROLE;
+}
+
 export async function handleCfDBootstrapOriginCustody(
   request,
   bindings,
   expectedSourceSha,
 ) {
-  if (bindings?.[RUNTIME_ROLE_BINDING] !== EXPECTED_STAGING_ROLE) {
+  if (unavailableOutsideStaging(bindings)) {
     return hardenedJson({ detail: "NOT_FOUND" }, 404);
   }
   if (!authorizedRequest(request, bindings, expectedSourceSha)) {
@@ -77,6 +87,39 @@ export async function handleCfDBootstrapOriginCustody(
   } catch (error) {
     return hardenedJson(
       { detail: sanitizedCfDDerivationFailureCode(error) },
+      502,
+    );
+  }
+}
+
+export async function handleCfDFunctionProvenanceCustody(
+  request,
+  bindings,
+  expectedSourceSha,
+) {
+  if (unavailableOutsideStaging(bindings)) {
+    return hardenedJson({ detail: "NOT_FOUND" }, 404);
+  }
+  if (!authorizedRequest(request, bindings, expectedSourceSha)) {
+    return hardenedJson(
+      { detail: "CLOUDFLARE_CF_D_ORIGIN_SYNC_UNAUTHORIZED" },
+      403,
+    );
+  }
+  try {
+    const sourceDigest = await fetchCfDNeonFunctionProvenance(bindings);
+    return hardenedJson(
+      {
+        status: "READY",
+        source_sha: expectedSourceSha,
+        source_state: sourceDigest === null ? "LEGACY_STALE" : "DIGEST",
+        source_sha256: sourceDigest,
+      },
+      200,
+    );
+  } catch (error) {
+    return hardenedJson(
+      { detail: sanitizedCfDNeonFunctionProvenanceFailureCode(error) },
       502,
     );
   }
