@@ -2,7 +2,9 @@ import { Container, getRandom } from "@cloudflare/containers";
 import { env as runtimeEnv } from "cloudflare:workers";
 import {
   CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH,
+  CF_D_FUNCTION_PROVENANCE_CUSTODY_PATH,
   handleCfDBootstrapOriginCustody,
+  handleCfDFunctionProvenanceCustody,
 } from "./cf-d-bootstrap-origin-custody.js";
 import {
   CF_D_NEON_BOOTSTRAP_EGRESS_HOST,
@@ -192,6 +194,9 @@ export default {
     }
     if (url.pathname === CF_D_BOOTSTRAP_ORIGIN_CUSTODY_PATH) {
       return handleCfDBootstrapOriginCustody(request, env, SOURCE_SHA);
+    }
+    if (url.pathname === CF_D_FUNCTION_PROVENANCE_CUSTODY_PATH) {
+      return handleCfDFunctionProvenanceCustody(request, env, SOURCE_SHA);
     }
     if (url.pathname === CF_D_PRODUCTION_DATABASE_BOOTSTRAP_PATH) {
       return proxyCfDProductionDatabaseBootstrap(request, env, url);
