@@ -200,18 +200,7 @@ def function_invocation_credential(
     )
     try:
         yield credential.api_token
-    except BaseException as primary:
-        try:
-            revoke_function_invocation_credential(
-                project_token,
-                project_id,
-                branch_id,
-                credential.token_id,
-            )
-        except builds.BootstrapStopped as cleanup:
-            raise cleanup from primary
-        raise
-    else:
+    finally:
         revoke_function_invocation_credential(
             project_token,
             project_id,
