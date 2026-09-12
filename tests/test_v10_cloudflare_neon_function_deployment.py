@@ -537,16 +537,22 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             )
             deploy.assert_not_called()
 
-    def test_exact_main_candidate_deploys_after_origin_custody(self) -> None:
+    def test_exact_main_candidate_converges_function_before_persisting_origin(
+        self,
+    ) -> None:
         source = _CANDIDATE_RUNNER.read_text(encoding="utf-8")
-        persist = source.index(
-            "persist_bootstrap_origin_custody(api, bootstrap_origin)"
-        )
+        custody = source.index("bootstrap_origin = fetch_bootstrap_origin_custody(")
+        adapter = source.index("with _candidate_provenance_transport(")
         deploy = source.index(
             "deploy_exact_main_bootstrap_function_if_required(api, sha)"
         )
-        self.assertLess(persist, deploy)
-        self.assertIn('if branch == "main":', source[persist:deploy])
+        persist = source.index(
+            "persist_bootstrap_origin_custody(api, bootstrap_origin)"
+        )
+        self.assertLess(custody, adapter)
+        self.assertLess(adapter, deploy)
+        self.assertLess(deploy, persist)
+        self.assertIn('if branch == "main":', source[custody:deploy])
 
     def test_release_contract_requires_provenance_before_project_management(
         self,
