@@ -21,6 +21,7 @@ _FUNCTION_INVOKE_SCOPE = "functions:invoke"
 _PROJECT_AUTHORITY_ENV = "NEON_FUNCTION_DEPLOY_API_KEY"
 _PROJECT_ID_ENV = "NEON_PROJECT_ID"
 _MANAGED_NAME_PREFIX = "omni-cio-cf-d-release-"
+_SENSITIVE_CREATE_RESPONSE_FIELDS = ("api_token", "s3_secret_access_key")
 _ID = re.compile(r"^[a-z0-9-]{1,60}$")
 _TOKEN_ID = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 _FAILURE_PREFIX = "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_"
@@ -65,7 +66,7 @@ def _request(
     headers = {
         "Accept": _JSON_MEDIA_TYPE,
         "Authorization": f"Bearer {project_token}",
-        "User-Agent": "omni-cio-v10-cf-d-neon-function-invoke-credential/2",
+        "User-Agent": "omni-cio-v10-cf-d-neon-function-invoke-credential/3",
     }
     if body is not None:
         headers["Content-Type"] = _JSON_MEDIA_TYPE
@@ -192,26 +193,52 @@ def cleanup_managed_function_invocation_credentials(
     return len(token_ids)
 
 
-def _created_credential(raw: bytes, branch_id: str) -> FunctionInvocationCredential:
+def _created_credential_payload(raw: bytes) -> dict[str, Any]:
     payload = _json_object(raw)
     credential = payload.get("credential", payload)
     if not isinstance(credential, dict):
         raise builds.BootstrapStopped(f"{_FAILURE_PREFIX}RESPONSE_INVALID")
+    for field in _SENSITIVE_CREATE_RESPONSE_FIELDS:
+        value = credential.get(field)
+        if isinstance(value, str) and value:
+            builds._mask(value)
+    return credential
+
+
+def _created_token_id(credential: dict[str, Any]) -> str | None:
     token_id = credential.get("token_id")
+    if isinstance(token_id, str) and _TOKEN_ID.fullmatch(token_id) is not None:
+        return token_id
+    return None
+
+
+def _secret_value_is_valid(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 16 <= len(value) <= 4096
+        and value.isascii()
+        and not any(character.isspace() for character in value)
+    )
+
+
+def _created_credential(
+    credential: dict[str, Any],
+    branch_id: str,
+    expected_name: str,
+) -> FunctionInvocationCredential:
+    token_id = _created_token_id(credential)
     api_token = credential.get("api_token")
-    scopes = credential.get("scopes")
+    s3_secret_access_key = credential.get("s3_secret_access_key")
     if (
-        not isinstance(token_id, str)
-        or _TOKEN_ID.fullmatch(token_id) is None
-        or not isinstance(api_token, str)
-        or not (16 <= len(api_token) <= 4096)
-        or not api_token.isascii()
-        or any(character.isspace() for character in api_token)
-        or scopes != [_FUNCTION_INVOKE_SCOPE]
+        token_id is None
+        or not _secret_value_is_valid(api_token)
+        or not _secret_value_is_valid(s3_secret_access_key)
+        or credential.get("name") != expected_name
+        or credential.get("scopes") != [_FUNCTION_INVOKE_SCOPE]
         or credential.get("branch_id") != branch_id
     ):
         raise builds.BootstrapStopped(f"{_FAILURE_PREFIX}RESPONSE_INVALID")
-    builds._mask(api_token)
+    assert isinstance(api_token, str)
     return FunctionInvocationCredential(token_id=token_id, api_token=api_token)
 
 
@@ -225,9 +252,10 @@ def issue_function_invocation_credential(
         project_id,
         branch_id,
     )
+    credential_name = _credential_name()
     body = json.dumps(
         {
-            "name": _credential_name(),
+            "name": credential_name,
             "scopes": [_FUNCTION_INVOKE_SCOPE],
             "principal_type": "user",
         },
@@ -253,7 +281,23 @@ def issue_function_invocation_credential(
                 f"{_FAILURE_PREFIX}{suffix}",
                 status=status,
             )
-        credential = _created_credential(raw, branch_id)
+        created_payload = _created_credential_payload(raw)
+        created_token_id = _created_token_id(created_payload)
+        try:
+            credential = _created_credential(
+                created_payload,
+                branch_id,
+                credential_name,
+            )
+        except builds.BootstrapStopped:
+            if created_token_id is not None:
+                revoke_function_invocation_credential(
+                    project_token,
+                    project_id,
+                    branch_id,
+                    created_token_id,
+                )
+            raise
         cleanup_after_failure = False
         return credential
     finally:

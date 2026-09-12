@@ -12,7 +12,9 @@ _PROJECT_ID = "billowing-smoke-00000000"
 _BRANCH_ID = "br-example1234"
 _PROJECT_TOKEN = "synthetic-project-authority"
 _INVOKE_TOKEN = "synthetic-invoke-authority"
+_S3_SECRET = "nsk_live_" + "a" * 64
 _TOKEN_ID = "nak_live_0123456789abcdef0123456789abcdef"
+_MANUAL_NAME = "omni-cio-cf-d-release-manual"
 
 
 def _empty_list_response() -> bytes:
@@ -30,15 +32,23 @@ def _managed_meta(*, scopes: list[str] | None = None) -> dict[str, object]:
     }
 
 
-def _create_response(*, branch_id: str = _BRANCH_ID) -> bytes:
+def _create_response(
+    *,
+    branch_id: str = _BRANCH_ID,
+    name: str = _MANUAL_NAME,
+    scopes: list[str] | None = None,
+    s3_secret_access_key: str = _S3_SECRET,
+) -> bytes:
     return json.dumps(
         {
             "token_id": _TOKEN_ID,
-            "name": "omni-cio-cf-d-release-123-1",
+            "token_id_short": "0123456789ab",
+            "name": name,
             "api_token": _INVOKE_TOKEN,
-            "scopes": ["functions:invoke"],
+            "s3_secret_access_key": s3_secret_access_key,
+            "scopes": scopes if scopes is not None else ["functions:invoke"],
             "branch_id": branch_id,
-            "principal_type": "user",
+            "created_at": "2026-09-12T00:00:00Z",
         },
         separators=(",", ":"),
     ).encode("utf-8")
@@ -79,7 +89,7 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             _TOKEN_ID,
         )
 
-    def test_issue_requests_only_function_invoke_scope_and_masks_token(self) -> None:
+    def test_issue_requests_only_function_invoke_scope_and_masks_all_secrets(self) -> None:
         observed: dict[str, object] = {}
 
         def request(
@@ -92,7 +102,7 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
             if method == "GET":
                 return 200, _empty_list_response()
             observed.update(method=method, path=path, token=token, body=body)
-            return 201, _create_response()
+            return 201, _create_response(name="omni-cio-cf-d-release-123-1")
 
         with (
             mock.patch.object(invoke, "_request", side_effect=request),
@@ -114,19 +124,16 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
         self.assertEqual(payload["name"], "omni-cio-cf-d-release-123-1")
         self.assertEqual(payload["scopes"], ["functions:invoke"])
         self.assertEqual(payload["principal_type"], "user")
-        mask.assert_called_once_with(_INVOKE_TOKEN)
+        self.assertEqual(
+            mask.call_args_list,
+            [mock.call(_INVOKE_TOKEN), mock.call(_S3_SECRET)],
+        )
 
-    def test_issue_rejects_broader_or_mismatched_credential(self) -> None:
+    def test_issue_rejects_broader_mismatched_or_unlabeled_credential(self) -> None:
         payloads = (
-            json.dumps(
-                {
-                    "token_id": _TOKEN_ID,
-                    "api_token": _INVOKE_TOKEN,
-                    "scopes": ["functions:invoke", "storage:read"],
-                    "branch_id": _BRANCH_ID,
-                }
-            ).encode("utf-8"),
+            _create_response(scopes=["functions:invoke", "storage:read"]),
             _create_response(branch_id="br-other1234"),
+            _create_response(name="provider-mutated-name"),
         )
         for payload in payloads:
             with (
@@ -136,6 +143,7 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
                     side_effect=[
                         (200, _empty_list_response()),
                         (201, payload),
+                        (204, b""),
                         (200, _empty_list_response()),
                     ],
                 ),
@@ -145,6 +153,44 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
                 ),
             ):
                 self._issue_credential()
+
+    def test_invalid_created_response_masks_secrets_and_revokes_known_token(self) -> None:
+        calls: list[str] = []
+
+        def request(
+            method: str,
+            path: str,
+            token: str,
+            *,
+            body: bytes | None = None,
+        ) -> tuple[int, bytes]:
+            del path, token, body
+            calls.append(method)
+            if calls == ["GET"]:
+                return 200, _empty_list_response()
+            if calls == ["GET", "POST"]:
+                return 201, _create_response(name="provider-mutated-name")
+            if method == "DELETE":
+                return 204, b""
+            if method == "GET":
+                return 200, _empty_list_response()
+            raise AssertionError(method)
+
+        with (
+            mock.patch.object(invoke, "_request", side_effect=request),
+            mock.patch.object(builds, "_mask") as mask,
+            self.assertRaisesRegex(
+                builds.BootstrapStopped,
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_INVOKE_CREDENTIAL_RESPONSE_INVALID",
+            ),
+        ):
+            self._issue_credential()
+
+        self.assertEqual(calls, ["GET", "POST", "DELETE", "GET"])
+        self.assertEqual(
+            mask.call_args_list,
+            [mock.call(_INVOKE_TOKEN), mock.call(_S3_SECRET)],
+        )
 
     def test_issue_403_is_explicit_project_authority_failure(self) -> None:
         with (
