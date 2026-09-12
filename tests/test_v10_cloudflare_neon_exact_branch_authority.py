@@ -48,21 +48,42 @@ class CloudflareNeonExactBranchAuthorityTests(unittest.TestCase):
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID",
         )
 
-    def test_exact_branch_rejects_provider_project_mismatch(self) -> None:
+    def test_exact_branch_rejects_collection_shaped_response(self) -> None:
         payload = {
-            "branch": {
-                "id": _BRANCH_ID,
-                "project_id": "billowing-smoke-other0000",
-                "default": True,
-                "current_state": "ready",
-            }
+            "branches": [
+                {
+                    "id": _BRANCH_ID,
+                    "project_id": _PROJECT_ID,
+                    "default": True,
+                    "current_state": "ready",
+                }
+            ]
         }
         with mock.patch.object(deployer, "_get", return_value=payload):
             with self.assertRaisesRegex(
                 builds.BootstrapStopped,
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_DEFAULT_BRANCH_MISMATCH",
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID",
             ):
                 deployer._exact_branch("synthetic-provider-fixture", _PROJECT_ID, _TARGET)
+
+    def test_exact_branch_rejects_provider_project_mismatch_or_omission(self) -> None:
+        for provider_project_id in ("billowing-smoke-other0000", None):
+            payload = {
+                "branch": {
+                    "id": _BRANCH_ID,
+                    "project_id": provider_project_id,
+                    "default": True,
+                    "current_state": "ready",
+                }
+            }
+            with mock.patch.object(deployer, "_get", return_value=payload):
+                with self.assertRaisesRegex(
+                    builds.BootstrapStopped,
+                    "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_DEFAULT_BRANCH_MISMATCH",
+                ):
+                    deployer._exact_branch(
+                        "synthetic-provider-fixture", _PROJECT_ID, _TARGET
+                    )
 
     def test_exact_branch_rejects_non_default_or_non_ready(self) -> None:
         for default, state in ((False, "ready"), (True, "suspended")):
