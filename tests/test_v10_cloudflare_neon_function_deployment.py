@@ -341,9 +341,12 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
 
     def test_target_branch_requires_exact_default_handoff_branch(self) -> None:
         payload = {
-            "branches": [
-                {"id": _BRANCH_ID, "default": True, "current_state": "ready"}
-            ]
+            "branch": {
+                "id": _BRANCH_ID,
+                "project_id": _PROJECT_ID,
+                "default": True,
+                "current_state": "ready",
+            }
         }
         with mock.patch.object(deployer, "_get", return_value=payload):
             self.assertEqual(
@@ -352,13 +355,12 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             )
 
         wrong = {
-            "branches": [
-                {
-                    "id": "br-other1234",
-                    "default": True,
-                    "current_state": "ready",
-                }
-            ]
+            "branch": {
+                "id": "br-other1234",
+                "project_id": _PROJECT_ID,
+                "default": True,
+                "current_state": "ready",
+            }
         }
         with mock.patch.object(deployer, "_get", return_value=wrong):
             with self.assertRaisesRegex(
