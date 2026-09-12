@@ -12,7 +12,7 @@ _PROJECT_ID = "billowing-smoke-00000000"
 _BRANCH_ID = "br-example1234"
 _PROJECT_TOKEN = "synthetic-project-authority"
 _INVOKE_TOKEN = "synthetic-invoke-authority"
-_S3_SECRET = "nsk_live_" + "a" * 64
+_S3_ACCESS_FIXTURE = "synthetic-object-storage-access-value"
 _TOKEN_ID = "nak_live_0123456789abcdef0123456789abcdef"
 _MANUAL_NAME = "omni-cio-cf-d-release-manual"
 
@@ -37,7 +37,7 @@ def _create_response(
     branch_id: str = _BRANCH_ID,
     name: str = _MANUAL_NAME,
     scopes: list[str] | None = None,
-    s3_secret_access_key: str = _S3_SECRET,
+    s3_secret_access_key: str = _S3_ACCESS_FIXTURE,
 ) -> bytes:
     return json.dumps(
         {
@@ -135,7 +135,7 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
         self.assertEqual(payload["principal_type"], "user")
         self.assertEqual(
             mask.call_args_list,
-            [mock.call(_INVOKE_TOKEN), mock.call(_S3_SECRET)],
+            [mock.call(_INVOKE_TOKEN), mock.call(_S3_ACCESS_FIXTURE)],
         )
 
     def test_issue_rejects_broader_mismatched_or_unlabeled_credential(self) -> None:
@@ -200,7 +200,7 @@ class NeonFunctionInvocationCredentialTests(unittest.TestCase):
         self.assertEqual(calls, ["GET", "POST", "DELETE", "GET"])
         self.assertEqual(
             mask.call_args_list,
-            [mock.call(_INVOKE_TOKEN), mock.call(_S3_SECRET)],
+            [mock.call(_INVOKE_TOKEN), mock.call(_S3_ACCESS_FIXTURE)],
         )
 
     def test_issue_403_is_explicit_project_authority_failure(self) -> None:
