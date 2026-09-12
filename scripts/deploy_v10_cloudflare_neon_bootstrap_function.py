@@ -237,31 +237,14 @@ def _exact_branch(
         token,
         "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID",
     )
-    branch: object = payload.get("branch")
-    if branch is None and "branches" in payload:
-        rows = payload.get("branches")
-        if not isinstance(rows, list):
-            raise builds.BootstrapStopped(
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID"
-            )
-        defaults = [
-            row for row in rows if isinstance(row, dict) and row.get("default") is True
-        ]
-        if len(defaults) != 1:
-            raise builds.BootstrapStopped(
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_DEFAULT_BRANCH_NOT_UNIQUE"
-            )
-        branch = defaults[0]
-    elif branch is None:
-        branch = payload
+    branch = payload.get("branch")
     if not isinstance(branch, dict):
         raise builds.BootstrapStopped(
             "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID"
         )
-    response_project_id = branch.get("project_id")
     if (
         branch.get("id") != target.branch_id
-        or (response_project_id is not None and response_project_id != project_id)
+        or branch.get("project_id") != project_id
         or branch.get("default") is not True
         or branch.get("current_state") != "ready"
     ):
