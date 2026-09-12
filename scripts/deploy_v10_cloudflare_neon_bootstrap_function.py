@@ -245,7 +245,9 @@ def _exact_branch(
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_BRANCH_RESPONSE_INVALID"
             )
         defaults = [
-            row for row in rows if isinstance(row, dict) and row.get("default") is True
+            row
+            for row in rows
+            if isinstance(row, dict) and row.get("default") is True
         ]
         if len(defaults) != 1:
             raise builds.BootstrapStopped(
