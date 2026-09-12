@@ -16,9 +16,7 @@ from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import (
 )
 
 
-_PROVENANCE_CUSTODY_PATH = (
-    "/api/internal/v10/cf-d/function-source-provenance-custody"
-)
+_PROVENANCE_CUSTODY_PATH = "/api/internal/v10/cf-d/function-source-provenance-custody"
 _JSON_MEDIA_TYPE = "application/json"
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _MAX_RESPONSE_BYTES = 4_096
@@ -164,7 +162,9 @@ def _probe_once(
         response = connection.getresponse()
         status = int(response.status)
         if status != 200:
-            raise builds.BootstrapStopped(_failure_code(response, status), status=status)
+            raise builds.BootstrapStopped(
+                _failure_code(response, status), status=status
+            )
         content_type = str(response.getheader("Content-Type", "")).lower()
         if _JSON_MEDIA_TYPE not in content_type:
             raise builds.BootstrapStopped(_PROVENANCE_INVALID)
