@@ -10,7 +10,6 @@ import stat
 import sys
 from typing import Any, NamedTuple
 
-import scripts.bootstrap_v10_cloudflare_builds as builds
 import scripts.bootstrap_v10_cloudflare_production_database_via_staging as legacy
 from omni_cio.contracts.v1.cloudflare_cf_d_bootstrap_failures import (
     NEON_BOOTSTRAP_REJECTED,
