@@ -54,8 +54,6 @@ def _function_state(
 
 
 def _required_env(name: str) -> str:
-    if name == "NEON_API_KEY":
-        return "synthetic-provider-fixture"
     if name == "NEON_PROJECT_ID":
         return _PROJECT_ID
     if name == "NEON_ORG_ID":
@@ -99,7 +97,9 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             self.assertNotIn(deployer._WRAPPER_DIGEST_PLACEHOLDER, rendered)
             self.assertEqual(archive.read("handler.mjs"), handler)
 
-    def test_provenance_accepts_exact_digest_and_marks_legacy_handler_stale(self) -> None:
+    def test_provenance_accepts_exact_digest_and_marks_legacy_handler_stale(
+        self,
+    ) -> None:
         digest = "b" * 64
         exact = json.dumps(
             {"status": "READY", "source_sha256": digest},
@@ -131,16 +131,52 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 builds.BootstrapStopped,
                 "CLOUDFLARE_CF_D_NEON_FUNCTION_PROVENANCE_INVALID",
             ):
-                deployer._provenance_response(
-                    status,
-                    content_type,
-                    body,
-                    digest,
-                )
+                deployer._provenance_response(status, content_type, body, digest)
 
-    def test_exact_source_reuse_requires_stable_read_state_but_no_write(self) -> None:
+    def test_exact_source_reuse_is_credential_free(self) -> None:
         archive = b"PK synthetic"
         digest = "e" * 64
+        with (
+            mock.patch.object(
+                deployer,
+                "_assert_exact_head",
+                return_value=_EXPECTED_SHA,
+            ),
+            mock.patch.object(
+                deployer,
+                "read_bootstrap_origin_handoff",
+                return_value=_TARGET,
+            ),
+            mock.patch.object(
+                deployer,
+                "_deployment_bundle",
+                return_value=(archive, digest),
+            ),
+            mock.patch.object(
+                deployer,
+                "_probe_source_provenance",
+                return_value=True,
+            ),
+            mock.patch.object(deployer, "_deploy_api_key") as project_key,
+            mock.patch.object(deployer, "_validate_project") as validate_project,
+            mock.patch.object(deployer, "_exact_branch") as exact_branch,
+            mock.patch.object(deployer, "_function") as function_read,
+            mock.patch.object(deployer, "_deploy") as deploy,
+        ):
+            self.assertFalse(
+                deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
+            )
+        project_key.assert_not_called()
+        validate_project.assert_not_called()
+        exact_branch.assert_not_called()
+        function_read.assert_not_called()
+        deploy.assert_not_called()
+
+    def test_source_drift_loads_exact_project_authority_then_rechecks_before_post(
+        self,
+    ) -> None:
+        archive = b"PK synthetic"
+        digest = "f" * 64
         function = _function_state(
             current_id=6,
             current_status="completed",
@@ -163,32 +199,36 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 "_deployment_bundle",
                 return_value=(archive, digest),
             ),
-            mock.patch.object(builds, "_required_env", side_effect=_required_env),
-            mock.patch.object(deployer, "_validate_project"),
-            mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
-            mock.patch.object(
-                deployer,
-                "_function",
-                return_value=function,
-            ) as function_read,
             mock.patch.object(
                 deployer,
                 "_probe_source_provenance",
-                return_value=True,
+                side_effect=[False, True],
             ),
+            mock.patch.object(
+                deployer,
+                "_deploy_api_key",
+                return_value="synthetic-deploy-fixture",
+            ) as project_key,
+            mock.patch.object(builds, "_required_env", side_effect=_required_env),
+            mock.patch.object(deployer, "_validate_project") as validate_project,
+            mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
+            mock.patch.object(deployer, "_function", return_value=function),
             mock.patch.object(deployer, "_deploy") as deploy,
-            mock.patch.object(deployer, "_deploy_api_key") as deploy_key,
         ):
             self.assertFalse(
                 deployer.deploy_exact_main_bootstrap_function(_EXPECTED_SHA)
             )
-        self.assertEqual(function_read.call_count, 2)
+        project_key.assert_called_once_with()
+        validate_project.assert_called_once_with(
+            "synthetic-deploy-fixture",
+            _PROJECT_ID,
+            _ORG_ID,
+        )
         deploy.assert_not_called()
-        deploy_key.assert_not_called()
 
-    def test_exact_source_reuse_rejects_deployment_race(self) -> None:
+    def test_concurrent_exact_source_with_changed_deployment_rejects_race(self) -> None:
         archive = b"PK synthetic"
-        digest = "f" * 64
+        digest = "a" * 64
         sequence = [
             _function_state(
                 current_id=6,
@@ -219,15 +259,20 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 "_deployment_bundle",
                 return_value=(archive, digest),
             ),
+            mock.patch.object(
+                deployer,
+                "_probe_source_provenance",
+                side_effect=[False, True],
+            ),
+            mock.patch.object(
+                deployer,
+                "_deploy_api_key",
+                return_value="synthetic-deploy-fixture",
+            ),
             mock.patch.object(builds, "_required_env", side_effect=_required_env),
             mock.patch.object(deployer, "_validate_project"),
             mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
             mock.patch.object(deployer, "_function", side_effect=sequence),
-            mock.patch.object(
-                deployer,
-                "_probe_source_provenance",
-                return_value=True,
-            ),
             mock.patch.object(deployer, "_deploy") as deploy,
         ):
             with self.assertRaisesRegex(
@@ -256,6 +301,11 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                 "_deployment_bundle",
                 return_value=(archive, digest),
             ),
+            mock.patch.object(
+                deployer,
+                "_deploy_api_key",
+                return_value="synthetic-deploy-fixture",
+            ),
             mock.patch.object(builds, "_required_env", side_effect=_required_env),
             mock.patch.object(deployer, "_validate_project"),
             mock.patch.object(deployer, "_exact_branch", return_value=_BRANCH_ID),
@@ -264,15 +314,10 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             mock.patch.object(
                 deployer,
                 "_probe_source_provenance",
-                side_effect=[False, True],
+                side_effect=[False, False, True],
             ),
             mock.patch.object(deployer, "_deploy", return_value="7") as deploy,
             mock.patch.object(deployer, "_wait") as wait,
-            mock.patch.dict(
-                deployer.os.environ,
-                {deployer._DEPLOY_API_KEY_ENV: "synthetic-deploy-fixture"},
-                clear=False,
-            ),
         ):
             with self.assertRaisesRegex(
                 builds.BootstrapStopped,
@@ -287,7 +332,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             archive,
         )
         wait.assert_called_once_with(
-            "synthetic-provider-fixture",
+            "synthetic-deploy-fixture",
             _PROJECT_ID,
             _BRANCH_ID,
             "6",
@@ -381,7 +426,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             cast(bytes, observed["body"]),
         )
 
-    def test_deploy_403_is_explicit_function_write_authority_failure(self) -> None:
+    def test_management_403_is_explicit_project_authority_failure(self) -> None:
         with mock.patch.object(
             deployer,
             "_request",
@@ -389,7 +434,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 builds.BootstrapStopped,
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRITE_API_KEY_INSUFFICIENT",
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROJECT_API_KEY_INSUFFICIENT",
             ):
                 deployer._deploy(
                     "synthetic-provider-fixture",
@@ -399,7 +444,7 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
                     b"PK synthetic",
                 )
 
-    def test_deploy_write_authority_is_required_only_after_source_drift(self) -> None:
+    def test_project_authority_is_required_only_after_source_drift(self) -> None:
         with mock.patch.dict(
             deployer.os.environ,
             {deployer._DEPLOY_API_KEY_ENV: ""},
@@ -407,24 +452,11 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 builds.BootstrapStopped,
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_WRITE_API_KEY_REQUIRED",
+                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_PROJECT_API_KEY_REQUIRED",
             ):
-                deployer._deploy_api_key("synthetic-read-fixture")
+                deployer._deploy_api_key()
 
-    def test_deploy_write_authority_must_be_separate_from_read_authority(self) -> None:
-        token = "synthetic-shared-fixture"
-        with mock.patch.dict(
-            deployer.os.environ,
-            {deployer._DEPLOY_API_KEY_ENV: token},
-            clear=False,
-        ):
-            with self.assertRaisesRegex(
-                builds.BootstrapStopped,
-                "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY_AUTHORITY_NOT_SEPARATED",
-            ):
-                deployer._deploy_api_key(token)
-
-    def test_deploy_write_authority_is_masked_before_use(self) -> None:
+    def test_project_authority_is_masked_before_use(self) -> None:
         with (
             mock.patch.dict(
                 deployer.os.environ,
@@ -434,10 +466,17 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             mock.patch.object(builds, "_mask") as mask,
         ):
             self.assertEqual(
-                deployer._deploy_api_key("synthetic-read-fixture"),
+                deployer._deploy_api_key(),
                 "synthetic-deploy-fixture",
             )
         mask.assert_called_once_with("synthetic-deploy-fixture")
+
+    def test_legacy_neon_read_credential_is_metadata_only(
+        self,
+    ) -> None:
+        source = Path(deployer.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count("_READ_API_KEY_ENV"), 1)
+        self.assertNotIn("def _read_api_key", source)
 
     def test_wait_accepts_only_returned_deployment_and_rejects_race(self) -> None:
         sequence = [
@@ -509,7 +548,9 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         self.assertLess(persist, deploy)
         self.assertIn('if branch == "main":', source[persist:deploy])
 
-    def test_release_contract_requires_provenance_before_conditional_deploy(self) -> None:
+    def test_release_contract_requires_provenance_before_project_management(
+        self,
+    ) -> None:
         contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
         cutover = contract["cutover"]
         self.assertIs(
@@ -520,7 +561,10 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_exact_source_provenance_required"
+                (
+                    "production_database_bootstrap_function_exact_source_"
+                    "provenance_required"
+                )
             ],
             True,
         )
@@ -560,31 +604,55 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_exact_source_reuse_without_api_write_allowed"
+                (
+                    "production_database_bootstrap_function_exact_source_reuse_"
+                    "without_api_write_allowed"
+                )
             ],
             True,
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_deploy_if_runtime_secret_missing_only"
+                (
+                    "production_database_bootstrap_function_provenance_before_"
+                    "management_api_required"
+                )
             ],
             True,
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_active_deployment_match_required"
+                (
+                    "production_database_bootstrap_function_exact_source_reuse_"
+                    "without_management_api_required"
+                )
             ],
             True,
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_deploy_before_oidc_mint_required"
+                (
+                    "production_database_bootstrap_function_active_deployment_"
+                    "match_required"
+                )
             ],
             True,
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_provider_identifier_logging_allowed"
+                (
+                    "production_database_bootstrap_function_deploy_before_oidc_"
+                    "mint_required"
+                )
+            ],
+            True,
+        )
+        self.assertIs(
+            cutover[
+                (
+                    "production_database_bootstrap_function_provider_identifier_"
+                    "logging_allowed"
+                )
             ],
             False,
         )
@@ -594,6 +662,15 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
             ],
             deployer._READ_API_KEY_ENV,
         )
+        self.assertIs(
+            cutover[
+                (
+                    "production_database_bootstrap_function_read_api_key_binding_"
+                    "active"
+                )
+            ],
+            False,
+        )
         self.assertEqual(
             cutover[
                 "production_database_bootstrap_function_deploy_api_key_binding"
@@ -602,13 +679,28 @@ class CloudflareNeonFunctionDeploymentTests(unittest.TestCase):
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_read_write_authority_separation_required"
+                (
+                    "production_database_bootstrap_function_read_write_authority_"
+                    "separation_required"
+                )
+            ],
+            False,
+        )
+        self.assertIs(
+            cutover[
+                (
+                    "production_database_bootstrap_function_deploy_api_key_required_"
+                    "only_on_source_drift"
+                )
             ],
             True,
         )
         self.assertIs(
             cutover[
-                "production_database_bootstrap_function_deploy_api_key_required_only_on_source_drift"
+                (
+                    "production_database_bootstrap_function_deploy_api_key_used_for_"
+                    "read_polling_allowed"
+                )
             ],
             True,
         )
