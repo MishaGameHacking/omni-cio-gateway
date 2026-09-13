@@ -23,6 +23,7 @@ _RUNTIME_DSN_FILENAME_BY_ENVIRONMENT = {
 }
 _ROLE_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 _NEON_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,60}$")
+_NEON_BRANCH_ID_PATTERN = re.compile(r"^br-[a-z0-9-]{4,57}$")
 _NEON_FRANKFURT_HOST_SUFFIX = ".eu-central-1.aws.neon.tech"
 _HTTP_GET = "GET"
 _NEON_POSTGRES18_REQUIRED_CODE = "NEON_POSTGRES18_REQUIRED"
@@ -99,11 +100,33 @@ def _validate_neon_project_id(value: str) -> str:
     return value
 
 
+def _validate_neon_branch_id(value: object) -> str:
+    if not isinstance(value, str) or _NEON_BRANCH_ID_PATTERN.fullmatch(value) is None:
+        raise _base.ProvisioningStopped("NEON_BRANCH_ID_INVALID")
+    return value
+
+
 def _required_neon_project_id() -> str:
     value = os.environ.get("NEON_PROJECT_ID", "").strip()
     if not value:
         raise _base.ProvisioningStopped("NEON_PROJECT_ID_REQUIRED")
     return _validate_neon_project_id(value)
+
+
+def _expected_branch_id_for_environment(environment: str) -> str | None:
+    if environment != "production":
+        return None
+    try:
+        from scripts.bootstrap_v10_cloudflare_production_database_direct import (
+            read_bootstrap_origin_handoff,
+        )
+
+        target = read_bootstrap_origin_handoff()
+    except RuntimeError:
+        raise _base.ProvisioningStopped(
+            "CLOUDFLARE_CF_D_BOOTSTRAP_TARGET_HANDOFF_INVALID"
+        ) from None
+    return _validate_neon_branch_id(target.branch_id)
 
 
 def _project_pg_version(project: dict[str, Any], code: str) -> int:
@@ -162,13 +185,57 @@ def _validate_branch_payload(payload: object) -> dict[str, Any]:
     return body
 
 
+def _validate_exact_branch_payload(
+    payload: object,
+    project_id: str,
+    expected_branch_id: str,
+) -> dict[str, Any]:
+    body = _base._json_object(payload, "NEON_BRANCH_RESPONSE_INVALID")
+    branch = _base._json_object(
+        body.get("branch"),
+        "NEON_BRANCH_RESPONSE_INVALID",
+    )
+    if branch.get("id") != expected_branch_id:
+        raise _base.ProvisioningStopped("NEON_BRANCH_ID_MISMATCH")
+    if branch.get("project_id") != project_id:
+        raise _base.ProvisioningStopped("NEON_BRANCH_PROJECT_BINDING_MISMATCH")
+    if branch.get("default") is not True:
+        raise _base.ProvisioningStopped("NEON_DEFAULT_BRANCH_MISMATCH")
+    if branch.get("current_state") != "ready":
+        raise _base.ProvisioningStopped("NEON_BRANCH_NOT_READY")
+    return branch
+
+
 def _project_scoped_branch_authority(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
     project_id: str,
+    expected_branch_id: str | None = None,
 ) -> dict[str, Any]:
     _org._validate_neon_org_id(organization_id)
     safe_project_id = _validate_neon_project_id(project_id)
+    if expected_branch_id is not None:
+        safe_branch_id = _validate_neon_branch_id(expected_branch_id)
+        try:
+            payload = api.request(
+                _HTTP_GET,
+                f"/projects/{safe_project_id}/branches/{safe_branch_id}",
+            )
+        except _base.ProvisioningStopped as exc:
+            if exc.status not in {403, 404}:
+                raise
+            raise _base.ProvisioningStopped(
+                "NEON_PROJECT_KEY_BINDING_MISMATCH",
+                status=exc.status,
+            ) from None
+        branch = _validate_exact_branch_payload(
+            payload,
+            safe_project_id,
+            safe_branch_id,
+        )
+        _base._emit("CLOUDFLARE_NEON_PROJECT_BINDING=EXACT_BRANCH_READ_VERIFIED")
+        return {"branches": [branch]}
+
     try:
         payload = api.request(
             _HTTP_GET,
@@ -182,7 +249,7 @@ def _project_scoped_branch_authority(
             status=exc.status,
         ) from None
     body = _validate_branch_payload(payload)
-    _base._emit("CLOUDFLARE_NEON_PROJECT_BINDING=EXACT_BRANCH_READ_VERIFIED")
+    _base._emit("CLOUDFLARE_NEON_PROJECT_BINDING=BRANCH_COLLECTION_READ_VERIFIED")
     return body
 
 
@@ -208,6 +275,7 @@ def _provider_access_context(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
     project_id: str,
+    expected_branch_id: str | None = None,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
     try:
         scope, project = _provider_context(api, organization_id, project_id)
@@ -218,8 +286,17 @@ def _provider_access_context(
             api,
             organization_id,
             project_id,
+            expected_branch_id,
         )
         return "PROJECT_SCOPED", None, branches
+    if expected_branch_id is not None:
+        branches = _project_scoped_branch_authority(
+            api,
+            organization_id,
+            project_id,
+            expected_branch_id,
+        )
+        return scope, None, branches
     return scope, project, None
 
 
@@ -300,6 +377,7 @@ def _project_scoped_target(
     project_id: str,
     runtime_role: str,
     branch_payload: dict[str, Any],
+    expected_branch_id: str | None = None,
 ) -> _base.NeonTarget:
     safe_project_id = _base._provider_segment(
         _validate_neon_project_id(project_id),
@@ -321,6 +399,10 @@ def _project_scoped_target(
         defaults[0].get("id"),
         "NEON_BRANCH_ID_INVALID",
     )
+    if expected_branch_id is not None and branch_id != _validate_neon_branch_id(
+        expected_branch_id
+    ):
+        raise _base.ProvisioningStopped("NEON_BRANCH_CUSTODY_MISMATCH")
 
     database_payload = _base._json_object(
         api.request(
@@ -537,6 +619,7 @@ def _write_runtime_dsn(output_file: Path, runtime_uri: str) -> None:
 def run(expected_sha: str, environment: str) -> str:
     _base._exact_head(_REPO_ROOT, expected_sha)
     runtime_role = _runtime_role(environment)
+    expected_branch_id = _expected_branch_id_for_environment(environment)
     neon_key = _base._required_env("NEON_API_KEY")
     organization_id = _org._required_neon_org_id()
     project_id = _required_neon_project_id()
@@ -548,6 +631,7 @@ def run(expected_sha: str, environment: str) -> str:
         neon,
         organization_id,
         project_id,
+        expected_branch_id,
     )
     _emit_provider_access(scope)
     if project is not None:
@@ -563,6 +647,7 @@ def run(expected_sha: str, environment: str) -> str:
             project_id,
             runtime_role,
             branch_payload,
+            expected_branch_id,
         )
 
     try:
