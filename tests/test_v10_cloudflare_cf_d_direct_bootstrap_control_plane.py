@@ -65,11 +65,10 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert "python -m scripts.provision_v10_cloudflare_neon_runtime" in bootstrap
     assert '--expected-sha "$EXPECTED_HEAD"' in bootstrap
     assert "--environment production" in bootstrap
-    assert (
-        "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}" in bootstrap
-    )
+    assert "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}" in bootstrap
     assert "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}" in bootstrap
     assert "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}" in bootstrap
+    assert "NEON_FUNCTION_DEPLOY_API_KEY" not in bootstrap
     assert "put-runtime-secret" in bootstrap
     assert "bootstrap_v10_cloudflare_production_database_direct" not in bootstrap
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in bootstrap
@@ -94,7 +93,7 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
     )
     assert (
         cutover["production_database_bootstrap_project_scoped_credential_binding"]
-        == "NEON_FUNCTION_DEPLOY_API_KEY"
+        == "NEON_API_KEY"
     )
     assert (
         cutover[
