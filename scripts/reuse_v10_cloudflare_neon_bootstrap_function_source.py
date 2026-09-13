@@ -31,7 +31,6 @@ def deploy_exact_main_bootstrap_function_if_required(
         return False
 
     print(
-        "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY="
-        "DEFERRED_PROJECT_SCOPED_RUNTIME_BOOTSTRAP"
+        "CLOUDFLARE_CF_D_NEON_FUNCTION_DEPLOY=DEFERRED_PROJECT_SCOPED_RUNTIME_BOOTSTRAP"
     )
     return False
