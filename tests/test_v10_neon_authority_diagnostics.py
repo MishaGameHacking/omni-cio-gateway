@@ -375,11 +375,37 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
                         if source.startswith(provision, index)
                     ]
                     self.assertEqual(len(provision_indexes), 2)
-                    self.assertEqual(source.count("--environment staging"), 1)
-                    self.assertEqual(source.count("--environment production"), 1)
                     staging_provision, production_provision = provision_indexes
-                    staging_environment = source.index("--environment staging")
-                    production_environment = source.index("--environment production")
+                    staging_command_end = source.index(
+                        'test -s "$dsn_file"',
+                        staging_provision,
+                    )
+                    production_command_end = source.index(
+                        'test -s "$dsn_file"',
+                        production_provision,
+                    )
+                    staging_command = source[
+                        staging_provision:staging_command_end
+                    ]
+                    production_command = source[
+                        production_provision:production_command_end
+                    ]
+                    self.assertEqual(
+                        staging_command.count("--environment staging"),
+                        1,
+                    )
+                    self.assertNotIn(
+                        "--environment production",
+                        staging_command,
+                    )
+                    self.assertEqual(
+                        production_command.count("--environment production"),
+                        1,
+                    )
+                    self.assertNotIn(
+                        "--environment staging",
+                        production_command,
+                    )
                     branch_start = source.rfind(
                         'if [ "$neon_rc" -ne 0 ]; then',
                         0,
@@ -388,9 +414,7 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
                     self.assertGreaterEqual(branch_start, 0)
                     self.assertLess(branch_start, diagnostic_index)
                     self.assertLess(diagnostic_index, staging_provision)
-                    self.assertLess(staging_provision, staging_environment)
-                    self.assertLess(staging_environment, production_provision)
-                    self.assertLess(production_provision, production_environment)
+                    self.assertLess(staging_provision, production_provision)
                     continue
 
                 self.assertEqual(source.count("id: neon_authority"), 1)
