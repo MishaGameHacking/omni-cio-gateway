@@ -145,4 +145,11 @@ def test_release_contract_freezes_server_bootstrap_composition() -> None:
         "production_database_bootstrap_route_priority_before_api_catchall_required"
     ] is True
     assert cutover["production_database_bootstrap_exact_sha_required"] is True
-    assert cutover["production_database_bootstrap_github_oidc_required"] is True
+    assert cutover["production_database_bootstrap_github_oidc_required"] is False
+    assert cutover["production_database_bootstrap_function_retained_legacy_component"] is True
+    assert (
+        cutover[
+            "production_database_bootstrap_github_oidc_required_for_legacy_function_transport"
+        ]
+        is True
+    )
