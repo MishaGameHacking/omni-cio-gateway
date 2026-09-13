@@ -113,7 +113,7 @@
     "production_database_secret_state_convergence_attempts": 15,
     "production_database_secret_state_convergence_delay_seconds": 2,
     "production_database_bootstrap_active_transport": "PROJECT_SCOPED_NEON_RUNTIME_PROVISIONER",
-    "production_database_bootstrap_project_scoped_credential_binding": "NEON_FUNCTION_DEPLOY_API_KEY",
+    "production_database_bootstrap_project_scoped_credential_binding": "NEON_API_KEY",
     "production_database_bootstrap_project_scoped_credential_environment_alias": "NEON_API_KEY",
     "production_database_bootstrap_project_scoped_authority_required": true,
     "production_database_bootstrap_organization_wide_authority_required": false,
