@@ -365,11 +365,7 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
                         source.count('if [ "$neon_rc" -ne 0 ]; then'),
                         1,
                     )
-                    diagnostic_indexes = [
-                        index
-                        for index in range(len(source))
-                        if source.startswith(diagnostic, index)
-                    ]
+                    diagnostic_index = source.index(diagnostic)
                     provision = (
                         "python -m scripts.provision_v10_cloudflare_neon_runtime"
                     )
@@ -378,20 +374,47 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
                         for index in range(len(source))
                         if source.startswith(provision, index)
                     ]
-                    self.assertEqual(len(provision_indexes), 1)
-                    for diagnostic_index, provision_index in zip(
-                        diagnostic_indexes,
-                        provision_indexes,
-                        strict=True,
-                    ):
-                        branch_start = source.rfind(
-                            'if [ "$neon_rc" -ne 0 ]; then',
-                            0,
-                            diagnostic_index,
-                        )
-                        self.assertGreaterEqual(branch_start, 0)
-                        self.assertLess(branch_start, diagnostic_index)
-                        self.assertLess(diagnostic_index, provision_index)
+                    self.assertEqual(len(provision_indexes), 2)
+                    staging_provision, production_provision = provision_indexes
+                    staging_command_end = source.index(
+                        'test -s "$dsn_file"',
+                        staging_provision,
+                    )
+                    production_command_end = source.index(
+                        'test -s "$dsn_file"',
+                        production_provision,
+                    )
+                    staging_command = source[
+                        staging_provision:staging_command_end
+                    ]
+                    production_command = source[
+                        production_provision:production_command_end
+                    ]
+                    self.assertEqual(
+                        staging_command.count("--environment staging"),
+                        1,
+                    )
+                    self.assertNotIn(
+                        "--environment production",
+                        staging_command,
+                    )
+                    self.assertEqual(
+                        production_command.count("--environment production"),
+                        1,
+                    )
+                    self.assertNotIn(
+                        "--environment staging",
+                        production_command,
+                    )
+                    branch_start = source.rfind(
+                        'if [ "$neon_rc" -ne 0 ]; then',
+                        0,
+                        diagnostic_index,
+                    )
+                    self.assertGreaterEqual(branch_start, 0)
+                    self.assertLess(branch_start, diagnostic_index)
+                    self.assertLess(diagnostic_index, staging_provision)
+                    self.assertLess(staging_provision, production_provision)
                     continue
 
                 self.assertEqual(source.count("id: neon_authority"), 1)
