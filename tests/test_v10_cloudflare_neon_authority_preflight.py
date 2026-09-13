@@ -20,7 +20,7 @@ FUNCTION_DEPLOY_BINDING = (
     "NEON_FUNCTION_DEPLOY_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
 )
 FUNCTION_PROJECT_BINDING = "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}"
-RECOVERY_ALIAS_BINDING = "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
+DATABASE_PROJECT_BINDING = "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}"
 NEON_ORG_BINDING = "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}"
 
 
@@ -104,7 +104,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         )
         self.assertIn(NEON_PROVISION, bootstrap)
         self.assertIn("--environment production", bootstrap)
-        self.assertIn(RECOVERY_ALIAS_BINDING, bootstrap)
+        self.assertIn(DATABASE_PROJECT_BINDING, bootstrap)
         self.assertIn(NEON_ORG_BINDING, bootstrap)
         self.assertIn(FUNCTION_PROJECT_BINDING, bootstrap)
         self.assertIn(
@@ -112,6 +112,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             bootstrap,
         )
         self.assertNotIn(LEGACY_FUNCTION_BOOTSTRAP, bootstrap)
+        self.assertNotIn("NEON_FUNCTION_DEPLOY_API_KEY", bootstrap)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", bootstrap)
         self.assertNotIn("STAGING_ORIGIN", bootstrap)
         self.assertNotIn("--origin", bootstrap)
@@ -124,7 +125,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             self.assertNotIn("NEON_FUNCTION_DEPLOY_API_KEY", section)
             self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", section)
 
-    def test_function_invoke_secret_is_not_a_release_dependency(self) -> None:
+    def test_legacy_function_deploy_secret_is_not_active_release_dependency(self) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
         candidate = self._workflow_step(
             source,
@@ -135,17 +136,16 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             "Bootstrap production database secret if missing",
         )
 
-        self.assertIn(FUNCTION_DEPLOY_BINDING, candidate)
+        self.assertIn(DATABASE_PROJECT_BINDING, candidate)
         self.assertIn(FUNCTION_PROJECT_BINDING, candidate)
-        self.assertIn(RECOVERY_ALIAS_BINDING, candidate)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, candidate)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", candidate)
+        self.assertIn(DATABASE_PROJECT_BINDING, production_bootstrap)
         self.assertIn(FUNCTION_PROJECT_BINDING, production_bootstrap)
-        self.assertIn(RECOVERY_ALIAS_BINDING, production_bootstrap)
         self.assertIn(NEON_ORG_BINDING, production_bootstrap)
         self.assertNotIn(FUNCTION_DEPLOY_BINDING, production_bootstrap)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", production_bootstrap)
-        self.assertEqual(source.count(FUNCTION_DEPLOY_BINDING), 1)
-        self.assertEqual(source.count(RECOVERY_ALIAS_BINDING), 2)
+        self.assertEqual(source.count(FUNCTION_DEPLOY_BINDING), 0)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", source)
         self.assertNotIn("echo $NEON_FUNCTION_DEPLOY_API_KEY", source)
 
@@ -203,8 +203,8 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
 
     def test_neon_preflight_uses_only_runtime_secret_bindings(self) -> None:
         expected_bindings = {
-            CANDIDATE_WORKFLOW: "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}",
-            PRODUCTION_WORKFLOW: RECOVERY_ALIAS_BINDING,
+            CANDIDATE_WORKFLOW: DATABASE_PROJECT_BINDING,
+            PRODUCTION_WORKFLOW: DATABASE_PROJECT_BINDING,
         }
         for path, authority_binding in expected_bindings.items():
             with self.subTest(path=path.name):
@@ -224,6 +224,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
                     self.assertIn(authority_binding, section)
                     self.assertIn(NEON_ORG_BINDING, section)
                     self.assertIn(FUNCTION_PROJECT_BINDING, section)
+                    self.assertNotIn(FUNCTION_DEPLOY_BINDING, section)
                     self.assertNotIn("vars.NEON_", section)
                     self.assertNotIn("echo $NEON", section)
 
