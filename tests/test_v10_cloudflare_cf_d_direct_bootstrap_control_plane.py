@@ -93,12 +93,12 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         "PROJECT_SCOPED_NEON_RUNTIME_PROVISIONER"
     )
     assert (
-        cutover["production_database_bootstrap_project_scoped_api_key_binding"]
+        cutover["production_database_bootstrap_project_scoped_credential_binding"]
         == "NEON_FUNCTION_DEPLOY_API_KEY"
     )
     assert (
         cutover[
-            "production_database_bootstrap_project_scoped_api_key_environment_alias"
+            "production_database_bootstrap_project_scoped_credential_environment_alias"
         ]
         == "NEON_API_KEY"
     )
