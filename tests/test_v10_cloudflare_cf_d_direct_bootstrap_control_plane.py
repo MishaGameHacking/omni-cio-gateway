@@ -37,9 +37,11 @@ _load_legacy_tests()
 
 def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
-    anchor = source.index(
-        "      - name: Bootstrap production Worker anchor without public route if absent"
+    anchor_name = (
+        "      - name: Bootstrap production Worker anchor without public route if "
+        "absent"
     )
+    anchor = source.index(anchor_name)
     probe_start = source.index("      - name: Probe production database secret")
     bootstrap_start = source.index(
         "      - name: Bootstrap production database secret if missing"
@@ -65,18 +67,18 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert "python -m scripts.provision_v10_cloudflare_neon_runtime" in bootstrap
     assert '--expected-sha "$EXPECTED_HEAD"' in bootstrap
     assert "--environment production" in bootstrap
-    assert (
-        "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}" in bootstrap
-    )
+    assert "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}" in bootstrap
     assert "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}" in bootstrap
     assert "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}" in bootstrap
     assert "put-runtime-secret" in bootstrap
     assert "bootstrap_v10_cloudflare_production_database_direct" not in bootstrap
+    assert "NEON_FUNCTION_DEPLOY_API_KEY" not in bootstrap
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in bootstrap
 
     assert "probe-runtime-secret" in confirm
     assert "NEON_API_KEY:" not in confirm
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in confirm
+    assert "NEON_FUNCTION_DEPLOY_API_KEY" not in source
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in source
 
 
@@ -89,12 +91,18 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         candidate["staging_bootstrap_origin_private_control_plane_handoff_for_main"]
         is True
     )
+    assert candidate["staging_neon_management_api_credential_binding"] == (
+        "NEON_API_KEY"
+    )
+    assert candidate["staging_neon_authority_exposed_only_if_database_secret_missing"]
+    assert not candidate["staging_legacy_function_deploy_credential_active_dependency"]
+
     assert cutover["production_database_bootstrap_active_transport"] == (
         "PROJECT_SCOPED_NEON_RUNTIME_PROVISIONER"
     )
     assert (
         cutover["production_database_bootstrap_project_scoped_credential_binding"]
-        == "NEON_FUNCTION_DEPLOY_API_KEY"
+        == "NEON_API_KEY"
     )
     assert (
         cutover[
@@ -102,6 +110,14 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         ]
         == "NEON_API_KEY"
     )
+    assert not cutover[
+        "production_database_bootstrap_runtime_management_function_deploy_alias_allowed"
+    ]
+    legacy_dependency = (
+        "production_database_bootstrap_legacy_function_deploy_credential_"
+        "active_dependency"
+    )
+    assert not cutover[legacy_dependency]
     assert (
         cutover["production_database_bootstrap_project_scoped_authority_required"]
         is True
