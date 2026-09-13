@@ -20,7 +20,7 @@ FUNCTION_DEPLOY_BINDING = (
     "NEON_FUNCTION_DEPLOY_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
 )
 FUNCTION_PROJECT_BINDING = "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}"
-RECOVERY_ALIAS_BINDING = "NEON_API_KEY: ${{ secrets.NEON_FUNCTION_DEPLOY_API_KEY }}"
+RUNTIME_AUTHORITY_BINDING = "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}"
 NEON_ORG_BINDING = "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}"
 
 
@@ -63,33 +63,52 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             ),
         )
 
-    def test_production_staging_recovery_probe_precedes_staging_provision(self) -> None:
+    def test_production_staging_recovery_separates_probe_and_neon_authority(
+        self,
+    ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
         self.assertEqual(source.count(NEON_PROJECT_AUTHORITY_PROBE), 1)
         self.assertEqual(source.count(NEON_PROVISION), 2)
 
-        staging_secret_probe = source.index(
-            "python -m scripts.probe_v10_cloudflare_staging_runtime_secret"
+        probe = self._workflow_step(
+            source,
+            "Probe reusable staging runtime secret before Neon management API",
         )
-        provider_probe = source.index(NEON_PROJECT_AUTHORITY_PROBE)
-        staging_provision = source.index("--environment staging", provider_probe)
-        production_secret_probe = source.index(
-            "python -m scripts.manage_v10_cloudflare_production probe-runtime-secret"
+        bootstrap = self._workflow_step(
+            source,
+            "Bootstrap staging database secret if missing",
         )
-        production_provision = source.index(
-            "--environment production", production_secret_probe
+        rehearsal = self._workflow_step(
+            source,
+            "Rehearse exact accepted main on isolated staging Worker and Container",
         )
 
-        self.assertLess(staging_secret_probe, provider_probe)
-        self.assertLess(provider_probe, staging_provision)
-        self.assertLess(staging_provision, production_secret_probe)
-        self.assertLess(production_secret_probe, production_provision)
+        self.assertIn("probe_v10_cloudflare_staging_runtime_secret", probe)
+        self.assertIn('echo "bootstrap_required=false" >> "$GITHUB_OUTPUT"', probe)
+        self.assertIn('echo "bootstrap_required=true" >> "$GITHUB_OUTPUT"', probe)
+        self.assertNotIn("NEON_API_KEY:", probe)
+        self.assertNotIn("NEON_ORG_ID:", probe)
+        self.assertNotIn("NEON_PROJECT_ID:", probe)
+
         self.assertIn(
-            'if [ "$neon_rc" -ne 0 ]; then',
-            source[provider_probe:staging_provision],
+            "steps.staging_database_state.outputs.bootstrap_required == 'true'",
+            bootstrap,
         )
+        self.assertIn(NEON_PROJECT_AUTHORITY_PROBE, bootstrap)
+        self.assertIn(NEON_PROVISION, bootstrap)
+        self.assertIn("--environment staging", bootstrap)
+        self.assertIn(RUNTIME_AUTHORITY_BINDING, bootstrap)
+        self.assertIn(NEON_ORG_BINDING, bootstrap)
+        self.assertIn(FUNCTION_PROJECT_BINDING, bootstrap)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, bootstrap)
 
-    def test_production_database_bootstrap_uses_project_scoped_runtime_provisioner(
+        self.assertIn("run_v10_cloudflare_gated_candidate", rehearsal)
+        self.assertNotIn("NEON_API_KEY:", rehearsal)
+        self.assertNotIn("NEON_ORG_ID:", rehearsal)
+        self.assertNotIn("NEON_PROJECT_ID:", rehearsal)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, rehearsal)
+
+    def test_production_database_bootstrap_uses_runtime_management_credential(
         self,
     ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
@@ -104,7 +123,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         )
         self.assertIn(NEON_PROVISION, bootstrap)
         self.assertIn("--environment production", bootstrap)
-        self.assertIn(RECOVERY_ALIAS_BINDING, bootstrap)
+        self.assertIn(RUNTIME_AUTHORITY_BINDING, bootstrap)
         self.assertIn(NEON_ORG_BINDING, bootstrap)
         self.assertIn(FUNCTION_PROJECT_BINDING, bootstrap)
         self.assertIn(
@@ -112,6 +131,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             bootstrap,
         )
         self.assertNotIn(LEGACY_FUNCTION_BOOTSTRAP, bootstrap)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, bootstrap)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", bootstrap)
         self.assertNotIn("STAGING_ORIGIN", bootstrap)
         self.assertNotIn("--origin", bootstrap)
@@ -124,30 +144,27 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             self.assertNotIn("NEON_FUNCTION_DEPLOY_API_KEY", section)
             self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", section)
 
-    def test_function_invoke_secret_is_not_a_release_dependency(self) -> None:
+    def test_legacy_function_secret_is_not_active_release_dependency(self) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
-        candidate = self._workflow_step(
+        staging_bootstrap = self._workflow_step(
             source,
-            "Rehearse exact accepted main on isolated staging Worker and Container",
+            "Bootstrap staging database secret if missing",
         )
         production_bootstrap = self._workflow_step(
             source,
             "Bootstrap production database secret if missing",
         )
 
-        self.assertIn(FUNCTION_DEPLOY_BINDING, candidate)
-        self.assertIn(FUNCTION_PROJECT_BINDING, candidate)
-        self.assertIn(RECOVERY_ALIAS_BINDING, candidate)
-        self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", candidate)
-        self.assertIn(FUNCTION_PROJECT_BINDING, production_bootstrap)
-        self.assertIn(RECOVERY_ALIAS_BINDING, production_bootstrap)
-        self.assertIn(NEON_ORG_BINDING, production_bootstrap)
-        self.assertNotIn(FUNCTION_DEPLOY_BINDING, production_bootstrap)
-        self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", production_bootstrap)
-        self.assertEqual(source.count(FUNCTION_DEPLOY_BINDING), 1)
-        self.assertEqual(source.count(RECOVERY_ALIAS_BINDING), 2)
+        for section in (staging_bootstrap, production_bootstrap):
+            self.assertIn(RUNTIME_AUTHORITY_BINDING, section)
+            self.assertIn(FUNCTION_PROJECT_BINDING, section)
+            self.assertIn(NEON_ORG_BINDING, section)
+            self.assertNotIn(FUNCTION_DEPLOY_BINDING, section)
+            self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", section)
+
+        self.assertNotIn("NEON_FUNCTION_DEPLOY_API_KEY", source)
+        self.assertEqual(source.count(RUNTIME_AUTHORITY_BINDING), 2)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", source)
-        self.assertNotIn("echo $NEON_FUNCTION_DEPLOY_API_KEY", source)
 
     def test_provider_readiness_cli_defers_neon_until_bootstrap_is_needed(self) -> None:
         output = StringIO()
@@ -201,31 +218,24 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertIn("NEON_BOOTSTRAP_AUTHORITY=DEFERRED_UNTIL_REQUIRED", report)
         self.assertIn("CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED", report)
 
-    def test_neon_preflight_uses_only_runtime_secret_bindings(self) -> None:
-        expected_bindings = {
-            CANDIDATE_WORKFLOW: "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}",
-            PRODUCTION_WORKFLOW: RECOVERY_ALIAS_BINDING,
+    def test_neon_preflight_uses_only_runtime_management_secret(self) -> None:
+        expected_steps = {
+            CANDIDATE_WORKFLOW: (
+                "Verify Neon exact-project read authority before provider mutation"
+            ),
+            PRODUCTION_WORKFLOW: "Bootstrap staging database secret if missing",
         }
-        for path, authority_binding in expected_bindings.items():
+        for path, step_name in expected_steps.items():
             with self.subTest(path=path.name):
                 source = self._read(path)
-                probe_indexes = [
-                    index
-                    for index in range(len(source))
-                    if source.startswith(NEON_PROJECT_AUTHORITY_PROBE, index)
-                ]
-                self.assertGreaterEqual(len(probe_indexes), 1)
-                for probe_index in probe_indexes:
-                    section_start = source.rfind("      - name:", 0, probe_index)
-                    section_end = source.find("\n      - name:", probe_index)
-                    self.assertGreaterEqual(section_start, 0)
-                    self.assertGreater(section_end, probe_index)
-                    section = source[section_start:section_end]
-                    self.assertIn(authority_binding, section)
-                    self.assertIn(NEON_ORG_BINDING, section)
-                    self.assertIn(FUNCTION_PROJECT_BINDING, section)
-                    self.assertNotIn("vars.NEON_", section)
-                    self.assertNotIn("echo $NEON", section)
+                section = self._workflow_step(source, step_name)
+                self.assertIn(NEON_PROJECT_AUTHORITY_PROBE, section)
+                self.assertIn(RUNTIME_AUTHORITY_BINDING, section)
+                self.assertIn(NEON_ORG_BINDING, section)
+                self.assertIn(FUNCTION_PROJECT_BINDING, section)
+                self.assertNotIn(FUNCTION_DEPLOY_BINDING, section)
+                self.assertNotIn("vars.NEON_", section)
+                self.assertNotIn("echo $NEON", section)
 
 
 if __name__ == "__main__":
