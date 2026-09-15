@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 import subprocess
-import sys
 from tempfile import TemporaryDirectory
 import unittest
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPT_DIR))
-import verify_windows_ci_locks as verifier  # noqa: E402
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[1] / "scripts" / "verify_windows_ci_locks.py"
+)
+SPEC = importlib.util.spec_from_file_location("verify_windows_ci_locks", SCRIPT_PATH)
+assert SPEC is not None and SPEC.loader is not None
+verifier = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(verifier)
 
 
 class Runner:
