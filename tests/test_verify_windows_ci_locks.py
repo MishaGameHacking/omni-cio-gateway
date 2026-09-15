@@ -111,6 +111,28 @@ class WindowsLockVerificationTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(sleeps, [1.0])
 
+    def test_transient_transport_failure_exhaustion_fails_closed(self) -> None:
+        runner = Runner(
+            [
+                completed(1, stderr="connection broken"),
+                completed(1, stderr="connection broken"),
+                completed(1, stderr="connection broken"),
+            ]
+        )
+        sleeps: list[float] = []
+
+        status = verifier.verify_windows_ci_locks(
+            root=self.root,
+            attempts=3,
+            backoff_seconds=1.0,
+            runner=runner,
+            sleeper=sleeps.append,
+        )
+
+        self.assertEqual(status, 1)
+        self.assertEqual(sleeps, [1.0, 2.0])
+        self.assertEqual(len(runner.commands), 3)
+
     def test_repeated_timeouts_fail_closed(self) -> None:
         runner = Runner(
             [
