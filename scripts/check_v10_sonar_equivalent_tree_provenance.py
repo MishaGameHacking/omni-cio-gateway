@@ -55,7 +55,11 @@ def _associated_pull_request(
 
 def _sha_field(mapping: dict[str, Any], key: str, code: str) -> str:
     value = mapping.get(key)
-    if not isinstance(value, str) or release_gate._SHA.fullmatch(value.lower()) is None:  # noqa: SLF001
+    invalid_sha = (
+        not isinstance(value, str)
+        or release_gate._SHA.fullmatch(value.lower()) is None  # noqa: SLF001
+    )
+    if invalid_sha:
         raise release_gate.ReleaseGateStopped(code)
     return value.lower()
 
@@ -113,7 +117,9 @@ def _tree_sha(repository: str, token: str, commit_sha: str) -> str:
 
 
 def _require_cancelled_main_check(main_check: dict[str, Any]) -> None:
-    if main_check.get("status") != "completed" or main_check.get("conclusion") != "cancelled":
+    status_is_completed = main_check.get("status") == "completed"
+    conclusion_is_cancelled = main_check.get("conclusion") == "cancelled"
+    if not status_is_completed or not conclusion_is_cancelled:
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_NOT_CANCELLED"
         )
