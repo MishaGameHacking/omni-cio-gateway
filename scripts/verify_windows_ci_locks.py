@@ -17,6 +17,18 @@ _VERIFY_TIMEOUT_SECONDS = 30.0
 _MAX_ATTEMPTS = 3
 _MAX_BACKOFF_SECONDS = 30.0
 
+_NON_RETRYABLE_MARKERS = (
+    "401 client error",
+    "403 client error",
+    "certificate verify failed",
+    "could not find a version that satisfies",
+    "does not match the hashes",
+    "hashes are required",
+    "no matching distribution found",
+    "sslcertverificationerror",
+    "unauthorized",
+)
+
 _TRANSIENT_TRANSPORT_MARKERS = (
     "access violation writing",
     "connection aborted",
@@ -100,6 +112,8 @@ def _timeout_text(value: str | bytes | None) -> str:
 
 def is_transient_transport_failure(stdout: str, stderr: str) -> bool:
     combined = f"{stdout}\n{stderr}".lower()
+    if any(marker in combined for marker in _NON_RETRYABLE_MARKERS):
+        return False
     return any(marker in combined for marker in _TRANSIENT_TRANSPORT_MARKERS)
 
 
