@@ -75,8 +75,12 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert 'if [ "$neon_rc" -ne 0 ]; then' in bootstrap
     assert "python -m scripts.probe_v10_neon_authority_diagnostics || true" in bootstrap
     assert 'exit "$neon_rc"' in bootstrap
-    assert bootstrap.index("python -m scripts.provision_v10_cloudflare_neon_runtime") < bootstrap.index("python -m scripts.probe_v10_neon_authority_diagnostics")
-    assert bootstrap.index("python -m scripts.probe_v10_neon_authority_diagnostics") < bootstrap.index('test -s "$dsn_file"')
+    assert bootstrap.index(
+        "python -m scripts.provision_v10_cloudflare_neon_runtime"
+    ) < bootstrap.index("python -m scripts.probe_v10_neon_authority_diagnostics")
+    assert bootstrap.index(
+        "python -m scripts.probe_v10_neon_authority_diagnostics"
+    ) < bootstrap.index('test -s "$dsn_file"')
     assert "put-runtime-secret" in bootstrap
     assert "bootstrap_v10_cloudflare_production_database_direct" not in bootstrap
     assert "NEON_FUNCTION_DEPLOY_API_KEY" not in bootstrap
