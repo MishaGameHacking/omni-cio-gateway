@@ -11,7 +11,8 @@ SCRIPT_PATH = (
     Path(__file__).resolve().parents[1] / "scripts" / "check_ci_security_baseline.py"
 )
 SPEC = importlib.util.spec_from_file_location("check_ci_security_baseline", SCRIPT_PATH)
-assert SPEC is not None and SPEC.loader is not None
+assert SPEC is not None
+assert SPEC.loader is not None
 baseline = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(baseline)
 
