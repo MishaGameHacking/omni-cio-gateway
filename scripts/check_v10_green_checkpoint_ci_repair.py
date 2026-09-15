@@ -19,7 +19,9 @@ TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 AUTHORITATIVE_WORKFLOW = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 EXTERNAL_REVIEW_GUARD = ROOT / "scripts/check_v10_pr_external_review_gate.py"
 POSTMERGE_RELEASE_GATE = ROOT / "scripts/check_v10_cloudflare_postmerge_release_gate.py"
-PRODUCTION_RELEASE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
+PRODUCTION_RELEASE_WORKFLOW = (
+    ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
+)
 
 RED_REPAIR_ONLY = "RED_REPAIR_ONLY"
 TARGET_REPAIRED = "TARGET_REPAIRED"
@@ -407,6 +409,8 @@ def _validate_static_surfaces(failures: list[str]) -> None:
             "post_merge_check_name",
             "post_merge_check_app_slug",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NEW_ISSUES_PRESENT",
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SECURITY_HOTSPOTS_PRESENT",
             "/check-runs?",
         ),
         PRODUCTION_RELEASE_WORKFLOW: (
