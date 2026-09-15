@@ -19,6 +19,7 @@ TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 AUTHORITATIVE_WORKFLOW = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 EXTERNAL_REVIEW_GUARD = ROOT / "scripts/check_v10_pr_external_review_gate.py"
 POSTMERGE_RELEASE_GATE = ROOT / "scripts/check_v10_cloudflare_postmerge_release_gate.py"
+SONAR_PROVENANCE_GUARD = ROOT / "scripts/check_v10_sonar_equivalent_tree_provenance.py"
 PRODUCTION_RELEASE_WORKFLOW = (
     ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
 )
@@ -283,6 +284,16 @@ def _validate_sonar(payload: dict[str, Any], failures: list[str]) -> None:
         "post_merge_check_name": SONAR_POSTMERGE_CHECK_NAME,
         "post_merge_check_app_slug": SONAR_POSTMERGE_APP_SLUG,
         "post_merge_check_success_only": True,
+        "post_merge_cancelled_equivalent_tree_fallback_allowed": True,
+        "post_merge_cancelled_fallback_main_annotations_must_be_zero": True,
+        "post_merge_cancelled_fallback_unique_merged_pr_required": True,
+        "post_merge_cancelled_fallback_base_must_be_main": True,
+        "post_merge_cancelled_fallback_merge_sha_must_equal_exact_main": True,
+        "post_merge_cancelled_fallback_tree_identity_required": True,
+        "post_merge_cancelled_fallback_pr_head_sonar_success_required": True,
+        "post_merge_cancelled_fallback_pr_head_zero_findings_required": True,
+        "post_merge_cancelled_fallback_current_main_recheck_required": True,
+        "post_merge_failure_or_findings_fallback_forbidden": True,
     }
     for key, value in expected.items():
         _expect(sonar, key, value, SONAR_SECTION, failures)
@@ -411,11 +422,19 @@ def _validate_static_surfaces(failures: list[str]) -> None:
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NEW_ISSUES_PRESENT",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SECURITY_HOTSPOTS_PRESENT",
+            "certify_cancelled_exact_main_sonar",
             "/check-runs?",
+        ),
+        SONAR_PROVENANCE_GUARD: (
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_PULL_NOT_UNIQUE",
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_TREE_MISMATCH",
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_NOT_CANCELLED",
+            "_external_check_state",
         ),
         PRODUCTION_RELEASE_WORKFLOW: (
             "actions: read",
             "checks: read",
+            "pull-requests: read",
             "check_v10_cloudflare_postmerge_release_gate",
         ),
     }
@@ -460,6 +479,7 @@ def main() -> int:
     )
     print("Required merge gate: exact-head Sonar zero-issue enforcement enabled")
     print("Post-merge release gate: exact-main Sonar success enforcement enabled")
+    print("Post-merge cancelled Sonar: equivalent-tree PR provenance is fail-closed")
     print("Next functional checkpoint requires CERTIFIED_GREEN.")
     return 0
 
