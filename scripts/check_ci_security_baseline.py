@@ -11,6 +11,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "regression-shield.yml"
+AUTHORITATIVE_WORKFLOW_PATH = (
+    ROOT / ".github" / "workflows" / "self-hosted-windows-smoke.yml"
+)
+WINDOWS_LOCK_HELPER_PATH = ROOT / "scripts" / "verify_windows_ci_locks.py"
+BOUNDED_WINDOWS_LOCK_COMMAND = "python scripts/verify_windows_ci_locks.py"
+UNBOUNDED_WINDOWS_LOCK_COMMAND = "python -m piptools compile"
+PROTECTED_LOCK_WORKFLOW_PATHS = (WORKFLOW_PATH, AUTHORITATIVE_WORKFLOW_PATH)
 LOCK_PATHS = (
     ROOT / "requirements.txt",
     ROOT / "requirements-dev.txt",
@@ -246,8 +253,7 @@ REQUIRED_WORKFLOW_COMMANDS = {
     "external CI environment export": EXTERNAL_VENV_EXPORT_COMMAND,
     "Windows lock projection": "python scripts/windows_ci_lock.py project",
     "hash-locked install": "--require-hashes -r windows-requirements-dev.txt",
-    "lock consistency": "python -m piptools compile",
-    "Windows lock verification": "python scripts/windows_ci_lock.py verify",
+    "bounded lock consistency": BOUNDED_WINDOWS_LOCK_COMMAND,
     "CI policy self-check": "python scripts/check_ci_security_baseline.py",
     "V10 repository boundaries": "python scripts/check_v10_repository_boundaries.py",
     "V10 toolchain baseline": "python scripts/check_v10_toolchain_baseline.py",
@@ -417,6 +423,33 @@ def validate_workflow(failures: list[str]) -> None:
         failures.append(
             "every self-hosted job must reset and clean its external virtual environment"
         )
+
+
+def validate_bounded_windows_lock_verification(failures: list[str]) -> None:
+    if not WINDOWS_LOCK_HELPER_PATH.is_file():
+        failures.append("missing bounded Windows lock verification helper")
+    for path in PROTECTED_LOCK_WORKFLOW_PATHS:
+        if not path.is_file():
+            failures.append(
+                f"missing protected Windows lock workflow: {display_path(path)}"
+            )
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            failures.append(
+                f"cannot read protected Windows lock workflow {display_path(path)}: {exc}"
+            )
+            continue
+        if text.count(BOUNDED_WINDOWS_LOCK_COMMAND) != 1:
+            failures.append(
+                f"{display_path(path)} must invoke the bounded Windows lock helper "
+                "exactly once"
+            )
+        if UNBOUNDED_WINDOWS_LOCK_COMMAND in text:
+            failures.append(
+                f"{display_path(path)} must not execute raw unbounded piptools compile"
+            )
 
 
 def validate_render_contract(failures: list[str]) -> None:
@@ -818,6 +851,7 @@ def validate_repository_baseline() -> list[str]:
     for path in LOCK_PATHS:
         validate_lock_file(path, failures)
     validate_workflow(failures)
+    validate_bounded_windows_lock_verification(failures)
     validate_render_contract(failures)
     bootstrap = ROOT / ".github" / "workflows" / "pr03-bootstrap.yml"
     if bootstrap.exists():
@@ -858,6 +892,7 @@ def main() -> int:
         print("CI/security baseline check passed.")
         print("Dependency locks: pinned and SHA-256 hashed")
         print("Windows projection: exact except allowlisted uvloop exclusion")
+        print("Windows lock re-resolution: bounded and transient-only retry")
         print("CI virtual environments: isolated in RUNNER_TEMP")
         print("GitHub Actions: pinned to full commit SHAs")
         print(
