@@ -12,7 +12,8 @@ SCRIPT_PATH = (
     Path(__file__).resolve().parents[1] / "scripts" / "verify_windows_ci_locks.py"
 )
 SPEC = importlib.util.spec_from_file_location("verify_windows_ci_locks", SCRIPT_PATH)
-assert SPEC is not None and SPEC.loader is not None
+assert SPEC is not None
+assert SPEC.loader is not None
 verifier = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = verifier
 SPEC.loader.exec_module(verifier)
