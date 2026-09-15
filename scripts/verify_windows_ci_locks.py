@@ -121,6 +121,10 @@ def _safe_exit_code(returncode: int) -> int:
     return returncode if 1 <= returncode <= 255 else 1
 
 
+def _retry_delay(backoff_seconds: float, attempt: int) -> float:
+    return min(backoff_seconds * attempt, _MAX_BACKOFF_SECONDS)
+
+
 def _compile_command(plan: LockPlan) -> list[str]:
     return [
         sys.executable,
@@ -162,6 +166,70 @@ def _remove_partial_output(root: Path, plan: LockPlan) -> bool:
     return True
 
 
+def _handle_compile_timeout(
+    plan: LockPlan,
+    *,
+    attempt: int,
+    attempts: int,
+    backoff_seconds: float,
+    compile_timeout_seconds: float,
+    sleeper: Sleeper,
+) -> int | None:
+    if attempt == attempts:
+        print(
+            f"pip-compile timed out after {compile_timeout_seconds:g}s on "
+            f"attempt {attempt}/{attempts} for {plan.source}; lock gate "
+            "remains failed closed.",
+            file=sys.stderr,
+        )
+        return 75
+    delay = _retry_delay(backoff_seconds, attempt)
+    print(
+        f"pip-compile timed out after {compile_timeout_seconds:g}s on attempt "
+        f"{attempt}/{attempts} for {plan.source}; retrying after {delay:g}s.",
+        file=sys.stderr,
+    )
+    sleeper(delay)
+    return None
+
+
+def _handle_compile_result(
+    plan: LockPlan,
+    completed: subprocess.CompletedProcess[str],
+    *,
+    attempt: int,
+    attempts: int,
+    backoff_seconds: float,
+    sleeper: Sleeper,
+) -> int | None:
+    _emit(completed.stdout, stream=sys.stdout)
+    _emit(completed.stderr, stream=sys.stderr)
+    if completed.returncode == 0:
+        return 0
+    if not is_transient_transport_failure(completed.stdout, completed.stderr):
+        print(
+            f"pip-compile failed for {plan.source} with a non-transient resolver "
+            "or content error; retry is forbidden.",
+            file=sys.stderr,
+        )
+        return _safe_exit_code(completed.returncode)
+    if attempt == attempts:
+        print(
+            f"pip-compile transient transport failure persisted for {plan.source} "
+            f"after {attempts} attempts; lock gate remains failed closed.",
+            file=sys.stderr,
+        )
+        return _safe_exit_code(completed.returncode)
+    delay = _retry_delay(backoff_seconds, attempt)
+    print(
+        f"pip-compile transient transport failure on attempt {attempt}/{attempts} "
+        f"for {plan.source}; retrying after {delay:g}s.",
+        file=sys.stderr,
+    )
+    sleeper(delay)
+    return None
+
+
 def _run_compile_plan(
     plan: LockPlan,
     *,
@@ -179,58 +247,33 @@ def _run_compile_plan(
         try:
             completed = runner(command, root, compile_timeout_seconds)
         except subprocess.TimeoutExpired as exc:
-            stdout = _timeout_text(exc.stdout)
-            stderr = _timeout_text(exc.stderr)
-            _emit(stdout, stream=sys.stdout)
-            _emit(stderr, stream=sys.stderr)
-            if attempt == attempts:
-                print(
-                    f"pip-compile timed out after {compile_timeout_seconds:g}s on "
-                    f"attempt {attempt}/{attempts} for {plan.source}; lock gate "
-                    "remains failed closed.",
-                    file=sys.stderr,
-                )
-                return 75
-            delay = min(backoff_seconds * attempt, _MAX_BACKOFF_SECONDS)
-            print(
-                f"pip-compile timed out after {compile_timeout_seconds:g}s on attempt "
-                f"{attempt}/{attempts} for {plan.source}; retrying after {delay:g}s.",
-                file=sys.stderr,
+            _emit(_timeout_text(exc.stdout), stream=sys.stdout)
+            _emit(_timeout_text(exc.stderr), stream=sys.stderr)
+            status = _handle_compile_timeout(
+                plan,
+                attempt=attempt,
+                attempts=attempts,
+                backoff_seconds=backoff_seconds,
+                compile_timeout_seconds=compile_timeout_seconds,
+                sleeper=sleeper,
             )
-            sleeper(delay)
+            if status is not None:
+                return status
             continue
         except OSError as exc:
             print(f"pip-compile launcher failed: {exc}", file=sys.stderr)
             return 70
 
-        _emit(completed.stdout, stream=sys.stdout)
-        _emit(completed.stderr, stream=sys.stderr)
-        if completed.returncode == 0:
-            return 0
-
-        if not is_transient_transport_failure(completed.stdout, completed.stderr):
-            print(
-                f"pip-compile failed for {plan.source} with a non-transient resolver "
-                "or content error; retry is forbidden.",
-                file=sys.stderr,
-            )
-            return _safe_exit_code(completed.returncode)
-
-        if attempt == attempts:
-            print(
-                f"pip-compile transient transport failure persisted for {plan.source} "
-                f"after {attempts} attempts; lock gate remains failed closed.",
-                file=sys.stderr,
-            )
-            return _safe_exit_code(completed.returncode)
-
-        delay = min(backoff_seconds * attempt, _MAX_BACKOFF_SECONDS)
-        print(
-            f"pip-compile transient transport failure on attempt {attempt}/{attempts} "
-            f"for {plan.source}; retrying after {delay:g}s.",
-            file=sys.stderr,
+        status = _handle_compile_result(
+            plan,
+            completed,
+            attempt=attempt,
+            attempts=attempts,
+            backoff_seconds=backoff_seconds,
+            sleeper=sleeper,
         )
-        sleeper(delay)
+        if status is not None:
+            return status
     return 1
 
 
