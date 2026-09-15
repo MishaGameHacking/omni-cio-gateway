@@ -45,7 +45,7 @@ Adjacent failure mode: any required external GitHub App check can be invisible t
 - Add a second exact-commit evidence surface using GitHub commit check-runs.
 - Grant the production-release workflow explicit read-only `checks: read` authority so the check-runs evidence surface is actually available under explicit GitHub token permissions.
 - Bind the required post-merge Sonar evidence by both exact check name `SonarCloud Code Analysis` and GitHub App slug `sonarqubecloud`.
-- Require the latest matching exact-main check to be `completed` with conclusion `success` and zero annotations.
+- Require the latest matching exact-main check to be `completed` with conclusion `success`, zero new issues, zero Security Hotspots and zero annotations.
 - Treat missing or in-progress external evidence as bounded pending, never GREEN.
 - Treat any terminal non-success external conclusion as immediate fail-closed RED.
 - Re-run the same gate immediately before production promotion, preserving the existing superseded-main check.
@@ -58,7 +58,7 @@ Deterministic coverage requires:
 - a same-name check from the wrong GitHub App must not satisfy the gate;
 - a matching provider check with `cancelled` must stop the gate;
 - the latest matching provider check is authoritative over an older successful one;
-- non-zero annotations must stop the gate;
+- non-zero new issues, Security Hotspots or annotations must stop the gate;
 - missing/in-progress external evidence remains pending;
 - exact-SHA check-run filter drift fails closed;
 - check-run pagination remains bounded and complete;
