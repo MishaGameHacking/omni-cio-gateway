@@ -312,9 +312,16 @@ jobs:
           set -euo pipefail
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-production-dsn.txt"
           rm -f "$dsn_file"
+          set +e
           python -m scripts.provision_v10_cloudflare_neon_runtime \
             --expected-sha "$EXPECTED_HEAD" \
             --environment production
+          neon_rc=$?
+          set -e
+          if [ "$neon_rc" -ne 0 ]; then
+            python -m scripts.probe_v10_neon_authority_diagnostics || true
+            exit "$neon_rc"
+          fi
           test -s "$dsn_file"
           python -m scripts.manage_v10_cloudflare_production put-runtime-secret
 

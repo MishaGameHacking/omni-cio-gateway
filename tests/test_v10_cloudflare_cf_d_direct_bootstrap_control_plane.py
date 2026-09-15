@@ -70,6 +70,17 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}" in bootstrap
     assert "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}" in bootstrap
     assert "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}" in bootstrap
+    assert "set +e" in bootstrap
+    assert "neon_rc=$?" in bootstrap
+    assert 'if [ "$neon_rc" -ne 0 ]; then' in bootstrap
+    assert "python -m scripts.probe_v10_neon_authority_diagnostics || true" in bootstrap
+    assert 'exit "$neon_rc"' in bootstrap
+    assert bootstrap.index(
+        "python -m scripts.provision_v10_cloudflare_neon_runtime"
+    ) < bootstrap.index("python -m scripts.probe_v10_neon_authority_diagnostics")
+    assert bootstrap.index(
+        "python -m scripts.probe_v10_neon_authority_diagnostics"
+    ) < bootstrap.index('test -s "$dsn_file"')
     assert "put-runtime-secret" in bootstrap
     assert "bootstrap_v10_cloudflare_production_database_direct" not in bootstrap
     assert "NEON_FUNCTION_DEPLOY_API_KEY" not in bootstrap
@@ -150,6 +161,34 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
     assert cutover["production_database_bootstrap_runner_temp_dsn_only"] is True
     assert cutover["production_database_bootstrap_dsn_logging_allowed"] is False
     assert cutover["production_database_bootstrap_dsn_artifact_allowed"] is False
+    assert (
+        cutover["production_database_bootstrap_neon_authority_failure_diagnostic_required"]
+        is True
+    )
+    assert (
+        cutover[
+            "production_database_bootstrap_neon_authority_failure_diagnostic_read_only"
+        ]
+        is True
+    )
+    assert (
+        cutover[
+            "production_database_bootstrap_neon_authority_failure_diagnostic_non_authoritative"
+        ]
+        is True
+    )
+    assert (
+        cutover[
+            "production_database_bootstrap_neon_authority_failure_original_exit_preserved"
+        ]
+        is True
+    )
+    assert (
+        cutover[
+            "production_database_bootstrap_neon_authority_failure_may_convert_red_to_green"
+        ]
+        is False
+    )
 
     assert (
         cutover["production_database_bootstrap_function_active_transport"] is False
