@@ -10,7 +10,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 CHECK = ROOT / "scripts/check_v10_green_checkpoint_ci_repair.py"
 CONTRACT = ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
-AMENDMENT = ROOT / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md"
+AMENDMENT = (
+    ROOT
+    / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md"
+)
 RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
 TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 
@@ -24,6 +27,7 @@ LIVE_GUIDANCE = (
     ROOT / "docs/master-plan/README.md",
     ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md",
     ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md",
+    ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md",
     ROOT / ".github/pull_request_template.md",
     ROOT / ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml",
 )
@@ -44,8 +48,14 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         )
         assert completed.returncode == 0, completed.stderr or completed.stdout
         assert "Live guidance: synchronized with Amendment 16" in completed.stdout
-        assert "Targeted verifier: exact dispatch head + accepted frontend toolchain enforced" in completed.stdout
-        assert "Post-merge release gate: exact-main Sonar success enforcement enabled" in completed.stdout
+        assert (
+            "Targeted verifier: exact dispatch head + accepted frontend toolchain enforced"
+            in completed.stdout
+        )
+        assert (
+            "Post-merge release gate: exact-main Sonar success enforcement enabled"
+            in completed.stdout
+        )
         assert "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
 
     def test_red_checkpoint_blocks_next_functional_checkpoint(self) -> None:
@@ -120,11 +130,17 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
     def test_superseded_wait_all_operational_sections_are_removed(self) -> None:
         forbidden_by_path = {
             ROOT / "CONTRIBUTING.md": "## Pre-CI / HEAD FREEZE",
-            ROOT / ".github/pull_request_template.md": "## HEAD FREEZE / verification batch",
+            ROOT / ".github/pull_request_template.md": (
+                "## HEAD FREEZE / verification batch"
+            ),
             ROOT / "gpt/PROJECT_INSTRUCTIONS.md": "\nHEAD FREEZE:\n",
             ROOT / "gpt/NEW_CHAT_PROMPT.md": "\nHEAD FREEZE:\n",
-            ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": "## 7. Verification batches / HEAD FREEZE",
-            ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": "## 7. Verification batches / HEAD FREEZE",
+            ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": (
+                "## 7. Verification batches / HEAD FREEZE"
+            ),
+            ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
+                "## 7. Verification batches / HEAD FREEZE"
+            ),
         }
         for path, marker in forbidden_by_path.items():
             assert marker not in path.read_text(encoding="utf-8"), path
