@@ -16,6 +16,8 @@ _NAME = "SonarCloud Code Analysis"
 _APP = "sonarqubecloud"
 _REPOSITORY = "owner/repo"
 _TOKEN = "token"
+_CONCLUSION = "conclusion"
+_OUTPUT = "output"
 
 
 def _main_check(
@@ -25,8 +27,8 @@ def _main_check(
 ) -> dict[str, Any]:
     return {
         "status": "completed",
-        "conclusion": conclusion,
-        "output": {"annotations_count": annotations, "summary": "analysis failed"},
+        _CONCLUSION: conclusion,
+        _OUTPUT: {"annotations_count": annotations, "summary": "analysis failed"},
     }
 
 
@@ -50,11 +52,11 @@ def _green_head_check() -> dict[str, Any]:
         "name": _NAME,
         "head_sha": _HEAD,
         "status": "completed",
-        "conclusion": "success",
+        _CONCLUSION: "success",
         "started_at": "2026-09-15T21:57:32Z",
         "completed_at": "2026-09-15T21:58:04Z",
         "app": {"slug": _APP},
-        "output": {
+        _OUTPUT: {
             "annotations_count": 0,
             "summary": "[0 New issues]\n[0 Security Hotspots]",
         },
@@ -140,7 +142,7 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
 
     def test_pr_head_sonar_must_be_normal_success(self) -> None:
         bad_head = _green_head_check()
-        bad_head["conclusion"] = "cancelled"
+        bad_head[_CONCLUSION] = "cancelled"
         api_rows = [[_pull()], _tree_payload(), _tree_payload()]
         with (
             patch.object(release_gate, "_require_current_main"),
@@ -155,7 +157,7 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
 
     def test_pr_head_sonar_findings_remain_red(self) -> None:
         finding = _green_head_check()
-        finding["output"]["summary"] = "[1 New issues]\n[0 Security Hotspots]"
+        finding[_OUTPUT]["summary"] = "[1 New issues]\n[0 Security Hotspots]"
         api_rows = [[_pull()], _tree_payload(), _tree_payload()]
         with (
             patch.object(release_gate, "_require_current_main"),
