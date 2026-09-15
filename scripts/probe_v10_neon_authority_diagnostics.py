@@ -27,6 +27,9 @@ _FALSE = "FALSE"
 _CANONICAL_LOOKUP_LIMIT = 10
 _AUTH_PATH = "/auth"
 _CURRENT_USER_ORGANIZATIONS_PATH = "/users/me/organizations"
+_QUERY_SCOPE_ORGANIZATION = "ORGANIZATION_SCOPED"
+_QUERY_SCOPE_PROJECT = "PROJECT_SCOPED"
+_QUERY_SCOPE_SKIPPED = "SKIPPED"
 _AUTH_METHODS = frozenset(
     {
         "keycloak",
@@ -68,6 +71,7 @@ class NeonAuthorityDiagnostic:
     organization_status: str
     project_status: str
     branches_status: str
+    canonical_query_scope: str
     canonical_query_status: str
     canonical_name_matches: str
     configured_id_match: str
@@ -84,6 +88,7 @@ class NeonAuthorityDiagnostic:
                 f"organization_status={self.organization_status}",
                 f"exact_project_status={self.project_status}",
                 f"exact_branches_status={self.branches_status}",
+                f"canonical_query_scope={self.canonical_query_scope}",
                 f"canonical_query_status={self.canonical_query_status}",
                 f"canonical_name_matches={self.canonical_name_matches}",
                 f"configured_id_match={self.configured_id_match}",
@@ -168,15 +173,14 @@ def _credential_organizations(
     return evidence.status, configured_org_match
 
 
-def _canonical_query_path(organization_id: str) -> str:
-    query = urlencode(
-        {
-            "limit": str(_CANONICAL_LOOKUP_LIMIT),
-            "search": _base.NEON_PROJECT_NAME,
-            "org_id": organization_id,
-        }
-    )
-    return f"/projects?{query}"
+def _canonical_query_path(organization_id: str | None) -> str:
+    parameters = {
+        "limit": str(_CANONICAL_LOOKUP_LIMIT),
+        "search": _base.NEON_PROJECT_NAME,
+    }
+    if organization_id is not None:
+        parameters["org_id"] = organization_id
+    return f"/projects?{urlencode(parameters)}"
 
 
 def _canonical_project_match(
@@ -207,45 +211,71 @@ def _canonical_project_match(
     return count, configured_id_match
 
 
+def _canonical_lookup_scope(
+    *,
+    credential_orgs_status: str,
+    organization_status: str,
+) -> tuple[str, str | None]:
+    if organization_status == _STATUS_OK:
+        return _QUERY_SCOPE_ORGANIZATION, "ORGANIZATION"
+    if (
+        credential_orgs_status in _DENIED_STATUSES
+        and organization_status in _DENIED_STATUSES
+    ):
+        return _QUERY_SCOPE_PROJECT, None
+    return _QUERY_SCOPE_SKIPPED, None
+
+
 def _canonical_lookup(
     api: _NeonReadApi,
     organization_id: str,
     project_id: str,
+    *,
+    credential_orgs_status: str,
     organization_status: str,
-) -> tuple[str, str, str]:
-    if organization_status != _STATUS_OK:
-        return _STATUS_SKIPPED, _UNKNOWN, _UNKNOWN
-    evidence = _read(api, _canonical_query_path(organization_id))
+) -> tuple[str, str, str, str]:
+    query_scope, organization_mode = _canonical_lookup_scope(
+        credential_orgs_status=credential_orgs_status,
+        organization_status=organization_status,
+    )
+    if query_scope == _QUERY_SCOPE_SKIPPED:
+        return query_scope, _STATUS_SKIPPED, _UNKNOWN, _UNKNOWN
+    query_org_id = organization_id if organization_mode == "ORGANIZATION" else None
+    evidence = _read(api, _canonical_query_path(query_org_id))
     if evidence.status != _STATUS_OK:
-        return evidence.status, _UNKNOWN, _UNKNOWN
+        return query_scope, evidence.status, _UNKNOWN, _UNKNOWN
     try:
         matches, configured_id_match = _canonical_project_match(
             evidence.payload,
             project_id,
         )
     except _base.ProvisioningStopped:
-        return _STATUS_INVALID_PAYLOAD, _UNKNOWN, _UNKNOWN
-    return evidence.status, matches, configured_id_match
+        return query_scope, _STATUS_INVALID_PAYLOAD, _UNKNOWN, _UNKNOWN
+    return query_scope, evidence.status, matches, configured_id_match
 
 
 def _exact_resource_denied(project_status: str, branches_status: str) -> bool:
     return project_status in _DENIED_STATUSES or branches_status in _DENIED_STATUSES
 
 
-def _organization_classification(
+def _canonical_classification(
     *,
-    organization_status: str,
-    project_status: str,
-    branches_status: str,
+    canonical_query_scope: str,
     canonical_query_status: str,
     canonical_name_matches: str,
     configured_id_match: str,
+    project_status: str,
+    branches_status: str,
 ) -> str | None:
-    if organization_status != _STATUS_OK or canonical_query_status != _STATUS_OK:
+    if canonical_query_status != _STATUS_OK:
         return None
     if canonical_name_matches == "0":
+        if canonical_query_scope == _QUERY_SCOPE_PROJECT:
+            return "CANONICAL_PROJECT_NOT_VISIBLE_TO_CREDENTIAL"
         return "CANONICAL_PROJECT_NOT_FOUND_IN_CONFIGURED_ORG"
     if canonical_name_matches == "MULTIPLE":
+        if canonical_query_scope == _QUERY_SCOPE_PROJECT:
+            return "CANONICAL_PROJECT_NAME_NOT_UNIQUE_FOR_CREDENTIAL"
         return "CANONICAL_PROJECT_NAME_NOT_UNIQUE"
     if canonical_name_matches == "1" and configured_id_match == _FALSE:
         return "CONFIGURED_PROJECT_ID_DRIFT"
@@ -265,6 +295,7 @@ def _classification(
     organization_status: str,
     project_status: str,
     branches_status: str,
+    canonical_query_scope: str,
     canonical_query_status: str,
     canonical_name_matches: str,
     configured_id_match: str,
@@ -279,16 +310,22 @@ def _classification(
         return "CREDENTIAL_INVALID"
     if credential_orgs_status == _STATUS_OK and configured_org_match == _FALSE:
         return "CONFIGURED_ORG_ID_DRIFT"
-    organization_classification = _organization_classification(
-        organization_status=organization_status,
-        project_status=project_status,
-        branches_status=branches_status,
+    canonical_classification = _canonical_classification(
+        canonical_query_scope=canonical_query_scope,
         canonical_query_status=canonical_query_status,
         canonical_name_matches=canonical_name_matches,
         configured_id_match=configured_id_match,
+        project_status=project_status,
+        branches_status=branches_status,
     )
-    if organization_classification is not None:
-        return organization_classification
+    if canonical_classification is not None:
+        return canonical_classification
+    if (
+        canonical_query_scope == _QUERY_SCOPE_PROJECT
+        and canonical_query_status in _DENIED_STATUSES
+        and _exact_resource_denied(project_status, branches_status)
+    ):
+        return "CREDENTIAL_PROJECT_READ_FORBIDDEN"
     if (
         credential_orgs_status == _STATUS_OK
         and configured_org_match == _TRUE
@@ -317,13 +354,17 @@ def diagnose_neon_authority(
     organization = _read(api, f"/organizations/{safe_org_id}")
     project = _read(api, f"/projects/{safe_project_id}")
     branches = _read(api, f"/projects/{safe_project_id}/branches?limit=1")
-    canonical_query_status, canonical_name_matches, configured_id_match = (
-        _canonical_lookup(
-            api,
-            safe_org_id,
-            safe_project_id,
-            organization.status,
-        )
+    (
+        canonical_query_scope,
+        canonical_query_status,
+        canonical_name_matches,
+        configured_id_match,
+    ) = _canonical_lookup(
+        api,
+        safe_org_id,
+        safe_project_id,
+        credential_orgs_status=credential_orgs_status,
+        organization_status=organization.status,
     )
     classification = _classification(
         auth_status=auth_status,
@@ -332,6 +373,7 @@ def diagnose_neon_authority(
         organization_status=organization.status,
         project_status=project.status,
         branches_status=branches.status,
+        canonical_query_scope=canonical_query_scope,
         canonical_query_status=canonical_query_status,
         canonical_name_matches=canonical_name_matches,
         configured_id_match=configured_id_match,
@@ -344,6 +386,7 @@ def diagnose_neon_authority(
         organization_status=organization.status,
         project_status=project.status,
         branches_status=branches.status,
+        canonical_query_scope=canonical_query_scope,
         canonical_query_status=canonical_query_status,
         canonical_name_matches=canonical_name_matches,
         configured_id_match=configured_id_match,
