@@ -24,7 +24,6 @@ LIVE_GUIDANCE = (
     ROOT / "docs/master-plan/README.md",
     ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md",
     ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md",
-    ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md",
     ROOT / ".github/pull_request_template.md",
     ROOT / ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml",
 )
@@ -46,6 +45,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert completed.returncode == 0, completed.stderr or completed.stdout
         assert "Live guidance: synchronized with Amendment 16" in completed.stdout
         assert "Targeted verifier: exact dispatch head + accepted frontend toolchain enforced" in completed.stdout
+        assert "Post-merge release gate: exact-main Sonar success enforcement enabled" in completed.stdout
         assert "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
 
     def test_red_checkpoint_blocks_next_functional_checkpoint(self) -> None:
@@ -93,6 +93,10 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert sonar["new_issues_default"] == 0
         assert sonar["unresolved_new_security_hotspots"] == 0
         assert sonar["material_new_reliability_security_maintainability_findings"] == 0
+        assert sonar["post_merge_exact_main_check_required"] is True
+        assert sonar["post_merge_check_name"] == "SonarCloud Code Analysis"
+        assert sonar["post_merge_check_app_slug"] == "sonarqubecloud"
+        assert sonar["post_merge_check_success_only"] is True
 
     def test_targeted_workflow_pins_exact_requested_sha_and_toolchain(self) -> None:
         workflow = TARGETED_WORKFLOW.read_text(encoding="utf-8")

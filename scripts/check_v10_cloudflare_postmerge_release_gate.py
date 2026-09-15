@@ -23,10 +23,16 @@ _RETRY_DELAYS = (1.0, 2.0)
 _DEFAULT_WAIT_SECONDS = 900
 _DEFAULT_POLL_SECONDS = 15
 _WORKFLOW_RUNS_PER_PAGE = 100
+_CHECK_RUNS_PER_PAGE = 100
 _MAX_FILTERED_WORKFLOW_RUNS = 1000
+_MAX_FILTERED_CHECK_RUNS = 1000
 _CONTRACT = (
     Path(__file__).resolve().parents[1]
     / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
+)
+_GREEN_CHECKPOINT_CONTRACT = (
+    Path(__file__).resolve().parents[1]
+    / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
 )
 
 
@@ -68,23 +74,50 @@ def _repository(value: str) -> str:
     return repository
 
 
-def _contract() -> tuple[frozenset[str], int]:
+def _read_json_contract(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(_CONTRACT.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CONTRACT_INVALID") from None
+    if not isinstance(payload, dict):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CONTRACT_INVALID")
+    return payload
+
+
+def _contract() -> tuple[frozenset[str], int, str, str]:
+    try:
+        payload = _read_json_contract(_CONTRACT)
         gate = payload["post_merge_gate"]
         names = gate["required_core_push_workflows"]
         minimum = gate["minimum_successful_push_workflows"]
-    except (OSError, KeyError, TypeError, ValueError):
+
+        green_payload = _read_json_contract(_GREEN_CHECKPOINT_CONTRACT)
+        sonar = green_payload["sonar_review"]
+        external_required = sonar["post_merge_exact_main_check_required"]
+        external_name = sonar["post_merge_check_name"]
+        external_app_slug = sonar["post_merge_check_app_slug"]
+        external_success_only = sonar["post_merge_check_success_only"]
+    except (KeyError, TypeError):
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CONTRACT_INVALID") from None
     if (
         not isinstance(names, list)
         or not names
         or any(not isinstance(name, str) or not name for name in names)
+        or len(set(names)) != len(names)
     ):
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CONTRACT_INVALID")
     if not isinstance(minimum, int) or minimum < len(names):
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CONTRACT_INVALID")
-    return frozenset(names), minimum
+    if (
+        external_required is not True
+        or external_success_only is not True
+        or not isinstance(external_name, str)
+        or not external_name
+        or not isinstance(external_app_slug, str)
+        or not external_app_slug
+    ):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CONTRACT_INVALID")
+    return frozenset(names), minimum, external_name, external_app_slug
 
 
 def _api_headers(token: str) -> dict[str, str]:
@@ -245,6 +278,68 @@ def _workflow_runs(
     return rows
 
 
+def _check_runs_query(page: int) -> str:
+    return urlencode(
+        {
+            "per_page": str(_CHECK_RUNS_PER_PAGE),
+            "page": str(page),
+            "filter": "latest",
+        }
+    )
+
+
+def _check_run_page(
+    repository: str,
+    token: str,
+    expected_sha: str,
+    page: int,
+) -> tuple[int, list[dict[str, Any]]]:
+    query = _check_runs_query(page)
+    payload = _api_get(
+        f"/repos/{repository}/commits/{expected_sha}/check-runs?{query}",
+        token,
+    )
+    if not isinstance(payload, dict):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECKS_RESPONSE_INVALID")
+    total_count = payload.get("total_count")
+    raw_rows = payload.get("check_runs")
+    if (
+        not isinstance(total_count, int)
+        or total_count < 0
+        or not isinstance(raw_rows, list)
+    ):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECKS_RESPONSE_INVALID")
+    rows: list[dict[str, Any]] = []
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECK_INVALID")
+        rows.append(raw)
+    return total_count, rows
+
+
+def _check_runs(repository: str, token: str, expected_sha: str) -> list[dict[str, Any]]:
+    total_count, first_page = _check_run_page(repository, token, expected_sha, 1)
+    if total_count > _MAX_FILTERED_CHECK_RUNS:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECKS_TRUNCATED")
+    page_count = max(1, (total_count + _CHECK_RUNS_PER_PAGE - 1) // _CHECK_RUNS_PER_PAGE)
+    rows = list(first_page)
+    for page in range(2, page_count + 1):
+        observed_total, page_rows = _check_run_page(
+            repository,
+            token,
+            expected_sha,
+            page,
+        )
+        if observed_total != total_count:
+            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECKS_CHANGED_DURING_READ")
+        rows.extend(page_rows)
+    if len(rows) != total_count:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECKS_INCOMPLETE")
+    if any(row.get("head_sha") != expected_sha for row in rows):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECK_FILTER_DRIFT")
+    return rows
+
+
 def _latest_runs_by_name(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     ordering: dict[str, tuple[int, int]] = {}
@@ -289,6 +384,41 @@ def _gate_state(
     return not pending, len(latest)
 
 
+def _external_check_state(
+    rows: list[dict[str, Any]],
+    required_name: str,
+    required_app_slug: str,
+) -> bool:
+    matches: list[dict[str, Any]] = []
+    for row in rows:
+        app = row.get("app")
+        app_slug = app.get("slug") if isinstance(app, dict) else None
+        if row.get("name") == required_name and app_slug == required_app_slug:
+            matches.append(row)
+    if not matches:
+        return False
+
+    latest: dict[str, Any] | None = None
+    latest_id = -1
+    for row in matches:
+        check_id = row.get("id")
+        if not isinstance(check_id, int) or check_id < 1:
+            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECK_INVALID")
+        if check_id > latest_id:
+            latest = row
+            latest_id = check_id
+    assert latest is not None
+
+    if latest.get("status") != "completed":
+        return False
+    if latest.get("conclusion") != "success":
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS")
+    output = latest.get("output")
+    if not isinstance(output, dict) or output.get("annotations_count") != 0:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_ANNOTATIONS_PRESENT")
+    return True
+
+
 def wait_for_release_gate(
     expected_sha: str,
     *,
@@ -304,7 +434,7 @@ def wait_for_release_gate(
     sha = _expected_sha(expected_sha)
     repository = _repository(_required(environment, "GITHUB_REPOSITORY"))
     token = _required(environment, "GITHUB_TOKEN")
-    required_names, minimum_successful = _contract()
+    required_names, minimum_successful, external_name, external_app_slug = _contract()
     deadline = time.monotonic() + float(wait_seconds)
     while True:
         if _current_main_sha(repository, token) != sha:
@@ -314,16 +444,27 @@ def wait_for_release_gate(
             required_names,
             minimum_successful,
         )
-        if ready:
+        external_ready = _external_check_state(
+            _check_runs(repository, token, sha),
+            external_name,
+            external_app_slug,
+        )
+        if ready and external_ready:
             if _current_main_sha(repository, token) != sha:
                 raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_MAIN_SUPERSEDED")
             print(
                 "CLOUDFLARE_POSTMERGE_GATE=READY "
-                f"exact_sha={sha} push_workflows={observed}"
+                f"exact_sha={sha} push_workflows={observed} "
+                f"external_check={external_name}"
             )
             return observed
         if time.monotonic() >= deadline:
-            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_PUSH_WORKFLOWS_PENDING")
+            code = (
+                "CLOUDFLARE_POSTMERGE_PUSH_WORKFLOWS_PENDING"
+                if not ready
+                else "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_PENDING"
+            )
+            raise ReleaseGateStopped(code)
         time.sleep(min(float(poll_seconds), max(0.0, deadline - time.monotonic())))
 
 

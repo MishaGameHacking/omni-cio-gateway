@@ -18,6 +18,8 @@ RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
 TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
 AUTHORITATIVE_WORKFLOW = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 EXTERNAL_REVIEW_GUARD = ROOT / "scripts/check_v10_pr_external_review_gate.py"
+POSTMERGE_RELEASE_GATE = ROOT / "scripts/check_v10_cloudflare_postmerge_release_gate.py"
+PRODUCTION_RELEASE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
 
 RED_REPAIR_ONLY = "RED_REPAIR_ONLY"
 TARGET_REPAIRED = "TARGET_REPAIRED"
@@ -40,6 +42,8 @@ TOOLCHAIN_BASELINE_PATH = "docs/architecture/V10_TOOLCHAIN_BASELINE.json"
 AUTHORITATIVE_WORKFLOW_PATH = ".github/workflows/self-hosted-windows-smoke.yml"
 EXTERNAL_REVIEW_GUARD_PATH = "scripts/check_v10_pr_external_review_gate.py"
 AUTHORITATIVE_CHECK_NAME = "V10 authoritative merge gate"
+SONAR_POSTMERGE_CHECK_NAME = "SonarCloud Code Analysis"
+SONAR_POSTMERGE_APP_SLUG = "sonarqubecloud"
 
 LIVE_GUIDANCE_MARKERS: dict[Path, tuple[str, ...]] = {
     ROOT / "AGENTS.md": (
@@ -273,6 +277,10 @@ def _validate_sonar(payload: dict[str, Any], failures: list[str]) -> None:
         "github_checks_permission": "read",
         "bounded_wait_required": True,
         "annotation_count_must_be_zero": True,
+        "post_merge_exact_main_check_required": True,
+        "post_merge_check_name": SONAR_POSTMERGE_CHECK_NAME,
+        "post_merge_check_app_slug": SONAR_POSTMERGE_APP_SLUG,
+        "post_merge_check_success_only": True,
     }
     for key, value in expected.items():
         _expect(sonar, key, value, SONAR_SECTION, failures)
@@ -389,10 +397,22 @@ def _validate_static_surfaces(failures: list[str]) -> None:
             f"python {EXTERNAL_REVIEW_GUARD_PATH}",
         ),
         EXTERNAL_REVIEW_GUARD: (
-            "SonarCloud Code Analysis",
+            SONAR_POSTMERGE_CHECK_NAME,
             "new issues must be 0",
             "Security Hotspots must be 0",
             "annotations/new findings must be 0",
+        ),
+        POSTMERGE_RELEASE_GATE: (
+            "post_merge_exact_main_check_required",
+            "post_merge_check_name",
+            "post_merge_check_app_slug",
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
+            "/check-runs?",
+        ),
+        PRODUCTION_RELEASE_WORKFLOW: (
+            "actions: read",
+            "checks: read",
+            "check_v10_cloudflare_postmerge_release_gate",
         ),
     }
     for path, markers in surfaces.items():
@@ -435,6 +455,7 @@ def main() -> int:
         "Targeted verifier: exact dispatch head + accepted frontend toolchain enforced"
     )
     print("Required merge gate: exact-head Sonar zero-issue enforcement enabled")
+    print("Post-merge release gate: exact-main Sonar success enforcement enabled")
     print("Next functional checkpoint requires CERTIFIED_GREEN.")
     return 0
 

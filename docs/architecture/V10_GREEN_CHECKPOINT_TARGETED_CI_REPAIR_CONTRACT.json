@@ -61,7 +61,11 @@
     "external_review_guard": "scripts/check_v10_pr_external_review_gate.py",
     "github_checks_permission": "read",
     "bounded_wait_required": true,
-    "annotation_count_must_be_zero": true
+    "annotation_count_must_be_zero": true,
+    "post_merge_exact_main_check_required": true,
+    "post_merge_check_name": "SonarCloud Code Analysis",
+    "post_merge_check_app_slug": "sonarqubecloud",
+    "post_merge_check_success_only": true
   },
   "green": {
     "accepted_check_conclusions": ["success"],
