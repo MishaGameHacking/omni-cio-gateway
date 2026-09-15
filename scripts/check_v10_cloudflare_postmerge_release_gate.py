@@ -413,6 +413,17 @@ def _external_check_ordering(row: dict[str, Any]) -> tuple[str, int]:
     return timestamp, check_id
 
 
+def _latest_external_check(
+    rows: list[dict[str, Any]],
+    required_name: str,
+    required_app_slug: str,
+) -> dict[str, Any] | None:
+    matches = _matching_external_checks(rows, required_name, required_app_slug)
+    if not matches:
+        return None
+    return max(matches, key=_external_check_ordering)
+
+
 def _external_check_output(row: dict[str, Any]) -> tuple[dict[str, Any], str]:
     output = row.get("output")
     if not isinstance(output, dict):
@@ -447,10 +458,9 @@ def _external_check_state(
     required_name: str,
     required_app_slug: str,
 ) -> bool:
-    matches = _matching_external_checks(rows, required_name, required_app_slug)
-    if not matches:
+    latest = _latest_external_check(rows, required_name, required_app_slug)
+    if latest is None:
         return False
-    latest = max(matches, key=_external_check_ordering)
     if latest.get("status") != "completed":
         return False
     if latest.get("conclusion") != "success":
@@ -472,6 +482,39 @@ def _require_current_main(repository: str, token: str, expected_sha: str) -> Non
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_MAIN_SUPERSEDED")
 
 
+def _external_evidence_state(
+    repository: str,
+    token: str,
+    expected_sha: str,
+    external_name: str,
+    external_app_slug: str,
+) -> bool:
+    rows = _check_runs(repository, token, expected_sha)
+    latest = _latest_external_check(rows, external_name, external_app_slug)
+    if latest is None or latest.get("status") != "completed":
+        return False
+    if latest.get("conclusion") == "success":
+        output, summary = _external_check_output(latest)
+        _require_zero_sonar_findings(output, summary)
+        return True
+    if latest.get("conclusion") != "cancelled":
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS")
+
+    from scripts.check_v10_sonar_equivalent_tree_provenance import (
+        certify_cancelled_exact_main_sonar,
+    )
+
+    certify_cancelled_exact_main_sonar(
+        repository=repository,
+        token=token,
+        expected_sha=expected_sha,
+        main_check=latest,
+        required_name=external_name,
+        required_app_slug=external_app_slug,
+    )
+    return True
+
+
 def _release_gate_snapshot(
     repository: str,
     token: str,
@@ -487,8 +530,10 @@ def _release_gate_snapshot(
         required_names,
         minimum_successful,
     )
-    external_ready = _external_check_state(
-        _check_runs(repository, token, expected_sha),
+    external_ready = _external_evidence_state(
+        repository,
+        token,
+        expected_sha,
         external_name,
         external_app_slug,
     )
