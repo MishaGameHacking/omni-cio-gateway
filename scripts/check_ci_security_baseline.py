@@ -219,7 +219,7 @@ APPROVED_PUBLIC_CHECKSUM_LINES = {
     "scripts/check_v10_wp7_bootstrap_contract.py": frozenset(
         {f'"{_WP7_PUBLIC_PYTHON_SHA256}"'}
     ),
-    "tests/test_v10_wp7_bootSTRAP_CONTRACT.py": frozenset(
+    "tests/test_v10_wp7_bootstrap_contract.py": frozenset(
         {f'"{_WP7_PUBLIC_PYTHON_SHA256}"'}
     ),
 }
