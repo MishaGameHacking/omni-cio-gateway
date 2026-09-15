@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -13,6 +14,7 @@ SCRIPT_PATH = (
 SPEC = importlib.util.spec_from_file_location("verify_windows_ci_locks", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None
 verifier = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = verifier
 SPEC.loader.exec_module(verifier)
 
 
