@@ -161,6 +161,31 @@ class WindowsLockVerificationTests(unittest.TestCase):
         self.assertEqual(sleeps, [1.0, 2.0])
         self.assertEqual(len(runner.commands), 3)
 
+    def test_security_failure_overrides_transient_marker(self) -> None:
+        runner = Runner(
+            [
+                completed(
+                    1,
+                    stderr=(
+                        "Max retries exceeded with url /simple/pkg/ caused by "
+                        "SSLCertVerificationError: certificate verify failed"
+                    ),
+                )
+            ]
+        )
+        sleeps: list[float] = []
+
+        status = verifier.verify_windows_ci_locks(
+            root=self.root,
+            attempts=3,
+            runner=runner,
+            sleeper=sleeps.append,
+        )
+
+        self.assertEqual(status, 1)
+        self.assertEqual(sleeps, [])
+        self.assertEqual(len(runner.commands), 1)
+
     def test_non_transient_compile_failure_is_not_retried(self) -> None:
         runner = Runner(
             [
