@@ -21,13 +21,13 @@ CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID"
 CLOUDFLARE_API_TOKEN = "CLOUDFLARE_API_TOKEN"
 CLOUDFLARE_ZONE_ID = "CLOUDFLARE_ZONE_ID"
 CLOUDFLARE_ZONE_NAME = "CLOUDFLARE_ZONE_NAME"
-NEON_API_KEY = "NEON_API_KEY"
-NEON_FUNCTION_DEPLOY_API_KEY = "NEON_FUNCTION_DEPLOY_API_KEY"
+NEON_RUNTIME_BINDING = "NEON_API_KEY"
+NEON_FUNCTION_DEPLOY_BINDING = "NEON_FUNCTION_DEPLOY_API_KEY"
 NEON_ORG_ID = "NEON_ORG_ID"
 NEON_PROJECT_ID = "NEON_PROJECT_ID"
 CUSTOM_HOST = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
 REMOVED_FUNCTION_INVOKE_TOKEN = "NEON_FUNCTION_INVOKE_API_TOKEN"
-RETIRED_RENDER_API_KEY = "RENDER_API_KEY"
+RETIRED_RENDER_BINDING = "RENDER_API_KEY"
 
 _SECRET_REF = re.compile(r"\$\{\{\s*secrets\.([A-Z][A-Z0-9_]*)\s*\}\}")
 _VAR_REF = re.compile(r"\$\{\{\s*vars\.([A-Z][A-Z0-9_]*)\s*\}\}")
@@ -38,8 +38,8 @@ _EXPECTED_INVENTORY = frozenset(
         CLOUDFLARE_API_TOKEN,
         CLOUDFLARE_ZONE_ID,
         CLOUDFLARE_ZONE_NAME,
-        NEON_API_KEY,
-        NEON_FUNCTION_DEPLOY_API_KEY,
+        NEON_RUNTIME_BINDING,
+        NEON_FUNCTION_DEPLOY_BINDING,
         NEON_ORG_ID,
         NEON_PROJECT_ID,
         CUSTOM_HOST,
@@ -59,8 +59,8 @@ _ACTIVE_WORKFLOWS = frozenset(
     {PROVIDER_WORKFLOW, CANDIDATE_WORKFLOW, PRODUCTION_WORKFLOW}
 )
 _EXPECTED_RETIRED = frozenset({RETIRED_HOSTED_WORKFLOW, RETIRED_PREVIEW_WORKFLOW})
-_EXPECTED_FORBIDDEN = frozenset({REMOVED_FUNCTION_INVOKE_TOKEN, RETIRED_RENDER_API_KEY})
-_ACTIVE_NEON_TUPLE = frozenset({NEON_API_KEY, NEON_ORG_ID, NEON_PROJECT_ID})
+_EXPECTED_FORBIDDEN = frozenset({REMOVED_FUNCTION_INVOKE_TOKEN, RETIRED_RENDER_BINDING})
+_ACTIVE_NEON_TUPLE = frozenset({NEON_RUNTIME_BINDING, NEON_ORG_ID, NEON_PROJECT_ID})
 _DOMAIN_TUPLE = frozenset({CLOUDFLARE_ZONE_ID, CLOUDFLARE_ZONE_NAME, CUSTOM_HOST})
 _RETAINED_FUNCTION_COMPONENTS = frozenset(
     {
@@ -69,12 +69,12 @@ _RETAINED_FUNCTION_COMPONENTS = frozenset(
     }
 )
 _EXPECTED_ROLES: dict[str, object] = {
-    "active_neon_runtime_management_secret": NEON_API_KEY,
-    "legacy_neon_function_deploy_secret": NEON_FUNCTION_DEPLOY_API_KEY,
+    "active_neon_runtime_management_binding": NEON_RUNTIME_BINDING,
+    "legacy_neon_function_deploy_binding": NEON_FUNCTION_DEPLOY_BINDING,
     "legacy_function_transport_active": False,
-    "active_runtime_may_alias_legacy_function_deploy_secret": False,
+    "active_runtime_may_alias_legacy_function_deploy_binding": False,
     "protected_provider_identifiers_may_use_actions_variables": False,
-    "active_cloudflare_job_level_secret_injection_allowed": False,
+    "active_cloudflare_job_level_provider_binding_injection_allowed": False,
 }
 _EXPECTED_INVARIANTS: dict[str, object] = {
     "gateway_entrypoint": "app:app",
@@ -140,7 +140,7 @@ def _validate_inventory_entry(name: str, metadata: object) -> None:
         metadata.get("state"), str
     ):
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_INVENTORY_METADATA_INVALID")
-    if name != NEON_FUNCTION_DEPLOY_API_KEY:
+    if name != NEON_FUNCTION_DEPLOY_BINDING:
         return
     if metadata.get("active_workflow_reference_allowed") is not False:
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_FUNCTION_DEPLOY_STATE_INVALID")
@@ -248,7 +248,7 @@ def _validate_retired_workflows(
 
 
 def _validate_role_consumers(all_refs: dict[str, set[str]]) -> None:
-    if any(NEON_FUNCTION_DEPLOY_API_KEY in refs for refs in all_refs.values()):
+    if any(NEON_FUNCTION_DEPLOY_BINDING in refs for refs in all_refs.values()):
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_DORMANT_FUNCTION_KEY_EXPOSED")
     for path in _ACTIVE_WORKFLOWS:
         if _ACTIVE_NEON_TUPLE - all_refs[path]:

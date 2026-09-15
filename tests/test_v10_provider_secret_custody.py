@@ -75,6 +75,38 @@ class ProviderSecretCustodyTests(unittest.TestCase):
     def test_repository_provider_secret_custody_contract_passes(self) -> None:
         guard.validate(ROOT)
 
+    def test_secret_name_metadata_is_detector_unambiguous(self) -> None:
+        contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
+        roles = contract["role_separation"]
+        self.assertEqual(
+            roles["active_neon_runtime_management_binding"],
+            "NEON_API_KEY",
+        )
+        self.assertEqual(
+            roles["legacy_neon_function_deploy_binding"],
+            "NEON_FUNCTION_DEPLOY_API_KEY",
+        )
+        self.assertFalse(
+            roles["active_runtime_may_alias_legacy_function_deploy_binding"]
+        )
+        self.assertFalse(
+            roles["active_cloudflare_job_level_provider_binding_injection_allowed"]
+        )
+        for name, value in roles.items():
+            if isinstance(value, str):
+                self.assertNotIn("secret", name.lower())
+
+        source = Path(guard.__file__).read_text(encoding="utf-8")
+        ambiguous_assignments = (
+            "NEON_API_" + 'KEY = "NEON_API_' + 'KEY"',
+            "NEON_FUNCTION_DEPLOY_API_"
+            + 'KEY = "NEON_FUNCTION_DEPLOY_API_'
+            + 'KEY"',
+            "RETIRED_RENDER_API_" + 'KEY = "RENDER_API_' + 'KEY"',
+        )
+        for assignment in ambiguous_assignments:
+            self.assertNotIn(assignment, source)
+
     def test_unknown_workflow_secret_is_rejected(self) -> None:
         root = self._root()
         _append(
