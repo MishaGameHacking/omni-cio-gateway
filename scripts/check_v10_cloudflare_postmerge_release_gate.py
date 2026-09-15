@@ -26,6 +26,8 @@ _WORKFLOW_RUNS_PER_PAGE = 100
 _CHECK_RUNS_PER_PAGE = 100
 _MAX_FILTERED_WORKFLOW_RUNS = 1000
 _MAX_FILTERED_CHECK_RUNS = 1000
+_ZERO_NEW_ISSUES = re.compile(r"\[(\d+) New issues\]")
+_ZERO_HOTSPOTS = re.compile(r"\[(\d+) Security Hotspots\]")
 _CONTRACT = (
     Path(__file__).resolve().parents[1]
     / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
@@ -321,7 +323,10 @@ def _check_runs(repository: str, token: str, expected_sha: str) -> list[dict[str
     total_count, first_page = _check_run_page(repository, token, expected_sha, 1)
     if total_count > _MAX_FILTERED_CHECK_RUNS:
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECKS_TRUNCATED")
-    page_count = max(1, (total_count + _CHECK_RUNS_PER_PAGE - 1) // _CHECK_RUNS_PER_PAGE)
+    page_count = max(
+        1,
+        (total_count + _CHECK_RUNS_PER_PAGE - 1) // _CHECK_RUNS_PER_PAGE,
+    )
     rows = list(first_page)
     for page in range(2, page_count + 1):
         observed_total, page_rows = _check_run_page(
@@ -398,24 +403,42 @@ def _external_check_state(
     if not matches:
         return False
 
-    latest: dict[str, Any] | None = None
-    latest_id = -1
-    for row in matches:
+    def ordering(row: dict[str, Any]) -> tuple[str, int]:
         check_id = row.get("id")
         if not isinstance(check_id, int) or check_id < 1:
             raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECK_INVALID")
-        if check_id > latest_id:
-            latest = row
-            latest_id = check_id
-    assert latest is not None
+        timestamp = row.get("completed_at") or row.get("started_at")
+        if not isinstance(timestamp, str) or not timestamp:
+            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CHECK_INVALID")
+        return timestamp, check_id
 
+    latest = max(matches, key=ordering)
     if latest.get("status") != "completed":
         return False
     if latest.get("conclusion") != "success":
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS")
     output = latest.get("output")
-    if not isinstance(output, dict) or output.get("annotations_count") != 0:
-        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_ANNOTATIONS_PRESENT")
+    if not isinstance(output, dict):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_OUTPUT_INVALID")
+    summary = output.get("summary")
+    if not isinstance(summary, str):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SUMMARY_INVALID")
+    issue_match = _ZERO_NEW_ISSUES.search(summary)
+    hotspot_match = _ZERO_HOTSPOTS.search(summary)
+    if issue_match is None or hotspot_match is None:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SUMMARY_INVALID")
+    if int(issue_match.group(1)) != 0:
+        raise ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NEW_ISSUES_PRESENT"
+        )
+    if int(hotspot_match.group(1)) != 0:
+        raise ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SECURITY_HOTSPOTS_PRESENT"
+        )
+    if output.get("annotations_count") != 0:
+        raise ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_ANNOTATIONS_PRESENT"
+        )
     return True
 
 
