@@ -101,16 +101,19 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
         self.assertEqual(observed, 2)
 
     def test_external_check_requires_exact_provider_identity_and_success(self) -> None:
+        wrong_provider_rows = [_check(app_slug="github-actions")]
+        green_rows = [_check()]
+        cancelled_rows = [_check(conclusion="cancelled")]
         self.assertFalse(
             gate._external_check_state(
-                [_check(app_slug="github-actions")],
+                wrong_provider_rows,
                 _EXTERNAL_NAME,
                 _EXTERNAL_APP,
             )
         )
         self.assertTrue(
             gate._external_check_state(
-                [_check()],
+                green_rows,
                 _EXTERNAL_NAME,
                 _EXTERNAL_APP,
             )
@@ -120,7 +123,7 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
         ):
             gate._external_check_state(
-                [_check(conclusion="cancelled")],
+                cancelled_rows,
                 _EXTERNAL_NAME,
                 _EXTERNAL_APP,
             )
@@ -147,12 +150,14 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
             gate._external_check_state(rows, _EXTERNAL_NAME, _EXTERNAL_APP)
 
     def test_external_check_requires_zero_sonar_new_code_metrics(self) -> None:
+        issue_rows = [_check(new_issues=1)]
+        hotspot_rows = [_check(hotspots=1)]
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NEW_ISSUES_PRESENT",
         ):
             gate._external_check_state(
-                [_check(new_issues=1)],
+                issue_rows,
                 _EXTERNAL_NAME,
                 _EXTERNAL_APP,
             )
@@ -161,18 +166,19 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SECURITY_HOTSPOTS_PRESENT",
         ):
             gate._external_check_state(
-                [_check(hotspots=1)],
+                hotspot_rows,
                 _EXTERNAL_NAME,
                 _EXTERNAL_APP,
             )
 
     def test_external_check_requires_zero_annotations(self) -> None:
+        annotated_rows = [_check(annotations_count=1)]
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_ANNOTATIONS_PRESENT",
         ):
             gate._external_check_state(
-                [_check(annotations_count=1)],
+                annotated_rows,
                 _EXTERNAL_NAME,
                 _EXTERNAL_APP,
             )
@@ -234,12 +240,13 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
                 gate._workflow_runs("owner/repo", "token", _SHA)
 
     def test_check_runs_fail_closed_if_exact_sha_filter_drifts(self) -> None:
+        drifted_check = _check(head_sha="b" * 40)
         with patch.object(
             gate,
             "_api_get",
             return_value={
                 "total_count": 1,
-                "check_runs": [_check(head_sha="b" * 40)],
+                "check_runs": [drifted_check],
             },
         ):
             with self.assertRaisesRegex(
@@ -252,12 +259,13 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
         first_page = [
             _run(f"workflow-{index}", run_id=index + 1) for index in range(100)
         ]
+        late_run = _run("late", run_id=102)
         with patch.object(
             gate,
             "_api_get",
             side_effect=(
                 {"total_count": 101, "workflow_runs": first_page},
-                {"total_count": 102, "workflow_runs": [_run("late", run_id=102)]},
+                {"total_count": 102, "workflow_runs": [late_run]},
             ),
         ):
             with self.assertRaisesRegex(
@@ -324,6 +332,7 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
     def test_wait_rechecks_main_after_all_evidence_is_green(self) -> None:
         rows = [_run("Regression Shield"), _run("V10 Engineering Governance")]
         rows.extend(_run(f"workflow-{index}") for index in range(9))
+        green_check = _check()
         environment = {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}
         with (
             patch.object(
@@ -332,7 +341,7 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
                 return_value=(_REQUIRED, 11, _EXTERNAL_NAME, _EXTERNAL_APP),
             ),
             patch.object(gate, "_workflow_runs", return_value=rows),
-            patch.object(gate, "_check_runs", return_value=[_check()]),
+            patch.object(gate, "_check_runs", return_value=[green_check]),
             patch.object(gate, "_current_main_sha", side_effect=[_SHA, "b" * 40]),
         ):
             with self.assertRaisesRegex(
