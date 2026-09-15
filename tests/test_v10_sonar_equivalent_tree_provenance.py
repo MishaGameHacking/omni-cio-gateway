@@ -127,18 +127,20 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
                 _certify()
 
     def test_main_cancellation_must_have_zero_annotations(self) -> None:
+        main_check = _main_check(annotations=1)
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_ANNOTATIONS_PRESENT",
         ):
-            provenance._require_cancelled_main_check(_main_check(annotations=1))
+            provenance._require_cancelled_main_check(main_check)
 
     def test_main_failure_is_not_eligible_for_cancelled_provenance(self) -> None:
+        main_check = _main_check(conclusion="failure")
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_NOT_CANCELLED",
         ):
-            provenance._require_cancelled_main_check(_main_check(conclusion="failure"))
+            provenance._require_cancelled_main_check(main_check)
 
     def test_pr_head_sonar_must_be_normal_success(self) -> None:
         bad_head = _green_head_check()
