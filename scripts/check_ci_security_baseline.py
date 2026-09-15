@@ -10,10 +10,9 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW_PATH = ROOT / ".github" / "workflows" / "regression-shield.yml"
-AUTHORITATIVE_WORKFLOW_PATH = (
-    ROOT / ".github" / "workflows" / "self-hosted-windows-smoke.yml"
-)
+WORKFLOW_DIRECTORY = ROOT / ".github" / "workflows"
+WORKFLOW_PATH = WORKFLOW_DIRECTORY / "regression-shield.yml"
+AUTHORITATIVE_WORKFLOW_PATH = WORKFLOW_DIRECTORY / "self-hosted-windows-smoke.yml"
 WINDOWS_LOCK_HELPER_PATH = ROOT / "scripts" / "verify_windows_ci_locks.py"
 BOUNDED_WINDOWS_LOCK_COMMAND = "python scripts/verify_windows_ci_locks.py"
 UNBOUNDED_WINDOWS_LOCK_COMMAND = "python -m piptools compile"
@@ -220,7 +219,7 @@ APPROVED_PUBLIC_CHECKSUM_LINES = {
     "scripts/check_v10_wp7_bootstrap_contract.py": frozenset(
         {f'"{_WP7_PUBLIC_PYTHON_SHA256}"'}
     ),
-    "tests/test_v10_wp7_bootstrap_contract.py": frozenset(
+    "tests/test_v10_wp7_bootSTRAP_CONTRACT.py": frozenset(
         {f'"{_WP7_PUBLIC_PYTHON_SHA256}"'}
     ),
 }
@@ -853,7 +852,7 @@ def validate_repository_baseline() -> list[str]:
     validate_workflow(failures)
     validate_bounded_windows_lock_verification(failures)
     validate_render_contract(failures)
-    bootstrap = ROOT / ".github" / "workflows" / "pr03-bootstrap.yml"
+    bootstrap = WORKFLOW_DIRECTORY / "pr03-bootstrap.yml"
     if bootstrap.exists():
         failures.append("temporary PR-03 bootstrap workflow must not be committed")
     return failures
