@@ -10,6 +10,8 @@ import scripts.check_v10_sonar_equivalent_tree_provenance as provenance
 _SHA = "a" * 40
 _NAME = "SonarCloud Code Analysis"
 _APP = "sonarqubecloud"
+_REPOSITORY = "owner/repo"
+_TOKEN = "token"
 
 
 def _check(conclusion: str | None) -> dict[str, object]:
@@ -29,6 +31,16 @@ def _check(conclusion: str | None) -> dict[str, object]:
     }
 
 
+def _evidence_state() -> bool:
+    return gate._external_evidence_state(
+        _REPOSITORY,
+        _TOKEN,
+        _SHA,
+        _NAME,
+        _APP,
+    )
+
+
 class CloudflarePostMergeSonarFallbackTests(unittest.TestCase):
     def test_cancelled_exact_main_uses_bounded_provenance_certifier(self) -> None:
         cancelled = _check("cancelled")
@@ -40,15 +52,7 @@ class CloudflarePostMergeSonarFallbackTests(unittest.TestCase):
                 return_value="b" * 40,
             ) as certify,
         ):
-            self.assertTrue(
-                gate._external_evidence_state(
-                    "owner/repo",
-                    "token",
-                    _SHA,
-                    _NAME,
-                    _APP,
-                )
-            )
+            self.assertTrue(_evidence_state())
         certify.assert_called_once()
 
     def test_terminal_failure_never_uses_provenance_fallback(self) -> None:
@@ -64,28 +68,14 @@ class CloudflarePostMergeSonarFallbackTests(unittest.TestCase):
                 RuntimeError,
                 "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
             ):
-                gate._external_evidence_state(
-                    "owner/repo",
-                    "token",
-                    _SHA,
-                    _NAME,
-                    _APP,
-                )
+                _evidence_state()
         certify.assert_not_called()
 
     def test_pending_or_missing_exact_main_sonar_stays_pending(self) -> None:
         for rows in ([], [_check(None)]):
             with self.subTest(rows=rows):
                 with patch.object(gate, "_check_runs", return_value=rows):
-                    self.assertFalse(
-                        gate._external_evidence_state(
-                            "owner/repo",
-                            "token",
-                            _SHA,
-                            _NAME,
-                            _APP,
-                        )
-                    )
+                    self.assertFalse(_evidence_state())
 
 
 if __name__ == "__main__":
