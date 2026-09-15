@@ -248,27 +248,7 @@ jobs:
             -PythonPath "$python_path"
 
       - name: Verify lock files are current
-        run: |
-          python -m piptools compile \
-            --allow-unsafe \
-            --generate-hashes \
-            --resolver=backtracking \
-            --strip-extras \
-            --quiet \
-            --constraint=requirements.txt \
-            --output-file=windows-compiled-requirements.txt \
-            requirements.in
-          python -m piptools compile \
-            --allow-unsafe \
-            --generate-hashes \
-            --resolver=backtracking \
-            --strip-extras \
-            --quiet \
-            --constraint=requirements-dev.txt \
-            --output-file=windows-compiled-requirements-dev.txt \
-            requirements-dev.in
-          python scripts/windows_ci_lock.py verify requirements.txt windows-compiled-requirements.txt
-          python scripts/windows_ci_lock.py verify requirements-dev.txt windows-compiled-requirements-dev.txt
+        run: python scripts/verify_windows_ci_locks.py
 
       - name: Verify repository and CI policy contracts
         run: |
