@@ -38,6 +38,10 @@ def _check(
     conclusion: str | None = "success",
     check_id: int = 1,
     annotations_count: int = 0,
+    new_issues: int = 0,
+    hotspots: int = 0,
+    started_at: str = "2026-09-15T20:00:00Z",
+    completed_at: str | None = "2026-09-15T20:01:00Z",
     head_sha: str = _SHA,
 ):
     return {
@@ -46,8 +50,13 @@ def _check(
         "head_sha": head_sha,
         "status": "completed" if conclusion is not None else "in_progress",
         "conclusion": conclusion,
+        "started_at": started_at,
+        "completed_at": completed_at if conclusion is not None else None,
         "app": {"slug": app_slug},
-        "output": {"annotations_count": annotations_count},
+        "output": {
+            "annotations_count": annotations_count,
+            "summary": f"[{new_issues} New issues]\n[{hotspots} Security Hotspots]",
+        },
     }
 
 
@@ -118,14 +127,44 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
 
     def test_external_check_latest_same_provider_run_is_authoritative(self) -> None:
         rows = [
-            _check(conclusion="success", check_id=1),
-            _check(conclusion="cancelled", check_id=2),
+            _check(
+                conclusion="success",
+                check_id=20,
+                started_at="2026-09-15T20:00:00Z",
+                completed_at="2026-09-15T20:01:00Z",
+            ),
+            _check(
+                conclusion="cancelled",
+                check_id=2,
+                started_at="2026-09-15T20:02:00Z",
+                completed_at="2026-09-15T20:03:00Z",
+            ),
         ]
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
         ):
             gate._external_check_state(rows, _EXTERNAL_NAME, _EXTERNAL_APP)
+
+    def test_external_check_requires_zero_sonar_new_code_metrics(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NEW_ISSUES_PRESENT",
+        ):
+            gate._external_check_state(
+                [_check(new_issues=1)],
+                _EXTERNAL_NAME,
+                _EXTERNAL_APP,
+            )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SECURITY_HOTSPOTS_PRESENT",
+        ):
+            gate._external_check_state(
+                [_check(hotspots=1)],
+                _EXTERNAL_NAME,
+                _EXTERNAL_APP,
+            )
 
     def test_external_check_requires_zero_annotations(self) -> None:
         with self.assertRaisesRegex(
@@ -139,7 +178,9 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
             )
 
     def test_workflow_runs_paginates_complete_exact_sha_evidence(self) -> None:
-        first_page = [_run(f"workflow-{index}", run_id=index + 1) for index in range(100)]
+        first_page = [
+            _run(f"workflow-{index}", run_id=index + 1) for index in range(100)
+        ]
         second_page = [_run("workflow-100", run_id=101)]
         with patch.object(
             gate,
@@ -208,7 +249,9 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
                 gate._check_runs("owner/repo", "token", _SHA)
 
     def test_workflow_runs_fail_closed_if_snapshot_changes_between_pages(self) -> None:
-        first_page = [_run(f"workflow-{index}", run_id=index + 1) for index in range(100)]
+        first_page = [
+            _run(f"workflow-{index}", run_id=index + 1) for index in range(100)
+        ]
         with patch.object(
             gate,
             "_api_get",
@@ -303,7 +346,9 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
                     poll_seconds=1,
                 )
 
-    def test_wait_reports_external_check_pending_after_workflows_are_green(self) -> None:
+    def test_wait_reports_external_check_pending_after_workflows_are_green(
+        self,
+    ) -> None:
         rows = [_run("Regression Shield"), _run("V10 Engineering Governance")]
         rows.extend(_run(f"workflow-{index}") for index in range(9))
         environment = {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}
