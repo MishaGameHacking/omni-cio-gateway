@@ -57,6 +57,7 @@ _RESPONSE_MEDIA_MISSING = "MISSING"
 _TRANSPORT_MATCH = "MATCH"
 _TRANSPORT_DIVERGENT = "DIVERGENT"
 _TRANSPORT_DIRECT_UNAVAILABLE = "DIRECT_UNAVAILABLE"
+_TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT = "DIRECT_SKIPPED_CREDENTIAL_FORMAT"
 
 
 class _NeonReadApi(Protocol):
@@ -512,16 +513,27 @@ def _credential_transport_marker(
     *,
     direct_probe: DirectProbe,
 ) -> str:
-    evidence = direct_probe(token, project_id)
+    credential_format = _credential_format(token)
+    if credential_format == _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED:
+        evidence = _DirectTransportEvidence(
+            status=_STATUS_SKIPPED,
+            response_media=_RESPONSE_MEDIA_MISSING,
+        )
+        transport_equivalence = _TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT
+    else:
+        evidence = direct_probe(token, project_id)
+        transport_equivalence = _transport_relation(
+            primary_project_status,
+            evidence.status,
+        )
     return " ".join(
         (
             "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC",
-            f"credential_format={_credential_format(token)}",
+            f"credential_format={credential_format}",
             f"primary_exact_project_status={primary_project_status}",
             f"direct_exact_project_status={evidence.status}",
             f"direct_response_media={evidence.response_media}",
-            "transport_equivalence="
-            f"{_transport_relation(primary_project_status, evidence.status)}",
+            f"transport_equivalence={transport_equivalence}",
         )
     )
 
