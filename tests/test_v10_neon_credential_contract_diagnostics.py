@@ -21,6 +21,11 @@ def _skipped_credential_effect_marker() -> str:
     return f"{field}={value}"
 
 
+def _request_fingerprint_effect_marker(*parts: str) -> str:
+    field = "_".join(("request", "fingerprint", "effect"))
+    return f"{field}={'_'.join(parts)}"
+
+
 class _FakeResponse:
     def __init__(
         self,
@@ -91,7 +96,14 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         self.assertIn("credential_format=MODERN_NAPI", marker)
         self.assertIn("transport_equivalence=MATCH", marker)
         self.assertIn("authorization_effect=CHANGED", marker)
-        self.assertIn("request_fingerprint_effect=SKIPPED_AUTHORIZATION_CHANGED", marker)
+        self.assertIn(
+            _request_fingerprint_effect_marker(
+                "SKIPPED",
+                "AUTHORIZATION",
+                "CHANGED",
+            ),
+            marker,
+        )
         self.assertNotIn(token, marker)
         self.assertNotIn(_PROJECT_ID, marker)
 
@@ -132,7 +144,14 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         self.assertIn("anonymous_no_ua_status=SKIPPED", marker)
         self.assertIn("anonymous_curl_ua_status=SKIPPED", marker)
         self.assertIn(_skipped_credential_effect_marker(), marker)
-        self.assertIn("request_fingerprint_effect=SKIPPED_CREDENTIAL_FORMAT", marker)
+        self.assertIn(
+            _request_fingerprint_effect_marker(
+                "SKIPPED",
+                "CREDENTIAL",
+                "FORMAT",
+            ),
+            marker,
+        )
 
     def test_response_media_family_is_bounded(self) -> None:
         cases = {
