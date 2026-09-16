@@ -37,7 +37,7 @@ def _pull(
     *,
     number: int = _PR_NUMBER,
     base_ref: str = "main",
-    merge_sha: str = _MAIN,
+    merge_sha: str | None = _MAIN,
     head_sha: str = _HEAD,
 ) -> dict[str, Any]:
     return {
@@ -47,6 +47,10 @@ def _pull(
         "base": {"ref": base_ref},
         "head": {"sha": head_sha},
     }
+
+
+def _merge_event(commit_id: object = _MAIN) -> dict[str, object]:
+    return {"event": "merged", "commit_id": commit_id}
 
 
 def _green_head_check() -> dict[str, Any]:
@@ -92,17 +96,30 @@ def _certify(main_check: dict[str, Any] | None = None) -> str:
     )
 
 
+def _require_merge_identity(pull_request: dict[str, Any]) -> None:
+    provenance._require_merge_identity(
+        _REPOSITORY,
+        _TOKEN,
+        _PR_NUMBER,
+        pull_request,
+        _MAIN,
+    )
+
+
 class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
     def test_certification_requires_unique_canonical_pr_tree_and_green_head(self) -> None:
         with (
             patch.object(release_gate, "_require_current_main") as current_main,
-            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()) as api_get,
             patch.object(release_gate, "_check_runs", return_value=[_green_head_check()]),
         ):
             certified = _certify()
 
         self.assertEqual(certified, _HEAD)
         self.assertEqual(current_main.call_count, 2)
+        self.assertFalse(
+            any("/issues/" in call.args[0] for call in api_get.call_args_list)
+        )
 
     def test_association_projection_merge_sha_is_not_used_as_canonical_metadata(
         self,
@@ -124,19 +141,112 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
             RuntimeError,
             provenance.MERGE_SHA_CONVERGENCE_PENDING,
         ):
-            provenance._pull_request_head(pull, _MAIN)
+            _require_merge_identity(pull)
 
-    def test_malformed_or_missing_canonical_merge_sha_is_terminal_red(self) -> None:
-        malformed = _pull(merge_sha="not-a-sha")
-        missing = _pull()
-        del missing["merge_commit_sha"]
-        for pull in (malformed, missing):
-            with self.subTest(pull=pull):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
-                ):
-                    provenance._pull_request_head(pull, _MAIN)
+    def test_missing_canonical_merge_sha_key_is_terminal_red(self) -> None:
+        pull = _pull()
+        del pull["merge_commit_sha"]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISSING",
+        ):
+            _require_merge_identity(pull)
+
+    def test_malformed_non_null_canonical_merge_sha_is_terminal_red(self) -> None:
+        pull = _pull(merge_sha="not-a-sha")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
+        ):
+            _require_merge_identity(pull)
+
+    def test_null_merge_sha_uses_unique_exact_merged_event_then_continues(self) -> None:
+        canonical = _pull(merge_sha=None)
+        api_rows: list[Any] = [
+            [_pull()],
+            canonical,
+            [_merge_event()],
+            _tree_payload(),
+            _tree_payload(),
+        ]
+        with (
+            patch.object(release_gate, "_require_current_main") as current_main,
+            patch.object(release_gate, "_api_get", side_effect=api_rows) as api_get,
+            patch.object(release_gate, "_check_runs", return_value=[_green_head_check()]),
+        ):
+            certified = _certify()
+
+        self.assertEqual(certified, _HEAD)
+        self.assertEqual(current_main.call_count, 2)
+        issue_calls = [
+            call.args[0] for call in api_get.call_args_list if "/issues/" in call.args[0]
+        ]
+        self.assertEqual(len(issue_calls), 1)
+        self.assertIn(f"/issues/{_PR_NUMBER}/events", issue_calls[0])
+
+    def test_null_merge_sha_requires_exactly_one_merged_event(self) -> None:
+        cases = (
+            ([], "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_NOT_UNIQUE"),
+            (
+                [_merge_event(), _merge_event()],
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_NOT_UNIQUE",
+            ),
+        )
+        for events, code in cases:
+            with self.subTest(events=events):
+                with patch.object(release_gate, "_api_get", return_value=events):
+                    with self.assertRaisesRegex(RuntimeError, code):
+                        _require_merge_identity(_pull(merge_sha=None))
+
+    def test_null_merge_sha_rejects_invalid_or_mismatched_event_commit(self) -> None:
+        cases = (
+            (
+                [_merge_event(None)],
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_COMMIT_INVALID",
+            ),
+            (
+                [{"event": "merged"}],
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_COMMIT_INVALID",
+            ),
+            (
+                [_merge_event("not-a-sha")],
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_COMMIT_INVALID",
+            ),
+            (
+                [_merge_event(_OTHER_TREE)],
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_COMMIT_MISMATCH",
+            ),
+        )
+        for events, code in cases:
+            with self.subTest(code=code):
+                with patch.object(release_gate, "_api_get", return_value=events):
+                    with self.assertRaisesRegex(RuntimeError, code):
+                        _require_merge_identity(_pull(merge_sha=None))
+
+    def test_null_merge_sha_event_pagination_is_bounded_fail_closed(self) -> None:
+        page = [
+            {"event": "closed", "commit_id": None},
+            {"event": "ready_for_review", "commit_id": None},
+        ]
+        overflow = [{"event": "head_ref_deleted", "commit_id": None}]
+        with (
+            patch.object(provenance, "_ISSUE_EVENTS_PER_PAGE", 2),
+            patch.object(provenance, "_MAX_ISSUE_EVENT_PAGES", 2),
+            patch.object(release_gate, "_api_get", side_effect=[page, page, overflow]),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_LIST_TRUNCATED",
+            ):
+                _require_merge_identity(_pull(merge_sha=None))
+
+    def test_null_merge_sha_invalid_event_response_is_terminal_red(self) -> None:
+        with patch.object(release_gate, "_api_get", return_value={}):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_RESPONSE_INVALID",
+            ):
+                _require_merge_identity(_pull(merge_sha=None))
 
     def test_multiple_associated_prs_fail_closed(self) -> None:
         associated = [_pull(), _pull(number=_PR_NUMBER + 1)]
@@ -180,7 +290,7 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_BASE_NOT_MAIN",
         ):
-            provenance._pull_request_head(pull, _MAIN)
+            provenance._pull_request_head(pull)
 
     def test_source_tree_mismatch_fails_closed(self) -> None:
         with (

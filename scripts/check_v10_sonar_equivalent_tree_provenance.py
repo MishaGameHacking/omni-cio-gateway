@@ -7,6 +7,8 @@ import scripts.check_v10_cloudflare_postmerge_release_gate as release_gate
 
 _PULL_REQUESTS_PER_PAGE = 100
 _MAX_ASSOCIATED_PULL_REQUESTS = 100
+_ISSUE_EVENTS_PER_PAGE = 100
+_MAX_ISSUE_EVENT_PAGES = 10
 MERGE_SHA_CONVERGENCE_PENDING = (
     "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_CONVERGENCE_PENDING"
 )
@@ -86,8 +88,7 @@ def _canonical_pull_request(
     return payload
 
 
-def _sha_field(mapping: dict[str, Any], key: str, code: str) -> str:
-    value = mapping.get(key)
+def _sha_value(value: Any, code: str) -> str:
     invalid_sha = (
         not isinstance(value, str) or release_gate._SHA.fullmatch(value.lower()) is None
     )  # noqa: SLF001
@@ -96,10 +97,103 @@ def _sha_field(mapping: dict[str, Any], key: str, code: str) -> str:
     return value.lower()
 
 
-def _pull_request_head(
+def _sha_field(mapping: dict[str, Any], key: str, code: str) -> str:
+    return _sha_value(mapping.get(key), code)
+
+
+def _issue_event_page(
+    repository: str,
+    token: str,
+    pull_request_number: int,
+    page: int,
+) -> list[dict[str, Any]]:
+    payload = release_gate._api_get(  # noqa: SLF001 - GitHub merge-event provenance
+        f"/repos/{repository}/issues/{pull_request_number}/events"
+        f"?per_page={_ISSUE_EVENTS_PER_PAGE}&page={page}",
+        token,
+    )
+    if not isinstance(payload, list):
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_RESPONSE_INVALID"
+        )
+    rows: list[dict[str, Any]] = []
+    for raw in payload:
+        if not isinstance(raw, dict):
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_INVALID"
+            )
+        rows.append(raw)
+    return rows
+
+
+def _merged_event_commit_sha(
+    repository: str,
+    token: str,
+    pull_request_number: int,
+) -> str:
+    merged_events: list[dict[str, Any]] = []
+    for page in range(1, _MAX_ISSUE_EVENT_PAGES + 1):
+        rows = _issue_event_page(repository, token, pull_request_number, page)
+        merged_events.extend(row for row in rows if row.get("event") == "merged")
+        if len(rows) < _ISSUE_EVENTS_PER_PAGE:
+            break
+    else:
+        overflow = _issue_event_page(
+            repository,
+            token,
+            pull_request_number,
+            _MAX_ISSUE_EVENT_PAGES + 1,
+        )
+        if overflow:
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_LIST_TRUNCATED"
+            )
+
+    if len(merged_events) != 1:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_NOT_UNIQUE"
+        )
+    return _sha_field(
+        merged_events[0],
+        "commit_id",
+        "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_COMMIT_INVALID",
+    )
+
+
+def _require_merge_identity(
+    repository: str,
+    token: str,
+    pull_request_number: int,
     pull_request: dict[str, Any],
     expected_sha: str,
-) -> str:
+) -> None:
+    if "merge_commit_sha" not in pull_request:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISSING"
+        )
+
+    raw_merge_sha = pull_request["merge_commit_sha"]
+    if raw_merge_sha is None:
+        merged_event_sha = _merged_event_commit_sha(
+            repository,
+            token,
+            pull_request_number,
+        )
+        if merged_event_sha != expected_sha:
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_EVENT_COMMIT_MISMATCH"
+            )
+        return
+
+    merge_sha = _sha_value(
+        raw_merge_sha,
+        "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
+    )
+    if merge_sha != expected_sha:
+        raise release_gate.ReleaseGateStopped(MERGE_SHA_CONVERGENCE_PENDING)
+
+
+def _pull_request_head(pull_request: dict[str, Any]) -> str:
     merged_at = pull_request.get("merged_at")
     base = pull_request.get("base")
     head = pull_request.get("head")
@@ -115,19 +209,11 @@ def _pull_request_head(
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_INVALID"
         )
-    head_sha = _sha_field(
+    return _sha_field(
         head,
         "sha",
         "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_INVALID",
     )
-    merge_sha = _sha_field(
-        pull_request,
-        "merge_commit_sha",
-        "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
-    )
-    if merge_sha != expected_sha:
-        raise release_gate.ReleaseGateStopped(MERGE_SHA_CONVERGENCE_PENDING)
-    return head_sha
 
 
 def _tree_sha(repository: str, token: str, commit_sha: str) -> str:
@@ -176,18 +262,27 @@ def certify_cancelled_exact_main_sonar(
 ) -> str:
     """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
 
-    The association endpoint proves unique PR identity and canonical PR detail supplies
-    merged metadata. A syntactically valid merge SHA that differs from exact main is a
-    pending provider-metadata state for the outer bounded release loop; exact equality
-    is still mandatory before tree and Sonar certification can continue.
+    Canonical PR merge SHA remains the primary exact-merge identity. If GitHub returns
+    that field as explicit JSON null after merge, the verifier requires one bounded,
+    unique `merged` issue event whose commit id equals exact main. Missing/malformed
+    metadata, ambiguous events and mismatches remain terminal; a valid non-null SHA
+    mismatch remains pending for the outer bounded release loop.
     """
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
     _require_cancelled_main_check(main_check)
 
     associated_pull = _associated_pull_request(repository, token, expected_sha)
+    pull_request_number = _pull_request_number(associated_pull)
     pull_request = _canonical_pull_request(repository, token, associated_pull)
-    head_sha = _pull_request_head(pull_request, expected_sha)
+    head_sha = _pull_request_head(pull_request)
+    _require_merge_identity(
+        repository,
+        token,
+        pull_request_number,
+        pull_request,
+        expected_sha,
+    )
 
     main_tree = _tree_sha(repository, token, expected_sha)
     head_tree = _tree_sha(repository, token, head_sha)
