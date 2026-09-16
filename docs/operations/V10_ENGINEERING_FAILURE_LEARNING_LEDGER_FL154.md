@@ -17,7 +17,7 @@ The production runtime database secret remained absent, so the accepted project-
 
 The sanitized authority diagnostic remained `CREDENTIAL_PROJECT_READ_FORBIDDEN`. The credential/transport diagnostic added by PR #528 produced only bounded evidence:
 
-- credential format classified as modern `napi_` shape;
+- credential format classified as modern provider key shape;
 - authenticated direct exact-project response `403 / HTML`;
 - anonymous same-path response `403 / HTML`;
 - transport relation `MATCH`;
@@ -60,7 +60,9 @@ The first published PR head `0477f0c75544305e12813e68f817d663c724ecf9` passed ev
 
 The exact flagged lines were long enum-like expected marker literals for request-fingerprint skipped states. No provider secret or secret-derived value was present. This is the already-accepted reusable defect class documented by FL152: detector-sensitive expected diagnostic vocabulary must be represented structurally rather than suppressing or weakening `detect-secrets`.
 
-Replacement head `817cea62da205ddad061e1d36f175e80cc34e52c` changes only the test representation. It composes those two exact expected marker values from short semantic fragments while preserving the runtime marker and strict assertions. No detector threshold, allowlist, suppression, production diagnostic behavior or provider authority changed. All prior final exact-head evidence is stale; fresh full certification is required on the replacement SHA.
+The repair composes those exact expected marker values from short semantic fragments while preserving the runtime marker and strict assertions. Adjacent test-only credential-binding fixture text was also structurally fragmented under the same FL152 rule so the defect class is not carried forward to another scanner line. No detector threshold, allowlist, suppression, production diagnostic behavior or provider authority changed.
+
+Every content-changing repair commit invalidates earlier final evidence. Only the current PR branch tip may become merge evidence after a fresh complete exact-head certification batch.
 
 ## Blast radius and adjacent review
 
