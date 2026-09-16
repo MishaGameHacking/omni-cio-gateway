@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, Mock, patch
 
 import scripts.probe_v10_neon_authority_diagnostics as diagnostics
 
@@ -83,6 +83,28 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         self.assertEqual(
             diagnostics._credential_format("legacy-provider-key-fixture"),
             "LEGACY_OR_UNKNOWN",
+        )
+
+    def test_wrapped_credential_is_never_sent_to_direct_http_transport(self) -> None:
+        token = f'"{_modern_token()}"'
+        direct_probe = Mock()
+        marker = diagnostics._credential_transport_marker(
+            token,
+            _PROJECT_ID,
+            "403",
+            direct_probe=direct_probe,
+        )
+        direct_probe.assert_not_called()
+        self.assertNotIn(token, marker)
+        self.assertNotIn(_PROJECT_ID, marker)
+        self.assertEqual(
+            marker,
+            "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC "
+            "credential_format=WRAPPED_OR_ASSIGNED "
+            "primary_exact_project_status=403 "
+            "direct_exact_project_status=SKIPPED "
+            "direct_response_media=MISSING "
+            "transport_equivalence=DIRECT_SKIPPED_CREDENTIAL_FORMAT",
         )
 
     def test_response_media_family_is_bounded(self) -> None:
