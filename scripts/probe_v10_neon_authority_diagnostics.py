@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import http.client
 import os
+import ssl
 import sys
 from typing import Any, Protocol, TextIO
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from scripts import provision_v10_cloudflare_neon_runtime as _runtime
 from scripts import provision_v10_render_neon_preview as _base
@@ -18,6 +20,7 @@ _STATUS_UNAUTHORIZED = "401"
 _STATUS_FORBIDDEN = "403"
 _STATUS_NOT_FOUND = "404"
 _STATUS_ERROR = "ERROR"
+_STATUS_UNAVAILABLE = "UNAVAILABLE"
 _STATUS_SKIPPED = "SKIPPED"
 _STATUS_INVALID_PAYLOAD = "INVALID_PAYLOAD"
 _DENIED_STATUSES = frozenset({_STATUS_FORBIDDEN, _STATUS_NOT_FOUND})
@@ -39,6 +42,22 @@ _AUTH_METHODS = frozenset(
         "oauth",
     }
 )
+_NEON_API_HOST = "console.neon.tech"
+_NEON_API_PREFIX = "/api/v2"
+_DIRECT_TIMEOUT_SECONDS = 20.0
+_DIRECT_USER_AGENT = "omni-cio-v10-neon-authority-diagnostic/1"
+_CREDENTIAL_FORMAT_MODERN = "MODERN_NAPI"
+_CREDENTIAL_FORMAT_LEGACY_OR_UNKNOWN = "LEGACY_OR_UNKNOWN"
+_CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED = "WRAPPED_OR_ASSIGNED"
+_RESPONSE_MEDIA_JSON = "JSON"
+_RESPONSE_MEDIA_HTML = "HTML"
+_RESPONSE_MEDIA_TEXT = "TEXT"
+_RESPONSE_MEDIA_OTHER = "OTHER"
+_RESPONSE_MEDIA_MISSING = "MISSING"
+_TRANSPORT_MATCH = "MATCH"
+_TRANSPORT_DIVERGENT = "DIVERGENT"
+_TRANSPORT_DIRECT_UNAVAILABLE = "DIRECT_UNAVAILABLE"
+_TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT = "DIRECT_SKIPPED_CREDENTIAL_FORMAT"
 
 
 class _NeonReadApi(Protocol):
@@ -60,6 +79,15 @@ ApiFactory = Callable[[str, str], _NeonReadApi]
 class _ReadEvidence:
     status: str
     payload: object | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _DirectTransportEvidence:
+    status: str
+    response_media: str
+
+
+DirectProbe = Callable[[str, str], _DirectTransportEvidence]
 
 
 @dataclass(frozen=True, slots=True)
@@ -394,6 +422,122 @@ def diagnose_neon_authority(
     )
 
 
+def _credential_format(token: str) -> str:
+    lowered = token.casefold()
+    if (
+        any(character.isspace() for character in token)
+        or token[:1] in {"'", '"'}
+        or token[-1:] in {"'", '"'}
+        or lowered.startswith("neon_api_key=")
+        or lowered.startswith("export neon_api_key=")
+    ):
+        return _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED
+    if token.startswith("napi_"):
+        return _CREDENTIAL_FORMAT_MODERN
+    return _CREDENTIAL_FORMAT_LEGACY_OR_UNKNOWN
+
+
+def _response_media_family(value: str | None) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return _RESPONSE_MEDIA_MISSING
+    media_type = value.split(";", 1)[0].strip().casefold()
+    if media_type == "application/json" or media_type.endswith("+json"):
+        return _RESPONSE_MEDIA_JSON
+    if media_type == "text/html":
+        return _RESPONSE_MEDIA_HTML
+    if media_type == "text/plain":
+        return _RESPONSE_MEDIA_TEXT
+    return _RESPONSE_MEDIA_OTHER
+
+
+def _direct_tls_context() -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_default_certs(ssl.Purpose.SERVER_AUTH)
+    if not context.check_hostname or context.verify_mode != ssl.CERT_REQUIRED:
+        raise OSError("direct Neon diagnostic TLS verification unavailable")
+    return context
+
+
+def _direct_exact_project_probe(
+    token: str,
+    project_id: str,
+) -> _DirectTransportEvidence:
+    safe_project_id = _runtime._validate_neon_project_id(project_id)
+    path = f"{_NEON_API_PREFIX}/projects/{quote(safe_project_id, safe='')}"
+    connection: http.client.HTTPSConnection | None = None
+    try:
+        connection = http.client.HTTPSConnection(
+            _NEON_API_HOST,
+            443,
+            timeout=_DIRECT_TIMEOUT_SECONDS,
+            context=_direct_tls_context(),
+        )
+        connection.request(
+            _HTTP_GET,
+            path,
+            body=None,
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+                "User-Agent": _DIRECT_USER_AGENT,
+            },
+        )
+        response = connection.getresponse()
+        return _DirectTransportEvidence(
+            status=str(int(response.status)),
+            response_media=_response_media_family(response.getheader("Content-Type")),
+        )
+    except (OSError, http.client.HTTPException):
+        return _DirectTransportEvidence(
+            status=_STATUS_UNAVAILABLE,
+            response_media=_RESPONSE_MEDIA_MISSING,
+        )
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def _transport_relation(primary_status: str, direct_status: str) -> str:
+    if direct_status == _STATUS_UNAVAILABLE:
+        return _TRANSPORT_DIRECT_UNAVAILABLE
+    if direct_status == primary_status:
+        return _TRANSPORT_MATCH
+    return _TRANSPORT_DIVERGENT
+
+
+def _credential_transport_marker(
+    token: str,
+    project_id: str,
+    primary_project_status: str,
+    *,
+    direct_probe: DirectProbe,
+) -> str:
+    credential_format = _credential_format(token)
+    if credential_format == _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED:
+        evidence = _DirectTransportEvidence(
+            status=_STATUS_SKIPPED,
+            response_media=_RESPONSE_MEDIA_MISSING,
+        )
+        transport_equivalence = _TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT
+    else:
+        evidence = direct_probe(token, project_id)
+        transport_equivalence = _transport_relation(
+            primary_project_status,
+            evidence.status,
+        )
+    return " ".join(
+        (
+            "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC",
+            f"credential_format={credential_format}",
+            f"primary_exact_project_status={primary_project_status}",
+            f"direct_exact_project_status={evidence.status}",
+            f"direct_response_media={evidence.response_media}",
+            f"transport_equivalence={transport_equivalence}",
+        )
+    )
+
+
 def _default_api_factory(token: str, organization_id: str) -> _NeonReadApi:
     return _org.OrgScopedNeonApi(token, organization_id)
 
@@ -413,11 +557,14 @@ def probe_neon_authority_diagnostics(
     *,
     api_factory: ApiFactory = _default_api_factory,
     output: TextIO | None = None,
+    enable_direct_transport_probe: bool = False,
+    direct_probe: DirectProbe = _direct_exact_project_probe,
 ) -> int:
     environment = os.environ if environ is None else environ
     destination = sys.stdout if output is None else output
     try:
         token = _required(environment, "NEON_API_KEY")
+        _base._mask(token)
         organization_id = _org._validate_neon_org_id(
             _required(environment, "NEON_ORG_ID")
         )
@@ -433,11 +580,21 @@ def probe_neon_authority_diagnostics(
         print(_blocked_report(exc), file=destination)
         return 78
     print(diagnostic.marker(), file=destination)
+    if enable_direct_transport_probe:
+        print(
+            _credential_transport_marker(
+                token,
+                project_id,
+                diagnostic.project_status,
+                direct_probe=direct_probe,
+            ),
+            file=destination,
+        )
     return 0
 
 
 def main() -> int:
-    return probe_neon_authority_diagnostics()
+    return probe_neon_authority_diagnostics(enable_direct_transport_probe=True)
 
 
 if __name__ == "__main__":
