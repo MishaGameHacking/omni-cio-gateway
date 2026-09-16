@@ -92,17 +92,6 @@ def _certify(main_check: dict[str, Any] | None = None) -> str:
     )
 
 
-def _converged_head(*, attempts: int = 2, delay_seconds: float = 0.0) -> str:
-    return provenance._canonical_pull_request_head_with_convergence(
-        _REPOSITORY,
-        _TOKEN,
-        _pull(),
-        _MAIN,
-        attempts=attempts,
-        delay_seconds=delay_seconds,
-    )
-
-
 class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
     def test_certification_requires_unique_canonical_pr_tree_and_green_head(self) -> None:
         with (
@@ -129,50 +118,24 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
 
         self.assertEqual(certified, _HEAD)
 
-    def test_canonical_merge_sha_converges_within_bounded_wait(self) -> None:
-        details = [_pull(merge_sha=_OTHER_TREE), _pull()]
-        with (
-            patch.object(release_gate, "_api_get", side_effect=details),
-            patch.object(release_gate, "_require_current_main") as current_main,
-            patch.object(provenance.time, "sleep") as sleep,
+    def test_valid_canonical_merge_sha_mismatch_is_pending(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            provenance.MERGE_SHA_CONVERGENCE_PENDING,
         ):
-            head_sha = _converged_head()
+            provenance._pull_request_head(_pull(merge_sha=_OTHER_TREE), _MAIN)
 
-        self.assertEqual(head_sha, _HEAD)
-        current_main.assert_called_once_with(_REPOSITORY, _TOKEN, _MAIN)
-        sleep.assert_called_once_with(0.0)
-
-    def test_canonical_merge_sha_persistent_mismatch_fails_closed(self) -> None:
-        details = [_pull(merge_sha=_OTHER_TREE), _pull(merge_sha=_OTHER_TREE)]
-        with (
-            patch.object(release_gate, "_api_get", side_effect=details),
-            patch.object(release_gate, "_require_current_main") as current_main,
-            patch.object(provenance.time, "sleep") as sleep,
-        ):
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISMATCH",
-            ):
-                _converged_head()
-
-        current_main.assert_called_once_with(_REPOSITORY, _TOKEN, _MAIN)
-        sleep.assert_called_once_with(0.0)
-
-    def test_malformed_canonical_merge_sha_fails_without_wait(self) -> None:
+    def test_malformed_or_missing_canonical_merge_sha_is_terminal_red(self) -> None:
         malformed = _pull(merge_sha="not-a-sha")
-        with (
-            patch.object(release_gate, "_api_get", return_value=malformed),
-            patch.object(release_gate, "_require_current_main") as current_main,
-            patch.object(provenance.time, "sleep") as sleep,
-        ):
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
-            ):
-                _converged_head()
-
-        current_main.assert_not_called()
-        sleep.assert_not_called()
+        missing = _pull()
+        del missing["merge_commit_sha"]
+        for pull in (malformed, missing):
+            with self.subTest(pull=pull):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
+                ):
+                    provenance._pull_request_head(pull, _MAIN)
 
     def test_multiple_associated_prs_fail_closed(self) -> None:
         associated = [_pull(), _pull(number=_PR_NUMBER + 1)]
@@ -210,18 +173,12 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
             ):
                 provenance._canonical_pull_request(_REPOSITORY, _TOKEN, associated)
 
-    def test_non_main_or_wrong_canonical_merge_sha_fail_closed(self) -> None:
-        cases = (
-            (_pull(base_ref="release"), "CLOUDFLARE_POSTMERGE_PROVENANCE_BASE_NOT_MAIN"),
-            (
-                _pull(merge_sha=_OTHER_TREE),
-                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISMATCH",
-            ),
-        )
-        for pull, code in cases:
-            with self.subTest(code=code):
-                with self.assertRaisesRegex(RuntimeError, code):
-                    provenance._pull_request_head(pull, _MAIN)
+    def test_non_main_canonical_base_fails_closed(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_BASE_NOT_MAIN",
+        ):
+            provenance._pull_request_head(_pull(base_ref="release"), _MAIN)
 
     def test_source_tree_mismatch_fails_closed(self) -> None:
         with (

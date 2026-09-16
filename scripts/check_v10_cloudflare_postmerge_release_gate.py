@@ -501,17 +501,31 @@ def _external_evidence_state(
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS")
 
     from scripts.check_v10_sonar_equivalent_tree_provenance import (
+        MERGE_SHA_CONVERGENCE_PENDING,
         certify_cancelled_exact_main_sonar,
     )
 
-    certify_cancelled_exact_main_sonar(
-        repository=repository,
-        token=token,
-        expected_sha=expected_sha,
-        main_check=latest,
-        required_name=external_name,
-        required_app_slug=external_app_slug,
-    )
+    try:
+        certify_cancelled_exact_main_sonar(
+            repository=repository,
+            token=token,
+            expected_sha=expected_sha,
+            main_check=latest,
+            required_name=external_name,
+            required_app_slug=external_app_slug,
+        )
+    except RuntimeError as exc:
+        code = getattr(exc, "code", None)
+        status = getattr(exc, "status", None)
+        if not isinstance(code, str) or not code:
+            raise
+        if code == MERGE_SHA_CONVERGENCE_PENDING:
+            return False
+        if status is not None and (
+            not isinstance(status, int) or isinstance(status, bool)
+        ):
+            raise
+        raise ReleaseGateStopped(code, status=status) from None
     return True
 
 
