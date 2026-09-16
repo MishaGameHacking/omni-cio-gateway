@@ -53,6 +53,36 @@ def _associated_pull_request(
     return first_page[0]
 
 
+def _pull_request_number(pull_request: dict[str, Any]) -> int:
+    value = pull_request.get("number")
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_PULL_NUMBER_INVALID"
+        )
+    return value
+
+
+def _canonical_pull_request(
+    repository: str,
+    token: str,
+    associated_pull_request: dict[str, Any],
+) -> dict[str, Any]:
+    number = _pull_request_number(associated_pull_request)
+    payload = release_gate._api_get(  # noqa: SLF001 - canonical merged-PR metadata
+        f"/repos/{repository}/pulls/{number}",
+        token,
+    )
+    if not isinstance(payload, dict):
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_PULL_DETAIL_RESPONSE_INVALID"
+        )
+    if payload.get("number") != number:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_PULL_DETAIL_NUMBER_MISMATCH"
+        )
+    return payload
+
+
 def _sha_field(mapping: dict[str, Any], key: str, code: str) -> str:
     value = mapping.get(key)
     invalid_sha = (
@@ -143,17 +173,17 @@ def certify_cancelled_exact_main_sonar(
 ) -> str:
     """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
 
-    This is deliberately narrower than treating ``cancelled`` as GREEN. The exact-main
-    check must be a clean provider cancellation, GitHub must bind the exact squash
-    commit to one merged PR, both commits must reference the same Git tree, and the
-    exact PR-head Sonar check must itself be a normal completed SUCCESS with zero
-    findings. Any ambiguity fails closed.
+    The associated-PR endpoint is used only to prove unique PR identity. Canonical
+    merged-PR metadata is then hydrated from the pull-request resource before any
+    merge/base/head assertion. The exact main and PR head must still share one Git
+    tree, and the exact PR-head Sonar check must be a normal zero-finding SUCCESS.
     """
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
     _require_cancelled_main_check(main_check)
 
-    pull_request = _associated_pull_request(repository, token, expected_sha)
+    associated_pull = _associated_pull_request(repository, token, expected_sha)
+    pull_request = _canonical_pull_request(repository, token, associated_pull)
     head_sha = _pull_request_head(pull_request, expected_sha)
 
     main_tree = _tree_sha(repository, token, expected_sha)
