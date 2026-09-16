@@ -13,21 +13,21 @@ PR #528 was squash-merged as protected `main` `1f7b15cd5adfd06f93dbb8c1c293e9026
 
 The production runtime database secret remained absent, so the accepted project-scoped Neon runtime provisioner executed and correctly stopped fail-closed with the existing project-key binding mismatch code. The sanitized authority diagnostic remained in the credential project-read-forbidden class. The credential/transport diagnostic added by PR #528 produced only bounded evidence:
 
-- credential format classified as modern provider key shape;
-- authenticated direct exact-project response `403 / HTML`;
-- anonymous same-path response `403 / HTML`;
-- transport relation `MATCH`;
-- authorization effect `UNCHANGED`.
+- credential format classified as a modern provider key shape;
+- authenticated direct exact-project response was HTTP 403 with HTML media;
+- anonymous same-path response was HTTP 403 with HTML media;
+- direct transport matched the primary status;
+- adding Authorization caused no bounded status/media change.
 
 No API key, organization/project identifier, request URL, response body, request ID, IP address, DSN, database credential or private payload is recorded here.
 
 ## Root-cause status
 
-The identical `403 + HTML` response for authenticated and anonymous requests proves that adding the Bearer credential has no externally observable effect at the bounded status/media level on the current runner path. This invalidates blind credential rotation as the next recovery action and narrows the unresolved class toward a pre-authentication edge/request-policy boundary.
+The identical status/media response for authenticated and anonymous requests proves that adding the Bearer credential has no externally observable effect at the bounded status/media level on the current runner path. This invalidates blind credential rotation as the next recovery action and narrows the unresolved class toward a pre-authentication edge/request-policy boundary.
 
 It does **not** prove a specific WAF rule, IP block, TLS fingerprint rule, proxy or User-Agent rule. The exact provider denial point remains unresolved.
 
-Current Neon documentation continues to show the same `console.neon.tech/api/v2` API path, Bearer authentication and curl-based automation examples. Current Neon guidance also describes project-scoped keys as one-project credentials suitable for CI/agent automation. There is no accepted evidence to change the API host/header, broaden provider authority or reinterpret a 403 as success.
+Current Neon documentation continues to show the same `console.neon.tech/api/v2` API path, Bearer authentication and curl-based automation examples. Current Neon guidance also describes project-scoped keys as one-project credentials suitable for CI/agent automation. There is no accepted evidence to change the API host/header, broaden provider authority or reinterpret a denial as success.
 
 ## Focused correction
 
@@ -47,7 +47,7 @@ The diagnostic never reads or emits response bodies, provider IDs, request IDs, 
 
 ## Exact-head repair checkpoint
 
-The first published PR head `0477f0c75544305e12813e68f817d663c724ecf9` passed every repository workflow except `Self-Hosted Windows CI`. The authoritative job passed lock verification, repository/security policy guards, compile, Ruff, formatting, mypy, protected `app:app`, full regression (`3185 passed`, `361` subtests, branch coverage `62.20%`), dependency audit and Bandit. It then failed only at the tracked-content secret scan on two deterministic test expectations classified as `Base64 High Entropy String`.
+The first published PR head `0477f0c75544305e12813e68f817d663c724ecf9` passed every repository workflow except `Self-Hosted Windows CI`. The authoritative job passed lock verification, repository/security policy guards, compile, Ruff, formatting, mypy, protected `app:app`, full regression with 3185 tests plus 361 subtests and branch coverage above the required threshold, dependency audit and Bandit. It then failed only at the tracked-content secret scan on two deterministic test expectations classified by the entropy detector.
 
 The exact flagged lines were long enum-like expected marker literals for request-fingerprint skipped states. No provider secret or secret-derived value was present. This is the already-accepted reusable defect class documented by FL152: detector-sensitive expected diagnostic vocabulary must be represented structurally rather than suppressing or weakening `detect-secrets`.
 
