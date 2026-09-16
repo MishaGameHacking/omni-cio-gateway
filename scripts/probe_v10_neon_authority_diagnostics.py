@@ -45,7 +45,7 @@ _AUTH_METHODS = frozenset(
 _NEON_API_HOST = "console.neon.tech"
 _NEON_API_PREFIX = "/api/v2"
 _DIRECT_TIMEOUT_SECONDS = 20.0
-_DIRECT_USER_AGENT = "omni-cio-v10-neon-authority-diagnostic/1"
+_DIRECT_USER_AGENT = "omni-cio-v10-neon-authority-diagnostic/2"
 _CREDENTIAL_FORMAT_MODERN = "MODERN_NAPI"
 _CREDENTIAL_FORMAT_LEGACY_OR_UNKNOWN = "LEGACY_OR_UNKNOWN"
 _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED = "WRAPPED_OR_ASSIGNED"
@@ -58,6 +58,10 @@ _TRANSPORT_MATCH = "MATCH"
 _TRANSPORT_DIVERGENT = "DIVERGENT"
 _TRANSPORT_DIRECT_UNAVAILABLE = "DIRECT_UNAVAILABLE"
 _TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT = "DIRECT_SKIPPED_CREDENTIAL_FORMAT"
+_AUTHORIZATION_EFFECT_CHANGED = "CHANGED"
+_AUTHORIZATION_EFFECT_UNCHANGED = "UNCHANGED"
+_AUTHORIZATION_EFFECT_DIRECT_UNAVAILABLE = "DIRECT_UNAVAILABLE"
+_AUTHORIZATION_EFFECT_SKIPPED_CREDENTIAL_FORMAT = "SKIPPED_CREDENTIAL_FORMAT"
 
 
 class _NeonReadApi(Protocol):
@@ -87,7 +91,7 @@ class _DirectTransportEvidence:
     response_media: str
 
 
-DirectProbe = Callable[[str, str], _DirectTransportEvidence]
+DirectProbe = Callable[[str | None, str], _DirectTransportEvidence]
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,10 +196,7 @@ def _credential_organizations(
     if evidence.status != _STATUS_OK:
         return evidence.status, _UNKNOWN
     try:
-        configured_org_match = _configured_org_match(
-            evidence.payload,
-            expected_org_id,
-        )
+        configured_org_match = _configured_org_match(evidence.payload, expected_org_id)
     except _base.ProvisioningStopped:
         return _STATUS_INVALID_PAYLOAD, _UNKNOWN
     return evidence.status, configured_org_match
@@ -460,7 +461,7 @@ def _direct_tls_context() -> ssl.SSLContext:
 
 
 def _direct_exact_project_probe(
-    token: str,
+    token: str | None,
     project_id: str,
 ) -> _DirectTransportEvidence:
     safe_project_id = _runtime._validate_neon_project_id(project_id)
@@ -473,15 +474,17 @@ def _direct_exact_project_probe(
             timeout=_DIRECT_TIMEOUT_SECONDS,
             context=_direct_tls_context(),
         )
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": _DIRECT_USER_AGENT,
+        }
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
         connection.request(
             _HTTP_GET,
             path,
             body=None,
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {token}",
-                "User-Agent": _DIRECT_USER_AGENT,
-            },
+            headers=headers,
         )
         response = connection.getresponse()
         return _DirectTransportEvidence(
@@ -506,6 +509,20 @@ def _transport_relation(primary_status: str, direct_status: str) -> str:
     return _TRANSPORT_DIVERGENT
 
 
+def _authorization_effect(
+    authenticated: _DirectTransportEvidence,
+    anonymous: _DirectTransportEvidence,
+) -> str:
+    if _STATUS_UNAVAILABLE in {authenticated.status, anonymous.status}:
+        return _AUTHORIZATION_EFFECT_DIRECT_UNAVAILABLE
+    if (
+        authenticated.status == anonymous.status
+        and authenticated.response_media == anonymous.response_media
+    ):
+        return _AUTHORIZATION_EFFECT_UNCHANGED
+    return _AUTHORIZATION_EFFECT_CHANGED
+
+
 def _credential_transport_marker(
     token: str,
     project_id: str,
@@ -519,13 +536,17 @@ def _credential_transport_marker(
             status=_STATUS_SKIPPED,
             response_media=_RESPONSE_MEDIA_MISSING,
         )
+        anonymous = evidence
         transport_equivalence = _TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT
+        authorization_effect = _AUTHORIZATION_EFFECT_SKIPPED_CREDENTIAL_FORMAT
     else:
         evidence = direct_probe(token, project_id)
+        anonymous = direct_probe(None, project_id)
         transport_equivalence = _transport_relation(
             primary_project_status,
             evidence.status,
         )
+        authorization_effect = _authorization_effect(evidence, anonymous)
     return " ".join(
         (
             "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC",
@@ -534,6 +555,9 @@ def _credential_transport_marker(
             f"direct_exact_project_status={evidence.status}",
             f"direct_response_media={evidence.response_media}",
             f"transport_equivalence={transport_equivalence}",
+            f"anonymous_exact_project_status={anonymous.status}",
+            f"anonymous_response_media={anonymous.response_media}",
+            f"authorization_effect={authorization_effect}",
         )
     )
 
