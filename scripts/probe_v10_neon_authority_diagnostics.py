@@ -487,7 +487,7 @@ def _direct_exact_project_probe(
             status=str(int(response.status)),
             response_media=_response_media_family(response.getheader("Content-Type")),
         )
-    except (OSError, ssl.SSLError, http.client.HTTPException):
+    except (OSError, http.client.HTTPException):
         return _DirectTransportEvidence(
             status=_STATUS_UNAVAILABLE,
             response_media=_RESPONSE_MEDIA_MISSING,
