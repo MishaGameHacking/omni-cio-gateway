@@ -56,6 +56,16 @@ A redirect, missing executable, timeout, non-zero curl result, malformed output,
 
 The new client-stack effect is changed only when the real curl status/media pair differs from the already-proven Python curl-style control, unchanged when the pairs are identical, unavailable when curl evidence cannot be established, and explicitly skipped when an earlier narrower diagnostic already changed or became unavailable.
 
+## Checkpoint RED and repair
+
+The first published PR #532 checkpoint `28f7752b29397ce2edffc25b451863b51bc6618b` entered `RED_REPAIR_ONLY` immediately when Engineering Governance consumed the exact-head Sonar finding. Sonar reported one maintainability issue: the credential-transport orchestration function had Cognitive Complexity 16 while the repository threshold is 15. No security finding, authority broadening or provider mutation was implicated.
+
+Root cause: the new independent-client decision was implemented as an additional nested conditional inside an already branch-heavy diagnostic orchestration function. The branch was functionally bounded, but the control-flow composition crossed the maintainability threshold.
+
+Blast radius review covered the direct transport classifier, request-fingerprint classifier, independent-client classifier, skipped-state behavior and all marker-producing call sites. The repair extracts the independent-client decision into a small single-responsibility helper. The helper owns only whether to execute the independent probe and how to classify an earlier unavailable/changed request-fingerprint state; the orchestration function retains the existing sequencing and output contract.
+
+No behavior, security boundary, timeout, curl command, marker field or mutation authority changes in this repair. Existing deterministic tests continue to exercise changed, unchanged, unavailable and skipped branches. Because repository content changes, all prior exact-head evidence is stale and the replacement SHA requires fresh complete certification.
+
 ## Blast radius and adjacent review
 
 Directly reviewed:
@@ -86,6 +96,7 @@ Deterministic coverage requires:
 - the independent client to run only after both Authorization and Python request-fingerprint effects are unchanged;
 - changed, unchanged, unavailable and skipped client-stack states to have deterministic tests;
 - secret/project/private-response material to remain absent from emitted markers;
+- diagnostic orchestration complexity to stay below the active Sonar maintainability threshold by keeping independent client-stack selection isolated from credential/request sequencing;
 - the tracked-content secret scanner to remain unmodified;
 - the production provisioner and original RED exit status to remain unchanged;
 - full exact-head CI, Sonar/security/review certification before squash merge and fresh exact-main post-merge/release evidence afterward.
@@ -93,6 +104,8 @@ Deterministic coverage requires:
 ## Prevention law
 
 When a provider denial is unchanged by authentication and by safe ordinary request-header variation, do not continue rotating credentials or invent a provider rule. Vary exactly one broader boundary at a time. Before attributing a denial to runner egress/provider edge, compare an independent ordinary client stack on the same anonymous exact resource with the same protocol/header intent. If the independent client is also denied identically, move the next investigation outward to egress/provider edge; if it differs, repair the shared client/transport compatibility boundary instead.
+
+When a diagnostic orchestration function already coordinates several fail-closed states, add a new classification boundary through an isolated helper instead of nesting another decision tree into the coordinator. This keeps security sequencing explicit without allowing maintainability complexity to accumulate.
 
 ## Protected invariants
 

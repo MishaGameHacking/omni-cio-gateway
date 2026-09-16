@@ -677,6 +677,21 @@ def _skipped_direct_evidence() -> _DirectTransportEvidence:
     )
 
 
+def _client_stack_probe_result(
+    project_id: str,
+    reference: _DirectTransportEvidence,
+    request_fingerprint_effect: str,
+    independent_probe: IndependentProbe,
+) -> tuple[_DirectTransportEvidence, str]:
+    if request_fingerprint_effect == _REQUEST_FINGERPRINT_UNCHANGED:
+        independent = independent_probe(project_id)
+        return independent, _client_stack_effect(reference, independent)
+    skipped = _skipped_direct_evidence()
+    if request_fingerprint_effect == _REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE:
+        return skipped, _CLIENT_STACK_SKIPPED_DIRECT_UNAVAILABLE
+    return skipped, _CLIENT_STACK_SKIPPED_REQUEST_FINGERPRINT_CHANGED
+
+
 def _credential_transport_marker(
     token: str,
     project_id: str,
@@ -716,21 +731,12 @@ def _credential_transport_marker(
                 anonymous_no_user_agent,
                 anonymous_curl_user_agent,
             )
-            if request_fingerprint_effect == _REQUEST_FINGERPRINT_UNCHANGED:
-                independent_client = independent_probe(project_id)
-                client_stack_effect = _client_stack_effect(
-                    anonymous_curl_user_agent,
-                    independent_client,
-                )
-            elif (
-                request_fingerprint_effect
-                == _REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE
-            ):
-                client_stack_effect = _CLIENT_STACK_SKIPPED_DIRECT_UNAVAILABLE
-            else:
-                client_stack_effect = (
-                    _CLIENT_STACK_SKIPPED_REQUEST_FINGERPRINT_CHANGED
-                )
+            independent_client, client_stack_effect = _client_stack_probe_result(
+                project_id,
+                anonymous_curl_user_agent,
+                request_fingerprint_effect,
+                independent_probe,
+            )
         else:
             anonymous_no_user_agent = _skipped_direct_evidence()
             anonymous_curl_user_agent = _skipped_direct_evidence()
