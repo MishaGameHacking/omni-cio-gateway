@@ -45,7 +45,8 @@ _AUTH_METHODS = frozenset(
 _NEON_API_HOST = "console.neon.tech"
 _NEON_API_PREFIX = "/api/v2"
 _DIRECT_TIMEOUT_SECONDS = 20.0
-_DIRECT_USER_AGENT = "omni-cio-v10-neon-authority-diagnostic/2"
+_DIRECT_USER_AGENT = "omni-cio-v10-neon-authority-diagnostic/3"
+_DIRECT_CURL_USER_AGENT = "curl/8.0"
 _CREDENTIAL_FORMAT_MODERN = "MODERN_NAPI"
 _CREDENTIAL_FORMAT_LEGACY_OR_UNKNOWN = "LEGACY_OR_UNKNOWN"
 _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED = "WRAPPED_OR_ASSIGNED"
@@ -62,6 +63,11 @@ _AUTHORIZATION_EFFECT_CHANGED = "CHANGED"
 _AUTHORIZATION_EFFECT_UNCHANGED = "UNCHANGED"
 _AUTHORIZATION_EFFECT_DIRECT_UNAVAILABLE = "DIRECT_UNAVAILABLE"
 _AUTHORIZATION_EFFECT_SKIPPED_CREDENTIAL_FORMAT = "SKIPPED_CREDENTIAL_FORMAT"
+_REQUEST_FINGERPRINT_CHANGED = "CHANGED"
+_REQUEST_FINGERPRINT_UNCHANGED = "UNCHANGED"
+_REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE = "DIRECT_UNAVAILABLE"
+_REQUEST_FINGERPRINT_SKIPPED_CREDENTIAL_FORMAT = "SKIPPED_CREDENTIAL_FORMAT"
+_REQUEST_FINGERPRINT_SKIPPED_AUTHORIZATION_CHANGED = "SKIPPED_AUTHORIZATION_CHANGED"
 
 
 class _NeonReadApi(Protocol):
@@ -91,7 +97,7 @@ class _DirectTransportEvidence:
     response_media: str
 
 
-DirectProbe = Callable[[str | None, str], _DirectTransportEvidence]
+DirectProbe = Callable[[str | None, str, str | None], _DirectTransportEvidence]
 
 
 @dataclass(frozen=True, slots=True)
@@ -463,6 +469,7 @@ def _direct_tls_context() -> ssl.SSLContext:
 def _direct_exact_project_probe(
     token: str | None,
     project_id: str,
+    user_agent: str | None = _DIRECT_USER_AGENT,
 ) -> _DirectTransportEvidence:
     safe_project_id = _runtime._validate_neon_project_id(project_id)
     path = f"{_NEON_API_PREFIX}/projects/{quote(safe_project_id, safe='')}"
@@ -474,10 +481,9 @@ def _direct_exact_project_probe(
             timeout=_DIRECT_TIMEOUT_SECONDS,
             context=_direct_tls_context(),
         )
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": _DIRECT_USER_AGENT,
-        }
+        headers = {"Accept": "application/json"}
+        if user_agent is not None:
+            headers["User-Agent"] = user_agent
         if token is not None:
             headers["Authorization"] = f"Bearer {token}"
         connection.request(
@@ -523,6 +529,30 @@ def _authorization_effect(
     return _AUTHORIZATION_EFFECT_CHANGED
 
 
+def _request_fingerprint_effect(
+    reference: _DirectTransportEvidence,
+    *controls: _DirectTransportEvidence,
+) -> str:
+    if reference.status == _STATUS_UNAVAILABLE or any(
+        control.status == _STATUS_UNAVAILABLE for control in controls
+    ):
+        return _REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE
+    reference_pair = (reference.status, reference.response_media)
+    if all(
+        (control.status, control.response_media) == reference_pair
+        for control in controls
+    ):
+        return _REQUEST_FINGERPRINT_UNCHANGED
+    return _REQUEST_FINGERPRINT_CHANGED
+
+
+def _skipped_direct_evidence() -> _DirectTransportEvidence:
+    return _DirectTransportEvidence(
+        status=_STATUS_SKIPPED,
+        response_media=_RESPONSE_MEDIA_MISSING,
+    )
+
+
 def _credential_transport_marker(
     token: str,
     project_id: str,
@@ -532,21 +562,41 @@ def _credential_transport_marker(
 ) -> str:
     credential_format = _credential_format(token)
     if credential_format == _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED:
-        evidence = _DirectTransportEvidence(
-            status=_STATUS_SKIPPED,
-            response_media=_RESPONSE_MEDIA_MISSING,
-        )
+        evidence = _skipped_direct_evidence()
         anonymous = evidence
+        anonymous_no_user_agent = evidence
+        anonymous_curl_user_agent = evidence
         transport_equivalence = _TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT
         authorization_effect = _AUTHORIZATION_EFFECT_SKIPPED_CREDENTIAL_FORMAT
+        request_fingerprint_effect = _REQUEST_FINGERPRINT_SKIPPED_CREDENTIAL_FORMAT
     else:
-        evidence = direct_probe(token, project_id)
-        anonymous = direct_probe(None, project_id)
+        evidence = direct_probe(token, project_id, _DIRECT_USER_AGENT)
+        anonymous = direct_probe(None, project_id, _DIRECT_USER_AGENT)
         transport_equivalence = _transport_relation(
             primary_project_status,
             evidence.status,
         )
         authorization_effect = _authorization_effect(evidence, anonymous)
+        if authorization_effect == _AUTHORIZATION_EFFECT_UNCHANGED:
+            anonymous_no_user_agent = direct_probe(None, project_id, None)
+            anonymous_curl_user_agent = direct_probe(
+                None,
+                project_id,
+                _DIRECT_CURL_USER_AGENT,
+            )
+            request_fingerprint_effect = _request_fingerprint_effect(
+                anonymous,
+                anonymous_no_user_agent,
+                anonymous_curl_user_agent,
+            )
+        else:
+            anonymous_no_user_agent = _skipped_direct_evidence()
+            anonymous_curl_user_agent = _skipped_direct_evidence()
+            request_fingerprint_effect = (
+                _REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE
+                if authorization_effect == _AUTHORIZATION_EFFECT_DIRECT_UNAVAILABLE
+                else _REQUEST_FINGERPRINT_SKIPPED_AUTHORIZATION_CHANGED
+            )
     return " ".join(
         (
             "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC",
@@ -558,6 +608,11 @@ def _credential_transport_marker(
             f"anonymous_exact_project_status={anonymous.status}",
             f"anonymous_response_media={anonymous.response_media}",
             f"authorization_effect={authorization_effect}",
+            f"anonymous_no_ua_status={anonymous_no_user_agent.status}",
+            f"anonymous_no_ua_media={anonymous_no_user_agent.response_media}",
+            f"anonymous_curl_ua_status={anonymous_curl_user_agent.status}",
+            f"anonymous_curl_ua_media={anonymous_curl_user_agent.response_media}",
+            f"request_fingerprint_effect={request_fingerprint_effect}",
         )
     )
 
