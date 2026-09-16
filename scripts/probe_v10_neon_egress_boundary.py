@@ -22,7 +22,9 @@ _MEDIA_HTML = "HTML"
 _MEDIA_TEXT = "TEXT"
 _MEDIA_OTHER = "OTHER"
 _MEDIA_MISSING = "MISSING"
-_ALLOWED_MEDIA = frozenset({_MEDIA_JSON, _MEDIA_HTML, _MEDIA_TEXT, _MEDIA_OTHER, _MEDIA_MISSING})
+_ALLOWED_MEDIA = frozenset(
+    {_MEDIA_JSON, _MEDIA_HTML, _MEDIA_TEXT, _MEDIA_OTHER, _MEDIA_MISSING}
+)
 _EFFECT_CHANGED = "CHANGED"
 _EFFECT_UNCHANGED = "UNCHANGED"
 _EFFECT_UNAVAILABLE = "UNAVAILABLE"
@@ -64,7 +66,11 @@ def _unavailable() -> EgressProbeEvidence:
 
 
 def _parse_probe_output(returncode: int, output: object) -> EgressProbeEvidence:
-    if returncode != 0 or not isinstance(output, str) or len(output) > _MAX_OUTPUT_CHARS:
+    if (
+        returncode != 0
+        or not isinstance(output, str)
+        or len(output) > _MAX_OUTPUT_CHARS
+    ):
         return _unavailable()
     lines = output.splitlines()
     if len(lines) != 2:
@@ -84,7 +90,9 @@ def probe_egress_boundary(
     executable = shutil.which("curl")
     if not executable or not os.path.isabs(executable):
         return _unavailable()
-    target = f"https://{_NEON_API_HOST}{_NEON_API_PREFIX}/projects/{_SYNTHETIC_PROJECT_ID}"
+    target = (
+        f"https://{_NEON_API_HOST}{_NEON_API_PREFIX}/projects/{_SYNTHETIC_PROJECT_ID}"
+    )
     command = [
         executable,
         "--disable",
@@ -158,7 +166,9 @@ def classify_egress_effect(
     return _EFFECT_CHANGED
 
 
-def _write_github_output(evidence: EgressProbeEvidence, environ: Mapping[str, str]) -> None:
+def _write_github_output(
+    evidence: EgressProbeEvidence, environ: Mapping[str, str]
+) -> None:
     path = environ.get("GITHUB_OUTPUT", "").strip()
     if not path:
         return
