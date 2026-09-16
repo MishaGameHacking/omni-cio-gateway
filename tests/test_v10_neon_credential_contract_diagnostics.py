@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import scripts.probe_v10_neon_authority_diagnostics as diagnostics
 
@@ -123,7 +122,7 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
             "console.neon.tech",
             443,
             timeout=20.0,
-            context=unittest.mock.ANY,
+            context=ANY,
         )
         self.assertTrue(connection.closed)
         self.assertEqual(len(connection.requests), 1)
