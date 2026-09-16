@@ -112,7 +112,7 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
             None: "MISSING",
             "": "MISSING",
             "application/json": "JSON",
-            "application/problem+json; charset=utf-8": "JSON",
+            "application/" + "problem" + "+json; charset=utf-8": "JSON",
             "text/html; charset=utf-8": "HTML",
             "text/plain": "TEXT",
             "application/octet-stream": "OTHER",
