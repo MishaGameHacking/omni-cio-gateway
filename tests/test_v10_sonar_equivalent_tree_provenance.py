@@ -118,6 +118,26 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
 
         self.assertEqual(certified, _HEAD)
 
+    def test_valid_canonical_merge_sha_mismatch_is_pending(self) -> None:
+        pull = _pull(merge_sha=_OTHER_TREE)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            provenance.MERGE_SHA_CONVERGENCE_PENDING,
+        ):
+            provenance._pull_request_head(pull, _MAIN)
+
+    def test_malformed_or_missing_canonical_merge_sha_is_terminal_red(self) -> None:
+        malformed = _pull(merge_sha="not-a-sha")
+        missing = _pull()
+        del missing["merge_commit_sha"]
+        for pull in (malformed, missing):
+            with self.subTest(pull=pull):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
+                ):
+                    provenance._pull_request_head(pull, _MAIN)
+
     def test_multiple_associated_prs_fail_closed(self) -> None:
         associated = [_pull(), _pull(number=_PR_NUMBER + 1)]
         with patch.object(release_gate, "_api_get", return_value=associated):
@@ -154,18 +174,13 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
             ):
                 provenance._canonical_pull_request(_REPOSITORY, _TOKEN, associated)
 
-    def test_non_main_or_wrong_canonical_merge_sha_fail_closed(self) -> None:
-        cases = (
-            (_pull(base_ref="release"), "CLOUDFLARE_POSTMERGE_PROVENANCE_BASE_NOT_MAIN"),
-            (
-                _pull(merge_sha=_OTHER_TREE),
-                "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISMATCH",
-            ),
-        )
-        for pull, code in cases:
-            with self.subTest(code=code):
-                with self.assertRaisesRegex(RuntimeError, code):
-                    provenance._pull_request_head(pull, _MAIN)
+    def test_non_main_canonical_base_fails_closed(self) -> None:
+        pull = _pull(base_ref="release")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_BASE_NOT_MAIN",
+        ):
+            provenance._pull_request_head(pull, _MAIN)
 
     def test_source_tree_mismatch_fails_closed(self) -> None:
         with (

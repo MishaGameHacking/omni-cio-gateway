@@ -57,7 +57,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             in completed.stdout
         )
         assert (
-            "Post-merge cancelled Sonar: equivalent-tree PR provenance is fail-closed"
+            "valid merge-SHA convergence uses the outer bounded release wait"
             in completed.stdout
         )
         assert "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
@@ -121,6 +121,17 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             sonar["post_merge_cancelled_fallback_merge_sha_must_equal_exact_main"]
             is True
         )
+        assert (
+            sonar["post_merge_cancelled_fallback_valid_merge_sha_mismatch_state"]
+            == "PENDING"
+        )
+        assert (
+            sonar[
+                "post_merge_cancelled_fallback_merge_sha_convergence_uses_outer_release_wait"
+            ]
+            is True
+        )
+        assert sonar["post_merge_cancelled_fallback_malformed_merge_sha_terminal"] is True
         assert sonar["post_merge_cancelled_fallback_tree_identity_required"] is True
         assert (
             sonar["post_merge_cancelled_fallback_pr_head_sonar_success_required"] is True

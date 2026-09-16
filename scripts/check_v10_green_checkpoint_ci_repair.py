@@ -47,6 +47,9 @@ EXTERNAL_REVIEW_GUARD_PATH = "scripts/check_v10_pr_external_review_gate.py"
 AUTHORITATIVE_CHECK_NAME = "V10 authoritative merge gate"
 SONAR_POSTMERGE_CHECK_NAME = "SonarCloud Code Analysis"
 SONAR_POSTMERGE_APP_SLUG = "sonarqubecloud"
+SONAR_POSTMERGE_MERGE_SHA_PENDING = (
+    "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_CONVERGENCE_PENDING"
+)
 
 LIVE_GUIDANCE_MARKERS: dict[Path, tuple[str, ...]] = {
     ROOT / "AGENTS.md": (
@@ -289,6 +292,9 @@ def _validate_sonar(payload: dict[str, Any], failures: list[str]) -> None:
         "post_merge_cancelled_fallback_unique_merged_pr_required": True,
         "post_merge_cancelled_fallback_base_must_be_main": True,
         "post_merge_cancelled_fallback_merge_sha_must_equal_exact_main": True,
+        "post_merge_cancelled_fallback_valid_merge_sha_mismatch_state": "PENDING",
+        "post_merge_cancelled_fallback_merge_sha_convergence_uses_outer_release_wait": True,
+        "post_merge_cancelled_fallback_malformed_merge_sha_terminal": True,
         "post_merge_cancelled_fallback_tree_identity_required": True,
         "post_merge_cancelled_fallback_pr_head_sonar_success_required": True,
         "post_merge_cancelled_fallback_pr_head_zero_findings_required": True,
@@ -422,11 +428,14 @@ def _validate_static_surfaces(failures: list[str]) -> None:
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NEW_ISSUES_PRESENT",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SECURITY_HOTSPOTS_PRESENT",
+            "MERGE_SHA_CONVERGENCE_PENDING",
             "certify_cancelled_exact_main_sonar",
             "/check-runs?",
         ),
         SONAR_PROVENANCE_GUARD: (
             "CLOUDFLARE_POSTMERGE_PROVENANCE_PULL_NOT_UNIQUE",
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
+            SONAR_POSTMERGE_MERGE_SHA_PENDING,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_TREE_MISMATCH",
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_NOT_CANCELLED",
             "_external_check_state",
@@ -479,7 +488,10 @@ def main() -> int:
     )
     print("Required merge gate: exact-head Sonar zero-issue enforcement enabled")
     print("Post-merge release gate: exact-main Sonar success enforcement enabled")
-    print("Post-merge cancelled Sonar: equivalent-tree PR provenance is fail-closed")
+    print(
+        "Post-merge cancelled Sonar: equivalent-tree PR provenance is fail-closed; "
+        "valid merge-SHA convergence uses the outer bounded release wait"
+    )
     print("Next functional checkpoint requires CERTIFIED_GREEN.")
     return 0
 
