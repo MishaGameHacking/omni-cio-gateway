@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import scripts.check_v10_cloudflare_postmerge_release_gate as release_gate
@@ -7,6 +8,9 @@ import scripts.check_v10_cloudflare_postmerge_release_gate as release_gate
 
 _PULL_REQUESTS_PER_PAGE = 100
 _MAX_ASSOCIATED_PULL_REQUESTS = 100
+_MERGE_SHA_CONVERGENCE_ATTEMPTS = 60
+_MERGE_SHA_CONVERGENCE_DELAY_SECONDS = 15.0
+_MERGE_SHA_MISMATCH = "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISMATCH"
 
 
 def _pull_request_page(
@@ -123,10 +127,43 @@ def _pull_request_head(
         "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
     )
     if merge_sha != expected_sha:
-        raise release_gate.ReleaseGatePending(
-            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_PENDING"
-        )
+        raise release_gate.ReleaseGateStopped(_MERGE_SHA_MISMATCH)
     return head_sha
+
+
+def _canonical_pull_request_head_with_convergence(
+    repository: str,
+    token: str,
+    associated_pull_request: dict[str, Any],
+    expected_sha: str,
+    *,
+    attempts: int = _MERGE_SHA_CONVERGENCE_ATTEMPTS,
+    delay_seconds: float = _MERGE_SHA_CONVERGENCE_DELAY_SECONDS,
+) -> str:
+    if attempts < 1 or delay_seconds < 0:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_CONVERGENCE_SETTINGS_INVALID"
+        )
+    for attempt in range(attempts):
+        pull_request = _canonical_pull_request(
+            repository,
+            token,
+            associated_pull_request,
+        )
+        try:
+            return _pull_request_head(pull_request, expected_sha)
+        except release_gate.ReleaseGateStopped as exc:
+            if exc.code != _MERGE_SHA_MISMATCH:
+                raise
+            if attempt + 1 >= attempts:
+                raise
+            release_gate._require_current_main(  # noqa: SLF001
+                repository,
+                token,
+                expected_sha,
+            )
+            time.sleep(delay_seconds)
+    raise AssertionError("bounded PR merge-SHA convergence exhausted")
 
 
 def _tree_sha(repository: str, token: str, commit_sha: str) -> str:
@@ -176,16 +213,20 @@ def certify_cancelled_exact_main_sonar(
     """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
 
     The association endpoint proves unique PR identity and canonical PR detail supplies
-    merged metadata. A valid merge SHA that has not converged to exact main remains
-    pending under the outer bounded release wait; it is never accepted as GREEN.
+    merged metadata. A valid merge SHA that has not converged to exact main is retried
+    for a fixed interval, but exact equality is still mandatory before certification.
     """
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
     _require_cancelled_main_check(main_check)
 
     associated_pull = _associated_pull_request(repository, token, expected_sha)
-    pull_request = _canonical_pull_request(repository, token, associated_pull)
-    head_sha = _pull_request_head(pull_request, expected_sha)
+    head_sha = _canonical_pull_request_head_with_convergence(
+        repository,
+        token,
+        associated_pull,
+        expected_sha,
+    )
 
     main_tree = _tree_sha(repository, token, expected_sha)
     head_tree = _tree_sha(repository, token, head_sha)
