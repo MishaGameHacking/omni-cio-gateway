@@ -119,11 +119,12 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
         self.assertEqual(certified, _HEAD)
 
     def test_valid_canonical_merge_sha_mismatch_is_pending(self) -> None:
+        pull = _pull(merge_sha=_OTHER_TREE)
         with self.assertRaisesRegex(
             RuntimeError,
             provenance.MERGE_SHA_CONVERGENCE_PENDING,
         ):
-            provenance._pull_request_head(_pull(merge_sha=_OTHER_TREE), _MAIN)
+            provenance._pull_request_head(pull, _MAIN)
 
     def test_malformed_or_missing_canonical_merge_sha_is_terminal_red(self) -> None:
         malformed = _pull(merge_sha="not-a-sha")
@@ -174,11 +175,12 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
                 provenance._canonical_pull_request(_REPOSITORY, _TOKEN, associated)
 
     def test_non_main_canonical_base_fails_closed(self) -> None:
+        pull = _pull(base_ref="release")
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_BASE_NOT_MAIN",
         ):
-            provenance._pull_request_head(_pull(base_ref="release"), _MAIN)
+            provenance._pull_request_head(pull, _MAIN)
 
     def test_source_tree_mismatch_fails_closed(self) -> None:
         with (
