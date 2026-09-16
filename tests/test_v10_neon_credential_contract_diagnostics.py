@@ -110,11 +110,13 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
     def test_credential_format_flags_shell_or_quote_wrapping_only(self) -> None:
         token = _modern_token()
         binding = "NEON_" + "API_" + "KEY"
+        assignment = f"{binding}={token}"
+        exported_assignment = "export " + assignment
         wrapped_values = (
             f'"{token}"',
             f"'{token}'",
-            f"{binding}={token}",
-            f"export {binding}={token}",
+            assignment,
+            exported_assignment,
             f"{token}\ncontinued",
         )
         for value in wrapped_values:
