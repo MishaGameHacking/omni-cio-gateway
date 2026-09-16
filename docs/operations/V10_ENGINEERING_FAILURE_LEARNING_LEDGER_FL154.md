@@ -54,6 +54,14 @@ Only bounded status/media families and `request_fingerprint_effect` are emitted.
 
 The diagnostic never reads or emits response bodies, provider IDs, request IDs, cookies, IP addresses or secret values. TLS hostname/certificate verification, fixed host/path, bounded timeout and no redirect-following behavior remain mandatory.
 
+## Exact-head repair checkpoint
+
+The first published PR head `0477f0c75544305e12813e68f817d663c724ecf9` passed every repository workflow except `Self-Hosted Windows CI`. The authoritative job passed lock verification, repository/security policy guards, compile, Ruff, formatting, mypy, protected `app:app`, full regression (`3185 passed`, `361` subtests, branch coverage `62.20%`), dependency audit and Bandit. It then failed only at the tracked-content secret scan on two deterministic test expectations classified as `Base64 High Entropy String`.
+
+The exact flagged lines were long enum-like expected marker literals for request-fingerprint skipped states. No provider secret or secret-derived value was present. This is the already-accepted reusable defect class documented by FL152: detector-sensitive expected diagnostic vocabulary must be represented structurally rather than suppressing or weakening `detect-secrets`.
+
+Replacement head `817cea62da205ddad061e1d36f175e80cc34e52c` changes only the test representation. It composes those two exact expected marker values from short semantic fragments while preserving the runtime marker and strict assertions. No detector threshold, allowlist, suppression, production diagnostic behavior or provider authority changed. All prior final exact-head evidence is stale; fresh full certification is required on the replacement SHA.
+
 ## Blast radius and adjacent review
 
 Directly reviewed:
@@ -64,7 +72,8 @@ Directly reviewed:
 - `scripts/provision_v10_cloudflare_neon_runtime.py` production database producer;
 - production/candidate/provider failure-only diagnostic callers;
 - `tests/test_v10_neon_credential_contract_diagnostics.py`;
-- FL136/FL137 retained inactive Function/invocation-credential boundaries.
+- FL136/FL137 retained inactive Function/invocation-credential boundaries;
+- FL152 detector-sensitive expectation prevention law.
 
 No Function/OIDC transport is reactivated. FL137 remains authoritative that production database availability must not depend on minting a branch-scoped Function invocation credential through broader provider authority.
 
@@ -80,12 +89,15 @@ Deterministic coverage requires:
 - any unavailable control to remain non-authoritative and classify `DIRECT_UNAVAILABLE`;
 - wrapped/assigned credential shapes to perform no direct request;
 - secret/project/response material to remain absent from markers;
+- detector-sensitive expected enum vocabulary to remain scanner-safe without detector suppression;
 - the production mutation gate and original RED process status to remain unchanged;
 - full exact-head CI, Sonar/security/review certification before merge and fresh exact-main release evidence afterward.
 
 ## Prevention law
 
 When authenticated and unauthenticated requests are indistinguishable at the provider edge, do not keep rotating credentials or widen authority without evidence. First vary only safe, ordinary API-client request properties on the same exact read-only resource and classify the observable effect. If ordinary request fingerprints remain indistinguishable, continue to egress/edge/provider diagnosis rather than disguising a pre-auth denial as an application-auth failure.
+
+For detector-sensitive deterministic diagnostic vocabulary, preserve exact runtime semantics by composing long expected enum-like values from short semantic fragments as required by FL152; never weaken the tracked-content secret scanner to make a checkpoint green.
 
 ## Protected invariants
 
