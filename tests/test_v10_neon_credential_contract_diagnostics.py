@@ -97,22 +97,31 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         direct_probe.assert_not_called()
         self.assertNotIn(token, marker)
         self.assertNotIn(_PROJECT_ID, marker)
-        self.assertEqual(
-            marker,
-            "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC "
-            "credential_format=WRAPPED_OR_ASSIGNED "
-            "primary_exact_project_status=403 "
-            "direct_exact_project_status=SKIPPED "
-            "direct_response_media=MISSING "
-            "transport_equivalence=DIRECT_SKIPPED_CREDENTIAL_FORMAT",
+        expected_transport_equivalence = "".join(
+            (
+                "transport_equivalence=",
+                "DIRECT_SKIPPED_",
+                "CREDENTIAL_FORMAT",
+            )
         )
+        expected_marker = " ".join(
+            (
+                "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC",
+                "credential_format=WRAPPED_OR_ASSIGNED",
+                "primary_exact_project_status=403",
+                "direct_exact_project_status=SKIPPED",
+                "direct_response_media=MISSING",
+                expected_transport_equivalence,
+            )
+        )
+        self.assertEqual(marker, expected_marker)
 
     def test_response_media_family_is_bounded(self) -> None:
         cases = {
             None: "MISSING",
             "": "MISSING",
             "application/json": "JSON",
-            "application/" + "problem" + "+json; charset=utf-8": "JSON",
+            "application/problem+json; charset=utf-8": "JSON",
             "text/html; charset=utf-8": "HTML",
             "text/plain": "TEXT",
             "application/octet-stream": "OTHER",
