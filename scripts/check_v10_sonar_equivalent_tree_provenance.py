@@ -167,12 +167,7 @@ def _require_merge_identity(
     pull_request: dict[str, Any],
     expected_sha: str,
 ) -> None:
-    if "merge_commit_sha" not in pull_request:
-        raise release_gate.ReleaseGateStopped(
-            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISSING"
-        )
-
-    raw_merge_sha = pull_request["merge_commit_sha"]
+    raw_merge_sha = pull_request.get("merge_commit_sha")
     if raw_merge_sha is None:
         merged_event_sha = _merged_event_commit_sha(
             repository,
@@ -262,11 +257,12 @@ def certify_cancelled_exact_main_sonar(
 ) -> str:
     """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
 
-    Canonical PR merge SHA remains the primary exact-merge identity. If GitHub returns
-    that field as explicit JSON null after merge, the verifier requires one bounded,
-    unique `merged` issue event whose commit id equals exact main. Missing/malformed
-    metadata, ambiguous events and mismatches remain terminal; a valid non-null SHA
-    mismatch remains pending for the outer bounded release loop.
+    Canonical PR merge SHA remains the primary exact-merge identity. If GitHub makes
+    that field unavailable after merge, either by omitting it or returning JSON null,
+    the verifier requires one bounded, unique `merged` issue event whose commit id
+    equals exact main. Malformed metadata, ambiguous events and mismatches remain
+    terminal; a valid non-null SHA mismatch remains pending for the outer bounded
+    release loop.
     """
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
