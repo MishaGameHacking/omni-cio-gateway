@@ -55,10 +55,7 @@ def _associated_pull_request(
 
 def _sha_field(mapping: dict[str, Any], key: str, code: str) -> str:
     value = mapping.get(key)
-    invalid_sha = (
-        not isinstance(value, str)
-        or release_gate._SHA.fullmatch(value.lower()) is None  # noqa: SLF001
-    )
+    invalid_sha = not isinstance(value, str) or release_gate._SHA.fullmatch(value.lower()) is None  # noqa: SLF001
     if invalid_sha:
         raise release_gate.ReleaseGateStopped(code)
     return value.lower()
@@ -76,7 +73,10 @@ def _pull_request_head(
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_PULL_NOT_MERGED"
         )
-    if not isinstance(merge_commit_sha, str) or merge_commit_sha.lower() != expected_sha:
+    if (
+        not isinstance(merge_commit_sha, str)
+        or merge_commit_sha.lower() != expected_sha
+    ):
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISMATCH"
         )
