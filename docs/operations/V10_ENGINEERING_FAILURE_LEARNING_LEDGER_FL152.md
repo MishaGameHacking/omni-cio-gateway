@@ -13,11 +13,13 @@ Exact repair head `27a4612ebba033fca9f9d5017e9461b7f933a784` passed lock verific
 
 The first replacement head `2195981ebdfe63d35160a11d17256165830ae35d` repeated the same exact scanner finding after again passing compile, Ruff/format, mypy, protected runtime, the full regression suite, dependency audit and Bandit. That fresh evidence disproved the initial attribution to the nearby MIME fixture.
 
-Exact-head line inspection then identified the detector-sensitive source as the long quoted expected `transport_equivalence` classifier used by the wrapped/assigned credential diagnostic regression. No secret value is involved.
+Exact-head line inspection identified the detector-sensitive source as the long quoted expected `transport_equivalence` classifier used by the wrapped/assigned credential diagnostic regression. No secret value is involved.
+
+Before relying on the next full run, focused scanner-rule preflight against the official Base64 entropy behavior found one adjacent would-be collision introduced by the first structural rewrite: the combined expected `credential_format` field was also a quoted Base64-character-only token just above the default entropy threshold. That field is now structurally fragmented as part of the same repair instead of waiting for another CI failure.
 
 ## Root cause and blast radius
 
-`detect-secrets` evaluates quoted source strings independently with entropy heuristics. The regression intentionally asserted a long uppercase/underscore diagnostic classifier as one quoted source token. That token is deterministic application vocabulary, but its source representation satisfies the Base64 high-entropy heuristic.
+`detect-secrets` evaluates quoted source strings independently with entropy heuristics. The regression intentionally asserted long uppercase/underscore diagnostic classifiers as quoted source tokens. Those strings are deterministic application vocabulary, but their source representation can satisfy the Base64 high-entropy heuristic.
 
 The diagnostic implementation, production mutation gate, Neon authority contract and runtime behavior are unchanged. The first repair modified an unrelated MIME fixture because the scanner line was not resolved against the exact checked head before editing; that unrelated change is reverted in the permanent correction.
 
@@ -26,7 +28,7 @@ Direct blast radius is the new diagnostic test fixture representation only. No p
 ## Permanent correction
 
 - Preserve the exact runtime diagnostic marker and its strict equality regression.
-- Build only the detector-sensitive expected classifier from short semantic fragments on separate source lines, then compose the expected marker structurally.
+- Build the detector-sensitive expected `credential_format` and `transport_equivalence` fields from short semantic fragments on separate source lines, then compose the expected marker structurally.
 - Restore the unrelated MIME fixture byte-for-byte to its original representation.
 - Do not add detector suppression, allowlisting, baseline exceptions or threshold changes.
 - Do not weaken or disable `detect-secrets`.
@@ -35,7 +37,7 @@ Direct blast radius is the new diagnostic test fixture representation only. No p
 
 ## Prevention law
 
-When a security scanner reports a source line, resolve that exact line on the exact checked SHA before changing adjacent fixtures. For tests that intentionally assert long enum-like diagnostic vocabulary, preserve exact runtime semantics while representing detector-sensitive expected tokens structurally rather than suppressing the security detector.
+When a security scanner reports a source line, resolve that exact line on the exact checked SHA before changing adjacent fixtures. For tests that intentionally assert long enum-like diagnostic vocabulary, run the same entropy rule during focused preflight and preserve exact runtime semantics by representing detector-sensitive expected tokens structurally rather than suppressing the security detector.
 
 ## Protected invariants
 

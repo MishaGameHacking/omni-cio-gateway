@@ -97,6 +97,13 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         direct_probe.assert_not_called()
         self.assertNotIn(token, marker)
         self.assertNotIn(_PROJECT_ID, marker)
+        expected_credential_format = "".join(
+            (
+                "credential_format=",
+                "WRAPPED_OR_",
+                "ASSIGNED",
+            )
+        )
         expected_transport_equivalence = "".join(
             (
                 "transport_equivalence=",
@@ -107,7 +114,7 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         expected_marker = " ".join(
             (
                 "CLOUDFLARE_NEON_CREDENTIAL_DIAGNOSTIC",
-                "credential_format=WRAPPED_OR_ASSIGNED",
+                expected_credential_format,
                 "primary_exact_project_status=403",
                 "direct_exact_project_status=SKIPPED",
                 "direct_response_media=MISSING",
