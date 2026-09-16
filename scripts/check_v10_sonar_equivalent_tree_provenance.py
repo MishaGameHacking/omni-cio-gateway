@@ -98,19 +98,11 @@ def _pull_request_head(
     expected_sha: str,
 ) -> str:
     merged_at = pull_request.get("merged_at")
-    merge_commit_sha = pull_request.get("merge_commit_sha")
     base = pull_request.get("base")
     head = pull_request.get("head")
     if not isinstance(merged_at, str) or not merged_at:
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_PULL_NOT_MERGED"
-        )
-    if (
-        not isinstance(merge_commit_sha, str)
-        or merge_commit_sha.lower() != expected_sha
-    ):
-        raise release_gate.ReleaseGateStopped(
-            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_MISMATCH"
         )
     if not isinstance(base, dict) or base.get("ref") != "main":
         raise release_gate.ReleaseGateStopped(
@@ -120,11 +112,21 @@ def _pull_request_head(
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_INVALID"
         )
-    return _sha_field(
+    head_sha = _sha_field(
         head,
         "sha",
         "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_INVALID",
     )
+    merge_sha = _sha_field(
+        pull_request,
+        "merge_commit_sha",
+        "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_INVALID",
+    )
+    if merge_sha != expected_sha:
+        raise release_gate.ReleaseGatePending(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_PENDING"
+        )
+    return head_sha
 
 
 def _tree_sha(repository: str, token: str, commit_sha: str) -> str:
@@ -173,10 +175,9 @@ def certify_cancelled_exact_main_sonar(
 ) -> str:
     """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
 
-    The associated-PR endpoint is used only to prove unique PR identity. Canonical
-    merged-PR metadata is then hydrated from the pull-request resource before any
-    merge/base/head assertion. The exact main and PR head must still share one Git
-    tree, and the exact PR-head Sonar check must be a normal zero-finding SUCCESS.
+    The association endpoint proves unique PR identity and canonical PR detail supplies
+    merged metadata. A valid merge SHA that has not converged to exact main remains
+    pending under the outer bounded release wait; it is never accepted as GREEN.
     """
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
