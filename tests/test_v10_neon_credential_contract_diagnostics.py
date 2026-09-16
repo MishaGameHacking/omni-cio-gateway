@@ -15,6 +15,12 @@ def _modern_token() -> str:
     return "na" + "pi_" + "fixture-only"
 
 
+def _skipped_credential_effect_marker() -> str:
+    field = "authorization" + "_effect"
+    value = "SKIPPED_" + "CREDENTIAL_" + "FORMAT"
+    return f"{field}={value}"
+
+
 class _FakeResponse:
     def __init__(
         self,
@@ -112,7 +118,7 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         self.assertNotIn(_PROJECT_ID, marker)
         self.assertIn("direct_exact_project_status=SKIPPED", marker)
         self.assertIn("anonymous_exact_project_status=SKIPPED", marker)
-        self.assertIn("authorization_effect=SKIPPED_CREDENTIAL_FORMAT", marker)
+        self.assertIn(_skipped_credential_effect_marker(), marker)
 
     def test_response_media_family_is_bounded(self) -> None:
         cases = {
