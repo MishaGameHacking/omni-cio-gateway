@@ -56,6 +56,10 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             "Post-merge release gate: exact-main Sonar success enforcement enabled"
             in completed.stdout
         )
+        assert (
+            "Post-merge cancelled Sonar: equivalent-tree PR provenance is fail-closed"
+            in completed.stdout
+        )
         assert "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
 
     def test_red_checkpoint_blocks_next_functional_checkpoint(self) -> None:
@@ -107,6 +111,27 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert sonar["post_merge_check_name"] == "SonarCloud Code Analysis"
         assert sonar["post_merge_check_app_slug"] == "sonarqubecloud"
         assert sonar["post_merge_check_success_only"] is True
+        assert sonar["post_merge_cancelled_equivalent_tree_fallback_allowed"] is True
+        assert (
+            sonar["post_merge_cancelled_fallback_main_annotations_must_be_zero"] is True
+        )
+        assert sonar["post_merge_cancelled_fallback_unique_merged_pr_required"] is True
+        assert sonar["post_merge_cancelled_fallback_base_must_be_main"] is True
+        assert (
+            sonar["post_merge_cancelled_fallback_merge_sha_must_equal_exact_main"]
+            is True
+        )
+        assert sonar["post_merge_cancelled_fallback_tree_identity_required"] is True
+        assert (
+            sonar["post_merge_cancelled_fallback_pr_head_sonar_success_required"] is True
+        )
+        assert (
+            sonar["post_merge_cancelled_fallback_pr_head_zero_findings_required"] is True
+        )
+        assert (
+            sonar["post_merge_cancelled_fallback_current_main_recheck_required"] is True
+        )
+        assert sonar["post_merge_failure_or_findings_fallback_forbidden"] is True
 
     def test_targeted_workflow_pins_exact_requested_sha_and_toolchain(self) -> None:
         workflow = TARGETED_WORKFLOW.read_text(encoding="utf-8")
