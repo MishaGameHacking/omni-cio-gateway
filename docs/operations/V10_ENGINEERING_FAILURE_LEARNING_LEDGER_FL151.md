@@ -45,7 +45,8 @@ Current Neon documentation establishes two relevant stable facts used only for d
   - `MODERN_NAPI` when the consumed value has the current provider prefix and no wrapper evidence;
   - `WRAPPED_OR_ASSIGNED` only for deterministic shell-assignment, quote-wrapping or embedded-whitespace shapes that cannot be the raw bearer token expected by the API;
   - `LEGACY_OR_UNKNOWN` for every other non-empty value, because older Neon API keys remain valid and must not be rejected by format alone.
-- Add one exact-project `GET` using an independent direct `http.client` TLS transport that does not use `urllib` proxy resolution.
+- A credential classified `WRAPPED_OR_ASSIGNED` must never be inserted into an additional diagnostic HTTP header. The direct probe is skipped and reports only bounded `SKIPPED` / `DIRECT_SKIPPED_CREDENTIAL_FORMAT` evidence. This prevents malformed-header exceptions from reflecting credential material in a traceback while preserving the original RED failure.
+- For modern or legacy/unknown non-empty shapes, add one exact-project `GET` using an independent direct `http.client` TLS transport that does not use `urllib` proxy resolution.
 - The direct probe must target only the configured exact project. It must not enumerate projects or organizations, mutate provider state, follow redirects, log request URLs containing identifiers, log response bodies, or expose the token.
 - Emit only bounded status/media-family/equivalence metadata: exact HTTP status, `JSON|HTML|TEXT|OTHER|MISSING`, and whether the direct result matches the primary transport.
 - Explicitly mask the credential value before any diagnostic request even though GitHub secret masking is already present.
@@ -73,6 +74,8 @@ Deterministic coverage requires:
 
 - recognizable modern key format is classified without logging the value;
 - wrapped/assigned/embedded-whitespace inputs are classified without logging the value;
+- a wrapped/assigned credential never reaches the direct HTTP probe or an Authorization-header construction path;
+- wrapped/assigned skip evidence is bounded to `SKIPPED`, `MISSING` and `DIRECT_SKIPPED_CREDENTIAL_FORMAT` without token/project reflection;
 - all non-modern non-empty inputs remain `LEGACY_OR_UNKNOWN`, not automatically invalid;
 - the direct probe performs exactly one `GET` against the exact configured project path;
 - the direct probe performs no `/projects?` enumeration and no organization request;
@@ -86,7 +89,7 @@ Deterministic coverage requires:
 
 ## Prevention law
 
-When an external authority failure is observed through one transport and one opaque secret source, repeated configuration changes are not evidence. Before requesting another OWNER credential action, diagnostics must separate secret serialization, transport/edge behavior and provider authorization using bounded read-only probes that never expose secret values or broaden authority. Diagnostics explain RED; they do not authorize GREEN.
+When an external authority failure is observed through one transport and one opaque secret source, repeated configuration changes are not evidence. Before requesting another OWNER credential action, diagnostics must separate secret serialization, transport/edge behavior and provider authorization using bounded read-only probes that never expose secret values or broaden authority. Diagnostics explain RED; they do not authorize GREEN. A credential shape already proven unsafe for an HTTP header must be classified without attempting a second request that could reflect it through client-side validation errors.
 
 ## Protected invariants
 
