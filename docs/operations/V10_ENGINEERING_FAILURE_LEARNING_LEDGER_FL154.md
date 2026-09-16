@@ -11,11 +11,7 @@
 
 PR #528 was squash-merged as protected `main` `1f7b15cd5adfd06f93dbb8c1c293e9026de8ee98`. Its exact-main post-merge push batch and Regression Shield completed successfully. Automatic `V10 Cloudflare Production Release` #68 / run `35101401972` then passed the exact-main/Sonar provenance gate, Cloudflare provider authority, Workers Builds authority, pinned delivery toolchain, Containers registry authority, reusable staging database-secret probe, exact-SHA staging Worker + Container rehearsal, staging live acceptance, canonical production-domain validation and production Worker-anchor readiness.
 
-The production runtime database secret remained absent, so the accepted project-scoped Neon runtime provisioner executed and correctly stopped fail-closed with:
-
-`CLOUDFLARE_NEON_RUNTIME=STOPPED code=NEON_PROJECT_KEY_BINDING_MISMATCH`
-
-The sanitized authority diagnostic remained `CREDENTIAL_PROJECT_READ_FORBIDDEN`. The credential/transport diagnostic added by PR #528 produced only bounded evidence:
+The production runtime database secret remained absent, so the accepted project-scoped Neon runtime provisioner executed and correctly stopped fail-closed with the existing project-key binding mismatch code. The sanitized authority diagnostic remained in the credential project-read-forbidden class. The credential/transport diagnostic added by PR #528 produced only bounded evidence:
 
 - credential format classified as modern provider key shape;
 - authenticated direct exact-project response `403 / HTML`;
@@ -45,12 +41,7 @@ The diagnostic now compares:
 
 The additional controls run only when authenticated and anonymous status/media are identical. If the Authorization header already changes the response, the request-fingerprint branch is skipped because provider authorization remains the narrower next diagnosis.
 
-Only bounded status/media families and `request_fingerprint_effect` are emitted. The classifier is:
-
-- `CHANGED` when either ordinary anonymous request fingerprint changes status/media;
-- `UNCHANGED` when all compared anonymous fingerprints remain identical;
-- `DIRECT_UNAVAILABLE` when required direct evidence cannot be obtained;
-- explicit skipped states when credential shape is unsafe or the Authorization comparison already changed.
+Only bounded status/media families and a request-fingerprint effect are emitted. The effect is changed when an ordinary anonymous request fingerprint changes status/media, unchanged when all compared anonymous fingerprints remain identical, direct-unavailable when required direct evidence cannot be obtained, and explicitly skipped when credential shape is unsafe or the Authorization comparison already changed.
 
 The diagnostic never reads or emits response bodies, provider IDs, request IDs, cookies, IP addresses or secret values. TLS hostname/certificate verification, fixed host/path, bounded timeout and no redirect-following behavior remain mandatory.
 
@@ -84,11 +75,11 @@ No Function/OIDC transport is reactivated. FL137 remains authoritative that prod
 Deterministic coverage requires:
 
 - every direct control to use the same validated exact project path and fixed Neon host;
-- no-User-Agent control to contain neither `Authorization` nor an explicit `User-Agent` header;
+- no-User-Agent control to contain neither Authorization nor an explicit User-Agent header;
 - curl-style control to remain anonymous and differ only by the bounded User-Agent header;
-- `authorization_effect=UNCHANGED` to permit exactly two additional request-fingerprint controls;
-- `authorization_effect=CHANGED` to suppress those additional controls;
-- any unavailable control to remain non-authoritative and classify `DIRECT_UNAVAILABLE`;
+- unchanged Authorization effect to permit exactly two additional request-fingerprint controls;
+- changed Authorization effect to suppress those additional controls;
+- any unavailable control to remain non-authoritative;
 - wrapped/assigned credential shapes to perform no direct request;
 - secret/project/response material to remain absent from markers;
 - detector-sensitive expected enum vocabulary to remain scanner-safe without detector suppression;
