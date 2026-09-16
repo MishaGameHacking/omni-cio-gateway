@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import ANY, Mock, patch
 
@@ -23,6 +24,11 @@ def _skipped_credential_effect_marker() -> str:
 
 def _request_fingerprint_effect_marker(*parts: str) -> str:
     field = "_".join(("request", "fingerprint", "effect"))
+    return f"{field}={'_'.join(parts)}"
+
+
+def _client_stack_effect_marker(*parts: str) -> str:
+    field = "_".join(("client", "stack", "effect"))
     return f"{field}={'_'.join(parts)}"
 
 
@@ -80,11 +86,13 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 response_media="JSON",
             )
 
+        independent_probe = Mock()
         marker = diagnostics._credential_transport_marker(
             token,
             _PROJECT_ID,
             "403",
             direct_probe=direct_probe,
+            independent_probe=independent_probe,
         )
         self.assertEqual(
             calls,
@@ -93,6 +101,7 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 (None, diagnostics._DIRECT_USER_AGENT),
             ],
         )
+        independent_probe.assert_not_called()
         self.assertIn("credential_format=MODERN_NAPI", marker)
         self.assertIn("transport_equivalence=MATCH", marker)
         self.assertIn("authorization_effect=CHANGED", marker)
@@ -102,6 +111,10 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 "AUTHORIZATION",
                 "CHANGED",
             ),
+            marker,
+        )
+        self.assertIn(
+            _client_stack_effect_marker("SKIPPED", "AUTHORIZATION", "CHANGED"),
             marker,
         )
         self.assertNotIn(token, marker)
@@ -133,19 +146,23 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
     def test_wrapped_credential_never_reaches_any_direct_transport(self) -> None:
         token = f'"{_modern_token()}"'
         direct_probe = Mock()
+        independent_probe = Mock()
         marker = diagnostics._credential_transport_marker(
             token,
             _PROJECT_ID,
             "403",
             direct_probe=direct_probe,
+            independent_probe=independent_probe,
         )
         direct_probe.assert_not_called()
+        independent_probe.assert_not_called()
         self.assertNotIn(token, marker)
         self.assertNotIn(_PROJECT_ID, marker)
         self.assertIn("direct_exact_project_status=SKIPPED", marker)
         self.assertIn("anonymous_exact_project_status=SKIPPED", marker)
         self.assertIn("anonymous_no_ua_status=SKIPPED", marker)
         self.assertIn("anonymous_curl_ua_status=SKIPPED", marker)
+        self.assertIn("independent_curl_status=SKIPPED", marker)
         self.assertIn(_skipped_credential_effect_marker(), marker)
         self.assertIn(
             _request_fingerprint_effect_marker(
@@ -153,6 +170,10 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 "CREDENTIAL",
                 "FORMAT",
             ),
+            marker,
+        )
+        self.assertIn(
+            _client_stack_effect_marker("SKIPPED", "CREDENTIAL", "FORMAT"),
             marker,
         )
 
@@ -265,6 +286,96 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
         )
         self.assertEqual(no_ua_connection.requests[0][1], curl_connection.requests[0][1])
 
+    def test_independent_curl_probe_is_anonymous_https_only_and_sanitizes_environment(
+        self,
+    ) -> None:
+        executable = os.path.abspath(os.path.join("tools", "curl"))
+        completed = Mock(returncode=0, stdout="401\napplication/json\n")
+        sensitive_name = "NEON_" + "API_" + "KEY"
+        proxy_name = "HTTPS_" + "PROXY"
+        source_environment = {
+            sensitive_name: _modern_token(),
+            proxy_name: "http://proxy.invalid:8080",
+            "PATH": "private-path-value",
+            "SYSTEMROOT": "C:\\Windows",
+        }
+        with (
+            patch.object(diagnostics.shutil, "which", return_value=executable),
+            patch.object(
+                diagnostics.subprocess,
+                "run",
+                return_value=completed,
+            ) as run,
+        ):
+            evidence = diagnostics._independent_curl_exact_project_probe(
+                _PROJECT_ID,
+                environ=source_environment,
+            )
+
+        self.assertEqual(evidence, diagnostics._DirectTransportEvidence("401", "JSON"))
+        run.assert_called_once()
+        command = run.call_args.args[0]
+        kwargs = run.call_args.kwargs
+        self.assertEqual(command[0], executable)
+        self.assertIn("--proto", command)
+        self.assertEqual(command[command.index("--proto") + 1], "=https")
+        self.assertIn("--tlsv1.2", command)
+        self.assertIn("--max-redirs", command)
+        self.assertEqual(command[command.index("--max-redirs") + 1], "0")
+        self.assertNotIn("--location", command)
+        self.assertEqual(command[command.index("--output") + 1], os.devnull)
+        self.assertEqual(command[-1], f"https://console.neon.tech/api/v2/projects/{_PROJECT_ID}")
+        flattened = " ".join(command)
+        self.assertNotIn("Authorization", flattened)
+        self.assertNotIn(_modern_token(), flattened)
+        self.assertEqual(kwargs["env"], {"SYSTEMROOT": "C:\\Windows"})
+        self.assertNotIn(sensitive_name, kwargs["env"])
+        self.assertNotIn(proxy_name, kwargs["env"])
+        self.assertIs(kwargs["stdin"], diagnostics.subprocess.DEVNULL)
+        self.assertIs(kwargs["stdout"], diagnostics.subprocess.PIPE)
+        self.assertIs(kwargs["stderr"], diagnostics.subprocess.DEVNULL)
+        self.assertEqual(kwargs["timeout"], 25.0)
+
+    def test_independent_curl_probe_fails_closed_for_missing_or_invalid_results(self) -> None:
+        executable = os.path.abspath(os.path.join("tools", "curl"))
+        unavailable = diagnostics._DirectTransportEvidence("UNAVAILABLE", "MISSING")
+
+        with (
+            patch.object(diagnostics.shutil, "which", return_value=None),
+            patch.object(diagnostics.subprocess, "run") as run,
+        ):
+            self.assertEqual(
+                diagnostics._independent_curl_exact_project_probe(_PROJECT_ID),
+                unavailable,
+            )
+        run.assert_not_called()
+
+        bad_results = (
+            Mock(returncode=1, stdout="000\n\n"),
+            Mock(returncode=0, stdout="302\ntext/html\n"),
+            Mock(returncode=0, stdout="403\ntext/html\nextra\n"),
+            Mock(returncode=0, stdout="not-status\ntext/html\n"),
+            Mock(returncode=0, stdout="x" * 257),
+        )
+        for completed in bad_results:
+            with self.subTest(stdout=str(completed.stdout)[:16]):
+                with (
+                    patch.object(
+                        diagnostics.shutil,
+                        "which",
+                        return_value=executable,
+                    ),
+                    patch.object(
+                        diagnostics.subprocess,
+                        "run",
+                        return_value=completed,
+                    ),
+                ):
+                    self.assertEqual(
+                        diagnostics._independent_curl_exact_project_probe(_PROJECT_ID),
+                        unavailable,
+                    )
+
     def test_transport_relation_distinguishes_proxy_or_stack_divergence(self) -> None:
         self.assertEqual(diagnostics._transport_relation("403", "403"), "MATCH")
         self.assertEqual(diagnostics._transport_relation("403", "200"), "DIVERGENT")
@@ -318,7 +429,31 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
             "DIRECT_UNAVAILABLE",
         )
 
-    def test_unchanged_authorization_runs_bounded_request_fingerprint_controls(self) -> None:
+    def test_client_stack_effect_classifies_changed_unchanged_and_unavailable(self) -> None:
+        reference = diagnostics._DirectTransportEvidence("403", "HTML")
+        self.assertEqual(
+            diagnostics._client_stack_effect(
+                reference,
+                diagnostics._DirectTransportEvidence("403", "HTML"),
+            ),
+            "UNCHANGED",
+        )
+        self.assertEqual(
+            diagnostics._client_stack_effect(
+                reference,
+                diagnostics._DirectTransportEvidence("401", "JSON"),
+            ),
+            "CHANGED",
+        )
+        self.assertEqual(
+            diagnostics._client_stack_effect(
+                reference,
+                diagnostics._DirectTransportEvidence("UNAVAILABLE", "MISSING"),
+            ),
+            "INDEPENDENT_CLIENT_UNAVAILABLE",
+        )
+
+    def test_changed_request_fingerprint_skips_independent_client(self) -> None:
         token = _modern_token()
         calls: list[tuple[str | None, str | None]] = []
 
@@ -333,11 +468,13 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 return diagnostics._DirectTransportEvidence("401", "JSON")
             return diagnostics._DirectTransportEvidence("403", "HTML")
 
+        independent_probe = Mock()
         marker = diagnostics._credential_transport_marker(
             token,
             _PROJECT_ID,
             "403",
             direct_probe=direct_probe,
+            independent_probe=independent_probe,
         )
 
         self.assertEqual(
@@ -349,14 +486,66 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 (None, diagnostics._DIRECT_CURL_USER_AGENT),
             ],
         )
+        independent_probe.assert_not_called()
         self.assertIn("authorization_effect=UNCHANGED", marker)
         self.assertIn("anonymous_no_ua_status=403", marker)
         self.assertIn("anonymous_no_ua_media=HTML", marker)
         self.assertIn("anonymous_curl_ua_status=401", marker)
         self.assertIn("anonymous_curl_ua_media=JSON", marker)
         self.assertIn("request_fingerprint_effect=CHANGED", marker)
+        self.assertIn(
+            _client_stack_effect_marker(
+                "SKIPPED",
+                "REQUEST",
+                "FINGERPRINT",
+                "CHANGED",
+            ),
+            marker,
+        )
         self.assertNotIn(token, marker)
         self.assertNotIn(_PROJECT_ID, marker)
+
+    def test_unchanged_request_fingerprint_runs_independent_client(self) -> None:
+        token = _modern_token()
+        direct_probe = Mock(
+            return_value=diagnostics._DirectTransportEvidence("403", "HTML")
+        )
+        independent_probe = Mock(
+            return_value=diagnostics._DirectTransportEvidence("401", "JSON")
+        )
+        marker = diagnostics._credential_transport_marker(
+            token,
+            _PROJECT_ID,
+            "403",
+            direct_probe=direct_probe,
+            independent_probe=independent_probe,
+        )
+        independent_probe.assert_called_once_with(_PROJECT_ID)
+        self.assertIn("request_fingerprint_effect=UNCHANGED", marker)
+        self.assertIn("independent_curl_status=401", marker)
+        self.assertIn("independent_curl_media=JSON", marker)
+        self.assertIn("client_stack_effect=CHANGED", marker)
+        self.assertNotIn(token, marker)
+        self.assertNotIn(_PROJECT_ID, marker)
+
+    def test_unavailable_independent_client_remains_non_authoritative(self) -> None:
+        token = _modern_token()
+        direct_probe = Mock(
+            return_value=diagnostics._DirectTransportEvidence("403", "HTML")
+        )
+        independent_probe = Mock(
+            return_value=diagnostics._DirectTransportEvidence("UNAVAILABLE", "MISSING")
+        )
+        marker = diagnostics._credential_transport_marker(
+            token,
+            _PROJECT_ID,
+            "403",
+            direct_probe=direct_probe,
+            independent_probe=independent_probe,
+        )
+        self.assertIn("independent_curl_status=UNAVAILABLE", marker)
+        self.assertIn("independent_curl_media=MISSING", marker)
+        self.assertIn("client_stack_effect=INDEPENDENT_CLIENT_UNAVAILABLE", marker)
 
     def test_direct_transport_marker_never_reflects_response_or_secret_material(self) -> None:
         token = _modern_token()
@@ -376,11 +565,15 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 response_media="HTML",
             )
 
+        independent_probe = Mock(
+            return_value=diagnostics._DirectTransportEvidence("403", "HTML")
+        )
         marker = diagnostics._credential_transport_marker(
             token,
             _PROJECT_ID,
             "403",
             direct_probe=direct_probe,
+            independent_probe=independent_probe,
         )
         self.assertEqual(
             received_calls,
@@ -391,6 +584,7 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
                 (None, diagnostics._DIRECT_CURL_USER_AGENT),
             ],
         )
+        independent_probe.assert_called_once_with(_PROJECT_ID)
         for private_value in (token, _PROJECT_ID, private_response):
             self.assertNotIn(private_value, marker)
         self.assertEqual(
@@ -408,7 +602,10 @@ class NeonCredentialContractDiagnosticTests(unittest.TestCase):
             "anonymous_no_ua_media=HTML "
             "anonymous_curl_ua_status=403 "
             "anonymous_curl_ua_media=HTML "
-            "request_fingerprint_effect=UNCHANGED",
+            "request_fingerprint_effect=UNCHANGED "
+            "independent_curl_status=403 "
+            "independent_curl_media=HTML "
+            "client_stack_effect=UNCHANGED",
         )
 
 

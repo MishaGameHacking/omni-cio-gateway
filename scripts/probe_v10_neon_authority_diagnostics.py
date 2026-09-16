@@ -4,7 +4,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import http.client
 import os
+import shutil
 import ssl
+import subprocess
 import sys
 from typing import Any, Protocol, TextIO
 from urllib.parse import quote, urlencode
@@ -47,6 +49,8 @@ _NEON_API_PREFIX = "/api/v2"
 _DIRECT_TIMEOUT_SECONDS = 20.0
 _DIRECT_USER_AGENT = "omni-cio-v10-neon-authority-diagnostic/3"
 _DIRECT_CURL_USER_AGENT = "curl/8.0"
+_INDEPENDENT_CLIENT_TIMEOUT_SECONDS = 25.0
+_INDEPENDENT_CLIENT_MAX_OUTPUT_CHARS = 256
 _CREDENTIAL_FORMAT_MODERN = "MODERN_NAPI"
 _CREDENTIAL_FORMAT_LEGACY_OR_UNKNOWN = "LEGACY_OR_UNKNOWN"
 _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED = "WRAPPED_OR_ASSIGNED"
@@ -68,6 +72,15 @@ _REQUEST_FINGERPRINT_UNCHANGED = "UNCHANGED"
 _REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE = "DIRECT_UNAVAILABLE"
 _REQUEST_FINGERPRINT_SKIPPED_CREDENTIAL_FORMAT = "SKIPPED_CREDENTIAL_FORMAT"
 _REQUEST_FINGERPRINT_SKIPPED_AUTHORIZATION_CHANGED = "SKIPPED_AUTHORIZATION_CHANGED"
+_CLIENT_STACK_CHANGED = "CHANGED"
+_CLIENT_STACK_UNCHANGED = "UNCHANGED"
+_CLIENT_STACK_INDEPENDENT_UNAVAILABLE = "INDEPENDENT_CLIENT_UNAVAILABLE"
+_CLIENT_STACK_SKIPPED_CREDENTIAL_FORMAT = "SKIPPED_CREDENTIAL_FORMAT"
+_CLIENT_STACK_SKIPPED_AUTHORIZATION_CHANGED = "SKIPPED_AUTHORIZATION_CHANGED"
+_CLIENT_STACK_SKIPPED_DIRECT_UNAVAILABLE = "SKIPPED_DIRECT_UNAVAILABLE"
+_CLIENT_STACK_SKIPPED_REQUEST_FINGERPRINT_CHANGED = (
+    "SKIPPED_REQUEST_FINGERPRINT_CHANGED"
+)
 
 
 class _NeonReadApi(Protocol):
@@ -98,6 +111,7 @@ class _DirectTransportEvidence:
 
 
 DirectProbe = Callable[[str | None, str, str | None], _DirectTransportEvidence]
+IndependentProbe = Callable[[str], _DirectTransportEvidence]
 
 
 @dataclass(frozen=True, slots=True)
@@ -507,6 +521,102 @@ def _direct_exact_project_probe(
             connection.close()
 
 
+def _independent_client_environment(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    source = os.environ if environ is None else environ
+    result: dict[str, str] = {}
+    for name in ("SYSTEMROOT", "WINDIR"):
+        value = source.get(name)
+        if isinstance(value, str) and value:
+            result[name] = value
+    return result
+
+
+def _unavailable_independent_evidence() -> _DirectTransportEvidence:
+    return _DirectTransportEvidence(
+        status=_STATUS_UNAVAILABLE,
+        response_media=_RESPONSE_MEDIA_MISSING,
+    )
+
+
+def _independent_curl_exact_project_probe(
+    project_id: str,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> _DirectTransportEvidence:
+    safe_project_id = _runtime._validate_neon_project_id(project_id)
+    executable = shutil.which("curl")
+    if not executable or not os.path.isabs(executable):
+        return _unavailable_independent_evidence()
+    path = f"{_NEON_API_PREFIX}/projects/{quote(safe_project_id, safe='')}"
+    target = f"https://{_NEON_API_HOST}{path}"
+    command = [
+        executable,
+        "--disable",
+        "--silent",
+        "--show-error",
+        "--output",
+        os.devnull,
+        "--write-out",
+        "%{http_code}\n%{content_type}\n",
+        "--proto",
+        "=https",
+        "--tlsv1.2",
+        "--http1.1",
+        "--noproxy",
+        "*",
+        "--user-agent",
+        _DIRECT_CURL_USER_AGENT,
+        "--connect-timeout",
+        "10",
+        "--max-time",
+        str(int(_DIRECT_TIMEOUT_SECONDS)),
+        "--max-redirs",
+        "0",
+        "--request",
+        _HTTP_GET,
+        "--header",
+        "Accept: application/json",
+        target,
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            timeout=_INDEPENDENT_CLIENT_TIMEOUT_SECONDS,
+            env=_independent_client_environment(environ),
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return _unavailable_independent_evidence()
+    output = completed.stdout
+    if (
+        completed.returncode != 0
+        or not isinstance(output, str)
+        or len(output) > _INDEPENDENT_CLIENT_MAX_OUTPUT_CHARS
+    ):
+        return _unavailable_independent_evidence()
+    lines = output.splitlines()
+    if len(lines) != 2:
+        return _unavailable_independent_evidence()
+    status = lines[0].strip()
+    if len(status) != 3 or not status.isdecimal():
+        return _unavailable_independent_evidence()
+    status_code = int(status)
+    if not 200 <= status_code <= 599 or 300 <= status_code < 400:
+        return _unavailable_independent_evidence()
+    return _DirectTransportEvidence(
+        status=status,
+        response_media=_response_media_family(lines[1].strip() or None),
+    )
+
+
 def _transport_relation(primary_status: str, direct_status: str) -> str:
     if direct_status == _STATUS_UNAVAILABLE:
         return _TRANSPORT_DIRECT_UNAVAILABLE
@@ -546,6 +656,20 @@ def _request_fingerprint_effect(
     return _REQUEST_FINGERPRINT_CHANGED
 
 
+def _client_stack_effect(
+    reference: _DirectTransportEvidence,
+    independent: _DirectTransportEvidence,
+) -> str:
+    if independent.status == _STATUS_UNAVAILABLE:
+        return _CLIENT_STACK_INDEPENDENT_UNAVAILABLE
+    if (
+        reference.status == independent.status
+        and reference.response_media == independent.response_media
+    ):
+        return _CLIENT_STACK_UNCHANGED
+    return _CLIENT_STACK_CHANGED
+
+
 def _skipped_direct_evidence() -> _DirectTransportEvidence:
     return _DirectTransportEvidence(
         status=_STATUS_SKIPPED,
@@ -559,8 +683,10 @@ def _credential_transport_marker(
     primary_project_status: str,
     *,
     direct_probe: DirectProbe,
+    independent_probe: IndependentProbe,
 ) -> str:
     credential_format = _credential_format(token)
+    independent_client = _skipped_direct_evidence()
     if credential_format == _CREDENTIAL_FORMAT_WRAPPED_OR_ASSIGNED:
         evidence = _skipped_direct_evidence()
         anonymous = evidence
@@ -569,6 +695,7 @@ def _credential_transport_marker(
         transport_equivalence = _TRANSPORT_DIRECT_SKIPPED_CREDENTIAL_FORMAT
         authorization_effect = _AUTHORIZATION_EFFECT_SKIPPED_CREDENTIAL_FORMAT
         request_fingerprint_effect = _REQUEST_FINGERPRINT_SKIPPED_CREDENTIAL_FORMAT
+        client_stack_effect = _CLIENT_STACK_SKIPPED_CREDENTIAL_FORMAT
     else:
         evidence = direct_probe(token, project_id, _DIRECT_USER_AGENT)
         anonymous = direct_probe(None, project_id, _DIRECT_USER_AGENT)
@@ -589,6 +716,21 @@ def _credential_transport_marker(
                 anonymous_no_user_agent,
                 anonymous_curl_user_agent,
             )
+            if request_fingerprint_effect == _REQUEST_FINGERPRINT_UNCHANGED:
+                independent_client = independent_probe(project_id)
+                client_stack_effect = _client_stack_effect(
+                    anonymous_curl_user_agent,
+                    independent_client,
+                )
+            elif (
+                request_fingerprint_effect
+                == _REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE
+            ):
+                client_stack_effect = _CLIENT_STACK_SKIPPED_DIRECT_UNAVAILABLE
+            else:
+                client_stack_effect = (
+                    _CLIENT_STACK_SKIPPED_REQUEST_FINGERPRINT_CHANGED
+                )
         else:
             anonymous_no_user_agent = _skipped_direct_evidence()
             anonymous_curl_user_agent = _skipped_direct_evidence()
@@ -596,6 +738,11 @@ def _credential_transport_marker(
                 _REQUEST_FINGERPRINT_DIRECT_UNAVAILABLE
                 if authorization_effect == _AUTHORIZATION_EFFECT_DIRECT_UNAVAILABLE
                 else _REQUEST_FINGERPRINT_SKIPPED_AUTHORIZATION_CHANGED
+            )
+            client_stack_effect = (
+                _CLIENT_STACK_SKIPPED_DIRECT_UNAVAILABLE
+                if authorization_effect == _AUTHORIZATION_EFFECT_DIRECT_UNAVAILABLE
+                else _CLIENT_STACK_SKIPPED_AUTHORIZATION_CHANGED
             )
     return " ".join(
         (
@@ -613,6 +760,9 @@ def _credential_transport_marker(
             f"anonymous_curl_ua_status={anonymous_curl_user_agent.status}",
             f"anonymous_curl_ua_media={anonymous_curl_user_agent.response_media}",
             f"request_fingerprint_effect={request_fingerprint_effect}",
+            f"independent_curl_status={independent_client.status}",
+            f"independent_curl_media={independent_client.response_media}",
+            f"client_stack_effect={client_stack_effect}",
         )
     )
 
@@ -638,6 +788,7 @@ def probe_neon_authority_diagnostics(
     output: TextIO | None = None,
     enable_direct_transport_probe: bool = False,
     direct_probe: DirectProbe = _direct_exact_project_probe,
+    independent_probe: IndependentProbe = _independent_curl_exact_project_probe,
 ) -> int:
     environment = os.environ if environ is None else environ
     destination = sys.stdout if output is None else output
@@ -666,6 +817,7 @@ def probe_neon_authority_diagnostics(
                 project_id,
                 diagnostic.project_status,
                 direct_probe=direct_probe,
+                independent_probe=independent_probe,
             ),
             file=destination,
         )
