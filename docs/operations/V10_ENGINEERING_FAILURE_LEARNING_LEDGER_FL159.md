@@ -1,6 +1,6 @@
 # V10 Engineering Failure Learning — FL159
 
-Failure class: `CF_D_SONAR_EXACT_MAIN_CHECK_MISSING`
+Failure class: `CF_D_SONAR_EXACT_MAIN_SUITE_STALLED`
 
 Date: 2026-09-17
 
@@ -10,11 +10,11 @@ Scope: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / CF-D / exact-main release accepta
 
 PR #538 was squash-merged as exact protected `main` `c7fe6f9380208a41d5763bab180a434215e80fdb` after exact-head GitHub Actions and Sonar certification.
 
-The complete repository-owned post-merge push batch on that exact main SHA reached `success`. Production Release #73 then waited the full bounded post-merge gate and stopped before provider mutation with:
+The complete repository-owned post-merge push batch on that exact main SHA reached `success`. Production Release #73 attempts 2 and 3 each waited the full bounded post-merge gate and stopped before provider mutation with:
 
 `CLOUDFLARE_POSTMERGE_GATE=STOPPED code=CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_PENDING`
 
-Direct GitHub check-run evidence showed that the exact main commit had **no** matching `SonarCloud Code Analysis` check from GitHub App `sonarqubecloud`. This differs from FL146, where the exact-main provider check existed but concluded `cancelled`.
+The first evidence read showed zero matching `SonarCloud Code Analysis` **check-runs** on exact main. A stronger GitHub Checks read then proved that the provider event was not absent: app `sonarqubecloud` had created an exact-main **check suite** at merge time, but the suite remained `status=queued`, `conclusion=null`, `latest_check_runs_count=0` and never produced a check-run during either bounded release attempt.
 
 At the same time, GitHub proved all source-equivalence edges needed for independent source-quality evidence:
 
@@ -25,23 +25,21 @@ At the same time, GitHub proved all source-equivalence edges needed for independ
 - exact-main Git tree: the same `e199005b404c2330fd750dd2dfc3df74730202ad`;
 - PR-head Sonar: `completed/success`, Quality Gate passed, `0 New issues`, `0 Security Hotspots`, `0 annotations`.
 
-A same-SHA failed-jobs rerun was attempted under Amendment 16, but an absent provider check cannot be created by blindly repeating the repository release gate.
+A same-SHA failed-jobs rerun under Amendment 16 reproduced the same release stop, so blind rerun was exhausted.
 
 ## Root cause
 
 The release gate had two accepted external Sonar evidence paths:
 
-1. preferred direct exact-main `completed/success` evidence;
-2. a narrow equivalent-tree provenance recovery only when the exact-main provider check existed and concluded `cancelled`.
+1. preferred direct exact-main `completed/success` check-run evidence;
+2. narrow equivalent-tree provenance recovery when an exact-main check-run existed and concluded `cancelled`.
 
-When no exact-main Sonar check existed, `_external_evidence_state()` returned pending on every poll. After the bounded wait expired, the gate had no second-stage classification for the difference between:
+When no exact-main check-run existed, `_external_evidence_state()` correctly remained pending, but the deadline path originally inspected check-runs only. It therefore could not distinguish:
 
-- a still-running provider check; and
-- a provider check that never materialized.
+- a genuinely absent Sonar suite;
+- a Sonar suite acknowledged by GitHub but stalled in `queued`/`in_progress` with zero check-runs.
 
-Both states therefore ended as the same permanent `EXTERNAL_CHECK_PENDING` blocker.
-
-The provider-side reason the exact-main check did not materialize is intentionally not guessed. SonarQube Cloud documents main-branch analysis as normally triggered when main changes, but repository release authority must remain safe even when an external provider execution is absent.
+Treating `check-runs == 0` alone as provider absence would be too broad because a queued provider suite is still pending external work. The provider-side reason for the stall is intentionally not guessed.
 
 ## Blast radius and analogous surfaces
 
@@ -54,9 +52,12 @@ Directly coupled surfaces:
 
 Adjacent failure modes reviewed:
 
-- an exact-main Sonar check is merely late and still `in_progress`;
-- exact-main Sonar concludes `failure` or reports findings;
-- cancelled exact-main Sonar follows the already accepted FL146 path;
+- direct exact-main Sonar check-run is late and `in_progress`;
+- exact-main check-run concludes `failure` or reports findings;
+- cancelled exact-main check-run follows accepted FL146;
+- provider suite exists but is queued/in-progress with zero check-runs;
+- provider suite reaches a terminal conclusion without a usable check-run;
+- provider suite or check-run appears/changes during provenance collection;
 - multiple/ambiguous associated PRs;
 - non-main PR base;
 - canonical merge mismatch;
@@ -66,44 +67,50 @@ Adjacent failure modes reviewed:
 
 ## Permanent correction
 
-The preferred path remains unchanged: an exact-main Sonar check, when present, must be `completed/success` with zero New issues, zero Security Hotspots and zero annotations.
+The preferred path is unchanged: an exact-main Sonar check-run, when present, must be `completed/success` with zero New issues, zero Security Hotspots and zero annotations.
 
-Missing exact-main evidence is **not** immediately reclassified as GREEN. During the normal bounded wait it remains pending exactly as before.
+No missing/stalled condition is immediately reclassified as GREEN. Throughout the normal bounded wait, lack of a completed exact-main check-run remains pending exactly as before.
 
-Only after the full configured wait has expired, and only if all repository-owned exact-main push workflows are already successful, the gate performs a fresh check-run read:
+Only after the full configured wait has expired, and only after all repository-owned exact-main push workflows are successful, the deadline path may enter equivalent-tree recovery.
 
-- if a matching exact-main check now exists, normal exact-main/cancelled semantics remain authoritative;
-- if the check is still in progress, release remains pending/fail-closed;
-- if it is a terminal failure/finding, release remains terminal RED;
-- only if **no matching exact-main provider check exists** may the missing-evidence provenance recovery run.
+The provenance verifier then reads exact-main check suites as well as check-runs:
 
-The missing-evidence recovery reuses the same cryptographic chain accepted for FL146:
+- no matching suite -> `missing_exact_main_after_bounded_wait` candidate;
+- latest matching suite `queued` or `in_progress`, `conclusion=null`, zero check-runs -> `stalled_exact_main_suite_after_bounded_wait` candidate;
+- any terminal/non-null suite conclusion or non-zero check-run count is not eligible for stalled-suite fallback;
+- any exact-main check-run that appears remains authoritative and aborts the fallback attempt;
+- a suite that appears, disappears, changes identity, leaves the stalled state, or gains a check-run during provenance aborts the fallback attempt.
+
+Neither a queued suite nor a missing suite is counted as a successful provider execution. Recovery is permitted only because the exact landed source tree can be independently bound to a previously normal Sonar analysis of the exact same source tree.
+
+Both missing and stalled-suite recovery reuse the cryptographic/evidence chain accepted for FL146:
 
 1. current main equals expected SHA;
 2. exactly one associated merged PR;
 3. canonical PR base is `main`;
-4. canonical merge identity equals exact main, with the already accepted unique merged-event fallback only when GitHub omits the merge SHA;
+4. canonical merge identity equals exact main, with the accepted unique merged-event fallback only when GitHub omits the merge SHA;
 5. exact-main and PR-head Git trees are identical;
-6. exact PR head has normal `sonarqubecloud` `completed/success` Sonar evidence with zero findings/annotations;
-7. current main is rechecked after evidence collection.
-
-The resulting evidence is explicitly labeled `missing_exact_main_after_bounded_wait`; the absent provider run is never called successful.
+6. exact PR head has normal `sonarqubecloud` `completed/success` evidence with zero findings/annotations;
+7. current main is rechecked during and after evidence collection.
 
 ## Regression guards
 
 Deterministic tests freeze that:
 
-- missing exact-main Sonar remains pending during normal polling;
-- the missing fallback is reachable only from the deadline path;
-- an in-progress exact-main check blocks the missing fallback;
-- terminal provider failure/finding never uses the missing fallback;
-- missing evidence still requires unique merged-PR, exact merge identity, identical Git tree and normal green PR-head Sonar;
-- current main is checked before and after provenance certification;
-- the Amendment-16 machine contract records the bounded-wait and no-matching-main-check preconditions.
+- no-check-run evidence remains pending during normal polling;
+- deadline-only recovery classifies missing versus stalled provider suite;
+- stalled suite requires `queued|in_progress`, null conclusion and zero check-runs;
+- terminal/non-zero suite states are rejected;
+- a check-run appearing during provenance aborts fallback;
+- a previously missing suite appearing during provenance aborts fallback;
+- a stalled suite changing identity/state during provenance aborts fallback;
+- suite pagination and exact-SHA filtering fail closed;
+- unique merged-PR, exact merge identity, identical Git tree and normal green PR-head Sonar remain mandatory;
+- Amendment-16 machine contract records both missing and stalled-suite conditions.
 
 ## Prevention law
 
-An absent external-provider execution is not a successful execution, but it is also not automatically a source-quality failure. A release may recover from persistent provider absence only after a bounded direct-evidence wait and only through a unique, cryptographically anchored, exact-source-equivalent evidence chain that already received the required normal provider analysis.
+`check-runs == 0` is not sufficient proof that an external provider did not receive the event. Release authority must inspect provider check-suite state before classifying no-check-run evidence. A persistently stalled external suite is never called GREEN; after a full bounded direct-evidence wait it may be replaced only by a unique, cryptographically anchored, exact-source-equivalent provider analysis that already proved the landed source tree clean.
 
 ## Protected invariants
 
