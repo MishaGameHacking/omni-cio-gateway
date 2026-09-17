@@ -355,7 +355,7 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
                     poll_seconds=1,
                 )
 
-    def test_wait_reports_external_check_pending_after_workflows_are_green(
+    def test_wait_reports_external_check_pending_when_deadline_fallback_is_not_ready(
         self,
     ) -> None:
         rows = [_run("Regression Shield"), _run("V10 Engineering Governance")]
@@ -370,6 +370,7 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
             patch.object(gate, "_workflow_runs", return_value=rows),
             patch.object(gate, "_check_runs", return_value=[]),
             patch.object(gate, "_current_main_sha", return_value=_SHA),
+            patch.object(gate, "_deadline_external_evidence_state", return_value=False),
         ):
             with self.assertRaisesRegex(
                 RuntimeError,
@@ -381,6 +382,39 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
                     wait_seconds=0,
                     poll_seconds=1,
                 )
+
+    def test_wait_accepts_missing_exact_main_only_after_deadline_provenance(self) -> None:
+        rows = [_run("Regression Shield"), _run("V10 Engineering Governance")]
+        rows.extend(_run(f"workflow-{index}") for index in range(9))
+        environment = {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}
+        with (
+            patch.object(
+                gate,
+                "_contract",
+                return_value=(_REQUIRED, 11, _EXTERNAL_NAME, _EXTERNAL_APP),
+            ),
+            patch.object(gate, "_workflow_runs", return_value=rows),
+            patch.object(gate, "_external_evidence_state", return_value=False),
+            patch.object(
+                gate, "_deadline_external_evidence_state", return_value=True
+            ) as deadline_evidence,
+            patch.object(gate, "_current_main_sha", return_value=_SHA),
+        ):
+            observed = gate.wait_for_release_gate(
+                _SHA,
+                environ=environment,
+                wait_seconds=0,
+                poll_seconds=1,
+            )
+
+        self.assertEqual(observed, 11)
+        deadline_evidence.assert_called_once_with(
+            "owner/repo",
+            "token",
+            _SHA,
+            _EXTERNAL_NAME,
+            _EXTERNAL_APP,
+        )
 
 
 if __name__ == "__main__":
