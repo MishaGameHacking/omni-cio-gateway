@@ -22,28 +22,42 @@ The same workflow already had a legitimately skipped staging-recovery job becaus
 
 ## Root cause
 
-GitHub Actions job-level `if` evaluation has status-check semantics. Without an explicit status-check function such as `always()`, an implicit success-status condition participates in dependency evaluation. In a dependency graph containing a skipped ancestor, a later job can be skipped before the intended output comparison is allowed to drive the required recovery path.
+GitHub Actions job-level `if` evaluation has status-check semantics. Without an explicit status-check function, an implicit success-status condition participates in dependency evaluation. In a dependency graph containing a skipped ancestor, a later job can be skipped before the intended output comparison is allowed to drive the required recovery path.
 
 The production recovery job used only:
 
 `needs.rehearse.outputs.production_bootstrap_required == 'true'`
 
-It did not explicitly neutralize inherited skip propagation with `always()` and did not require the direct producer job result to be `success` in the same expression.
+It did not explicitly neutralize inherited skip propagation with a status-check function and did not require the direct producer job result to be `success` in the same expression.
 
 The staging recovery job used the same vulnerable condition shape, so the defect class existed symmetrically even though staging secret reuse meant it did not trigger in Release #72.
 
 A second failure mode amplified the defect: the workflow had no terminal fail-closed DAG sentinel. If an applicable recovery or promotion job was skipped, all executed jobs could still be `success`, allowing the workflow itself to appear green despite incomplete release authority.
 
+## Adjacent cancellation hazard
+
+The first repair checkpoint used `always()` to override inherited skip propagation. That solves the skip-propagation defect, but `always()` has a materially different cancellation semantic: GitHub re-evaluates running job conditions during workflow cancellation, and `always()` remains true even when the workflow is cancelled.
+
+That behavior is acceptable for bounded read-only cleanup/terminal observation, but not as the job-level status function for release jobs that can mutate Neon or Cloudflare state.
+
+Permanent release orchestration therefore uses the following invariant:
+
+`CANCELLATION_FAIL_CLOSED`
+
+Provider-mutating release jobs use `!cancelled()` plus explicit producer/result requirements. The terminal read-only release outcome sentinel retains `always()` so incomplete/cancelled release graphs cannot be mistaken for an accepted production release.
+
 ## Permanent correction
 
-Both conditional hosted recovery jobs now use an explicit status-check function and direct-producer success requirement:
+The four conditional jobs that can reach provider mutation use cancellation-safe status semantics:
 
-- staging recovery: `always() && inspect_database_state.result == 'success' && staging_bootstrap_required == 'true'`;
-- production recovery: `always() && rehearse.result == 'success' && production_bootstrap_required == 'true'`.
+- staging recovery: `!cancelled() && inspect_database_state.result == 'success' && staging_bootstrap_required == 'true'`;
+- staging rehearsal/production-state probe: `!cancelled() && inspect_database_state.result == 'success' && (staging_bootstrap_required == 'false' || hosted staging recovery == 'success')`;
+- production recovery: `!cancelled() && rehearse.result == 'success' && production_bootstrap_required == 'true'`;
+- production promotion: `!cancelled() && rehearse.result == 'success' && (production_bootstrap_required == 'false' || hosted production recovery == 'success')`.
 
-This preserves conditional execution when a secret is already reusable, while preventing an earlier skipped dependency from silently suppressing a recovery that the immediate producer explicitly requires.
+This preserves conditional execution when a secret is already reusable, prevents an earlier skipped dependency from silently suppressing a recovery that the immediate producer explicitly requires, and prevents provider-mutating downstream jobs from remaining eligible after workflow cancellation.
 
-A final `CF-D release DAG terminal fail-closed gate` now runs with `always()` for applicable release invocations and validates the complete state machine:
+A final `CF-D release DAG terminal fail-closed gate` runs with `always()` for applicable release invocations and validates the complete state machine:
 
 1. database-state inspection succeeded;
 2. staging bootstrap output is exactly `true` or `false`;
@@ -53,7 +67,7 @@ A final `CF-D release DAG terminal fail-closed gate` now runs with `always()` fo
 6. when production recovery is required, hosted production recovery concluded `success`;
 7. production promotion concluded `success`.
 
-Missing/invalid outputs, required-but-skipped recovery, failed recovery, or skipped promotion therefore force the overall workflow RED instead of producing a false successful release.
+Missing/invalid outputs, required-but-skipped recovery, failed recovery, skipped promotion, or a cancellation that prevents provider-mutating jobs from completing therefore cannot produce terminal release acceptance.
 
 ## Security and authority invariants
 
@@ -76,11 +90,13 @@ Unchanged:
 
 ## Regression guard
 
-`tests/test_v10_cloudflare_cf_d_hosted_egress_recovery.py` now freezes:
+`tests/test_v10_cloudflare_cf_d_hosted_egress_recovery.py` freezes:
 
-- explicit `always()` + direct-producer-success semantics on both hosted recovery jobs;
+- explicit `!cancelled()` + direct-producer-success semantics on both hosted recovery jobs;
+- cancellation-safe job-level conditions for staging rehearsal and production promotion;
+- absence of job-level `always()` on the four provider-mutating conditional jobs;
 - staging/production symmetry;
-- the terminal fail-closed DAG gate;
+- the terminal read-only `always()` fail-closed DAG gate;
 - rejection of a required recovery that does not end in `success`;
 - required successful production promotion before terminal success.
 

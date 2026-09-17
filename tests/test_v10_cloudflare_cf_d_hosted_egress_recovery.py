@@ -21,6 +21,10 @@ def _section(source: str, start: str, end: str | None) -> str:
     return tail if end is None else tail.split(end, 1)[0]
 
 
+def _job_header(section: str) -> str:
+    return section.split("    steps:\n", 1)[0]
+
+
 class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -64,13 +68,13 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         )
         self.assertIn("runs-on: ubuntu-24.04", hosted_staging)
         self.assertIn("runs-on: ubuntu-24.04", hosted_production)
-        self.assertIn("always()", hosted_staging)
+        self.assertIn("!cancelled()", _job_header(hosted_staging))
         self.assertIn("needs.inspect_database_state.result == 'success'", hosted_staging)
         self.assertIn(
             "needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'",
             hosted_staging,
         )
-        self.assertIn("always()", hosted_production)
+        self.assertIn("!cancelled()", _job_header(hosted_production))
         self.assertIn("needs.rehearse.result == 'success'", hosted_production)
         self.assertIn(
             "needs.rehearse.outputs.production_bootstrap_required == 'true'",
@@ -83,6 +87,31 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
             ),
             2,
         )
+
+    def test_provider_mutating_jobs_are_cancellation_safe(self) -> None:
+        provider_mutating_jobs = (
+            _section(
+                self.workflow,
+                "  bootstrap_staging_database:\n",
+                "  rehearse:\n",
+            ),
+            _section(
+                self.workflow,
+                "  rehearse:\n",
+                "  bootstrap_production_database:\n",
+            ),
+            _section(
+                self.workflow,
+                "  bootstrap_production_database:\n",
+                "  promote:\n",
+            ),
+            _section(self.workflow, "  promote:\n", "  release_outcome:\n"),
+        )
+        for job in provider_mutating_jobs:
+            header = _job_header(job)
+            self.assertIn("!cancelled()", header)
+            self.assertNotIn("always()", header)
+        self.assertEqual(self.workflow.count("!cancelled()"), 4)
 
     def test_neon_credentials_are_confined_to_hosted_recovery_jobs(self) -> None:
         inspect = _section(
@@ -163,7 +192,7 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
 
     def test_promotion_requires_applicable_hosted_recovery_success(self) -> None:
         promote = _section(self.workflow, "  promote:\n", "  release_outcome:\n")
-        self.assertIn("always()", promote)
+        self.assertIn("!cancelled()", _job_header(promote))
         self.assertIn("needs.rehearse.result == 'success'", promote)
         self.assertIn(
             "needs.rehearse.outputs.production_bootstrap_required == 'false'",
@@ -182,6 +211,7 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
             "  rehearse:\n",
             "  bootstrap_production_database:\n",
         )
+        self.assertIn("!cancelled()", _job_header(rehearse))
         self.assertIn("needs.inspect_database_state.result == 'success'", rehearse)
         self.assertIn(
             "needs.inspect_database_state.outputs.staging_bootstrap_required "
@@ -195,8 +225,10 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
 
     def test_terminal_release_gate_rejects_required_recovery_skip(self) -> None:
         terminal = _section(self.workflow, "  release_outcome:\n", None)
+        header = _job_header(terminal)
+        self.assertIn("always()", header)
+        self.assertNotIn("!cancelled()", header)
         for marker in (
-            "always()",
             "needs.inspect_database_state.result",
             "needs.inspect_database_state.outputs.staging_bootstrap_required",
             "needs.bootstrap_staging_database.result",
@@ -231,6 +263,7 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         self.assertIn("CF_D_NEON_SELF_HOSTED_EGRESS_BLOCKS_RUNTIME_BOOTSTRAP", failure)
         self.assertIn("Production Release #71", failure)
         self.assertIn("CF_D_REQUIRED_RECOVERY_SKIP_PROPAGATION", dag_failure)
+        self.assertIn("CANCELLATION_FAIL_CLOSED", dag_failure)
         self.assertIn("Production Release #72", dag_failure)
 
 

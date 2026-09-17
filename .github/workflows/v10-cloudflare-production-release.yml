@@ -210,7 +210,7 @@ jobs:
     name: CF-D hosted staging database recovery
     needs: inspect_database_state
     if: >-
-      always() &&
+      !cancelled() &&
       needs.inspect_database_state.result == 'success' &&
       needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'
     runs-on: ubuntu-24.04
@@ -294,7 +294,7 @@ jobs:
       - inspect_database_state
       - bootstrap_staging_database
     if: >-
-      always() &&
+      !cancelled() &&
       needs.inspect_database_state.result == 'success' &&
       (needs.inspect_database_state.outputs.staging_bootstrap_required == 'false' ||
        needs.bootstrap_staging_database.result == 'success')
@@ -492,7 +492,7 @@ jobs:
     name: CF-D hosted production database recovery
     needs: rehearse
     if: >-
-      always() &&
+      !cancelled() &&
       needs.rehearse.result == 'success' &&
       needs.rehearse.outputs.production_bootstrap_required == 'true'
     runs-on: ubuntu-24.04
@@ -576,7 +576,7 @@ jobs:
       - rehearse
       - bootstrap_production_database
     if: >-
-      always() &&
+      !cancelled() &&
       needs.rehearse.result == 'success' &&
       (needs.rehearse.outputs.production_bootstrap_required == 'false' ||
        needs.bootstrap_production_database.result == 'success')
