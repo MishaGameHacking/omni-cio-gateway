@@ -108,6 +108,7 @@
     "post_merge_stalled_suite_pr_head_sonar_success_required": true,
     "post_merge_stalled_suite_tree_identity_required": true,
     "post_merge_stalled_suite_terminal_conclusion_fallback_forbidden": true,
+    "post_merge_in_progress_fallback_forbidden": true,
     "post_merge_in_progress_check_run_fallback_forbidden": true,
     "post_merge_failure_or_findings_fallback_forbidden": true
   },
