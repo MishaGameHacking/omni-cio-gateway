@@ -69,6 +69,59 @@ LIVE_GUIDANCE_MARKERS: dict[Path, tuple[str, ...]] = {
         CERTIFIED_GREEN,
     ),
     ROOT / ".github/copilot-instructions.md": (
+        GREEN_CHECKPOINT_REPAIR,
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / "gpt/PROJECT_INSTRUCTIONS.md": (
+        GREEN_CHECKPOINT_AMENDMENT,
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / "gpt/NEW_CHAT_PROMPT.md": (
+        GREEN_CHECKPOINT_AMENDMENT,
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / "docs/master-plan/README.md": (
+        GREEN_CHECKPOINT_REPAIR,
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md": (
+        GREEN_CHECKPOINT_LAW,
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": (
+        "Green Checkpoint certification",
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
+        "Green Checkpoint verification",
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / ".github/pull_request_template.md": (
+        GREEN_CHECKPOINT_REPAIR,
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+    ROOT / ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml": (
+        "Green Checkpoint / targeted repair evidence",
+        RED_REPAIR_ONLY,
+        CERTIFIED_GREEN,
+    ),
+}
+
+SUPERSEDED_OPERATIONAL_MARKERS: dict[Path, tuple[str, ...]] = {
+    ROOT / "CONTRIBUTING.md": ("## Pre-CI / HEAD FREEZE",),
+    ROOT / "README.md": (
+        "After a verification SHA is published, **HEAD FREEZE** applies",
+        "one published head -> HEAD FREEZE",
+    ),
+    ROOT / ".github/copilot-instructions.md": (
         "After publishing a verification head, HEAD FREEZE applies",
     ),
     ROOT / "gpt/PROJECT_INSTRUCTIONS.md": ("\nHEAD FREEZE:\n",),
