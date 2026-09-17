@@ -12,6 +12,8 @@ _MAX_ISSUE_EVENT_PAGES = 10
 _CHECK_SUITES_PER_PAGE = 100
 _MAX_FILTERED_CHECK_SUITES = 1000
 _STALLED_SUITE_STATUSES = frozenset({"queued", "in_progress"})
+_AUTHORITATIVE_GATE_NAME = "V10 authoritative merge gate"
+_AUTHORITATIVE_GATE_APP_SLUG = "github-actions"
 MERGE_SHA_CONVERGENCE_PENDING = (
     "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_CONVERGENCE_PENDING"
 )
@@ -382,6 +384,40 @@ def _require_cancelled_main_check(main_check: dict[str, Any]) -> None:
         )
 
 
+def _authoritative_head_gate_success(
+    rows: list[dict[str, Any]],
+    head_sha: str,
+) -> bool:
+    matches: list[dict[str, Any]] = []
+    for row in rows:
+        app = row.get("app")
+        if (
+            row.get("name") == _AUTHORITATIVE_GATE_NAME
+            and row.get("head_sha") == head_sha
+            and isinstance(app, dict)
+            and app.get("slug") == _AUTHORITATIVE_GATE_APP_SLUG
+        ):
+            matches.append(row)
+    if not matches:
+        return False
+    latest = max(
+        matches,
+        key=lambda row: str(row.get("completed_at") or row.get("started_at") or ""),
+    )
+    if latest.get("status") != "completed":
+        return False
+    if latest.get("conclusion") != "success":
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_AUTHORITATIVE_GATE_NOT_SUCCESS"
+        )
+    output = latest.get("output")
+    if not isinstance(output, dict) or output.get("annotations_count") != 0:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_AUTHORITATIVE_GATE_ANNOTATIONS_PRESENT"
+        )
+    return True
+
+
 def _certify_equivalent_tree_pr_sonar(
     *,
     repository: str,
@@ -412,11 +448,21 @@ def _certify_equivalent_tree_pr_sonar(
         )
 
     head_checks = release_gate._check_runs(repository, token, head_sha)  # noqa: SLF001
-    if not release_gate._external_check_state(  # noqa: SLF001
+    latest_sonar = release_gate._latest_external_check(  # noqa: SLF001
         head_checks,
         required_name,
         required_app_slug,
-    ):
+    )
+    if latest_sonar is not None:
+        if not release_gate._external_check_state(  # noqa: SLF001
+            head_checks,
+            required_name,
+            required_app_slug,
+        ):
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_CHECK_PENDING"
+            )
+    elif not _authoritative_head_gate_success(head_checks, head_sha):
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_CHECK_MISSING"
         )

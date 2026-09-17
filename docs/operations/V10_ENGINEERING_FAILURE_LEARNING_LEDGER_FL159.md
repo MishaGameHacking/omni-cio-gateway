@@ -108,9 +108,30 @@ Deterministic tests freeze that:
 - unique merged-PR, exact merge identity, identical Git tree and normal green PR-head Sonar remain mandatory;
 - Amendment-16 machine contract records both missing and stalled-suite conditions.
 
+## READY-cycle adjacent failure and systemic correction
+
+When PR #540 exact head `b7e46f841f746232f1f6a26c10337aa2a52c3099` moved from DRAFT to READY, `V10 Engineering Governance` run `35271945425` failed at `Fail fast on exact-head Sonar findings`. The repository guard waited its complete bounded interval for `SonarCloud Code Analysis` and then stopped with:
+
+`External review gate failed: Sonar exact-head check did not complete within bounded wait`
+
+This was not a source-quality finding. GitHub Checks showed the same external-provider failure shape on the PR head itself: an exact-head `sonarqubecloud` suite existed in `queued` state with null conclusion and zero check-runs. Separately, the authenticated `sonarqubecloud[bot]` pull-request decoration was updated after the exact head and suite were created and reported `Quality Gate passed`, `0 New issues`, `0 Accepted issues` and `0 Security Hotspots` for PR #540.
+
+The blast radius included two direct consumers:
+
+1. `scripts/check_v10_pr_external_review_gate.py`, which could consume only a direct Sonar check-run;
+2. `_certify_equivalent_tree_pr_sonar` in `scripts/check_v10_sonar_equivalent_tree_provenance.py`, which also required a direct PR-head Sonar check-run and would therefore have reproduced the same stop after merge.
+
+The systemic correction keeps direct check-runs authoritative whenever they exist. Only after the PR guard exhausts its bounded wait with **no direct Sonar check-run** may it inspect the exact-head Sonar suite and authenticated PR decoration. The fallback requires an open PR on base `main`, exact PR head identity, a stalled `sonarqubecloud` suite with null conclusion and zero runs, a fresh `sonarqubecloud[bot]` decoration after both the head commit and suite creation, Quality Gate passed, zero New/Accepted issues and zero Security Hotspots, plus fresh run/suite/PR/comment rechecks. Any direct run that appears becomes authoritative immediately; an in-progress, failed or finding-bearing direct run is never masked.
+
+For post-merge same-tree provenance, a missing direct PR-head Sonar check-run may be represented only by the repository-owned exact-head `V10 authoritative merge gate` after it completed `success` with zero annotations. That gate is the durable proof that the bounded PR external-review verifier accepted the exact head. If a direct PR-head Sonar check-run exists, its own status remains authoritative and the repository gate cannot override it.
+
+This closes the reusable defect class without calling a queued provider suite successful and without weakening the zero-finding policy.
+
 ## Prevention law
 
 `check-runs == 0` is not sufficient proof that an external provider did not receive the event. Release authority must inspect provider check-suite state before classifying no-check-run evidence. A persistently stalled external suite is never called GREEN; after a full bounded direct-evidence wait it may be replaced only by a unique, cryptographically anchored, exact-source-equivalent provider analysis that already proved the landed source tree clean.
+
+A pull-request external-review gate must likewise distinguish provider transport/check-run delivery from provider analysis evidence. A repository-owned merge gate may stand in for a missing downstream check-run only when that merge gate itself is exact-head, completed success, and is known to have enforced the bounded external-review policy on that same head.
 
 ## Protected invariants
 

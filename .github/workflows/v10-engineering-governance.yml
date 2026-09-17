@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   checks: read
+  pull-requests: read
 
 concurrency:
   group: v10-engineering-governance-${{ github.event.pull_request.number || github.ref }}
