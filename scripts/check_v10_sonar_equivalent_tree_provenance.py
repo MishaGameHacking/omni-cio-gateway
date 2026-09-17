@@ -358,11 +358,14 @@ def certify_missing_exact_main_sonar(
         token,
         expected_sha,
     )
-    if release_gate._latest_external_check(  # noqa: SLF001
-        refreshed_main_checks,
-        required_name,
-        required_app_slug,
-    ) is not None:
+    if (
+        release_gate._latest_external_check(  # noqa: SLF001
+            refreshed_main_checks,
+            required_name,
+            required_app_slug,
+        )
+        is not None
+    ):
         raise release_gate.ReleaseGateStopped(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_APPEARED"
         )
