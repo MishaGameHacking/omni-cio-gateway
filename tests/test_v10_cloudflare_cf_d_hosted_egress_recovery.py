@@ -10,6 +10,9 @@ _ADAPTER = _ROOT / "scripts/bootstrap_v10_cloudflare_neon_hosted_egress.py"
 _FAILURE_LEDGER = (
     _ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL157.md"
 )
+_DAG_FAILURE_LEDGER = (
+    _ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL158.md"
+)
 _ARCHITECTURE = _ROOT / "docs/architecture/V10_CLOUDFLARE_NEON_HOSTED_EGRESS_BRIDGE.md"
 
 
@@ -61,16 +64,19 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         )
         self.assertIn("runs-on: ubuntu-24.04", hosted_staging)
         self.assertIn("runs-on: ubuntu-24.04", hosted_production)
+        self.assertIn("always()", hosted_staging)
+        self.assertIn("needs.inspect_database_state.result == 'success'", hosted_staging)
         self.assertIn(
-            "if: needs.inspect_database_state.outputs.staging_bootstrap_required "
-            "== 'true'",
+            "needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'",
             hosted_staging,
         )
+        self.assertIn("always()", hosted_production)
+        self.assertIn("needs.rehearse.result == 'success'", hosted_production)
         self.assertIn(
-            "if: needs.rehearse.outputs.production_bootstrap_required == 'true'",
+            "needs.rehearse.outputs.production_bootstrap_required == 'true'",
             hosted_production,
         )
-        self.assertEqual(self.workflow.count("runs-on: ubuntu-24.04"), 2)
+        self.assertEqual(self.workflow.count("runs-on: ubuntu-24.04"), 3)
         self.assertEqual(
             self.workflow.count(
                 "uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
@@ -89,7 +95,7 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
             "  rehearse:\n",
             "  bootstrap_production_database:\n",
         )
-        promote = _section(self.workflow, "  promote:\n", None)
+        promote = _section(self.workflow, "  promote:\n", "  release_outcome:\n")
         hosted_staging = _section(
             self.workflow,
             "  bootstrap_staging_database:\n",
@@ -156,7 +162,7 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
             self.assertNotIn("functions:invoke", source)
 
     def test_promotion_requires_applicable_hosted_recovery_success(self) -> None:
-        promote = _section(self.workflow, "  promote:\n", None)
+        promote = _section(self.workflow, "  promote:\n", "  release_outcome:\n")
         self.assertIn("always()", promote)
         self.assertIn("needs.rehearse.result == 'success'", promote)
         self.assertIn(
@@ -187,11 +193,34 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
             rehearse,
         )
 
+    def test_terminal_release_gate_rejects_required_recovery_skip(self) -> None:
+        terminal = _section(self.workflow, "  release_outcome:\n", None)
+        for marker in (
+            "always()",
+            "needs.inspect_database_state.result",
+            "needs.inspect_database_state.outputs.staging_bootstrap_required",
+            "needs.bootstrap_staging_database.result",
+            "needs.rehearse.result",
+            "needs.rehearse.outputs.production_bootstrap_required",
+            "needs.bootstrap_production_database.result",
+            "needs.promote.result",
+            'if [ "$STAGING_REQUIRED" = "true" ]; then',
+            'test "$STAGING_RECOVERY_RESULT" = "success"',
+            'if [ "$PRODUCTION_REQUIRED" = "true" ]; then',
+            'test "$PRODUCTION_RECOVERY_RESULT" = "success"',
+            'test "$PROMOTE_RESULT" = "success"',
+            "CLOUDFLARE_RELEASE_DAG=TERMINAL_SUCCESS",
+        ):
+            self.assertIn(marker, terminal)
+        self.assertNotIn("secrets.", terminal)
+
     def test_architecture_and_failure_learning_are_tracked(self) -> None:
         self.assertTrue(_ARCHITECTURE.is_file())
         self.assertTrue(_FAILURE_LEDGER.is_file())
+        self.assertTrue(_DAG_FAILURE_LEDGER.is_file())
         architecture = _ARCHITECTURE.read_text(encoding="utf-8")
         failure = _FAILURE_LEDGER.read_text(encoding="utf-8")
+        dag_failure = _DAG_FAILURE_LEDGER.read_text(encoding="utf-8")
         for marker in (
             "GITHUB_HOSTED_MISSING_SECRET_RECOVERY_ONLY",
             "HOSTED_EPHEMERAL_BRANCH_CUSTODY_RESYNC",
@@ -201,6 +230,8 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
             self.assertIn(marker, architecture)
         self.assertIn("CF_D_NEON_SELF_HOSTED_EGRESS_BLOCKS_RUNTIME_BOOTSTRAP", failure)
         self.assertIn("Production Release #71", failure)
+        self.assertIn("CF_D_REQUIRED_RECOVERY_SKIP_PROPAGATION", dag_failure)
+        self.assertIn("Production Release #72", dag_failure)
 
 
 if __name__ == "__main__":
