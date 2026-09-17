@@ -58,8 +58,7 @@ def _github_json(path: str, token: str) -> Any:
 
 def _check_runs_path(repository: str, head_sha: str) -> str:
     return (
-        f"/repos/{repository}/commits/{head_sha}/check-runs"
-        "?per_page=100&filter=latest"
+        f"/repos/{repository}/commits/{head_sha}/check-runs?per_page=100&filter=latest"
     )
 
 
@@ -438,8 +437,7 @@ def _validate_sonar_comment(
 
 def _same_comment(first: dict[str, Any], second: dict[str, Any]) -> bool:
     return all(
-        first.get(key) == second.get(key)
-        for key in ("id", "updated_at", "body")
+        first.get(key) == second.get(key) for key in ("id", "updated_at", "body")
     )
 
 
@@ -478,7 +476,9 @@ def _certify_stalled_suite_decoration(
         raise ReviewGateError("Sonar exact-head pull-request association changed")
     fresh_suite = _latest_sonar_suite(repository, head_sha, token, pull_request_number)
     if _stalled_suite_fingerprint(fresh_suite) != suite_fingerprint:
-        raise ReviewGateError("Sonar exact-head stalled suite changed during evidence read")
+        raise ReviewGateError(
+            "Sonar exact-head stalled suite changed during evidence read"
+        )
     fresh_comment = _latest_sonar_comment(
         repository,
         token,
@@ -626,7 +626,9 @@ def _validated_environment() -> tuple[str, str, str] | None:
 
 def main() -> int:
     if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
-        print("External review gate: pull_request-only; current event is not applicable.")
+        print(
+            "External review gate: pull_request-only; current event is not applicable."
+        )
         return 0
 
     environment = _validated_environment()
