@@ -149,13 +149,35 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
             patch.object(release_gate, "_require_current_main") as current_main,
             patch.object(release_gate, "_api_get", side_effect=_api_rows()),
             patch.object(
-                release_gate, "_check_runs", return_value=[_green_head_check()]
+                release_gate,
+                "_check_runs",
+                side_effect=([_green_head_check()], []),
             ),
         ):
             certified = _certify_missing()
 
         self.assertEqual(certified, _HEAD)
-        self.assertEqual(current_main.call_count, 2)
+        self.assertEqual(current_main.call_count, 3)
+
+    def test_missing_exact_main_fails_closed_if_provider_check_appears_during_provenance(
+        self,
+    ) -> None:
+        appeared = _green_head_check()
+        appeared["head_sha"] = _MAIN
+        with (
+            patch.object(release_gate, "_require_current_main"),
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(
+                release_gate,
+                "_check_runs",
+                side_effect=([_green_head_check()], [appeared]),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_APPEARED",
+            ):
+                _certify_missing()
 
     def test_association_projection_merge_sha_is_not_used_as_canonical_metadata(
         self,
