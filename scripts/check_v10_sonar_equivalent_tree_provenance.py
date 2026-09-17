@@ -254,6 +254,7 @@ def _certify_equivalent_tree_pr_sonar(
     required_name: str,
     required_app_slug: str,
     evidence_mode: str,
+    emit_certification: bool = True,
 ) -> str:
     associated_pull = _associated_pull_request(repository, token, expected_sha)
     pull_request_number = _pull_request_number(associated_pull)
@@ -285,11 +286,12 @@ def _certify_equivalent_tree_pr_sonar(
         )
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
-    print(
-        "CLOUDFLARE_POSTMERGE_SONAR_PROVENANCE=CERTIFIED "
-        f"mode={evidence_mode} exact_main={expected_sha} "
-        f"certified_head={head_sha} tree={main_tree}"
-    )
+    if emit_certification:
+        print(
+            "CLOUDFLARE_POSTMERGE_SONAR_PROVENANCE=CERTIFIED "
+            f"mode={evidence_mode} exact_main={expected_sha} "
+            f"certified_head={head_sha} tree={main_tree}"
+        )
     return head_sha
 
 
@@ -334,18 +336,41 @@ def certify_missing_exact_main_sonar(
 ) -> str:
     """Certify equivalent PR Sonar only after bounded exact-main check absence.
 
-    The caller owns the bounded wait and must prove that no matching exact-main
-    provider check exists at the deadline. This function then applies the same
-    unique merged-PR, exact merge identity, Git-tree equivalence, green PR-head
-    Sonar, and current-main checks used by the cancelled-provider recovery path.
+    The caller owns the bounded wait and proves that no matching exact-main provider
+    check exists at the deadline. After source-equivalent PR evidence is collected,
+    this certifier re-reads exact-main checks so a provider check that materializes
+    during provenance collection cannot be bypassed by the missing-evidence path.
     """
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
-    return _certify_equivalent_tree_pr_sonar(
+    head_sha = _certify_equivalent_tree_pr_sonar(
         repository=repository,
         token=token,
         expected_sha=expected_sha,
         required_name=required_name,
         required_app_slug=required_app_slug,
         evidence_mode="missing_exact_main_after_bounded_wait",
+        emit_certification=False,
     )
+
+    refreshed_main_checks = release_gate._check_runs(  # noqa: SLF001
+        repository,
+        token,
+        expected_sha,
+    )
+    if release_gate._latest_external_check(  # noqa: SLF001
+        refreshed_main_checks,
+        required_name,
+        required_app_slug,
+    ) is not None:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_APPEARED"
+        )
+
+    release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
+    print(
+        "CLOUDFLARE_POSTMERGE_SONAR_PROVENANCE=CERTIFIED "
+        "mode=missing_exact_main_after_bounded_wait "
+        f"exact_main={expected_sha} certified_head={head_sha}"
+    )
+    return head_sha
