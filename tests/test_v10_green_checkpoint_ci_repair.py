@@ -142,6 +142,27 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert (
             sonar["post_merge_cancelled_fallback_current_main_recheck_required"] is True
         )
+        assert sonar["post_merge_missing_equivalent_tree_fallback_allowed"] is True
+        assert (
+            sonar["post_merge_missing_fallback_requires_bounded_wait_exhausted"] is True
+        )
+        assert (
+            sonar["post_merge_missing_fallback_requires_no_matching_main_check"] is True
+        )
+        assert sonar["post_merge_missing_fallback_unique_merged_pr_required"] is True
+        assert sonar["post_merge_missing_fallback_base_must_be_main"] is True
+        assert (
+            sonar["post_merge_missing_fallback_merge_sha_must_equal_exact_main"] is True
+        )
+        assert sonar["post_merge_missing_fallback_tree_identity_required"] is True
+        assert (
+            sonar["post_merge_missing_fallback_pr_head_sonar_success_required"] is True
+        )
+        assert (
+            sonar["post_merge_missing_fallback_pr_head_zero_findings_required"] is True
+        )
+        assert sonar["post_merge_missing_fallback_current_main_recheck_required"] is True
+        assert sonar["post_merge_in_progress_fallback_forbidden"] is True
         assert sonar["post_merge_failure_or_findings_fallback_forbidden"] is True
 
     def test_targeted_workflow_pins_exact_requested_sha_and_toolchain(self) -> None:
@@ -175,7 +196,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
                 "## 7. Verification batches / HEAD FREEZE"
             ),
             ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
-                "## 7. Verification batches / HEAD FREEZE"
+                "## 7. Verification batches / HEAD FREEZE",
             ),
         }
         for path, marker in forbidden_by_path.items():
