@@ -11,8 +11,11 @@ import scripts.check_v10_cloudflare_provider_readiness as readiness
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
+HOSTED_ADAPTER = ROOT / "scripts/bootstrap_v10_cloudflare_neon_hosted_egress.py"
+RUNTIME_PROVISIONER = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
 NEON_PROJECT_AUTHORITY_PROBE = "probe_provider_access_from_env()"
 NEON_PROVISION = "python -m scripts.provision_v10_cloudflare_neon_runtime"
+HOSTED_BOOTSTRAP = "python -m scripts.bootstrap_v10_cloudflare_neon_hosted_egress"
 LEGACY_FUNCTION_BOOTSTRAP = (
     "python -m scripts.bootstrap_v10_cloudflare_production_database_direct"
 )
@@ -39,7 +42,17 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
     @staticmethod
     def _workflow_step(source: str, name: str) -> str:
         start = source.index(f"      - name: {name}")
-        end = source.index("\n      - name:", start + 1)
+        end = source.find("\n      - name:", start + 1)
+        if end == -1:
+            end = len(source)
+        return source[start:end]
+
+    @staticmethod
+    def _workflow_job(source: str, job_id: str, next_job_id: str | None) -> str:
+        start = source.index(f"  {job_id}:\n")
+        if next_job_id is None:
+            return source[start:]
+        end = source.index(f"  {next_job_id}:\n", start + 1)
         return source[start:end]
 
     def _assert_probe_precedes(self, source: str, markers: tuple[str, ...]) -> None:
@@ -49,6 +62,20 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 marker_index = source.index(marker)
                 self.assertLess(probe_index, marker_index)
+
+    def _assert_hosted_runtime_authority_chain(self, environment: str) -> None:
+        adapter = self._read(HOSTED_ADAPTER)
+        runtime = self._read(RUNTIME_PROVISIONER)
+        self.assertIn(f'runtime.run(expected_sha, "{environment}")', adapter)
+        self.assertIn(
+            "scope, project, branch_payload = _provider_access_context(",
+            runtime,
+        )
+        provider_index = runtime.index(
+            "scope, project, branch_payload = _provider_access_context("
+        )
+        mutation_index = runtime.index("import psycopg", provider_index)
+        self.assertLess(provider_index, mutation_index)
 
     def test_candidate_neon_authority_is_read_before_provider_mutation(self) -> None:
         source = self._read(CANDIDATE_WORKFLOW)
@@ -67,19 +94,32 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self,
     ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
-        self.assertEqual(source.count(NEON_PROJECT_AUTHORITY_PROBE), 1)
-        self.assertEqual(source.count(NEON_PROVISION), 2)
+        inspect = self._workflow_job(
+            source,
+            "inspect_database_state",
+            "bootstrap_staging_database",
+        )
+        hosted_staging = self._workflow_job(
+            source,
+            "bootstrap_staging_database",
+            "rehearse",
+        )
+        rehearse = self._workflow_job(
+            source,
+            "rehearse",
+            "bootstrap_production_database",
+        )
 
         probe = self._workflow_step(
-            source,
+            inspect,
             "Probe reusable staging runtime secret before Neon management API",
         )
         bootstrap = self._workflow_step(
-            source,
-            "Bootstrap staging database secret if missing",
+            hosted_staging,
+            "Bootstrap staging database secret through hosted egress",
         )
         rehearsal = self._workflow_step(
-            source,
+            rehearse,
             "Rehearse exact accepted main on isolated staging Worker and Container",
         )
 
@@ -91,16 +131,17 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertNotIn("NEON_PROJECT_ID:", probe)
 
         self.assertIn(
-            "steps.staging_database_state.outputs.bootstrap_required == 'true'",
-            bootstrap,
+            "needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'",
+            hosted_staging,
         )
-        self.assertIn(NEON_PROJECT_AUTHORITY_PROBE, bootstrap)
-        self.assertIn(NEON_PROVISION, bootstrap)
-        self.assertIn("--environment staging", bootstrap)
+        self.assertIn("runs-on: ubuntu-24.04", hosted_staging)
+        self.assertIn(HOSTED_BOOTSTRAP, bootstrap)
+        self.assertIn("bootstrap-staging", bootstrap)
         self.assertIn(RUNTIME_AUTHORITY_BINDING, bootstrap)
         self.assertIn(NEON_ORG_BINDING, bootstrap)
         self.assertIn(FUNCTION_PROJECT_BINDING, bootstrap)
         self.assertNotIn(FUNCTION_DEPLOY_BINDING, bootstrap)
+        self._assert_hosted_runtime_authority_chain("staging")
 
         self.assertIn("run_v10_cloudflare_gated_candidate", rehearsal)
         self.assertNotIn("NEON_API_KEY:", rehearsal)
@@ -112,31 +153,43 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self,
     ) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
-        probe = self._workflow_step(source, "Probe production database secret")
-        bootstrap = self._workflow_step(
+        rehearse = self._workflow_job(
             source,
-            "Bootstrap production database secret if missing",
+            "rehearse",
+            "bootstrap_production_database",
+        )
+        hosted_production = self._workflow_job(
+            source,
+            "bootstrap_production_database",
+            "promote",
+        )
+        promote = self._workflow_job(source, "promote", None)
+        probe = self._workflow_step(rehearse, "Probe production database secret")
+        bootstrap = self._workflow_step(
+            hosted_production,
+            "Bootstrap production database secret through hosted egress",
         )
         confirm = self._workflow_step(
-            source,
+            promote,
             "Confirm production database secret ready",
         )
-        self.assertIn(NEON_PROVISION, bootstrap)
-        self.assertIn("--environment production", bootstrap)
+
+        self.assertIn(HOSTED_BOOTSTRAP, bootstrap)
+        self.assertIn("bootstrap-production", bootstrap)
         self.assertIn(RUNTIME_AUTHORITY_BINDING, bootstrap)
         self.assertIn(NEON_ORG_BINDING, bootstrap)
         self.assertIn(FUNCTION_PROJECT_BINDING, bootstrap)
         self.assertIn(
-            "steps.production_database_state.outputs.bootstrap_required == 'true'",
-            bootstrap,
+            "needs.rehearse.outputs.production_bootstrap_required == 'true'",
+            hosted_production,
         )
         self.assertNotIn(LEGACY_FUNCTION_BOOTSTRAP, bootstrap)
         self.assertNotIn(FUNCTION_DEPLOY_BINDING, bootstrap)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", bootstrap)
-        self.assertNotIn("STAGING_ORIGIN", bootstrap)
-        self.assertNotIn("--origin", bootstrap)
         self.assertNotIn("vars.NEON_", bootstrap)
         self.assertNotIn("echo $NEON", bootstrap)
+        self._assert_hosted_runtime_authority_chain("production")
+
         for section in (probe, confirm):
             self.assertNotIn("NEON_API_KEY:", section)
             self.assertNotIn("NEON_ORG_ID:", section)
@@ -146,13 +199,23 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
 
     def test_legacy_function_secret_is_not_active_release_dependency(self) -> None:
         source = self._read(PRODUCTION_WORKFLOW)
-        staging_bootstrap = self._workflow_step(
+        hosted_staging = self._workflow_job(
             source,
-            "Bootstrap staging database secret if missing",
+            "bootstrap_staging_database",
+            "rehearse",
+        )
+        hosted_production = self._workflow_job(
+            source,
+            "bootstrap_production_database",
+            "promote",
+        )
+        staging_bootstrap = self._workflow_step(
+            hosted_staging,
+            "Bootstrap staging database secret through hosted egress",
         )
         production_bootstrap = self._workflow_step(
-            source,
-            "Bootstrap production database secret if missing",
+            hosted_production,
+            "Bootstrap production database secret through hosted egress",
         )
 
         for section in (staging_bootstrap, production_bootstrap):
@@ -165,6 +228,9 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertNotIn("NEON_FUNCTION_DEPLOY_API_KEY", source)
         self.assertEqual(source.count(RUNTIME_AUTHORITY_BINDING), 2)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", source)
+        adapter = self._read(HOSTED_ADAPTER)
+        self.assertNotIn("NEON_FUNCTION_DEPLOY_API_KEY", adapter)
+        self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", adapter)
 
     def test_provider_readiness_cli_defers_neon_until_bootstrap_is_needed(self) -> None:
         output = StringIO()
@@ -219,23 +285,37 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertIn("CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED", report)
 
     def test_neon_preflight_uses_only_runtime_management_secret(self) -> None:
-        expected_steps = {
-            CANDIDATE_WORKFLOW: (
-                "Verify Neon exact-project read authority before provider mutation"
-            ),
-            PRODUCTION_WORKFLOW: "Bootstrap staging database secret if missing",
-        }
-        for path, step_name in expected_steps.items():
-            with self.subTest(path=path.name):
-                source = self._read(path)
-                section = self._workflow_step(source, step_name)
-                self.assertIn(NEON_PROJECT_AUTHORITY_PROBE, section)
-                self.assertIn(RUNTIME_AUTHORITY_BINDING, section)
-                self.assertIn(NEON_ORG_BINDING, section)
-                self.assertIn(FUNCTION_PROJECT_BINDING, section)
-                self.assertNotIn(FUNCTION_DEPLOY_BINDING, section)
-                self.assertNotIn("vars.NEON_", section)
-                self.assertNotIn("echo $NEON", section)
+        candidate = self._read(CANDIDATE_WORKFLOW)
+        candidate_section = self._workflow_step(
+            candidate,
+            "Verify Neon exact-project read authority before provider mutation",
+        )
+        self.assertIn(NEON_PROJECT_AUTHORITY_PROBE, candidate_section)
+        self.assertIn(RUNTIME_AUTHORITY_BINDING, candidate_section)
+        self.assertIn(NEON_ORG_BINDING, candidate_section)
+        self.assertIn(FUNCTION_PROJECT_BINDING, candidate_section)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, candidate_section)
+        self.assertNotIn("vars.NEON_", candidate_section)
+        self.assertNotIn("echo $NEON", candidate_section)
+
+        production = self._read(PRODUCTION_WORKFLOW)
+        hosted_staging = self._workflow_job(
+            production,
+            "bootstrap_staging_database",
+            "rehearse",
+        )
+        hosted_section = self._workflow_step(
+            hosted_staging,
+            "Bootstrap staging database secret through hosted egress",
+        )
+        self.assertIn(HOSTED_BOOTSTRAP, hosted_section)
+        self.assertIn(RUNTIME_AUTHORITY_BINDING, hosted_section)
+        self.assertIn(NEON_ORG_BINDING, hosted_section)
+        self.assertIn(FUNCTION_PROJECT_BINDING, hosted_section)
+        self.assertNotIn(FUNCTION_DEPLOY_BINDING, hosted_section)
+        self.assertNotIn("vars.NEON_", hosted_section)
+        self.assertNotIn("echo $NEON", hosted_section)
+        self._assert_hosted_runtime_authority_chain("staging")
 
 
 if __name__ == "__main__":

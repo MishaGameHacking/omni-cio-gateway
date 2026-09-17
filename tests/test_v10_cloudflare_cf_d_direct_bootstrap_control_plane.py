@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
+HOSTED_ADAPTER = ROOT / "scripts/bootstrap_v10_cloudflare_neon_hosted_egress.py"
 CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
 _LEGACY = ROOT / "tests/_v10_cloudflare_cf_d_direct_bootstrap_legacy.py"
 _REPLACED = {
@@ -28,7 +29,17 @@ def _load_legacy_tests() -> None:
 
 def _workflow_step(source: str, name: str) -> str:
     start = source.index(f"      - name: {name}")
-    end = source.index("\n      - name:", start + 1)
+    end = source.find("\n      - name:", start + 1)
+    if end == -1:
+        end = len(source)
+    return source[start:end]
+
+
+def _workflow_job(source: str, job_id: str, next_job_id: str | None) -> str:
+    start = source.index(f"  {job_id}:\n")
+    if next_job_id is None:
+        return source[start:]
+    end = source.index(f"  {next_job_id}:\n", start + 1)
     return source[start:end]
 
 
@@ -37,26 +48,25 @@ _load_legacy_tests()
 
 def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
+    adapter = HOSTED_ADAPTER.read_text(encoding="utf-8")
+    rehearse = _workflow_job(source, "rehearse", "bootstrap_production_database")
+    hosted = _workflow_job(source, "bootstrap_production_database", "promote")
+    promote = _workflow_job(source, "promote", None)
+
     anchor_name = (
         "      - name: Bootstrap production Worker anchor without public route if "
         "absent"
     )
-    anchor = source.index(anchor_name)
-    probe_start = source.index("      - name: Probe production database secret")
-    bootstrap_start = source.index(
-        "      - name: Bootstrap production database secret if missing"
-    )
-    confirm_start = source.index(
-        "      - name: Confirm production database secret ready"
-    )
-    assert anchor < probe_start < bootstrap_start < confirm_start
+    anchor = rehearse.index(anchor_name)
+    probe_start = rehearse.index("      - name: Probe production database secret")
+    assert anchor < probe_start
 
-    probe = _workflow_step(source, "Probe production database secret")
+    probe = _workflow_step(rehearse, "Probe production database secret")
     bootstrap = _workflow_step(
-        source,
-        "Bootstrap production database secret if missing",
+        hosted,
+        "Bootstrap production database secret through hosted egress",
     )
-    confirm = _workflow_step(source, "Confirm production database secret ready")
+    confirm = _workflow_step(promote, "Confirm production database secret ready")
 
     assert "probe-runtime-secret" in probe
     assert "bootstrap_required=false" in probe
@@ -64,33 +74,41 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert "NEON_API_KEY:" not in probe
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in probe
 
-    assert "python -m scripts.provision_v10_cloudflare_neon_runtime" in bootstrap
+    assert "needs.rehearse.outputs.production_bootstrap_required == 'true'" in hosted
+    assert "runs-on: ubuntu-24.04" in hosted
+    assert "python -m scripts.bootstrap_v10_cloudflare_neon_hosted_egress" in bootstrap
+    assert "bootstrap-production" in bootstrap
     assert '--expected-sha "$EXPECTED_HEAD"' in bootstrap
-    assert "--environment production" in bootstrap
     assert "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}" in bootstrap
     assert "NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}" in bootstrap
     assert "NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}" in bootstrap
     assert "set +e" in bootstrap
-    assert "neon_rc=$?" in bootstrap
-    assert 'if [ "$neon_rc" -ne 0 ]; then' in bootstrap
+    assert "hosted_rc=$?" in bootstrap
+    assert 'if [ "$hosted_rc" -ne 0 ]; then' in bootstrap
     assert "python -m scripts.probe_v10_neon_authority_diagnostics || true" in bootstrap
-    assert 'exit "$neon_rc"' in bootstrap
-    assert bootstrap.index(
-        "python -m scripts.provision_v10_cloudflare_neon_runtime"
-    ) < bootstrap.index("python -m scripts.probe_v10_neon_authority_diagnostics")
-    assert bootstrap.index(
-        "python -m scripts.probe_v10_neon_authority_diagnostics"
-    ) < bootstrap.index('test -s "$dsn_file"')
-    assert "put-runtime-secret" in bootstrap
+    assert 'exit "$hosted_rc"' in bootstrap
     assert "bootstrap_v10_cloudflare_production_database_direct" not in bootstrap
     assert "NEON_FUNCTION_DEPLOY_API_KEY" not in bootstrap
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in bootstrap
+
+    custody_index = adapter.index(
+        "_resync_production_branch_custody(api, expected_sha)"
+    )
+    runtime_index = adapter.index('runtime.run(expected_sha, "production")')
+    secret_index = adapter.index("production.put_runtime_secret()")
+    assert custody_index < runtime_index < secret_index
+    assert "fetch_bootstrap_origin_custody" in adapter
+    assert "write_bootstrap_origin_handoff" in adapter
+    assert "branches?limit=100" not in adapter
 
     assert "probe-runtime-secret" in confirm
     assert "NEON_API_KEY:" not in confirm
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in confirm
     assert "NEON_FUNCTION_DEPLOY_API_KEY" not in source
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in source
+    assert (
+        "needs.bootstrap_production_database.result == 'success'" in promote
+    )
 
 
 def test_direct_bootstrap_transport_is_machine_readable() -> None:
@@ -162,7 +180,9 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
     assert cutover["production_database_bootstrap_dsn_logging_allowed"] is False
     assert cutover["production_database_bootstrap_dsn_artifact_allowed"] is False
     assert (
-        cutover["production_database_bootstrap_neon_authority_failure_diagnostic_required"]
+        cutover[
+            "production_database_bootstrap_neon_authority_failure_diagnostic_required"
+        ]
         is True
     )
     assert (
@@ -173,19 +193,22 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
     )
     assert (
         cutover[
-            "production_database_bootstrap_neon_authority_failure_diagnostic_non_authoritative"
+            "production_database_bootstrap_neon_authority_failure_diagnostic_"
+            "non_authoritative"
         ]
         is True
     )
     assert (
         cutover[
-            "production_database_bootstrap_neon_authority_failure_original_exit_preserved"
+            "production_database_bootstrap_neon_authority_failure_original_exit_"
+            "preserved"
         ]
         is True
     )
     assert (
         cutover[
-            "production_database_bootstrap_neon_authority_failure_may_convert_red_to_green"
+            "production_database_bootstrap_neon_authority_failure_may_convert_red_"
+            "to_green"
         ]
         is False
     )
