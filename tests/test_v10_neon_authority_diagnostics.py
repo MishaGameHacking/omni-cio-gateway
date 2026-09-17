@@ -354,6 +354,9 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
         )
         diagnostic = "python -m scripts.probe_v10_neon_authority_diagnostics"
         production_name = "v10-cloudflare-production-release.yml"
+        hosted_command = (
+            "python -m scripts.bootstrap_v10_cloudflare_neon_hosted_egress"
+        )
         for path in WORKFLOWS:
             with self.subTest(path=path.name):
                 source = path.read_text(encoding="utf-8")
@@ -362,76 +365,40 @@ class NeonAuthorityDiagnosticTests(unittest.TestCase):
                     self.assertEqual(source.count(conditional), 0)
                     self.assertEqual(source.count(diagnostic), 2)
                     self.assertEqual(
-                        source.count('if [ "$neon_rc" -ne 0 ]; then'),
+                        source.count('if [ "$hosted_rc" -ne 0 ]; then'),
                         2,
                     )
-                    self.assertEqual(source.count('exit "$neon_rc"'), 2)
-                    provision = (
-                        "python -m scripts.provision_v10_cloudflare_neon_runtime"
-                    )
-                    provision_indexes = [
+                    self.assertEqual(source.count('exit "$hosted_rc"'), 2)
+                    command_indexes = [
                         index
                         for index in range(len(source))
-                        if source.startswith(provision, index)
+                        if source.startswith(hosted_command, index)
                     ]
                     diagnostic_indexes = [
                         index
                         for index in range(len(source))
                         if source.startswith(diagnostic, index)
                     ]
-                    self.assertEqual(len(provision_indexes), 2)
+                    self.assertEqual(len(command_indexes), 2)
                     self.assertEqual(len(diagnostic_indexes), 2)
-                    staging_provision, production_provision = provision_indexes
+                    staging_command, production_command = command_indexes
                     staging_diagnostic, production_diagnostic = diagnostic_indexes
-                    staging_command_end = source.index(
-                        'test -s "$dsn_file"',
-                        staging_provision,
-                    )
-                    production_command_end = source.index(
-                        'test -s "$dsn_file"',
-                        production_provision,
-                    )
-                    staging_command = source[
-                        staging_provision:staging_command_end
-                    ]
-                    production_command = source[
-                        production_provision:production_command_end
-                    ]
-                    self.assertEqual(
-                        staging_command.count("--environment staging"),
-                        1,
-                    )
-                    self.assertNotIn(
-                        "--environment production",
-                        staging_command,
-                    )
-                    self.assertEqual(
-                        production_command.count("--environment production"),
-                        1,
-                    )
-                    self.assertNotIn(
-                        "--environment staging",
-                        production_command,
-                    )
-                    staging_branch_start = source.rfind(
-                        'if [ "$neon_rc" -ne 0 ]; then',
-                        0,
-                        staging_diagnostic,
-                    )
-                    production_branch_start = source.rfind(
-                        'if [ "$neon_rc" -ne 0 ]; then',
-                        0,
+                    self.assertLess(staging_command, staging_diagnostic)
+                    self.assertLess(staging_diagnostic, production_command)
+                    self.assertLess(production_command, production_diagnostic)
+                    staging_end = source.index('exit "$hosted_rc"', staging_diagnostic)
+                    production_end = source.index(
+                        'exit "$hosted_rc"',
                         production_diagnostic,
                     )
-                    self.assertGreaterEqual(staging_branch_start, 0)
-                    self.assertGreaterEqual(production_branch_start, 0)
-                    self.assertLess(staging_branch_start, staging_diagnostic)
-                    self.assertLess(staging_diagnostic, staging_provision)
-                    self.assertLess(staging_provision, production_provision)
-                    self.assertLess(production_provision, production_branch_start)
-                    self.assertLess(production_branch_start, production_diagnostic)
-                    self.assertLess(production_diagnostic, production_command_end)
-                    self.assertIn('exit "$neon_rc"', production_command)
+                    staging_section = source[staging_command:staging_end]
+                    production_section = source[production_command:production_end]
+                    self.assertIn("bootstrap-staging", staging_section)
+                    self.assertNotIn("bootstrap-production", staging_section)
+                    self.assertIn("bootstrap-production", production_section)
+                    self.assertNotIn("bootstrap-staging", production_section)
+                    self.assertIn(diagnostic, staging_section)
+                    self.assertIn(diagnostic, production_section)
                     continue
 
                 self.assertEqual(source.count("id: neon_authority"), 1)
