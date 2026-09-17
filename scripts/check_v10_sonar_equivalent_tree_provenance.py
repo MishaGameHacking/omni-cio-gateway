@@ -246,28 +246,15 @@ def _require_cancelled_main_check(main_check: dict[str, Any]) -> None:
         )
 
 
-def certify_cancelled_exact_main_sonar(
+def _certify_equivalent_tree_pr_sonar(
     *,
     repository: str,
     token: str,
     expected_sha: str,
-    main_check: dict[str, Any],
     required_name: str,
     required_app_slug: str,
+    evidence_mode: str,
 ) -> str:
-    """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
-
-    Canonical PR merge SHA remains the primary exact-merge identity. If GitHub makes
-    that field unavailable after merge, either by omitting it or returning JSON null,
-    the verifier requires one bounded, unique `merged` issue event whose commit id
-    equals exact main. Malformed metadata, ambiguous events and mismatches remain
-    terminal; a valid non-null SHA mismatch remains pending for the outer bounded
-    release loop.
-    """
-
-    release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
-    _require_cancelled_main_check(main_check)
-
     associated_pull = _associated_pull_request(repository, token, expected_sha)
     pull_request_number = _pull_request_number(associated_pull)
     pull_request = _canonical_pull_request(repository, token, associated_pull)
@@ -300,6 +287,65 @@ def certify_cancelled_exact_main_sonar(
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
     print(
         "CLOUDFLARE_POSTMERGE_SONAR_PROVENANCE=CERTIFIED "
-        f"exact_main={expected_sha} certified_head={head_sha} tree={main_tree}"
+        f"mode={evidence_mode} exact_main={expected_sha} "
+        f"certified_head={head_sha} tree={main_tree}"
     )
     return head_sha
+
+
+def certify_cancelled_exact_main_sonar(
+    *,
+    repository: str,
+    token: str,
+    expected_sha: str,
+    main_check: dict[str, Any],
+    required_name: str,
+    required_app_slug: str,
+) -> str:
+    """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
+
+    Canonical PR merge SHA remains the primary exact-merge identity. If GitHub makes
+    that field unavailable after merge, either by omitting it or returning JSON null,
+    the verifier requires one bounded, unique `merged` issue event whose commit id
+    equals exact main. Malformed metadata, ambiguous events and mismatches remain
+    terminal; a valid non-null SHA mismatch remains pending for the outer bounded
+    release loop.
+    """
+
+    release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
+    _require_cancelled_main_check(main_check)
+    return _certify_equivalent_tree_pr_sonar(
+        repository=repository,
+        token=token,
+        expected_sha=expected_sha,
+        required_name=required_name,
+        required_app_slug=required_app_slug,
+        evidence_mode="cancelled_exact_main",
+    )
+
+
+def certify_missing_exact_main_sonar(
+    *,
+    repository: str,
+    token: str,
+    expected_sha: str,
+    required_name: str,
+    required_app_slug: str,
+) -> str:
+    """Certify equivalent PR Sonar only after bounded exact-main check absence.
+
+    The caller owns the bounded wait and must prove that no matching exact-main
+    provider check exists at the deadline. This function then applies the same
+    unique merged-PR, exact merge identity, Git-tree equivalence, green PR-head
+    Sonar, and current-main checks used by the cancelled-provider recovery path.
+    """
+
+    release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
+    return _certify_equivalent_tree_pr_sonar(
+        repository=repository,
+        token=token,
+        expected_sha=expected_sha,
+        required_name=required_name,
+        required_app_slug=required_app_slug,
+        evidence_mode="missing_exact_main_after_bounded_wait",
+    )
