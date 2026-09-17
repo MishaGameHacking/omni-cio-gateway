@@ -99,6 +99,15 @@ def _contract() -> tuple[frozenset[str], int, str, str]:
         external_name = sonar["post_merge_check_name"]
         external_app_slug = sonar["post_merge_check_app_slug"]
         external_success_only = sonar["post_merge_check_success_only"]
+        missing_fallback_allowed = sonar[
+            "post_merge_missing_equivalent_tree_fallback_allowed"
+        ]
+        missing_fallback_waited = sonar[
+            "post_merge_missing_fallback_requires_bounded_wait_exhausted"
+        ]
+        missing_fallback_no_main_check = sonar[
+            "post_merge_missing_fallback_requires_no_matching_main_check"
+        ]
     except (KeyError, TypeError):
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_CONTRACT_INVALID") from None
     if (
@@ -113,6 +122,9 @@ def _contract() -> tuple[frozenset[str], int, str, str]:
     if (
         external_required is not True
         or external_success_only is not True
+        or missing_fallback_allowed is not True
+        or missing_fallback_waited is not True
+        or missing_fallback_no_main_check is not True
         or not isinstance(external_name, str)
         or not external_name
         or not isinstance(external_app_slug, str)
@@ -529,6 +541,38 @@ def _external_evidence_state(
     return True
 
 
+def _deadline_external_evidence_state(
+    repository: str,
+    token: str,
+    expected_sha: str,
+    external_name: str,
+    external_app_slug: str,
+) -> bool:
+    rows = _check_runs(repository, token, expected_sha)
+    latest = _latest_external_check(rows, external_name, external_app_slug)
+    if latest is not None:
+        return _external_evidence_state(
+            repository,
+            token,
+            expected_sha,
+            external_name,
+            external_app_slug,
+        )
+
+    from scripts.check_v10_sonar_equivalent_tree_provenance import (
+        certify_missing_exact_main_sonar,
+    )
+
+    certify_missing_exact_main_sonar(
+        repository=repository,
+        token=token,
+        expected_sha=expected_sha,
+        required_name=external_name,
+        required_app_slug=external_app_slug,
+    )
+    return True
+
+
 def _release_gate_snapshot(
     repository: str,
     token: str,
@@ -593,6 +637,21 @@ def wait_for_release_gate(
             )
             return observed
         if time.monotonic() >= deadline:
+            if ready and _deadline_external_evidence_state(
+                repository,
+                token,
+                sha,
+                external_name,
+                external_app_slug,
+            ):
+                _require_current_main(repository, token, sha)
+                print(
+                    "CLOUDFLARE_POSTMERGE_GATE=READY "
+                    f"exact_sha={sha} push_workflows={observed} "
+                    f"external_check={external_name} "
+                    "evidence=bounded_equivalent_tree"
+                )
+                return observed
             raise ReleaseGateStopped(_pending_gate_code(ready))
         time.sleep(min(float(poll_seconds), max(0.0, deadline - time.monotonic())))
 
