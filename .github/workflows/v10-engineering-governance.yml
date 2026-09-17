@@ -92,6 +92,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
           GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: ${{ github.workspace }}
         run: python scripts/check_v10_pr_external_review_gate.py
 
       - name: Verify engineering governance contract
