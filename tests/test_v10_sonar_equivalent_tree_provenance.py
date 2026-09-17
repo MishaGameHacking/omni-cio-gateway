@@ -103,6 +103,16 @@ def _certify(main_check: dict[str, Any] | None = None) -> str:
     )
 
 
+def _certify_missing() -> str:
+    return provenance.certify_missing_exact_main_sonar(
+        repository=_REPOSITORY,
+        token=_TOKEN,
+        expected_sha=_MAIN,
+        required_name=_NAME,
+        required_app_slug=_APP,
+    )
+
+
 def _require_merge_identity(pull_request: dict[str, Any]) -> None:
     provenance._require_merge_identity(
         _REPOSITORY,
@@ -131,6 +141,21 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
         self.assertFalse(
             any("/issues/" in call.args[0] for call in api_get.call_args_list)
         )
+
+    def test_missing_exact_main_uses_same_unique_tree_and_green_head_chain(
+        self,
+    ) -> None:
+        with (
+            patch.object(release_gate, "_require_current_main") as current_main,
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(
+                release_gate, "_check_runs", return_value=[_green_head_check()]
+            ),
+        ):
+            certified = _certify_missing()
+
+        self.assertEqual(certified, _HEAD)
+        self.assertEqual(current_main.call_count, 2)
 
     def test_association_projection_merge_sha_is_not_used_as_canonical_metadata(
         self,
