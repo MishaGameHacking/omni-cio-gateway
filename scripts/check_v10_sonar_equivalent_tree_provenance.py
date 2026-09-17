@@ -9,6 +9,9 @@ _PULL_REQUESTS_PER_PAGE = 100
 _MAX_ASSOCIATED_PULL_REQUESTS = 100
 _ISSUE_EVENTS_PER_PAGE = 100
 _MAX_ISSUE_EVENT_PAGES = 10
+_CHECK_SUITES_PER_PAGE = 100
+_MAX_FILTERED_CHECK_SUITES = 1000
+_STALLED_SUITE_STATUSES = frozenset({"queued", "in_progress"})
 MERGE_SHA_CONVERGENCE_PENDING = (
     "CLOUDFLARE_POSTMERGE_PROVENANCE_MERGE_SHA_CONVERGENCE_PENDING"
 )
@@ -232,6 +235,139 @@ def _tree_sha(repository: str, token: str, commit_sha: str) -> str:
     )
 
 
+def _check_suite_page(
+    repository: str,
+    token: str,
+    expected_sha: str,
+    page: int,
+) -> tuple[int, list[dict[str, Any]]]:
+    payload = release_gate._api_get(  # noqa: SLF001 - same GitHub Checks authority
+        f"/repos/{repository}/commits/{expected_sha}/check-suites"
+        f"?per_page={_CHECK_SUITES_PER_PAGE}&page={page}",
+        token,
+    )
+    if not isinstance(payload, dict):
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITES_RESPONSE_INVALID"
+        )
+    total_count = payload.get("total_count")
+    raw_rows = payload.get("check_suites")
+    if (
+        not isinstance(total_count, int)
+        or total_count < 0
+        or not isinstance(raw_rows, list)
+    ):
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITES_RESPONSE_INVALID"
+        )
+    rows: list[dict[str, Any]] = []
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITE_INVALID"
+            )
+        rows.append(raw)
+    return total_count, rows
+
+
+def _check_suites(
+    repository: str,
+    token: str,
+    expected_sha: str,
+) -> list[dict[str, Any]]:
+    total_count, first_page = _check_suite_page(repository, token, expected_sha, 1)
+    if total_count > _MAX_FILTERED_CHECK_SUITES:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITES_TRUNCATED"
+        )
+    page_count = max(
+        1,
+        (total_count + _CHECK_SUITES_PER_PAGE - 1) // _CHECK_SUITES_PER_PAGE,
+    )
+    rows = list(first_page)
+    for page in range(2, page_count + 1):
+        observed_total, page_rows = _check_suite_page(
+            repository,
+            token,
+            expected_sha,
+            page,
+        )
+        if observed_total != total_count:
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITES_CHANGED_DURING_READ"
+            )
+        rows.extend(page_rows)
+    if len(rows) != total_count:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITES_INCOMPLETE"
+        )
+    if any(row.get("head_sha") != expected_sha for row in rows):
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITE_FILTER_DRIFT"
+        )
+    return rows
+
+
+def _matching_external_suites(
+    rows: list[dict[str, Any]],
+    required_app_slug: str,
+) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for row in rows:
+        app = row.get("app")
+        app_slug = app.get("slug") if isinstance(app, dict) else None
+        if app_slug == required_app_slug:
+            matches.append(row)
+    return matches
+
+
+def _external_suite_ordering(row: dict[str, Any]) -> tuple[str, int]:
+    suite_id = row.get("id")
+    if not isinstance(suite_id, int) or isinstance(suite_id, bool) or suite_id < 1:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITE_INVALID"
+        )
+    timestamp = row.get("updated_at") or row.get("created_at")
+    if not isinstance(timestamp, str) or not timestamp:
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITE_INVALID"
+        )
+    return timestamp, suite_id
+
+
+def _latest_external_suite(
+    rows: list[dict[str, Any]],
+    required_app_slug: str,
+) -> dict[str, Any] | None:
+    matches = _matching_external_suites(rows, required_app_slug)
+    if not matches:
+        return None
+    return max(matches, key=_external_suite_ordering)
+
+
+def _require_stalled_main_suite(
+    suite: dict[str, Any],
+    required_app_slug: str,
+) -> int:
+    app = suite.get("app")
+    app_slug = app.get("slug") if isinstance(app, dict) else None
+    suite_id = suite.get("id")
+    check_runs_count = suite.get("latest_check_runs_count")
+    if (
+        app_slug != required_app_slug
+        or not isinstance(suite_id, int)
+        or isinstance(suite_id, bool)
+        or suite_id < 1
+        or suite.get("status") not in _STALLED_SUITE_STATUSES
+        or suite.get("conclusion") is not None
+        or check_runs_count != 0
+    ):
+        raise release_gate.ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_SUITE_NOT_STALLED"
+        )
+    return suite_id
+
+
 def _require_cancelled_main_check(main_check: dict[str, Any]) -> None:
     status_is_completed = main_check.get("status") == "completed"
     conclusion_is_cancelled = main_check.get("conclusion") == "cancelled"
@@ -304,15 +440,7 @@ def certify_cancelled_exact_main_sonar(
     required_name: str,
     required_app_slug: str,
 ) -> str:
-    """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan.
-
-    Canonical PR merge SHA remains the primary exact-merge identity. If GitHub makes
-    that field unavailable after merge, either by omitting it or returning JSON null,
-    the verifier requires one bounded, unique `merged` issue event whose commit id
-    equals exact main. Malformed metadata, ambiguous events and mismatches remain
-    terminal; a valid non-null SHA mismatch remains pending for the outer bounded
-    release loop.
-    """
+    """Certify source-equivalent PR Sonar evidence for a cancelled main autoscan."""
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
     _require_cancelled_main_check(main_check)
@@ -334,22 +462,33 @@ def certify_missing_exact_main_sonar(
     required_name: str,
     required_app_slug: str,
 ) -> str:
-    """Certify equivalent PR Sonar only after bounded exact-main check absence.
+    """Certify equivalent PR Sonar after bounded no-check-run evidence.
 
-    The caller owns the bounded wait and proves that no matching exact-main provider
-    check exists at the deadline. After source-equivalent PR evidence is collected,
-    this certifier re-reads exact-main checks so a provider check that materializes
-    during provenance collection cannot be bypassed by the missing-evidence path.
+    The caller owns the bounded wait. This verifier distinguishes a genuinely absent
+    Sonar suite from a provider suite that exists but is stalled with zero check-runs.
+    Neither state is counted as successful provider execution; both may recover only
+    through the exact same source-equivalent PR Sonar provenance after the deadline.
     """
 
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
+    initial_suites = _check_suites(repository, token, expected_sha)
+    initial_suite = _latest_external_suite(initial_suites, required_app_slug)
+    initial_suite_id: int | None = None
+    evidence_mode = "missing_exact_main_after_bounded_wait"
+    if initial_suite is not None:
+        initial_suite_id = _require_stalled_main_suite(
+            initial_suite,
+            required_app_slug,
+        )
+        evidence_mode = "stalled_exact_main_suite_after_bounded_wait"
+
     head_sha = _certify_equivalent_tree_pr_sonar(
         repository=repository,
         token=token,
         expected_sha=expected_sha,
         required_name=required_name,
         required_app_slug=required_app_slug,
-        evidence_mode="missing_exact_main_after_bounded_wait",
+        evidence_mode=evidence_mode,
         emit_certification=False,
     )
 
@@ -370,10 +509,31 @@ def certify_missing_exact_main_sonar(
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_APPEARED"
         )
 
+    refreshed_suites = _check_suites(repository, token, expected_sha)
+    refreshed_suite = _latest_external_suite(refreshed_suites, required_app_slug)
+    if initial_suite_id is None:
+        if refreshed_suite is not None:
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_SUITE_APPEARED"
+            )
+    else:
+        if refreshed_suite is None:
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_SUITE_CHANGED"
+            )
+        refreshed_suite_id = _require_stalled_main_suite(
+            refreshed_suite,
+            required_app_slug,
+        )
+        if refreshed_suite_id != initial_suite_id:
+            raise release_gate.ReleaseGateStopped(
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_SUITE_CHANGED"
+            )
+
     release_gate._require_current_main(repository, token, expected_sha)  # noqa: SLF001
     print(
         "CLOUDFLARE_POSTMERGE_SONAR_PROVENANCE=CERTIFIED "
-        "mode=missing_exact_main_after_bounded_wait "
-        f"exact_main={expected_sha} certified_head={head_sha}"
+        f"mode={evidence_mode} exact_main={expected_sha} "
+        f"certified_head={head_sha}"
     )
     return head_sha
