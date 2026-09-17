@@ -149,6 +149,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert (
             sonar["post_merge_missing_fallback_requires_no_matching_main_check"] is True
         )
+        assert sonar["post_merge_missing_fallback_requires_no_matching_main_suite"] is True
         assert sonar["post_merge_missing_fallback_unique_merged_pr_required"] is True
         assert sonar["post_merge_missing_fallback_base_must_be_main"] is True
         assert (
@@ -162,7 +163,27 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             sonar["post_merge_missing_fallback_pr_head_zero_findings_required"] is True
         )
         assert sonar["post_merge_missing_fallback_current_main_recheck_required"] is True
+        assert sonar["post_merge_stalled_suite_equivalent_tree_fallback_allowed"] is True
+        assert (
+            sonar["post_merge_stalled_suite_fallback_requires_bounded_wait_exhausted"]
+            is True
+        )
+        assert sonar["post_merge_stalled_suite_allowed_statuses"] == [
+            "queued",
+            "in_progress",
+        ]
+        assert sonar["post_merge_stalled_suite_requires_null_conclusion"] is True
+        assert sonar["post_merge_stalled_suite_requires_zero_check_runs"] is True
+        assert sonar["post_merge_stalled_suite_unique_latest_suite_required"] is True
+        assert sonar["post_merge_stalled_suite_state_recheck_required"] is True
+        assert sonar["post_merge_stalled_suite_pr_head_sonar_success_required"] is True
+        assert sonar["post_merge_stalled_suite_tree_identity_required"] is True
+        assert (
+            sonar["post_merge_stalled_suite_terminal_conclusion_fallback_forbidden"]
+            is True
+        )
         assert sonar["post_merge_in_progress_fallback_forbidden"] is True
+        assert sonar["post_merge_in_progress_check_run_fallback_forbidden"] is True
         assert sonar["post_merge_failure_or_findings_fallback_forbidden"] is True
 
     def test_targeted_workflow_pins_exact_requested_sha_and_toolchain(self) -> None:
@@ -215,7 +236,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         for marker in (
             "ONE CHECKPOINT",
             "RED = REPAIR ONLY",
-            "TARGETED_RECHECK",
+            "TARGETED RECHECK",
             "FULL CERTIFICATION",
             "dispatch-ref head",
             "V10_TOOLCHAIN_BASELINE.json",
