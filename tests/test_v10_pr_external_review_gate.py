@@ -1,19 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import importlib.util
-from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts/check_v10_pr_external_review_gate.py"
-SPEC = importlib.util.spec_from_file_location("v10_external_review_gate", SCRIPT)
-assert SPEC is not None
-assert SPEC.loader is not None
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
+import scripts.check_v10_pr_external_review_gate as MODULE
 
 
 _HEAD = "a" * 40
@@ -35,6 +26,7 @@ class V10ExternalReviewGateTests(unittest.TestCase):
         annotations: int = 0,
     ) -> dict[str, object]:
         return {
+            "id": 1,
             "name": MODULE.SONAR_CHECK_NAME,
             "head_sha": sha,
             "status": status,
@@ -49,9 +41,6 @@ class V10ExternalReviewGateTests(unittest.TestCase):
                     f"[{hotspots} Security Hotspots](https://sonarcloud.io/)"
                 ),
                 "annotations_count": annotations,
-                "annotations_url": (
-                    "https://api.github.com/repos/owner/repo/check-runs/1/annotations"
-                ),
             },
         }
 
@@ -112,30 +101,28 @@ class V10ExternalReviewGateTests(unittest.TestCase):
     def _commit(self) -> dict[str, object]:
         return {
             "sha": _HEAD,
-            "commit": {
-                "committer": {"date": "2026-09-17T19:46:53Z"},
-            },
+            "commit": {"committer": {"date": "2026-09-17T19:46:53Z"}},
         }
 
     def test_exact_clean_sonar_run_passes(self) -> None:
-        assert MODULE._validate_sonar_run(self._run()) == []
+        self.assertEqual(MODULE._validate_sonar_run(self._run()), [])
 
     def test_nonzero_new_issues_fail_closed(self) -> None:
         failures = MODULE._validate_sonar_run(self._run(issues=5, annotations=5))
-        assert any("new issues must be 0" in item for item in failures)
-        assert any("annotations/new findings must be 0" in item for item in failures)
+        self.assertTrue(any("new issues must be 0" in item for item in failures))
+        self.assertTrue(any("annotations/new findings must be 0" in item for item in failures))
 
     def test_nonzero_hotspots_fail_closed(self) -> None:
         failures = MODULE._validate_sonar_run(self._run(hotspots=1))
-        assert any("Security Hotspots must be 0" in item for item in failures)
+        self.assertTrue(any("Security Hotspots must be 0" in item for item in failures))
 
     def test_incomplete_or_failed_quality_gate_fails_closed(self) -> None:
         incomplete = MODULE._validate_sonar_run(
             self._run(status="in_progress", conclusion="success")
         )
         failed = MODULE._validate_sonar_run(self._run(conclusion="failure"))
-        assert any("not completed" in item for item in incomplete)
-        assert any("Quality Gate is not success" in item for item in failed)
+        self.assertTrue(any("not completed" in item for item in incomplete))
+        self.assertTrue(any("Quality Gate is not success" in item for item in failed))
 
     def test_missing_summary_metrics_fail_closed(self) -> None:
         run = self._run()
@@ -143,41 +130,35 @@ class V10ExternalReviewGateTests(unittest.TestCase):
         assert isinstance(output, dict)
         output["summary"] = "Quality Gate passed"
         failures = MODULE._validate_sonar_run(run)
-        assert any("new-issues metric" in item for item in failures)
-        assert any("Security-Hotspots metric" in item for item in failures)
+        self.assertTrue(any("new-issues metric" in item for item in failures))
+        self.assertTrue(any("Security-Hotspots metric" in item for item in failures))
 
     def test_only_exact_head_sonar_run_is_selected(self) -> None:
         exact_sha = "b" * 40
-        payload = {
-            "check_runs": [
-                self._run(sha=_HEAD),
-                self._run(sha=exact_sha),
-            ]
-        }
+        payload = {"check_runs": [self._run(sha=_HEAD), self._run(sha=exact_sha)]}
         selected = MODULE._find_exact_sonar_run(payload, exact_sha)
+        self.assertIsNotNone(selected)
         assert selected is not None
-        assert selected["head_sha"] == exact_sha
+        self.assertEqual(selected["head_sha"], exact_sha)
 
     def test_wrong_provider_or_head_does_not_satisfy_gate(self) -> None:
         wrong_provider = self._run()
         app = wrong_provider["app"]
         assert isinstance(app, dict)
         app["slug"] = "other"
-        payload = {"check_runs": [wrong_provider]}
-        assert MODULE._find_exact_sonar_run(payload, _HEAD) is None
-        assert MODULE._find_exact_sonar_run({"check_runs": [self._run()]}, "b" * 40) is None
+        self.assertIsNone(MODULE._find_exact_sonar_run({"check_runs": [wrong_provider]}, _HEAD))
+        self.assertIsNone(MODULE._find_exact_sonar_run({"check_runs": [self._run()]}, "b" * 40))
 
     def test_stalled_suite_requires_zero_runs_and_null_conclusion(self) -> None:
-        assert MODULE._stalled_suite_fingerprint(self._suite()) == (
-            _SUITE_ID,
-            "queued",
-            None,
-            0,
+        self.assertEqual(
+            MODULE._stalled_suite_fingerprint(self._suite()),
+            (_SUITE_ID, "queued", None, 0),
         )
-        for suite in (
+        invalid_suites = (
             self._suite(status="completed", conclusion="failure"),
             self._suite(check_runs_count=1),
-        ):
+        )
+        for suite in invalid_suites:
             with self.subTest(suite=suite):
                 with self.assertRaisesRegex(
                     RuntimeError,
@@ -186,28 +167,27 @@ class V10ExternalReviewGateTests(unittest.TestCase):
                     MODULE._stalled_suite_fingerprint(suite)
 
     def test_sonar_decoration_requires_zero_metrics_and_exact_pr(self) -> None:
-        assert MODULE._validate_sonar_comment(self._comment(), _PR_NUMBER) == []
-        for comment, marker in (
+        self.assertEqual(MODULE._validate_sonar_comment(self._comment(), _PR_NUMBER), [])
+        cases = (
             (self._comment(issues=1), "New issues must be 0"),
             (self._comment(accepted=1), "Accepted issues must be 0"),
             (self._comment(hotspots=1), "Security Hotspots must be 0"),
-        ):
+        )
+        for comment, marker in cases:
             with self.subTest(marker=marker):
                 failures = MODULE._validate_sonar_comment(comment, _PR_NUMBER)
-                assert any(marker in failure for failure in failures)
+                self.assertTrue(any(marker in failure for failure in failures))
 
     def test_stale_sonar_decoration_fails_closed(self) -> None:
         comments = [self._comment(updated_at="2026-09-17T19:46:52Z")]
+        not_before = datetime(2026, 9, 17, 19, 46, 54, tzinfo=timezone.utc)
         with patch.object(MODULE, "_github_json", return_value=comments):
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "decoration is missing",
-            ):
+            with self.assertRaisesRegex(RuntimeError, "decoration is missing"):
                 MODULE._latest_sonar_comment(
                     _REPOSITORY,
                     _TOKEN,
                     _PR_NUMBER,
-                    not_before=datetime(2026, 9, 17, 19, 46, 54, tzinfo=timezone.utc),
+                    not_before=not_before,
                 )
 
     def test_stalled_suite_decoration_certifies_with_toctou_rechecks(self) -> None:
@@ -222,11 +202,7 @@ class V10ExternalReviewGateTests(unittest.TestCase):
             [self._comment()],
         ]
         with patch.object(MODULE, "_github_json", side_effect=payloads):
-            mode = MODULE._certify_stalled_suite_decoration(
-                _REPOSITORY,
-                _HEAD,
-                _TOKEN,
-            )
+            mode = MODULE._certify_stalled_suite_decoration(_REPOSITORY, _HEAD, _TOKEN)
         self.assertEqual(mode, "stalled_suite_pr_decoration")
 
     def test_direct_run_appearing_during_fallback_becomes_authoritative(self) -> None:
@@ -238,11 +214,7 @@ class V10ExternalReviewGateTests(unittest.TestCase):
             {"check_runs": [self._run()]},
         ]
         with patch.object(MODULE, "_github_json", side_effect=payloads):
-            mode = MODULE._certify_stalled_suite_decoration(
-                _REPOSITORY,
-                _HEAD,
-                _TOKEN,
-            )
+            mode = MODULE._certify_stalled_suite_decoration(_REPOSITORY, _HEAD, _TOKEN)
         self.assertEqual(mode, "direct_check_run_after_stalled_suite")
 
     def test_changed_suite_during_fallback_fails_closed(self) -> None:
@@ -257,36 +229,23 @@ class V10ExternalReviewGateTests(unittest.TestCase):
         ]
         with patch.object(MODULE, "_github_json", side_effect=payloads):
             with self.assertRaisesRegex(RuntimeError, "suite changed"):
-                MODULE._certify_stalled_suite_decoration(
-                    _REPOSITORY,
-                    _HEAD,
-                    _TOKEN,
-                )
+                MODULE._certify_stalled_suite_decoration(_REPOSITORY, _HEAD, _TOKEN)
 
     def test_wait_prefers_direct_completed_check(self) -> None:
-        with patch.object(
-            MODULE,
-            "_github_json",
-            return_value={"check_runs": [self._run()]},
-        ):
+        payload = {"check_runs": [self._run()]}
+        with patch.object(MODULE, "_github_json", return_value=payload):
             run, mode = MODULE._wait_for_sonar(_REPOSITORY, _HEAD, _TOKEN)
         self.assertIsNotNone(run)
         self.assertEqual(mode, "direct_check_run")
 
     def test_wait_never_uses_decoration_when_direct_check_is_in_progress(self) -> None:
         in_progress = self._run(status="in_progress", conclusion="success")
+        payload = {"check_runs": [in_progress]}
+        settings = {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"}
         with (
-            patch.object(
-                MODULE,
-                "_github_json",
-                return_value={"check_runs": [in_progress]},
-            ),
+            patch.object(MODULE, "_github_json", return_value=payload),
             patch.object(MODULE, "_certify_stalled_suite_decoration") as fallback,
-            patch.dict(
-                MODULE.os.environ,
-                {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"},
-                clear=False,
-            ),
+            patch.dict(MODULE.os.environ, settings, clear=False),
         ):
             with self.assertRaisesRegex(RuntimeError, "did not complete"):
                 MODULE._wait_for_sonar(_REPOSITORY, _HEAD, _TOKEN)

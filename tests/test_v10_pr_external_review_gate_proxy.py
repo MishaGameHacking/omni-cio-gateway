@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 import unittest
 from unittest.mock import patch
 
+import scripts.check_v10_pr_external_review_gate as MODULE
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts/check_v10_pr_external_review_gate.py"
-SPEC = importlib.util.spec_from_file_location("v10_external_review_gate_proxy", SCRIPT)
-assert SPEC is not None
-assert SPEC.loader is not None
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
 
 _HEAD = "a" * 40
 _REPOSITORY = "owner/repo"
 _TOKEN = "token"
+_SETTINGS = {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"}
 
 
 def _governance(
@@ -34,10 +27,7 @@ def _governance(
         "started_at": "2026-09-17T20:00:00Z",
         "completed_at": "2026-09-17T20:05:00Z" if status == "completed" else None,
         "app": {"slug": "github-actions"},
-        "output": {
-            "annotations_count": annotations,
-            "summary": "governance",
-        },
+        "output": {"annotations_count": annotations, "summary": "governance"},
     }
 
 
@@ -71,54 +61,37 @@ class V10ExternalReviewGateProxyTests(unittest.TestCase):
         ]
         with (
             patch.object(MODULE, "_github_json", side_effect=payloads),
-            patch.dict(
-                MODULE.os.environ,
-                {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"},
-                clear=False,
-            ),
+            patch.dict(MODULE.os.environ, _SETTINGS, clear=False),
         ):
             run, mode = MODULE._wait_for_sonar(_REPOSITORY, _HEAD, _TOKEN)
         self.assertIsNone(run)
         self.assertEqual(mode, "repository_governance_proxy")
 
     def test_non_permission_http_error_never_uses_governance_proxy(self) -> None:
-        payloads = [
-            {"check_runs": []},
-            MODULE.ReviewGateHttpError(500),
-        ]
+        payloads = [{"check_runs": []}, MODULE.ReviewGateHttpError(500)]
         with (
             patch.object(MODULE, "_github_json", side_effect=payloads),
-            patch.dict(
-                MODULE.os.environ,
-                {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"},
-                clear=False,
-            ),
+            patch.dict(MODULE.os.environ, _SETTINGS, clear=False),
         ):
             with self.assertRaisesRegex(RuntimeError, "HTTP 500"):
                 MODULE._wait_for_sonar(_REPOSITORY, _HEAD, _TOKEN)
 
     def test_direct_in_progress_sonar_blocks_governance_proxy(self) -> None:
-        payload = {"check_runs": [_sonar(status="in_progress"), _governance()]}
+        check_runs = [_sonar(status="in_progress"), _governance()]
+        payload = {"check_runs": check_runs}
         with (
             patch.object(MODULE, "_github_json", return_value=payload),
-            patch.dict(
-                MODULE.os.environ,
-                {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"},
-                clear=False,
-            ),
+            patch.dict(MODULE.os.environ, _SETTINGS, clear=False),
         ):
             with self.assertRaisesRegex(RuntimeError, "did not become successful"):
                 MODULE._repository_governance_proxy(_REPOSITORY, _HEAD, _TOKEN)
 
     def test_direct_failed_sonar_blocks_governance_proxy(self) -> None:
-        payload = {"check_runs": [_sonar(conclusion="failure"), _governance()]}
+        check_runs = [_sonar(conclusion="failure"), _governance()]
+        payload = {"check_runs": check_runs}
         with (
             patch.object(MODULE, "_github_json", return_value=payload),
-            patch.dict(
-                MODULE.os.environ,
-                {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"},
-                clear=False,
-            ),
+            patch.dict(MODULE.os.environ, _SETTINGS, clear=False),
         ):
             with self.assertRaisesRegex(RuntimeError, "Quality Gate is not success"):
                 MODULE._repository_governance_proxy(_REPOSITORY, _HEAD, _TOKEN)
@@ -127,11 +100,7 @@ class V10ExternalReviewGateProxyTests(unittest.TestCase):
         payload = {"check_runs": [_governance(conclusion="failure")]}
         with (
             patch.object(MODULE, "_github_json", return_value=payload),
-            patch.dict(
-                MODULE.os.environ,
-                {"V10_SONAR_GATE_ATTEMPTS": "1", "V10_SONAR_GATE_DELAY_SECONDS": "1"},
-                clear=False,
-            ),
+            patch.dict(MODULE.os.environ, _SETTINGS, clear=False),
         ):
             with self.assertRaisesRegex(RuntimeError, "proxy is not success"):
                 MODULE._repository_governance_proxy(_REPOSITORY, _HEAD, _TOKEN)

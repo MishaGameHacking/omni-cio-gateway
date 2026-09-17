@@ -7,7 +7,10 @@ import sys
 import time
 from typing import Any
 
-import scripts.check_v10_cloudflare_postmerge_release_gate as release_gate
+if __package__:
+    from . import check_v10_cloudflare_postmerge_release_gate as release_gate
+else:
+    import check_v10_cloudflare_postmerge_release_gate as release_gate
 
 
 SONAR_CHECK_NAME = "SonarCloud Code Analysis"
@@ -45,8 +48,6 @@ class ReviewGateHttpError(ReviewGateError):
 
 
 def _github_json(path: str, token: str) -> Any:
-    """Reuse the fixed-host, bounded GitHub API client accepted by CF-D."""
-
     try:
         return release_gate._api_get(path, token)  # noqa: SLF001 - shared API authority
     except release_gate.ReleaseGateStopped as exc:
@@ -82,27 +83,52 @@ def _annotations_path(repository: str, check_run_id: int) -> str:
     return f"/repos/{repository}/check-runs/{check_run_id}/annotations?per_page=100"
 
 
-def _find_exact_sonar_run(payload: Any, head_sha: str) -> dict[str, Any] | None:
+def _check_run_rows(payload: Any) -> list[dict[str, Any]]:
     if not isinstance(payload, dict):
-        return None
-    runs = payload.get("check_runs")
-    if not isinstance(runs, list):
-        return None
-    matches = [
-        run
-        for run in runs
-        if isinstance(run, dict)
-        and run.get("name") == SONAR_CHECK_NAME
-        and run.get("head_sha") == head_sha
-        and isinstance(run.get("app"), dict)
-        and run["app"].get("slug") == SONAR_APP_SLUG
-    ]
-    if not matches:
+        return []
+    raw_rows = payload.get("check_runs")
+    if not isinstance(raw_rows, list):
+        return []
+    return [row for row in raw_rows if isinstance(row, dict)]
+
+
+def _matches_named_check(
+    row: dict[str, Any],
+    *,
+    head_sha: str,
+    name: str,
+    app_slug: str,
+) -> bool:
+    app = row.get("app")
+    return (
+        row.get("name") == name
+        and row.get("head_sha") == head_sha
+        and isinstance(app, dict)
+        and app.get("slug") == app_slug
+    )
+
+
+def _latest_by_time(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not rows:
         return None
     return max(
-        matches,
-        key=lambda run: str(run.get("completed_at") or run.get("started_at") or ""),
+        rows,
+        key=lambda row: str(row.get("completed_at") or row.get("started_at") or ""),
     )
+
+
+def _find_exact_sonar_run(payload: Any, head_sha: str) -> dict[str, Any] | None:
+    matches = [
+        row
+        for row in _check_run_rows(payload)
+        if _matches_named_check(
+            row,
+            head_sha=head_sha,
+            name=SONAR_CHECK_NAME,
+            app_slug=SONAR_APP_SLUG,
+        )
+    ]
+    return _latest_by_time(matches)
 
 
 def _metric(summary: str, pattern: re.Pattern[str], label: str) -> int:
@@ -124,10 +150,11 @@ def _validate_sonar_run(run: dict[str, Any]) -> list[str]:
     summary = output.get("summary")
     summary = summary if isinstance(summary, str) else ""
 
-    for pattern, label, failure_message in (
+    metric_specs = (
         (ZERO_NEW_ISSUES, "new-issues metric", NEW_ISSUES_ZERO_FAILURE),
         (ZERO_HOTSPOTS, "Security-Hotspots metric", HOTSPOTS_ZERO_FAILURE),
-    ):
+    )
+    for pattern, label, failure_message in metric_specs:
         try:
             value = _metric(summary, pattern, label)
         except ReviewGateError as exc:
@@ -188,6 +215,18 @@ def _timestamp(value: object, label: str) -> datetime:
     return parsed
 
 
+def _target_pull(row: dict[str, Any], head_sha: str) -> bool:
+    head = row.get("head")
+    base = row.get("base")
+    return (
+        isinstance(head, dict)
+        and head.get("sha") == head_sha
+        and isinstance(base, dict)
+        and base.get("ref") == "main"
+        and row.get("state") == "open"
+    )
+
+
 def _exact_pull_request(
     repository: str,
     head_sha: str,
@@ -196,20 +235,10 @@ def _exact_pull_request(
     payload = _github_json(_pulls_path(repository, head_sha), token)
     if not isinstance(payload, list) or len(payload) >= _MAX_PAGE_SIZE:
         raise ReviewGateError("Sonar exact-head pull-request association is ambiguous")
-    matches: list[dict[str, Any]] = []
-    for row in payload:
-        if not isinstance(row, dict):
-            raise ReviewGateError("Sonar exact-head pull-request association is invalid")
-        head = row.get("head")
-        base = row.get("base")
-        if (
-            isinstance(head, dict)
-            and head.get("sha") == head_sha
-            and isinstance(base, dict)
-            and base.get("ref") == "main"
-            and row.get("state") == "open"
-        ):
-            matches.append(row)
+    rows = [row for row in payload if isinstance(row, dict)]
+    if len(rows) != len(payload):
+        raise ReviewGateError("Sonar exact-head pull-request association is invalid")
+    matches = [row for row in rows if _target_pull(row, head_sha)]
     if len(matches) != 1:
         raise ReviewGateError("Sonar exact-head pull-request association is not unique")
     number = matches[0].get("number")
@@ -223,12 +252,68 @@ def _head_commit_time(repository: str, head_sha: str, token: str) -> datetime:
     if not isinstance(payload, dict) or payload.get("sha") != head_sha:
         raise ReviewGateError("Sonar exact-head commit metadata is invalid")
     commit = payload.get("commit")
-    if not isinstance(commit, dict):
-        raise ReviewGateError("Sonar exact-head commit metadata is invalid")
-    committer = commit.get("committer")
+    committer = commit.get("committer") if isinstance(commit, dict) else None
     if not isinstance(committer, dict):
-        raise ReviewGateError("Sonar exact-head commit committer is invalid")
+        raise ReviewGateError("Sonar exact-head commit metadata is invalid")
     return _timestamp(committer.get("date"), "Sonar exact-head commit")
+
+
+def _suite_rows(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        raise ReviewGateError("Sonar exact-head check-suite response is invalid")
+    total_count = payload.get("total_count")
+    raw_rows = payload.get("check_suites")
+    valid_count = isinstance(total_count, int) and not isinstance(total_count, bool)
+    valid_rows = isinstance(raw_rows, list)
+    if not valid_count or not valid_rows:
+        raise ReviewGateError("Sonar exact-head check-suite response is invalid")
+    if total_count < 0 or total_count > _MAX_PAGE_SIZE or len(raw_rows) != total_count:
+        raise ReviewGateError("Sonar exact-head check-suite response is truncated")
+    if not all(isinstance(row, dict) for row in raw_rows):
+        raise ReviewGateError("Sonar exact-head check-suite row is invalid")
+    return list(raw_rows)
+
+
+def _suite_has_pull(
+    suite: dict[str, Any],
+    pull_request_number: int,
+    head_sha: str,
+) -> bool:
+    pull_requests = suite.get("pull_requests")
+    if not isinstance(pull_requests, list):
+        return False
+    for pull in pull_requests:
+        if not isinstance(pull, dict) or pull.get("number") != pull_request_number:
+            continue
+        head = pull.get("head")
+        if isinstance(head, dict) and head.get("sha") == head_sha:
+            return True
+    return False
+
+
+def _suite_matches(
+    suite: dict[str, Any],
+    *,
+    head_sha: str,
+    pull_request_number: int,
+) -> bool:
+    app = suite.get("app")
+    return (
+        suite.get("head_sha") == head_sha
+        and isinstance(app, dict)
+        and app.get("slug") == SONAR_APP_SLUG
+        and _suite_has_pull(suite, pull_request_number, head_sha)
+    )
+
+
+def _suite_ordering(suite: dict[str, Any]) -> tuple[str, int]:
+    suite_id = suite.get("id")
+    if not isinstance(suite_id, int) or isinstance(suite_id, bool) or suite_id <= 0:
+        raise ReviewGateError("Sonar exact-head check-suite id is invalid")
+    timestamp = suite.get("updated_at") or suite.get("created_at")
+    if not isinstance(timestamp, str) or not timestamp:
+        raise ReviewGateError("Sonar exact-head check-suite timestamp is invalid")
+    return timestamp, suite_id
 
 
 def _latest_sonar_suite(
@@ -238,53 +323,18 @@ def _latest_sonar_suite(
     pull_request_number: int,
 ) -> dict[str, Any]:
     payload = _github_json(_check_suites_path(repository, head_sha), token)
-    if not isinstance(payload, dict):
-        raise ReviewGateError("Sonar exact-head check-suite response is invalid")
-    total_count = payload.get("total_count")
-    rows = payload.get("check_suites")
-    if (
-        not isinstance(total_count, int)
-        or total_count < 0
-        or total_count > _MAX_PAGE_SIZE
-        or not isinstance(rows, list)
-        or len(rows) != total_count
-    ):
-        raise ReviewGateError("Sonar exact-head check-suite response is truncated")
-    matches: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            raise ReviewGateError("Sonar exact-head check-suite row is invalid")
-        app = row.get("app")
-        pull_requests = row.get("pull_requests")
-        associated = False
-        if isinstance(pull_requests, list):
-            for pull in pull_requests:
-                if not isinstance(pull, dict):
-                    continue
-                head = pull.get("head")
-                if (
-                    pull.get("number") == pull_request_number
-                    and isinstance(head, dict)
-                    and head.get("sha") == head_sha
-                ):
-                    associated = True
-                    break
-        if (
-            row.get("head_sha") == head_sha
-            and isinstance(app, dict)
-            and app.get("slug") == SONAR_APP_SLUG
-            and associated
-        ):
-            matches.append(row)
+    matches = [
+        suite
+        for suite in _suite_rows(payload)
+        if _suite_matches(
+            suite,
+            head_sha=head_sha,
+            pull_request_number=pull_request_number,
+        )
+    ]
     if not matches:
         raise ReviewGateError("Sonar exact-head check suite is missing")
-    return max(
-        matches,
-        key=lambda row: (
-            str(row.get("updated_at") or row.get("created_at") or ""),
-            int(row.get("id") or 0),
-        ),
-    )
+    return max(matches, key=_suite_ordering)
 
 
 def _stalled_suite_fingerprint(
@@ -294,18 +344,41 @@ def _stalled_suite_fingerprint(
     status = suite.get("status")
     conclusion = suite.get("conclusion")
     check_runs_count = suite.get("latest_check_runs_count")
-    if (
-        not isinstance(suite_id, int)
-        or isinstance(suite_id, bool)
-        or suite_id <= 0
-        or status not in _STALLED_SUITE_STATUSES
-        or conclusion is not None
-        or check_runs_count != 0
-    ):
+    eligible = (
+        isinstance(suite_id, int)
+        and not isinstance(suite_id, bool)
+        and suite_id > 0
+        and status in _STALLED_SUITE_STATUSES
+        and conclusion is None
+        and check_runs_count == 0
+    )
+    if not eligible:
         raise ReviewGateError(
             "Sonar exact-head suite is not an eligible stalled zero-run suite"
         )
-    return suite_id, str(status), conclusion, int(check_runs_count)
+    return int(suite_id), str(status), conclusion, int(check_runs_count)
+
+
+def _comment_time(comment: dict[str, Any]) -> datetime:
+    return _timestamp(
+        comment.get("updated_at") or comment.get("created_at"),
+        "Sonar pull-request decoration",
+    )
+
+
+def _sonar_comment_matches(
+    row: dict[str, Any],
+    *,
+    marker: str,
+    not_before: datetime,
+) -> bool:
+    user = row.get("user")
+    body = row.get("body")
+    if not isinstance(user, dict) or user.get("login") != SONAR_BOT_LOGIN:
+        return False
+    if not isinstance(body, str) or marker not in body:
+        return False
+    return _comment_time(row) >= not_before
 
 
 def _latest_sonar_comment(
@@ -318,49 +391,32 @@ def _latest_sonar_comment(
     payload = _github_json(_comments_path(repository, pull_request_number), token)
     if not isinstance(payload, list) or len(payload) >= _MAX_PAGE_SIZE:
         raise ReviewGateError("Sonar pull-request decoration list is ambiguous")
-    matches: list[dict[str, Any]] = []
+    rows = [row for row in payload if isinstance(row, dict)]
+    if len(rows) != len(payload):
+        raise ReviewGateError("Sonar pull-request decoration row is invalid")
     marker = f"pullRequest={pull_request_number}"
-    for row in payload:
-        if not isinstance(row, dict):
-            raise ReviewGateError("Sonar pull-request decoration row is invalid")
-        user = row.get("user")
-        body = row.get("body")
-        if (
-            isinstance(user, dict)
-            and user.get("login") == SONAR_BOT_LOGIN
-            and isinstance(body, str)
-            and marker in body
-        ):
-            observed_at = _timestamp(
-                row.get("updated_at") or row.get("created_at"),
-                "Sonar pull-request decoration",
-            )
-            if observed_at >= not_before:
-                matches.append(row)
+    matches = [
+        row
+        for row in rows
+        if _sonar_comment_matches(row, marker=marker, not_before=not_before)
+    ]
     if not matches:
         raise ReviewGateError("Sonar exact-head pull-request decoration is missing")
-    return max(
-        matches,
-        key=lambda row: _timestamp(
-            row.get("updated_at") or row.get("created_at"),
-            "Sonar pull-request decoration",
-        ),
-    )
+    return max(matches, key=_comment_time)
 
 
 def _validate_sonar_comment(
     comment: dict[str, Any],
     pull_request_number: int,
 ) -> list[str]:
-    failures: list[str] = []
     user = comment.get("user")
     body = comment.get("body")
     if not isinstance(user, dict) or user.get("login") != SONAR_BOT_LOGIN:
-        failures.append("Sonar pull-request decoration author is invalid")
-        return failures
+        return ["Sonar pull-request decoration author is invalid"]
     if not isinstance(body, str):
-        failures.append("Sonar pull-request decoration body is invalid")
-        return failures
+        return ["Sonar pull-request decoration body is invalid"]
+
+    failures: list[str] = []
     if f"pullRequest={pull_request_number}" not in body:
         failures.append("Sonar pull-request decoration is not bound to this PR")
     if "Quality Gate passed" not in body:
@@ -380,6 +436,13 @@ def _validate_sonar_comment(
     return failures
 
 
+def _same_comment(first: dict[str, Any], second: dict[str, Any]) -> bool:
+    return all(
+        first.get(key) == second.get(key)
+        for key in ("id", "updated_at", "body")
+    )
+
+
 def _certify_stalled_suite_decoration(
     repository: str,
     head_sha: str,
@@ -388,22 +451,15 @@ def _certify_stalled_suite_decoration(
     pull_request = _exact_pull_request(repository, head_sha, token)
     pull_request_number = int(pull_request["number"])
     commit_time = _head_commit_time(repository, head_sha, token)
-    suite = _latest_sonar_suite(
-        repository,
-        head_sha,
-        token,
-        pull_request_number,
-    )
+    suite = _latest_sonar_suite(repository, head_sha, token, pull_request_number)
     suite_fingerprint = _stalled_suite_fingerprint(suite)
-    suite_time = _timestamp(
-        suite.get("created_at"),
-        "Sonar exact-head check suite",
-    )
+    suite_time = _timestamp(suite.get("created_at"), "Sonar exact-head check suite")
+    not_before = max(commit_time, suite_time)
     comment = _latest_sonar_comment(
         repository,
         token,
         pull_request_number,
-        not_before=max(commit_time, suite_time),
+        not_before=not_before,
     )
     failures = _validate_sonar_comment(comment, pull_request_number)
     if failures:
@@ -420,27 +476,16 @@ def _certify_stalled_suite_decoration(
     fresh_pull_request = _exact_pull_request(repository, head_sha, token)
     if fresh_pull_request.get("number") != pull_request_number:
         raise ReviewGateError("Sonar exact-head pull-request association changed")
-    fresh_suite = _latest_sonar_suite(
-        repository,
-        head_sha,
-        token,
-        pull_request_number,
-    )
+    fresh_suite = _latest_sonar_suite(repository, head_sha, token, pull_request_number)
     if _stalled_suite_fingerprint(fresh_suite) != suite_fingerprint:
-        raise ReviewGateError(
-            "Sonar exact-head stalled suite changed during evidence read"
-        )
+        raise ReviewGateError("Sonar exact-head stalled suite changed during evidence read")
     fresh_comment = _latest_sonar_comment(
         repository,
         token,
         pull_request_number,
-        not_before=max(commit_time, suite_time),
+        not_before=not_before,
     )
-    if (
-        fresh_comment.get("id") != comment.get("id")
-        or fresh_comment.get("updated_at") != comment.get("updated_at")
-        or fresh_comment.get("body") != comment.get("body")
-    ):
+    if not _same_comment(comment, fresh_comment):
         raise ReviewGateError(
             "Sonar exact-head pull-request decoration changed during evidence read"
         )
@@ -457,29 +502,62 @@ def _find_exact_named_check(
     name: str,
     app_slug: str,
 ) -> dict[str, Any] | None:
-    if not isinstance(payload, dict):
-        return None
-    runs = payload.get("check_runs")
-    if not isinstance(runs, list):
-        return None
-    matches = []
-    for row in runs:
-        if not isinstance(row, dict):
-            continue
-        app = row.get("app")
-        if (
-            row.get("name") == name
-            and row.get("head_sha") == head_sha
-            and isinstance(app, dict)
-            and app.get("slug") == app_slug
-        ):
-            matches.append(row)
-    if not matches:
-        return None
-    return max(
-        matches,
-        key=lambda row: str(row.get("completed_at") or row.get("started_at") or ""),
+    matches = [
+        row
+        for row in _check_run_rows(payload)
+        if _matches_named_check(
+            row,
+            head_sha=head_sha,
+            name=name,
+            app_slug=app_slug,
+        )
+    ]
+    return _latest_by_time(matches)
+
+
+def _validate_governance_proxy(run: dict[str, Any]) -> None:
+    if run.get("conclusion") != "success":
+        raise ReviewGateError("Exact-head engineering governance proxy is not success")
+    output = run.get("output")
+    if not isinstance(output, dict) or output.get(ANNOTATIONS_COUNT_KEY) != 0:
+        raise ReviewGateError(
+            "Exact-head engineering governance proxy annotations must be 0"
+        )
+
+
+def _proxy_candidate(
+    payload: Any,
+    head_sha: str,
+) -> tuple[dict[str, Any] | None, str] | None:
+    direct_run = _find_exact_sonar_run(payload, head_sha)
+    if direct_run is not None:
+        if direct_run.get("status") != STATUS_COMPLETED:
+            return None
+        failures = _validate_sonar_run(direct_run)
+        if failures:
+            raise ReviewGateError("; ".join(failures))
+        return direct_run, "direct_check_run_after_proxy_wait"
+
+    governance = _find_exact_named_check(
+        payload,
+        head_sha,
+        _GOVERNANCE_CHECK_NAME,
+        _GITHUB_ACTIONS_APP_SLUG,
     )
+    if governance is None or governance.get("status") != STATUS_COMPLETED:
+        return None
+    _validate_governance_proxy(governance)
+    return None, "repository_governance_proxy"
+
+
+def _wait_settings() -> tuple[int, int]:
+    attempts = int(os.environ.get("V10_SONAR_GATE_ATTEMPTS", str(DEFAULT_ATTEMPTS)))
+    delay = int(
+        os.environ.get("V10_SONAR_GATE_DELAY_SECONDS", str(DEFAULT_DELAY_SECONDS))
+    )
+    if attempts < 1 or attempts > 120 or delay < 1 or delay > 60:
+        raise ReviewGateError("Sonar review-gate wait settings are invalid")
+    return attempts, delay
 
 
 def _repository_governance_proxy(
@@ -487,41 +565,13 @@ def _repository_governance_proxy(
     head_sha: str,
     token: str,
 ) -> tuple[dict[str, Any] | None, str]:
-    attempts = int(os.environ.get("V10_SONAR_GATE_ATTEMPTS", str(DEFAULT_ATTEMPTS)))
-    delay = int(
-        os.environ.get("V10_SONAR_GATE_DELAY_SECONDS", str(DEFAULT_DELAY_SECONDS))
-    )
-    for attempt in range(1, attempts + 1):
+    attempts, delay = _wait_settings()
+    for attempt in range(attempts):
         payload = _github_json(_check_runs_path(repository, head_sha), token)
-        direct_run = _find_exact_sonar_run(payload, head_sha)
-        if direct_run is not None:
-            if direct_run.get("status") == STATUS_COMPLETED:
-                failures = _validate_sonar_run(direct_run)
-                if failures:
-                    raise ReviewGateError("; ".join(failures))
-                return direct_run, "direct_check_run_after_proxy_wait"
-        else:
-            governance = _find_exact_named_check(
-                payload,
-                head_sha,
-                _GOVERNANCE_CHECK_NAME,
-                _GITHUB_ACTIONS_APP_SLUG,
-            )
-            if governance is not None and governance.get("status") == STATUS_COMPLETED:
-                if governance.get("conclusion") != "success":
-                    raise ReviewGateError(
-                        "Exact-head engineering governance proxy is not success"
-                    )
-                output = governance.get("output")
-                if (
-                    not isinstance(output, dict)
-                    or output.get(ANNOTATIONS_COUNT_KEY) != 0
-                ):
-                    raise ReviewGateError(
-                        "Exact-head engineering governance proxy annotations must be 0"
-                    )
-                return None, "repository_governance_proxy"
-        if attempt < attempts:
+        candidate = _proxy_candidate(payload, head_sha)
+        if candidate is not None:
+            return candidate
+        if attempt + 1 < attempts:
             time.sleep(delay)
     raise ReviewGateError(
         "Exact-head engineering governance proxy did not become successful "
@@ -534,17 +584,14 @@ def _wait_for_sonar(
     head_sha: str,
     token: str,
 ) -> tuple[dict[str, Any] | None, str]:
-    attempts = int(os.environ.get("V10_SONAR_GATE_ATTEMPTS", str(DEFAULT_ATTEMPTS)))
-    delay = int(
-        os.environ.get("V10_SONAR_GATE_DELAY_SECONDS", str(DEFAULT_DELAY_SECONDS))
-    )
+    attempts, delay = _wait_settings()
     latest_run: dict[str, Any] | None = None
-    for attempt in range(1, attempts + 1):
+    for attempt in range(attempts):
         payload = _github_json(_check_runs_path(repository, head_sha), token)
         latest_run = _find_exact_sonar_run(payload, head_sha)
         if latest_run is not None and latest_run.get("status") == STATUS_COMPLETED:
             return latest_run, "direct_check_run"
-        if attempt < attempts:
+        if attempt + 1 < attempts:
             time.sleep(delay)
     if latest_run is not None:
         raise ReviewGateError(
@@ -579,9 +626,7 @@ def _validated_environment() -> tuple[str, str, str] | None:
 
 def main() -> int:
     if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
-        print(
-            "External review gate: pull_request-only; current event is not applicable."
-        )
+        print("External review gate: pull_request-only; current event is not applicable.")
         return 0
 
     environment = _validated_environment()
@@ -591,14 +636,12 @@ def main() -> int:
 
     try:
         run, evidence_mode = _wait_for_sonar(repository, head_sha, token)
-        if run is None:
-            failures: list[str] = []
-            annotations: list[str] = []
-        else:
-            failures = _validate_sonar_run(run)
-            annotations = (
-                _annotation_lines(run, repository, token) if failures else []
-            )
+        failures = _validate_sonar_run(run) if run is not None else []
+        annotations = (
+            _annotation_lines(run, repository, token)
+            if run is not None and failures
+            else []
+        )
     except ReviewGateError as exc:
         print(f"{EXTERNAL_GATE_FAILED}: {exc}", file=sys.stderr)
         return 1

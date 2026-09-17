@@ -61,20 +61,17 @@ def _authoritative_gate(
 
 
 def _certify_with_head_checks(head_checks: list[dict[str, Any]]) -> str:
+    pull_request = {
+        "number": 540,
+        "merged_at": "2026-09-17T21:00:00Z",
+        "merge_commit_sha": _MAIN,
+        "base": {"ref": "main"},
+        "head": {"sha": _HEAD},
+    }
     with (
         patch.object(provenance, "_associated_pull_request", return_value={"number": 540}),
         patch.object(provenance, "_pull_request_number", return_value=540),
-        patch.object(
-            provenance,
-            "_canonical_pull_request",
-            return_value={
-                "number": 540,
-                "merged_at": "2026-09-17T21:00:00Z",
-                "merge_commit_sha": _MAIN,
-                "base": {"ref": "main"},
-                "head": {"sha": _HEAD},
-            },
-        ),
+        patch.object(provenance, "_canonical_pull_request", return_value=pull_request),
         patch.object(provenance, "_pull_request_head", return_value=_HEAD),
         patch.object(provenance, "_require_merge_identity"),
         patch.object(provenance, "_tree_sha", side_effect=(_TREE, _TREE)),
@@ -94,52 +91,51 @@ def _certify_with_head_checks(head_checks: list[dict[str, Any]]) -> str:
 
 class SonarEquivalentTreePrHeadFallbackTests(unittest.TestCase):
     def test_authoritative_gate_certifies_when_direct_sonar_check_is_absent(self) -> None:
-        self.assertEqual(_certify_with_head_checks([_authoritative_gate()]), _HEAD)
+        checks = [_authoritative_gate()]
+        self.assertEqual(_certify_with_head_checks(checks), _HEAD)
 
     def test_no_direct_sonar_and_no_authoritative_gate_fails_closed(self) -> None:
+        checks: list[dict[str, Any]] = []
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_CHECK_MISSING",
         ):
-            _certify_with_head_checks([])
+            _certify_with_head_checks(checks)
 
     def test_direct_in_progress_sonar_remains_authoritative(self) -> None:
+        checks = [
+            _sonar_check(status="in_progress", conclusion="success"),
+            _authoritative_gate(),
+        ]
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_CHECK_PENDING",
         ):
-            _certify_with_head_checks(
-                [
-                    _sonar_check(status="in_progress", conclusion="success"),
-                    _authoritative_gate(),
-                ]
-            )
+            _certify_with_head_checks(checks)
 
     def test_direct_failed_sonar_is_not_masked_by_authoritative_gate(self) -> None:
+        checks = [_sonar_check(conclusion="failure"), _authoritative_gate()]
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
         ):
-            _certify_with_head_checks(
-                [
-                    _sonar_check(conclusion="failure"),
-                    _authoritative_gate(),
-                ]
-            )
+            _certify_with_head_checks(checks)
 
     def test_failed_authoritative_gate_is_not_accepted(self) -> None:
+        checks = [_authoritative_gate(conclusion="failure")]
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_AUTHORITATIVE_GATE_NOT_SUCCESS",
         ):
-            _certify_with_head_checks([_authoritative_gate(conclusion="failure")])
+            _certify_with_head_checks(checks)
 
     def test_authoritative_gate_with_annotations_is_not_accepted(self) -> None:
+        checks = [_authoritative_gate(annotations=1)]
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_HEAD_AUTHORITATIVE_GATE_ANNOTATIONS_PRESENT",
         ):
-            _certify_with_head_checks([_authoritative_gate(annotations=1)])
+            _certify_with_head_checks(checks)
 
 
 if __name__ == "__main__":
