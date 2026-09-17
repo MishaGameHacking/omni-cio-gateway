@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-import json
 import os
 import re
 import sys
 import time
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+
+import scripts.check_v10_cloudflare_postmerge_release_gate as release_gate
 
 
 SONAR_CHECK_NAME = "SonarCloud Code Analysis"
@@ -20,18 +18,16 @@ EXTERNAL_GATE_FAILED = "External review gate failed"
 STATUS_COMPLETED = "completed"
 OUTPUT_KEY = "output"
 ANNOTATIONS_COUNT_KEY = "annotations_count"
-GITHUB_API_HOST = "api.github.com"
-GITHUB_API_ROOT = f"https://{GITHUB_API_HOST}"
 ZERO_NEW_ISSUES = re.compile(r"\[(\d+) New issues\]")
 ZERO_ACCEPTED_ISSUES = re.compile(r"\[(\d+) Accepted issues\]")
 ZERO_HOTSPOTS = re.compile(r"\[(\d+) Security Hotspots\]")
 NEW_ISSUES_ZERO_FAILURE = "new issues must be 0"
 HOTSPOTS_ZERO_FAILURE = "Security Hotspots must be 0"
-API_VERSION = "2022-11-28"
 DEFAULT_ATTEMPTS = 25
 DEFAULT_DELAY_SECONDS = 5
 _STALLED_SUITE_STATUSES = frozenset({"queued", "in_progress"})
 _MAX_PAGE_SIZE = 100
+_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GOVERNANCE_CHECK_NAME = "Engineering quality and green-merge contract"
 _GITHUB_ACTIONS_APP_SLUG = "github-actions"
 
@@ -48,64 +44,42 @@ class ReviewGateHttpError(ReviewGateError):
         self.status = status
 
 
-def _is_github_api_url(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname == GITHUB_API_HOST
+def _github_json(path: str, token: str) -> Any:
+    """Reuse the fixed-host, bounded GitHub API client accepted by CF-D."""
 
-
-def _github_json(url: str, token: str) -> Any:
-    if not _is_github_api_url(url):
-        raise ReviewGateError(
-            "GitHub review-gate URL is outside the fixed HTTPS API host"
-        )
-    request = Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": API_VERSION,
-            "User-Agent": "omni-cio-green-checkpoint-gate",
-        },
-    )
     try:
-        with urlopen(request, timeout=20) as response:  # nosec B310 -- fixed HTTPS host
-            return json.load(response)
-    except HTTPError as exc:
-        raise ReviewGateHttpError(exc.code) from exc
-    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise ReviewGateError(f"GitHub review-gate request failed: {exc}") from exc
+        return release_gate._api_get(path, token)  # noqa: SLF001 - shared API authority
+    except release_gate.ReleaseGateStopped as exc:
+        if exc.status is not None:
+            raise ReviewGateHttpError(exc.status) from exc
+        raise ReviewGateError(f"GitHub review-gate request failed: {exc.code}") from exc
 
 
-def _check_runs_url(repository: str, head_sha: str) -> str:
+def _check_runs_path(repository: str, head_sha: str) -> str:
     return (
-        f"{GITHUB_API_ROOT}/repos/{repository}/commits/{head_sha}/check-runs"
+        f"/repos/{repository}/commits/{head_sha}/check-runs"
         "?per_page=100&filter=latest"
     )
 
 
-def _check_suites_url(repository: str, head_sha: str) -> str:
-    return (
-        f"{GITHUB_API_ROOT}/repos/{repository}/commits/{head_sha}/check-suites"
-        "?per_page=100"
-    )
+def _check_suites_path(repository: str, head_sha: str) -> str:
+    return f"/repos/{repository}/commits/{head_sha}/check-suites?per_page=100"
 
 
-def _pulls_url(repository: str, head_sha: str) -> str:
-    return (
-        f"{GITHUB_API_ROOT}/repos/{repository}/commits/{head_sha}/pulls"
-        "?per_page=100"
-    )
+def _pulls_path(repository: str, head_sha: str) -> str:
+    return f"/repos/{repository}/commits/{head_sha}/pulls?per_page=100"
 
 
-def _commit_url(repository: str, head_sha: str) -> str:
-    return f"{GITHUB_API_ROOT}/repos/{repository}/commits/{head_sha}"
+def _commit_path(repository: str, head_sha: str) -> str:
+    return f"/repos/{repository}/commits/{head_sha}"
 
 
-def _comments_url(repository: str, pull_request_number: int) -> str:
-    return (
-        f"{GITHUB_API_ROOT}/repos/{repository}/issues/{pull_request_number}/comments"
-        "?per_page=100"
-    )
+def _comments_path(repository: str, pull_request_number: int) -> str:
+    return f"/repos/{repository}/issues/{pull_request_number}/comments?per_page=100"
+
+
+def _annotations_path(repository: str, check_run_id: int) -> str:
+    return f"/repos/{repository}/check-runs/{check_run_id}/annotations?per_page=100"
 
 
 def _find_exact_sonar_run(payload: Any, head_sha: str) -> dict[str, Any] | None:
@@ -171,15 +145,23 @@ def _validate_sonar_run(run: dict[str, Any]) -> list[str]:
     return failures
 
 
-def _annotation_lines(run: dict[str, Any], token: str) -> list[str]:
+def _annotation_lines(
+    run: dict[str, Any],
+    repository: str,
+    token: str,
+) -> list[str]:
     output = run.get(OUTPUT_KEY)
     output = output if isinstance(output, dict) else {}
     if output.get(ANNOTATIONS_COUNT_KEY) in (None, 0):
         return []
-    annotations_url = output.get("annotations_url")
-    if not isinstance(annotations_url, str) or not _is_github_api_url(annotations_url):
-        return ["Sonar annotations URL missing or outside GitHub API"]
-    payload = _github_json(f"{annotations_url}?per_page=100", token)
+    check_run_id = run.get("id")
+    if (
+        not isinstance(check_run_id, int)
+        or isinstance(check_run_id, bool)
+        or check_run_id <= 0
+    ):
+        return ["Sonar check-run id missing or invalid"]
+    payload = _github_json(_annotations_path(repository, check_run_id), token)
     if not isinstance(payload, list):
         return ["Sonar annotations response is not a list"]
     lines: list[str] = []
@@ -211,7 +193,7 @@ def _exact_pull_request(
     head_sha: str,
     token: str,
 ) -> dict[str, Any]:
-    payload = _github_json(_pulls_url(repository, head_sha), token)
+    payload = _github_json(_pulls_path(repository, head_sha), token)
     if not isinstance(payload, list) or len(payload) >= _MAX_PAGE_SIZE:
         raise ReviewGateError("Sonar exact-head pull-request association is ambiguous")
     matches: list[dict[str, Any]] = []
@@ -237,7 +219,7 @@ def _exact_pull_request(
 
 
 def _head_commit_time(repository: str, head_sha: str, token: str) -> datetime:
-    payload = _github_json(_commit_url(repository, head_sha), token)
+    payload = _github_json(_commit_path(repository, head_sha), token)
     if not isinstance(payload, dict) or payload.get("sha") != head_sha:
         raise ReviewGateError("Sonar exact-head commit metadata is invalid")
     commit = payload.get("commit")
@@ -255,7 +237,7 @@ def _latest_sonar_suite(
     token: str,
     pull_request_number: int,
 ) -> dict[str, Any]:
-    payload = _github_json(_check_suites_url(repository, head_sha), token)
+    payload = _github_json(_check_suites_path(repository, head_sha), token)
     if not isinstance(payload, dict):
         raise ReviewGateError("Sonar exact-head check-suite response is invalid")
     total_count = payload.get("total_count")
@@ -333,7 +315,7 @@ def _latest_sonar_comment(
     *,
     not_before: datetime,
 ) -> dict[str, Any]:
-    payload = _github_json(_comments_url(repository, pull_request_number), token)
+    payload = _github_json(_comments_path(repository, pull_request_number), token)
     if not isinstance(payload, list) or len(payload) >= _MAX_PAGE_SIZE:
         raise ReviewGateError("Sonar pull-request decoration list is ambiguous")
     matches: list[dict[str, Any]] = []
@@ -427,7 +409,7 @@ def _certify_stalled_suite_decoration(
     if failures:
         raise ReviewGateError("; ".join(failures))
 
-    fresh_runs = _github_json(_check_runs_url(repository, head_sha), token)
+    fresh_runs = _github_json(_check_runs_path(repository, head_sha), token)
     late_run = _find_exact_sonar_run(fresh_runs, head_sha)
     if late_run is not None:
         late_failures = _validate_sonar_run(late_run)
@@ -510,7 +492,7 @@ def _repository_governance_proxy(
         os.environ.get("V10_SONAR_GATE_DELAY_SECONDS", str(DEFAULT_DELAY_SECONDS))
     )
     for attempt in range(1, attempts + 1):
-        payload = _github_json(_check_runs_url(repository, head_sha), token)
+        payload = _github_json(_check_runs_path(repository, head_sha), token)
         direct_run = _find_exact_sonar_run(payload, head_sha)
         if direct_run is not None:
             if direct_run.get("status") == STATUS_COMPLETED:
@@ -558,7 +540,7 @@ def _wait_for_sonar(
     )
     latest_run: dict[str, Any] | None = None
     for attempt in range(1, attempts + 1):
-        payload = _github_json(_check_runs_url(repository, head_sha), token)
+        payload = _github_json(_check_runs_path(repository, head_sha), token)
         latest_run = _find_exact_sonar_run(payload, head_sha)
         if latest_run is not None and latest_run.get("status") == STATUS_COMPLETED:
             return latest_run, "direct_check_run"
@@ -577,13 +559,13 @@ def _wait_for_sonar(
 
 
 def _validated_environment() -> tuple[str, str, str] | None:
-    repository = os.environ.get("GITHUB_REPOSITORY", "")
-    head_sha = os.environ.get("EXPECTED_HEAD", "")
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    head_sha = os.environ.get("EXPECTED_HEAD", "").strip().lower()
     token = os.environ.get("GITHUB_TOKEN", "")
-    if not repository or re.fullmatch(r"[^/\s]+/[^/\s]+", repository) is None:
+    if _REPOSITORY_PATTERN.fullmatch(repository) is None:
         print(f"{EXTERNAL_GATE_FAILED}: invalid GITHUB_REPOSITORY", file=sys.stderr)
         return None
-    if re.fullmatch(r"[0-9a-f]{40}", head_sha) is None:
+    if release_gate._SHA.fullmatch(head_sha) is None:  # noqa: SLF001 - shared authority
         print(
             f"{EXTERNAL_GATE_FAILED}: EXPECTED_HEAD must be lowercase full SHA",
             file=sys.stderr,
@@ -614,7 +596,9 @@ def main() -> int:
             annotations: list[str] = []
         else:
             failures = _validate_sonar_run(run)
-            annotations = _annotation_lines(run, token) if failures else []
+            annotations = (
+                _annotation_lines(run, repository, token) if failures else []
+            )
     except ReviewGateError as exc:
         print(f"{EXTERNAL_GATE_FAILED}: {exc}", file=sys.stderr)
         return 1
