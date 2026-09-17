@@ -299,6 +299,17 @@ def _validate_sonar(payload: dict[str, Any], failures: list[str]) -> None:
         "post_merge_cancelled_fallback_pr_head_sonar_success_required": True,
         "post_merge_cancelled_fallback_pr_head_zero_findings_required": True,
         "post_merge_cancelled_fallback_current_main_recheck_required": True,
+        "post_merge_missing_equivalent_tree_fallback_allowed": True,
+        "post_merge_missing_fallback_requires_bounded_wait_exhausted": True,
+        "post_merge_missing_fallback_requires_no_matching_main_check": True,
+        "post_merge_missing_fallback_unique_merged_pr_required": True,
+        "post_merge_missing_fallback_base_must_be_main": True,
+        "post_merge_missing_fallback_merge_sha_must_equal_exact_main": True,
+        "post_merge_missing_fallback_tree_identity_required": True,
+        "post_merge_missing_fallback_pr_head_sonar_success_required": True,
+        "post_merge_missing_fallback_pr_head_zero_findings_required": True,
+        "post_merge_missing_fallback_current_main_recheck_required": True,
+        "post_merge_in_progress_fallback_forbidden": True,
         "post_merge_failure_or_findings_fallback_forbidden": True,
     }
     for key, value in expected.items():
@@ -425,11 +436,14 @@ def _validate_static_surfaces(failures: list[str]) -> None:
             "post_merge_exact_main_check_required",
             "post_merge_check_name",
             "post_merge_check_app_slug",
+            "post_merge_missing_equivalent_tree_fallback_allowed",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NOT_SUCCESS",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_NEW_ISSUES_PRESENT",
             "CLOUDFLARE_POSTMERGE_EXTERNAL_CHECK_SECURITY_HOTSPOTS_PRESENT",
             "MERGE_SHA_CONVERGENCE_PENDING",
             "certify_cancelled_exact_main_sonar",
+            "certify_missing_exact_main_sonar",
+            "_deadline_external_evidence_state",
             "/check-runs?",
         ),
         SONAR_PROVENANCE_GUARD: (
@@ -438,6 +452,8 @@ def _validate_static_surfaces(failures: list[str]) -> None:
             SONAR_POSTMERGE_MERGE_SHA_PENDING,
             "CLOUDFLARE_POSTMERGE_PROVENANCE_TREE_MISMATCH",
             "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_NOT_CANCELLED",
+            "certify_missing_exact_main_sonar",
+            "missing_exact_main_after_bounded_wait",
             "_external_check_state",
         ),
         PRODUCTION_RELEASE_WORKFLOW: (
@@ -491,6 +507,10 @@ def main() -> int:
     print(
         "Post-merge cancelled Sonar: equivalent-tree PR provenance is fail-closed; "
         "valid merge-SHA convergence uses the outer bounded release wait"
+    )
+    print(
+        "Post-merge missing Sonar: equivalent-tree PR provenance is allowed only "
+        "after bounded wait exhaustion with no matching exact-main check"
     )
     print("Next functional checkpoint requires CERTIFIED_GREEN.")
     return 0

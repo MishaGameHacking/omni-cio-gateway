@@ -48,6 +48,16 @@ def _evidence_state() -> bool:
     )
 
 
+def _deadline_state() -> bool:
+    return gate._deadline_external_evidence_state(
+        _REPOSITORY,
+        _TOKEN,
+        _SHA,
+        _NAME,
+        _APP,
+    )
+
+
 class CloudflarePostMergeSonarFallbackTests(unittest.TestCase):
     def test_cancelled_exact_main_uses_provenance_certifier(self) -> None:
         cancelled = _check("cancelled")
@@ -148,6 +158,44 @@ class CloudflarePostMergeSonarFallbackTests(unittest.TestCase):
             with self.subTest(rows=rows):
                 with patch.object(gate, "_check_runs", return_value=rows):
                     self.assertFalse(_evidence_state())
+
+    def test_deadline_missing_exact_main_uses_provenance_certifier(self) -> None:
+        with (
+            patch.object(gate, "_check_runs", return_value=[]),
+            patch.object(
+                provenance,
+                "certify_missing_exact_main_sonar",
+                return_value="b" * 40,
+            ) as certify,
+        ):
+            self.assertTrue(_deadline_state())
+        certify.assert_called_once_with(
+            repository=_REPOSITORY,
+            token=_TOKEN,
+            expected_sha=_SHA,
+            required_name=_NAME,
+            required_app_slug=_APP,
+        )
+
+    def test_deadline_in_progress_exact_main_never_uses_missing_fallback(self) -> None:
+        pending = _check(None)
+        with (
+            patch.object(gate, "_check_runs", return_value=[pending]),
+            patch.object(gate, "_external_evidence_state", return_value=False) as normal,
+            patch.object(
+                provenance,
+                "certify_missing_exact_main_sonar",
+            ) as certify_missing,
+        ):
+            self.assertFalse(_deadline_state())
+        normal.assert_called_once_with(
+            _REPOSITORY,
+            _TOKEN,
+            _SHA,
+            _NAME,
+            _APP,
+        )
+        certify_missing.assert_not_called()
 
 
 if __name__ == "__main__":

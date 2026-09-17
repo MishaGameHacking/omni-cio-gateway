@@ -77,6 +77,26 @@ def _green_head_check() -> dict[str, Any]:
     }
 
 
+def _suite(
+    *,
+    suite_id: int = 101,
+    status: str = "queued",
+    conclusion: str | None = None,
+    check_runs_count: int = 0,
+    head_sha: str = _MAIN,
+) -> dict[str, Any]:
+    return {
+        "id": suite_id,
+        "head_sha": head_sha,
+        "status": status,
+        "conclusion": conclusion,
+        "latest_check_runs_count": check_runs_count,
+        "created_at": "2026-09-17T18:03:22Z",
+        "updated_at": "2026-09-17T18:03:22Z",
+        "app": {"slug": _APP},
+    }
+
+
 def _tree_payload(tree_sha: str = _TREE) -> dict[str, dict[str, str]]:
     return {"tree": {"sha": tree_sha}}
 
@@ -98,6 +118,16 @@ def _certify(main_check: dict[str, Any] | None = None) -> str:
         token=_TOKEN,
         expected_sha=_MAIN,
         main_check=_main_check() if main_check is None else main_check,
+        required_name=_NAME,
+        required_app_slug=_APP,
+    )
+
+
+def _certify_missing() -> str:
+    return provenance.certify_missing_exact_main_sonar(
+        repository=_REPOSITORY,
+        token=_TOKEN,
+        expected_sha=_MAIN,
         required_name=_NAME,
         required_app_slug=_APP,
     )
@@ -131,6 +161,162 @@ class SonarEquivalentTreeProvenanceTests(unittest.TestCase):
         self.assertFalse(
             any("/issues/" in call.args[0] for call in api_get.call_args_list)
         )
+
+    def test_missing_exact_main_uses_same_unique_tree_and_green_head_chain(
+        self,
+    ) -> None:
+        with (
+            patch.object(release_gate, "_require_current_main") as current_main,
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(
+                release_gate,
+                "_check_runs",
+                side_effect=([_green_head_check()], []),
+            ),
+            patch.object(provenance, "_check_suites", side_effect=([], [])),
+        ):
+            certified = _certify_missing()
+
+        self.assertEqual(certified, _HEAD)
+        self.assertEqual(current_main.call_count, 3)
+
+    def test_stalled_exact_main_suite_uses_same_provenance_after_deadline(self) -> None:
+        stalled = _suite()
+        with (
+            patch.object(release_gate, "_require_current_main") as current_main,
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(
+                release_gate,
+                "_check_runs",
+                side_effect=([_green_head_check()], []),
+            ),
+            patch.object(
+                provenance,
+                "_check_suites",
+                side_effect=([stalled], [stalled]),
+            ),
+        ):
+            certified = _certify_missing()
+
+        self.assertEqual(certified, _HEAD)
+        self.assertEqual(current_main.call_count, 3)
+
+    def test_terminal_or_nonzero_suite_is_not_eligible_for_stalled_fallback(
+        self,
+    ) -> None:
+        cases = (
+            _suite(status="completed", conclusion="failure"),
+            _suite(check_runs_count=1),
+        )
+        for suite in cases:
+            with self.subTest(suite=suite):
+                with (
+                    patch.object(release_gate, "_require_current_main"),
+                    patch.object(provenance, "_check_suites", return_value=[suite]),
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_SUITE_NOT_STALLED",
+                    ):
+                        _certify_missing()
+
+    def test_missing_exact_main_fails_closed_if_provider_check_appears_during_provenance(
+        self,
+    ) -> None:
+        appeared = _green_head_check()
+        appeared["head_sha"] = _MAIN
+        with (
+            patch.object(release_gate, "_require_current_main"),
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(
+                release_gate,
+                "_check_runs",
+                side_effect=([_green_head_check()], [appeared]),
+            ),
+            patch.object(provenance, "_check_suites", return_value=[]),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_CHECK_APPEARED",
+            ):
+                _certify_missing()
+
+    def test_missing_suite_appearance_during_provenance_fails_closed(self) -> None:
+        appeared = _suite()
+        with (
+            patch.object(release_gate, "_require_current_main"),
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(
+                release_gate,
+                "_check_runs",
+                side_effect=([_green_head_check()], []),
+            ),
+            patch.object(
+                provenance,
+                "_check_suites",
+                side_effect=([], [appeared]),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_SUITE_APPEARED",
+            ):
+                _certify_missing()
+
+    def test_stalled_suite_change_during_provenance_fails_closed(self) -> None:
+        initial = _suite(suite_id=101)
+        replacement = _suite(suite_id=102)
+        with (
+            patch.object(release_gate, "_require_current_main"),
+            patch.object(release_gate, "_api_get", side_effect=_api_rows()),
+            patch.object(
+                release_gate,
+                "_check_runs",
+                side_effect=([_green_head_check()], []),
+            ),
+            patch.object(
+                provenance,
+                "_check_suites",
+                side_effect=([initial], [replacement]),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_MAIN_SUITE_CHANGED",
+            ):
+                _certify_missing()
+
+    def test_check_suites_paginates_and_requires_exact_sha(self) -> None:
+        first = [_suite(suite_id=index + 1) for index in range(100)]
+        second = [_suite(suite_id=101)]
+        with (
+            patch.object(provenance, "_MAX_FILTERED_CHECK_SUITES", 101),
+            patch.object(
+                release_gate,
+                "_api_get",
+                side_effect=(
+                    {"total_count": 101, "check_suites": first},
+                    {"total_count": 101, "check_suites": second},
+                ),
+            ) as api_get,
+        ):
+            suites = provenance._check_suites(_REPOSITORY, _TOKEN, _MAIN)
+
+        self.assertEqual(len(suites), 101)
+        self.assertEqual(api_get.call_count, 2)
+
+    def test_check_suites_rejects_exact_sha_filter_drift(self) -> None:
+        drifted = _suite(head_sha=_HEAD)
+        with patch.object(
+            release_gate,
+            "_api_get",
+            return_value={"total_count": 1, "check_suites": [drifted]},
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_POSTMERGE_PROVENANCE_SUITE_FILTER_DRIFT",
+            ):
+                provenance._check_suites(_REPOSITORY, _TOKEN, _MAIN)
 
     def test_association_projection_merge_sha_is_not_used_as_canonical_metadata(
         self,
