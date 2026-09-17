@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest import mock
 
 from scripts import bootstrap_v10_cloudflare_neon_hosted_egress as hosted
-from scripts import provision_v10_cloudflare_neon_runtime as runtime
 
 
 _EXPECTED_SHA = "a" * 40
@@ -54,10 +53,7 @@ class CloudflareNeonHostedEgressTests(unittest.TestCase):
                 "fetch_bootstrap_origin_custody",
                 return_value=_BOOTSTRAP_ORIGIN,
             ) as fetch_custody,
-            mock.patch.object(
-                hosted,
-                "write_bootstrap_origin_handoff",
-            ) as write_handoff,
+            mock.patch.object(hosted, "write_bootstrap_origin_handoff") as write_handoff,
         ):
             hosted._resync_production_branch_custody(api, _EXPECTED_SHA)
 
