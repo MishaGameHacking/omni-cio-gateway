@@ -196,7 +196,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
                 "## 7. Verification batches / HEAD FREEZE"
             ),
             ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
-                "## 7. Verification batches / HEAD FREEZE",
+                "## 7. Verification batches / HEAD FREEZE"
             ),
         }
         for path, marker in forbidden_by_path.items():
@@ -215,7 +215,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         for marker in (
             "ONE CHECKPOINT",
             "RED = REPAIR ONLY",
-            "TARGETED RECHECK",
+            "TARGETED_RECHECK",
             "FULL CERTIFICATION",
             "dispatch-ref head",
             "V10_TOOLCHAIN_BASELINE.json",
