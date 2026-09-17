@@ -209,7 +209,10 @@ jobs:
   bootstrap_staging_database:
     name: CF-D hosted staging database recovery
     needs: inspect_database_state
-    if: needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'
+    if: >-
+      !cancelled() &&
+      needs.inspect_database_state.result == 'success' &&
+      needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -291,7 +294,7 @@ jobs:
       - inspect_database_state
       - bootstrap_staging_database
     if: >-
-      always() &&
+      !cancelled() &&
       needs.inspect_database_state.result == 'success' &&
       (needs.inspect_database_state.outputs.staging_bootstrap_required == 'false' ||
        needs.bootstrap_staging_database.result == 'success')
@@ -488,7 +491,10 @@ jobs:
   bootstrap_production_database:
     name: CF-D hosted production database recovery
     needs: rehearse
-    if: needs.rehearse.outputs.production_bootstrap_required == 'true'
+    if: >-
+      !cancelled() &&
+      needs.rehearse.result == 'success' &&
+      needs.rehearse.outputs.production_bootstrap_required == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -570,7 +576,7 @@ jobs:
       - rehearse
       - bootstrap_production_database
     if: >-
-      always() &&
+      !cancelled() &&
       needs.rehearse.result == 'success' &&
       (needs.rehearse.outputs.production_bootstrap_required == 'false' ||
        needs.bootstrap_production_database.result == 'success')
@@ -799,3 +805,53 @@ jobs:
             rm -rf .git
           fi
           exit "$quarantine_rc"
+
+  release_outcome:
+    name: CF-D release DAG terminal fail-closed gate
+    needs:
+      - inspect_database_state
+      - bootstrap_staging_database
+      - rehearse
+      - bootstrap_production_database
+      - promote
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce required recovery and promotion outcomes
+        shell: bash
+        env:
+          INSPECT_RESULT: ${{ needs.inspect_database_state.result }}
+          STAGING_REQUIRED: ${{ needs.inspect_database_state.outputs.staging_bootstrap_required }}
+          STAGING_RECOVERY_RESULT: ${{ needs.bootstrap_staging_database.result }}
+          REHEARSE_RESULT: ${{ needs.rehearse.result }}
+          PRODUCTION_REQUIRED: ${{ needs.rehearse.outputs.production_bootstrap_required }}
+          PRODUCTION_RECOVERY_RESULT: ${{ needs.bootstrap_production_database.result }}
+          PROMOTE_RESULT: ${{ needs.promote.result }}
+        run: |
+          set -euo pipefail
+          test "$INSPECT_RESULT" = "success"
+          case "$STAGING_REQUIRED" in
+            true|false) ;;
+            *) echo "CLOUDFLARE_RELEASE_DAG_INVALID staging_bootstrap_required=${STAGING_REQUIRED:-missing}" >&2; exit 31 ;;
+          esac
+          if [ "$STAGING_REQUIRED" = "true" ]; then
+            test "$STAGING_RECOVERY_RESULT" = "success"
+          fi
+          test "$REHEARSE_RESULT" = "success"
+          case "$PRODUCTION_REQUIRED" in
+            true|false) ;;
+            *) echo "CLOUDFLARE_RELEASE_DAG_INVALID production_bootstrap_required=${PRODUCTION_REQUIRED:-missing}" >&2; exit 32 ;;
+          esac
+          if [ "$PRODUCTION_REQUIRED" = "true" ]; then
+            test "$PRODUCTION_RECOVERY_RESULT" = "success"
+          fi
+          test "$PROMOTE_RESULT" = "success"
+          echo "CLOUDFLARE_RELEASE_DAG=TERMINAL_SUCCESS"
