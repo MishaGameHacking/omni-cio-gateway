@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.web.browser_security_v1 import BrowserCookiePolicyV1
+from omni_cio.web.identity_v1 import IdentityProviderV1
 from omni_cio.web.product_identity_v1 import (
     PostgresProductIdentityRepositoryV1,
     ProductAuthenticationServiceV1,
@@ -159,7 +160,7 @@ def build_wp22a_phase5_provider_auth(
             cookies=cookies,
             now=now,
             disabled_reasons=disabled,
-            registration_enabled=True,
+            registration_enabled=False,
         )
 
     transactions = PostgresAuthorizationTransactionStoreV1(connection)
@@ -168,7 +169,7 @@ def build_wp22a_phase5_provider_auth(
             connection,
             binding_key=identity_binding_key,
         ),
-        registration_enabled=False,
+        registration_enabled=True,
     )
     authentication = ProductAuthenticationServiceV1(
         identities=identities,
