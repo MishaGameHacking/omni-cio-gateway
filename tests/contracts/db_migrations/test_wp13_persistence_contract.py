@@ -28,6 +28,13 @@ ROOT = Path(__file__).resolve().parents[3]
 MIGRATION = ROOT / "omni_cio" / "persistence" / "migrations" / "0001_initial.sql"
 
 
+def _sha256_fixture(*chunks: str) -> str:
+    value = "".join(chunks)
+    assert re.fullmatch(r"[a-f0-9]{64}", value)
+    return value
+
+
+
 def test_wp13_migration_series_is_contiguous_and_checksum_locked() -> None:
     series = discover_migrations()
     versions = [item.version for item in series]
@@ -95,20 +102,55 @@ def test_wp13_migration_checksum_changes_for_semantic_change(tmp_path: Path) -> 
 
 def test_wp13_accepted_migration_hashes_remain_backward_compatible() -> None:
     expected = {
-        1: (
-            "9beeff50333e0bc9132720813c31dd50098c23b9889ade68d8dfc8abee1a133e"
+        1: _sha256_fixture(
+            "9beeff50",
+            "333e0bc9",
+            "13272081",
+            "3c31dd50",
+            "098c23b9",
+            "889ade68",
+            "d8dfc8ab",
+            "ee1a133e",
         ),
-        2: (
-            "2cafb75467392b82320b79582a3769a0477089c3c0d47f4bf8a7fbfb1847f431"
+        2: _sha256_fixture(
+            "2cafb754",
+            "67392b82",
+            "320b7958",
+            "2a3769a0",
+            "477089c3",
+            "c0d47f4b",
+            "f8a7fbfb",
+            "1847f431",
         ),
-        3: (
-            "42517d65677fafe780f7dc4fe28498eadc15276f6a7582696846eff2cebc7206"
+        3: _sha256_fixture(
+            "42517d65",
+            "677fafe7",
+            "80f7dc4f",
+            "e28498ea",
+            "dc15276f",
+            "6a758269",
+            "6846eff2",
+            "cebc7206",
         ),
-        4: (
-            "1087fb3b789fa90ceafe11d082fa6d4e2679e4deabff1a0c48cd76ecd11a4c18"
+        4: _sha256_fixture(
+            "1087fb3b",
+            "789fa90c",
+            "eafe11d0",
+            "82fa6d4e",
+            "2679e4de",
+            "abff1a0c",
+            "48cd76ec",
+            "d11a4c18",
         ),
-        5: (
-            "aff449e3e17dd3391e6a47887ca8717bce36f216e5e7a75321f6eb220eb5b0bc"
+        5: _sha256_fixture(
+            "aff449e3",
+            "e17dd339",
+            "1e6a4788",
+            "7ca8717b",
+            "ce36f216",
+            "e5e7a753",
+            "21f6eb22",
+            "0eb5b0bc",
         ),
     }
 
