@@ -174,7 +174,7 @@ export function ApplicationShell() {
       </aside>
       <main className="shell-content" id="main-content">
         {sessionUnavailable ? <div className="shell-degraded" role="alert">Выход не подтверждён сервером. Текущая сессия остаётся активной.</div> : null}
-        {previewMode?.synthetic ? (
+        {previewMode?.synthetic && !previewMode.registration_enabled ? (
           <div className="shell-degraded" role="status">
             SYNTHETIC PREVIEW · real registration, broker credentials and private portfolio data are disabled. Не вводи реальные токены на этом стенде.
           </div>
