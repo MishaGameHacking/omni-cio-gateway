@@ -194,6 +194,19 @@ class CloudflareRuntimeCompatibilityTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_source_telegram_activation(self) -> None:
+        payload = json.loads(guard.WRANGLER.read_text(encoding="utf-8"))
+        payload["vars"][guard._TELEGRAM_LOGIN_BINDING] = "true"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_PRODUCTION_ROLE_BINDING_INVALID",
+                ):
+                    guard.validate()
+
     def test_guard_rejects_staging_runtime_role_binding_drift(self) -> None:
         payload = json.loads(guard.WRANGLER.read_text(encoding="utf-8"))
         payload["env"]["staging"]["vars"][guard._RUNTIME_ROLE_BINDING] = (
