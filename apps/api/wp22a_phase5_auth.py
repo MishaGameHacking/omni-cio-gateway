@@ -40,6 +40,8 @@ _VK_CLIENT_ID = "OMNI_V10_VK_ID_CLIENT_ID"
 _IDENTITY_BINDING_KEY = "OMNI_V10_IDENTITY_BINDING_KEY_HEX"
 _CSRF_BINDING_KEY = "OMNI_V10_CSRF_BINDING_KEY_HEX"
 _PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"
+_TELEGRAM_LOGIN_ENABLED = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"
+_VK_ID_LOGIN_ENABLED = "OMNI_V10_VK_ID_LOGIN_ENABLED"
 _HEX_32_BYTES = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -129,6 +131,16 @@ def build_wp22a_phase5_provider_auth(
 
     provider_configured = bool(telegram_client_id or vk_client_id)
     public_multi_user_enabled = _flag(environment, _PUBLIC_MULTI_USER_ENABLED)
+    telegram_login_enabled = _flag(environment, _TELEGRAM_LOGIN_ENABLED)
+    vk_id_login_enabled = _flag(environment, _VK_ID_LOGIN_ENABLED)
+    if telegram_login_enabled and not telegram_client_id:
+        raise Phase5ProviderAuthConfigurationError(
+            "WP22A_PHASE5_TELEGRAM_ACTIVATION_CONFIGURATION_REQUIRED"
+        )
+    if vk_id_login_enabled and not vk_client_id:
+        raise Phase5ProviderAuthConfigurationError(
+            "WP22A_PHASE5_VK_ID_ACTIVATION_CONFIGURATION_REQUIRED"
+        )
     if provider_configured:
         csrf_binding_key = _key(environment, _CSRF_BINDING_KEY)
         identity_binding_key = _key(environment, _IDENTITY_BINDING_KEY)
@@ -148,12 +160,26 @@ def build_wp22a_phase5_provider_auth(
             now=now,
         )
 
-    if not public_multi_user_enabled:
-        disabled = {}
-        if telegram_client_id:
-            disabled[IdentityProviderV1.TELEGRAM] = "PUBLIC_MULTI_USER_DISABLED"
-        if vk_client_id:
-            disabled[IdentityProviderV1.VK_ID] = "PUBLIC_MULTI_USER_DISABLED"
+    disabled: dict[IdentityProviderV1, str] = {}
+    for provider, configured, enabled in (
+        (IdentityProviderV1.TELEGRAM, bool(telegram_client_id), telegram_login_enabled),
+        (IdentityProviderV1.VK_ID, bool(vk_client_id), vk_id_login_enabled),
+    ):
+        if not configured:
+            continue
+        if not public_multi_user_enabled:
+            disabled[provider] = "PUBLIC_MULTI_USER_DISABLED"
+        elif not enabled:
+            disabled[provider] = "PROVIDER_ACTIVATION_DISABLED"
+
+    active_provider = (
+        public_multi_user_enabled
+        and (
+            (telegram_login_enabled and bool(telegram_client_id))
+            or (vk_id_login_enabled and bool(vk_client_id))
+        )
+    )
+    if not active_provider:
         return ProviderAuthRouteServicesV1(
             runtimes=(),
             authentication=None,
@@ -177,7 +203,7 @@ def build_wp22a_phase5_provider_auth(
     )
 
     runtimes: list[ProviderAuthenticationRuntimeLike] = []
-    if telegram_client_id:
+    if telegram_client_id and telegram_login_enabled:
         telegram_config = TelegramOidcConfigV1(
             client_id=telegram_client_id,
             client_secret=telegram_client_secret,
@@ -190,7 +216,7 @@ def build_wp22a_phase5_provider_auth(
                 verifier=TelegramJwksSingleFlightVerifierV1(telegram_config),
             )
         )
-    if vk_client_id:
+    if vk_client_id and vk_id_login_enabled:
         runtimes.append(
             BrowserBoundVkIdOauthRuntimeV1(
                 config=VkIdOauthConfigV1(
