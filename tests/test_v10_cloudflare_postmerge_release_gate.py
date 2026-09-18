@@ -296,6 +296,81 @@ class CloudflarePostMergeReleaseGateTests(unittest.TestCase):
         self.assertEqual(open_api.call_count, 2)
         sleep.assert_called_once_with(1.0)
 
+    def test_api_get_retries_github_500_and_recovers(self) -> None:
+        transient = gate.HTTPError(
+            "https://api.github.com/repos/owner/repo",
+            500,
+            "server error",
+            hdrs=None,
+            fp=None,
+        )
+        with (
+            patch.object(
+                gate,
+                "_open_api_request",
+                side_effect=(transient, (200, b'{"ok": true}')),
+            ) as open_api,
+            patch.object(gate.time, "sleep") as sleep,
+        ):
+            self.assertEqual(gate._api_get("/repos/owner/repo", "token"), {"ok": True})
+        self.assertEqual(open_api.call_count, 2)
+        sleep.assert_called_once_with(1.0)
+
+    def test_api_get_repeated_github_500_exhausts_bound_and_stays_sanitized(
+        self,
+    ) -> None:
+        transient = gate.HTTPError(
+            "https://api.github.com/repos/owner/repo",
+            500,
+            "must-never-be-printed",
+            hdrs=None,
+            fp=None,
+        )
+        with (
+            patch.object(
+                gate,
+                "_open_api_request",
+                side_effect=(transient, transient, transient),
+            ) as open_api,
+            patch.object(gate.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(gate.ReleaseGateStopped) as caught:
+                gate._api_get("/repos/owner/repo", "secret-token")
+        self.assertEqual(open_api.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1.0, 2.0])
+        self.assertEqual(
+            str(caught.exception),
+            "CLOUDFLARE_POSTMERGE_GITHUB_HTTP_ERROR status=500",
+        )
+        self.assertNotIn("must-never-be-printed", str(caught.exception))
+        self.assertNotIn("secret-token", str(caught.exception))
+
+    def test_api_get_authority_failures_never_retry(self) -> None:
+        for status in (401, 403):
+            with self.subTest(status=status):
+                terminal = gate.HTTPError(
+                    "https://api.github.com/repos/owner/repo",
+                    status,
+                    "authority failure",
+                    hdrs=None,
+                    fp=None,
+                )
+                with (
+                    patch.object(
+                        gate,
+                        "_open_api_request",
+                        side_effect=terminal,
+                    ) as open_api,
+                    patch.object(gate.time, "sleep") as sleep,
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        f"CLOUDFLARE_POSTMERGE_GITHUB_AUTHORITY_INSUFFICIENT status={status}",
+                    ):
+                        gate._api_get("/repos/owner/repo", "token")
+                self.assertEqual(open_api.call_count, 1)
+                sleep.assert_not_called()
+
     def test_api_get_rejects_invalid_json_with_classified_error(self) -> None:
         with patch.object(gate, "_open_api_request", return_value=(200, b"not-json")):
             with self.assertRaisesRegex(
