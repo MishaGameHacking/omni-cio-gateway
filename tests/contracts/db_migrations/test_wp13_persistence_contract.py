@@ -14,6 +14,7 @@ from omni_cio.contracts.v1.domain import (
 from omni_cio.persistence.migration import (
     MIGRATION_LOCK_KEY,
     POSTGRES_MAJOR,
+    MigrationSeriesError,
     discover_migrations,
     migration_series_digest,
 )
@@ -34,6 +35,79 @@ def test_wp13_migration_series_is_contiguous_and_checksum_locked() -> None:
     assert re.fullmatch(r"[a-f0-9]{64}", migration_series_digest(series))
     assert MIGRATION_LOCK_KEY == 132013
     assert POSTGRES_MAJOR == 18
+
+
+
+
+def test_wp13_migration_checksum_is_line_ending_invariant(tmp_path: Path) -> None:
+    migration_dir = tmp_path / "migrations"
+    migration_dir.mkdir()
+    path = migration_dir / "0001_example.sql"
+
+    source_lf = "CREATE TABLE example (id integer);\nSELECT 1;\n"
+    path.write_bytes(source_lf.encode("utf-8"))
+    lf_checksum = discover_migrations(migration_dir)[0].sha256
+
+    path.write_bytes(source_lf.replace("\n", "\r\n").encode("utf-8"))
+    crlf_checksum = discover_migrations(migration_dir)[0].sha256
+
+    assert lf_checksum == crlf_checksum
+
+
+def test_wp13_migration_checksum_preserves_historical_crlf_identity(
+    tmp_path: Path,
+) -> None:
+    migration_dir = tmp_path / "migrations"
+    migration_dir.mkdir()
+    path = migration_dir / "0001_example.sql"
+    source_lf = "CREATE TABLE example (id integer);\n"
+    historical_bytes = source_lf.replace("\n", "\r\n").encode("utf-8")
+    path.write_bytes(source_lf.encode("utf-8"))
+
+    import hashlib
+
+    assert discover_migrations(migration_dir)[0].sha256 == hashlib.sha256(
+        historical_bytes
+    ).hexdigest()
+
+
+def test_wp13_migration_checksum_rejects_bare_cr(tmp_path: Path) -> None:
+    migration_dir = tmp_path / "migrations"
+    migration_dir.mkdir()
+    path = migration_dir / "0001_example.sql"
+    path.write_bytes(b"CREATE TABLE example (id integer);\rSELECT 1;\r")
+
+    import pytest
+
+    with pytest.raises(MigrationSeriesError, match="unsupported bare CR"):
+        discover_migrations(migration_dir)
+
+
+def test_wp13_migration_checksum_changes_for_semantic_change(tmp_path: Path) -> None:
+    migration_dir = tmp_path / "migrations"
+    migration_dir.mkdir()
+    path = migration_dir / "0001_example.sql"
+    path.write_text("SELECT 1;\n", encoding="utf-8")
+    first = discover_migrations(migration_dir)[0].sha256
+
+    path.write_text("SELECT 2;\n", encoding="utf-8")
+    second = discover_migrations(migration_dir)[0].sha256
+
+    assert first != second
+
+
+def test_wp13_accepted_migration_hashes_remain_backward_compatible() -> None:
+    expected = {
+        1: "9beeff50333e0bc9132720813c31dd50098c23b9889ade68d8dfc8abee1a133e",
+        2: "2cafb75467392b82320b79582a3769a0477089c3c0d47f4bf8a7fbfb1847f431",
+        3: "42517d65677fafe780f7dc4fe28498eadc15276f6a7582696846eff2cebc7206",
+        4: "1087fb3b789fa90ceafe11d082fa6d4e2679e4deabff1a0c48cd76ecd11a4c18",
+        5: "aff449e3e17dd3391e6a47887ca8717bce36f216e5e7a75321f6eb220eb5b0bc",
+    }
+
+    series = discover_migrations()
+
+    assert {item.version: item.sha256 for item in series} == expected
 
 
 def test_wp13_initial_schema_covers_master_plan_persistence_families() -> None:
