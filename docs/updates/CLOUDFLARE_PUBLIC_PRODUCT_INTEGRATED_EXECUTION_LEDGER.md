@@ -64,6 +64,8 @@ Final accepted evidence chain:
 
 The accepted chain resolves the earlier RED repair history preserved below without rewriting it. The historical RED checkpoints remain evidence of the failure-learning path; they are not current execution state.
 
+Historical Amendment-16 repair-state vocabulary is intentionally preserved for machine/audit compatibility: `RED_REPAIR_ONLY` describes superseded repair checkpoints below and is **not** the current System Update state.
+
 No public multi-user, Telegram/VK provider activation, T-Invest public READ activation, broker-write or Real-money authority is implied by this infrastructure/release closeout.
 
 ## 4. Final-convergence defect inventory

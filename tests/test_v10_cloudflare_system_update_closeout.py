@@ -39,6 +39,7 @@ def test_cloudflare_execution_ledger_is_historical_closeout() -> None:
 
     for marker in (
         "ACCEPTED COMPLETE / HISTORICAL EXECUTION RECORD",
+        "`RED_REPAIR_ONLY` describes superseded repair checkpoints",
         "CF-D / `CLOUDFLARE-PUBLIC-CUTOVER` | DONE / ACCEPTED",
         "Production Release #78",
         "Update state: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED = ACCEPTED_COMPLETE`",
