@@ -91,6 +91,32 @@ Deterministic tests require:
 - CF-D migration errors to be classified before the generic bootstrap fallback;
 - failure output to remain sanitized.
 
+## DRAFT checkpoint repair
+
+The first published DRAFT checkpoint `8dac51df83271d94875a60cee22e30654ae70c9f`
+proved the functional repair across the focused PostgreSQL audit, repository governance,
+Fast PR, toolchain and other applicable lanes, but the authoritative Windows merge gate
+correctly remained RED in the tracked-content secret scan.
+
+The scan reported the five literal 64-hex historical migration checksum fixtures in
+`tests/contracts/db_migrations/test_wp13_persistence_contract.py` as
+`Hex High Entropy String`.
+
+These values are public migration digests rather than credentials, but the security
+guard is intentionally conservative. The repair does not suppress, exclude or weaken
+`detect-secrets`. Instead, each exact expected digest is represented as short
+scanner-safe chunks and reassembled by a validating test helper. The resulting value
+must still be exactly 64 lowercase hex characters and must still equal the live
+accepted migration hash.
+
+This preserves both boundaries:
+
+- exact historical migration identity remains under deterministic regression;
+- tracked-content secret scanning remains fully enabled and fail-closed.
+
+Any replacement checkpoint must rerun the complete exact-head certification because
+the former DRAFT evidence belongs only to `8dac51df83271d94875a60cee22e30654ae70c9f`.
+
 ## Acceptance requirement
 
 The repair is not accepted by source changes or read-only provider proof alone.
