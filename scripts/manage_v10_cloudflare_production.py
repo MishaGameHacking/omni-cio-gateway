@@ -161,9 +161,7 @@ def _require_telegram_production_bindings(rows: list[object]) -> None:
             )
             is None
         ):
-            raise builds.BootstrapStopped(
-                "CLOUDFLARE_TELEGRAM_LOGIN_BINDING_MISSING"
-            )
+            raise builds.BootstrapStopped("CLOUDFLARE_TELEGRAM_LOGIN_BINDING_MISSING")
 
 
 def _require_telegram_staging_isolation(rows: list[object]) -> None:
