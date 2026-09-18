@@ -117,7 +117,7 @@ Integrated implementation is **ACCEPTED COMPLETE**. This ledger is now historica
 | Live/temporal evidence | POST-MERGE BOUNDARY | Exact production evidence must be gathered after merge and cannot be synthesized branch-locally. |
 | Production cutover | TIMING BOUNDARY | Amendment 15 explicitly keeps actual CF-D mutation after merge; no separate implementation branch is required. |
 | Real-money authority | N/A | Broker write and Real execution remain OFF. |
-| Reviewability limit | CLEAR | Current PR is one coherent Cloudflare/Neon release-control convergence unit. |
+| Reviewability limit | CLEAR | The final convergence PR was one coherent Cloudflare/Neon release-control convergence unit. |
 
 Split decision: `NO_ADDITIONAL_BRANCH_SPLIT_REQUIRED`.
 
@@ -145,14 +145,14 @@ Split decision: `NO_ADDITIONAL_BRANCH_SPLIT_REQUIRED`.
 - `c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`: explicit TLS policy + decomposition; Sonar/governance SUCCESS, protected merge gate RED only at FL114 tracked-content scan finding.
 - `902fca16fb83b1d72dd8a2ff9b8edabf3fe7a8ee`: FL114 marker repair + ledger refresh; all observed non-owning workflows and real staging build SUCCESS, owning Windows/Governance RED on the shared FL115 ledger-marker compatibility defect.
 - Final integrated replacement checkpoint `1431f94fb5106d2e12104b920a26546c5029c4ec` became `CERTIFIED_GREEN`, landed through PR #478, and was followed by focused accepted-main CF-D recovery/hardening repairs.
-- Final closeout main `b8b27217a177d954ae1efb327b224503fd0e30b0` is accepted through post-merge Regression Shield/Governance and Production Release #78.
+- Final accepted Cloudflare runtime/release baseline `b8b27217a177d954ae1efb327b224503fd0e30b0` is proven through post-merge Regression Shield/Governance and Production Release #78.
 
 Every earlier RED or superseded exact-head result remains historical evidence only.
 
 ## 9. Main-drift record
 
 - Accepted `main` at final-convergence branch creation: `6b28198550adc09a001de8779df900b13caa5c42`.
-- Final accepted closeout `main`: `b8b27217a177d954ae1efb327b224503fd0e30b0`.
+- Final accepted Cloudflare runtime/release baseline before documentation closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`.
 - Subsequent CF-D focused repairs were intentionally landed as separate bounded changes under Amendment 16 as real post-merge defects were exposed.
 - Production Release #78 rechecked exact current `main` immediately before production promotion and completed successfully.
 - No unresolved main drift remains in the accepted Cloudflare System Update closeout.
@@ -175,13 +175,13 @@ Every earlier RED or superseded exact-head result remains historical evidence on
 - [x] Canonical `.ru` Custom Domain attached/verified.
 - [x] Exact-main live release/database health acceptance passed.
 - [x] Russian-network/no-VPN evidence is **not a current accepted authority requirement**; the earlier ledger item was explicitly conditional and no accepted owning contract currently requires it.
-- [x] Canonical current status is being synchronized from the complete accepted evidence chain in the focused closeout PR that converts this ledger to historical accepted state.
+- [x] Canonical current status records the complete accepted evidence chain and this ledger is historical accepted execution evidence.
 
 ## 11. Handoff
 
 - Final accepted Cloudflare runtime/release main before documentation closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`.
 - Final accepted Cloudflare production run: V10 Cloudflare Production Release #78 / `35321810810` / `success`.
-- Owning System Update issue: #412 (historical dashboard; issue lifecycle is closed from accepted evidence after source closeout).
+- Owning System Update issue: #412 (historical dashboard; issue state is administrative and does not override accepted source authority).
 - Provider-secret custody hardening issue #510: completed.
 - Update state: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED = ACCEPTED_COMPLETE`.
 - Completed milestones: CF-A, CF-B, CF-C, CF-D.
