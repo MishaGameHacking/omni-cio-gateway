@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
@@ -37,6 +37,11 @@ TELEGRAM_CALLBACK_PATH = "/api/v10/web/auth/telegram/callback"
 VK_ID_START_PATH = "/api/v10/web/auth/vk_id/start"
 VK_ID_CALLBACK_PATH = "/api/v10/web/auth/vk_id/callback"
 _PROOF_COOKIE_MAX_AGE_SECONDS = 15 * 60
+_ALLOWED_DISABLED_REASONS = frozenset(
+    {
+        "PUBLIC_MULTI_USER_DISABLED",
+    }
+)
 
 
 class ProductAuthenticationLike(Protocol):
@@ -64,6 +69,8 @@ class ProviderAuthRouteServicesV1:
     authentication: ProductAuthenticationLike | None
     cookies: BrowserCookiePolicyV1
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+    disabled_reasons: Mapping[IdentityProviderV1, str] = field(default_factory=dict)
+    registration_enabled: bool = False
     abuse: ProviderAuthAbuseControlV1 = field(
         default_factory=ProviderAuthAbuseControlV1
     )
@@ -79,6 +86,18 @@ class ProviderAuthRouteServicesV1:
             raise ValueError("PROVIDER_AUTH_RUNTIME_INVALID")
         if self.runtimes and self.authentication is None:
             raise ValueError("PROVIDER_AUTH_AUTHENTICATION_REQUIRED")
+        if self.registration_enabled and self.authentication is None:
+            raise ValueError("PROVIDER_AUTH_REGISTRATION_REQUIRES_AUTHENTICATION")
+        blocked = set(self.disabled_reasons)
+        if blocked - set(IdentityProviderV1):
+            raise ValueError("PROVIDER_AUTH_DISABLED_PROVIDER_INVALID")
+        if blocked & set(providers):
+            raise ValueError("PROVIDER_AUTH_ENABLED_PROVIDER_CANNOT_BE_DISABLED")
+        if any(
+            reason not in _ALLOWED_DISABLED_REASONS
+            for reason in self.disabled_reasons.values()
+        ):
+            raise ValueError("PROVIDER_AUTH_DISABLED_REASON_INVALID")
 
     def runtime(
         self,
@@ -88,6 +107,11 @@ class ProviderAuthRouteServicesV1:
             (runtime for runtime in self.runtimes if runtime.provider == provider),
             None,
         )
+
+    def disabled_reason(self, provider: IdentityProviderV1) -> str | None:
+        if self.runtime(provider) is not None:
+            return None
+        return self.disabled_reasons.get(provider, "NOT_CONFIGURED")
 
     def descriptors(self) -> tuple[ProviderDescriptorV1, ...]:
         configured = {runtime.provider for runtime in self.runtimes}
