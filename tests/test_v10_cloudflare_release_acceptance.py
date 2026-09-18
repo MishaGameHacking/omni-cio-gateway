@@ -163,19 +163,29 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
                 ):
                     guard.validate()
 
-    def test_guard_rejects_unsafe_wrangler_dependency_install(self) -> None:
+    def test_guard_rejects_wrangler_custom_build_reentry(self) -> None:
         payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
-        payload["build"]["command"] = payload["build"]["command"].replace(
-            "npm ci --ignore-scripts --prefix apps/web",
-            "npm ci --prefix apps/web",
-        )
+        payload["build"] = {"command": guard._SECURE_WEB_BUILD}
         with tempfile.TemporaryDirectory() as temporary:
             candidate = Path(temporary) / "wrangler.jsonc"
             candidate.write_text(json.dumps(payload), encoding="utf-8")
             with mock.patch.object(guard, "WRANGLER", candidate):
                 with self.assertRaisesRegex(
                     RuntimeError,
-                    "CLOUDFLARE_RELEASE_SELF_CONTAINED_BUILD_INVALID",
+                    "CLOUDFLARE_RELEASE_WRANGLER_CUSTOM_BUILD_REENTRY_FORBIDDEN",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_workers_builds_build_command_drift(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        payload["candidate"]["workers_builds_build_command"] = "npm run alternate-build"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "release.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "CONTRACT", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RELEASE_CANDIDATE_WORKERS_BUILDS_BUILD_COMMAND_INVALID",
                 ):
                     guard.validate()
 
