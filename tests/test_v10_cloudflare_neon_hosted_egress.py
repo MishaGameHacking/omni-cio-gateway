@@ -12,13 +12,6 @@ from scripts import bootstrap_v10_cloudflare_neon_hosted_egress as hosted
 
 
 _EXPECTED_SHA = "a" * 40
-_STAGING_ORIGIN = "https://omni-cio-v10-web-staging.example.workers.dev"
-_BOOTSTRAP_ORIGIN = (
-    "https://br-test1234-cfdprodbootstrap.compute.c-6."
-    "eu-central-1.aws.neon.tech/"
-)
-
-
 class CloudflareNeonHostedEgressTests(unittest.TestCase):
     def test_staging_bootstrap_writes_cloudflare_secret_in_same_job(self) -> None:
         api = mock.Mock()
@@ -31,43 +24,15 @@ class CloudflareNeonHostedEgressTests(unittest.TestCase):
         runtime_run.assert_called_once_with(_EXPECTED_SHA, "staging")
         put_secret.assert_called_once_with(api)
 
-    def test_production_custody_resync_uses_exact_staging_release(self) -> None:
-        api = mock.Mock()
-        token_context = mock.MagicMock()
-        token_context.__enter__.return_value = "0" * 64
-        token_context.__exit__.return_value = False
-        with (
-            mock.patch.object(
-                hosted.builds,
-                "_staging_url",
-                return_value=_STAGING_ORIGIN,
-            ),
-            mock.patch.object(hosted, "assert_staging_exact_release") as exact_release,
-            mock.patch.object(
-                hosted,
-                "bootstrap_origin_sync_token",
-                return_value=token_context,
-            ) as sync_token,
-            mock.patch.object(
-                hosted,
-                "fetch_bootstrap_origin_custody",
-                return_value=_BOOTSTRAP_ORIGIN,
-            ) as fetch_custody,
-            mock.patch.object(hosted, "write_bootstrap_origin_handoff") as write_handoff,
-        ):
-            hosted._resync_production_branch_custody(api, _EXPECTED_SHA)
+    def test_production_custody_resync_reuses_version_bound_candidate_lifecycle(
+        self,
+    ) -> None:
+        with mock.patch.object(hosted.gated, "run") as gated_run:
+            hosted._resync_production_branch_custody(_EXPECTED_SHA)
 
-        exact_release.assert_called_once_with(_STAGING_ORIGIN, _EXPECTED_SHA)
-        sync_token.assert_called_once_with(api)
-        fetch_custody.assert_called_once_with(
-            staging_origin=_STAGING_ORIGIN,
-            expected_sha=_EXPECTED_SHA,
-            token="0" * 64,
-        )
-        write_handoff.assert_called_once_with(_BOOTSTRAP_ORIGIN)
+        gated_run.assert_called_once_with(_EXPECTED_SHA, source_branch="main")
 
     def test_production_bootstrap_resyncs_before_canonical_runtime(self) -> None:
-        api = mock.Mock()
         order: list[str] = []
 
         def resync(*_args: object, **_kwargs: object) -> None:
@@ -80,7 +45,6 @@ class CloudflareNeonHostedEgressTests(unittest.TestCase):
             order.append("secret")
 
         with (
-            mock.patch.object(hosted, "_cloudflare_api", return_value=api),
             mock.patch.object(
                 hosted,
                 "_resync_production_branch_custody",
@@ -98,9 +62,7 @@ class CloudflareNeonHostedEgressTests(unittest.TestCase):
         self.assertEqual(order, ["custody", "runtime", "secret"])
 
     def test_production_runtime_is_not_called_when_custody_resync_fails(self) -> None:
-        api = mock.Mock()
         with (
-            mock.patch.object(hosted, "_cloudflare_api", return_value=api),
             mock.patch.object(
                 hosted,
                 "_resync_production_branch_custody",
@@ -119,38 +81,17 @@ class CloudflareNeonHostedEgressTests(unittest.TestCase):
         runtime_run.assert_not_called()
         put_secret.assert_not_called()
 
-    def test_resync_does_not_log_raw_bootstrap_origin(self) -> None:
-        api = mock.Mock()
-        token_context = mock.MagicMock()
-        token_context.__enter__.return_value = "0" * 64
-        token_context.__exit__.return_value = False
+    def test_resync_logs_only_sanitized_ready_marker(self) -> None:
         output = io.StringIO()
         with (
-            mock.patch.object(
-                hosted.builds,
-                "_staging_url",
-                return_value=_STAGING_ORIGIN,
-            ),
-            mock.patch.object(hosted, "assert_staging_exact_release"),
-            mock.patch.object(
-                hosted,
-                "bootstrap_origin_sync_token",
-                return_value=token_context,
-            ),
-            mock.patch.object(
-                hosted,
-                "fetch_bootstrap_origin_custody",
-                return_value=_BOOTSTRAP_ORIGIN,
-            ),
-            mock.patch.object(hosted, "write_bootstrap_origin_handoff"),
+            mock.patch.object(hosted.gated, "run"),
             redirect_stdout(output),
         ):
-            hosted._resync_production_branch_custody(api, _EXPECTED_SHA)
-        self.assertNotIn(_BOOTSTRAP_ORIGIN, output.getvalue())
-        self.assertNotIn("br-test1234", output.getvalue())
-        self.assertIn(
-            "CLOUDFLARE_NEON_HOSTED_PRODUCTION_BRANCH_CUSTODY=READY",
+            hosted._resync_production_branch_custody(_EXPECTED_SHA)
+
+        self.assertEqual(
             output.getvalue(),
+            "CLOUDFLARE_NEON_HOSTED_PRODUCTION_BRANCH_CUSTODY=READY\n",
         )
 
     def test_hosted_control_plane_projection_uses_canonical_lock_only(self) -> None:

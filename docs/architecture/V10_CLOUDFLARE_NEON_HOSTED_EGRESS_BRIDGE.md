@@ -26,15 +26,20 @@ The workflow is triggered only from the exact-main CF-D release workflow. Reposi
 
 FL138 established a strict production rule: when exact branch custody already exists, production authority must use one exact branch resource and must not fall back to branch collection enumeration. The hosted recovery preserves that rule.
 
-The raw production branch identifier is **not** copied from the self-hosted runner to a job output, artifact, summary, environment value, or repository file. Instead, when production recovery is required, the hosted job reacquires the already validated target from the exact-SHA staging release by reusing the accepted custody protocol:
+The raw production branch identifier is **not** copied from the self-hosted runner to a job output, artifact, summary, environment value, or repository file.
 
-1. resolve the existing staging Worker origin with Cloudflare authority;
-2. require `/api/v10/release` to attest the exact accepted main SHA before custody is requested;
-3. arm a fresh random `OMNI_V10_CF_D_ORIGIN_SYNC_TOKEN` as a staging Worker secret;
-4. fetch the bounded bootstrap-origin custody response through the exact internal endpoint;
-5. remove the sync token in the context-manager cleanup path;
-6. validate the returned origin and write the existing restricted `RUNNER_TEMP` target descriptor **inside the hosted job**;
-7. invoke the unchanged canonical production provisioner, which reads that descriptor and performs its existing exact `GET /projects/{project_id}/branches/{branch_id}` authority check before database mutation.
+`HOSTED_CUSTODY_REUSES_VERSION_BOUND_CANDIDATE`
+
+Production Release #75 proved that simply attesting the already-serving exact-SHA staging release and then arming a fresh script secret is not version-bound custody: the secret mutation can create/deploy a new Worker version, so an immediate custody request can reach a serving version that does not carry the fresh token. The hosted production bridge therefore reuses the accepted gated candidate lifecycle rather than implementing a second token protocol:
+
+1. create the bounded gated staging trigger for exact accepted `main`;
+2. remove any stale sync token, arm a fresh random `OMNI_V10_CF_D_ORIGIN_SYNC_TOKEN`, and prove its control-plane presence **before** starting the exact Build;
+3. start and wait for a fresh exact-main manual staging Build;
+4. require one active staging Worker version at exactly 100 percent traffic;
+5. require `/api/v10/release` to attest the exact accepted main SHA and protected release flags;
+6. fetch the bounded bootstrap-origin custody response while no secret mutation occurs between exact Build/release proof and custody;
+7. remove and prove absence of the sync token, write the validated restricted `RUNNER_TEMP` target descriptor inside the hosted job, preserve the accepted persistent-origin cleanup semantics, and quarantine the temporary staging trigger;
+8. invoke the unchanged canonical production provisioner, which reads that descriptor and performs its existing exact `GET /projects/{project_id}/branches/{branch_id}` authority check before database mutation.
 
 The raw branch identifier therefore exists only in the hosted job's restricted runner-temp custody immediately before canonical provisioning. It never crosses a job boundary, and production does not re-enter `branches?limit=100`.
 

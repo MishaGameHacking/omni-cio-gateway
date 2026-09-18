@@ -92,13 +92,15 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in bootstrap
 
     custody_index = adapter.index(
-        "_resync_production_branch_custody(api, expected_sha)"
+        "_resync_production_branch_custody(expected_sha)"
     )
     runtime_index = adapter.index('runtime.run(expected_sha, "production")')
     secret_index = adapter.index("production.put_runtime_secret()")
     assert custody_index < runtime_index < secret_index
-    assert "fetch_bootstrap_origin_custody" in adapter
-    assert "write_bootstrap_origin_handoff" in adapter
+    assert 'gated.run(expected_sha, source_branch="main")' in adapter
+    assert "bootstrap_origin_sync_token" not in adapter
+    assert "fetch_bootstrap_origin_custody" not in adapter
+    assert "write_bootstrap_origin_handoff" not in adapter
     assert "branches?limit=100" not in adapter
 
     assert "probe-runtime-secret" in confirm

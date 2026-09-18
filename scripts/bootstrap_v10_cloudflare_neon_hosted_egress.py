@@ -5,22 +5,13 @@ import sys
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
 import scripts.manage_v10_cloudflare_production as production
+import scripts.run_v10_cloudflare_gated_candidate as gated
 from scripts import provision_v10_cloudflare_neon_runtime as runtime
 from scripts import provision_v10_render_neon_preview as neon_base
-from scripts.bootstrap_v10_cloudflare_production_database_direct import (
-    write_bootstrap_origin_handoff,
-)
 from scripts.bootstrap_v10_cloudflare_production_database_via_staging import (
     BootstrapStopped as LegacyBootstrapStopped,
 )
 from scripts.cloudflare_staging_secrets import put_staging_runtime_secret
-from scripts.sync_v10_cloudflare_cf_d_bootstrap_origin import (
-    assert_staging_exact_release,
-    bootstrap_origin_sync_token,
-    fetch_bootstrap_origin_custody,
-)
-
-
 def _cloudflare_api() -> builds.CloudflareApi:
     token = builds._required_env("CLOUDFLARE_API_TOKEN")
     account_id = builds._required_env("CLOUDFLARE_ACCOUNT_ID")
@@ -34,25 +25,13 @@ def bootstrap_staging(expected_sha: str) -> None:
     print("CLOUDFLARE_NEON_HOSTED_STAGING_BOOTSTRAP=READY")
 
 
-def _resync_production_branch_custody(
-    api: builds.CloudflareApi,
-    expected_sha: str,
-) -> None:
-    staging_origin = builds._staging_url(api)
-    assert_staging_exact_release(staging_origin, expected_sha)
-    with bootstrap_origin_sync_token(api) as sync_token:
-        bootstrap_origin = fetch_bootstrap_origin_custody(
-            staging_origin=staging_origin,
-            expected_sha=expected_sha,
-            token=sync_token,
-        )
-    write_bootstrap_origin_handoff(bootstrap_origin)
+def _resync_production_branch_custody(expected_sha: str) -> None:
+    gated.run(expected_sha, source_branch="main")
     print("CLOUDFLARE_NEON_HOSTED_PRODUCTION_BRANCH_CUSTODY=READY")
 
 
 def bootstrap_production(expected_sha: str) -> None:
-    api = _cloudflare_api()
-    _resync_production_branch_custody(api, expected_sha)
+    _resync_production_branch_custody(expected_sha)
     runtime.run(expected_sha, "production")
     production.put_runtime_secret()
     print("CLOUDFLARE_NEON_HOSTED_PRODUCTION_BOOTSTRAP=READY")
