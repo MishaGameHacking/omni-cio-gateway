@@ -17,7 +17,9 @@
   },
   "vars": {
     "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_cloudflare_prod",
-    "PUBLIC_MULTI_USER_ENABLED": "false"
+    "PUBLIC_MULTI_USER_ENABLED": "false",
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
+    "OMNI_V10_VK_ID_LOGIN_ENABLED": "false"
   },
   "secrets": {
     "required": ["OMNI_V10_POSTGRES_DSN"]
@@ -52,7 +54,9 @@
       "workers_dev": true,
       "vars": {
         "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_cloudflare_staging",
-        "PUBLIC_MULTI_USER_ENABLED": "false"
+        "PUBLIC_MULTI_USER_ENABLED": "false",
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
+        "OMNI_V10_VK_ID_LOGIN_ENABLED": "false"
       },
       "secrets": {
         "required": ["OMNI_V10_POSTGRES_DSN"]
