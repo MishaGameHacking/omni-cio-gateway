@@ -20,13 +20,13 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 
 Product implementation is **PRODUCT IMPLEMENTATION PAUSED** after the accepted Cloudflare System Update. `WEB-VISUAL-INTEGRATED` is now the current next prepared product System Update, but it remains OWNER-locked and still requires the exact command `START V10 WEB VISUAL SYSTEM UPDATE` before any visual-refresh source branch or implementation begins. WP23+ remains locked.
 
-## Latest accepted engineering baseline
+## Latest accepted Cloudflare runtime/release baseline
 
-Exact protected `main` is:
+The final functional CF-D runtime/release baseline before this documentation-only closeout is:
 
 `b8b27217a177d954ae1efb327b224503fd0e30b0`
 
-It is the squash merge of PR #547, **CF-D: freeze provider secret custody on current main**, and it completes the accepted CF-D provider-secret custody hardening on top of the earlier Cloudflare/Neon convergence and recovery repairs.
+It is the squash merge of PR #547, **CF-D: freeze provider secret custody on current main**, and it completes the accepted CF-D provider-secret custody hardening on top of the earlier Cloudflare/Neon convergence and recovery repairs. The exact current protected `main` SHA is always resolved from GitHub; this documentation record intentionally does not try to self-reference the future squash SHA that accepts its own closeout.
 
 Exact-new-main acceptance on `b8b2721...` is proven by:
 
@@ -38,7 +38,7 @@ Exact-new-main acceptance on `b8b2721...` is proven by:
 - hosted staging and production database recovery jobs were correctly `skipped` only because their accepted reusable runtime database bindings were already ready; no required recovery outcome was suppressed;
 - the exact accepted main was deployed through the gated Cloudflare Workers Build, the canonical Custom Domain was attached/verified, live production release acceptance passed, and rollback was correctly unnecessary.
 
-This closes the implementation/recovery/security evidence chain for `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`. Issue #510 is completed. Issue #412 remains the owning historical System Update dashboard until this status-closeout PR lands and the dashboard is closed from the accepted evidence chain.
+This closes the implementation/recovery/security evidence chain for `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`. Issue #510 is completed. Issue #412 is the owning historical System Update dashboard; its issue lifecycle does not override this canonical accepted-state record.
 
 Render is retired from active new-V10 deployment/alignment authority; historical WP22A Render/Neon evidence remains preserved. Protected V9 Render production/recovery and stable entrypoint `app:app` remain separate protected recovery boundaries.
 
@@ -402,9 +402,9 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 ## Current next action
 
-1. land this focused Cloudflare System Update closeout/status synchronization through the normal exact-head GREEN -> squash merge -> exact-new-main post-merge acceptance lifecycle;
-2. after that merge, close System Update dashboard issue #412 from the accepted evidence chain;
-3. keep `WEB-VISUAL-INTEGRATED` prepared but unstarted until the OWNER issues exactly `START V10 WEB VISUAL SYSTEM UPDATE`;
-4. if that command is issued, restore fresh accepted `main`, revalidate sequencing/authority, create the dedicated visual System Update branch, and begin only `WEB-VISUAL-A`;
-5. until then, do not begin WP23+, Telegram Bot, AI/Cortex, Guardian, broker-write or Real execution;
+1. no new functional implementation package is authorized while `WEB-VISUAL-INTEGRATED` remains OWNER-locked;
+2. keep `WEB-VISUAL-INTEGRATED` prepared but unstarted until the OWNER issues exactly `START V10 WEB VISUAL SYSTEM UPDATE`;
+3. if that command is issued, restore fresh accepted `main`, revalidate sequencing/authority, create the dedicated visual System Update branch, and begin only `WEB-VISUAL-A`;
+4. until then, continue only focused maintenance/defect/security/recovery/governance work that is actually required by accepted main;
+5. do not begin WP23+, Telegram Bot, AI/Cortex, Guardian, broker-write or Real execution;
 6. never treat Cloudflare deployment/public release, a GitHub merge, AI output or an OWNER visual START command as broker-submit authorization.

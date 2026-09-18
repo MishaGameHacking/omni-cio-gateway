@@ -15,7 +15,7 @@ the newest accepted-main evidence chain and accepted amendments.
 - Branch: `system/cloudflare-public-product`
 - Historical integrated-update base: `2106f1b1792bc710c8eaa68d6be87e04455c0263`
 - Final-convergence accepted base: `6b28198550adc09a001de8779df900b13caa5c42`
-- Final accepted closeout `main`: `b8b27217a177d954ae1efb327b224503fd0e30b0`
+- Final accepted Cloudflare runtime/release `main` before documentation-only closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`
 - OWNER authority / START evidence: accepted Amendments 14 and 15 plus the canonical
   current status/evidence chain.
 - Green Checkpoint authority: accepted Amendment 16.
@@ -179,9 +179,9 @@ Every earlier RED or superseded exact-head result remains historical evidence on
 
 ## 11. Handoff
 
-- Final accepted main before documentation closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`.
+- Final accepted Cloudflare runtime/release main before documentation closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`.
 - Final accepted Cloudflare production run: V10 Cloudflare Production Release #78 / `35321810810` / `success`.
-- Owning System Update issue: #412; close only after the focused status-closeout PR is accepted on `main`.
+- Owning System Update issue: #412 (historical dashboard; issue lifecycle is closed from accepted evidence after source closeout).
 - Provider-secret custody hardening issue #510: completed.
 - Update state: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED = ACCEPTED_COMPLETE`.
 - Completed milestones: CF-A, CF-B, CF-C, CF-D.
