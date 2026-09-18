@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 _ACCOUNT_ID = "a" * 32
 _ZONE_ID = "b" * 32
 _VERSION_ID = "11111111-2222-3333-4444-555555555555"
+_PRODUCTION_SECRET_PATH = (
+    f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
+)
+_STAGING_SECRET_PATH = (
+    f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web-staging/secrets"
+)
 
 
 class _Api:
@@ -53,10 +59,36 @@ class CloudflareProductionManagerTests(unittest.TestCase):
             "CLOUDFLARE_ZONE_NAME": "example.ru",
         }
 
+    @staticmethod
+    def _telegram_rows() -> list[dict[str, str]]:
+        return [
+            {"name": name, "type": "secret_text"}
+            for name in production._TELEGRAM_LOGIN_BINDINGS
+        ]
+
+    def _run_telegram_probe(
+        self,
+        production_rows: object,
+        staging_rows: object = (),
+    ) -> tuple[int, str, _Api]:
+        api = _Api(
+            {
+                ("GET", _PRODUCTION_SECRET_PATH): production_rows,
+                ("GET", _STAGING_SECRET_PATH): staging_rows,
+            }
+        )
+        output = io.StringIO()
+        with patch.object(production, "_api", return_value=api):
+            code = production.probe_telegram_login_readiness(
+                self._environment(),
+                output=output,
+            )
+        return code, output.getvalue(), api
+
     def test_runtime_secret_probe_distinguishes_reuse_and_bootstrap_without_value_access(
         self,
     ) -> None:
-        path = f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
+        path = _PRODUCTION_SECRET_PATH
         scenarios = (
             ([{"name": "OMNI_V10_POSTGRES_DSN", "type": "secret_text"}], 0, "REUSED"),
             ([], 10, "BOOTSTRAP_REQUIRED"),
@@ -78,51 +110,30 @@ class CloudflareProductionManagerTests(unittest.TestCase):
     def test_telegram_readiness_requires_prod_secrets_and_staging_isolation(
         self,
     ) -> None:
-        production_path = (
-            f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
+        required = self._telegram_rows()
+        code, output, api = self._run_telegram_probe(
+            [
+                {"name": "OMNI_V10_POSTGRES_DSN", "type": "secret_text"},
+                *required,
+            ],
+            [{"name": "OMNI_V10_POSTGRES_DSN", "type": "secret_text"}],
         )
-        staging_path = (
-            f"/accounts/{_ACCOUNT_ID}/workers/scripts/"
-            "omni-cio-v10-web-staging/secrets"
-        )
-        required = [
-            {"name": name, "type": "secret_text"}
-            for name in production._TELEGRAM_LOGIN_BINDINGS
-        ]
-        api = _Api(
-            {
-                ("GET", production_path): [
-                    {"name": "OMNI_V10_POSTGRES_DSN", "type": "secret_text"},
-                    *required,
-                ],
-                ("GET", staging_path): [
-                    {"name": "OMNI_V10_POSTGRES_DSN", "type": "secret_text"}
-                ],
-            }
-        )
-        output = io.StringIO()
-        with patch.object(production, "_api", return_value=api):
-            code = production.probe_telegram_login_readiness(
-                self._environment(),
-                output=output,
-            )
         self.assertEqual(code, 0)
         self.assertEqual(
-            output.getvalue().strip(),
+            output.strip(),
             "CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY "
             "production_bindings=4 staging_bindings=0",
         )
+        self.assertEqual(
+            api.calls,
+            [
+                ("GET", _PRODUCTION_SECRET_PATH, None),
+                ("GET", _STAGING_SECRET_PATH, None),
+            ],
+        )
 
     def test_telegram_readiness_rejects_missing_duplicate_or_type_drift(self) -> None:
-        path = f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
-        staging = (
-            f"/accounts/{_ACCOUNT_ID}/workers/scripts/"
-            "omni-cio-v10-web-staging/secrets"
-        )
-        required = [
-            {"name": name, "type": "secret_text"}
-            for name in production._TELEGRAM_LOGIN_BINDINGS
-        ]
+        required = self._telegram_rows()
         drift = [dict(row) for row in required]
         drift[0]["type"] = "plain_text"
         scenarios = (
@@ -135,58 +146,30 @@ class CloudflareProductionManagerTests(unittest.TestCase):
         )
         for rows, marker in scenarios:
             with self.subTest(marker=marker):
-                api = _Api({("GET", path): rows, ("GET", staging): []})
-                output = io.StringIO()
-                with patch.object(production, "_api", return_value=api):
-                    code = production.probe_telegram_login_readiness(
-                        self._environment(),
-                        output=output,
-                    )
+                code, output, _ = self._run_telegram_probe(rows)
                 self.assertEqual(code, 78)
-                self.assertIn(marker, output.getvalue())
+                self.assertIn(marker, output)
 
     def test_telegram_readiness_blocks_staging_or_value_exposure(self) -> None:
-        production_path = (
-            f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
-        )
-        staging_path = (
-            f"/accounts/{_ACCOUNT_ID}/workers/scripts/"
-            "omni-cio-v10-web-staging/secrets"
-        )
-        required = [
-            {"name": name, "type": "secret_text"}
-            for name in production._TELEGRAM_LOGIN_BINDINGS
-        ]
-
+        required = self._telegram_rows()
         leaked = [dict(row) for row in required]
         leaked[1]["text"] = "must-never-be-printed"
-        api = _Api({("GET", production_path): leaked})
-        output = io.StringIO()
-        with patch.object(production, "_api", return_value=api):
-            code = production.probe_telegram_login_readiness(
-                self._environment(),
-                output=output,
-            )
+        code, output, _ = self._run_telegram_probe(leaked)
         self.assertEqual(code, 78)
-        self.assertIn("CLOUDFLARE_TELEGRAM_LOGIN_SECRET_VALUE_EXPOSURE", output.getvalue())
-        self.assertNotIn("must-never-be-printed", output.getvalue())
-
-        api = _Api(
-            {
-                ("GET", production_path): required,
-                ("GET", staging_path): [dict(required[0])],
-            }
+        self.assertIn(
+            "CLOUDFLARE_TELEGRAM_LOGIN_SECRET_VALUE_EXPOSURE",
+            output,
         )
-        output = io.StringIO()
-        with patch.object(production, "_api", return_value=api):
-            code = production.probe_telegram_login_readiness(
-                self._environment(),
-                output=output,
-            )
+        self.assertNotIn("must-never-be-printed", output)
+
+        code, output, _ = self._run_telegram_probe(
+            required,
+            [dict(required[0])],
+        )
         self.assertEqual(code, 78)
         self.assertIn(
             "CLOUDFLARE_TELEGRAM_LOGIN_STAGING_BINDING_EXPOSED",
-            output.getvalue(),
+            output,
         )
 
     def test_telegram_readiness_workflow_reuses_existing_provider_custody(self) -> None:
@@ -200,9 +183,14 @@ class CloudflareProductionManagerTests(unittest.TestCase):
         self.assertEqual(workflow.count(command), 1)
         for name in production._TELEGRAM_LOGIN_BINDINGS:
             self.assertNotIn(f"secrets.{name}", workflow)
-        self.assertNotIn('"PUBLIC_MULTI_USER_ENABLED": "true"', (ROOT / "wrangler.jsonc").read_text(encoding="utf-8"))
-        self.assertNotIn('"OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true"', (ROOT / "wrangler.jsonc").read_text(encoding="utf-8"))
-        self.assertNotIn('"OMNI_V10_VK_ID_LOGIN_ENABLED": "true"', (ROOT / "wrangler.jsonc").read_text(encoding="utf-8"))
+
+        wrangler = (ROOT / "wrangler.jsonc").read_text(encoding="utf-8")
+        for enabled_marker in (
+            '"PUBLIC_MULTI_USER_ENABLED": "true"',
+            '"OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true"',
+            '"OMNI_V10_VK_ID_LOGIN_ENABLED": "true"',
+        ):
+            self.assertNotIn(enabled_marker, wrangler)
 
     def test_domain_config_requires_ru_zone_and_host_within_zone(self) -> None:
         environment = self._environment()

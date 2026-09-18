@@ -122,7 +122,6 @@ def probe_runtime_secret(
     return _RUNTIME_DSN_BINDING_MISSING
 
 
-
 def _telegram_secret_rows(
     api: builds.CloudflareApi,
     worker: str,
