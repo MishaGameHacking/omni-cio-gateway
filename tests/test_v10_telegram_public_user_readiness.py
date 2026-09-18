@@ -46,6 +46,34 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_guard_rejects_provider_readiness_marker_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["provider_secret_readiness"]["marker"] = "READY_BUT_UNREVIEWED"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_BINDINGS_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_release_evidence_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["operations"]["exact_main_release_evidence"]["conclusion"] = "failure"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_RELEASE_EVIDENCE_INVALID",
+            ):
+                guard.validate(root)
+
     def test_guard_rejects_extra_telegram_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
