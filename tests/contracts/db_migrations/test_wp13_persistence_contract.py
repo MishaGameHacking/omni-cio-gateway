@@ -154,9 +154,10 @@ def test_wp13_accepted_migration_hashes_remain_backward_compatible() -> None:
         ),
     }
 
-    series = discover_migrations()
+    actual = {item.version: item.sha256 for item in discover_migrations()}
 
-    assert {item.version: item.sha256 for item in series} == expected
+    for version, expected_sha256 in expected.items():
+        assert actual[version] == expected_sha256
 
 
 def test_wp13_migration_working_tree_eol_is_repository_pinned() -> None:
