@@ -40,7 +40,6 @@ def test_wp13_migration_series_is_contiguous_and_checksum_locked() -> None:
     assert POSTGRES_MAJOR == 18
 
 
-
 def test_wp13_migration_checksum_is_line_ending_invariant(tmp_path: Path) -> None:
     migration_dir = tmp_path / "migrations"
     migration_dir.mkdir()
@@ -96,11 +95,21 @@ def test_wp13_migration_checksum_changes_for_semantic_change(tmp_path: Path) -> 
 
 def test_wp13_accepted_migration_hashes_remain_backward_compatible() -> None:
     expected = {
-        1: "9beeff50333e0bc9132720813c31dd50098c23b9889ade68d8dfc8abee1a133e",
-        2: "2cafb75467392b82320b79582a3769a0477089c3c0d47f4bf8a7fbfb1847f431",
-        3: "42517d65677fafe780f7dc4fe28498eadc15276f6a7582696846eff2cebc7206",
-        4: "1087fb3b789fa90ceafe11d082fa6d4e2679e4deabff1a0c48cd76ecd11a4c18",
-        5: "aff449e3e17dd3391e6a47887ca8717bce36f216e5e7a75321f6eb220eb5b0bc",
+        1: (
+            "9beeff50333e0bc9132720813c31dd50098c23b9889ade68d8dfc8abee1a133e"
+        ),
+        2: (
+            "2cafb75467392b82320b79582a3769a0477089c3c0d47f4bf8a7fbfb1847f431"
+        ),
+        3: (
+            "42517d65677fafe780f7dc4fe28498eadc15276f6a7582696846eff2cebc7206"
+        ),
+        4: (
+            "1087fb3b789fa90ceafe11d082fa6d4e2679e4deabff1a0c48cd76ecd11a4c18"
+        ),
+        5: (
+            "aff449e3e17dd3391e6a47887ca8717bce36f216e5e7a75321f6eb220eb5b0bc"
+        ),
     }
 
     series = discover_migrations()
