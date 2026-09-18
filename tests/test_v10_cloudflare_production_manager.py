@@ -176,11 +176,20 @@ class CloudflareProductionManagerTests(unittest.TestCase):
         workflow = (
             ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml"
         ).read_text(encoding="utf-8")
-        command = (
-            "python -m scripts.manage_v10_cloudflare_production "
-            "probe-telegram-login-readiness"
+        step_start = workflow.index(
+            "Probe Telegram Login production binding readiness without values"
         )
-        self.assertEqual(workflow.count(command), 1)
+        step_end = workflow.index(
+            "Accept provider readiness after database authority resolution"
+        )
+        step = workflow[step_start:step_end]
+        self.assertEqual(
+            step.count("python -m scripts.manage_v10_cloudflare_production"),
+            1,
+        )
+        self.assertEqual(step.count("probe-telegram-login-readiness"), 1)
+        self.assertIn("secrets.CLOUDFLARE_API_TOKEN", step)
+        self.assertIn("secrets.CLOUDFLARE_ACCOUNT_ID", step)
         for name in production._TELEGRAM_LOGIN_BINDINGS:
             self.assertNotIn(f"secrets.{name}", workflow)
 
