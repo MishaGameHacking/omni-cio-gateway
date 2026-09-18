@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import Any
 import unittest
 from unittest.mock import patch
@@ -8,6 +9,7 @@ from unittest.mock import patch
 import scripts.manage_v10_cloudflare_production as production
 
 
+ROOT = Path(__file__).resolve().parents[1]
 _ACCOUNT_ID = "a" * 32
 _ZONE_ID = "b" * 32
 _VERSION_ID = "11111111-2222-3333-4444-555555555555"
@@ -71,6 +73,136 @@ class CloudflareProductionManagerTests(unittest.TestCase):
                 self.assertEqual(code, expected_code)
                 self.assertIn(marker, output.getvalue())
                 self.assertNotIn("text", output.getvalue())
+
+
+    def test_telegram_readiness_requires_prod_secrets_and_staging_isolation(
+        self,
+    ) -> None:
+        production_path = (
+            f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
+        )
+        staging_path = (
+            f"/accounts/{_ACCOUNT_ID}/workers/scripts/"
+            "omni-cio-v10-web-staging/secrets"
+        )
+        required = [
+            {"name": name, "type": "secret_text"}
+            for name in production._TELEGRAM_LOGIN_BINDINGS
+        ]
+        api = _Api(
+            {
+                ("GET", production_path): [
+                    {"name": "OMNI_V10_POSTGRES_DSN", "type": "secret_text"},
+                    *required,
+                ],
+                ("GET", staging_path): [
+                    {"name": "OMNI_V10_POSTGRES_DSN", "type": "secret_text"}
+                ],
+            }
+        )
+        output = io.StringIO()
+        with patch.object(production, "_api", return_value=api):
+            code = production.probe_telegram_login_readiness(
+                self._environment(),
+                output=output,
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            output.getvalue().strip(),
+            "CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY "
+            "production_bindings=4 staging_bindings=0",
+        )
+
+    def test_telegram_readiness_rejects_missing_duplicate_or_type_drift(self) -> None:
+        path = f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
+        staging = (
+            f"/accounts/{_ACCOUNT_ID}/workers/scripts/"
+            "omni-cio-v10-web-staging/secrets"
+        )
+        required = [
+            {"name": name, "type": "secret_text"}
+            for name in production._TELEGRAM_LOGIN_BINDINGS
+        ]
+        drift = [dict(row) for row in required]
+        drift[0]["type"] = "plain_text"
+        scenarios = (
+            (required[:-1], "CLOUDFLARE_TELEGRAM_LOGIN_BINDING_MISSING"),
+            (
+                [*required, dict(required[0])],
+                "CLOUDFLARE_TELEGRAM_LOGIN_SECRET_NOT_UNIQUE",
+            ),
+            (drift, "CLOUDFLARE_TELEGRAM_LOGIN_SECRET_TYPE_DRIFT"),
+        )
+        for rows, marker in scenarios:
+            with self.subTest(marker=marker):
+                api = _Api({("GET", path): rows, ("GET", staging): []})
+                output = io.StringIO()
+                with patch.object(production, "_api", return_value=api):
+                    code = production.probe_telegram_login_readiness(
+                        self._environment(),
+                        output=output,
+                    )
+                self.assertEqual(code, 78)
+                self.assertIn(marker, output.getvalue())
+
+    def test_telegram_readiness_blocks_staging_or_value_exposure(self) -> None:
+        production_path = (
+            f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/secrets"
+        )
+        staging_path = (
+            f"/accounts/{_ACCOUNT_ID}/workers/scripts/"
+            "omni-cio-v10-web-staging/secrets"
+        )
+        required = [
+            {"name": name, "type": "secret_text"}
+            for name in production._TELEGRAM_LOGIN_BINDINGS
+        ]
+
+        leaked = [dict(row) for row in required]
+        leaked[1]["text"] = "must-never-be-printed"
+        api = _Api({("GET", production_path): leaked})
+        output = io.StringIO()
+        with patch.object(production, "_api", return_value=api):
+            code = production.probe_telegram_login_readiness(
+                self._environment(),
+                output=output,
+            )
+        self.assertEqual(code, 78)
+        self.assertIn("CLOUDFLARE_TELEGRAM_LOGIN_SECRET_VALUE_EXPOSURE", output.getvalue())
+        self.assertNotIn("must-never-be-printed", output.getvalue())
+
+        api = _Api(
+            {
+                ("GET", production_path): required,
+                ("GET", staging_path): [dict(required[0])],
+            }
+        )
+        output = io.StringIO()
+        with patch.object(production, "_api", return_value=api):
+            code = production.probe_telegram_login_readiness(
+                self._environment(),
+                output=output,
+            )
+        self.assertEqual(code, 78)
+        self.assertIn(
+            "CLOUDFLARE_TELEGRAM_LOGIN_STAGING_BINDING_EXPOSED",
+            output.getvalue(),
+        )
+
+    def test_telegram_readiness_workflow_reuses_existing_provider_custody(self) -> None:
+        workflow = (
+            ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml"
+        ).read_text(encoding="utf-8")
+        command = (
+            "python -m scripts.manage_v10_cloudflare_production "
+            "probe-telegram-login-readiness"
+        )
+        self.assertEqual(workflow.count(command), 1)
+        for name in production._TELEGRAM_LOGIN_BINDINGS:
+            self.assertNotIn(f"secrets.{name}", workflow)
+        self.assertNotIn('"PUBLIC_MULTI_USER_ENABLED": "true"', (ROOT / "wrangler.jsonc").read_text(encoding="utf-8"))
+        self.assertNotIn('"OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true"', (ROOT / "wrangler.jsonc").read_text(encoding="utf-8"))
+        self.assertNotIn('"OMNI_V10_VK_ID_LOGIN_ENABLED": "true"', (ROOT / "wrangler.jsonc").read_text(encoding="utf-8"))
 
     def test_domain_config_requires_ru_zone_and_host_within_zone(self) -> None:
         environment = self._environment()

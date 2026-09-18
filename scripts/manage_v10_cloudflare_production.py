@@ -20,7 +20,15 @@ from scripts.cloudflare_worker_secret_state import (
 
 
 _PRODUCTION_WORKER = "omni-cio-v10-web"
+_STAGING_WORKER = "omni-cio-v10-web-staging"
 _RUNTIME_DSN_BINDING = "OMNI_V10_POSTGRES_DSN"
+_TELEGRAM_LOGIN_BINDINGS = (
+    "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
+    "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET",
+    "OMNI_V10_IDENTITY_BINDING_KEY_HEX",
+    "OMNI_V10_CSRF_BINDING_KEY_HEX",
+)
+_TELEGRAM_LOGIN_BINDING_SET = frozenset(_TELEGRAM_LOGIN_BINDINGS)
 _CUSTOM_HOST_ENV = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
 _ZONE_ID_ENV = "CLOUDFLARE_ZONE_ID"
 _ZONE_NAME_ENV = "CLOUDFLARE_ZONE_NAME"
@@ -44,14 +52,39 @@ def _api(environ: Mapping[str, str]) -> builds.CloudflareApi:
     return builds.CloudflareApi(account_id, token)
 
 
-def _runtime_secret_present(api: builds.CloudflareApi) -> bool:
-    rows = builds._list(
+def _script_secret_rows(
+    api: builds.CloudflareApi,
+    worker: str,
+    *,
+    invalid_code: str,
+) -> list[object]:
+    return builds._list(
         api.request(
             "GET",
             f"/accounts/{api.account_id}/workers/scripts/"
-            f"{quote(_PRODUCTION_WORKER, safe='')}/secrets",
+            f"{quote(worker, safe='')}/secrets",
         ),
-        "CLOUDFLARE_PRODUCTION_SECRETS_INVALID",
+        invalid_code,
+    )
+
+
+def _blocked_probe(
+    destination: TextIO,
+    marker: str,
+    exc: builds.BootstrapStopped,
+) -> int:
+    fields = [f"{marker}=BLOCKED", f"code={exc.code}"]
+    if exc.status is not None:
+        fields.append(f"status={exc.status}")
+    print(" ".join(fields), file=destination)
+    return _PROVIDER_BLOCKED
+
+
+def _runtime_secret_present(api: builds.CloudflareApi) -> bool:
+    rows = _script_secret_rows(
+        api,
+        _PRODUCTION_WORKER,
+        invalid_code="CLOUDFLARE_PRODUCTION_SECRETS_INVALID",
     )
     secret_type = script_secret_type(
         rows,
@@ -77,19 +110,102 @@ def probe_runtime_secret(
     try:
         present = _runtime_secret_present(_api(environment))
     except builds.BootstrapStopped as exc:
-        fields = [
-            "CLOUDFLARE_PRODUCTION_DATABASE_SECRET=BLOCKED",
-            f"code={exc.code}",
-        ]
-        if exc.status is not None:
-            fields.append(f"status={exc.status}")
-        print(" ".join(fields), file=destination)
-        return _PROVIDER_BLOCKED
+        return _blocked_probe(
+            destination,
+            "CLOUDFLARE_PRODUCTION_DATABASE_SECRET",
+            exc,
+        )
     if present:
         print("CLOUDFLARE_PRODUCTION_DATABASE_SECRET=REUSED", file=destination)
         return 0
     print("CLOUDFLARE_PRODUCTION_DATABASE_SECRET=BOOTSTRAP_REQUIRED", file=destination)
     return _RUNTIME_DSN_BINDING_MISSING
+
+
+
+def _telegram_secret_rows(
+    api: builds.CloudflareApi,
+    worker: str,
+) -> list[object]:
+    rows = _script_secret_rows(
+        api,
+        worker,
+        invalid_code="CLOUDFLARE_TELEGRAM_LOGIN_SECRETS_INVALID",
+    )
+    for raw_row in rows:
+        row = builds._object(raw_row, "CLOUDFLARE_TELEGRAM_LOGIN_SECRET_INVALID")
+        name = row.get("name")
+        binding_type = row.get("type")
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(binding_type, str)
+            or not binding_type
+        ):
+            raise builds.BootstrapStopped("CLOUDFLARE_TELEGRAM_LOGIN_SECRET_INVALID")
+        if "text" in row:
+            raise builds.BootstrapStopped(
+                "CLOUDFLARE_TELEGRAM_LOGIN_SECRET_VALUE_EXPOSURE"
+            )
+    return rows
+
+
+def _require_telegram_production_bindings(rows: list[object]) -> None:
+    for name in _TELEGRAM_LOGIN_BINDINGS:
+        if (
+            script_secret_type(
+                rows,
+                name,
+                invalid_code="CLOUDFLARE_TELEGRAM_LOGIN_SECRET_INVALID",
+                not_unique_code="CLOUDFLARE_TELEGRAM_LOGIN_SECRET_NOT_UNIQUE",
+                type_drift_code="CLOUDFLARE_TELEGRAM_LOGIN_SECRET_TYPE_DRIFT",
+            )
+            is None
+        ):
+            raise builds.BootstrapStopped(
+                "CLOUDFLARE_TELEGRAM_LOGIN_BINDING_MISSING"
+            )
+
+
+def _require_telegram_staging_isolation(rows: list[object]) -> None:
+    names: set[str] = set()
+    for raw_row in rows:
+        row = builds._object(raw_row, "CLOUDFLARE_TELEGRAM_LOGIN_SECRET_INVALID")
+        name = row.get("name")
+        if not isinstance(name, str):
+            raise builds.BootstrapStopped("CLOUDFLARE_TELEGRAM_LOGIN_SECRET_INVALID")
+        names.add(name)
+    if names & _TELEGRAM_LOGIN_BINDING_SET:
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_TELEGRAM_LOGIN_STAGING_BINDING_EXPOSED"
+        )
+
+
+def probe_telegram_login_readiness(
+    environ: Mapping[str, str] | None = None,
+    *,
+    output: TextIO | None = None,
+) -> int:
+    environment = os.environ if environ is None else environ
+    destination = sys.stdout if output is None else output
+    try:
+        api = _api(environment)
+        production_rows = _telegram_secret_rows(api, _PRODUCTION_WORKER)
+        _require_telegram_production_bindings(production_rows)
+        staging_rows = _telegram_secret_rows(api, _STAGING_WORKER)
+        _require_telegram_staging_isolation(staging_rows)
+    except builds.BootstrapStopped as exc:
+        return _blocked_probe(
+            destination,
+            "CLOUDFLARE_TELEGRAM_LOGIN_READINESS",
+            exc,
+        )
+    print(
+        "CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY "
+        "production_bindings=4 staging_bindings=0",
+        file=destination,
+    )
+    return 0
 
 
 def put_runtime_secret(environ: Mapping[str, str] | None = None) -> None:
@@ -284,6 +400,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "command",
         choices=(
             "probe-runtime-secret",
+            "probe-telegram-login-readiness",
             "put-runtime-secret",
             "validate-domain-config",
             "attach-domain",
@@ -298,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "probe-runtime-secret":
         return probe_runtime_secret()
+    if args.command == "probe-telegram-login-readiness":
+        return probe_telegram_login_readiness()
     try:
         if args.command == "put-runtime-secret":
             put_runtime_secret()
