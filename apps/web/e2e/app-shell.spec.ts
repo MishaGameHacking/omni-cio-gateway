@@ -55,6 +55,16 @@ test("unauthenticated route is guarded and exposes only Telegram/VK login", asyn
   await expect(page.getByText(/OWNER acceptance|публичная демонстрация/i)).toHaveCount(0);
 });
 
+test("configured but activation-blocked provider stays disabled truthfully", async ({ page }) => {
+  await mockUnauthenticatedApi(page, [
+    { provider: "telegram", enabled: false, reason: "PUBLIC_MULTI_USER_DISABLED" },
+    { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
+  ]);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Продолжить через Telegram" })).toBeDisabled();
+  await expect(page.getByText(/публичная регистрация ещё не активирована/i)).toBeVisible();
+});
+
 test("configured provider login uses a top-level POST instead of state-changing GET", async ({ page }) => {
   await mockUnauthenticatedApi(page, [
     { provider: "telegram", enabled: true },
