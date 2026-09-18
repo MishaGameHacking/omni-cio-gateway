@@ -232,8 +232,7 @@ def _validate_master_context_snapshot(
         for marker in ("OWNER START REQUIRED", "START V10 WEB VISUAL SYSTEM UPDATE"):
             if marker not in master_context:
                 failures.append(
-                    "Master Context owner-locked next package marker missing: "
-                    f"{marker}"
+                    f"Master Context owner-locked next package marker missing: {marker}"
                 )
 
 
