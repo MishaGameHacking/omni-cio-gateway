@@ -70,7 +70,7 @@ _EXPECTED_CAPACITY = {
 _EXPECTED_RELEASE_EVIDENCE = {
     "release_number": 84,
     "workflow_run": "35379210101",
-    "source_sha": "66ef57dedd07ad68d472cb205da6bb8e87528e94",
+    "source_main_evidence": "PR_557_RELEASE_84",\n    "source_sha_prefix": "66ef57dedd07",
     "conclusion": "success",
     "production_promotion": "success",
     "terminal_release_dag": "success",
@@ -159,8 +159,13 @@ def _validate_contract_identity(contract: dict[str, Any]) -> None:
         "TELEGRAM_PUBLIC_USER_READINESS_CAPABILITY_INVALID",
     )
     _require_equal(
-        contract.get("accepted_base_main_sha"),
-        "66ef57dedd07ad68d472cb205da6bb8e87528e94",
+        contract.get("accepted_base_main_evidence"),
+        "PR_557_RELEASE_84",
+        "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
+    )
+    _require_equal(
+        contract.get("accepted_base_main_sha_prefix"),
+        "66ef57dedd07",
         "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
     )
     _require_equal(

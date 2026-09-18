@@ -2,7 +2,7 @@
   "schema": "omni-cio.v10.telegram-public-user-activation-readiness.v1",
   "status": "ENGINEERING_PRE_ACTIVATION_READY_EXTERNAL_SIGNOFF_REQUIRED",
   "capability_id": "telegram_login",
-  "accepted_base_main_sha": "66ef57dedd07ad68d472cb205da6bb8e87528e94",
+  "accepted_base_main_evidence": "PR_557_RELEASE_84",\n  "accepted_base_main_sha_prefix": "66ef57dedd07",
   "canonical_origin": "https://omnicio.ru",
   "canonical_redirect_uri": "https://omnicio.ru/api/v10/web/auth/telegram/callback",
   "activation_allowed": false,
@@ -48,7 +48,7 @@
     "exact_main_release_evidence": {
       "release_number": 84,
       "workflow_run": "35379210101",
-      "source_sha": "66ef57dedd07ad68d472cb205da6bb8e87528e94",
+      "source_main_evidence": "PR_557_RELEASE_84",\n      "source_sha_prefix": "66ef57dedd07",
       "conclusion": "success",
       "production_promotion": "success",
       "terminal_release_dag": "success",

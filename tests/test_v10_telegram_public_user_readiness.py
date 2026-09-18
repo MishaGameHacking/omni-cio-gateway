@@ -32,6 +32,20 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
     def test_current_repository_contract_is_valid(self) -> None:
         guard.validate()
 
+    def test_guard_rejects_base_evidence_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["accepted_base_main_evidence"] = "UNREVIEWED_BASE"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
+            ):
+                guard.validate(root)
+
     def test_guard_rejects_premature_legal_acceptance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
