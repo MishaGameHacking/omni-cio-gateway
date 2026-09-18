@@ -328,5 +328,6 @@ def build_wp22a_phase5_provider_auth(
         authentication=authentication,
         cookies=cookies,
         now=now,
+        disabled_reasons=disabled,
         registration_enabled=True,
     )
