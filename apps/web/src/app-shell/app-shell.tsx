@@ -45,7 +45,9 @@ function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
   const telegram = provider("telegram");
   const vk = provider("vk_id");
   const activationBlocked = [telegram, vk].some(
-    (item) => item?.reason === "PUBLIC_MULTI_USER_DISABLED",
+    (item) =>
+      item?.reason === "PUBLIC_MULTI_USER_DISABLED" ||
+      item?.reason === "PROVIDER_ACTIVATION_DISABLED",
   );
   return (
     <main className="login-shell" role="main">
