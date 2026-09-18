@@ -34,7 +34,6 @@ def _sha256_fixture(*chunks: str) -> str:
     return value
 
 
-
 def test_wp13_migration_series_is_contiguous_and_checksum_locked() -> None:
     series = discover_migrations()
     versions = [item.version for item in series]
