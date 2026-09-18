@@ -92,6 +92,27 @@ def migration_root() -> Path:
     return Path(__file__).resolve().parent / "migrations"
 
 
+def _migration_checksum_bytes(path: Path) -> bytes:
+    raw = path.read_bytes()
+    try:
+        source = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise MigrationSeriesError(
+            f"migration source must be UTF-8: {path.name}"
+        ) from None
+
+    normalized_lf = source.replace("\r\n", "\n")
+    if "\r" in normalized_lf:
+        raise MigrationSeriesError(
+            f"migration source contains unsupported bare CR line endings: {path.name}"
+        )
+
+    # Migration checksums predate hosted Linux recovery and were first persisted
+    # from the authoritative Windows checkout. Preserve that accepted checksum
+    # identity while making discovery independent of the runner working-tree EOL.
+    return normalized_lf.replace("\n", "\r\n").encode("utf-8")
+
+
 def discover_migrations(root: Path | None = None) -> tuple[Migration, ...]:
     base = root or migration_root()
     migrations: list[Migration] = []
@@ -109,7 +130,7 @@ def discover_migrations(root: Path | None = None) -> tuple[Migration, ...]:
                 version=version,
                 name=match.group("name"),
                 path=path,
-                sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                sha256=hashlib.sha256(_migration_checksum_bytes(path)).hexdigest(),
             )
         )
 
