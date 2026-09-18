@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import scripts.check_v10_cloudflare_candidate_delivery as candidate_guard
+
 
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
@@ -32,6 +34,10 @@ def test_visual_package_is_next_but_owner_locked() -> None:
     assert "START V10 WEB VISUAL SYSTEM UPDATE" in status
     assert "do not create the visual-refresh implementation branch" in status
     assert "WP23+ / Telegram" in status
+
+
+def test_candidate_guard_accepts_historical_closeout_ledger() -> None:
+    candidate_guard._validate_ledger()
 
 
 def test_cloudflare_execution_ledger_is_historical_closeout() -> None:
