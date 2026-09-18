@@ -1,0 +1,97 @@
+{
+  "schema": "omni-cio.v10.telegram-public-user-activation-readiness.v1",
+  "status": "ENGINEERING_PRE_ACTIVATION_READY_EXTERNAL_SIGNOFF_REQUIRED",
+  "capability_id": "telegram_login",
+  "accepted_base_main_evidence": "PR_557_RELEASE_84",
+  "accepted_base_main_sha_segments": [
+    "66ef57de",
+    "dd07ad68",
+    "d472cb20",
+    "5da6bb8e",
+    "87528e94"
+  ],
+  "canonical_origin": "https://omnicio.ru",
+  "canonical_redirect_uri": "https://omnicio.ru/api/v10/web/auth/telegram/callback",
+  "activation_allowed": false,
+  "provider_registration": {
+    "owner_attested_in_accepted_pr_551": true,
+    "allowed_origin_attested": true,
+    "redirect_uri_attested": true,
+    "provider_secret_values_recorded": false
+  },
+  "provider_secret_readiness": {
+    "accepted": true,
+    "workflow_run": "35367055812",
+    "marker": "CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY production_bindings=4 staging_bindings=0"
+  },
+  "data_minimization": {
+    "telegram_oidc_scopes": ["openid"],
+    "profile_scope_requested": false,
+    "phone_scope_requested": false,
+    "raw_telegram_subject_persisted": false,
+    "external_identity_binding": "HMAC_SHA256_KEYED",
+    "raw_oauth_state_persisted": false,
+    "raw_browser_proof_persisted": false,
+    "provider_auth_transaction_max_minutes": 15,
+    "session_authority": "SERVER_SIDE_OPAQUE_TOKEN_SHA256"
+  },
+  "capacity_and_abuse": {
+    "window_seconds": 60,
+    "global_api_requests": 5000,
+    "health_requests": 120,
+    "anonymous_requests": 300,
+    "authenticated_session_requests": 600,
+    "provider_starts": 60,
+    "provider_callbacks": 120,
+    "outbound_provider_concurrency": 8,
+    "max_session_keys": 4096,
+    "retry_after_seconds": 1,
+    "production_container_max_instances": 1,
+    "production_container_instance_type": "lite",
+    "automatic_capacity_expansion_authorized": false,
+    "real_user_capacity_claim": false
+  },
+  "operations": {
+    "exact_main_release_evidence": {
+      "release_number": 84,
+      "workflow_run": "35379210101",
+      "source_main_evidence": "PR_557_RELEASE_84",
+      "source_sha_equals_accepted_base_main": true,
+      "conclusion": "success",
+      "production_promotion": "success",
+      "terminal_release_dag": "success",
+      "rollback_required": false
+    },
+    "workers_metrics_baseline_required": true,
+    "healthz_release_acceptance_required": true,
+    "rollback_path_required": true,
+    "stored_workers_logs_required_for_activation": false,
+    "workers_tracing_required_for_activation": false,
+    "paid_observability_expansion_authorized": false,
+    "post_activation_provider_availability_evidence_required": true,
+    "post_activation_real_user_isolation_evidence_required": true
+  },
+  "legal_privacy_gate": {
+    "accepted": false,
+    "status": "OWNER_OR_QUALIFIED_REVIEW_REQUIRED",
+    "required_before_activation": [
+      "operator_controller_identity_and_contact",
+      "applicable_jurisdictions_and_operator_role",
+      "purposes_and_legal_basis",
+      "data_locations_processors_and_cross_border_flows",
+      "retention_deletion_and_account_erasure_semantics",
+      "user_notice_rights_and_contact_channel",
+      "incident_notification_and_localization_obligations"
+    ],
+    "no_legal_conclusion_inferred_from_pseudonymization": true
+  },
+  "protected_invariants": {
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "broker_write": false,
+    "gateway_entrypoint": "app:app"
+  }
+}

@@ -121,6 +121,9 @@ jobs:
       - name: Verify provider secret custody contract
         run: python scripts/check_v10_provider_secret_custody.py
 
+      - name: Verify Telegram public-user pre-activation readiness contract
+        run: python scripts/check_v10_telegram_public_user_readiness.py
+
       - name: Verify hosted release post-merge alignment governance
         run: python scripts/check_v10_hosted_release_alignment_governance.py
 
@@ -157,6 +160,7 @@ jobs:
           scripts/check_v10_cloudflare_live_release.py
           scripts/check_v10_cloudflare_candidate_delivery.py
           scripts/check_v10_provider_secret_custody.py
+          scripts/check_v10_telegram_public_user_readiness.py
           scripts/provision_v10_cloudflare_neon_runtime.py
           scripts/bootstrap_v10_cloudflare_builds.py
           scripts/write_v10_cloudflare_build_info.py
@@ -191,6 +195,7 @@ jobs:
           tests.test_v10_cloudflare_live_release
           tests.test_v10_cloudflare_candidate_provider
           tests.test_v10_provider_secret_custody
+          tests.test_v10_telegram_public_user_readiness
           tests.test_v10_jsonc
 
       - name: Clean self-hosted workspace

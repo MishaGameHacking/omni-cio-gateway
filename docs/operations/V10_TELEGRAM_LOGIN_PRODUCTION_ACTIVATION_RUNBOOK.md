@@ -20,6 +20,8 @@ Register with BotFather Login Widget / OIDC:
 Telegram documents Authorization Code flow with PKCE and requires Allowed URLs to be
 pre-registered before redirect/login processing.
 
+Accepted repository evidence now records the OWNER attestation already preserved in merged PR #551: both exact values above were registered before the readiness gate. This is a non-secret external-action attestation only; it does not expose Client ID/Secret values and does not by itself activate public users.
+
 ## Cloudflare secret binding names
 
 Provider/runtime values must exist only in approved Cloudflare secret custody:
@@ -78,11 +80,13 @@ run is the accepted checker on protected `main`, before the separate activation 
 3. non-delegable Telegram Allowed URL/callback registration;
 4. Cloudflare secret provisioning without exposing values;
 5. read-only/sanitized readiness check proving named bindings exist;
-6. focused activation PR changing only the owning public-user activation state;
-7. production release SUCCESS;
-8. real canonical-Web USER login -> callback -> ordinary product account -> Tenant ->
-   server-side Session;
-9. logout/revoke and multi-user isolation negatives;
-10. update capability state only from accepted real evidence.
+6. repository pre-activation readiness contract passes: data minimization, bounded capacity/abuse controls, monitoring/rollback baseline and explicit unresolved legal/operator gate;
+7. public-user legal/operator/privacy-notice sign-off is accepted for the actual launch context;
+8. focused activation PR changing only the owning public-user activation state;
+9. production release SUCCESS;
+10. real canonical-Web USER login -> callback -> ordinary product account -> Tenant ->
+    server-side Session;
+11. logout/revoke, provider-availability and multi-user isolation negatives;
+12. update capability state only from accepted real evidence.
 
 At no point does login activation authorize broker write or Real-money execution.
