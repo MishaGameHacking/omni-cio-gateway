@@ -27,6 +27,14 @@ TRANSACTION_MIGRATION = Path(
 LIMITS = Path("omni_cio/web/request_limits_v1.py")
 WRANGLER = Path("wrangler.jsonc")
 
+_EXPECTED_BASE_MAIN_SHA_SEGMENTS = (
+    "66ef57de",
+    "dd07ad68",
+    "d472cb20",
+    "5da6bb8e",
+    "87528e94",
+)
+
 EXPECTED_LIMITS = {
     "window_seconds": 60,
     "global_api_requests": 5000,
@@ -70,7 +78,8 @@ _EXPECTED_CAPACITY = {
 _EXPECTED_RELEASE_EVIDENCE = {
     "release_number": 84,
     "workflow_run": "35379210101",
-    "source_main_evidence": "PR_557_RELEASE_84",\n    "source_sha_prefix": "66ef57dedd07",
+    "source_main_evidence": "PR_557_RELEASE_84",
+    "source_sha_equals_accepted_base_main": True,
     "conclusion": "success",
     "production_promotion": "success",
     "terminal_release_dag": "success",
@@ -136,6 +145,25 @@ def _require_equal(actual: object, expected: object, code: str) -> None:
         raise RuntimeError(code)
 
 
+def _string_segments(value: object, code: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise RuntimeError(code)
+    if not all(isinstance(item, str) for item in value):
+        raise RuntimeError(code)
+    return tuple(value)
+
+
+def _validate_base_main_sha(contract: dict[str, Any]) -> None:
+    code = "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID"
+    segments = _string_segments(contract.get("accepted_base_main_sha_segments"), code)
+    _require_equal(segments, _EXPECTED_BASE_MAIN_SHA_SEGMENTS, code)
+    reconstructed = "".join(segments)
+    expected = "".join(_EXPECTED_BASE_MAIN_SHA_SEGMENTS)
+    if re.fullmatch(r"[0-9a-f]{40}", reconstructed) is None:
+        raise RuntimeError(code)
+    _require_equal(reconstructed, expected, code)
+
+
 def _require_text_markers(source: str, markers: tuple[str, ...], code: str) -> None:
     for marker in markers:
         if marker not in source:
@@ -163,11 +191,7 @@ def _validate_contract_identity(contract: dict[str, Any]) -> None:
         "PR_557_RELEASE_84",
         "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
     )
-    _require_equal(
-        contract.get("accepted_base_main_sha_prefix"),
-        "66ef57dedd07",
-        "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
-    )
+    _validate_base_main_sha(contract)
     _require_equal(
         contract.get("canonical_origin"),
         "https://omnicio.ru",

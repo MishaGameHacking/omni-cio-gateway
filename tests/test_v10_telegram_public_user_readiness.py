@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import shutil
 import tempfile
@@ -45,6 +46,43 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
                 "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
             ):
                 guard.validate(root)
+
+    def test_guard_rejects_base_main_sha_segment_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["accepted_base_main_sha_segments"][0] = "00000000"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_release_source_binding_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["operations"]["exact_main_release_evidence"][
+                "source_sha_equals_accepted_base_main"
+            ] = False
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_RELEASE_EVIDENCE_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_machine_surfaces_avoid_contiguous_hex_sha_literals(self) -> None:
+        pattern = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")
+        contract = (guard.ROOT / guard.CONTRACT).read_text(encoding="utf-8")
+        checker = Path(guard.__file__).read_text(encoding="utf-8")
+        self.assertIsNone(pattern.search(contract))
+        self.assertIsNone(pattern.search(checker))
 
     def test_guard_rejects_premature_legal_acceptance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
