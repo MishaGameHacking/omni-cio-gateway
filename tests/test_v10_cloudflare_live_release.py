@@ -79,7 +79,31 @@ class CloudflareLiveReleaseTests(unittest.TestCase):
                 "real_trading_enabled": False,
             },
             sha,
+            False,
         )
+
+    def test_verify_release_accepts_enabled_public_multi_user_when_expected(self) -> None:
+        sha = "a" * 40
+        verifier.verify_release(
+            {
+                "status": "ok",
+                "platform": "cloudflare",
+                "source_sha": sha,
+                "backend": "container",
+                "static_assets": True,
+                "public_multi_user_enabled": True,
+                "real_trading_enabled": False,
+            },
+            sha,
+            True,
+        )
+
+    def test_public_multi_user_expectation_rejects_invalid_literal(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_EXPECTATION_INVALID",
+        ):
+            verifier._expected_public_multi_user("enabled")
 
     def test_verify_container_source_accepts_exact_baked_sha(self) -> None:
         sha = "a" * 40
@@ -125,6 +149,7 @@ class CloudflareLiveReleaseTests(unittest.TestCase):
                     "real_trading_enabled": False,
                 },
                 sha,
+                False,
             )
 
     def test_verify_release_rejects_public_multi_user_widening(self) -> None:
@@ -144,6 +169,29 @@ class CloudflareLiveReleaseTests(unittest.TestCase):
                     "real_trading_enabled": False,
                 },
                 sha,
+                False,
+            )
+
+    def test_verify_release_rejects_public_multi_user_disablement_when_enabled_expected(
+        self,
+    ) -> None:
+        sha = "a" * 40
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_ENABLED_INVALID",
+        ):
+            verifier.verify_release(
+                {
+                    "status": "ok",
+                    "platform": "cloudflare",
+                    "source_sha": sha,
+                    "backend": "container",
+                    "static_assets": True,
+                    "public_multi_user_enabled": False,
+                    "real_trading_enabled": False,
+                },
+                sha,
+                True,
             )
 
 

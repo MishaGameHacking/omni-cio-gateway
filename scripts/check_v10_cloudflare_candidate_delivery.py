@@ -208,7 +208,7 @@ def _validate_candidate_workflow() -> None:
             "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
             "bootstrap_v10_cloudflare_builds",
-            "probe_v10_cloudflare_live_release.sh",
+            'probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD" false',
             'test "$(node --version)" = "v24.18.0"',
             'test "$(npm --version)" = "11.16.0"',
             "npm ci --ignore-scripts --no-audit --no-fund",

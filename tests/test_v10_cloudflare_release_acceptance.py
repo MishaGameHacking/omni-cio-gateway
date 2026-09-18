@@ -15,6 +15,22 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
     def test_repository_release_contract_is_valid(self) -> None:
         guard.validate()
 
+    def test_guard_rejects_implicit_public_multi_user_expectation(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        payload["live_assertions"][
+            "public_multi_user_expectation_must_be_explicit"
+        ] = False
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "release.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "CONTRACT", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RELEASE_LIVE_"
+                    "PUBLIC_MULTI_USER_EXPECTATION_MUST_BE_EXPLICIT_INVALID",
+                ):
+                    guard.validate()
+
     def test_production_manager_avoids_hardcoded_secret_keyword_assignments(self) -> None:
         source = guard.PRODUCTION_MANAGER.read_text(encoding="utf-8")
         hardcoded_secret_assignment = re.compile(
