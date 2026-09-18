@@ -108,6 +108,12 @@ def test_wp13_accepted_migration_hashes_remain_backward_compatible() -> None:
     assert {item.version: item.sha256 for item in series} == expected
 
 
+def test_wp13_migration_working_tree_eol_is_repository_pinned() -> None:
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+    assert "omni_cio/persistence/migrations/*.sql text eol=lf" in attributes
+
+
 def test_wp13_initial_schema_covers_master_plan_persistence_families() -> None:
     sql = MIGRATION.read_text(encoding="utf-8")
     required_relations = {
