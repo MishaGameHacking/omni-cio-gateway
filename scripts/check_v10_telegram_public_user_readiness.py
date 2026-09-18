@@ -11,7 +11,7 @@ from scripts.v10_jsonc import loads_jsonc
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = Path("docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json")
+CONTRACT = Path(\n    "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"\n)
 LEDGER = Path("docs/updates/V10_CAPABILITY_ACTIVATION_TELEGRAM_LOGIN.md")
 RUNBOOK = Path("docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md")
 TELEGRAM = Path("omni_cio/web/telegram_oidc_v1.py")
@@ -453,9 +453,7 @@ def _validate_activation_flags(wrangler: dict[str, Any]) -> None:
 def _validate_container_envelope(wrangler: dict[str, Any]) -> None:
     containers = wrangler.get("containers")
     if not isinstance(containers, list) or len(containers) != 1:
-        raise RuntimeError(
-            "TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT"
-        )
+        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT")
     container = _mapping(
         containers[0],
         "TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT",
@@ -489,9 +487,7 @@ def _validate_ledger_source(root: Path) -> None:
         "TELEGRAM_PUBLIC_USER_READINESS_LEDGER_STATE_INVALID",
     )
     if "TO: LIVE_OPERABLE\nDECISION: ACCEPTED" in ledger:
-        raise RuntimeError(
-            "TELEGRAM_PUBLIC_USER_READINESS_LEDGER_PREMATURE_ACCEPTANCE"
-        )
+        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_LEDGER_PREMATURE_ACCEPTANCE")
 
 
 def _validate_runbook_source(root: Path) -> None:
