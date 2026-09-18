@@ -11,7 +11,9 @@ from scripts.v10_jsonc import loads_jsonc
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = Path(\n    "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"\n)
+CONTRACT = Path(
+    "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
+)
 LEDGER = Path("docs/updates/V10_CAPABILITY_ACTIVATION_TELEGRAM_LOGIN.md")
 RUNBOOK = Path("docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md")
 TELEGRAM = Path("omni_cio/web/telegram_oidc_v1.py")
