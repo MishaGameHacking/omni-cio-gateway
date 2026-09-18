@@ -220,6 +220,7 @@ def _validate_worker() -> None:
         '"OMNI_V10_IDENTITY_BINDING_KEY_HEX"',
         '"OMNI_V10_CSRF_BINDING_KEY_HEX"',
         "productAuthEnvironment(runtimeEnv, runtimeRole)",
+        "if (runtimeRole !== PRODUCTION_RUNTIME_ROLE)",
         "CLOUDFLARE_RUNTIME_DATABASE_ROLE_NOT_CONFIGURED",
         'sleepAfter = "1m"',
         'headers.delete("x-forwarded-for")',
