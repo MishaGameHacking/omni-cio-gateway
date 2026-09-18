@@ -38,6 +38,7 @@ _TELEGRAM_CLIENT_AUTH_ENV = "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET"
 _VK_CLIENT_ID = "OMNI_V10_VK_ID_CLIENT_ID"
 _IDENTITY_BINDING_KEY = "OMNI_V10_IDENTITY_BINDING_KEY_HEX"
 _CSRF_BINDING_KEY = "OMNI_V10_CSRF_BINDING_KEY_HEX"
+_PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"
 _HEX_32_BYTES = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -47,6 +48,17 @@ class Phase5ProviderAuthConfigurationError(RuntimeError):
 
 def _value(env: Mapping[str, str], name: str) -> str:
     return env.get(name, "").strip()
+
+
+def _flag(env: Mapping[str, str], name: str) -> bool:
+    value = _value(env, name)
+    if not value:
+        return False
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    raise Phase5ProviderAuthConfigurationError(f"{name}_INVALID")
 
 
 def _key(env: Mapping[str, str], name: str) -> bytes:
@@ -115,6 +127,7 @@ def build_wp22a_phase5_provider_auth(
         )
 
     provider_configured = bool(telegram_client_id or vk_client_id)
+    public_multi_user_enabled = _flag(environment, _PUBLIC_MULTI_USER_ENABLED)
     if provider_configured:
         csrf_binding_key = _key(environment, _CSRF_BINDING_KEY)
         identity_binding_key = _key(environment, _IDENTITY_BINDING_KEY)
@@ -132,6 +145,21 @@ def build_wp22a_phase5_provider_auth(
             authentication=None,
             cookies=cookies,
             now=now,
+        )
+
+    if not public_multi_user_enabled:
+        disabled = {}
+        if telegram_client_id:
+            disabled[IdentityProviderV1.TELEGRAM] = "PUBLIC_MULTI_USER_DISABLED"
+        if vk_client_id:
+            disabled[IdentityProviderV1.VK_ID] = "PUBLIC_MULTI_USER_DISABLED"
+        return ProviderAuthRouteServicesV1(
+            runtimes=(),
+            authentication=None,
+            cookies=cookies,
+            now=now,
+            disabled_reasons=disabled,
+            registration_enabled=True,
         )
 
     transactions = PostgresAuthorizationTransactionStoreV1(connection)
@@ -177,4 +205,5 @@ def build_wp22a_phase5_provider_auth(
         authentication=authentication,
         cookies=cookies,
         now=now,
+        registration_enabled=True,
     )
