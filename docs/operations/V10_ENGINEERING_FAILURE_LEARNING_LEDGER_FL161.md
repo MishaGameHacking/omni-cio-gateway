@@ -50,9 +50,9 @@ The hosted production adapter now reuses `run_v10_cloudflare_gated_candidate.run
 - proves one 100% active staging version;
 - proves the exact source SHA through the source-controlled release endpoint;
 - performs custody with no intervening secret mutation;
-- cleans the token;
-- writes the bounded main-only `RUNNER_TEMP` handoff;
-- preserves persistent-origin cleanup and quarantines the temporary trigger.
+- writes the bounded main-only `RUNNER_TEMP` handoff from the already validated custody response;
+- exits the token context so the token is removed and its absence is proved before the persistent bootstrap-origin secret write;
+- preserves the accepted persistent-origin write and quarantines the temporary trigger.
 
 Only after that shared version-bound lifecycle returns may the unchanged canonical production provisioner read the handoff and perform exact project/branch/default/ready checks before PostgreSQL mutation.
 
