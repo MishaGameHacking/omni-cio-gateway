@@ -7,7 +7,10 @@ import re
 import sys
 from typing import Any
 
-from scripts.v10_jsonc import loads_jsonc
+if __package__:
+    from .v10_jsonc import loads_jsonc
+else:
+    from v10_jsonc import loads_jsonc
 
 
 ROOT = Path(__file__).resolve().parents[1]
