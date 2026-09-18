@@ -242,9 +242,7 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
     ) -> None:
         super().__init__(app)
         self._hostname = hostname
-        self._browser_origin_hostname = _hostname(
-            browser_origin_hostname or hostname
-        )
+        self._browser_origin_hostname = _hostname(browser_origin_hostname or hostname)
         self._cookies = cookies
         self._sessions = sessions
         self._now = now
@@ -688,9 +686,7 @@ class _HostedPreviewRoutesV1:
                 "enabled": descriptor.enabled,
             }
             if not descriptor.enabled:
-                row["reason"] = self._provider_auth.disabled_reason(
-                    descriptor.provider
-                )
+                row["reason"] = self._provider_auth.disabled_reason(descriptor.provider)
             result.append(row)
         return result
 

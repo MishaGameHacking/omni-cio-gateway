@@ -385,9 +385,7 @@ def create_app():
             release_sha=release_sha,
             provider_auth=provider_auth,
             browser_origin_hostname=(
-                _PUBLIC_HOST
-                if runtime_role == "omni_cio_cloudflare_prod"
-                else None
+                _PUBLIC_HOST if runtime_role == "omni_cio_cloudflare_prod" else None
             ),
         ),
         trusted_edge_tls_terminated=False,
