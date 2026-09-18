@@ -36,17 +36,23 @@ Do not store the values in `wrangler.jsonc`, repository files or GitHub Actions 
 merely to relay them into Cloudflare. Worker Secrets / approved Cloudflare secret custody
 is the runtime authority.
 
-## Public activation flag
+## Public activation flags
 
-`PUBLIC_MULTI_USER_ENABLED=false` remains the source-controlled default.
+All source-controlled activation switches remain off in this preparation:
 
-Provider credentials alone must not activate login/registration. The flag may move to
-`true` only in a later focused activation change after provider registration, secret
-custody, privacy/legal/capacity/monitoring/incident readiness and real-user acceptance
-preconditions are satisfied.
+- `PUBLIC_MULTI_USER_ENABLED=false`;
+- `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`;
+- `OMNI_V10_VK_ID_LOGIN_ENABLED=false`.
 
-When the flag is false, configured provider bindings remain disabled with the truthful
-reason `PUBLIC_MULTI_USER_DISABLED`.
+Provider credentials alone must not activate login/registration. A later focused Telegram
+activation may set only `PUBLIC_MULTI_USER_ENABLED=true` and
+`OMNI_V10_TELEGRAM_LOGIN_ENABLED=true` after the owning gates close.
+`OMNI_V10_VK_ID_LOGIN_ENABLED` remains `false` until the separate VK ID capability
+has its own accepted provider/live evidence.
+
+When public multi-user is false, configured providers report
+`PUBLIC_MULTI_USER_DISABLED`. When public multi-user is true but a provider's own switch
+is false, that provider reports `PROVIDER_ACTIVATION_DISABLED`.
 
 ## Acceptance sequence
 
