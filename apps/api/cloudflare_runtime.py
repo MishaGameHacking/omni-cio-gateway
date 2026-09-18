@@ -13,6 +13,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
 from apps.api.cf_d_database_bootstrap import install_cf_d_database_bootstrap_route
+from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth
 from apps.api.hosted_preview import (
     PREVIEW_SESSION_POLICY,
     HostedPreviewServicesV1,
@@ -26,6 +27,8 @@ from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 
 
 _INTERNAL_HOST = "omni-cio.internal"
+_PUBLIC_HOST = "omnicio.ru"
+_PUBLIC_ORIGIN = "https://omnicio.ru"
 _INTERNAL_PROXY_PATH = "/_omni/cloudflare-proxy"
 _CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
 _CONTAINER_SOURCE_FILE = Path(__file__).with_name("generated_cloudflare_source_sha.txt")
@@ -363,10 +366,14 @@ def create_app():
         policy=PREVIEW_SESSION_POLICY,
     )
 
-    # Product providers deliberately remain disabled here. CF-D may only compose
-    # Telegram/VK after real provider registration, canonical public origin, secret
-    # custody and live acceptance evidence exist. The public Cloudflare shell must
-    # not turn infrastructure migration into an authentication bypass.
+    provider_auth = None
+    if runtime_role == "omni_cio_cloudflare_prod":
+        provider_auth = build_wp22a_phase5_provider_auth(
+            connection=connection,
+            sessions=sessions,
+            canonical_origin=_PUBLIC_ORIGIN,
+        )
+
     hosted_app = create_hosted_preview_app(
         HostedPreviewServicesV1(
             sessions=sessions,
@@ -376,7 +383,12 @@ def create_app():
             ),
             hostname=hostname,
             release_sha=release_sha,
-            provider_auth=None,
+            provider_auth=provider_auth,
+            browser_origin_hostname=(
+                _PUBLIC_HOST
+                if runtime_role == "omni_cio_cloudflare_prod"
+                else None
+            ),
         ),
         trusted_edge_tls_terminated=False,
     )
