@@ -652,7 +652,12 @@ def run(expected_sha: str, environment: str) -> str:
 
     try:
         import psycopg
-        from omni_cio.persistence.migration import apply_migrations
+        from omni_cio.persistence.migration import (
+            MigrationChecksumError,
+            MigrationError,
+            MigrationSeriesError,
+            apply_migrations,
+        )
     except Exception:
         raise _base.ProvisioningStopped("DATABASE_BOOTSTRAP_IMPORT_FAILED") from None
 
@@ -674,6 +679,18 @@ def run(expected_sha: str, environment: str) -> str:
             connection.execute(runtime_sql, prepare=False)
     except _base.ProvisioningStopped:
         raise
+    except MigrationChecksumError:
+        raise _base.ProvisioningStopped(
+            "CLOUDFLARE_DATABASE_MIGRATION_CHECKSUM_MISMATCH"
+        ) from None
+    except MigrationSeriesError:
+        raise _base.ProvisioningStopped(
+            "CLOUDFLARE_DATABASE_MIGRATION_SERIES_INVALID"
+        ) from None
+    except MigrationError:
+        raise _base.ProvisioningStopped(
+            "CLOUDFLARE_DATABASE_MIGRATION_FAILED"
+        ) from None
     except psycopg.OperationalError:
         raise _base.ProvisioningStopped("CLOUDFLARE_DATABASE_NETWORK_ERROR") from None
     except Exception:
