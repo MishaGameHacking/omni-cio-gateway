@@ -10,8 +10,8 @@ This ledger tracks the material `telegram_login` activation transition under Ame
 - Capability ID: `telegram_login`
 - User-facing name: Telegram Login
 - Owning WP/System Update: WP22A authentication architecture / Amendment 13 activation
-- Accepted base `main` SHA: `ad01e78bdf38c2014f3c79f41d43da8db695c219`
-- Branch: `activation/telegram-login-production`
+- Accepted base `main` SHA: `66ef57dedd07ad68d472cb205da6bb8e87528e94`
+- Branch: `activation/telegram-public-user-readiness`
 - Dashboard: issue #549
 - Canonical Web/runtime target: `https://omnicio.ru` / Cloudflare Worker + Container
 - Current accepted capability state: `BLOCKED_EXTERNAL`
@@ -23,7 +23,7 @@ This ledger tracks the material `telegram_login` activation transition under Ame
 - [x] Browser-bound state/proof, callback validation and session lifecycle are accepted.
 - [x] Verified identity -> ordinary product account -> Tenant -> server-side Session is accepted.
 - [x] Database-enforced tenant isolation and reserved historical OWNER-scope rejection are accepted.
-- [x] Canonical Cloudflare production ingress/release is accepted through Release #82.
+- [x] Canonical Cloudflare production ingress/release is accepted through Release #84 / run `35379210101`.
 - [x] Production runtime-only Telegram provider bindings are present and proven.
 - [ ] Real browser login/logout/revocation is proven on canonical Web.
 
@@ -46,12 +46,14 @@ Repository preparation in this branch:
 
 ## External blocker inventory
 
-- [ ] Telegram Allowed URL/origin registration for `https://omnicio.ru`.
-- [ ] Telegram OIDC callback registration for
-      `https://omnicio.ru/api/v10/web/auth/telegram/callback`.
+- [x] Telegram Allowed URL/origin `https://omnicio.ru` is OWNER-attested in accepted PR #551; this readiness change records that non-secret evidence explicitly.
+- [x] Telegram OIDC callback `https://omnicio.ru/api/v10/web/auth/telegram/callback` is OWNER-attested in accepted PR #551; no provider secret value is recorded.
 - [x] Runtime-only Telegram Client ID / Client Secret in Cloudflare secret custody.
 - [x] Runtime-only identity-binding and CSRF keys in Cloudflare secret custody.
-- [ ] Public-user privacy/legal/capacity/monitoring/incident gates accepted.
+- [x] Public-user technical data-minimization inventory is frozen by `V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json`.
+- [x] Engineering capacity/rate-limit/DoS controls are frozen and regression-guarded for the current one-Container launch envelope.
+- [x] Monitoring/rollback baseline is frozen: Cloudflare Workers metrics + exact-main `/healthz` release acceptance + bounded rollback; no paid logs/tracing expansion is assumed.
+- [ ] Public-user legal/operator/privacy-notice sign-off is accepted for the actual operator, jurisdictions and data flows.
 - [ ] `PUBLIC_MULTI_USER_ENABLED=true` accepted only after all owning gates close.
 - [ ] `OMNI_V10_TELEGRAM_LOGIN_ENABLED=true` accepted only for the Telegram capability.
 - [x] `OMNI_V10_VK_ID_LOGIN_ENABLED=false` remains fail-closed in this activation.
@@ -101,8 +103,7 @@ FROM: BLOCKED_EXTERNAL
 TO: LIVE_OPERABLE
 DECISION: BLOCKED
 EXTERNAL GATES CLOSED: canonical Cloudflare ingress/release + production runtime secret custody
-REMAINING BLOCKERS: any still-unproven provider Allowed URL/callback registration,
-public-user privacy/legal/capacity/monitoring/incident acceptance, real-user evidence
+REMAINING BLOCKERS: public-user legal/operator/privacy-notice sign-off plus post-activation real-user/provider-availability and tenant-isolation evidence
 EXACT EVIDENCE: issue #549 + current activation branch/PR
 ```
 
