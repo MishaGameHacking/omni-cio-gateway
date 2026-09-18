@@ -178,7 +178,9 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
 
     def test_hosted_dependency_projection_is_derived_from_canonical_lock(self) -> None:
         self.assertEqual(
-            self.workflow.count("build_v10_cloudflare_hosted_control_plane_lock"),
+            self.workflow.count(
+                "python -m scripts.build_v10_cloudflare_hosted_control_plane_lock"
+            ),
             2,
         )
         self.assertNotIn(
