@@ -10,7 +10,7 @@ Repository-front-door snapshot of accepted/current program authority:
 
 - accepted V10 implementation progress: **54%**;
 - WP0–WP22A: accepted COMPLETE according to the canonical status/evidence chain;
-- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update** is accepted COMPLETE; exact accepted closeout main is `b8b2721...` and Production Release #78 is `success`;
+- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update** is accepted COMPLETE; accepted Cloudflare runtime/release baseline before documentation closeout is `b8b2721...` and Production Release #78 is `success`;
 - CF-A -> CF-B -> CF-C -> CF-D are complete historical implementation milestones; `system/cloudflare-public-product` is no longer the active functional implementation branch;
 - current functional implementation package: **NONE**;
 - **PRODUCT IMPLEMENTATION PAUSED** pending a new authorized System Update;

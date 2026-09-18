@@ -2,8 +2,9 @@
 
 Status: **ACCEPTED COMPLETE / HISTORICAL EXECUTION RECORD — NOT CURRENT-STATE AUTHORITY**
 
-This is the branch-scoped execution ledger required by the accepted Integrated System
-Update law. Accepted V10 product progress/current-next authority remains in
+This document originated as the branch-scoped execution ledger required by the accepted
+Integrated System Update law. It is now retained as historical accepted execution evidence.
+Current V10 product progress/current-next authority remains only in
 `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` on protected `main`, interpreted through
 the newest accepted-main evidence chain and accepted amendments.
 
