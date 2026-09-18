@@ -16,6 +16,9 @@ _DAG_FAILURE_LEDGER = (
 _IMPORT_FAILURE_LEDGER = (
     _ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL160.md"
 )
+_VERSION_BOUND_FAILURE_LEDGER = (
+    _ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL161.md"
+)
 _ARCHITECTURE = _ROOT / "docs/architecture/V10_CLOUDFLARE_NEON_HOSTED_EGRESS_BRIDGE.md"
 
 
@@ -161,9 +164,14 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         self.assertNotIn("branch_id:", self.workflow)
         self.assertNotIn("neon_branch_id", self.workflow.lower())
         self.assertNotIn("upload-artifact", self.workflow)
-        self.assertIn("bootstrap_origin_sync_token", self.adapter)
-        self.assertIn("fetch_bootstrap_origin_custody", self.adapter)
-        self.assertIn("write_bootstrap_origin_handoff", self.adapter)
+        self.assertIn('gated.run(expected_sha, source_branch="main")', self.adapter)
+        for forbidden in (
+            "bootstrap_origin_sync_token",
+            "fetch_bootstrap_origin_custody",
+            "assert_staging_exact_release",
+            "write_bootstrap_origin_handoff",
+        ):
+            self.assertNotIn(forbidden, self.adapter)
         self.assertNotIn("branches?limit=100", self.adapter)
 
     def test_dsn_never_crosses_job_outputs_or_artifacts(self) -> None:
@@ -261,13 +269,18 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         self.assertTrue(_FAILURE_LEDGER.is_file())
         self.assertTrue(_DAG_FAILURE_LEDGER.is_file())
         self.assertTrue(_IMPORT_FAILURE_LEDGER.is_file())
+        self.assertTrue(_VERSION_BOUND_FAILURE_LEDGER.is_file())
         architecture = _ARCHITECTURE.read_text(encoding="utf-8")
         failure = _FAILURE_LEDGER.read_text(encoding="utf-8")
         dag_failure = _DAG_FAILURE_LEDGER.read_text(encoding="utf-8")
         import_failure = _IMPORT_FAILURE_LEDGER.read_text(encoding="utf-8")
+        version_bound_failure = _VERSION_BOUND_FAILURE_LEDGER.read_text(
+            encoding="utf-8"
+        )
         for marker in (
             "GITHUB_HOSTED_MISSING_SECRET_RECOVERY_ONLY",
             "HOSTED_EPHEMERAL_BRANCH_CUSTODY_RESYNC",
+            "HOSTED_CUSTODY_REUSES_VERSION_BOUND_CANDIDATE",
             "DSN_JOB_BOUNDARY_FORBIDDEN",
             "LEGACY_NEON_FUNCTION_TRANSPORT_REMAINS_INACTIVE",
         ):
@@ -283,6 +296,11 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         )
         self.assertIn("Production Release #74", import_failure)
         self.assertIn("PYDANTIC_IMPORT_CLOSURE_EXPLICIT", architecture)
+        self.assertIn(
+            "CF_D_HOSTED_CUSTODY_TOKEN_AFTER_EXACT_BUILD",
+            version_bound_failure,
+        )
+        self.assertIn("Production Release #75", version_bound_failure)
 
 
 if __name__ == "__main__":
