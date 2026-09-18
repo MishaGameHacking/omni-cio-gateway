@@ -90,9 +90,37 @@ def test_invalid_binding_key_encoding_is_rejected_without_echoing_value() -> Non
     assert invalid_binding_material not in str(error.value)
 
 
+def test_configured_provider_remains_blocked_while_public_multi_user_is_off() -> None:
+    services = _build(
+        {
+            "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
+            "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
+            "OMNI_V10_CSRF_BINDING_KEY_HEX": KEY_A,
+            "OMNI_V10_IDENTITY_BINDING_KEY_HEX": KEY_B,
+        }
+    )
+    assert services.authentication is None
+    assert services.runtimes == ()
+    assert services.registration_enabled is False
+    assert (
+        services.disabled_reason(IdentityProviderV1.TELEGRAM)
+        == "PUBLIC_MULTI_USER_DISABLED"
+    )
+    assert services.disabled_reason(IdentityProviderV1.VK_ID) == "NOT_CONFIGURED"
+
+
+def test_invalid_public_multi_user_flag_aborts_startup() -> None:
+    with pytest.raises(
+        Phase5ProviderAuthConfigurationError,
+        match="PUBLIC_MULTI_USER_ENABLED_INVALID",
+    ):
+        _build({"PUBLIC_MULTI_USER_ENABLED": "TRUE"})
+
+
 def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> None:
     services = _build(
         {
+            "PUBLIC_MULTI_USER_ENABLED": "true",
             "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
             "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
             "OMNI_V10_VK_ID_CLIENT_ID": "654321",
@@ -101,6 +129,7 @@ def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> Non
         }
     )
     assert services.authentication is not None
+    assert services.registration_enabled is True
     assert [runtime.provider for runtime in services.runtimes] == [
         IdentityProviderV1.TELEGRAM,
         IdentityProviderV1.VK_ID,
