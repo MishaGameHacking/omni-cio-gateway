@@ -38,6 +38,7 @@
     "provider_callbacks": 120,
     "outbound_provider_concurrency": 8,
     "max_session_keys": 4096,
+    "retry_after_seconds": 1,
     "production_container_max_instances": 1,
     "production_container_instance_type": "lite",
     "automatic_capacity_expansion_authorized": false,

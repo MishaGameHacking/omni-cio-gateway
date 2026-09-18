@@ -32,6 +32,7 @@ The current application-level policy is intentionally finite:
 | Provider callback | 120 requests/window/provider |
 | Concurrent outbound provider calls | 8 |
 | Remembered session limiter keys | 4096 |
+| Retry-After after application rate rejection | 1 second |
 | Cloudflare production Container instances | 1 |
 | Container instance type | `lite` |
 
