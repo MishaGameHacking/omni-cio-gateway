@@ -105,7 +105,9 @@ def _validate_candidate(candidate: dict[str, Any]) -> None:
     expected = {
         "staging_environment": "staging",
         "staging_worker_name": "omni-cio-v10-web-staging",
+        "workers_builds_build_command": "npm run build",
         "staging_deploy_command": "npm run cloudflare:deploy:staging",
+        "wrangler_custom_build_reentry_allowed": False,
         "staging_database_binding": "OMNI_V10_POSTGRES_DSN",
         "staging_container_rollout_required": True,
         "staging_container_image_source_probe_required": True,
@@ -147,7 +149,9 @@ def _validate_cutover(cutover: dict[str, Any]) -> None:
         "gated_post_merge_deploy_required": True,
         "production_worker_name": "omni-cio-v10-web",
         "production_workers_dev": False,
+        "workers_builds_build_command": "npm run build",
         "default_deploy_command": "npm run cloudflare:deploy",
+        "wrangler_custom_build_reentry_allowed": False,
         "production_build_transport": "WORKERS_BUILDS_GATED_MANUAL_EXACT_MAIN",
         "persistent_production_build_trigger_allowed": False,
         "stale_production_build_quarantine_before_snapshot_required": True,
@@ -200,9 +204,8 @@ def _validate_wrangler(contract: dict[str, Any]) -> None:
     candidate = _object(contract.get("candidate"), "CANDIDATE")
     cutover = _object(contract.get("cutover"), "CUTOVER")
     wrangler = _load(WRANGLER)
-    build = _object(wrangler.get("build"), "WRANGLER_BUILD")
-    if build.get("command") != _SECURE_WEB_BUILD:
-        raise RuntimeError("CLOUDFLARE_RELEASE_SELF_CONTAINED_BUILD_INVALID")
+    if wrangler.get("build") is not None:
+        raise RuntimeError("CLOUDFLARE_RELEASE_WRANGLER_CUSTOM_BUILD_REENTRY_FORBIDDEN")
     if wrangler.get("name") != cutover["production_worker_name"]:
         raise RuntimeError("CLOUDFLARE_RELEASE_PRODUCTION_WORKER_INVALID")
     if wrangler.get("workers_dev") is not False:
@@ -389,6 +392,7 @@ def _validate_production_build_source() -> None:
         (
             '"branch": _SOURCE_BRANCH',
             '_SOURCE_BRANCH = "main"',
+            '_BUILD_COMMAND = "npm run build"',
             '_DEPLOY_COMMAND = "npm run cloudflare:deploy"',
             "CLOUDFLARE_PRODUCTION_AUTODEPLOY_FORBIDDEN",
             "CLOUDFLARE_PRODUCTION_TRIGGER_RACE",

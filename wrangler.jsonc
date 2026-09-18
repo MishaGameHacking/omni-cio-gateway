@@ -6,9 +6,6 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "keep_vars": true,
-  "build": {
-    "command": "python scripts/write_v10_cloudflare_build_info.py && npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
-  },
   "assets": {
     "directory": "./apps/web/dist",
     "binding": "ASSETS",
