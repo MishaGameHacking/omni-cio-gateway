@@ -104,6 +104,7 @@ class HostedPreviewServicesV1:
     release_sha: str
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     provider_auth: ProviderAuthRouteServicesV1 | None = None
+    browser_origin_hostname: str | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -233,6 +234,7 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         *,
         hostname: str,
         cookies: BrowserCookiePolicyV1,
+        browser_origin_hostname: str | None = None,
         sessions: SessionRegistryLike,
         now: Callable[[], datetime],
         trusted_edge_tls_terminated: bool = False,
@@ -240,6 +242,9 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
     ) -> None:
         super().__init__(app)
         self._hostname = hostname
+        self._browser_origin_hostname = _hostname(
+            browser_origin_hostname or hostname
+        )
         self._cookies = cookies
         self._sessions = sessions
         self._now = now
@@ -319,7 +324,10 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
             # Origin/Fetch-Metadata/CSRF is not its authority; the route enforces
             # exact-source binding and GitHub OIDC after global admission controls.
             return None
-        if _origin_hostname(request.headers.get("origin", "")) != self._hostname:
+        if (
+            _origin_hostname(request.headers.get("origin", ""))
+            != self._browser_origin_hostname
+        ):
             return _safe_error("ORIGIN_REQUIRED", 403, api_path=api_path)
         fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
         if fetch_site in _UNTRUSTED_FETCH_SITES:
@@ -647,7 +655,7 @@ class _HostedPreviewRoutesV1:
             "enabled": False,
             "synthetic": True,
             "broker_credentials_enabled": False,
-            "registration_enabled": False,
+            "registration_enabled": self._provider_auth.registration_enabled,
             "label": "Synthetic technical boundary",
         }
 
@@ -680,7 +688,9 @@ class _HostedPreviewRoutesV1:
                 "enabled": descriptor.enabled,
             }
             if not descriptor.enabled:
-                row["reason"] = "NOT_CONFIGURED"
+                row["reason"] = self._provider_auth.disabled_reason(
+                    descriptor.provider
+                )
             result.append(row)
         return result
 
@@ -934,6 +944,7 @@ def create_hosted_preview_app(
         HostedPreviewSecurityMiddlewareV1,
         hostname=hostname,
         cookies=provider_auth.cookies,
+        browser_origin_hostname=services.browser_origin_hostname,
         sessions=services.sessions,
         now=services.now,
         trusted_edge_tls_terminated=trusted_edge_tls_terminated,
