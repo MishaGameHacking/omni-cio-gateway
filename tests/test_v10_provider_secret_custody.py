@@ -182,7 +182,6 @@ class ProviderSecretCustodyTests(unittest.TestCase):
             "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
         )
 
-
     def test_lowercase_secret_reference_normalizes_to_canonical_name(self) -> None:
         root = self._root()
         _replace(
