@@ -205,9 +205,7 @@ def _validate_wrangler(contract: dict[str, Any]) -> None:
     cutover = _object(contract.get("cutover"), "CUTOVER")
     wrangler = _load(WRANGLER)
     if wrangler.get("build") is not None:
-        raise RuntimeError(
-            "CLOUDFLARE_RELEASE_WRANGLER_CUSTOM_BUILD_REENTRY_FORBIDDEN"
-        )
+        raise RuntimeError("CLOUDFLARE_RELEASE_WRANGLER_CUSTOM_BUILD_REENTRY_FORBIDDEN")
     if wrangler.get("name") != cutover["production_worker_name"]:
         raise RuntimeError("CLOUDFLARE_RELEASE_PRODUCTION_WORKER_INVALID")
     if wrangler.get("workers_dev") is not False:
