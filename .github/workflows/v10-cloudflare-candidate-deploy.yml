@@ -212,7 +212,7 @@ jobs:
           set -euo pipefail
           accepted=0
           for attempt in $(seq 1 40); do
-            if bash scripts/probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD"; then
+            if bash scripts/probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD" false; then
               accepted=1
               break
             fi

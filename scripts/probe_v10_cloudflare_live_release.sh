@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -ne 1 ]]; then
-  echo "usage: probe_v10_cloudflare_live_release.sh <sha>" >&2
+if [[ "$#" -ne 2 ]]; then
+  echo "usage: probe_v10_cloudflare_live_release.sh <sha> <public-multi-user:true|false>" >&2
   exit 2
 fi
 
 sha="$1"
+expected_public_multi_user="$2"
+case "$expected_public_multi_user" in
+  true|false) ;;
+  *)
+    echo "invalid public-multi-user expectation" >&2
+    exit 2
+    ;;
+esac
 origin="$(python scripts/check_v10_cloudflare_live_release.py origin)"
 
 curl_flags=(
@@ -23,7 +31,7 @@ curl_flags=(
 )
 
 curl "${curl_flags[@]}" "${origin}/api/v10/release" \
-  | python scripts/check_v10_cloudflare_live_release.py release "$sha"
+  | python scripts/check_v10_cloudflare_live_release.py release "$sha" "$expected_public_multi_user"
 
 curl "${curl_flags[@]}" "${origin}/api/internal/v10/cloudflare/container-source" \
   | python scripts/check_v10_cloudflare_live_release.py container-source "$sha"

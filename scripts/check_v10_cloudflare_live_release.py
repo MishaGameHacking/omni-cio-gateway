@@ -100,7 +100,20 @@ def _expected_sha(value: str) -> str:
     return sha
 
 
-def verify_release(payload: Mapping[str, Any], expected_sha: str) -> None:
+def _expected_public_multi_user(value: str) -> bool:
+    candidate = value.strip().lower()
+    if candidate == "true":
+        return True
+    if candidate == "false":
+        return False
+    raise RuntimeError("CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_EXPECTATION_INVALID")
+
+
+def verify_release(
+    payload: Mapping[str, Any],
+    expected_sha: str,
+    expected_public_multi_user_enabled: bool,
+) -> None:
     sha = _expected_sha(expected_sha)
     expected = {
         "status": "ok",
@@ -108,7 +121,7 @@ def verify_release(payload: Mapping[str, Any], expected_sha: str) -> None:
         "source_sha": sha,
         "backend": "container",
         "static_assets": True,
-        "public_multi_user_enabled": False,
+        "public_multi_user_enabled": expected_public_multi_user_enabled,
         "real_trading_enabled": False,
     }
     for key, expected_value in expected.items():
@@ -140,21 +153,32 @@ def main(argv: list[str] | None = None) -> int:
         if args == ["origin"]:
             print(_configured_origin(os.environ))
             return 0
-        if len(args) != 2 or args[0] not in {
+        if not args or args[0] not in {
             "release",
             "container-source",
             "health",
         }:
             raise RuntimeError("CLOUDFLARE_RELEASE_USAGE_INVALID")
         mode = args[0]
-        sha = _expected_sha(args[1])
-        payload = _stdin_json()
         if mode == "release":
-            verify_release(payload, sha)
-        elif mode == "container-source":
-            verify_container_source(payload, sha)
+            if len(args) != 3:
+                raise RuntimeError("CLOUDFLARE_RELEASE_USAGE_INVALID")
+            sha = _expected_sha(args[1])
+            expected_public_multi_user_enabled = _expected_public_multi_user(args[2])
+            verify_release(
+                _stdin_json(),
+                sha,
+                expected_public_multi_user_enabled,
+            )
         else:
-            verify_health(payload, sha)
+            if len(args) != 2:
+                raise RuntimeError("CLOUDFLARE_RELEASE_USAGE_INVALID")
+            sha = _expected_sha(args[1])
+            payload = _stdin_json()
+            if mode == "container-source":
+                verify_container_source(payload, sha)
+            else:
+                verify_health(payload, sha)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1

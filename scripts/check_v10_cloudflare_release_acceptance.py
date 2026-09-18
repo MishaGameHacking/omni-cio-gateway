@@ -183,7 +183,9 @@ def _validate_live(live: dict[str, Any]) -> None:
         "release_platform": "cloudflare",
         "release_backend": "container",
         "release_static_assets": True,
-        "public_multi_user_enabled": False,
+        "public_multi_user_expectation_must_be_explicit": True,
+        "staging_public_multi_user_enabled": False,
+        "production_public_multi_user_enabled": False,
         "real_trading_enabled": False,
         "container_source_endpoint": _CONTAINER_SOURCE_PATH,
         "container_source_status": "ok",
@@ -295,6 +297,8 @@ def _validate_live_verifier() -> None:
             "CLOUDFLARE_RELEASE_CONTAINER_IMAGE_SHA_MISMATCH",
             "CLOUDFLARE_RELEASE_HEALTH_SHA_MISMATCH",
             "CLOUDFLARE_RELEASE_DATABASE_NOT_READY",
+            "CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_EXPECTATION_INVALID",
+            "_expected_public_multi_user",
             "_MAX_BYTES = 65_536",
             "sys.stdin.buffer.read(_MAX_BYTES + 1)",
         ),
@@ -318,7 +322,9 @@ def _validate_live_probe() -> None:
     _require_markers(
         probe,
         (
-            '[[ "$#" -ne 1 ]]',
+            '[[ "$#" -ne 2 ]]',
+            'expected_public_multi_user="$2"',
+            "true|false)",
             "--proto '=https'",
             "--tlsv1.2",
             "--max-redirs 0",
@@ -326,7 +332,7 @@ def _validate_live_probe() -> None:
             '"${origin}/api/v10/release"',
             '"${origin}/api/internal/v10/cloudflare/container-source"',
             '"${origin}/healthz"',
-            "check_v10_cloudflare_live_release.py release",
+            'check_v10_cloudflare_live_release.py release "$sha" "$expected_public_multi_user"',
             "check_v10_cloudflare_live_release.py container-source",
             "check_v10_cloudflare_live_release.py health",
         ),
@@ -396,8 +402,28 @@ def _validate_production_build_source() -> None:
     )
 
 
-def _validate_production_workflow() -> None:
+def _validate_production_workflow(live: dict[str, Any]) -> None:
     workflow = _read(PRODUCTION_WORKFLOW, "PRODUCTION_WORKFLOW")
+    staging_expected = str(live["staging_public_multi_user_enabled"]).lower()
+    production_expected = str(live["production_public_multi_user_enabled"]).lower()
+    staging_probe = (
+        'bash scripts/probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD" '
+        + staging_expected
+    )
+    production_probe = (
+        'bash scripts/probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD" '
+        + production_expected
+    )
+    staging_start = workflow.find("Accept exact-main staging rehearsal")
+    production_start = workflow.find("Accept canonical Cloudflare production release")
+    if staging_start < 0 or production_start <= staging_start:
+        raise RuntimeError("CLOUDFLARE_RELEASE_PRODUCTION_WORKFLOW_GUARD_MISSING")
+    staging_block = workflow[staging_start:production_start]
+    production_block = workflow[production_start:]
+    if staging_probe not in staging_block or production_probe not in production_block:
+        raise RuntimeError(
+            "CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_EXPECTATION_WIRING_INVALID"
+        )
     markers = (
         "workflow_run:",
         "- Regression Shield",
@@ -442,7 +468,9 @@ def validate() -> None:
     _validate_postmerge_gate_source()
     _validate_production_manager_source()
     _validate_production_build_source()
-    _validate_production_workflow()
+    _validate_production_workflow(
+        _object(contract.get("live_assertions"), "LIVE_ASSERTIONS")
+    )
 
 
 def main() -> int:
