@@ -12,6 +12,8 @@ from scripts import bootstrap_v10_cloudflare_neon_hosted_egress as hosted
 
 
 _EXPECTED_SHA = "a" * 40
+
+
 class CloudflareNeonHostedEgressTests(unittest.TestCase):
     def test_staging_bootstrap_writes_cloudflare_secret_in_same_job(self) -> None:
         api = mock.Mock()
