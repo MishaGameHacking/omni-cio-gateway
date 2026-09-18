@@ -50,7 +50,13 @@ Cross-job production data is limited to exact accepted main SHA and boolean miss
 
 ## Dependency and source integrity
 
-Hosted recovery uses Python `3.12.10`, matching the protected CF-D control-plane runtime. The minimal hosted provider dependency projection is generated at runtime from the exact accepted main `requirements.txt`; versions and hashes are not independently invented or upgraded. The projection is limited to `psycopg`, `psycopg-binary`, and `typing-extensions`, and is installed with `--require-hashes --no-deps`.
+Hosted recovery uses Python `3.12.10`, matching the protected CF-D control-plane runtime. The minimal hosted provider dependency projection is generated at runtime from the exact accepted main `requirements.txt`; versions and hashes are not independently invented or upgraded.
+
+`PYDANTIC_IMPORT_CLOSURE_EXPLICIT`
+
+Production Release #74 proved that the hosted bootstrap import graph executes regular-package `__init__.py` files under both `omni_cio.contracts` and `omni_cio.persistence` before database mutation. Those package initializers reach the accepted Pydantic-backed domain contracts. The bounded hosted projection therefore contains exactly the canonical hash-locked runtime closure required by that import graph: `annotated-types`, `pydantic`, `pydantic-core`, `psycopg`, `psycopg-binary`, `typing-extensions`, and `typing-inspection`. It remains installed with `--require-hashes --no-deps`.
+
+The projection intentionally excludes application/runtime packages such as FastAPI, HTTPX, Starlette, tzdata and Uvicorn. Any future package needed by hosted recovery must first enter the canonical reviewed lock and the explicit hosted allowlist; pip dependency resolution is not allowed to silently expand the recovery environment.
 
 No hosted recovery job uses an unpinned package version or an unpinned external Action.
 

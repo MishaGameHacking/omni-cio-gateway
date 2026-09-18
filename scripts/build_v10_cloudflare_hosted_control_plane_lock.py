@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import metadata
 import os
 import sys
 from pathlib import Path
@@ -9,9 +10,13 @@ _ROOT = Path(__file__).resolve().parents[1]
 _CANONICAL_LOCK = _ROOT / "requirements.txt"
 _FILENAME = "omni-cio-v10-cloudflare-hosted-control-plane.txt"
 _REQUIRED = {
+    "annotated-types": "0.8.0",
+    "pydantic": "2.13.4",
+    "pydantic-core": "2.46.4",
     "psycopg": "3.3.4",
     "psycopg-binary": "3.3.4",
     "typing-extensions": "4.16.0",
+    "typing-inspection": "0.4.2",
 }
 _HASH_PREFIX = "--hash=sha256:"
 _HEX = frozenset("0123456789abcdef")
@@ -98,6 +103,25 @@ def render_hosted_control_plane_lock(source: str) -> str:
             raise RuntimeError(f"CLOUDFLARE_HOSTED_LOCK_HASH_MISSING:{package}")
         rendered.extend(lines)
     return "\n".join(rendered) + "\n"
+
+
+def required_versions() -> dict[str, str]:
+    return dict(_REQUIRED)
+
+
+def verify_installed_control_plane_versions() -> None:
+    for package, expected_version in _REQUIRED.items():
+        try:
+            actual_version = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            raise RuntimeError(
+                f"CLOUDFLARE_HOSTED_LOCK_PACKAGE_NOT_INSTALLED:{package}"
+            ) from None
+        if actual_version != expected_version:
+            raise RuntimeError(
+                f"CLOUDFLARE_HOSTED_LOCK_INSTALLED_VERSION_DRIFT:{package}"
+            )
+    print("CLOUDFLARE_HOSTED_CONTROL_PLANE_PACKAGES=VERIFIED")
 
 
 def write_hosted_control_plane_lock() -> Path:
