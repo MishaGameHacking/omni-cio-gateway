@@ -364,10 +364,12 @@ def _validate_ledger() -> None:
     _require_markers(
         ledger,
         (
-            "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY",
+            "ACCEPTED COMPLETE / HISTORICAL EXECUTION RECORD",
             "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
+            "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED = ACCEPTED_COMPLETE",
             "system/cloudflare-public-product",
             "GitHub dashboard issue: `#412`",
+            "Production Release #78",
             "CF-A",
             "CF-B",
             "CF-C",

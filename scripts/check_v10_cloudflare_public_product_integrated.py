@@ -283,8 +283,10 @@ def _validate_surfaces(failures: list[str]) -> None:
         "current V10 status",
         status,
         (
-            f"## Current next package — {UPDATE_ID}",
-            BRANCH,
+            "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE",
+            "V10 Cloudflare Production Release #78",
+            "## Current next package — WEB-VISUAL-INTEGRATED",
+            "Current authorized functional implementation package: **NONE**",
             "CF-A",
             "CF-B",
             "CF-C",
@@ -326,10 +328,10 @@ def main() -> int:
             print(f"- {failure}", file=sys.stderr)
         return 1
     print("V10 integrated Cloudflare public-product governance check passed.")
-    print(f"Execution unit: {UPDATE_ID}")
-    print(f"Default branch: {BRANCH}")
-    print("Internal milestones: CF-A -> CF-B -> CF-C -> CF-D")
-    print("WEB VISUAL: separately OWNER-locked")
+    print(f"Accepted execution unit: {UPDATE_ID}")
+    print(f"Historical implementation branch: {BRANCH}")
+    print("Internal milestones: CF-A -> CF-B -> CF-C -> CF-D ACCEPTED COMPLETE")
+    print("Current next package: WEB-VISUAL-INTEGRATED / OWNER START REQUIRED")
     print("Broker/Real-money authority: unchanged and fail-closed")
     return 0
 

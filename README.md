@@ -10,11 +10,11 @@ Repository-front-door snapshot of accepted/current program authority:
 
 - accepted V10 implementation progress: **54%**;
 - WP0–WP22A: accepted COMPLETE according to the canonical status/evidence chain;
-- **PRODUCT IMPLEMENTATION PAUSED** for unrelated product scope during the Cloudflare provider/security transition;
-- current next package after Amendment 15 acceptance: **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update**;
-- the former Amendment-14 split stages remain ordered internal milestones: `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
-- default integrated implementation branch is `system/cloudflare-public-product`; one final PR is the default, but each internal milestone must pass before dependent work begins;
-- prepared product System Update remains **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G / OWNER START REQUIRED** and is not executed inside the Cloudflare public-product update;
+- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update** is accepted COMPLETE; accepted Cloudflare runtime/release baseline before documentation closeout is `b8b2721...` and Production Release #78 is `success`;
+- CF-A -> CF-B -> CF-C -> CF-D are complete historical implementation milestones; `system/cloudflare-public-product` is no longer the active functional implementation branch;
+- current functional implementation package: **NONE**;
+- **PRODUCT IMPLEMENTATION PAUSED** pending a new authorized System Update;
+- current next prepared package is **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G / OWNER START REQUIRED**;
 - exact product START required before visual implementation: `START V10 WEB VISUAL SYSTEM UPDATE`;
 - Amendment 12 still governs execution-unit law and mandatory split triggers except where later Amendment 16 supersedes verification publication/cadence rules;
 - Amendment 13 still governs progressive capability activation without waiting for all of V10;
@@ -25,7 +25,7 @@ Repository-front-door snapshot of accepted/current program authority:
 - Cloud.ru Evolution is no longer the selected provider target for new V10 work;
 - WP23+ remains locked;
 - **public multi-user/global browser service is the approved V10 target**;
-- **public Internet ingress remains OFF until CF-D and the capability-specific production security/privacy/broker/legal/capacity gates actually pass**; technical acceptance is not production activation;
+- canonical Cloudflare production ingress/release is accepted through CF-D, but **public multi-user and capability activation remain fail-closed until their own production security/privacy/provider/broker/legal/capacity gates pass**; infrastructure release acceptance is not capability activation;
 - final public production must not depend on PROJECT OWNER home IP, Wi-Fi, router/LAN, home Internet or Lenovo as the production origin;
 - final public Web/API/private-state runtime must use the approved Cloudflare managed-platform boundary after its owning internal compatibility/candidate/cutover gates;
 - PROJECT OWNER is an ordinary product USER when using Omni-CIO; GitHub/Cloudflare/Windows authority is separate from product identity;

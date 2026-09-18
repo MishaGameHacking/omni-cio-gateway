@@ -191,7 +191,7 @@ def _validate_readme_snapshot(
     for marker in (
         "## Current V10 snapshot",
         "WP23+ remains locked",
-        "public Internet ingress remains OFF",
+        "public multi-user and capability activation remain fail-closed",
     ):
         if marker not in readme:
             failures.append(f"root README is missing current-snapshot marker: {marker}")
@@ -207,6 +207,8 @@ def _validate_agents_snapshot(
         failures.append("AGENTS current snapshot does not match status progress")
     if package and f"**{package} —" not in agents:
         failures.append("AGENTS current snapshot does not match current package")
+    if package == "WEB-VISUAL-INTEGRATED" and "OWNER START REQUIRED" not in agents:
+        failures.append("AGENTS current next package must remain OWNER START REQUIRED")
 
 
 def _validate_master_context_snapshot(
@@ -222,14 +224,16 @@ def _validate_master_context_snapshot(
         failures.append(
             "Master Context convenience snapshot does not match status progress"
         )
-    if (
-        package
-        and f"**{package}** as the current authorized functional package"
-        not in master_context
-    ):
+    if package and f"**{package}** as the current next package" not in master_context:
         failures.append(
             "Master Context convenience snapshot does not match current package"
         )
+    if package == "WEB-VISUAL-INTEGRATED":
+        for marker in ("OWNER START REQUIRED", "START V10 WEB VISUAL SYSTEM UPDATE"):
+            if marker not in master_context:
+                failures.append(
+                    f"Master Context owner-locked next package marker missing: {marker}"
+                )
 
 
 def validate_live_guidance(progress: str, package: str, failures: list[str]) -> None:

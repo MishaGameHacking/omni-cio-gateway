@@ -17,13 +17,12 @@ Current synchronized snapshot:
 - WP0–WP22A / Blocks A–E accepted COMPLETE;
 - accepted V10 progress is **54%**;
 - complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate is accepted;
-- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update** is the current authorized `INTEGRATED_SYSTEM_UPDATE` after Amendment 15 acceptance;
-- ordered internal milestones remain `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
-- those milestones share one integrated implementation branch by default; an internal milestone must pass before dependent work starts, but a separate `main` merge between them is not required by Amendment 15;
-- PRODUCT IMPLEMENTATION remains PAUSED for unrelated product scope during the Cloudflare transition;
-- `WEB-VISUAL-INTEGRATED` remains prepared and still requires `START V10 WEB VISUAL SYSTEM UPDATE` before its separate source work;
+- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update** is accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
+- current authorized functional implementation package is NONE;
+- PRODUCT IMPLEMENTATION remains PAUSED pending a new authorized System Update;
+- **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G** is the current next prepared package / OWNER START REQUIRED and still requires `START V10 WEB VISUAL SYSTEM UPDATE` before its separate source work;
 - WP23+ LOCKED;
-- `PUBLIC_MULTI_USER_ENABLED=false` current fail-closed state until CF-D and capability-specific live gates actually accept a transition;
+- `PUBLIC_MULTI_USER_ENABLED=false` current fail-closed state until the remaining capability-specific live gates actually accept a transition;
 - Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ remain `BLOCKED_EXTERNAL` until their own gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
 - protected V9 `app:app` rollback intact.

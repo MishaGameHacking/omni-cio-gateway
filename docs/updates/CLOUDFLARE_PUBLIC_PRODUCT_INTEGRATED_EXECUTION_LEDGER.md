@@ -1,9 +1,10 @@
 # Cloudflare Public Product Integrated Execution Ledger
 
-Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
+Status: **ACCEPTED COMPLETE / HISTORICAL EXECUTION RECORD — NOT CURRENT-STATE AUTHORITY**
 
-This is the branch-scoped execution ledger required by the accepted Integrated System
-Update law. Accepted V10 product progress/current-next authority remains in
+This document originated as the branch-scoped execution ledger required by the accepted
+Integrated System Update law. It is now retained as historical accepted execution evidence.
+Current V10 product progress/current-next authority remains only in
 `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` on protected `main`, interpreted through
 the newest accepted-main evidence chain and accepted amendments.
 
@@ -15,14 +16,14 @@ the newest accepted-main evidence chain and accepted amendments.
 - Branch: `system/cloudflare-public-product`
 - Historical integrated-update base: `2106f1b1792bc710c8eaa68d6be87e04455c0263`
 - Final-convergence accepted base: `6b28198550adc09a001de8779df900b13caa5c42`
-- Current accepted `main` rechecked immediately before this repair batch:
-  `6b28198550adc09a001de8779df900b13caa5c42`
+- Final accepted Cloudflare runtime/release `main` before documentation-only closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`
 - OWNER authority / START evidence: accepted Amendments 14 and 15 plus the canonical
   current status/evidence chain.
 - Green Checkpoint authority: accepted Amendment 16.
 - GitHub dashboard issue: `#412`
-- Current final integrated DRAFT PR: `#478`
-- Historical predecessor PR: `#413`
+- Final-convergence integrated PR: `#478` (merged historical execution checkpoint)
+- Historical predecessor integrated PR: `#413`
+- Final accepted CF-D focused hardening PR: `#547`
 - Governing contracts: Amendments 12, 14, 15 and 16 plus the integrated-update,
   Cloudflare-platform, Cloudflare-public-product, Green Checkpoint and release-acceptance
   contracts.
@@ -34,45 +35,38 @@ the newest accepted-main evidence chain and accepted amendments.
 | 1 | CF-A / `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` | DONE | Source-controlled verifier contract, shards and governance guards accepted branch-locally. |
 | 2 | CF-B / `CLOUDFLARE-RUNTIME-COMPATIBILITY` | DONE | Worker, Static Assets, Container, pinned Python/Node delivery toolchain and Neon PostgreSQL 18 compatibility proven; protected V9 recovery retained. |
 | 3 | CF-C / `CLOUDFLARE-CANDIDATE-DEPLOYMENT` | DONE | Real Cloudflare staging Worker + Container, staging PostgreSQL 18 runtime binding, exact-SHA release/health/database acceptance and trigger quarantine succeeded on branch checkpoints. |
-| 4 | CF-D / `CLOUDFLARE-PUBLIC-CUTOVER` | SOURCE COMPLETE / CERTIFICATION IN PROGRESS | Post-merge exact-main release gate, direct release-control DB bootstrap, gated production Workers Build, Custom Domain, live acceptance and rollback source are implemented. Production mutation remains post-merge only. |
+| 4 | CF-D / `CLOUDFLARE-PUBLIC-CUTOVER` | DONE / ACCEPTED | Exact-main production release, reusable database binding custody, gated Workers Build promotion, canonical Custom Domain, live acceptance, provider-secret custody and terminal fail-closed DAG are accepted through Production Release #78 on exact main `b8b2721...`. |
 
 Internal milestone state is branch-local only. It does not advance accepted V10
 percentage, unlock WP23+, activate public multi-user mode, or authorize broker/Real
 execution.
 
-## 3. Current exact work item
+## 3. Final accepted work item
 
-Current state is `RED_REPAIR_ONLY` under Amendment 16 until the replacement SHA created
-by this repair batch completes full exact-head certification.
+The integrated Cloudflare System Update is accepted complete.
 
-The immediately preceding head is:
+Final accepted evidence chain:
 
-`902fca16fb83b1d72dd8a2ff9b8edabf3fe7a8ee`
+- final accepted protected `main`: `b8b27217a177d954ae1efb327b224503fd0e30b0`;
+- PR #547 squash merge completed the current-main provider-secret custody hardening;
+- Regression Shield #1617 / run `35320951393`: `success`;
+- V10 Engineering Governance #1607 / run `35320951440`: `success`;
+- complete applicable exact-main push batch: `success`;
+- V10 Cloudflare Production Release #78 / run `35321810810`: `success`;
+- exact-main database state/staging anchor: `success`;
+- staging rehearsal/production database state: `success`;
+- hosted staging and production recovery: correctly `skipped` because the accepted reusable runtime database bindings were already ready;
+- exact-main gated production promotion: `success`;
+- gated exact-main Workers Build deployment: `success`;
+- canonical Custom Domain attach/verification and live release acceptance: `success`;
+- rollback: correctly unnecessary;
+- terminal release DAG fail-closed gate: `success`.
 
-Its verification batch completed with one shared documentation-compatibility root cause:
+The accepted chain resolves the earlier RED repair history preserved below without rewriting it. The historical RED checkpoints remain evidence of the failure-learning path; they are not current execution state.
 
-- Self-Hosted Windows CI run `34456420839` failed in the protected regression suite
-  because `scripts/check_v10_cloudflare_candidate_delivery.py` could not find the exact
-  machine-consumed `Green Checkpoint verification` ledger marker;
-- V10 Engineering Governance run `34456420931` failed at the same Green Checkpoint
-  governance boundary for the same missing marker;
-- the protected Windows batch had already passed dependency installation, PostgreSQL 18
-  rehearsal, lock verification, repository/CI policy, compile, Ruff, formatter, mypy,
-  stable `app:app` and read-only release checks;
-- the regression suite otherwise reported `3040` passed tests and `62.2%` branch
-  coverage, above the required `60%` threshold;
-- all other observed exact-head PR workflows completed `success`;
-- exact-head Cloudflare staging Workers Build completed `success`;
-- exact-head Sonar passed before the governance marker check.
+Historical Amendment-16 repair-state vocabulary is intentionally preserved for machine/audit compatibility: `RED_REPAIR_ONLY` describes superseded repair checkpoints below and is **not** the current System Update state.
 
-FL115 records the root cause: the ledger refresh renamed the existing canonical heading
-from `Green Checkpoint verification` to the human-equivalent `Green Checkpoint history`.
-This correction restores the exact compatibility marker and keeps the stronger refreshed
-evidence below it. No governance consumer, test, security check or authority boundary is
-weakened.
-
-The exact replacement SHA is recorded in PR/dashboard evidence after publication because
-a tracked document cannot truthfully self-reference the commit that contains itself.
+No public multi-user, Telegram/VK provider activation, T-Invest public READ activation, broker-write or Real-money authority is implied by this infrastructure/release closeout.
 
 ## 4. Final-convergence defect inventory
 
@@ -108,11 +102,12 @@ a tracked document cannot truthfully self-reference the commit that contains its
 - [x] Security/authority/secret/recovery consequences reviewed.
 - [x] Mandatory split triggers reviewed; no additional implementation branch split is required.
 - [x] No WEB-VISUAL, Telegram/VK, AI/Cortex, broker-write or Real-money scope absorbed.
-- [ ] Replacement exact-head checkpoint `CERTIFIED_GREEN`.
-- [ ] Complete final Files Changed / independent review remains clear on the replacement SHA.
+- [x] Final replacement exact-head checkpoint reached `CERTIFIED_GREEN` before merge.
+- [x] Complete final Files Changed / review gate was clear with zero unresolved blocking threads.
+- [x] Squash merge and exact-new-main acceptance completed.
+- [x] Production Release #78 accepted the exact final main release path.
 
-Source implementation is `INTEGRATION_READY` for final external exact-head certification.
-This is not a GREEN claim and not accepted-main authority.
+Integrated implementation is **ACCEPTED COMPLETE**. This ledger is now historical execution evidence and not a competing current-status authority.
 
 ## 6. Mandatory split-trigger review
 
@@ -125,7 +120,7 @@ This is not a GREEN claim and not accepted-main authority.
 | Live/temporal evidence | POST-MERGE BOUNDARY | Exact production evidence must be gathered after merge and cannot be synthesized branch-locally. |
 | Production cutover | TIMING BOUNDARY | Amendment 15 explicitly keeps actual CF-D mutation after merge; no separate implementation branch is required. |
 | Real-money authority | N/A | Broker write and Real execution remain OFF. |
-| Reviewability limit | CLEAR | Current PR is one coherent Cloudflare/Neon release-control convergence unit. |
+| Reviewability limit | CLEAR | The final convergence PR was one coherent Cloudflare/Neon release-control convergence unit. |
 
 Split decision: `NO_ADDITIONAL_BRANCH_SPLIT_REQUIRED`.
 
@@ -152,51 +147,50 @@ Split decision: `NO_ADDITIONAL_BRANCH_SPLIT_REQUIRED`.
 - `3da2e1c2b9d3f866a45007ca6fbdd7aaefddde50`: custody/security hardening; Sonar identified explicit TLS-policy and cognitive-complexity findings.
 - `c8bb15e0a1cdf5179c4e5b27ef7b6cd59b3ac506`: explicit TLS policy + decomposition; Sonar/governance SUCCESS, protected merge gate RED only at FL114 tracked-content scan finding.
 - `902fca16fb83b1d72dd8a2ff9b8edabf3fe7a8ee`: FL114 marker repair + ledger refresh; all observed non-owning workflows and real staging build SUCCESS, owning Windows/Governance RED on the shared FL115 ledger-marker compatibility defect.
-- Replacement checkpoint: exact SHA recorded externally after publication; state `PENDING_FULL_RECERTIFICATION` until every applicable exact-head gate reaches terminal SUCCESS.
+- Final integrated replacement checkpoint `1431f94fb5106d2e12104b920a26546c5029c4ec` became `CERTIFIED_GREEN`, landed through PR #478, and was followed by focused accepted-main CF-D recovery/hardening repairs.
+- Final accepted Cloudflare runtime/release baseline `b8b27217a177d954ae1efb327b224503fd0e30b0` is proven through post-merge Regression Shield/Governance and Production Release #78.
 
-Every earlier exact-head result is historical after a content-changing repair.
+Every earlier RED or superseded exact-head result remains historical evidence only.
 
 ## 9. Main-drift record
 
-- Accepted `main` at final-convergence branch creation:
-  `6b28198550adc09a001de8779df900b13caa5c42`.
-- Accepted `main` immediately before this repair batch:
-  `6b28198550adc09a001de8779df900b13caa5c42`.
-- Drift intersecting this update: NONE at the recheck.
-- Re-anchor required before publication: NO.
-- The production workflow independently rechecks current `main` immediately before mutation.
+- Accepted `main` at final-convergence branch creation: `6b28198550adc09a001de8779df900b13caa5c42`.
+- Final accepted Cloudflare runtime/release baseline before documentation closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`.
+- Subsequent CF-D focused repairs were intentionally landed as separate bounded changes under Amendment 16 as real post-merge defects were exposed.
+- Production Release #78 rechecked exact current `main` immediately before production promotion and completed successfully.
+- No unresolved main drift remains in the accepted Cloudflare System Update closeout.
 
 ## 10. Final lifecycle
 
-- [ ] Replacement exact CF-D checkpoint `CERTIFIED_GREEN`.
-- [x] Branch-local source implementation `INTEGRATION_READY` for final certification.
-- [x] Integrated implementation branch and DRAFT PR exist.
+- [x] Final CF-D checkpoint reached `CERTIFIED_GREEN`.
+- [x] Integrated implementation reached `INTEGRATION_READY`.
 - [x] CF-A branch-local DONE.
 - [x] CF-B branch-local DONE.
-- [x] CF-C branch-local real provider acceptance DONE.
-- [x] CF-D source/release boundary complete.
-- [ ] Final independent review / complete Files Changed clear; unresolved blocking threads = 0.
-- [ ] PR transition to READY on unchanged certified head.
-- [ ] Any READY-state applicable checks conclude `success` on the exact head.
-- [ ] Squash merge into protected `main`.
-- [ ] Exact-new-main Regression Shield, Engineering Governance and every applicable post-merge gate `success`.
-- [ ] Exact-main isolated staging rehearsal passes post-merge.
-- [ ] Direct GitHub-OIDC -> Neon Function production bootstrap succeeds if the production runtime binding is absent.
-- [ ] CF-D gated production Worker + Container build succeeds.
-- [ ] Canonical `.ru` Custom Domain attached/verified.
-- [ ] Exact-main `/api/v10/release`, container-source and `/healthz database=READY` live acceptance passes.
-- [ ] Russian-network/no-VPN public-path evidence recorded if still required by current accepted authority.
-- [ ] Canonical current status/closeout updated only from the complete accepted evidence chain.
+- [x] CF-C real provider acceptance DONE.
+- [x] CF-D source/release boundary DONE.
+- [x] Final Files Changed / review gate clear; unresolved blocking threads = 0.
+- [x] READY exact-head verification completed successfully before final integrated merge.
+- [x] Integrated and subsequent focused repair PRs squash-merged into protected `main`.
+- [x] Exact-new-main Regression Shield, Engineering Governance and applicable post-merge gates completed `success`.
+- [x] Exact-main staging rehearsal passed.
+- [x] Production database runtime binding is accepted and reusable; hosted recovery is invoked only when actually required.
+- [x] CF-D gated production Worker + Container build/promotion succeeded.
+- [x] Canonical `.ru` Custom Domain attached/verified.
+- [x] Exact-main live release/database health acceptance passed.
+- [x] Russian-network/no-VPN evidence is **not a current accepted authority requirement**; the earlier ledger item was explicitly conditional and no accepted owning contract currently requires it.
+- [x] Canonical current status records the complete accepted evidence chain and this ledger is historical accepted execution evidence.
 
 ## 11. Handoff
 
-- Accepted main/base: `6b28198550adc09a001de8779df900b13caa5c42`.
-- Current PR: `#478`.
-- Pre-repair RED head: `902fca16fb83b1d72dd8a2ff9b8edabf3fe7a8ee`.
-- Current milestone: CF-D final exact-head certification and post-merge public cutover.
-- Completed: CF-A, CF-B, real CF-C, CF-D source path, direct control-plane bootstrap architecture, provider target custody, explicit TLS policy, rollback/domain/release guards.
-- Current repair: FL115 restores the canonical machine-consumed Green Checkpoint marker without weakening strict consumers.
-- Next lawful action after publication: full replacement-SHA exact-head certification; no unrelated feature work while RED.
-- Post-certification action: READY -> squash merge -> exact-new-main gates -> gated CF-D production release/live acceptance.
+- Final accepted Cloudflare runtime/release main before documentation closeout: `b8b27217a177d954ae1efb327b224503fd0e30b0`.
+- Final accepted Cloudflare production run: V10 Cloudflare Production Release #78 / `35321810810` / `success`.
+- Owning System Update issue: #412 (historical dashboard; issue state is administrative and does not override accepted source authority).
+- Provider-secret custody hardening issue #510: completed.
+- Update state: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED = ACCEPTED_COMPLETE`.
+- Completed milestones: CF-A, CF-B, CF-C, CF-D.
+- Current product implementation state: paused; no active functional implementation package.
+- Current next prepared package: `WEB-VISUAL-INTEGRATED` / OWNER START REQUIRED.
+- Exact start command remains `START V10 WEB VISUAL SYSTEM UPDATE`.
+- WP23+, Telegram Bot, AI/Cortex, Guardian, broker-write and Real execution remain locked/not authorized.
 
-This document is not a competing current-status authority.
+This document is a historical accepted execution record. Current progress/current-next authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` on accepted protected `main`.
