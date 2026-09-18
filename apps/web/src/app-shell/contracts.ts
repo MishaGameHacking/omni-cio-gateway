@@ -26,7 +26,11 @@ export interface WebSessionView {
 export interface ProviderView {
   provider: IdentityProvider;
   enabled: boolean;
-  reason?: "NOT_CONFIGURED" | "PRIVATE_ACCEPTANCE_ONLY" | "PUBLIC_MULTI_USER_DISABLED";
+  reason?:
+    | "NOT_CONFIGURED"
+    | "PRIVATE_ACCEPTANCE_ONLY"
+    | "PUBLIC_MULTI_USER_DISABLED"
+    | "PROVIDER_ACTIVATION_DISABLED";
 }
 
 export interface PrivateAcceptanceStatusView {
