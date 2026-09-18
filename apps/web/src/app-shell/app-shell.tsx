@@ -44,6 +44,9 @@ function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
   const vk = provider("vk_id");
+  const activationBlocked = [telegram, vk].some(
+    (item) => item?.reason === "PUBLIC_MULTI_USER_DISABLED",
+  );
   return (
     <main className="login-shell" role="main">
       <section className="login-card" aria-labelledby="login-title">
@@ -59,7 +62,11 @@ function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
             <button className="ds-button ds-button--secondary" disabled={!vk?.enabled} type="submit">Продолжить через VK ID</button>
           </form>
         </div>
-        <p className="shell-caption">Provider buttons остаются fail-closed до reviewed provider configuration.</p>
+        <p className="shell-caption">
+          {activationBlocked
+            ? "Провайдер настроен, но публичная регистрация ещё не активирована."
+            : "Provider buttons остаются fail-closed до reviewed provider configuration."}
+        </p>
       </section>
     </main>
   );
