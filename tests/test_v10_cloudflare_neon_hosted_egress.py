@@ -160,15 +160,57 @@ class CloudflareNeonHostedEgressTests(unittest.TestCase):
             encoding="utf-8"
         )
         rendered = lock.render_hosted_control_plane_lock(source)
-        for marker in (
-            "psycopg==3.3.4",
-            "psycopg-binary==3.3.4",
-            "typing-extensions==4.16.0",
-        ):
-            self.assertIn(marker, rendered)
-        self.assertNotIn("fastapi==", rendered)
-        self.assertNotIn("tzdata==", rendered)
+        expected = {
+            "annotated-types": "0.8.0",
+            "pydantic": "2.13.4",
+            "pydantic-core": "2.46.4",
+            "psycopg": "3.3.4",
+            "psycopg-binary": "3.3.4",
+            "typing-extensions": "4.16.0",
+            "typing-inspection": "0.4.2",
+        }
+        self.assertEqual(lock.required_versions(), expected)
+        for package, version in expected.items():
+            self.assertIn(f"{package}=={version}", rendered)
+        rendered_packages = {
+            parsed[0]
+            for line in rendered.splitlines()
+            if (parsed := lock._parse_header(line)) is not None
+        }
+        self.assertEqual(rendered_packages, set(expected))
+        for forbidden in ("fastapi", "httpx", "starlette", "tzdata", "uvicorn"):
+            self.assertNotIn(f"{forbidden}==", rendered)
         self.assertIn("--hash=sha256:", rendered)
+
+    def test_hosted_control_plane_projection_fails_closed_on_version_drift(
+        self,
+    ) -> None:
+        from scripts import build_v10_cloudflare_hosted_control_plane_lock as lock
+
+        source = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text(
+            encoding="utf-8"
+        )
+        drifted = source.replace("pydantic==2.13.4", "pydantic==2.13.5", 1)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_HOSTED_LOCK_VERSION_DRIFT:pydantic",
+        ):
+            lock.render_hosted_control_plane_lock(drifted)
+
+    def test_hosted_control_plane_installed_verifier_covers_projection(self) -> None:
+        from scripts import build_v10_cloudflare_hosted_control_plane_lock as lock
+
+        expected = lock.required_versions()
+        with mock.patch.object(
+            lock.metadata,
+            "version",
+            side_effect=expected.__getitem__,
+        ) as version:
+            lock.verify_installed_control_plane_versions()
+        self.assertEqual(
+            [call.args[0] for call in version.call_args_list],
+            list(expected),
+        )
 
     def test_hosted_control_plane_lock_path_is_runner_temp_bounded(self) -> None:
         from scripts import build_v10_cloudflare_hosted_control_plane_lock as lock

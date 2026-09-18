@@ -251,7 +251,7 @@ jobs:
           hosted_lock="${RUNNER_TEMP}/omni-cio-v10-cloudflare-hosted-control-plane.txt"
           test -s "$hosted_lock"
           python -m pip install --disable-pip-version-check --require-hashes --no-deps --force-reinstall -r "$hosted_lock"
-          python -c "import importlib.metadata as m; expected={'psycopg':'3.3.4','psycopg-binary':'3.3.4','typing-extensions':'4.16.0'}; actual={name:m.version(name) for name in expected}; assert actual == expected, actual"
+          python -c "from scripts.build_v10_cloudflare_hosted_control_plane_lock import verify_installed_control_plane_versions as verify; verify()"
 
       - name: Bootstrap staging database secret through hosted egress
         shell: bash
@@ -533,7 +533,7 @@ jobs:
           hosted_lock="${RUNNER_TEMP}/omni-cio-v10-cloudflare-hosted-control-plane.txt"
           test -s "$hosted_lock"
           python -m pip install --disable-pip-version-check --require-hashes --no-deps --force-reinstall -r "$hosted_lock"
-          python -c "import importlib.metadata as m; expected={'psycopg':'3.3.4','psycopg-binary':'3.3.4','typing-extensions':'4.16.0'}; actual={name:m.version(name) for name in expected}; assert actual == expected, actual"
+          python -c "from scripts.build_v10_cloudflare_hosted_control_plane_lock import verify_installed_control_plane_versions as verify; verify()"
 
       - name: Bootstrap production database secret through hosted egress
         shell: bash

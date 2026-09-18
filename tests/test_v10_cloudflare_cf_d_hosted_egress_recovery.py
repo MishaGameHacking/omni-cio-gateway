@@ -13,6 +13,9 @@ _FAILURE_LEDGER = (
 _DAG_FAILURE_LEDGER = (
     _ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL158.md"
 )
+_IMPORT_FAILURE_LEDGER = (
+    _ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL160.md"
+)
 _ARCHITECTURE = _ROOT / "docs/architecture/V10_CLOUDFLARE_NEON_HOSTED_EGRESS_BRIDGE.md"
 
 
@@ -175,7 +178,9 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
 
     def test_hosted_dependency_projection_is_derived_from_canonical_lock(self) -> None:
         self.assertEqual(
-            self.workflow.count("build_v10_cloudflare_hosted_control_plane_lock"),
+            self.workflow.count(
+                "python -m scripts.build_v10_cloudflare_hosted_control_plane_lock"
+            ),
             2,
         )
         self.assertNotIn(
@@ -183,6 +188,11 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
             self.workflow,
         )
         self.assertIn("--require-hashes --no-deps --force-reinstall", self.workflow)
+        self.assertEqual(
+            self.workflow.count("verify_installed_control_plane_versions"),
+            2,
+        )
+        self.assertNotIn("expected={'psycopg':'3.3.4'", self.workflow)
 
     def test_legacy_neon_function_transport_is_not_reactivated(self) -> None:
         for source in (self.workflow, self.adapter):
@@ -250,9 +260,11 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         self.assertTrue(_ARCHITECTURE.is_file())
         self.assertTrue(_FAILURE_LEDGER.is_file())
         self.assertTrue(_DAG_FAILURE_LEDGER.is_file())
+        self.assertTrue(_IMPORT_FAILURE_LEDGER.is_file())
         architecture = _ARCHITECTURE.read_text(encoding="utf-8")
         failure = _FAILURE_LEDGER.read_text(encoding="utf-8")
         dag_failure = _DAG_FAILURE_LEDGER.read_text(encoding="utf-8")
+        import_failure = _IMPORT_FAILURE_LEDGER.read_text(encoding="utf-8")
         for marker in (
             "GITHUB_HOSTED_MISSING_SECRET_RECOVERY_ONLY",
             "HOSTED_EPHEMERAL_BRANCH_CUSTODY_RESYNC",
@@ -265,6 +277,12 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         self.assertIn("CF_D_REQUIRED_RECOVERY_SKIP_PROPAGATION", dag_failure)
         self.assertIn("CANCELLATION_FAIL_CLOSED", dag_failure)
         self.assertIn("Production Release #72", dag_failure)
+        self.assertIn(
+            "CF_D_HOSTED_RECOVERY_INCOMPLETE_IMPORT_CLOSURE",
+            import_failure,
+        )
+        self.assertIn("Production Release #74", import_failure)
+        self.assertIn("PYDANTIC_IMPORT_CLOSURE_EXPLICIT", architecture)
 
 
 if __name__ == "__main__":
