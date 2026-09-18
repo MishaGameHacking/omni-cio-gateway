@@ -148,6 +148,29 @@ def test_provider_activation_without_configuration_aborts_startup() -> None:
         )
 
 
+def test_telegram_activation_does_not_activate_configured_vk_id() -> None:
+    services = _build(
+        {
+            "PUBLIC_MULTI_USER_ENABLED": "true",
+            "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true",
+            "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
+            "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
+            "OMNI_V10_VK_ID_CLIENT_ID": "654321",
+            "OMNI_V10_CSRF_BINDING_KEY_HEX": KEY_A,
+            "OMNI_V10_IDENTITY_BINDING_KEY_HEX": KEY_B,
+        }
+    )
+    assert services.authentication is not None
+    assert services.registration_enabled is True
+    assert [runtime.provider for runtime in services.runtimes] == [
+        IdentityProviderV1.TELEGRAM
+    ]
+    assert (
+        services.disabled_reason(IdentityProviderV1.VK_ID)
+        == "PROVIDER_ACTIVATION_DISABLED"
+    )
+
+
 def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> None:
     services = _build(
         {
