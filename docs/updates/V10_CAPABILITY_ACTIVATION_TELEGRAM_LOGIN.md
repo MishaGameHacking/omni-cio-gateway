@@ -33,7 +33,10 @@ Repository preparation in this branch:
 - staging isolation from provider-auth secret propagation;
 - public browser Origin authority decoupled from the internal Container Host;
 - registration bound to the existing `PUBLIC_MULTI_USER_ENABLED` fail-closed gate;
-- truthful UI/API reason while provider configuration exists but public activation is off.
+- Telegram activation additionally requires `OMNI_V10_TELEGRAM_LOGIN_ENABLED=true`;
+- VK ID remains independently gated by `OMNI_V10_VK_ID_LOGIN_ENABLED=false`;
+- truthful UI/API reason while provider configuration exists but public or
+  capability-specific activation is off.
 
 ## External blocker inventory
 
@@ -44,6 +47,8 @@ Repository preparation in this branch:
 - [ ] Runtime-only identity-binding and CSRF keys in Cloudflare secret custody.
 - [ ] Public-user privacy/legal/capacity/monitoring/incident gates accepted.
 - [ ] `PUBLIC_MULTI_USER_ENABLED=true` accepted only after all owning gates close.
+- [ ] `OMNI_V10_TELEGRAM_LOGIN_ENABLED=true` accepted only for the Telegram capability.
+- [x] `OMNI_V10_VK_ID_LOGIN_ENABLED=false` remains fail-closed in this activation.
 
 No secret value belongs in this file, issue #549, PR comments, CI logs or chat.
 
