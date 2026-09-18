@@ -22,6 +22,8 @@ BUILD_INFO = ROOT / "scripts/write_v10_cloudflare_build_info.py"
 WEB_CONFIG = ROOT / "apps/web/vite.config.ts"
 _RUNTIME_ROLE_BINDING = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _PUBLIC_MULTI_USER_BINDING = "PUBLIC_MULTI_USER_ENABLED"
+_TELEGRAM_LOGIN_BINDING = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"
+_VK_ID_LOGIN_BINDING = "OMNI_V10_VK_ID_LOGIN_ENABLED"
 _CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
 _CONTAINER_SOURCE_FILE = "apps/api/generated_cloudflare_source_sha.txt"
 
@@ -180,6 +182,8 @@ def _validate_wrangler(contract: dict[str, Any]) -> None:
     if production_vars != {
         _RUNTIME_ROLE_BINDING: roles["production"],
         _PUBLIC_MULTI_USER_BINDING: "false",
+        _TELEGRAM_LOGIN_BINDING: "false",
+        _VK_ID_LOGIN_BINDING: "false",
     }:
         raise RuntimeError("CLOUDFLARE_RUNTIME_PRODUCTION_ROLE_BINDING_INVALID")
     environments = _object(wrangler.get("env"), "ENV")
@@ -188,6 +192,8 @@ def _validate_wrangler(contract: dict[str, Any]) -> None:
     if staging_vars != {
         _RUNTIME_ROLE_BINDING: roles["staging"],
         _PUBLIC_MULTI_USER_BINDING: "false",
+        _TELEGRAM_LOGIN_BINDING: "false",
+        _VK_ID_LOGIN_BINDING: "false",
     }:
         raise RuntimeError("CLOUDFLARE_RUNTIME_STAGING_ROLE_BINDING_INVALID")
     container = _single_object(
@@ -214,12 +220,16 @@ def _validate_worker() -> None:
         "ALLOWED_DATABASE_RUNTIME_ROLES.has(value)",
         "OMNI_V10_POSTGRES_RUNTIME_ROLE: runtimeRole",
         'PUBLIC_MULTI_USER_ENV_NAME = "PUBLIC_MULTI_USER_ENABLED"',
+        'TELEGRAM_LOGIN_ENV_NAME = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"',
+        'VK_ID_LOGIN_ENV_NAME = "OMNI_V10_VK_ID_LOGIN_ENABLED"',
         '"OMNI_V10_TELEGRAM_OIDC_CLIENT_ID"',
         '"OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET"',
         '"OMNI_V10_VK_ID_CLIENT_ID"',
         '"OMNI_V10_IDENTITY_BINDING_KEY_HEX"',
         '"OMNI_V10_CSRF_BINDING_KEY_HEX"',
         "productAuthEnvironment(runtimeEnv, runtimeRole)",
+        '"CLOUDFLARE_TELEGRAM_LOGIN_FLAG_INVALID"',
+        '"CLOUDFLARE_VK_ID_LOGIN_FLAG_INVALID"',
         "if (runtimeRole !== PRODUCTION_RUNTIME_ROLE)",
         "CLOUDFLARE_RUNTIME_DATABASE_ROLE_NOT_CONFIGURED",
         'sleepAfter = "1m"',
