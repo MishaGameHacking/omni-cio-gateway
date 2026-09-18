@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+import hashlib
 from pathlib import Path
 import re
+
+import pytest
 
 from omni_cio.contracts.v1.domain import (
     InstrumentPrimaryIdentityKind,
@@ -38,7 +41,6 @@ def test_wp13_migration_series_is_contiguous_and_checksum_locked() -> None:
 
 
 
-
 def test_wp13_migration_checksum_is_line_ending_invariant(tmp_path: Path) -> None:
     migration_dir = tmp_path / "migrations"
     migration_dir.mkdir()
@@ -64,8 +66,6 @@ def test_wp13_migration_checksum_preserves_historical_crlf_identity(
     historical_bytes = source_lf.replace("\n", "\r\n").encode("utf-8")
     path.write_bytes(source_lf.encode("utf-8"))
 
-    import hashlib
-
     assert discover_migrations(migration_dir)[0].sha256 == hashlib.sha256(
         historical_bytes
     ).hexdigest()
@@ -76,8 +76,6 @@ def test_wp13_migration_checksum_rejects_bare_cr(tmp_path: Path) -> None:
     migration_dir.mkdir()
     path = migration_dir / "0001_example.sql"
     path.write_bytes(b"CREATE TABLE example (id integer);\rSELECT 1;\r")
-
-    import pytest
 
     with pytest.raises(MigrationSeriesError, match="unsupported bare CR"):
         discover_migrations(migration_dir)
