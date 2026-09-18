@@ -37,10 +37,9 @@ Current target after Amendments 14/15 are accepted:
 - один public modern multi-user Omni-CIO Web product для обычных Internet-connected phone/desktop browsers;
 - GitHub = engineering/source/review/provenance authority rank 1;
 - Cloudflare Workers Paid = selected new-V10 application/edge/build platform rank 2;
-- current Cloudflare implementation update = `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` on default branch `system/cloudflare-public-product`;
-- ordered internal milestones = `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
-- one final PR is default, but each milestone must pass its branch-local Exit Gate before dependent work;
-- separate main merge between CF-A…CF-D is not required after Amendment 15 acceptance; a real mandatory split trigger still forces stop/split;
+- accepted Cloudflare implementation update = `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED_COMPLETE`; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
+- current authorized functional implementation package = NONE;
+- current next prepared package = `WEB-VISUAL-INTEGRATED / OWNER START REQUIRED`; a real mandatory split trigger still applies once any future System Update is authorized;
 - final production НЕ зависит от PROJECT OWNER home IP, Wi-Fi/router/LAN, home Internet/power или Lenovo;
 - Lenovo = engineering/self-hosted CI/controlled acceptance/recovery/rollback, не public production origin;
 - Cloud.ru Evolution is no longer selected for new V10;
@@ -49,7 +48,7 @@ Current target after Amendments 14/15 are accepted:
 - D1 is not automatic financial/tenant truth replacement and Hyperdrive PG18 is not assumed compatible;
 - PROJECT OWNER не special product role; OWNER использует тот же OmniCIOUserAccount -> Tenant -> Session path, что и любой USER;
 - Telegram Login/VK ID = product auth; GitHub/cloud-provider/Windows = engineering authority;
-- public multi-user = approved target, но `PUBLIC_MULTI_USER_ENABLED=false` до CF-D + required capability gates;
+- public multi-user = approved target, но `PUBLIC_MULTI_USER_ENABLED=false` до завершения remaining capability-specific gates;
 - initial USER access fully free: BILLING_ENABLED=false, TRIAL_ENABLED=false, SUBSCRIPTION_ENFORCEMENT=false, PREMIUM_FEATURE_GATING=false; future monetization DEFERRED_OPTIONAL;
 - each USER owns only tenant-scoped BrokerConnection READ/optional TRADE credentials; no global/shared user broker token;
 - raw credentials never return to browser storage and never enter GitHub/CI/artifacts;
@@ -57,7 +56,7 @@ Current target after Amendments 14/15 are accepted:
 - `app:app` protected V9 baseline, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, no transfer/withdrawal/margin/leverage/uncovered-short remain preserved.
 
 WEB VISUAL lock:
-- `WEB-VISUAL-INTEGRATED` remains prepared and separate from the Cloudflare public-product update;
+- `WEB-VISUAL-INTEGRATED` is the current next prepared package after the accepted Cloudflare public-product update;
 - do not create or implement its visual-refresh source until the exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE` exists.
 
 Integrated System Update Execution Law:

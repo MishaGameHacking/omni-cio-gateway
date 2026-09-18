@@ -151,10 +151,11 @@ def test_status_closes_wp22a_and_stages_integrated_cloudflare_before_prepared_vi
     assert "Block E — **COMPLETE (14%)**" in text
     assert "PRODUCT IMPLEMENTATION PAUSED" in text
     assert (
-        "## Current next package — CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — "
-        "Cloudflare Public Product System Update"
+        "## Current next package — WEB-VISUAL-INTEGRATED — "
+        "Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED"
         in text
     )
+    assert "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE" in text
     assert "CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION" in text
     assert "CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY" in text
     assert "CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT" in text

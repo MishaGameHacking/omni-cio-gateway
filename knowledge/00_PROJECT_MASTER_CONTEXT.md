@@ -44,12 +44,11 @@ Current V10 snapshot after Amendments 14/15 are accepted:
 
 - **54% accepted implementation**;
 - WP0–WP22A / Blocks A–E COMPLETE;
-- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED** as the current authorized functional package;
-- default integrated implementation branch: `system/cloudflare-public-product`;
-- ordered internal milestones: `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
-- `WEB-VISUAL-INTEGRATED` remains the prepared product System Update, **PRODUCT IMPLEMENTATION PAUSED** for visual-refresh scope, with **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` still required before its separate source work;
+- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED** accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
+- no active authorized functional implementation package;
+- **WEB-VISUAL-INTEGRATED** as the current next package, with **PRODUCT IMPLEMENTATION PAUSED** and **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` before its separate source work;
 - WP23+ LOCKED;
-- current `PUBLIC_MULTI_USER_ENABLED=false` until CF-D and capability-specific live gates;
+- current `PUBLIC_MULTI_USER_ENABLED=false` until the remaining capability-specific live gates;
 - Telegram Login / VK ID / public multi-user tenant access / public T-Invest READ remain `BLOCKED_EXTERNAL` until their own live gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
 - protected V9 `app:app` rollback remains intact.

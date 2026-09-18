@@ -41,10 +41,11 @@ def test_wp22a_is_accepted_and_integrated_cloudflare_is_next_while_visual_is_pre
     assert "current runtime state, not a V10-wide release lock" in text
     assert "current user-facing activation transitions — **BLOCKED_EXTERNAL" in text
     assert (
-        "## Current next package — CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — "
-        "Cloudflare Public Product System Update"
+        "## Current next package — WEB-VISUAL-INTEGRATED — "
+        "Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED"
         in text
     )
+    assert "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE" in text
     assert "CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION" in text
     assert "CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY" in text
     assert "CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT" in text

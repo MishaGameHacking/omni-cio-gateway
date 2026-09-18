@@ -10,14 +10,13 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 
 - accepted implementation: 54%;
 - WP0–WP22A COMPLETE;
-- current next package after Amendment 15 acceptance: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`;
-- default implementation branch: `system/cloudflare-public-product`;
-- ordered internal milestones: `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
-- internal milestones share one final integrated PR by default, but each branch-local Exit Gate must pass before dependent work;
-- `WEB-VISUAL-INTEGRATED` remains prepared but PRODUCT IMPLEMENTATION PAUSED for visual-refresh scope until its separate OWNER start/sequence permits source work;
+- `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` is accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
+- current authorized functional implementation package: NONE;
+- current next prepared package: `WEB-VISUAL-INTEGRATED` / OWNER START REQUIRED;
+- `WEB-VISUAL-INTEGRATED` remains PRODUCT IMPLEMENTATION PAUSED until its separate OWNER start/sequence permits source work;
 - exact visual start remains `START V10 WEB VISUAL SYSTEM UPDATE`;
 - WP23+ locked;
-- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until CF-D and capability-specific gates;
+- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until the remaining capability-specific gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
 Before any material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 current status, V10 Program Lock/Master Plan/Amendments Index, all applicable active amendments/contracts including Amendments 14/15 and, when accepted, Amendment 16 Green Checkpoint / Targeted CI Repair, current V10 status, current execution-unit docs, open PR/issues and GitHub Actions.
@@ -63,7 +62,7 @@ Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source/Cloud
 
 Governed by the **Integrated System Update Execution Law**. Every material change is exactly one `FOCUSED_CHANGE` or one OWNER-authorized `INTEGRATED_SYSTEM_UPDATE` with ordered internal member milestones.
 
-Current Cloudflare execution unit is `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`. Its one-branch default never bypasses DB/migration, security/authority, dependency/toolchain, OWNER/provider, live/temporal, production-cutover, Real-money or reviewability split triggers.
+`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` is accepted COMPLETE. No new functional execution unit is active until a later package is explicitly authorized. Future Integrated System Updates still may not bypass DB/migration, security/authority, dependency/toolchain, OWNER/provider, live/temporal, production-cutover, Real-money or reviewability split triggers.
 
 `INTEGRATION_READY` remains the final whole-update readiness state before final landing review. Under Amendment 16, earlier logical checkpoints may be published/certified, but no dependent functional checkpoint may build on them until they are `CERTIFIED_GREEN`.
 
@@ -151,7 +150,7 @@ Current GitHub/Lenovo CI routing stays authoritative until CF-A lanes are accept
 
 ## WEB VISUAL lock
 
-`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` deploys the existing accepted presentation. It does not authorize visual-refresh implementation.
+`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` accepted the existing safe presentation/runtime release path. It does not authorize visual-refresh implementation.
 
 Do not create or implement `WEB-VISUAL-INTEGRATED` until the OWNER issues exactly:
 

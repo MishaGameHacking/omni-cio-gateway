@@ -31,13 +31,13 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 Это не второй progress ledger; точное состояние всегда берётся из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 - WP0–WP22A / Blocks A–E accepted COMPLETE; progress 54%.
-- Product implementation remains PAUSED for unrelated product scope during the provider/security transition.
-- Current next package after Amendment 15 acceptance: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`.
-- Default integrated implementation branch: `system/cloudflare-public-product`.
-- Ordered internal milestones: `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`.
-- `WEB-VISUAL-INTEGRATED` remains prepared and requires its separate exact OWNER start command `START V10 WEB VISUAL SYSTEM UPDATE` before source work.
+- `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` is accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones.
+- Current authorized functional implementation package: NONE.
+- Product implementation remains PAUSED pending a new authorized System Update.
+- Current next prepared package: `WEB-VISUAL-INTEGRATED` / OWNER START REQUIRED.
+- `WEB-VISUAL-INTEGRATED` requires its separate exact OWNER start command `START V10 WEB VISUAL SYSTEM UPDATE` before source work.
 - WP23+ locked.
-- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until CF-D and capability-specific live gates.
+- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until the remaining capability-specific live gates.
 - Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ remain `BLOCKED_EXTERNAL` until their own gates.
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 

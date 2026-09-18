@@ -33,15 +33,13 @@
 
 Current accepted/convenience state after Amendment 15 acceptance:
 - WP0–WP22A COMPLETE; accepted implementation progress 54%;
-- current execution unit = CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED;
-- default implementation branch = system/cloudflare-public-product;
-- ordered internal milestones = CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER;
-- one final PR is default; each branch-local milestone Exit Gate must pass before dependent work;
-- WEB-VISUAL-INTEGRATED remains prepared but separate;
-- PRODUCT IMPLEMENTATION PAUSED for visual-refresh/unrelated product scope;
+- CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED = ACCEPTED COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
+- current authorized functional implementation package = NONE;
+- WEB-VISUAL-INTEGRATED is the current next prepared package;
+- PRODUCT IMPLEMENTATION PAUSED until its separate OWNER start;
 - OWNER START REQUIRED before WEB VISUAL source work: exact command `START V10 WEB VISUAL SYSTEM UPDATE`;
 - WP23+, broker write and Real execution remain locked;
-- public activation remains fail-closed until CF-D and capability-specific external gates.
+- public capability activation remains fail-closed until the remaining capability-specific external gates.
 Never trust this snapshot over accepted current status/main.
 
 Current product direction:
@@ -119,8 +117,8 @@ Engineering invariants:
 - old chats/screenshots/stale PR text lose to accepted main + AGENTS + Current Status.
 
 WEB VISUAL lock:
-- CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED deploys the existing accepted presentation;
-- do not create/implement WEB-VISUAL-INTEGRATED without the exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE`.
+- CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED has accepted the existing safe presentation/runtime release path;
+- WEB-VISUAL-INTEGRATED remains unstarted; do not create/implement it without the exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE`.
 
 Broker/money safety:
 - protected V9 READ/Sandbox/Real contours remain isolated;
