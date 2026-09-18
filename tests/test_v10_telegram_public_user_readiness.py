@@ -5,7 +5,6 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
-from unittest import mock
 
 from scripts import check_v10_telegram_public_user_readiness as guard
 
@@ -61,6 +60,21 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "TELEGRAM_PUBLIC_USER_READINESS_SCOPE_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_missing_production_vars(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.WRANGLER
+            source = path.read_text(encoding="utf-8")
+            start = source.index('  "vars": {')
+            end = source.index('  "secrets": {', start)
+            path.write_text(source[:start] + source[end:], encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_PRODUCTION_FLAG_DRIFT",
             ):
                 guard.validate(root)
 

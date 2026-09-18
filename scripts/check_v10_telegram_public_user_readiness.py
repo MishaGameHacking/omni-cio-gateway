@@ -64,6 +64,8 @@ def _validate_contract(contract: dict[str, Any]) -> None:
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_STATUS_INVALID")
     if contract.get("capability_id") != "telegram_login":
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_CAPABILITY_INVALID")
+    if contract.get("accepted_base_main_sha") != "66ef57dedd07ad68d472cb205da6bb8e87528e94":
+        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID")
     if contract.get("canonical_origin") != "https://omnicio.ru":
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_ORIGIN_INVALID")
     if contract.get("canonical_redirect_uri") != "https://omnicio.ru/api/v10/web/auth/telegram/callback":
@@ -223,10 +225,22 @@ def _validate_sources(root: Path) -> None:
         "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
         "OMNI_V10_VK_ID_LOGIN_ENABLED": "false",
     }
-    if wrangler.get("vars", {}) | {} and any(wrangler.get("vars", {}).get(k) != v for k, v in expected_flags.items()):
+    production_vars = wrangler.get("vars")
+    if not isinstance(production_vars, dict) or any(
+        production_vars.get(name) != value for name, value in expected_flags.items()
+    ):
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_PRODUCTION_FLAG_DRIFT")
-    staging = wrangler.get("env", {}).get("staging", {})
-    if any(staging.get("vars", {}).get(k) != v for k, v in expected_flags.items()):
+
+    environments = wrangler.get("env")
+    if not isinstance(environments, dict):
+        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_STAGING_FLAG_DRIFT")
+    staging = environments.get("staging")
+    if not isinstance(staging, dict):
+        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_STAGING_FLAG_DRIFT")
+    staging_vars = staging.get("vars")
+    if not isinstance(staging_vars, dict) or any(
+        staging_vars.get(name) != value for name, value in expected_flags.items()
+    ):
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_STAGING_FLAG_DRIFT")
     containers = wrangler.get("containers")
     if (
