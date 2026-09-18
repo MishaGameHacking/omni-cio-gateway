@@ -54,6 +54,23 @@ When public multi-user is false, configured providers report
 `PUBLIC_MULTI_USER_DISABLED`. When public multi-user is true but a provider's own switch
 is false, that provider reports `PROVIDER_ACTIVATION_DISABLED`.
 
+## Sanitized Cloudflare readiness proof
+
+The canonical read-only proof reuses the existing `V10 Cloudflare Provider Readiness`
+workflow and its already-reviewed Cloudflare control-plane credential boundary. After this
+checker is accepted on protected `main`, dispatch that workflow on `main` and require:
+
+`CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY production_bindings=4 staging_bindings=0`
+
+The probe reads only Worker secret-binding metadata. It requires exactly the four reviewed
+production bindings above as `secret_text`, rejects duplicate/type drift, fails closed if a
+provider response exposes a secret value, and proves that none of the four bindings exists
+on `omni-cio-v10-web-staging`. It never copies Telegram/provider secret values into
+GitHub secrets, repository files, logs, outputs or artifacts.
+
+A feature-branch/manual run is not final activation evidence. The authoritative readiness
+run is the accepted checker on protected `main`, before the separate activation change.
+
 ## Acceptance sequence
 
 1. source-preparation PR exact-head DRAFT/READY GREEN and squash merge;
