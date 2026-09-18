@@ -117,10 +117,43 @@ def test_invalid_public_multi_user_flag_aborts_startup() -> None:
         _build({"PUBLIC_MULTI_USER_ENABLED": "TRUE"})
 
 
+def test_public_multi_user_does_not_enable_provider_without_its_own_gate() -> None:
+    services = _build(
+        {
+            "PUBLIC_MULTI_USER_ENABLED": "true",
+            "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
+            "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
+            "OMNI_V10_CSRF_BINDING_KEY_HEX": KEY_A,
+            "OMNI_V10_IDENTITY_BINDING_KEY_HEX": KEY_B,
+        }
+    )
+    assert services.authentication is None
+    assert services.runtimes == ()
+    assert (
+        services.disabled_reason(IdentityProviderV1.TELEGRAM)
+        == "PROVIDER_ACTIVATION_DISABLED"
+    )
+
+
+def test_provider_activation_without_configuration_aborts_startup() -> None:
+    with pytest.raises(
+        Phase5ProviderAuthConfigurationError,
+        match="WP22A_PHASE5_TELEGRAM_ACTIVATION_CONFIGURATION_REQUIRED",
+    ):
+        _build(
+            {
+                "PUBLIC_MULTI_USER_ENABLED": "true",
+                "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true",
+            }
+        )
+
+
 def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> None:
     services = _build(
         {
             "PUBLIC_MULTI_USER_ENABLED": "true",
+            "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true",
+            "OMNI_V10_VK_ID_LOGIN_ENABLED": "true",
             "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
             "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
             "OMNI_V10_VK_ID_CLIENT_ID": "654321",
