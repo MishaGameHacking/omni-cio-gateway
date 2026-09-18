@@ -116,6 +116,13 @@ jobs:
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
         run: python -m scripts.probe_v10_neon_authority_diagnostics
 
+      - name: Probe Telegram Login production binding readiness without values
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m scripts.probe_v10_cloudflare_telegram_login_readiness
+
       - name: Accept provider readiness after database authority resolution
         if: ${{ success() }}
         shell: bash
