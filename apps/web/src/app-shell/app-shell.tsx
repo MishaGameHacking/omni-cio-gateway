@@ -40,6 +40,16 @@ type LoginScreenProps = Readonly<{
   apiUnavailable: boolean;
 }>;
 
+function providerStatusCaption(providers: readonly (ProviderView | undefined)[]): string {
+  if (providers.some((item) => item?.reason === "PUBLIC_MULTI_USER_DISABLED")) {
+    return "Провайдер настроен, но публичная регистрация ещё не активирована.";
+  }
+  if (providers.some((item) => item?.reason === "PROVIDER_ACTIVATION_DISABLED")) {
+    return "Часть настроенных провайдеров входа ещё не активирована.";
+  }
+  return "Provider buttons остаются fail-closed до reviewed provider configuration.";
+}
+
 function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
@@ -59,7 +69,7 @@ function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
             <button className="ds-button ds-button--secondary" disabled={!vk?.enabled} type="submit">Продолжить через VK ID</button>
           </form>
         </div>
-        <p className="shell-caption">Provider buttons остаются fail-closed до reviewed provider configuration.</p>
+        <p className="shell-caption">{providerStatusCaption([telegram, vk])}</p>
       </section>
     </main>
   );

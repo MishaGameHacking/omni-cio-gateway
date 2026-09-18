@@ -20,6 +20,8 @@ def test_deployed_telegram_runtime_uses_single_flight_jwks_verifier() -> None:
         sessions=SessionRegistryV1(),
         canonical_origin="https://omni.example",
         env={
+            "PUBLIC_MULTI_USER_ENABLED": "true",
+            "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true",
             "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
             "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
             "OMNI_V10_CSRF_BINDING_KEY_HEX": CSRF_BINDING_KEY_HEX,

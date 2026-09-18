@@ -21,6 +21,9 @@ RUNTIME = ROOT / "apps/api/cloudflare_runtime.py"
 BUILD_INFO = ROOT / "scripts/write_v10_cloudflare_build_info.py"
 WEB_CONFIG = ROOT / "apps/web/vite.config.ts"
 _RUNTIME_ROLE_BINDING = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
+_PUBLIC_MULTI_USER_BINDING = "PUBLIC_MULTI_USER_ENABLED"
+_TELEGRAM_LOGIN_BINDING = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"
+_VK_ID_LOGIN_BINDING = "OMNI_V10_VK_ID_LOGIN_ENABLED"
 _CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
 _CONTAINER_SOURCE_FILE = "apps/api/generated_cloudflare_source_sha.txt"
 
@@ -176,12 +179,22 @@ def _validate_wrangler(contract: dict[str, Any]) -> None:
     if assets.get("run_worker_first") != ["/api/*", "/healthz"]:
         raise RuntimeError("CLOUDFLARE_RUNTIME_EDGE_ROUTING_INVALID")
     production_vars = _object(wrangler.get("vars"), "VARS")
-    if production_vars != {_RUNTIME_ROLE_BINDING: roles["production"]}:
+    if production_vars != {
+        _RUNTIME_ROLE_BINDING: roles["production"],
+        _PUBLIC_MULTI_USER_BINDING: "false",
+        _TELEGRAM_LOGIN_BINDING: "false",
+        _VK_ID_LOGIN_BINDING: "false",
+    }:
         raise RuntimeError("CLOUDFLARE_RUNTIME_PRODUCTION_ROLE_BINDING_INVALID")
     environments = _object(wrangler.get("env"), "ENV")
     staging = _object(environments.get("staging"), "STAGING")
     staging_vars = _object(staging.get("vars"), "STAGING_VARS")
-    if staging_vars != {_RUNTIME_ROLE_BINDING: roles["staging"]}:
+    if staging_vars != {
+        _RUNTIME_ROLE_BINDING: roles["staging"],
+        _PUBLIC_MULTI_USER_BINDING: "false",
+        _TELEGRAM_LOGIN_BINDING: "false",
+        _VK_ID_LOGIN_BINDING: "false",
+    }:
         raise RuntimeError("CLOUDFLARE_RUNTIME_STAGING_ROLE_BINDING_INVALID")
     container = _single_object(
         wrangler.get("containers"),
@@ -206,6 +219,18 @@ def _validate_worker() -> None:
         '"omni_cio_cloudflare_staging"',
         "ALLOWED_DATABASE_RUNTIME_ROLES.has(value)",
         "OMNI_V10_POSTGRES_RUNTIME_ROLE: runtimeRole",
+        'PUBLIC_MULTI_USER_ENV_NAME = "PUBLIC_MULTI_USER_ENABLED"',
+        'TELEGRAM_LOGIN_ENV_NAME = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"',
+        'VK_ID_LOGIN_ENV_NAME = "OMNI_V10_VK_ID_LOGIN_ENABLED"',
+        '"OMNI_V10_TELEGRAM_OIDC_CLIENT_ID"',
+        '"OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET"',
+        '"OMNI_V10_VK_ID_CLIENT_ID"',
+        '"OMNI_V10_IDENTITY_BINDING_KEY_HEX"',
+        '"OMNI_V10_CSRF_BINDING_KEY_HEX"',
+        "productAuthEnvironment(runtimeEnv, runtimeRole)",
+        '"CLOUDFLARE_TELEGRAM_LOGIN_FLAG_INVALID"',
+        '"CLOUDFLARE_VK_ID_LOGIN_FLAG_INVALID"',
+        "if (runtimeRole !== PRODUCTION_RUNTIME_ROLE)",
         "CLOUDFLARE_RUNTIME_DATABASE_ROLE_NOT_CONFIGURED",
         'sleepAfter = "1m"',
         'headers.delete("x-forwarded-for")',
@@ -224,7 +249,7 @@ def _validate_worker() -> None:
         'duplex: "half"',
         "CLOUDFLARE_RUNTIME_DATABASE_NOT_CONFIGURED",
         'url.pathname === "/api/v10/release"',
-        "public_multi_user_enabled: false",
+        'public_multi_user_enabled: publicMultiUserValue(env) === "true"',
         "real_trading_enabled: false",
     )
     _require_markers(worker, required, "CLOUDFLARE_RUNTIME_WORKER_GUARD_MISSING")
@@ -308,7 +333,12 @@ def _validate_runtime() -> None:
         "runtime_role = _runtime_database_role()",
         "_probe_cloudflare_database(",
         "expected_runtime_role=runtime_role",
-        "provider_auth=None",
+        "build_wp22a_phase5_provider_auth",
+        '_PUBLIC_ORIGIN = "https://omnicio.ru"',
+        '_PUBLIC_HOST = "omnicio.ru"',
+        'if runtime_role == "omni_cio_cloudflare_prod"',
+        "provider_auth=provider_auth",
+        "browser_origin_hostname=(",
         "trusted_edge_tls_terminated=False",
         "generated_cloudflare_source_sha.txt",
         '"CLOUDFLARE_RUNTIME_IMAGE_SOURCE_SHA_REQUIRED"',

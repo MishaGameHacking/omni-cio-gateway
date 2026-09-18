@@ -171,6 +171,7 @@ def _provider_services(
     sessions: SessionRegistryV1,
     *,
     configured: bool = False,
+    activation_blocked: bool = False,
 ) -> tuple[ProviderAuthRouteServicesV1, BrowserCookiePolicyV1]:
     cookies = BrowserCookiePolicyV1(csrf_binding_key=CSRF_KEY)
     return (
@@ -181,6 +182,11 @@ def _provider_services(
             ),
             cookies=cookies,
             now=lambda: FIXED_NOW,
+            disabled_reasons=(
+                {IdentityProviderV1.TELEGRAM: "PUBLIC_MULTI_USER_DISABLED"}
+                if activation_blocked
+                else {}
+            ),
         ),
         cookies,
     )
@@ -192,11 +198,14 @@ def _app(
     database_probe=lambda: None,
     sessions: SessionRegistryV1 | None = None,
     provider_configured: bool = False,
+    provider_activation_blocked: bool = False,
+    browser_origin_hostname: str | None = None,
 ):
     session_registry = sessions or SessionRegistryV1(PREVIEW_SESSION_POLICY)
     provider_auth, cookies = _provider_services(
         session_registry,
         configured=provider_configured,
+        activation_blocked=provider_activation_blocked,
     )
     app = create_hosted_preview_app(
         HostedPreviewServicesV1(
@@ -206,6 +215,7 @@ def _app(
             release_sha=RELEASE_SHA,
             now=lambda: FIXED_NOW,
             provider_auth=provider_auth,
+            browser_origin_hostname=browser_origin_hostname,
         ),
         web_dist=_web_dist(tmp_path),
     )
@@ -322,6 +332,43 @@ def test_unconfigured_provider_routes_exist_but_fail_closed(tmp_path: Path) -> N
     )
     assert configured_absent.status_code == 503
     assert configured_absent.json() == {"detail": "IDENTITY_PROVIDER_NOT_CONFIGURED"}
+
+
+def test_configured_provider_reports_public_activation_block_truthfully(
+    tmp_path: Path,
+) -> None:
+    app, _, _ = _app(tmp_path, provider_activation_blocked=True)
+    client = TestClient(app, base_url=ORIGIN)
+    providers = client.get("/api/v10/web/auth/providers").json()
+    assert providers[0] == {
+        "provider": "telegram",
+        "enabled": False,
+        "reason": "PUBLIC_MULTI_USER_DISABLED",
+    }
+
+
+def test_browser_origin_can_differ_from_internal_host_without_weakening_host_check(
+    tmp_path: Path,
+) -> None:
+    public_origin = "https://omnicio.ru"
+    app, _, _ = _app(
+        tmp_path,
+        provider_configured=True,
+        browser_origin_hostname="omnicio.ru",
+    )
+    client = TestClient(app, base_url=ORIGIN)
+    accepted = client.post(
+        TELEGRAM_START_PATH,
+        headers={"Origin": public_origin},
+        follow_redirects=False,
+    )
+    assert accepted.status_code == 303
+    rejected = client.post(
+        TELEGRAM_START_PATH,
+        headers={"Origin": "https://evil.example"},
+        follow_redirects=False,
+    )
+    assert rejected.status_code == 403
 
 
 def test_hosted_provider_callback_composes_verified_identity_to_session(

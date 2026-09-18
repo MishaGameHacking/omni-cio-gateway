@@ -269,3 +269,27 @@ Public target does not equal public activation. `PUBLIC_MULTI_USER_ENABLED=false
 ## 7. Threat-model maintenance
 
 Every V10 WP that introduces a new public surface, tenant data path, credential, persistent state, AI tool, provider or Real authority must update this threat model or explicitly demonstrate why no threat boundary changed.
+
+
+## Telegram Login production-activation preparation — 2026-09-18
+
+The accepted Telegram/VK authentication implementation is being prepared for canonical
+Cloudflare runtime activation without changing its current `BLOCKED_EXTERNAL` state.
+
+Additional controls for this activation contour:
+
+- Cloudflare Worker secret bindings are passed to the production Container only through
+  an explicit source-controlled provider-auth allowlist; staging receives no provider
+  credential bindings from this path;
+- the Worker never logs or serializes provider secret values;
+- public browser Origin authority (`omnicio.ru`) is separate from the fixed internal
+  Container Host (`omni-cio.internal`), preventing the internal proxy boundary from
+  accidentally rejecting the canonical browser while still rejecting foreign origins;
+- `PUBLIC_MULTI_USER_ENABLED=false` remains the source-controlled production default;
+- new external identity registration is enabled only when that exact public-user flag is
+  accepted as `true`; provider secrets alone cannot activate registration or mint a
+  tenant;
+- the PROJECT OWNER still uses the ordinary USER path and the historical owner scope
+  remains ineligible for Telegram/VK external identity binding;
+- broker write, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, transfer,
+  withdrawal, margin, leverage and uncovered-short boundaries are unchanged.

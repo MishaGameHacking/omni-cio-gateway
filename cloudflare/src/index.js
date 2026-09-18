@@ -24,6 +24,17 @@ const INTERNAL_HOST = "omni-cio.internal";
 const INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy";
 const REQUIRED_DATABASE_ENV_NAME = "OMNI_V10_POSTGRES_DSN";
 const REQUIRED_DATABASE_ROLE_ENV_NAME = "OMNI_V10_POSTGRES_RUNTIME_ROLE";
+const PUBLIC_MULTI_USER_ENV_NAME = "PUBLIC_MULTI_USER_ENABLED";
+const TELEGRAM_LOGIN_ENV_NAME = "OMNI_V10_TELEGRAM_LOGIN_ENABLED";
+const VK_ID_LOGIN_ENV_NAME = "OMNI_V10_VK_ID_LOGIN_ENABLED";
+const PRODUCTION_RUNTIME_ROLE = "omni_cio_cloudflare_prod";
+const PRODUCT_AUTH_SECRET_ENV_NAMES = Object.freeze([
+  "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
+  "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET",
+  "OMNI_V10_VK_ID_CLIENT_ID",
+  "OMNI_V10_IDENTITY_BINDING_KEY_HEX",
+  "OMNI_V10_CSRF_BINDING_KEY_HEX",
+]);
 const ALLOWED_DATABASE_RUNTIME_ROLES = new Set([
   "omni_cio_cloudflare_prod",
   "omni_cio_cloudflare_staging",
@@ -36,6 +47,51 @@ function runtimeDatabaseRole(bindings) {
   return typeof value === "string" && ALLOWED_DATABASE_RUNTIME_ROLES.has(value)
     ? value
     : null;
+}
+
+function booleanFlagValue(bindings, name, invalidCode) {
+  const value = bindings[name];
+  if (value === undefined || value === null || value === "") {
+    return "false";
+  }
+  if (value !== "true" && value !== "false") {
+    throw new Error(invalidCode);
+  }
+  return value;
+}
+
+function publicMultiUserValue(bindings) {
+  return booleanFlagValue(
+    bindings,
+    PUBLIC_MULTI_USER_ENV_NAME,
+    "CLOUDFLARE_PUBLIC_MULTI_USER_FLAG_INVALID",
+  );
+}
+
+function productAuthEnvironment(bindings, runtimeRole) {
+  const result = {
+    PUBLIC_MULTI_USER_ENABLED: publicMultiUserValue(bindings),
+    OMNI_V10_TELEGRAM_LOGIN_ENABLED: booleanFlagValue(
+      bindings,
+      TELEGRAM_LOGIN_ENV_NAME,
+      "CLOUDFLARE_TELEGRAM_LOGIN_FLAG_INVALID",
+    ),
+    OMNI_V10_VK_ID_LOGIN_ENABLED: booleanFlagValue(
+      bindings,
+      VK_ID_LOGIN_ENV_NAME,
+      "CLOUDFLARE_VK_ID_LOGIN_FLAG_INVALID",
+    ),
+  };
+  if (runtimeRole !== PRODUCTION_RUNTIME_ROLE) {
+    return result;
+  }
+  for (const name of PRODUCT_AUTH_SECRET_ENV_NAMES) {
+    const value = bindings[name];
+    if (typeof value === "string" && value.length > 0) {
+      result[name] = value;
+    }
+  }
+  return result;
 }
 
 function backendEnvironment() {
@@ -51,6 +107,7 @@ function backendEnvironment() {
     ...(runtimeRole
       ? { OMNI_V10_POSTGRES_RUNTIME_ROLE: runtimeRole }
       : {}),
+    ...productAuthEnvironment(runtimeEnv, runtimeRole),
   };
 }
 
@@ -186,7 +243,7 @@ export default {
         source_sha: SOURCE_SHA,
         backend: "container",
         static_assets: true,
-        public_multi_user_enabled: false,
+        public_multi_user_enabled: publicMultiUserValue(env) === "true",
         real_trading_enabled: false,
       });
     }
