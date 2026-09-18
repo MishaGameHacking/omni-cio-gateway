@@ -65,6 +65,18 @@ test("configured but activation-blocked provider stays disabled truthfully", asy
   await expect(page.getByText(/публичная регистрация ещё не активирована/i)).toBeVisible();
 });
 
+test("active provider does not inherit a disabled sibling's public-registration warning", async ({ page }) => {
+  await mockUnauthenticatedApi(page, [
+    { provider: "telegram", enabled: true },
+    { provider: "vk_id", enabled: false, reason: "PROVIDER_ACTIVATION_DISABLED" },
+  ]);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Продолжить через Telegram" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Продолжить через VK ID" })).toBeDisabled();
+  await expect(page.getByText(/публичная регистрация ещё не активирована/i)).toHaveCount(0);
+  await expect(page.getByText(/настроенных провайдеров входа ещё не активирована/i)).toBeVisible();
+});
+
 test("configured provider login uses a top-level POST instead of state-changing GET", async ({ page }) => {
   await mockUnauthenticatedApi(page, [
     { provider: "telegram", enabled: true },
