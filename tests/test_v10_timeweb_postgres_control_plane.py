@@ -7,9 +7,11 @@ import tempfile
 from unittest import mock
 import unittest
 from urllib.error import HTTPError
+from urllib.request import Request
 
 from scripts import check_v10_timeweb_postgres_control_plane as guard
 from scripts import probe_v10_timeweb_postgres_control_plane as probe
+from scripts import verify_v10_timeweb_github_environment as environment_gate
 
 
 class _Response:
@@ -32,9 +34,9 @@ class _Response:
 class _Opener:
     def __init__(self, outcomes: list[object]) -> None:
         self._outcomes = list(outcomes)
-        self.requests: list[object] = []
+        self.requests: list[Request] = []
 
-    def open(self, request: object, *, timeout: float) -> _Response:
+    def open(self, request: Request, *, timeout: float) -> _Response:
         del timeout
         self.requests.append(request)
         outcome = self._outcomes.pop(0)
@@ -52,11 +54,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
         source = guard.CONTRACT.read_text(encoding="utf-8")
         payload = json.loads(source)
         expected_parts = [
-            "b3d2e1db",
-            "a80b2b6e",
-            "bc004f70",
-            "f27bcc2b",
-            "8c8e7ff8",
+            "3a1bd050",
+            "d596b2e0",
+            "5f73a72f",
+            "93199f4e",
+            "2944f94b",
         ]
         self.assertNotIn("".join(expected_parts), source)
         self.assertEqual(payload["accepted_base_sha_parts"], expected_parts)
@@ -65,18 +67,183 @@ class TimewebControlPlaneTests(unittest.TestCase):
             ["TIMEWEB_CLOUD_API_", "TOKEN"],
         )
         self.assertFalse(payload["environment_gate"]["environment_hardening_accepted"])
+        self.assertTrue(
+            payload["environment_gate"]["machine_api_hardening_evidence_required"]
+        )
+        self.assertFalse(
+            payload["environment_gate"]["owner_ui_hardening_evidence_required"]
+        )
+        self.assertEqual(
+            payload["environment_gate"]["exact_custom_branch_patterns"],
+            ["main"],
+        )
+        self.assertTrue(
+            payload["environment_gate"]["runtime_ref_kind_enforcement_required"]
+        )
 
     def test_live_workflow_is_manual_main_only_and_read_only(self) -> None:
         source = guard.LIVE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", source)
+        self.assertIn("actions: read", source)
+        self.assertIn("environment-policy-proof:", source)
+        self.assertIn("needs: environment-policy-proof", source)
         self.assertIn("if: github.ref == 'refs/heads/main'", source)
         self.assertIn("environment: timeweb-synthetic", source)
+        self.assertEqual(
+            source.count("python -m scripts.verify_v10_timeweb_github_environment"),
+            2,
+        )
         self.assertIn(
             "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",
             source,
         )
         self.assertNotIn("pull_request:", source)
         self.assertNotIn("schedule:", source)
+
+    @staticmethod
+    def _environment_payload() -> dict[str, object]:
+        return {
+            "name": environment_gate.ENVIRONMENT_NAME,
+            "protection_rules": [{"id": 1, "type": "branch_policy"}],
+            "deployment_branch_policy": {
+                "protected_branches": False,
+                "custom_branch_policies": True,
+            },
+        }
+
+    @staticmethod
+    def _main_policy_payload() -> dict[str, object]:
+        return {
+            "total_count": 1,
+            "branch_policies": [{"id": 7, "name": "main", "type": "branch"}],
+        }
+
+    def test_environment_machine_gate_accepts_exact_main_policy(self) -> None:
+        opener = _Opener(
+            [
+                _Response(self._environment_payload()),
+                _Response(self._main_policy_payload()),
+            ]
+        )
+        environment_gate.verify_environment_policy(
+            "synthetic-token",
+            "MishaGameHacking/omni-cio-gateway",
+            opener=opener,
+            sleeper=lambda _seconds: None,
+        )
+        self.assertEqual(len(opener.requests), 2)
+        self.assertTrue(
+            opener.requests[0].full_url.endswith(
+                "/environments/timeweb-synthetic"
+            )
+        )
+        self.assertTrue(
+            opener.requests[1].full_url.endswith(
+                "/deployment-branch-policies?per_page=100&page=1"
+            )
+        )
+
+    def test_environment_machine_gate_accepts_documented_omitted_type(self) -> None:
+        policies = self._main_policy_payload()
+        policies["branch_policies"] = [{"id": 7, "name": "main"}]
+        opener = _Opener([_Response(self._environment_payload()), _Response(policies)])
+        environment_gate.verify_environment_policy(
+            "synthetic-token",
+            "MishaGameHacking/omni-cio-gateway",
+            opener=opener,
+            sleeper=lambda _seconds: None,
+        )
+
+    def test_environment_machine_gate_rejects_unrestricted_mode(self) -> None:
+        payload = self._environment_payload()
+        payload["deployment_branch_policy"] = None
+        opener = _Opener([_Response(payload)])
+        with self.assertRaisesRegex(
+            environment_gate.EnvironmentGateError,
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_SELECTION_MODE_INVALID",
+        ):
+            environment_gate.verify_environment_policy(
+                "synthetic-token",
+                "MishaGameHacking/omni-cio-gateway",
+                opener=opener,
+                sleeper=lambda _seconds: None,
+            )
+
+    def test_environment_machine_gate_rejects_extra_policy(self) -> None:
+        policies = self._main_policy_payload()
+        policies["total_count"] = 2
+        policies["branch_policies"] = [
+            {"id": 7, "name": "main", "type": "branch"},
+            {"id": 8, "name": "release/*", "type": "branch"},
+        ]
+        opener = _Opener([_Response(self._environment_payload()), _Response(policies)])
+        with self.assertRaisesRegex(
+            environment_gate.EnvironmentGateError,
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_COUNT_INVALID",
+        ):
+            environment_gate.verify_environment_policy(
+                "synthetic-token",
+                "MishaGameHacking/omni-cio-gateway",
+                opener=opener,
+                sleeper=lambda _seconds: None,
+            )
+
+    def test_environment_machine_gate_rejects_wrong_pattern(self) -> None:
+        policies = self._main_policy_payload()
+        policies["branch_policies"] = [
+            {"id": 7, "name": "release/*", "type": "branch"}
+        ]
+        opener = _Opener([_Response(self._environment_payload()), _Response(policies)])
+        with self.assertRaisesRegex(
+            environment_gate.EnvironmentGateError,
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_PATTERN_INVALID",
+        ):
+            environment_gate.verify_environment_policy(
+                "synthetic-token",
+                "MishaGameHacking/omni-cio-gateway",
+                opener=opener,
+                sleeper=lambda _seconds: None,
+            )
+
+    def test_environment_machine_gate_rejects_tag_type_if_exposed(self) -> None:
+        policies = self._main_policy_payload()
+        policies["branch_policies"] = [{"id": 7, "name": "main", "type": "tag"}]
+        opener = _Opener([_Response(self._environment_payload()), _Response(policies)])
+        with self.assertRaisesRegex(
+            environment_gate.EnvironmentGateError,
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_TYPE_INVALID",
+        ):
+            environment_gate.verify_environment_policy(
+                "synthetic-token",
+                "MishaGameHacking/omni-cio-gateway",
+                opener=opener,
+                sleeper=lambda _seconds: None,
+            )
+
+    def test_environment_machine_gate_retries_transient_get_once(self) -> None:
+        transient = HTTPError(
+            "https://api.github.com/environment",
+            503,
+            "service unavailable",
+            {},
+            io.BytesIO(b"provider detail"),
+        )
+        opener = _Opener(
+            [
+                transient,
+                _Response(self._environment_payload()),
+                _Response(self._main_policy_payload()),
+            ]
+        )
+        sleeps: list[float] = []
+        environment_gate.verify_environment_policy(
+            "synthetic-token",
+            "MishaGameHacking/omni-cio-gateway",
+            opener=opener,
+            sleeper=sleeps.append,
+        )
+        self.assertEqual(sleeps, [1.0])
+        self.assertEqual(len(opener.requests), 3)
 
     def test_timeweb_secret_scope_rejects_second_workflow(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

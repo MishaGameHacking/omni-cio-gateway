@@ -11,11 +11,13 @@ CONTRACT = (
     ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_CONTRACT.json"
 )
 PROBE = ROOT / "scripts/probe_v10_timeweb_postgres_control_plane.py"
+ENVIRONMENT_VERIFIER = ROOT / "scripts/verify_v10_timeweb_github_environment.py"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_RUNBOOK.md"
 WORKFLOWS = ROOT / ".github/workflows"
 LIVE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-readonly-proof.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
+_ENVIRONMENT_GATE_MARKER = "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY"
 
 
 def _read(path: Path) -> str:
@@ -76,17 +78,17 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             ),
             (
                 "status",
-                "SOURCE_READY_LIVE_READ_ONLY_DISPATCH_BLOCKED_ON_ENVIRONMENT_EVIDENCE",
+                "SOURCE_READY_MACHINE_ENVIRONMENT_GATE_PENDING_LIVE_EVIDENCE",
                 "TIMEWEB_CONTROL_PLANE_STATUS_INVALID",
             ),
             (
                 "accepted_base_sha_parts",
                 [
-                    "b3d2e1db",
-                    "a80b2b6e",
-                    "bc004f70",
-                    "f27bcc2b",
-                    "8c8e7ff8",
+                    "3a1bd050",
+                    "d596b2e0",
+                    "5f73a72f",
+                    "93199f4e",
+                    "2944f94b",
                 ],
                 "TIMEWEB_CONTROL_PLANE_BASE_INVALID",
             ),
@@ -130,8 +132,48 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
             ),
             (
                 "owner_ui_hardening_evidence_required",
+                False,
+                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
+            ),
+            (
+                "machine_api_hardening_evidence_required",
                 True,
                 "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
+            ),
+            (
+                "machine_gate_marker",
+                _ENVIRONMENT_GATE_MARKER,
+                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
+            ),
+            (
+                "github_actions_read_permission_required",
+                True,
+                "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
+            ),
+            (
+                "pre_secret_environment_policy_job_required",
+                True,
+                "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
+            ),
+            (
+                "pre_provider_revalidation_required",
+                True,
+                "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
+            ),
+            (
+                "exact_custom_branch_patterns",
+                ["main"],
+                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
+            ),
+            (
+                "api_branch_type_must_be_branch_if_exposed",
+                True,
+                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
+            ),
+            (
+                "runtime_ref_kind_enforcement_required",
+                True,
+                "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
             ),
             (
                 "secret_consumption_allowed_before_environment_gate",
@@ -152,6 +194,15 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
                 "workflow_path",
                 ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
                 "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
+            ),
+            (
+                "api_endpoints",
+                [
+                    "/repos/{owner}/{repo}/environments/timeweb-synthetic",
+                    "/repos/{owner}/{repo}/environments/timeweb-synthetic/"
+                    "deployment-branch-policies?per_page=100&page=1",
+                ],
+                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
             ),
         ),
     )
@@ -281,22 +332,80 @@ def _validate_probe_source() -> None:
         raise RuntimeError("TIMEWEB_CONTROL_PLANE_MUTATION_SOURCE_PRESENT")
 
 
+def _validate_environment_verifier_source() -> None:
+    source = _read(ENVIRONMENT_VERIFIER)
+    _require_markers(
+        source,
+        (
+            'API_BASE = "https://api.github.com"',
+            'API_VERSION = "2026-03-10"',
+            'ENVIRONMENT_NAME = "timeweb-synthetic"',
+            'EXPECTED_BRANCH_PATTERN = "main"',
+            'method="GET"',
+            "_NO_REDIRECT_OPENER",
+            "MAX_RESPONSE_BYTES + 1",
+            "deployment_branch_policy",
+            "custom_branch_policies",
+            "protected_branches",
+            "branch_policies",
+            _ENVIRONMENT_GATE_MARKER,
+        ),
+        "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_VERIFIER_DRIFT",
+    )
+    forbidden = (
+        'method="POST"',
+        'method="PUT"',
+        'method="PATCH"',
+        'method="DELETE"',
+        ".post(",
+        ".put(",
+        ".patch(",
+        ".delete(",
+        "TIMEWEB_CLOUD_API_TOKEN",
+        "OMNI_V10_POSTGRES_DSN",
+    )
+    if any(marker in source for marker in forbidden):
+        raise RuntimeError(
+            "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_VERIFIER_MUTATION_SURFACE"
+        )
+
+
 def _validate_live_workflow() -> None:
     source = _read(LIVE_WORKFLOW)
     _require_markers(
         source,
         (
             "workflow_dispatch:",
+            "actions: read",
             "contents: read",
+            "environment-policy-proof:",
+            "needs: environment-policy-proof",
             "if: github.ref == 'refs/heads/main'",
             f"environment: {_ENVIRONMENT_NAME}",
             f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}",
             "python scripts/check_v10_timeweb_postgres_control_plane.py",
+            "python -m scripts.verify_v10_timeweb_github_environment",
             "python -m scripts.probe_v10_timeweb_postgres_control_plane",
             "git clean -ffdx",
         ),
         "TIMEWEB_CONTROL_PLANE_WORKFLOW_DRIFT",
     )
+    verifier_marker = "python -m scripts.verify_v10_timeweb_github_environment"
+    if source.count(verifier_marker) != 2:
+        raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_VERIFIER_ORDER_INVALID")
+    environment_job = source.find("environment-policy-proof:")
+    proof_job = source.find("read-only-proof:")
+    secret_binding = source.find(
+        f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}"
+    )
+    second_verifier = source.rfind(verifier_marker, 0, secret_binding)
+    if not (
+        0 <= environment_job < proof_job
+        and proof_job < source.find(f"environment: {_ENVIRONMENT_NAME}", proof_job)
+        and proof_job < second_verifier < secret_binding
+    ):
+        raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_VERIFIER_ORDER_INVALID")
+
     forbidden = (
         "on:\n  push:",
         "pull_request:",
@@ -344,6 +453,7 @@ def _validate_runbook() -> None:
             "Terraform",
             "Public API",
             "Neon production authority",
+            _ENVIRONMENT_GATE_MARKER,
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         ),
         "TIMEWEB_CONTROL_PLANE_RUNBOOK_DRIFT",
@@ -353,6 +463,7 @@ def _validate_runbook() -> None:
 def validate() -> None:
     _validate_contract(_load_contract())
     _validate_probe_source()
+    _validate_environment_verifier_source()
     _validate_live_workflow()
     _validate_timeweb_secret_scope()
     _validate_runbook()
@@ -365,8 +476,9 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
     print(
-        "V10 Timeweb RU-PG-B read-only source workflow check passed; "
-        "live dispatch remains blocked until environment hardening evidence is accepted."
+        "V10 Timeweb RU-PG-B source workflow check passed; "
+        "live provider access remains blocked until the machine environment "
+        "gate passes."
     )
     return 0
 

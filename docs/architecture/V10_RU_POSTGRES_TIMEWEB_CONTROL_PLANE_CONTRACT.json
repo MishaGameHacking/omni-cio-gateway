@@ -1,7 +1,7 @@
 {
   "schema": "omni-cio.v10.ru-postgres-timeweb-control-plane-readonly.v1",
   "stage": "RU-PG-B_TIMEWEB_CONTROL_PLANE_READ_ONLY_PROOF",
-  "status": "SOURCE_READY_LIVE_READ_ONLY_DISPATCH_BLOCKED_ON_ENVIRONMENT_EVIDENCE",
+  "status": "SOURCE_READY_MACHINE_ENVIRONMENT_GATE_PENDING_LIVE_EVIDENCE",
   "owning_issue": 559,
   "provider": {
     "name": "Timeweb Cloud",
@@ -19,7 +19,7 @@
     "selected_branch_required": "main",
     "unrestricted_deployment_refs_allowed": false,
     "environment_hardening_accepted": false,
-    "owner_ui_hardening_evidence_required": true,
+    "owner_ui_hardening_evidence_required": false,
     "secret_consumption_allowed_before_environment_gate": false,
     "secret_consumption_allowed_after_environment_gate": true,
     "workflow_dispatch_main_only": true,
@@ -27,7 +27,21 @@
     "environment_variable_parts": [
       "TIMEWEB_CLOUD_API_",
       "TOKEN"
-    ]
+    ],
+    "machine_api_hardening_evidence_required": true,
+    "machine_gate_marker": "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
+    "github_actions_read_permission_required": true,
+    "pre_secret_environment_policy_job_required": true,
+    "pre_provider_revalidation_required": true,
+    "exact_custom_branch_patterns": [
+      "main"
+    ],
+    "api_branch_type_must_be_branch_if_exposed": true,
+    "api_endpoints": [
+      "/repos/{owner}/{repo}/environments/timeweb-synthetic",
+      "/repos/{owner}/{repo}/environments/timeweb-synthetic/deployment-branch-policies?per_page=100&page=1"
+    ],
+    "runtime_ref_kind_enforcement_required": true
   },
   "api_boundary": {
     "allowed_methods": [
@@ -77,13 +91,15 @@
     "live_read_only_evidence_accepted": false,
     "real_cluster_creation_required_later": true,
     "ru_pg_b_certified_green": false,
-    "ru_pg_c_allowed": false
+    "ru_pg_c_allowed": false,
+    "environment_machine_gate_required": true,
+    "environment_machine_gate_accepted": false
   },
   "accepted_base_sha_parts": [
-    "b3d2e1db",
-    "a80b2b6e",
-    "bc004f70",
-    "f27bcc2b",
-    "8c8e7ff8"
+    "3a1bd050",
+    "d596b2e0",
+    "5f73a72f",
+    "93199f4e",
+    "2944f94b"
   ]
 }
