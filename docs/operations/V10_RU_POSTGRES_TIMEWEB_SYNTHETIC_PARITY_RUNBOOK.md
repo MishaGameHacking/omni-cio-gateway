@@ -11,6 +11,8 @@ RU-PG-B proves that a real Timeweb Cloud Managed PostgreSQL 18 cluster in Moscow
 
 This stage is synthetic only. It must not receive real personal data, Telegram identities, real sessions, real portfolio data, broker credentials or production secrets.
 
+Reuse rule: RU-PG-B does not implement a second PostgreSQL stack. It imports the already accepted Neon/Cloudflare PostgreSQL runtime primitives for SQL rendering, runtime-role convergence, runtime verification and bounded connection retry. The Timeweb-specific boundary supplies only the target DSN/provider evidence. Synthetic proof uses the existing Cloudflare staging runtime role `omni_cio_cloudflare_staging`; the production role is not mutated in RU-PG-B.
+
 Official Timeweb facts revalidated on 2026-09-19:
 
 - PostgreSQL 18 is available;
@@ -81,8 +83,8 @@ The harness fails closed unless all of these pass:
 5. bootstrap login is LOGIN, non-superuser and has CREATEROLE;
 6. bootstrap identity is distinct from `omni_cio_hosted_api`;
 7. current migrations apply and exact migration state matches source;
-8. runtime role can be created or safely rotated;
-9. runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
+8. the accepted Neon/Cloudflare runtime-role convergence path creates or safely rotates `omni_cio_cloudflare_staging`;
+9. that staging runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
 10. runtime role inherits from no broader role;
 11. the accepted hosted runtime ACL SQL is reused unchanged;
 12. broker tenant relations are ENABLE + FORCE ROW LEVEL SECURITY;

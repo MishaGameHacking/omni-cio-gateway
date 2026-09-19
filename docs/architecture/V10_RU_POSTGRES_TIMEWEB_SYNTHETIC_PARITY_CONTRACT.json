@@ -37,7 +37,7 @@
     "separate_bootstrap_and_runtime_identities_required": true,
     "bootstrap_superuser_allowed": false,
     "bootstrap_createrole_required": true,
-    "runtime_role": "omni_cio_hosted_api",
+    "runtime_role": "omni_cio_cloudflare_staging",
     "runtime_superuser_allowed": false,
     "runtime_createdb_allowed": false,
     "runtime_createrole_allowed": false,
@@ -48,7 +48,12 @@
     "force_rls_required": true,
     "unscoped_default_deny_required": true,
     "cross_tenant_select_denied_required": true,
-    "cross_tenant_write_denied_required": true
+    "cross_tenant_write_denied_required": true,
+    "reuse_neon_runtime_sql_renderer": true,
+    "reuse_neon_runtime_role_convergence": true,
+    "reuse_neon_runtime_verification": true,
+    "reuse_existing_postgres_retry": true,
+    "production_runtime_role_mutated_in_ru_pg_b": false
   },
   "minimum_tier": {
     "configuration": "1 CPU / 1 GB RAM / 8 GB NVMe",

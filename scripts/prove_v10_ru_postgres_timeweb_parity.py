@@ -10,8 +10,10 @@ import sys
 from typing import Any
 
 import psycopg
-from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+from scripts import provision_v10_cloudflare_neon_runtime as neon_runtime
+from scripts import provision_v10_render_neon_preview as postgres_base
 
 from omni_cio.persistence.hosted_postgres_runtime_v1 import (
     load_hosted_postgres_runtime_contract,
@@ -32,7 +34,7 @@ ACK_ENV = "OMNI_V10_RU_PG_SYNTHETIC_ACK"
 ACK_VALUE = "TIMEWEB_SYNTHETIC_ONLY"
 LOCATION_ENV = "OMNI_V10_RU_PG_PROVIDER_LOCATION"
 LOCATION_VALUE = "ru-3"
-RUNTIME_ROLE = "omni_cio_hosted_api"
+RUNTIME_ROLE = neon_runtime._runtime_role("staging")
 _BROKER_CONNECTION_PREFIX = "broker-connection:v1:"
 _READ_CONNECTION_PREFIX = "read-connection:v1:"
 _SET_TENANT_SCOPE_SQL = "SELECT set_config('omni_cio.tenant_id', %s, true)"
@@ -119,66 +121,6 @@ def _bootstrap_role(connection: psycopg.Connection[Any]) -> str:
     return role
 
 
-def _runtime_role_state(
-    connection: psycopg.Connection[Any],
-) -> tuple[object, ...] | None:
-    return connection.execute(
-        "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
-        "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
-        "WHERE rolname = %s",
-        (RUNTIME_ROLE,),
-    ).fetchone()
-
-
-def _runtime_membership_count(
-    connection: psycopg.Connection[Any],
-) -> int:
-    row = connection.execute(
-        "SELECT count(*) FROM pg_catalog.pg_auth_members membership "
-        "JOIN pg_catalog.pg_roles member_role "
-        "ON member_role.oid = membership.member "
-        "WHERE member_role.rolname = %s",
-        (RUNTIME_ROLE,),
-    ).fetchone()
-    if row is None:
-        raise ParityStopped("RU_PG_RUNTIME_MEMBERSHIP_QUERY_INVALID")
-    return int(row[0])
-
-
-def _converge_runtime_role(
-    connection: psycopg.Connection[Any],
-    password: str,
-) -> None:
-    state = _runtime_role_state(connection)
-    if _runtime_membership_count(connection) != 0:
-        raise ParityStopped("RU_PG_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
-    expected = (True, False, False, False, False, False)
-    if state is None:
-        try:
-            connection.execute(
-                sql.SQL(
-                    "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
-                    "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}"
-                ).format(
-                    sql.Identifier(RUNTIME_ROLE),
-                    sql.Literal(password),
-                )
-            )
-        except psycopg.Error as exc:
-            if exc.sqlstate == "42501":
-                raise ParityStopped("RU_PG_RUNTIME_ROLE_CREATE_FORBIDDEN") from None
-            raise
-        return
-    if tuple(state) != expected:
-        raise ParityStopped("RU_PG_RUNTIME_ROLE_ATTRIBUTE_DRIFT")
-    connection.execute(
-        sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
-            sql.Identifier(RUNTIME_ROLE),
-            sql.Literal(password),
-        )
-    )
-
-
 def _seed_tenant(
     connection: psycopg.Connection[Any],
     tenant_id: str,
@@ -236,43 +178,9 @@ def _seed_synthetic_scope(
     _seed_connection(connection, TENANT_B, CONNECTION_B, SECRET_B)
 
 
-def _verify_force_rls(connection: psycopg.Connection[Any]) -> None:
-    rows = connection.execute(
-        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
-        "FROM pg_catalog.pg_class c "
-        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-        "WHERE n.nspname = 'omni_cio_v10' "
-        "AND c.relname IN "
-        "('broker_accounts','broker_connections',"
-        "'broker_connection_accounts') ORDER BY c.relname"
-    ).fetchall()
-    if len(rows) != 3:
-        raise ParityStopped("RU_PG_RLS_RELATIONS_INCOMPLETE")
-    if any(not bool(row[1]) or not bool(row[2]) for row in rows):
-        raise ParityStopped("RU_PG_FORCE_RLS_REQUIRED")
-
-
-def _verify_runtime_identity(
+def _verify_runtime_privilege_floor(
     connection: psycopg.Connection[Any],
 ) -> None:
-    row = connection.execute(
-        "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
-        "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
-        "WHERE rolname = current_user"
-    ).fetchone()
-    expected = (
-        RUNTIME_ROLE,
-        True,
-        False,
-        False,
-        False,
-        False,
-        False,
-    )
-    if row != expected:
-        raise ParityStopped("RU_PG_RUNTIME_ROLE_INVALID")
-    if _runtime_membership_count(connection) != 0:
-        raise ParityStopped("RU_PG_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
     forbidden = connection.execute(
         "SELECT has_table_privilege("
         "current_user, 'omni_cio_v10.schema_migrations', 'SELECT')"
@@ -328,34 +236,49 @@ def _expected_migration_state() -> tuple[tuple[int, str], ...]:
 
 def prove() -> None:
     bootstrap_dsn = _required_dsn()
-    runtime_sql = RUNTIME_SQL.read_text(encoding="utf-8")
+    runtime_sql = neon_runtime._runtime_sql(RUNTIME_ROLE)
     validate_hosted_postgres_runtime_sql(
-        runtime_sql,
+        RUNTIME_SQL.read_text(encoding="utf-8"),
         load_hosted_postgres_runtime_contract(),
     )
     runtime_password = secrets.token_urlsafe(32)
 
-    with psycopg.connect(bootstrap_dsn, autocommit=True) as bootstrap:
+    bootstrap = postgres_base._connect_postgres_with_retry(
+        psycopg,
+        bootstrap_dsn,
+        retry_marker="RU_PG_BOOTSTRAP_NETWORK_RETRY",
+        failure_code="RU_PG_BOOTSTRAP_NETWORK_ERROR",
+    )
+    with bootstrap:
         _verify_tls(bootstrap)
         require_postgres_18(bootstrap)
         _bootstrap_role(bootstrap)
         apply_migrations(bootstrap)
         if current_migration_state(bootstrap) != _expected_migration_state():
             raise ParityStopped("RU_PG_MIGRATION_STATE_INVALID")
-        _converge_runtime_role(bootstrap, runtime_password)
+        neon_runtime._converge_runtime_role(
+            bootstrap,
+            RUNTIME_ROLE,
+            runtime_password,
+        )
         _seed_synthetic_scope(bootstrap)
         bootstrap.execute(runtime_sql, prepare=False)
-        _verify_force_rls(bootstrap)
 
     runtime_dsn = _dsn_for_role(
         bootstrap_dsn,
         RUNTIME_ROLE,
         runtime_password,
     )
-    with psycopg.connect(runtime_dsn, autocommit=True) as runtime:
+    runtime = postgres_base._connect_postgres_with_retry(
+        psycopg,
+        runtime_dsn,
+        retry_marker="RU_PG_RUNTIME_NETWORK_RETRY",
+        failure_code="RU_PG_RUNTIME_CONNECTION_FAILED",
+    )
+    with runtime:
         _verify_tls(runtime)
-        _verify_runtime_identity(runtime)
-        _verify_force_rls(runtime)
+        neon_runtime._verify_runtime(runtime, RUNTIME_ROLE)
+        _verify_runtime_privilege_floor(runtime)
         _verify_rls_negatives(runtime)
 
     print(
@@ -370,6 +293,9 @@ def main() -> int:
         prove()
     except ParityStopped as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    except postgres_base.ProvisioningStopped as exc:
+        print(f"RU_PG_REUSED_PROVISIONER_STOPPED code={exc.code}", file=sys.stderr)
         return 1
     except psycopg.Error as exc:
         code = exc.sqlstate or "UNKNOWN"

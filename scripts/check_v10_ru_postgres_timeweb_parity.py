@@ -176,6 +176,28 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "RU_PG_B_MINIMUM_TIER_INVALID",
     )
 
+    parity = _mapping(
+        payload.get("parity"),
+        "RU_PG_B_PARITY_INVALID",
+    )
+    _require(
+        parity.get("runtime_role"),
+        "omni_cio_cloudflare_staging",
+        "RU_PG_B_RUNTIME_ROLE_INVALID",
+    )
+    for key in (
+        "reuse_neon_runtime_sql_renderer",
+        "reuse_neon_runtime_role_convergence",
+        "reuse_neon_runtime_verification",
+        "reuse_existing_postgres_retry",
+    ):
+        _require(parity.get(key), True, "RU_PG_B_REUSE_INVALID")
+    _require(
+        parity.get("production_runtime_role_mutated_in_ru_pg_b"),
+        False,
+        "RU_PG_B_PRODUCTION_ROLE_MUTATION_INVALID",
+    )
+
     next_stage = _mapping(
         payload.get("next_stage"),
         "RU_PG_B_NEXT_STAGE_INVALID",
@@ -221,6 +243,13 @@ def _validate_proof_source() -> None:
             "NOCREATEROLE NOREPLICATION NOBYPASSRLS",
             "validate_hosted_postgres_runtime_sql",
             "apply_migrations",
+            "provision_v10_cloudflare_neon_runtime as neon_runtime",
+            "provision_v10_render_neon_preview as postgres_base",
+            'RUNTIME_ROLE = neon_runtime._runtime_role("staging")',
+            "neon_runtime._runtime_sql(RUNTIME_ROLE)",
+            "neon_runtime._converge_runtime_role(",
+            "neon_runtime._verify_runtime(runtime, RUNTIME_ROLE)",
+            "postgres_base._connect_postgres_with_retry(",
             "pg_catalog.pg_stat_ssl",
             "RU_PG_TLS_VERIFY_FULL_REQUIRED",
             "RU_PG_TLS_ROOT_CERT_REQUIRED",

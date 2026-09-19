@@ -73,3 +73,14 @@ def test_runtime_dsn_preserves_transport_and_replaces_identity() -> None:
     assert params["password"] == "runtime-test-pass"
     assert params["sslmode"] == "verify-full"
     assert params["sslrootcert"] == "/synthetic/ca.pem"
+
+def test_proof_reuses_accepted_neon_postgres_runtime_primitives() -> None:
+    assert proof.RUNTIME_ROLE == "omni_cio_cloudflare_staging"
+    assert proof.neon_runtime._runtime_role("production") == (
+        "omni_cio_cloudflare_prod"
+    )
+    source = proof.Path(proof.__file__).read_text(encoding="utf-8")
+    assert "neon_runtime._runtime_sql(RUNTIME_ROLE)" in source
+    assert "neon_runtime._converge_runtime_role(" in source
+    assert "neon_runtime._verify_runtime(runtime, RUNTIME_ROLE)" in source
+    assert "postgres_base._connect_postgres_with_retry(" in source
