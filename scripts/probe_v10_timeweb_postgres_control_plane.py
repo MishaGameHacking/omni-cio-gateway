@@ -221,7 +221,7 @@ def _preset_type_candidates(provider_type: str) -> frozenset[str]:
     return frozenset({provider_type, family})
 
 
-def _select_target_preset(payload: object, provider_type: str) -> None:
+def _select_target_preset(payload: object, provider_type: str) -> int:
     candidates = _preset_type_candidates(provider_type)
     matches: list[dict[str, Any]] = []
     rows = _rows(
@@ -262,6 +262,15 @@ def _select_target_preset(payload: object, provider_type: str) -> None:
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT"
         )
+    preset_id = _number(
+        matches[0].get("id"),
+        "TIMEWEB_DATABASE_PRESET_ID_INVALID",
+    )
+    if preset_id <= 0:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_DATABASE_PRESET_ID_INVALID"
+        )
+    return preset_id
 
 
 def _verify_cluster_name_available(payload: object) -> None:

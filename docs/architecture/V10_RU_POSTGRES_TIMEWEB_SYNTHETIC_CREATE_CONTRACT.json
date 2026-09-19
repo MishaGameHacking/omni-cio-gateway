@@ -1,0 +1,122 @@
+{
+  "schema": "omni-cio.v10.ru-postgres-timeweb-synthetic-create.v1",
+  "stage": "RU-PG-B_TIMEWEB_SYNTHETIC_CLUSTER_CREATE",
+  "status": "SOURCE_READY_PAID_MUTATION_PENDING_MAIN_ACCEPTANCE",
+  "owning_issue": 559,
+  "accepted_base_sha_parts": [
+    "4987d5ad",
+    "ced8f449",
+    "b482ec1a",
+    "d4165a01",
+    "30c995d3"
+  ],
+  "prerequisite_evidence": {
+    "read_only_workflow_run": 35465650177,
+    "environment_gate_marker": "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
+    "read_only_marker": "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
+    "postgres_major": 18,
+    "terraform_location": "ru-3",
+    "cpu": 1,
+    "ram_mb": 2048,
+    "disk_mb": 20480,
+    "base_monthly_price_rub": 790,
+    "target_cluster_name_available": true
+  },
+  "authority": {
+    "owner_base_cost_approval_recorded": true,
+    "authorized_base_monthly_price_rub": 790,
+    "fresh_cost_revalidation_before_post_required": true,
+    "paid_mutation_allowed_only_after_source_checkpoint_accepted_on_main": true,
+    "manual_workflow_dispatch_required": true,
+    "exact_main_ref_required": true,
+    "environment": "timeweb-synthetic",
+    "environment_machine_gate_required": true,
+    "provider_secret_step_scope_required": true
+  },
+  "target": {
+    "provider": "Timeweb Cloud",
+    "service": "Managed PostgreSQL",
+    "cluster_name": "omni-cio-v10-ru-pg-synthetic",
+    "postgres_major": 18,
+    "location": "ru-3",
+    "availability_zone": "msk-1",
+    "cpu": 1,
+    "ram_mb": 2048,
+    "disk_mb": 20480,
+    "public_ipv4_authorized": false,
+    "public_ipv6_authorized": false,
+    "backup_addon_authorized": false,
+    "replicas_authorized": false,
+    "disk_autoscaling_authorized": false,
+    "production_data_allowed": false
+  },
+  "api_boundary": {
+    "get_endpoints": [
+      "/api/v1/projects",
+      "/api/v1/database-types",
+      "/api/v2/presets/dbs",
+      "/api/v1/projects/{project_id}/resources/databases",
+      "/api/v1/databases/{cluster_id}"
+    ],
+    "create_endpoint": "POST /api/v1/databases",
+    "post_retry_allowed": false,
+    "ambiguous_post_requires_get_reconciliation": true,
+    "put_allowed": false,
+    "patch_allowed": false,
+    "delete_allowed": false,
+    "redirects_allowed": false,
+    "max_response_bytes": 1048576,
+    "response_body_logging_allowed": false,
+    "provider_identifiers_in_output_allowed": false
+  },
+  "request_shape": {
+    "required_fields": [
+      "name",
+      "type",
+      "preset_id",
+      "project_id",
+      "availability_zone",
+      "is_public_ipv6",
+      "disk_autoscaling",
+      "description"
+    ],
+    "exact_availability_zone": "msk-1",
+    "is_public_ipv6": false,
+    "disk_autoscaling_enabled": false,
+    "forbidden_fields": [
+      "admin",
+      "instance",
+      "network",
+      "replication",
+      "auto_backups",
+      "backup_schedule",
+      "maintenance_slot",
+      "configuration",
+      "config_parameters"
+    ]
+  },
+  "post_create_verification": {
+    "exact_cluster_get_required": true,
+    "exact_project_membership_recheck_required": true,
+    "started_status_required": true,
+    "public_network_must_be_disabled": true,
+    "public_ipv6_must_be_disabled": true,
+    "autobackups_must_be_disabled": true,
+    "backup_schedule_must_be_disabled": true,
+    "replica_list_must_be_empty": true,
+    "disk_autoscaling_must_be_disabled": true,
+    "sanitized_marker": "TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY"
+  },
+  "protected_invariants": {
+    "current_neon_production_authority_preserved": true,
+    "production_postgres_dsn_mutation_allowed": false,
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "protected_v9_entrypoint": "app:app",
+    "ru_pg_c_allowed": false
+  }
+}

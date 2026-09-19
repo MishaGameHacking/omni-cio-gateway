@@ -15,6 +15,7 @@ PROVIDER_WORKFLOW = ".github/workflows/v10-cloudflare-provider-readiness.yml"
 CANDIDATE_WORKFLOW = ".github/workflows/v10-cloudflare-candidate-deploy.yml"
 PRODUCTION_WORKFLOW = ".github/workflows/v10-cloudflare-production-release.yml"
 TIMEWEB_READONLY_WORKFLOW = ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
+TIMEWEB_CREATE_WORKFLOW = ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
 RETIRED_HOSTED_WORKFLOW = ".github/workflows/v10-hosted-release-alignment.yml"
 RETIRED_PREVIEW_WORKFLOW = ".github/workflows/v10-phase4-free-preview-deploy.yml"
 
@@ -61,7 +62,8 @@ _EXPECTED_INVENTORY = frozenset(
 _CLOUDFLARE_WORKFLOWS = frozenset(
     {PROVIDER_WORKFLOW, CANDIDATE_WORKFLOW, PRODUCTION_WORKFLOW}
 )
-_ACTIVE_WORKFLOWS = _CLOUDFLARE_WORKFLOWS | {TIMEWEB_READONLY_WORKFLOW}
+_TIMEWEB_WORKFLOWS = frozenset({TIMEWEB_READONLY_WORKFLOW, TIMEWEB_CREATE_WORKFLOW})
+_ACTIVE_WORKFLOWS = _CLOUDFLARE_WORKFLOWS | _TIMEWEB_WORKFLOWS
 _EXPECTED_RETIRED = frozenset({RETIRED_HOSTED_WORKFLOW, RETIRED_PREVIEW_WORKFLOW})
 _EXPECTED_FORBIDDEN = frozenset({REMOVED_FUNCTION_INVOKE_TOKEN, RETIRED_RENDER_BINDING})
 _ACTIVE_NEON_TUPLE = frozenset({NEON_RUNTIME_BINDING, NEON_ORG_ID, NEON_PROJECT_ID})
@@ -82,6 +84,10 @@ _EXPECTED_ROLES: dict[str, object] = {
     "timeweb_control_plane_binding": TIMEWEB_CONTROL_PLANE_BINDING,
     "timeweb_binding_environment": "timeweb-synthetic",
     "timeweb_binding_job_level_injection_allowed": False,
+    "timeweb_allowed_workflows": [
+        TIMEWEB_READONLY_WORKFLOW,
+        TIMEWEB_CREATE_WORKFLOW,
+    ],
 }
 _EXPECTED_INVARIANTS: dict[str, object] = {
     "gateway_entrypoint": "app:app",
@@ -180,7 +186,7 @@ _EXPECTED_INVENTORY_METADATA: dict[str, tuple[str, str, str]] = {
     TIMEWEB_CONTROL_PLANE_BINDING: (
         "TIMEWEB",
         "CREDENTIAL",
-        "RU_PG_B_ENVIRONMENT_SCOPED_READ_ONLY",
+        "RU_PG_B_ENVIRONMENT_SCOPED_CONTROL_PLANE",
     ),
 }
 
@@ -341,8 +347,9 @@ def _validate_role_consumers(all_refs: dict[str, set[str]]) -> None:
     non_production_cloudflare = _CLOUDFLARE_WORKFLOWS - {PRODUCTION_WORKFLOW}
     if any(_DOMAIN_TUPLE & all_refs[path] for path in non_production_cloudflare):
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_DOMAIN_SCOPE_TOO_BROAD")
-    if all_refs[TIMEWEB_READONLY_WORKFLOW] != {TIMEWEB_CONTROL_PLANE_BINDING}:
-        raise RuntimeError("PROVIDER_SECRET_CUSTODY_TIMEWEB_SCOPE_INVALID")
+    for path in _TIMEWEB_WORKFLOWS:
+        if all_refs[path] != {TIMEWEB_CONTROL_PLANE_BINDING}:
+            raise RuntimeError("PROVIDER_SECRET_CUSTODY_TIMEWEB_SCOPE_INVALID")
 
 
 def validate(root: Path = ROOT) -> None:
