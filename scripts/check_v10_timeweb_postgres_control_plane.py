@@ -15,6 +15,7 @@ ENVIRONMENT_VERIFIER = ROOT / "scripts/verify_v10_timeweb_github_environment.py"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_RUNBOOK.md"
 WORKFLOWS = ROOT / ".github/workflows"
 LIVE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-readonly-proof.yml"
+SYNTHETIC_CREATE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-synthetic-create.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
 _ENVIRONMENT_GATE_MARKER = "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY"
@@ -425,15 +426,18 @@ def _validate_live_workflow() -> None:
 
 
 def _validate_timeweb_secret_scope() -> None:
-    allowed = LIVE_WORKFLOW.resolve()
+    allowed = {
+        LIVE_WORKFLOW.resolve(),
+        SYNTHETIC_CREATE_WORKFLOW.resolve(),
+    }
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):
             source = _read(path)
-            if _TIMEWEB_BINDING in source and path.resolve() != allowed:
+            if _TIMEWEB_BINDING in source and path.resolve() not in allowed:
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD")
             if (
                 f"environment: {_ENVIRONMENT_NAME}" in source
-                and path.resolve() != allowed
+                and path.resolve() not in allowed
             ):
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_SCOPE_TOO_BROAD")
 

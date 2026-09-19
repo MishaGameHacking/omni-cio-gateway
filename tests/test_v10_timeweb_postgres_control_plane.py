@@ -245,24 +245,36 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertEqual(sleeps, [1.0])
         self.assertEqual(len(opener.requests), 3)
 
-    def test_timeweb_secret_scope_rejects_second_workflow(self) -> None:
+    def test_timeweb_secret_scope_allows_exact_create_workflow_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             workflows = root / ".github/workflows"
             workflows.mkdir(parents=True)
-            (workflows / "v10-timeweb-postgres-readonly-proof.yml").write_text(
+            readonly = workflows / "v10-timeweb-postgres-readonly-proof.yml"
+            create = workflows / "v10-timeweb-postgres-synthetic-create.yml"
+            readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
             )
-            (workflows / "other.yml").write_text(
-                "# TIMEWEB_CLOUD_API_TOKEN\n",
+            create.write_text(
+                "environment: timeweb-synthetic\n"
+                "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
             )
             with mock.patch.object(guard, "WORKFLOWS", workflows), mock.patch.object(
                 guard,
                 "LIVE_WORKFLOW",
-                workflows / "v10-timeweb-postgres-readonly-proof.yml",
+                readonly,
+            ), mock.patch.object(
+                guard,
+                "SYNTHETIC_CREATE_WORKFLOW",
+                create,
             ):
+                guard._validate_timeweb_secret_scope()
+                (workflows / "other.yml").write_text(
+                    "# TIMEWEB_CLOUD_API_TOKEN\n",
+                    encoding="utf-8",
+                )
                 with self.assertRaisesRegex(
                     RuntimeError,
                     "TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD",
