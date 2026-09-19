@@ -18,7 +18,7 @@ WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
 
 _SCHEMA = "omni-cio.v10.ru-postgres-timeweb-synthetic-create.v1"
 _STAGE = "RU-PG-B_TIMEWEB_SYNTHETIC_CLUSTER_CREATE"
-_STATUS = "SOURCE_READY_PAID_MUTATION_PENDING_MAIN_ACCEPTANCE"
+_STATUS = "SOURCE_READY_PAID_MUTATION_GATED_ON_PARITY_TRANSPORT"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _CONFIRMATION = "CREATE_TIMEWEB_RU_PG_SYNTHETIC_790_RUB_MONTH"
 
@@ -55,6 +55,47 @@ def _require_markers(source: str, markers: tuple[str, ...], code: str) -> None:
     for marker in markers:
         if marker not in source:
             raise RuntimeError(code)
+
+
+def _validate_transport_state(
+    transport: dict[str, Any],
+    target: dict[str, Any],
+    *,
+    require_ready: bool,
+) -> None:
+    modes = {
+        "TIMEWEB_PRIVATE_VPC_RUNNER": "private_vpc_runner_evidence_accepted",
+        "PUBLIC_IPV6_PROVEN": "public_ipv6_reachability_accepted",
+        "PUBLIC_IPV4_OWNER_APPROVED": "public_ipv4_owner_approval_recorded",
+    }
+    evidence = {key: transport.get(key) is True for key in modes.values()}
+    status = transport.get("status")
+    selected = transport.get("selected_mode")
+
+    if status == "BLOCKED_PENDING_PROOF":
+        if selected is not None or any(evidence.values()):
+            raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID")
+        if require_ready:
+            raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_BLOCKED")
+        return
+
+    if status != "READY":
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID")
+    evidence_key = modes.get(selected)
+    if evidence_key is None:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID")
+    if sum(evidence.values()) != 1 or not evidence[evidence_key]:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID")
+    if (
+        selected == "PUBLIC_IPV6_PROVEN"
+        and target.get("public_ipv6_authorized") is not True
+    ):
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID")
+    if (
+        selected == "PUBLIC_IPV4_OWNER_APPROVED"
+        and target.get("public_ipv4_authorized") is not True
+    ):
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID")
 
 
 def _validate_contract(payload: dict[str, Any]) -> None:
@@ -104,6 +145,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "environment": "timeweb-synthetic",
         "environment_machine_gate_required": True,
         "provider_secret_step_scope_required": True,
+        "parity_transport_ready_required_before_provider_secret_access": True,
     }
     _require(
         authority,
@@ -111,6 +153,35 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_SYNTHETIC_CREATE_AUTHORITY_INVALID",
     )
 
+    transport = _mapping(
+        payload.get("parity_transport_gate"),
+        "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
+    )
+    expected_modes = [
+        "TIMEWEB_PRIVATE_VPC_RUNNER",
+        "PUBLIC_IPV6_PROVEN",
+        "PUBLIC_IPV4_OWNER_APPROVED",
+    ]
+    _require(
+        transport.get("required_before_provider_secret_access"),
+        True,
+        "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
+    )
+    _require(
+        transport.get("accepted_modes"),
+        expected_modes,
+        "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
+    )
+    _require(
+        transport.get("public_ipv4_recurring_price_rub"),
+        200,
+        "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
+    )
+    _require(
+        transport.get("public_ipv4_price_is_separate_from_base_790"),
+        True,
+        "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
+    )
     target = _mapping(payload.get("target"), "TIMEWEB_SYNTHETIC_CREATE_TARGET_INVALID")
     expected_target = {
         "provider": "Timeweb Cloud",
@@ -130,6 +201,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "production_data_allowed": False,
     }
     _require(target, expected_target, "TIMEWEB_SYNTHETIC_CREATE_TARGET_INVALID")
+    _validate_transport_state(transport, target, require_ready=False)
 
     api = _mapping(
         payload.get("api_boundary"),
@@ -342,6 +414,7 @@ def _validate_workflow() -> None:
             "needs: environment-policy-proof",
             "environment: timeweb-synthetic",
             "python scripts/check_v10_timeweb_postgres_synthetic_create.py",
+            "python scripts/check_v10_timeweb_postgres_synthetic_create.py --require-parity-transport-ready",
             "python -m scripts.verify_v10_timeweb_github_environment",
             "python -m scripts.provision_v10_timeweb_postgres_synthetic",
             f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}",
@@ -387,6 +460,19 @@ def _validate_runbook() -> None:
     )
 
 
+def _require_parity_transport_ready() -> None:
+    payload = _load_contract()
+    transport = _mapping(
+        payload.get("parity_transport_gate"),
+        "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
+    )
+    target = _mapping(
+        payload.get("target"),
+        "TIMEWEB_SYNTHETIC_CREATE_TARGET_INVALID",
+    )
+    _validate_transport_state(transport, target, require_ready=True)
+
+
 def validate() -> None:
     _validate_contract(_load_contract())
     _validate_read_only_probe_reuse()
@@ -399,6 +485,8 @@ def validate() -> None:
 def main() -> int:
     try:
         validate()
+        if "--require-parity-transport-ready" in sys.argv[1:]:
+            _require_parity_transport_ready()
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1

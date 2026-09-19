@@ -1,6 +1,6 @@
 # V10 RU-PG-B — Timeweb Synthetic PostgreSQL 18 Create Runbook
 
-Status: **SOURCE READY / PAID MUTATION PENDING MAIN ACCEPTANCE**
+Status: **SOURCE READY / PAID MUTATION BLOCKED ON PARITY TRANSPORT PROOF**
 
 Owning issue: #559
 
@@ -25,6 +25,33 @@ synthetic Timeweb Cloud Managed PostgreSQL 18 cluster for RU-PG-B parity proof.
 The source checkpoint itself must not create anything. Provider mutation is permitted
 only from the accepted protected `main` through the dedicated manual workflow after
 its exact source checkpoint has passed PR GREEN, squash merge and post-merge gates.
+
+### Pre-mutation parity-transport gate
+
+A paid cluster must not be created until the repository has accepted a concrete path
+for the mandatory RU-PG-B PostgreSQL parity harness to reach that cluster.
+
+Timeweb documents that a database intended only for its private network does not need
+a public IP, but access from outside that private network requires public access.
+Timeweb also documents that PostgreSQL TLS/domain setup is performed through public
+access. The existing parity harness requires a real PostgreSQL connection with
+`sslmode=verify-full` and an external CA root certificate.
+
+Therefore the create workflow now fails closed before provider-secret access unless a
+separate accepted transport checkpoint selects and proves exactly one of these modes:
+
+- `TIMEWEB_PRIVATE_VPC_RUNNER` — parity executes from a proved Timeweb private-network
+  runner/resource in the same accepted VPC;
+- `PUBLIC_IPV6_PROVEN` — free public IPv6 is explicitly proved reachable and compatible
+  with the required TLS/hostname-verification path;
+- `PUBLIC_IPV4_OWNER_APPROVED` — the separately billed public IPv4 path is explicitly
+  approved and security-reviewed. Timeweb currently lists public IPv4 as a separate
+  200 RUB/month option, outside the recorded 790 RUB/month base DBaaS approval.
+
+Until one mode is accepted, the machine-readable transport status remains
+`BLOCKED_PENDING_PROOF` and the paid create job cannot reach the Timeweb credential.
+This is intentionally stricter than merely creating an unreachable recurring-cost
+resource and discovering the networking blocker afterwards.
 
 ## Cost and add-on boundary
 
@@ -81,8 +108,9 @@ Before the Timeweb credential can be consumed it:
 
 1. bootstraps the exact protected-main SHA;
 2. validates this create contract and source surface;
-3. verifies the GitHub Environment `timeweb-synthetic` main-only policy;
-4. validates the exact confirmation value.
+3. verifies that RU-PG-B parity transport is separately accepted and machine-readable;
+4. verifies the GitHub Environment `timeweb-synthetic` main-only policy;
+5. validates the exact confirmation value.
 
 The provider credential remains an environment-scoped secret and is injected only
 into the single creation step.

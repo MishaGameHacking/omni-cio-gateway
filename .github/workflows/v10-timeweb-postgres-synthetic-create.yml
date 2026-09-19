@@ -80,6 +80,10 @@ jobs:
         shell: cmd
         run: python scripts/check_v10_timeweb_postgres_synthetic_create.py
 
+      - name: Verify RU-PG-B parity transport authority before paid provider mutation
+        shell: cmd
+        run: python scripts/check_v10_timeweb_postgres_synthetic_create.py --require-parity-transport-ready
+
       - name: Verify GitHub environment main-only policy before provider authority
         shell: cmd
         env:
