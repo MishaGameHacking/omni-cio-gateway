@@ -17,7 +17,8 @@ class RuPostgresTimewebParityTests(unittest.TestCase):
     def test_proof_requires_explicit_synthetic_ack(self) -> None:
         env = {
             proof.DSN_ENV: (
-                "host=db.test dbname=default_db user=bootstrap sslmode=require"
+                "host=db.test dbname=default_db user=bootstrap "
+                "sslmode=verify-full sslrootcert=/synthetic/ca.pem"
             ),
             proof.LOCATION_ENV: proof.LOCATION_VALUE,
         }
@@ -32,7 +33,8 @@ class RuPostgresTimewebParityTests(unittest.TestCase):
         env = {
             proof.DSN_ENV: (
                 "host=example.eu-central-1.aws.neon.tech "
-                "dbname=default_db user=bootstrap sslmode=require"
+                "dbname=default_db user=bootstrap sslmode=verify-full "
+                "sslrootcert=/synthetic/ca.pem"
             ),
             proof.ACK_ENV: proof.ACK_VALUE,
             proof.LOCATION_ENV: proof.LOCATION_VALUE,
@@ -44,9 +46,26 @@ class RuPostgresTimewebParityTests(unittest.TestCase):
             ):
                 proof._required_dsn()
 
+    def test_proof_rejects_tls_without_hostname_verification(self) -> None:
+        env = {
+            proof.DSN_ENV: (
+                "host=db.test dbname=default_db user=bootstrap "
+                "sslmode=require"
+            ),
+            proof.ACK_ENV: proof.ACK_VALUE,
+            proof.LOCATION_ENV: proof.LOCATION_VALUE,
+        }
+        with mock.patch.dict("os.environ", env, clear=True):
+            with self.assertRaisesRegex(
+                proof.ParityStopped,
+                "RU_PG_TLS_VERIFY_FULL_REQUIRED",
+            ):
+                proof._required_dsn()
+
     def test_runtime_dsn_preserves_transport_and_replaces_identity(self) -> None:
         original = (
-            "host=db.test dbname=default_db user=bootstrap sslmode=require"
+            "host=db.test dbname=default_db user=bootstrap "
+            "sslmode=verify-full sslrootcert=/synthetic/ca.pem"
         )
         runtime = proof._dsn_for_role(
             original,
@@ -56,7 +75,8 @@ class RuPostgresTimewebParityTests(unittest.TestCase):
         params = proof.conninfo_to_dict(runtime)
         self.assertEqual(params["user"], proof.RUNTIME_ROLE)
         self.assertEqual(params["password"], "runtime-test-pass")
-        self.assertEqual(params["sslmode"], "require")
+        self.assertEqual(params["sslmode"], "verify-full")
+        self.assertEqual(params["sslrootcert"], "/synthetic/ca.pem")
 
     def test_contract_cannot_prematurely_accept_provider_evidence(self) -> None:
         payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))

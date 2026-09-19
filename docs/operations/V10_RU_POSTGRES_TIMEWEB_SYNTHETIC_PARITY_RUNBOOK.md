@@ -49,6 +49,10 @@ and:
 
 `OMNI_V10_RU_PG_PROVIDER_LOCATION=ru-3`
 
+This value is only the expected provider location for the proof. It is not accepted provider-location evidence by itself. RU-PG-B still requires separate sanitized Timeweb control-plane evidence binding the real synthetic cluster to Moscow / MSK-1 / `ru-3`.
+
+The DSN must use `sslmode=verify-full` and an externally provisioned `sslrootcert` path. The certificate file is operational input, not repository content.
+
 The synthetic acknowledgement is a destructive-scope guard. It is not legal evidence and must never be used to justify real personal data.
 
 ## Proof sequence
@@ -56,25 +60,26 @@ The synthetic acknowledgement is a destructive-scope guard. It is not legal evid
 The harness fails closed unless all of these pass:
 
 1. target is not a Neon hostname;
-2. the PostgreSQL session is encrypted;
-3. server major is exactly PostgreSQL 18;
-4. bootstrap login is LOGIN, non-superuser and has CREATEROLE;
-5. bootstrap identity is distinct from `omni_cio_hosted_api`;
-6. current migrations apply and exact migration state matches source;
-7. runtime role can be created or safely rotated;
-8. runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
-9. runtime role inherits from no broader role;
-10. the accepted hosted runtime ACL SQL is reused unchanged;
-11. broker tenant relations are ENABLE + FORCE ROW LEVEL SECURITY;
-12. unscoped runtime reads return no tenant rows;
-13. tenant A cannot read tenant B broker rows;
-14. tenant A cannot insert a tenant B broker row.
+2. the PostgreSQL connection requires `sslmode=verify-full` and an external CA root certificate;
+3. the live PostgreSQL session is encrypted;
+4. server major is exactly PostgreSQL 18;
+5. bootstrap login is LOGIN, non-superuser and has CREATEROLE;
+6. bootstrap identity is distinct from `omni_cio_hosted_api`;
+7. current migrations apply and exact migration state matches source;
+8. runtime role can be created or safely rotated;
+9. runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
+10. runtime role inherits from no broader role;
+11. the accepted hosted runtime ACL SQL is reused unchanged;
+12. broker tenant relations are ENABLE + FORCE ROW LEVEL SECURITY;
+13. unscoped runtime reads return no tenant rows;
+14. tenant A cannot read tenant B broker rows;
+15. tenant A cannot insert a tenant B broker row.
 
 Success is represented only by the sanitized marker:
 
 `RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS`
 
-The marker contains no DSN, username, password, host, account ID or private payload.
+The marker contains no DSN, username, password, host, account ID or private payload. It intentionally does not claim provider identity or location; those remain separate provider-verifiable evidence.
 
 ## Minimum-tier rule
 

@@ -91,6 +91,26 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "RU_PG_B_COST_AUTHORITY_INVALID",
     )
 
+    runtime = _mapping(
+        payload.get("proof_runtime"),
+        "RU_PG_B_RUNTIME_INVALID",
+    )
+    _require(
+        runtime.get("sslmode_required"),
+        "verify-full",
+        "RU_PG_B_TLS_POLICY_INVALID",
+    )
+    _require(
+        runtime.get("sslrootcert_required"),
+        True,
+        "RU_PG_B_TLS_POLICY_INVALID",
+    )
+    _require(
+        runtime.get("provider_location_env_is_expectation_only"),
+        True,
+        "RU_PG_B_LOCATION_EVIDENCE_INVALID",
+    )
+
     evidence = _mapping(payload.get("evidence"), "RU_PG_B_EVIDENCE_INVALID")
     _require(evidence.get("accepted"), False, "RU_PG_B_PREMATURE_ACCEPTANCE")
     for key in (
@@ -100,6 +120,12 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "real_user_payload_allowed",
     ):
         _require(evidence.get(key), False, "RU_PG_B_EVIDENCE_INVALID")
+    for key in (
+        "provider_identity_evidence_required",
+        "provider_location_evidence_required",
+        "exact_cluster_location_required",
+    ):
+        _require(evidence.get(key), True, "RU_PG_B_EVIDENCE_INVALID")
 
     minimum = _mapping(
         payload.get("minimum_tier"),
@@ -167,6 +193,8 @@ def _validate_proof_source() -> None:
             "validate_hosted_postgres_runtime_sql",
             "apply_migrations",
             "pg_catalog.pg_stat_ssl",
+            "RU_PG_TLS_VERIFY_FULL_REQUIRED",
+            "RU_PG_TLS_ROOT_CERT_REQUIRED",
             "RU_PG_RLS_UNSCOPED_READ_LEAK",
             "RU_PG_RLS_CROSS_TENANT_READ_LEAK",
             "RU_PG_RLS_CROSS_TENANT_WRITE_ALLOWED",

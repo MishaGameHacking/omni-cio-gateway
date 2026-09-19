@@ -69,8 +69,10 @@ def _required_dsn() -> str:
         raise ParityStopped("RU_PG_BOOTSTRAP_HOST_REQUIRED")
     if host.endswith(".neon.tech"):
         raise ParityStopped("RU_PG_NEON_TARGET_FORBIDDEN")
-    if str(params.get("sslmode", "")).lower() == "disable":
-        raise ParityStopped("RU_PG_TLS_DISABLE_FORBIDDEN")
+    if str(params.get("sslmode", "")).lower() != "verify-full":
+        raise ParityStopped("RU_PG_TLS_VERIFY_FULL_REQUIRED")
+    if not str(params.get("sslrootcert", "")).strip():
+        raise ParityStopped("RU_PG_TLS_ROOT_CERT_REQUIRED")
     return value
 
 
@@ -363,8 +365,8 @@ def prove() -> None:
 
     print(
         "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS "
-        "provider=timeweb_cloud region=ru-3 postgres=18 "
-        "tls=verified runtime_role=verified migrations=verified rls=verified"
+        "postgres=18 tls=verify-full runtime_role=verified "
+        "migrations=verified rls=verified"
     )
 
 

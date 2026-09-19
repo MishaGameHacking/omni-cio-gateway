@@ -25,7 +25,10 @@
     "real_broker_data_allowed": false,
     "synthetic_cluster_required": true,
     "encrypted_postgres_session_required": true,
-    "cloudflare_connectivity_proved_by_this_stage": false
+    "cloudflare_connectivity_proved_by_this_stage": false,
+    "sslmode_required": "verify-full",
+    "sslrootcert_required": true,
+    "provider_location_env_is_expectation_only": true
   },
   "parity": {
     "exact_postgres_major": 18,
@@ -65,7 +68,9 @@
     "exact_postgres18_required": true,
     "role_parity_required": true,
     "migration_parity_required": true,
-    "rls_parity_required": true
+    "rls_parity_required": true,
+    "provider_identity_evidence_required": true,
+    "provider_location_evidence_required": true
   },
   "next_stage": {
     "stage": "RU-PG-C_CLOUDFLARE_TLS_RECOVERY_PARITY",
