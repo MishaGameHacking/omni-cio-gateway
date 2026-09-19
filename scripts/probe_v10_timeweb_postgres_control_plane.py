@@ -38,9 +38,7 @@ class TimewebReadOnlyApi:
         sleeper: Sleep = time.sleep,
     ) -> None:
         if not token:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_CLOUD_API_TOKEN_REQUIRED"
-            )
+            raise _provider_base.ProvisioningStopped("TIMEWEB_CLOUD_API_TOKEN_REQUIRED")
         self._token = token
         self._opener = opener or _provider_base._NO_REDIRECT_OPENER
         self._sleeper = sleeper
@@ -110,9 +108,7 @@ class TimewebReadOnlyApi:
                         "TIMEWEB_API_NETWORK_ERROR"
                     ) from None
                 self._sleep_before_retry(attempt)
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_API_RETRY_STATE_INVALID"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_API_RETRY_STATE_INVALID")
 
     def _decode_response(self, status: int, raw: bytes) -> Any:
         if status != 200:
@@ -121,9 +117,7 @@ class TimewebReadOnlyApi:
                 status=status,
             )
         if len(raw) > MAX_RESPONSE_BYTES:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_API_RESPONSE_TOO_LARGE"
-            )
+            raise _provider_base.ProvisioningStopped("TIMEWEB_API_RESPONSE_TOO_LARGE")
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
@@ -151,13 +145,9 @@ def _project_id(value: object) -> str:
     elif isinstance(value, str):
         text = value.strip()
     else:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PROJECT_ID_INVALID"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_PROJECT_ID_INVALID")
     if _PROVIDER_ID_PATTERN.fullmatch(text) is None:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PROJECT_ID_INVALID"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_PROJECT_ID_INVALID")
     return text
 
 
@@ -173,9 +163,7 @@ def _select_project(payload: object) -> str:
         if row.get("name") == TARGET_PROJECT_NAME
     ]
     if len(matches) != 1:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_TARGET_PROJECT_NOT_UNIQUE"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_TARGET_PROJECT_NOT_UNIQUE")
     return _project_id(matches[0].get("id"))
 
 
@@ -188,14 +176,10 @@ def _major_version(value: object) -> int | None:
 
 def _provider_type(value: object) -> str:
     if not isinstance(value, str):
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_DATABASE_TYPE_INVALID"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_DATABASE_TYPE_INVALID")
     normalized = value.strip().lower()
     if _PROVIDER_TYPE_PATTERN.fullmatch(normalized) is None:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_DATABASE_TYPE_INVALID"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_DATABASE_TYPE_INVALID")
     return normalized
 
 
@@ -214,9 +198,7 @@ def _select_postgres18_type(payload: object) -> str:
             continue
         matches.append(_provider_type(row.get("type")))
     if len(matches) != 1:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_POSTGRES18_TYPE_NOT_UNIQUE"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_POSTGRES18_TYPE_NOT_UNIQUE")
     return matches[0]
 
 
@@ -325,9 +307,7 @@ def main() -> int:
     try:
         probe()
     except _provider_base.ProvisioningStopped as exc:
-        _provider_base._emit(
-            f"TIMEWEB_RU_PG_CONTROL_PLANE=STOPPED code={exc.code}"
-        )
+        _provider_base._emit(f"TIMEWEB_RU_PG_CONTROL_PLANE=STOPPED code={exc.code}")
         return 1
     return 0
 

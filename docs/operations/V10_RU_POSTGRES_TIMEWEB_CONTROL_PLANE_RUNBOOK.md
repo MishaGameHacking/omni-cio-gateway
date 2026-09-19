@@ -12,8 +12,8 @@ Timeweb PostgreSQL 18 proof. It is deliberately read-only.
 
 The existing PostgreSQL 18 migrations, tenant model, RLS/FORCE RLS, runtime-role
 convergence and recovery semantics remain the application/database authority.
-Timeweb replaces only the provider-specific control-plane boundary. Neon
-production authority is preserved until the later accepted cutover.
+Timeweb replaces only the provider-specific control-plane boundary. Neon production authority
+is preserved until the later accepted cutover.
 
 ## OWNER secret custody
 

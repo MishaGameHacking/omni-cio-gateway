@@ -277,7 +277,9 @@ def _validate_workflows_do_not_consume_secret() -> None:
             if "TIMEWEB_CLOUD_API_TOKEN" in source:
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_WORKFLOW_PREMATURE")
             if "environment: timeweb-synthetic" in source:
-                raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_WORKFLOW_PREMATURE")
+                raise RuntimeError(
+                    "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_WORKFLOW_PREMATURE"
+                )
 
 
 def _validate_runbook() -> None:
