@@ -229,9 +229,7 @@ def _verify_rls_negatives(
             )
     except psycopg.Error as exc:
         if exc.sqlstate != "42501":
-            raise ParityStopped(
-                "RU_PG_RLS_CROSS_TENANT_WRITE_WRONG_FAILURE"
-            ) from None
+            raise ParityStopped("RU_PG_RLS_CROSS_TENANT_WRITE_WRONG_FAILURE") from None
     else:
         raise ParityStopped("RU_PG_RLS_CROSS_TENANT_WRITE_ALLOWED")
 
@@ -248,23 +246,18 @@ def _verify_default_privileges(
     schema_id = sql.Identifier(schema_name)
     role_id = sql.Identifier(RUNTIME_ROLE)
     table_id = sql.Identifier(schema_name, table_name)
-    connection.execute(
-        sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(schema_id)
-    )
+    connection.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(schema_id))
     connection.execute(sql.SQL("CREATE SCHEMA {}").format(schema_id))
     default_grant_installed = False
     try:
         connection.execute(
             sql.SQL(
-                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} "
-                "GRANT SELECT ON TABLES TO {}"
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}"
             ).format(schema_id, role_id)
         )
         default_grant_installed = True
         connection.execute(
-            sql.SQL("CREATE TABLE {} (probe integer NOT NULL)").format(
-                table_id
-            )
+            sql.SQL("CREATE TABLE {} (probe integer NOT NULL)").format(table_id)
         )
         privilege = connection.execute(
             "SELECT has_table_privilege(%s, %s, 'SELECT')",
