@@ -4,7 +4,7 @@ from collections.abc import Callable
 import json
 import os
 import time
-from typing import Any, NoReturn
+from typing import Any
 from urllib.error import HTTPError
 from urllib.request import OpenerDirector, Request
 
