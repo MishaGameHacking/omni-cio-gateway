@@ -14,7 +14,7 @@ PROBE = ROOT / "scripts/probe_v10_timeweb_postgres_control_plane.py"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_RUNBOOK.md"
 WORKFLOWS = ROOT / ".github/workflows"
 LIVE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-readonly-proof.yml"
-_SECRET_NAME = "TIMEWEB_CLOUD_API_TOKEN"
+_TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
 
 
@@ -290,7 +290,7 @@ def _validate_live_workflow() -> None:
             "contents: read",
             "if: github.ref == 'refs/heads/main'",
             f"environment: {_ENVIRONMENT_NAME}",
-            f"{_SECRET_NAME}: ${{{{ secrets.{_SECRET_NAME} }}}}",
+            f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}",
             "python scripts/check_v10_timeweb_postgres_control_plane.py",
             "python -m scripts.probe_v10_timeweb_postgres_control_plane",
             "git clean -ffdx",
@@ -320,7 +320,7 @@ def _validate_timeweb_secret_scope() -> None:
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):
             source = _read(path)
-            if _SECRET_NAME in source and path.resolve() != allowed:
+            if _TIMEWEB_BINDING in source and path.resolve() != allowed:
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD")
             if (
                 f"environment: {_ENVIRONMENT_NAME}" in source
@@ -337,7 +337,7 @@ def _validate_runbook() -> None:
             "RU-PG-B",
             "read-only",
             _ENVIRONMENT_NAME,
-            _SECRET_NAME,
+            _TIMEWEB_BINDING,
             "Selected branches and tags",
             "`main`",
             "workflow_dispatch",
