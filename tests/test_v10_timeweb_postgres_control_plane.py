@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+from pathlib import Path
+import tempfile
 from unittest import mock
 import unittest
 from urllib.error import HTTPError
@@ -50,21 +52,55 @@ class TimewebControlPlaneTests(unittest.TestCase):
         source = guard.CONTRACT.read_text(encoding="utf-8")
         payload = json.loads(source)
         expected_parts = [
-            "8fa5ad33",
-            "a17851af",
-            "f6ff82be",
-            "08281fed",
-            "0c8c33ae",
+            "b3d2e1db",
+            "a80b2b6e",
+            "bc004f70",
+            "f27bcc2b",
+            "8c8e7ff8",
         ]
         self.assertNotIn("".join(expected_parts), source)
-        self.assertEqual(
-            payload["accepted_base_sha_parts"],
-            expected_parts,
-        )
+        self.assertEqual(payload["accepted_base_sha_parts"], expected_parts)
         self.assertEqual(
             payload["environment_gate"]["environment_variable_parts"],
             ["TIMEWEB_CLOUD_API_", "TOKEN"],
         )
+        self.assertFalse(payload["environment_gate"]["environment_hardening_accepted"])
+
+    def test_live_workflow_is_manual_main_only_and_read_only(self) -> None:
+        source = guard.LIVE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", source)
+        self.assertIn("if: github.ref == 'refs/heads/main'", source)
+        self.assertIn("environment: timeweb-synthetic", source)
+        self.assertIn(
+            "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",
+            source,
+        )
+        self.assertNotIn("pull_request:", source)
+        self.assertNotIn("schedule:", source)
+
+    def test_timeweb_secret_scope_rejects_second_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workflows = root / ".github/workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "v10-timeweb-postgres-readonly-proof.yml").write_text(
+                "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                encoding="utf-8",
+            )
+            (workflows / "other.yml").write_text(
+                "# TIMEWEB_CLOUD_API_TOKEN\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(guard, "WORKFLOWS", workflows), mock.patch.object(
+                guard,
+                "LIVE_WORKFLOW",
+                workflows / "v10-timeweb-postgres-readonly-proof.yml",
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD",
+                ):
+                    guard._validate_timeweb_secret_scope()
 
     def test_project_id_rejects_non_ascii_digits(self) -> None:
         with self.assertRaisesRegex(
@@ -93,10 +129,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 }
             ]
         }
-        self.assertEqual(
-            probe._select_postgres18_type(payload),
-            "pg_current_18",
-        )
+        self.assertEqual(probe._select_postgres18_type(payload), "pg_current_18")
 
     def test_deprecated_postgres18_type_is_rejected(self) -> None:
         payload = {
@@ -152,11 +185,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             probe._select_target_preset(payload, "postgres18")
 
     def test_existing_target_cluster_fails_closed(self) -> None:
-        payload = {
-            "databases": [
-                {"id": 99, "name": probe.TARGET_CLUSTER_NAME},
-            ]
-        }
+        payload = {"databases": [{"id": 99, "name": probe.TARGET_CLUSTER_NAME}]}
         with self.assertRaisesRegex(
             probe._provider_base.ProvisioningStopped,
             "TIMEWEB_TARGET_CLUSTER_ALREADY_EXISTS",
@@ -172,10 +201,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             io.BytesIO(b'{"detail":"do not emit"}'),
         )
         opener = _Opener([request])
-        api = probe.TimewebReadOnlyApi(
-            "synthetic-token",
-            opener=opener,
-        )
+        api = probe.TimewebReadOnlyApi("synthetic-token", opener=opener)
         with self.assertRaisesRegex(
             probe._provider_base.ProvisioningStopped,
             "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
@@ -190,12 +216,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             {},
             io.BytesIO(b"provider detail"),
         )
-        opener = _Opener(
-            [
-                first,
-                _Response({"projects": []}),
-            ]
-        )
+        opener = _Opener([first, _Response({"projects": []})])
         sleeps: list[float] = []
         api = probe.TimewebReadOnlyApi(
             "synthetic-token",
@@ -208,18 +229,12 @@ class TimewebControlPlaneTests(unittest.TestCase):
 
     def test_request_is_get_only_and_token_is_not_emitted(self) -> None:
         opener = _Opener([_Response({"projects": []})])
-        api = probe.TimewebReadOnlyApi(
-            "synthetic-token",
-            opener=opener,
-        )
+        api = probe.TimewebReadOnlyApi("synthetic-token", opener=opener)
         with mock.patch("builtins.print") as output:
             api.get("/api/v1/projects")
         request = opener.requests[0]
         self.assertEqual(request.get_method(), "GET")
-        self.assertIn(
-            "Bearer synthetic-token",
-            request.headers.values(),
-        )
+        self.assertIn("Bearer synthetic-token", request.headers.values())
         rendered = " ".join(str(call) for call in output.call_args_list)
         self.assertNotIn("synthetic-token", rendered)
 

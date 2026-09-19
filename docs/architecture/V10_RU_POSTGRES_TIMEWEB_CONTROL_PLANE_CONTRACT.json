@@ -1,7 +1,7 @@
 {
   "schema": "omni-cio.v10.ru-postgres-timeweb-control-plane-readonly.v1",
-  "stage": "RU-PG-B_TIMEWEB_CONTROL_PLANE_READ_ONLY_PREFLIGHT",
-  "status": "SOURCE_CHECKPOINT_ENVIRONMENT_HARDENING_PENDING",
+  "stage": "RU-PG-B_TIMEWEB_CONTROL_PLANE_READ_ONLY_PROOF",
+  "status": "SOURCE_READY_LIVE_READ_ONLY_DISPATCH_BLOCKED_ON_ENVIRONMENT_EVIDENCE",
   "owning_issue": 559,
   "provider": {
     "name": "Timeweb Cloud",
@@ -18,8 +18,12 @@
     "name": "timeweb-synthetic",
     "selected_branch_required": "main",
     "unrestricted_deployment_refs_allowed": false,
-    "secret_consumption_allowed_in_this_checkpoint": false,
+    "environment_hardening_accepted": false,
     "owner_ui_hardening_evidence_required": true,
+    "secret_consumption_allowed_before_environment_gate": false,
+    "secret_consumption_allowed_after_environment_gate": true,
+    "workflow_dispatch_main_only": true,
+    "workflow_path": ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
     "environment_variable_parts": [
       "TIMEWEB_CLOUD_API_",
       "TOKEN"
@@ -69,16 +73,17 @@
   },
   "exit_gate": {
     "read_only_marker": "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
-    "live_secret_consuming_workflow_required_later": true,
+    "live_secret_consuming_workflow_required": true,
+    "live_read_only_evidence_accepted": false,
     "real_cluster_creation_required_later": true,
     "ru_pg_b_certified_green": false,
     "ru_pg_c_allowed": false
   },
   "accepted_base_sha_parts": [
-    "8fa5ad33",
-    "a17851af",
-    "f6ff82be",
-    "08281fed",
-    "0c8c33ae"
+    "b3d2e1db",
+    "a80b2b6e",
+    "bc004f70",
+    "f27bcc2b",
+    "8c8e7ff8"
   ]
 }

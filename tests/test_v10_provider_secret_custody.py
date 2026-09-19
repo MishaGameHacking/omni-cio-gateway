@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = Path("docs/architecture/V10_PROVIDER_SECRET_CUSTODY_CONTRACT.json")
 PROVIDER_WORKFLOW = Path(".github/workflows/v10-cloudflare-provider-readiness.yml")
 PRODUCTION_WORKFLOW = Path(".github/workflows/v10-cloudflare-production-release.yml")
+TIMEWEB_WORKFLOW = Path(".github/workflows/v10-timeweb-postgres-readonly-proof.yml")
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 
@@ -78,13 +79,14 @@ class ProviderSecretCustodyTests(unittest.TestCase):
     def test_secret_name_metadata_is_detector_unambiguous(self) -> None:
         contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
         roles = contract["role_separation"]
-        self.assertEqual(
-            roles["active_neon_runtime_management_binding"],
-            "NEON_API_KEY",
-        )
+        self.assertEqual(roles["active_neon_runtime_management_binding"], "NEON_API_KEY")
         self.assertEqual(
             roles["legacy_neon_function_deploy_binding"],
             "NEON_FUNCTION_DEPLOY_API_KEY",
+        )
+        self.assertEqual(
+            roles["timeweb_control_plane_binding"],
+            "TIMEWEB_CLOUD_API_TOKEN",
         )
         self.assertFalse(
             roles["active_runtime_may_alias_legacy_function_deploy_binding"]
@@ -92,6 +94,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         self.assertFalse(
             roles["active_cloudflare_job_level_provider_binding_injection_allowed"]
         )
+        self.assertFalse(roles["timeweb_binding_job_level_injection_allowed"])
         for name, value in roles.items():
             if isinstance(value, str):
                 self.assertNotIn("secret", name.lower())
@@ -117,6 +120,30 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         self._assert_rejected(
             root,
             "PROVIDER_SECRET_CUSTODY_UNREVIEWED_SECRET_REFERENCED",
+        )
+
+    def test_timeweb_binding_cannot_enter_cloudflare_workflow(self) -> None:
+        root = self._root()
+        _append(
+            root,
+            PROVIDER_WORKFLOW,
+            "\n# ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+        )
+        self._assert_rejected(
+            root,
+            "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
+        )
+
+    def test_cloudflare_binding_cannot_enter_timeweb_workflow(self) -> None:
+        root = self._root()
+        _append(
+            root,
+            TIMEWEB_WORKFLOW,
+            "\n# ${{ secrets.CLOUDFLARE_API_TOKEN }}\n",
+        )
+        self._assert_rejected(
+            root,
+            "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
         )
 
     def test_retired_render_secret_is_rejected(self) -> None:
@@ -248,10 +275,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         contract_path = root / CONTRACT_PATH
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract["repository_secret_inventory"]["CLOUDFLARE_ZONE_ID"]["state"] = "ACTIVE"
-        contract_path.write_text(
-            json.dumps(contract, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
         self._assert_rejected(
             root,
             "PROVIDER_SECRET_CUSTODY_INVENTORY_METADATA_INVALID",
@@ -262,10 +286,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         contract_path = root / CONTRACT_PATH
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract["status"] = "STALE"
-        contract_path.write_text(
-            json.dumps(contract, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
         self._assert_rejected(root, "PROVIDER_SECRET_CUSTODY_STATUS_MISMATCH")
 
 

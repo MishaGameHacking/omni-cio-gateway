@@ -13,6 +13,9 @@ CONTRACT = (
 PROBE = ROOT / "scripts/probe_v10_timeweb_postgres_control_plane.py"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_RUNBOOK.md"
 WORKFLOWS = ROOT / ".github/workflows"
+LIVE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-readonly-proof.yml"
+_TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
+_ENVIRONMENT_NAME = "timeweb-synthetic"
 
 
 def _read(path: Path) -> str:
@@ -43,11 +46,7 @@ def _require(actual: object, expected: object, code: str) -> None:
         raise RuntimeError(code)
 
 
-def _require_markers(
-    source: str,
-    markers: tuple[str, ...],
-    code: str,
-) -> None:
+def _require_markers(source: str, markers: tuple[str, ...], code: str) -> None:
     for marker in markers:
         if marker not in source:
             raise RuntimeError(code)
@@ -72,28 +71,35 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             ),
             (
                 "stage",
-                "RU-PG-B_TIMEWEB_CONTROL_PLANE_READ_ONLY_PREFLIGHT",
+                "RU-PG-B_TIMEWEB_CONTROL_PLANE_READ_ONLY_PROOF",
                 "TIMEWEB_CONTROL_PLANE_STAGE_INVALID",
             ),
             (
                 "status",
-                "SOURCE_CHECKPOINT_ENVIRONMENT_HARDENING_PENDING",
+                "SOURCE_READY_LIVE_READ_ONLY_DISPATCH_BLOCKED_ON_ENVIRONMENT_EVIDENCE",
                 "TIMEWEB_CONTROL_PLANE_STATUS_INVALID",
             ),
             (
                 "accepted_base_sha_parts",
                 [
-                    "8fa5ad33",
-                    "a17851af",
-                    "f6ff82be",
-                    "08281fed",
-                    "0c8c33ae",
+                    "b3d2e1db",
+                    "a80b2b6e",
+                    "bc004f70",
+                    "f27bcc2b",
+                    "8c8e7ff8",
                 ],
                 "TIMEWEB_CONTROL_PLANE_BASE_INVALID",
             ),
         ),
     )
+    _validate_environment_contract(payload)
+    _validate_api_contract(payload)
+    _validate_beta_contract(payload)
+    _validate_mutation_contract(payload)
+    _validate_iac_contract(payload)
 
+
+def _validate_environment_contract(payload: dict[str, Any]) -> None:
     environment = _mapping(
         payload.get("environment_gate"),
         "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_INVALID",
@@ -101,11 +107,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _require_fields(
         environment,
         (
-            (
-                "name",
-                "timeweb-synthetic",
-                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_INVALID",
-            ),
+            ("name", _ENVIRONMENT_NAME, "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_INVALID"),
             (
                 "environment_variable_parts",
                 ["TIMEWEB_CLOUD_API_", "TOKEN"],
@@ -122,47 +124,67 @@ def _validate_contract(payload: dict[str, Any]) -> None:
                 "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_INVALID",
             ),
             (
-                "secret_consumption_allowed_in_this_checkpoint",
+                "environment_hardening_accepted",
+                False,
+                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
+            ),
+            (
+                "owner_ui_hardening_evidence_required",
+                True,
+                "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
+            ),
+            (
+                "secret_consumption_allowed_before_environment_gate",
                 False,
                 "TIMEWEB_CONTROL_PLANE_SECRET_AUTHORITY_INVALID",
+            ),
+            (
+                "secret_consumption_allowed_after_environment_gate",
+                True,
+                "TIMEWEB_CONTROL_PLANE_SECRET_AUTHORITY_INVALID",
+            ),
+            (
+                "workflow_dispatch_main_only",
+                True,
+                "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
+            ),
+            (
+                "workflow_path",
+                ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
+                "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
             ),
         ),
     )
 
-    api = _mapping(
-        payload.get("api_boundary"),
-        "TIMEWEB_CONTROL_PLANE_API_INVALID",
-    )
+
+def _validate_api_contract(payload: dict[str, Any]) -> None:
+    api = _mapping(payload.get("api_boundary"), "TIMEWEB_CONTROL_PLANE_API_INVALID")
     _require_fields(
         api,
         (
-            (
-                "allowed_methods",
-                ["GET"],
-                "TIMEWEB_CONTROL_PLANE_METHOD_INVALID",
-            ),
+            ("allowed_methods", ["GET"], "TIMEWEB_CONTROL_PLANE_METHOD_INVALID"),
             (
                 "mutation_methods_allowed",
                 False,
                 "TIMEWEB_CONTROL_PLANE_METHOD_INVALID",
             ),
-            (
-                "redirects_allowed",
-                False,
-                "TIMEWEB_CONTROL_PLANE_REDIRECT_INVALID",
-            ),
+            ("redirects_allowed", False, "TIMEWEB_CONTROL_PLANE_REDIRECT_INVALID"),
             (
                 "response_body_logging_allowed",
+                False,
+                "TIMEWEB_CONTROL_PLANE_OUTPUT_INVALID",
+            ),
+            (
+                "provider_identifiers_in_output_allowed",
                 False,
                 "TIMEWEB_CONTROL_PLANE_OUTPUT_INVALID",
             ),
         ),
     )
 
-    beta = _mapping(
-        payload.get("beta_target"),
-        "TIMEWEB_CONTROL_PLANE_BETA_INVALID",
-    )
+
+def _validate_beta_contract(payload: dict[str, Any]) -> None:
+    beta = _mapping(payload.get("beta_target"), "TIMEWEB_CONTROL_PLANE_BETA_INVALID")
     expected_beta = {
         "cpu": 1,
         "ram_mb": 2048,
@@ -175,51 +197,29 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     }
     _require(beta, expected_beta, "TIMEWEB_CONTROL_PLANE_BETA_INVALID")
 
+
+def _validate_mutation_contract(payload: dict[str, Any]) -> None:
     mutation = _mapping(
         payload.get("provider_mutation"),
         "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID",
     )
-    _require_fields(
-        mutation,
-        (
-            (
-                "cluster_create_allowed",
-                False,
-                "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID",
-            ),
-            (
-                "cluster_update_allowed",
-                False,
-                "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID",
-            ),
-            (
-                "cluster_delete_allowed",
-                False,
-                "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID",
-            ),
-            (
-                "public_ip_create_allowed",
-                False,
-                "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID",
-            ),
-            (
-                "network_mutation_allowed",
-                False,
-                "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID",
-            ),
-            (
-                "production_dsn_mutation_allowed",
-                False,
-                "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID",
-            ),
-            (
-                "neon_production_authority_preserved",
-                True,
-                "TIMEWEB_CONTROL_PLANE_NEON_AUTHORITY_INVALID",
-            ),
-        ),
+    for key in (
+        "cluster_create_allowed",
+        "cluster_update_allowed",
+        "cluster_delete_allowed",
+        "public_ip_create_allowed",
+        "network_mutation_allowed",
+        "production_dsn_mutation_allowed",
+    ):
+        _require(mutation.get(key), False, "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID")
+    _require(
+        mutation.get("neon_production_authority_preserved"),
+        True,
+        "TIMEWEB_CONTROL_PLANE_NEON_AUTHORITY_INVALID",
     )
 
+
+def _validate_iac_contract(payload: dict[str, Any]) -> None:
     iac = _mapping(
         payload.get("infrastructure_as_code"),
         "TIMEWEB_CONTROL_PLANE_IAC_INVALID",
@@ -281,16 +281,52 @@ def _validate_probe_source() -> None:
         raise RuntimeError("TIMEWEB_CONTROL_PLANE_MUTATION_SOURCE_PRESENT")
 
 
-def _validate_workflows_do_not_consume_secret() -> None:
+def _validate_live_workflow() -> None:
+    source = _read(LIVE_WORKFLOW)
+    _require_markers(
+        source,
+        (
+            "workflow_dispatch:",
+            "contents: read",
+            "if: github.ref == 'refs/heads/main'",
+            f"environment: {_ENVIRONMENT_NAME}",
+            f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}",
+            "python scripts/check_v10_timeweb_postgres_control_plane.py",
+            "python -m scripts.probe_v10_timeweb_postgres_control_plane",
+            "git clean -ffdx",
+        ),
+        "TIMEWEB_CONTROL_PLANE_WORKFLOW_DRIFT",
+    )
+    forbidden = (
+        "on:\n  push:",
+        "pull_request:",
+        "schedule:",
+        "curl ",
+        "Invoke-RestMethod",
+        "Invoke-WebRequest",
+        "method=POST",
+        "method=PUT",
+        "method=PATCH",
+        "method=DELETE",
+        "provision_v10_ru_postgres",
+        "OMNI_V10_POSTGRES_DSN",
+    )
+    if any(marker in source for marker in forbidden):
+        raise RuntimeError("TIMEWEB_CONTROL_PLANE_WORKFLOW_MUTATION_SURFACE")
+
+
+def _validate_timeweb_secret_scope() -> None:
+    allowed = LIVE_WORKFLOW.resolve()
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):
             source = _read(path)
-            if "TIMEWEB_CLOUD_API_TOKEN" in source:
-                raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_WORKFLOW_PREMATURE")
-            if "environment: timeweb-synthetic" in source:
-                raise RuntimeError(
-                    "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_WORKFLOW_PREMATURE"
-                )
+            if _TIMEWEB_BINDING in source and path.resolve() != allowed:
+                raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD")
+            if (
+                f"environment: {_ENVIRONMENT_NAME}" in source
+                and path.resolve() != allowed
+            ):
+                raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_SCOPE_TOO_BROAD")
 
 
 def _validate_runbook() -> None:
@@ -300,13 +336,15 @@ def _validate_runbook() -> None:
         (
             "RU-PG-B",
             "read-only",
-            "timeweb-synthetic",
-            "TIMEWEB_CLOUD_API_TOKEN",
+            _ENVIRONMENT_NAME,
+            _TIMEWEB_BINDING,
             "Selected branches and tags",
             "`main`",
+            "workflow_dispatch",
             "Terraform",
             "Public API",
             "Neon production authority",
+            "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         ),
         "TIMEWEB_CONTROL_PLANE_RUNBOOK_DRIFT",
     )
@@ -315,7 +353,8 @@ def _validate_runbook() -> None:
 def validate() -> None:
     _validate_contract(_load_contract())
     _validate_probe_source()
-    _validate_workflows_do_not_consume_secret()
+    _validate_live_workflow()
+    _validate_timeweb_secret_scope()
     _validate_runbook()
 
 
@@ -326,8 +365,8 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
     print(
-        "V10 Timeweb RU-PG-B read-only control-plane source check passed; "
-        "environment hardening and live provider evidence remain pending."
+        "V10 Timeweb RU-PG-B read-only source workflow check passed; "
+        "live dispatch remains blocked until environment hardening evidence is accepted."
     )
     return 0
 
