@@ -47,6 +47,13 @@ class RuPostgresTimewebParitySourceTests(unittest.TestCase):
             finally:
                 guard.CONTRACT = original
 
+    def test_migration_retry_and_default_privileges_are_proved(self) -> None:
+        source = guard.PROOF.read_text(encoding="utf-8")
+        self.assertEqual(source.count("apply_migrations(bootstrap)"), 2)
+        self.assertIn("RU_PG_MIGRATION_RETRY_DRIFT", source)
+        self.assertIn("ALTER DEFAULT PRIVILEGES IN SCHEMA {}", source)
+        self.assertIn("RU_PG_DEFAULT_PRIVILEGES_NOT_EFFECTIVE", source)
+
     def test_cross_tenant_write_requires_rls_sqlstate(self) -> None:
         source = guard.PROOF.read_text(encoding="utf-8")
         self.assertIn('exc.sqlstate != "42501"', source)

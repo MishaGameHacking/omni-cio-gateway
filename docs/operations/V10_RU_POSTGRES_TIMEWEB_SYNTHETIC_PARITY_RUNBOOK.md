@@ -82,15 +82,16 @@ The harness fails closed unless all of these pass:
 4. server major is exactly PostgreSQL 18;
 5. bootstrap login is LOGIN, non-superuser and has CREATEROLE;
 6. bootstrap identity is distinct from `omni_cio_hosted_api`;
-7. current migrations apply and exact migration state matches source;
-8. the accepted Neon/Cloudflare runtime-role convergence path creates or safely rotates `omni_cio_cloudflare_staging`;
-9. that staging runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
-10. runtime role inherits from no broader role;
-11. the accepted hosted runtime ACL SQL is reused unchanged;
-12. broker tenant relations are ENABLE + FORCE ROW LEVEL SECURITY;
-13. unscoped runtime reads return no tenant rows;
-14. tenant A cannot read tenant B broker rows;
-15. tenant A cannot insert a tenant B broker row.
+7. current migrations apply, then a second migration pass is a no-op with identical exact state;
+8. a temporary synthetic schema proves `ALTER DEFAULT PRIVILEGES` grants future-table SELECT to the runtime role and is cleaned up;
+9. the accepted Neon/Cloudflare runtime-role convergence path creates or safely rotates `omni_cio_cloudflare_staging`;
+10. that staging runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
+11. runtime role inherits from no broader role;
+12. the accepted hosted runtime ACL SQL is reused unchanged;
+13. broker tenant relations are ENABLE + FORCE ROW LEVEL SECURITY;
+14. unscoped runtime reads return no tenant rows;
+15. tenant A cannot read tenant B broker rows;
+16. tenant A cannot insert a tenant B broker row and the denial must be SQLSTATE 42501.
 
 Success is represented only by the sanitized marker:
 

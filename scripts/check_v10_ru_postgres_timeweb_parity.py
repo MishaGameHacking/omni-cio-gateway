@@ -191,6 +191,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "reuse_neon_runtime_role_convergence",
         "reuse_neon_runtime_verification",
         "reuse_existing_postgres_retry",
+        "migration_retry_idempotence_required",
+        "alter_default_privileges_probe_required",
     ):
         _require(parity.get(key), True, "RU_PG_B_REUSE_INVALID")
     _require(
@@ -249,6 +251,10 @@ def _validate_proof_source() -> None:
             "neon_runtime._converge_runtime_role(",
             "neon_runtime._verify_runtime(runtime, RUNTIME_ROLE)",
             "postgres_base._connect_postgres_with_retry(",
+            "RU_PG_MIGRATION_RETRY_DRIFT",
+            "def _verify_default_privileges(",
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA {}",
+            "RU_PG_DEFAULT_PRIVILEGES_NOT_EFFECTIVE",
             "pg_catalog.pg_stat_ssl",
             "RU_PG_TLS_VERIFY_FULL_REQUIRED",
             "RU_PG_TLS_ROOT_CERT_REQUIRED",

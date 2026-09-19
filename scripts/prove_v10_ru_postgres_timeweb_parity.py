@@ -10,6 +10,7 @@ import sys
 from typing import Any
 
 import psycopg
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from scripts import provision_v10_cloudflare_neon_runtime as neon_runtime
@@ -38,6 +39,8 @@ RUNTIME_ROLE = neon_runtime._runtime_role("staging")
 _BROKER_CONNECTION_PREFIX = "broker-connection:v1:"
 _READ_CONNECTION_PREFIX = "read-connection:v1:"
 _SET_TENANT_SCOPE_SQL = "SELECT set_config('omni_cio.tenant_id', %s, true)"
+_DEFAULT_PRIVILEGE_SCHEMA = "omni_cio_ru_pg_parity"
+_DEFAULT_PRIVILEGE_TABLE = "default_privilege_probe"
 NOW = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
 TENANT_A = "tenant:v1:ru_pg_a"
 TENANT_B = "tenant:v1:ru_pg_b"
@@ -237,6 +240,51 @@ def _expected_migration_state() -> tuple[tuple[int, str], ...]:
     return tuple((item.version, item.sha256) for item in discover_migrations())
 
 
+def _verify_default_privileges(
+    connection: psycopg.Connection[Any],
+) -> None:
+    schema_name = _DEFAULT_PRIVILEGE_SCHEMA
+    table_name = _DEFAULT_PRIVILEGE_TABLE
+    schema_id = sql.Identifier(schema_name)
+    role_id = sql.Identifier(RUNTIME_ROLE)
+    table_id = sql.Identifier(schema_name, table_name)
+    connection.execute(
+        sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(schema_id)
+    )
+    connection.execute(sql.SQL("CREATE SCHEMA {}").format(schema_id))
+    default_grant_installed = False
+    try:
+        connection.execute(
+            sql.SQL(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} "
+                "GRANT SELECT ON TABLES TO {}"
+            ).format(schema_id, role_id)
+        )
+        default_grant_installed = True
+        connection.execute(
+            sql.SQL("CREATE TABLE {} (probe integer NOT NULL)").format(
+                table_id
+            )
+        )
+        privilege = connection.execute(
+            "SELECT has_table_privilege(%s, %s, 'SELECT')",
+            (RUNTIME_ROLE, f"{schema_name}.{table_name}"),
+        ).fetchone()
+        if privilege != (True,):
+            raise ParityStopped("RU_PG_DEFAULT_PRIVILEGES_NOT_EFFECTIVE")
+    finally:
+        if default_grant_installed:
+            connection.execute(
+                sql.SQL(
+                    "ALTER DEFAULT PRIVILEGES IN SCHEMA {} "
+                    "REVOKE SELECT ON TABLES FROM {}"
+                ).format(schema_id, role_id)
+            )
+        connection.execute(
+            sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(schema_id)
+        )
+
+
 def prove() -> None:
     bootstrap_dsn = _required_dsn()
     runtime_sql = neon_runtime._runtime_sql(RUNTIME_ROLE)
@@ -257,13 +305,18 @@ def prove() -> None:
         require_postgres_18(bootstrap)
         _bootstrap_role(bootstrap)
         apply_migrations(bootstrap)
-        if current_migration_state(bootstrap) != _expected_migration_state():
+        first_state = current_migration_state(bootstrap)
+        if first_state != _expected_migration_state():
             raise ParityStopped("RU_PG_MIGRATION_STATE_INVALID")
+        apply_migrations(bootstrap)
+        if current_migration_state(bootstrap) != first_state:
+            raise ParityStopped("RU_PG_MIGRATION_RETRY_DRIFT")
         neon_runtime._converge_runtime_role(
             bootstrap,
             RUNTIME_ROLE,
             runtime_password,
         )
+        _verify_default_privileges(bootstrap)
         _seed_synthetic_scope(bootstrap)
         bootstrap.execute(runtime_sql, prepare=False)
 

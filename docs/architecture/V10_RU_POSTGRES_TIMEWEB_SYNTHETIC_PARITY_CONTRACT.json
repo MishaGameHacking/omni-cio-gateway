@@ -53,7 +53,8 @@
     "reuse_neon_runtime_role_convergence": true,
     "reuse_neon_runtime_verification": true,
     "reuse_existing_postgres_retry": true,
-    "production_runtime_role_mutated_in_ru_pg_b": false
+    "production_runtime_role_mutated_in_ru_pg_b": false,
+    "alter_default_privileges_probe_required": true
   },
   "minimum_tier": {
     "configuration": "1 CPU / 1 GB RAM / 8 GB NVMe",
