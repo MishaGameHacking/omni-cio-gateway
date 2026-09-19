@@ -1,0 +1,385 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import secrets
+import sys
+from typing import Any
+
+import psycopg
+from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+from omni_cio.persistence.hosted_postgres_runtime_v1 import (
+    load_hosted_postgres_runtime_contract,
+    validate_hosted_postgres_runtime_sql,
+)
+from omni_cio.persistence.migration import (
+    apply_migrations,
+    current_migration_state,
+    discover_migrations,
+    require_postgres_18,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_SQL = (
+    ROOT / "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql"
+)
+DSN_ENV = "OMNI_V10_RU_PG_BOOTSTRAP_DSN"
+ACK_ENV = "OMNI_V10_RU_PG_SYNTHETIC_ACK"
+ACK_VALUE = "TIMEWEB_SYNTHETIC_ONLY"
+LOCATION_ENV = "OMNI_V10_RU_PG_PROVIDER_LOCATION"
+LOCATION_VALUE = "ru-3"
+RUNTIME_ROLE = "omni_cio_hosted_api"
+NOW = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
+TENANT_A = "tenant:v1:ru_pg_a"
+TENANT_B = "tenant:v1:ru_pg_b"
+CONNECTION_A = "broker-connection:v1:" + "1" * 64
+CONNECTION_B = "broker-connection:v1:" + "2" * 64
+CROSS_CONNECTION = "broker-connection:v1:" + "3" * 64
+SECRET_A = "read-connection:v1:" + "4" * 64
+SECRET_B = "read-connection:v1:" + "5" * 64
+CROSS_SECRET = "read-connection:v1:" + "6" * 64
+
+
+class ParityStopped(RuntimeError):
+    """Fail-closed sanitized RU-PG-B proof failure."""
+
+
+def _required_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise ParityStopped(f"{name}_REQUIRED")
+    return value
+
+
+def _required_dsn() -> str:
+    if _required_env(ACK_ENV) != ACK_VALUE:
+        raise ParityStopped("RU_PG_SYNTHETIC_ACK_INVALID")
+    if _required_env(LOCATION_ENV) != LOCATION_VALUE:
+        raise ParityStopped("RU_PG_PROVIDER_LOCATION_INVALID")
+    value = _required_env(DSN_ENV)
+    params = conninfo_to_dict(value)
+    host = str(params.get("host", "")).lower().rstrip(".")
+    if not host:
+        raise ParityStopped("RU_PG_BOOTSTRAP_HOST_REQUIRED")
+    if host.endswith(".neon.tech"):
+        raise ParityStopped("RU_PG_NEON_TARGET_FORBIDDEN")
+    if str(params.get("sslmode", "")).lower() == "disable":
+        raise ParityStopped("RU_PG_TLS_DISABLE_FORBIDDEN")
+    return value
+
+
+def _dsn_for_role(dsn: str, role: str, password: str) -> str:
+    params = conninfo_to_dict(dsn)
+    params["user"] = role
+    params["password"] = password
+    return make_conninfo(**params)
+
+
+def _record_sha256(payload: dict[str, object]) -> str:
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _verify_tls(connection: psycopg.Connection[Any]) -> None:
+    row = connection.execute(
+        "SELECT ssl FROM pg_catalog.pg_stat_ssl "
+        "WHERE pid = pg_catalog.pg_backend_pid()"
+    ).fetchone()
+    if row != (True,):
+        raise ParityStopped("RU_PG_TLS_SESSION_REQUIRED")
+
+
+def _bootstrap_role(connection: psycopg.Connection[Any]) -> str:
+    row = connection.execute(
+        "SELECT rolname, rolcanlogin, rolsuper, rolcreaterole, "
+        "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
+        "WHERE rolname = current_user"
+    ).fetchone()
+    if row is None or len(row) != 6:
+        raise ParityStopped("RU_PG_BOOTSTRAP_ROLE_INVALID")
+    role = str(row[0])
+    attrs = tuple(bool(value) for value in row[1:])
+    if attrs != (True, False, True, False, False):
+        raise ParityStopped("RU_PG_BOOTSTRAP_ROLE_AUTHORITY_INVALID")
+    if role == RUNTIME_ROLE:
+        raise ParityStopped("RU_PG_BOOTSTRAP_RUNTIME_IDENTITY_COLLISION")
+    return role
+
+
+def _runtime_role_state(
+    connection: psycopg.Connection[Any],
+) -> tuple[object, ...] | None:
+    return connection.execute(
+        "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
+        "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
+        "WHERE rolname = %s",
+        (RUNTIME_ROLE,),
+    ).fetchone()
+
+
+def _runtime_membership_count(
+    connection: psycopg.Connection[Any],
+) -> int:
+    row = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_auth_members membership "
+        "JOIN pg_catalog.pg_roles member_role "
+        "ON member_role.oid = membership.member "
+        "WHERE member_role.rolname = %s",
+        (RUNTIME_ROLE,),
+    ).fetchone()
+    if row is None:
+        raise ParityStopped("RU_PG_RUNTIME_MEMBERSHIP_QUERY_INVALID")
+    return int(row[0])
+
+
+def _converge_runtime_role(
+    connection: psycopg.Connection[Any],
+    password: str,
+) -> None:
+    state = _runtime_role_state(connection)
+    if _runtime_membership_count(connection) != 0:
+        raise ParityStopped("RU_PG_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
+    expected = (True, False, False, False, False, False)
+    if state is None:
+        try:
+            connection.execute(
+                sql.SQL(
+                    "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
+                    "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}"
+                ).format(
+                    sql.Identifier(RUNTIME_ROLE),
+                    sql.Literal(password),
+                )
+            )
+        except psycopg.Error as exc:
+            if exc.sqlstate == "42501":
+                raise ParityStopped(
+                    "RU_PG_RUNTIME_ROLE_CREATE_FORBIDDEN"
+                ) from None
+            raise
+        return
+    if tuple(state) != expected:
+        raise ParityStopped("RU_PG_RUNTIME_ROLE_ATTRIBUTE_DRIFT")
+    connection.execute(
+        sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
+            sql.Identifier(RUNTIME_ROLE),
+            sql.Literal(password),
+        )
+    )
+
+
+def _seed_tenant(
+    connection: psycopg.Connection[Any],
+    tenant_id: str,
+) -> None:
+    payload: dict[str, object] = {
+        "schema_version": "1.0",
+        "identity_version": 1,
+        "tenant_id": tenant_id,
+        "mode": "product_user",
+        "created_at": NOW.isoformat(),
+    }
+    connection.execute(
+        "INSERT INTO omni_cio_v10.tenants "
+        "(tenant_id, schema_version, identity_version, mode, created_at, "
+        "record_sha256) VALUES (%s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (tenant_id) DO NOTHING",
+        (
+            tenant_id,
+            "1.0",
+            1,
+            "product_user",
+            NOW,
+            _record_sha256(payload),
+        ),
+    )
+
+
+def _seed_connection(
+    connection: psycopg.Connection[Any],
+    tenant_id: str,
+    connection_id: str,
+    secret_ref: str,
+) -> None:
+    with connection.transaction():
+        connection.execute(
+            "SELECT set_config('omni_cio.tenant_id', %s, true)",
+            (tenant_id,),
+        )
+        connection.execute(
+            "INSERT INTO omni_cio_v10.broker_connections "
+            "(connection_id, tenant_id, provider, credential_role, state, "
+            "secret_ref, created_at, last_verified_at) "
+            "VALUES (%s, %s, 't_invest', 'read', 'ACTIVE', %s, %s, %s) "
+            "ON CONFLICT (connection_id) DO NOTHING",
+            (connection_id, tenant_id, secret_ref, NOW, NOW),
+        )
+
+
+def _seed_synthetic_scope(
+    connection: psycopg.Connection[Any],
+) -> None:
+    _seed_tenant(connection, TENANT_A)
+    _seed_tenant(connection, TENANT_B)
+    _seed_connection(connection, TENANT_A, CONNECTION_A, SECRET_A)
+    _seed_connection(connection, TENANT_B, CONNECTION_B, SECRET_B)
+
+
+def _verify_force_rls(connection: psycopg.Connection[Any]) -> None:
+    rows = connection.execute(
+        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
+        "FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'omni_cio_v10' "
+        "AND c.relname IN "
+        "('broker_accounts','broker_connections',"
+        "'broker_connection_accounts') ORDER BY c.relname"
+    ).fetchall()
+    if len(rows) != 3:
+        raise ParityStopped("RU_PG_RLS_RELATIONS_INCOMPLETE")
+    if any(not bool(row[1]) or not bool(row[2]) for row in rows):
+        raise ParityStopped("RU_PG_FORCE_RLS_REQUIRED")
+
+
+def _verify_runtime_identity(
+    connection: psycopg.Connection[Any],
+) -> None:
+    row = connection.execute(
+        "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
+        "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
+        "WHERE rolname = current_user"
+    ).fetchone()
+    expected = (
+        RUNTIME_ROLE,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+    )
+    if row != expected:
+        raise ParityStopped("RU_PG_RUNTIME_ROLE_INVALID")
+    if _runtime_membership_count(connection) != 0:
+        raise ParityStopped("RU_PG_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
+    forbidden = connection.execute(
+        "SELECT has_table_privilege("
+        "current_user, 'omni_cio_v10.schema_migrations', 'SELECT')"
+    ).fetchone()
+    if forbidden != (False,):
+        raise ParityStopped("RU_PG_RUNTIME_PRIVILEGE_WIDENED")
+
+
+def _verify_rls_negatives(
+    connection: psycopg.Connection[Any],
+) -> None:
+    with connection.transaction():
+        unscoped = connection.execute(
+            "SELECT connection_id FROM omni_cio_v10.broker_connections"
+        ).fetchall()
+        if unscoped:
+            raise ParityStopped("RU_PG_RLS_UNSCOPED_READ_LEAK")
+
+    with connection.transaction():
+        connection.execute(
+            "SELECT set_config('omni_cio.tenant_id', %s, true)",
+            (TENANT_A,),
+        )
+        visible = connection.execute(
+            "SELECT connection_id FROM omni_cio_v10.broker_connections "
+            "ORDER BY connection_id"
+        ).fetchall()
+        if visible != [(CONNECTION_A,)]:
+            raise ParityStopped("RU_PG_RLS_CROSS_TENANT_READ_LEAK")
+
+    try:
+        with connection.transaction():
+            connection.execute(
+                "SELECT set_config('omni_cio.tenant_id', %s, true)",
+                (TENANT_A,),
+            )
+            connection.execute(
+                "INSERT INTO omni_cio_v10.broker_connections "
+                "(connection_id, tenant_id, provider, credential_role, "
+                "state, secret_ref, created_at, last_verified_at) "
+                "VALUES (%s, %s, 't_invest', 'read', 'ACTIVE', %s, %s, %s)",
+                (CROSS_CONNECTION, TENANT_B, CROSS_SECRET, NOW, NOW),
+            )
+    except psycopg.Error:
+        pass
+    else:
+        raise ParityStopped("RU_PG_RLS_CROSS_TENANT_WRITE_ALLOWED")
+
+
+def _expected_migration_state() -> tuple[tuple[int, str], ...]:
+    return tuple(
+        (item.version, item.sha256)
+        for item in discover_migrations()
+    )
+
+
+def prove() -> None:
+    bootstrap_dsn = _required_dsn()
+    runtime_sql = RUNTIME_SQL.read_text(encoding="utf-8")
+    validate_hosted_postgres_runtime_sql(
+        runtime_sql,
+        load_hosted_postgres_runtime_contract(),
+    )
+    runtime_password = secrets.token_urlsafe(32)
+
+    with psycopg.connect(bootstrap_dsn, autocommit=True) as bootstrap:
+        _verify_tls(bootstrap)
+        require_postgres_18(bootstrap)
+        _bootstrap_role(bootstrap)
+        apply_migrations(bootstrap)
+        if current_migration_state(bootstrap) != _expected_migration_state():
+            raise ParityStopped("RU_PG_MIGRATION_STATE_INVALID")
+        _converge_runtime_role(bootstrap, runtime_password)
+        _seed_synthetic_scope(bootstrap)
+        bootstrap.execute(runtime_sql, prepare=False)
+        _verify_force_rls(bootstrap)
+
+    runtime_dsn = _dsn_for_role(
+        bootstrap_dsn,
+        RUNTIME_ROLE,
+        runtime_password,
+    )
+    with psycopg.connect(runtime_dsn, autocommit=True) as runtime:
+        _verify_tls(runtime)
+        _verify_runtime_identity(runtime)
+        _verify_force_rls(runtime)
+        _verify_rls_negatives(runtime)
+
+    print(
+        "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS "
+        "provider=timeweb_cloud region=ru-3 postgres=18 "
+        "tls=verified runtime_role=verified migrations=verified rls=verified"
+    )
+
+
+def main() -> int:
+    try:
+        prove()
+    except ParityStopped as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except psycopg.Error as exc:
+        code = exc.sqlstate or "UNKNOWN"
+        print(f"RU_PG_POSTGRES_ERROR sqlstate={code}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

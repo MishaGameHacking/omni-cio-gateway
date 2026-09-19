@@ -234,6 +234,26 @@ Prepared member scope remains:
 
 Until that separate product execution is authorized and current sequencing is revalidated, do not create the visual-refresh implementation branch or modify `apps/web` merely for visual redesign.
 
+## Amendment 17 — Russian PostgreSQL migration current stage
+
+Amendment 17 / RU-PG-A is accepted on protected `main` through PR #560, squash merge `4c0422a5...`, Regression Shield #1625, V10 Engineering Governance #1666 and Cloudflare Production Release #86.
+
+Accepted implementation progress remains **54%**. This migration is a legal/security/provider compatibility prerequisite and does not add product-progress percentage by itself.
+
+Current authorized focused stage: **RU-PG-B — provider bootstrap / synthetic PostgreSQL 18 parity**.
+
+RU-PG-B rules:
+
+- first candidate: Timeweb Cloud Managed PostgreSQL 18 in Moscow / MSK-1 / Terraform location `ru-3`;
+- synthetic data only;
+- current Neon production authority remains accepted until an explicit later cutover;
+- no production `OMNI_V10_POSTGRES_DSN` mutation;
+- no real Telegram/user/session/portfolio/broker data;
+- separate bootstrap and least-privilege runtime identities are mandatory;
+- the documented minimum Timeweb 1 CPU / 1 GB / 8 GB tier remains unaccepted until real provider evidence proves the identity split without weakening security;
+- provider credentials never belong in source, chat, PR comments, CI logs or artifacts;
+- RU-PG-C remains locked until RU-PG-B is `CERTIFIED_GREEN`.
+
 ## Current external activation baseline — BLOCKED_EXTERNAL where gates remain
 
 Current facts after accepted CF-D infrastructure/release cutover:
