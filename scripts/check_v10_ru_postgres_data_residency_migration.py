@@ -13,8 +13,7 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
-    ROOT
-    / "docs/architecture/V10_RU_POSTGRES_DATA_RESIDENCY_MIGRATION_CONTRACT.json"
+    ROOT / "docs/architecture/V10_RU_POSTGRES_DATA_RESIDENCY_MIGRATION_CONTRACT.json"
 )
 AMENDMENT = (
     ROOT
@@ -112,9 +111,7 @@ def _validate_candidate(payload: dict[str, Any]) -> None:
         "external_facts_revalidated_on": "2026-09-19",
         "external_facts_must_be_revalidated_before_purchase": True,
         "minimum_1cpu_1gb_8gb_tier_accepted": False,
-        "minimum_tier_blocker": (
-            "ADDITIONAL_DATABASE_USERS_DOCUMENTED_UNAVAILABLE"
-        ),
+        "minimum_tier_blocker": ("ADDITIONAL_DATABASE_USERS_DOCUMENTED_UNAVAILABLE"),
     }
     _require(candidate, expected, "RU_POSTGRES_CANDIDATE_INVALID")
 
@@ -222,9 +219,7 @@ def _validate_data_boundary(payload: dict[str, Any]) -> None:
     ):
         _require(data.get(key), True, "RU_POSTGRES_DATA_BOUNDARY_INVALID")
     _require(
-        data.get(
-            "real_ru_user_personal_data_on_candidate_before_cutover_allowed"
-        ),
+        data.get("real_ru_user_personal_data_on_candidate_before_cutover_allowed"),
         False,
         "RU_POSTGRES_DATA_BOUNDARY_INVALID",
     )
