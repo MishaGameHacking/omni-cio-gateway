@@ -60,9 +60,7 @@ def _required_environment(name: str) -> str:
 
 def _repository_slug(value: str) -> str:
     if not _REPOSITORY_RE.fullmatch(value):
-        raise EnvironmentGateError(
-            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_REPOSITORY_INVALID"
-        )
+        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_REPOSITORY_INVALID")
     return value
 
 
@@ -119,9 +117,7 @@ def _decode_response(status: int, raw: bytes) -> dict[str, Any]:
     if status != 200:
         raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_HTTP_FAILURE")
     if len(raw) > MAX_RESPONSE_BYTES:
-        raise EnvironmentGateError(
-            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_TOO_LARGE"
-        )
+        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_TOO_LARGE")
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -206,9 +202,7 @@ def _validate_branch_policies(payload: dict[str, Any]) -> None:
         "TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_INVALID",
     )
     if policy.get("name") != EXPECTED_BRANCH_PATTERN:
-        raise EnvironmentGateError(
-            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_PATTERN_INVALID"
-        )
+        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_PATTERN_INVALID")
 
     # GitHub's documented list-response example omits the policy type. When it is
     # omitted, the provider job's environment protection on refs/heads/main remains
