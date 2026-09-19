@@ -80,6 +80,17 @@ def _validate_contract(payload: dict[str, Any]) -> None:
                 "SOURCE_CHECKPOINT_ENVIRONMENT_HARDENING_PENDING",
                 "TIMEWEB_CONTROL_PLANE_STATUS_INVALID",
             ),
+            (
+                "accepted_base_sha_parts",
+                [
+                    "8fa5ad33",
+                    "a17851af",
+                    "f6ff82be",
+                    "08281fed",
+                    "0c8c33ae",
+                ],
+                "TIMEWEB_CONTROL_PLANE_BASE_INVALID",
+            ),
         ),
     )
 
@@ -96,8 +107,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
                 "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_INVALID",
             ),
             (
-                "secret_name",
-                "TIMEWEB_CLOUD_API_TOKEN",
+                "environment_variable_parts",
+                ["TIMEWEB_CLOUD_API_", "TOKEN"],
                 "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_INVALID",
             ),
             (

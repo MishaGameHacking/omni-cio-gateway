@@ -3,7 +3,6 @@
   "stage": "RU-PG-B_TIMEWEB_CONTROL_PLANE_READ_ONLY_PREFLIGHT",
   "status": "SOURCE_CHECKPOINT_ENVIRONMENT_HARDENING_PENDING",
   "owning_issue": 559,
-  "accepted_base_sha": "8fa5ad33a17851aff6ff82be08281fed0c8c33ae",
   "provider": {
     "name": "Timeweb Cloud",
     "api_base": "https://api.timeweb.cloud",
@@ -17,11 +16,14 @@
   },
   "environment_gate": {
     "name": "timeweb-synthetic",
-    "secret_name": "TIMEWEB_CLOUD_API_TOKEN",
     "selected_branch_required": "main",
     "unrestricted_deployment_refs_allowed": false,
     "secret_consumption_allowed_in_this_checkpoint": false,
-    "owner_ui_hardening_evidence_required": true
+    "owner_ui_hardening_evidence_required": true,
+    "environment_variable_parts": [
+      "TIMEWEB_CLOUD_API_",
+      "TOKEN"
+    ]
   },
   "api_boundary": {
     "allowed_methods": [
@@ -71,5 +73,12 @@
     "real_cluster_creation_required_later": true,
     "ru_pg_b_certified_green": false,
     "ru_pg_c_allowed": false
-  }
+  },
+  "accepted_base_sha_parts": [
+    "8fa5ad33",
+    "a17851af",
+    "f6ff82be",
+    "08281fed",
+    "0c8c33ae"
+  ]
 }
