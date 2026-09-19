@@ -307,6 +307,31 @@ Locks the 2026-09-08 OWNER engineering-discipline decision that:
 
 Amendment 16 explicitly supersedes only conflicting CI cadence/publication/wait-all repair language in Amendments 8/12 and live guidance. It does not change execution-unit grouping, Master Plan order/weights, current Cloudflare authority, product scope, activation authority or financial/security boundaries.
 
+### 17. Russian PostgreSQL Data-Residency Migration Authority
+
+`OMNI_CIO_V10_RU_POSTGRES_DATA_RESIDENCY_MIGRATION_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_RU_POSTGRES_DATA_RESIDENCY_MIGRATION_CONTRACT.json`;
+- `../../scripts/check_v10_ru_postgres_data_residency_migration.py`;
+- `../../tests/test_v10_ru_postgres_data_residency_migration.py`;
+- issue #559;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-09-19 OWNER data-residency/provider-migration direction that:
+
+- preserve PostgreSQL 18, migrations, tenant isolation, RLS/FORCE RLS and logical recovery rather than rewriting the persistence layer;
+- prove Timeweb Cloud Managed PostgreSQL 18 in a Russian region as the first replacement candidate;
+- do not accept the minimum Timeweb tariff merely because it is cheapest when it cannot prove the separate least-privilege runtime identity;
+- keep current Neon production authority until explicit equivalent migration/cutover evidence exists;
+- use synthetic data only before accepted production cutover;
+- execute the migration through mandatory split stages RU-PG-A -> RU-PG-B -> RU-PG-C -> RU-PG-D -> RU-PG-E;
+- preserve Cloudflare application/edge/build authority while replacing only the PostgreSQL provider adapter after proof;
+- retain all public-user, Telegram/VK, broker-write, Real-money, V9 recovery and WEB-VISUAL locks.
+
+Amendment 17 supersedes only the assumption that Neon is the permanent future production PostgreSQL provider. It does not self-certify Russian legal compliance, activate users, authorize provider purchase by itself, weaken security roles/RLS/recovery or erase historical Neon evidence.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
