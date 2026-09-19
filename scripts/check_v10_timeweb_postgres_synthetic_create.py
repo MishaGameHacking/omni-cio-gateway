@@ -13,9 +13,7 @@ CONTRACT = (
 PROVISIONER = ROOT / "scripts/provision_v10_timeweb_postgres_synthetic.py"
 READ_ONLY_PROBE = ROOT / "scripts/probe_v10_timeweb_postgres_control_plane.py"
 ENVIRONMENT_VERIFIER = ROOT / "scripts/verify_v10_timeweb_github_environment.py"
-RUNBOOK = (
-    ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_CREATE_RUNBOOK.md"
-)
+RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_CREATE_RUNBOOK.md"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
 
 _SCHEMA = "omni-cio.v10.ru-postgres-timeweb-synthetic-create.v1"

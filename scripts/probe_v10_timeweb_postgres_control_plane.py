@@ -267,9 +267,7 @@ def _select_target_preset(payload: object, provider_type: str) -> int:
         "TIMEWEB_DATABASE_PRESET_ID_INVALID",
     )
     if preset_id <= 0:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_DATABASE_PRESET_ID_INVALID"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_DATABASE_PRESET_ID_INVALID")
     return preset_id
 
 

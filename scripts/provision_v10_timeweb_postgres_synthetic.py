@@ -131,9 +131,7 @@ def _target_cluster_id(payload: object) -> int | None:
     )
     matches = [row for row in rows if row.get("name") == read_only.TARGET_CLUSTER_NAME]
     if len(matches) > 1:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_TARGET_CLUSTER_NOT_UNIQUE"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_TARGET_CLUSTER_NOT_UNIQUE")
     if not matches:
         return None
     return _numeric_id(
@@ -329,9 +327,7 @@ def _wait_for_started(
         if status == "started":
             return
         if status != "starting":
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_CLUSTER_UNSAFE_STATUS"
-            )
+            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
         if attempt < len(delays):
             sleeper(delays[attempt])
     raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_START_TIMEOUT")
