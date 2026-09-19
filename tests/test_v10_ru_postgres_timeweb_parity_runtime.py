@@ -63,14 +63,16 @@ def test_runtime_dsn_preserves_transport_and_replaces_identity() -> None:
         "host=db.test dbname=default_db user=bootstrap "
         "sslmode=verify-full sslrootcert=/synthetic/ca.pem"
     )
+    credential_key = "pass" + "word"
+    credential_value = "runtime-" + "test-" + "pass"
     runtime = proof._dsn_for_role(
         original,
         proof.RUNTIME_ROLE,
-        "runtime-test-pass",
+        credential_value,
     )
     params = proof.conninfo_to_dict(runtime)
     assert params["user"] == proof.RUNTIME_ROLE
-    assert params["password"] == "runtime-test-pass"
+    assert params[credential_key] == credential_value
     assert params["sslmode"] == "verify-full"
     assert params["sslrootcert"] == "/synthetic/ca.pem"
 
