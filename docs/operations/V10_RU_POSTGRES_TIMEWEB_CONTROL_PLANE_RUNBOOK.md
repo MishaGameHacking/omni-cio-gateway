@@ -1,9 +1,9 @@
 # V10 RU-PG-B — Timeweb Control-Plane Read-Only Proof
 
-Status: **SOURCE READY / LIVE DISPATCH BLOCKED ON ENVIRONMENT EVIDENCE**
+Status: **SOURCE READY / MACHINE ENVIRONMENT GATE PENDING LIVE EVIDENCE**
 
 Owning issue: #559  
-Accepted base: `b3d2e1dba80b2b6ebc004f70f27bcc2b8c8e7ff8`
+Accepted base: `3a1bd050d596b2e05f73a72f93199f4e2944f94b`
 
 ## Purpose
 
@@ -16,28 +16,62 @@ The existing PostgreSQL 18 migrations, tenant model, RLS/FORCE RLS, runtime-role
 convergence and recovery semantics remain the application/database authority.
 Timeweb replaces only the provider-specific control-plane boundary. Neon production authority is preserved until a later accepted cutover.
 
-## OWNER environment gate
+## Machine-verified environment gate
 
 GitHub environment `timeweb-synthetic` contains the environment secret named
 `TIMEWEB_CLOUD_API_TOKEN`. The secret value must never appear in source, chat,
 screenshots, PR comments, logs or artifacts.
 
-Before the new workflow may be dispatched, the environment must be configured as:
+Before the provider credential can be consumed, the workflow now performs a
+machine-verifiable GitHub REST proof that the environment uses selected deployment
+refs instead of an unrestricted or protected-branches-only mode. The verifier
+requires:
 
-- Deployment branches and tags: **Selected branches and tags**;
-- exactly one Branch rule: `main`;
-- no wildcard branch or tag rule that broadens access.
+- `deployment_branch_policy.protected_branches=false`;
+- `deployment_branch_policy.custom_branch_policies=true`;
+- exactly one custom deployment policy;
+- exact policy name `main`;
+- if GitHub exposes a policy `type` field, it must be `branch`;
+- no wildcard or second policy is accepted.
 
-The repository does not claim that external setting is accepted until direct OWNER
-or API evidence proves it. Until then, do not dispatch the workflow.
+The pre-secret job does **not** reference the Timeweb provider secret. It uses only
+the workflow `GITHUB_TOKEN` with `actions: read`, because GitHub documents that
+the environment and deployment-branch-policy read endpoints require Actions read
+permission for private repositories. The same policy is re-checked immediately
+before the provider step.
 
-GitHub documents that a job referencing an environment must satisfy its protection
-rules before it can access environment secrets. The workflow also fails closed at
-source level unless `github.ref == 'refs/heads/main'`.
+Accepted sanitized environment marker:
 
-Official GitHub reference:
+`TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY`
 
-- https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments
+The verifier reads only:
+
+- `GET /repos/{owner}/{repo}/environments/timeweb-synthetic`;
+- `GET /repos/{owner}/{repo}/environments/timeweb-synthetic/deployment-branch-policies?per_page=100&page=1`.
+
+It uses bounded GET retries, disallows redirects and never emits policy IDs,
+environment IDs, response bodies or token values.
+
+If the machine gate fails because the environment is not configured for selected
+branches/tags, the OWNER-only correction remains:
+
+1. Repository **Settings** -> **Environments** -> `timeweb-synthetic`;
+2. Deployment branches and tags -> **Selected branches and tags**;
+3. add exactly one **Branch** rule named `main`;
+4. remove any broader branch/tag rule;
+5. save the protection rule and rerun the read-only proof.
+
+Do not paste the provider token into chat, issues, pull requests or logs.
+
+GitHub documents that environment protection rules must pass before a job can use
+environment secrets, and that custom deployment branch policies are exposed through
+the deployment environment REST API.
+
+Official GitHub references:
+
+- https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
+- https://docs.github.com/en/rest/deployments/environments
+- https://docs.github.com/en/rest/deployments/branch-policies
 
 ## Read-only workflow
 
@@ -49,11 +83,15 @@ Properties:
 
 - manual `workflow_dispatch` only;
 - exact ref must be `refs/heads/main`;
+- repository permissions are limited to `contents: read` and `actions: read`;
+- a first job proves the exact GitHub environment policy without referencing the
+  Timeweb provider credential;
+- the provider job has `needs: environment-policy-proof`;
 - environment must be `timeweb-synthetic`;
-- `contents: read` is the only repository permission;
-- the provider credential is injected only into the single probe step;
-- source contract verification runs before the secret-consuming step;
-- the self-hosted workspace is cleaned in an `always()` step;
+- the environment policy is re-verified immediately before provider access;
+- the provider credential is injected only into the single Timeweb GET probe step;
+- source contract verification runs before any provider-secret consumption;
+- both self-hosted workspaces are cleaned in `always()` steps;
 - no provider identifiers or response bodies are accepted output.
 
 ## Why Public API, not Timeweb Terraform mutation yet
@@ -119,7 +157,8 @@ This checkpoint does not create or modify:
 - production `OMNI_V10_POSTGRES_DSN`;
 - Neon resources.
 
-Only after the environment restriction is proven and the live read-only run returns
-the sanitized marker may RU-PG-B proceed to a separate paid synthetic-cluster
-creation checkpoint. RU-PG-C remains locked until the complete RU-PG-B parity gate
-is `CERTIFIED_GREEN`.
+Only after the machine environment gate returns
+`TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY` and the same protected-main run returns
+`TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY` may RU-PG-B proceed to a separate
+paid synthetic-cluster creation checkpoint. RU-PG-C remains locked until the
+complete RU-PG-B parity gate is `CERTIFIED_GREEN`.
