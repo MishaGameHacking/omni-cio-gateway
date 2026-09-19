@@ -33,6 +33,65 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
     def test_source_contract_passes(self) -> None:
         guard.validate()
 
+    def test_paid_create_is_blocked_until_parity_transport_is_accepted(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_BLOCKED",
+        ):
+            guard._require_parity_transport_ready()
+
+    def test_transport_state_machine_accepts_exactly_one_proved_ready_mode(self) -> None:
+        payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
+        transport = payload["parity_transport_gate"]
+        transport["status"] = "READY"
+        transport["selected_mode"] = "TIMEWEB_PRIVATE_VPC_RUNNER"
+        transport["private_vpc_runner_evidence_accepted"] = True
+        target = payload["target"]
+        guard._validate_transport_state(transport, target, require_ready=True)
+
+        transport["public_ipv6_reachability_accepted"] = True
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID",
+        ):
+            guard._validate_transport_state(transport, target, require_ready=True)
+
+    def test_transport_state_machine_rejects_unproved_ready_mode(self) -> None:
+        payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
+        transport = payload["parity_transport_gate"]
+        transport["status"] = "READY"
+        transport["selected_mode"] = "PUBLIC_IPV6_PROVEN"
+        target = payload["target"]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID",
+        ):
+            guard._validate_transport_state(transport, target, require_ready=True)
+
+    def test_public_transport_cannot_be_ready_while_create_shape_forbids_it(self) -> None:
+        payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
+        transport = payload["parity_transport_gate"]
+        target = payload["target"]
+        transport["status"] = "READY"
+        transport["selected_mode"] = "PUBLIC_IPV6_PROVEN"
+        transport["public_ipv6_reachability_accepted"] = True
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID",
+        ):
+            guard._validate_transport_state(transport, target, require_ready=True)
+
+    def test_transport_gate_records_no_silent_public_network_authority(self) -> None:
+        payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
+        transport = payload["parity_transport_gate"]
+        target = payload["target"]
+        self.assertEqual(transport["status"], "BLOCKED_PENDING_PROOF")
+        self.assertIsNone(transport["selected_mode"])
+        self.assertFalse(target["public_ipv4_authorized"])
+        self.assertFalse(target["public_ipv6_authorized"])
+        self.assertEqual(transport["public_ipv4_recurring_price_rub"], 200)
+        self.assertTrue(transport["public_ipv4_price_is_separate_from_base_790"])
+
     def test_read_only_preset_returns_exact_provider_id(self) -> None:
         payload = {
             "databases_presets": [

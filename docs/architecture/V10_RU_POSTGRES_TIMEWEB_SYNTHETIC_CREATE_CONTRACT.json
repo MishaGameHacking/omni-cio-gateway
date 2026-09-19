@@ -1,7 +1,7 @@
 {
   "schema": "omni-cio.v10.ru-postgres-timeweb-synthetic-create.v1",
   "stage": "RU-PG-B_TIMEWEB_SYNTHETIC_CLUSTER_CREATE",
-  "status": "SOURCE_READY_PAID_MUTATION_PENDING_MAIN_ACCEPTANCE",
+  "status": "SOURCE_READY_PAID_MUTATION_GATED_ON_PARITY_TRANSPORT",
   "owning_issue": 559,
   "accepted_base_sha_parts": [
     "4987d5ad",
@@ -31,7 +31,23 @@
     "exact_main_ref_required": true,
     "environment": "timeweb-synthetic",
     "environment_machine_gate_required": true,
-    "provider_secret_step_scope_required": true
+    "provider_secret_step_scope_required": true,
+    "parity_transport_ready_required_before_provider_secret_access": true
+  },
+  "parity_transport_gate": {
+    "required_before_provider_secret_access": true,
+    "status": "BLOCKED_PENDING_PROOF",
+    "selected_mode": null,
+    "accepted_modes": [
+      "TIMEWEB_PRIVATE_VPC_RUNNER",
+      "PUBLIC_IPV6_PROVEN",
+      "PUBLIC_IPV4_OWNER_APPROVED"
+    ],
+    "private_vpc_runner_evidence_accepted": false,
+    "public_ipv6_reachability_accepted": false,
+    "public_ipv4_owner_approval_recorded": false,
+    "public_ipv4_recurring_price_rub": 200,
+    "public_ipv4_price_is_separate_from_base_790": true
   },
   "target": {
     "provider": "Timeweb Cloud",
