@@ -110,10 +110,11 @@
     "base_monthly_price_rub": 790,
     "owner_base_cost_approval_recorded": true,
     "public_ipv4_addon_included_in_base_price": false,
-    "public_ipv4_addon_authorized": false,
+    "public_ipv4_addon_authorized": true,
     "backup_storage_addon_included_in_base_price": false,
     "backup_storage_addon_authorized": false,
     "scale_up_only_after_capacity_evidence": true,
-    "scale_down_supported_by_provider": false
+    "scale_down_supported_by_provider": false,
+    "public_ipv4_monthly_price_rub": 200
   }
 }

@@ -1,0 +1,196 @@
+name: V10 RU-PG-B Timeweb Public IPv4 TLS
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Confirm authorized 200 RUB/month verifier-only public IPv4
+        required: true
+        type: choice
+        options:
+          - ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: v10-timeweb-postgres-public-ipv4-tls
+  cancel-in-progress: false
+
+jobs:
+  environment-policy-proof:
+    name: Verify Timeweb network source and main-only policy
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+
+    steps:
+      - name: Expose installed Git Bash
+        shell: cmd
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact protected main without external Actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          bootstrap_succeeded=0
+          for bootstrap_attempt in 1 2 3; do
+            rm -rf .git
+            git init .
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git config --local gc.auto 0
+            git config --local credential.helper ""
+            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+            fetch_status=0
+            git fetch --no-tags --prune --depth=1 origin "$EXPECTED_HEAD" || fetch_status=$?
+            git config --local --unset-all credential.helper 2>/dev/null || true
+            if [ "$fetch_status" -eq 0 ]; then
+              bootstrap_succeeded=1
+              break
+            fi
+            rm -rf .git
+            if [ "$bootstrap_attempt" -lt 3 ]; then
+              sleep "$((bootstrap_attempt * 5))"
+            fi
+          done
+          test "$bootstrap_succeeded" -eq 1
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Bootstrap protected runner Python
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify public IPv4 firewall TLS source contract
+        shell: cmd
+        run: python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py
+
+      - name: Verify GitHub environment main-only policy before provider authority
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m scripts.verify_v10_timeweb_github_environment
+
+      - name: Clean environment-proof workspace
+        if: always()
+        shell: bash
+        run: |
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi
+
+  configure-transport:
+    name: Configure verifier-only public IPv4 firewall and TLS
+    needs: environment-policy-proof
+    if: github.ref == 'refs/heads/main'
+    environment: timeweb-synthetic
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+      EXPECTED_CONFIRMATION: ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH
+
+    steps:
+      - name: Expose installed Git Bash
+        shell: cmd
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact protected main without external Actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          bootstrap_succeeded=0
+          for bootstrap_attempt in 1 2 3; do
+            rm -rf .git
+            git init .
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git config --local gc.auto 0
+            git config --local credential.helper ""
+            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+            fetch_status=0
+            git fetch --no-tags --prune --depth=1 origin "$EXPECTED_HEAD" || fetch_status=$?
+            git config --local --unset-all credential.helper 2>/dev/null || true
+            if [ "$fetch_status" -eq 0 ]; then
+              bootstrap_succeeded=1
+              break
+            fi
+            rm -rf .git
+            if [ "$bootstrap_attempt" -lt 3 ]; then
+              sleep "$((bootstrap_attempt * 5))"
+            fi
+          done
+          test "$bootstrap_succeeded" -eq 1
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Bootstrap protected runner Python
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Re-verify network source contract before live egress discovery
+        shell: cmd
+        run: python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py
+
+      - name: Discover and mask exact verifier egress IPv4
+        shell: cmd
+        run: python -m scripts.discover_v10_ru_pg_verifier_ipv4
+
+      - name: Re-verify GitHub environment policy before provider access
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m scripts.verify_v10_timeweb_github_environment
+
+      - name: Verify exact IPv4 cost confirmation
+        shell: cmd
+        env:
+          NETWORK_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          @echo off
+          if not "%NETWORK_CONFIRMATION%"=="%EXPECTED_CONFIRMATION%" exit /b 20
+
+      - name: Configure and verify Timeweb verifier-only public transport
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
+          TIMEWEB_RU_PG_PUBLIC_IPV4_CONFIRMATION: ${{ inputs.confirmation }}
+        run: python -m scripts.provision_v10_timeweb_postgres_public_ipv4_tls
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi

@@ -252,7 +252,7 @@ RU-PG-B rules:
 - separate bootstrap and least-privilege runtime identities are mandatory;
 - the documented minimum Timeweb 1 CPU / 1 GB / 8 GB tier remains unaccepted until real provider evidence proves the identity split without weakening security;
 - OWNER-selected beta target: PostgreSQL 18, Moscow, 1 CPU / 2 GB RAM / 20 GB NVMe, recorded base price 790 RUB/month as of 2026-09-19;
-- the 790 RUB approval covers the base DBaaS configuration only; separately billed public IPv4 and backup-storage add-ons remain outside this recorded cost approval until explicitly required/approved;
+- the 790 RUB approval covers the base DBaaS configuration; on 2026-09-20 the OWNER separately approved one public IPv4 up to 200 RUB/month for the RU-PG-B/RU-PG-C connectivity path, while backup-storage and other paid add-ons remain unauthorized; public-IP cost approval does not bypass the owning firewall/TLS security gate;
 - scale up only after capacity evidence; Timeweb documents that scale-down is not supported;
 - provider credentials never belong in source, chat, PR comments, CI logs or artifacts;
 - RU-PG-C remains locked until RU-PG-B is `CERTIFIED_GREEN`.

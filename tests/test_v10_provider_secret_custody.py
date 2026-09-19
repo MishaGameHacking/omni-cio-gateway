@@ -17,6 +17,9 @@ TIMEWEB_WORKFLOW = Path(".github/workflows/v10-timeweb-postgres-readonly-proof.y
 TIMEWEB_CREATE_WORKFLOW = Path(
     ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
 )
+TIMEWEB_NETWORK_WORKFLOW = Path(
+    ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
+)
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 
@@ -103,6 +106,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
             [
                 ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
                 ".github/workflows/v10-timeweb-postgres-synthetic-create.yml",
+                ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml",
             ],
         )
         for name, value in roles.items():

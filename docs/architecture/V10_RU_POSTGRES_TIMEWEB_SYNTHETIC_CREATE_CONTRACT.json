@@ -36,8 +36,8 @@
   },
   "parity_transport_gate": {
     "required_before_provider_secret_access": true,
-    "status": "BLOCKED_PENDING_PROOF",
-    "selected_mode": null,
+    "status": "READY",
+    "selected_mode": "PUBLIC_IPV4_OWNER_APPROVED",
     "accepted_modes": [
       "TIMEWEB_PRIVATE_VPC_RUNNER",
       "PUBLIC_IPV6_PROVEN",
@@ -45,9 +45,12 @@
     ],
     "private_vpc_runner_evidence_accepted": false,
     "public_ipv6_reachability_accepted": false,
-    "public_ipv4_owner_approval_recorded": false,
+    "public_ipv4_owner_approval_recorded": true,
     "public_ipv4_recurring_price_rub": 200,
-    "public_ipv4_price_is_separate_from_base_790": true
+    "public_ipv4_price_is_separate_from_base_790": true,
+    "public_ipv4_security_source_required": true,
+    "public_ipv4_firewall_drop_required": true,
+    "public_ipv4_tls_verify_full_required": true
   },
   "target": {
     "provider": "Timeweb Cloud",
@@ -59,7 +62,7 @@
     "cpu": 1,
     "ram_mb": 2048,
     "disk_mb": 20480,
-    "public_ipv4_authorized": false,
+    "public_ipv4_authorized": true,
     "public_ipv6_authorized": false,
     "backup_addon_authorized": false,
     "replicas_authorized": false,
