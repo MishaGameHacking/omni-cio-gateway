@@ -5,8 +5,8 @@ from decimal import Decimal, InvalidOperation
 import json
 import re
 import time
-from typing import Any
-from urllib.error import HTTPError, URLError
+from typing import Any, NoReturn
+from urllib.error import HTTPError
 from urllib.request import OpenerDirector, Request
 
 from scripts import provision_v10_render_neon_preview as _provider_base
@@ -25,7 +25,7 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 _RETRY_DELAYS_SECONDS = (1.0, 2.0)
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
 _PROVIDER_TYPE_PATTERN = re.compile(r"^[a-z0-9_-]{1,64}$")
-_PROVIDER_ID_PATTERN = re.compile(r"^[0-9]{1,20}$")
+_PROVIDER_ID_PATTERN = re.compile(r"^\d{1,20}$", re.ASCII)
 Sleep = Callable[[float], None]
 
 
@@ -45,12 +45,12 @@ class TimewebReadOnlyApi:
         self._opener = opener or _provider_base._NO_REDIRECT_OPENER
         self._sleeper = sleeper
 
-    def get(self, path: str, *, timeout: float = 30.0) -> Any:
+    def _request(self, path: str) -> Request:
         safe_path = _provider_base._safe_api_path(
             path,
             "TIMEWEB_API_PATH_INVALID",
         )
-        request = Request(
+        return Request(
             f"{API_BASE}{safe_path}",
             headers={
                 "Accept": "application/json",
@@ -59,38 +59,62 @@ class TimewebReadOnlyApi:
             },
             method="GET",
         )
+
+    def _open_once(
+        self,
+        request: Request,
+        timeout: float,
+    ) -> tuple[int, bytes]:
+        with self._opener.open(request, timeout=timeout) as response:
+            return int(response.status), response.read(MAX_RESPONSE_BYTES + 1)
+
+    @staticmethod
+    def _retry_available(attempt: int, attempts: int) -> bool:
+        return attempt + 1 < attempts
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        self._sleeper(_RETRY_DELAYS_SECONDS[attempt])
+
+    def _raise_http_failure(self, status: int) -> NoReturn:
+        if status in {401, 403}:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
+                status=status,
+            ) from None
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_API_HTTP_ERROR",
+            status=status,
+        ) from None
+
+    def _open_with_retries(
+        self,
+        request: Request,
+        timeout: float,
+    ) -> tuple[int, bytes]:
         attempts = len(_RETRY_DELAYS_SECONDS) + 1
         for attempt in range(attempts):
             try:
-                with self._opener.open(request, timeout=timeout) as response:
-                    status = int(response.status)
-                    raw = response.read(MAX_RESPONSE_BYTES + 1)
+                return self._open_once(request, timeout)
             except HTTPError as exc:
                 status = int(exc.code)
                 if (
                     status in _TRANSIENT_HTTP_STATUSES
-                    and attempt + 1 < attempts
+                    and self._retry_available(attempt, attempts)
                 ):
-                    self._sleeper(_RETRY_DELAYS_SECONDS[attempt])
+                    self._sleep_before_retry(attempt)
                     continue
-                if status in {401, 403}:
-                    raise _provider_base.ProvisioningStopped(
-                        "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
-                        status=status,
-                    ) from None
-                raise _provider_base.ProvisioningStopped(
-                    "TIMEWEB_API_HTTP_ERROR",
-                    status=status,
-                ) from None
-            except (URLError, TimeoutError, OSError):
-                if attempt + 1 >= attempts:
+                self._raise_http_failure(status)
+            except OSError:
+                if not self._retry_available(attempt, attempts):
                     raise _provider_base.ProvisioningStopped(
                         "TIMEWEB_API_NETWORK_ERROR"
                     ) from None
-                self._sleeper(_RETRY_DELAYS_SECONDS[attempt])
-                continue
-            break
+                self._sleep_before_retry(attempt)
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_API_RETRY_STATE_INVALID"
+        )
 
+    def _decode_response(self, status: int, raw: bytes) -> Any:
         if status != 200:
             raise _provider_base.ProvisioningStopped(
                 "TIMEWEB_API_UNEXPECTED_STATUS",
@@ -106,6 +130,13 @@ class TimewebReadOnlyApi:
             raise _provider_base.ProvisioningStopped(
                 "TIMEWEB_API_JSON_INVALID"
             ) from None
+
+    def get(self, path: str, *, timeout: float = 30.0) -> Any:
+        status, raw = self._open_with_retries(
+            self._request(path),
+            timeout,
+        )
+        return self._decode_response(status, raw)
 
 
 def _rows(payload: object, key: str, code: str) -> list[dict[str, Any]]:
@@ -209,7 +240,7 @@ def _price(value: object) -> Decimal:
 
 
 def _preset_type_candidates(provider_type: str) -> frozenset[str]:
-    family = re.sub(r"\d+$", "", provider_type)
+    family = provider_type.rstrip("0123456789")
     return frozenset({provider_type, family})
 
 

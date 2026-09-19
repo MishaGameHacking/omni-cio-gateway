@@ -46,6 +46,13 @@ class TimewebControlPlaneTests(unittest.TestCase):
     def test_source_contract_is_valid(self) -> None:
         guard.validate()
 
+    def test_project_id_rejects_non_ascii_digits(self) -> None:
+        with self.assertRaisesRegex(
+            probe._provider_base.ProvisioningStopped,
+            "TIMEWEB_PROJECT_ID_INVALID",
+        ):
+            probe._project_id("١٢٣")
+
     def test_project_selection_is_exact_and_unique(self) -> None:
         payload = {
             "projects": [
