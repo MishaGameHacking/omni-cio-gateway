@@ -7,43 +7,26 @@ from pathlib import Path
 import unittest
 from unittest import mock
 from urllib.error import HTTPError
-from urllib.request import Request
 
 from scripts import check_v10_timeweb_postgres_synthetic_create as guard
 from scripts import probe_v10_timeweb_postgres_control_plane as read_only
 from scripts import provision_v10_timeweb_postgres_synthetic as provisioner
 
 
-class _Response:
-    def __init__(self, payload: object, *, status: int = 200) -> None:
-        self.status = status
-        self._raw = json.dumps(payload).encode("utf-8")
-
-    def read(self, amount: int = -1) -> bytes:
-        if amount < 0:
-            return self._raw
-        return self._raw[:amount]
-
-    def __enter__(self) -> _Response:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        del args
+def _json_response(payload: object, *, status: int = 200) -> mock.MagicMock:
+    raw = json.dumps(payload).encode("utf-8")
+    response = mock.MagicMock()
+    response.status = status
+    response.read.side_effect = lambda amount=-1: raw if amount < 0 else raw[:amount]
+    response.__enter__.return_value = response
+    response.__exit__.return_value = None
+    return response
 
 
-class _Opener:
-    def __init__(self, outcomes: list[object]) -> None:
-        self._outcomes = list(outcomes)
-        self.requests: list[Request] = []
-
-    def open(self, request: Request, *, timeout: float) -> _Response:
-        del timeout
-        self.requests.append(request)
-        outcome = self._outcomes.pop(0)
-        if isinstance(outcome, BaseException):
-            raise outcome
-        assert isinstance(outcome, _Response)
-        return outcome
+def _sequence_opener(*outcomes: object) -> mock.Mock:
+    opener = mock.Mock()
+    opener.open.side_effect = list(outcomes)
+    return opener
 
 
 class TimewebSyntheticCreateTests(unittest.TestCase):
@@ -102,9 +85,8 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
             self.assertNotIn(forbidden, payload)
 
     def test_create_post_is_exactly_once_and_secret_is_not_emitted(self) -> None:
-        opener = _Opener(
-            [
-                _Response(
+        opener = _sequence_opener(
+            _json_response(
                     {
                         "db": {
                             "id": 91,
@@ -113,7 +95,6 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
                     },
                     status=201,
                 )
-            ]
         )
         api = provisioner.TimewebCreateApi("synthetic-token", opener=opener)
         with mock.patch("builtins.print") as output:
@@ -125,8 +106,8 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
                 )
             )
         self.assertEqual(provisioner._create_response_cluster_id(response), 91)
-        self.assertEqual(len(opener.requests), 1)
-        request = opener.requests[0]
+        self.assertEqual(opener.open.call_count, 1)
+        request = opener.open.call_args.args[0]
         self.assertEqual(request.get_method(), "POST")
         self.assertEqual(
             request.full_url,
@@ -137,10 +118,9 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
         self.assertNotIn("synthetic-token", rendered)
 
     def test_ambiguous_post_reconciles_by_get_without_second_post(self) -> None:
-        mutation_opener = _Opener([OSError("lost response")])
-        read_opener = _Opener(
-            [
-                _Response(
+        mutation_opener = _sequence_opener(OSError("lost response"))
+        read_opener = _sequence_opener(
+            _json_response(
                     {
                         "databases": [
                             {
@@ -150,7 +130,6 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
                         ]
                     }
                 )
-            ]
         )
         mutation_api = provisioner.TimewebCreateApi(
             "synthetic-token",
@@ -173,14 +152,14 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
             reconcile_delays=(),
         )
         self.assertEqual((cluster_id, mode), (91, "reconciled"))
-        self.assertEqual(len(mutation_opener.requests), 1)
-        self.assertEqual(mutation_opener.requests[0].get_method(), "POST")
-        self.assertEqual(len(read_opener.requests), 1)
-        self.assertEqual(read_opener.requests[0].get_method(), "GET")
+        self.assertEqual(mutation_opener.open.call_count, 1)
+        self.assertEqual(mutation_opener.open.call_args.args[0].get_method(), "POST")
+        self.assertEqual(read_opener.open.call_count, 1)
+        self.assertEqual(read_opener.open.call_args.args[0].get_method(), "GET")
 
     def test_ambiguous_post_without_reconciliation_never_retries(self) -> None:
-        mutation_opener = _Opener([OSError("lost response")])
-        read_opener = _Opener([_Response({"databases": []})])
+        mutation_opener = _sequence_opener(OSError("lost response"))
+        read_opener = _sequence_opener(_json_response({"databases": []}))
         mutation_api = provisioner.TimewebCreateApi(
             "synthetic-token",
             opener=mutation_opener,
@@ -188,6 +167,11 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
         read_api = read_only.TimewebReadOnlyApi(
             "synthetic-token",
             opener=read_opener,
+        )
+        payload = provisioner._create_payload(
+            provider_type="postgres18",
+            preset_id=777,
+            project_id="42",
         )
         with self.assertRaisesRegex(
             provisioner._provider_base.ProvisioningStopped,
@@ -197,15 +181,11 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
                 mutation_api,
                 read_api,
                 "/api/v1/projects/42/resources/databases",
-                provisioner._create_payload(
-                    provider_type="postgres18",
-                    preset_id=777,
-                    project_id="42",
-                ),
+                payload,
                 sleeper=lambda _seconds: None,
                 reconcile_delays=(),
             )
-        self.assertEqual(len(mutation_opener.requests), 1)
+        self.assertEqual(mutation_opener.open.call_count, 1)
 
     def test_transient_http_post_is_ambiguous_not_retried(self) -> None:
         failure = HTTPError(
@@ -215,20 +195,19 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
             {},
             io.BytesIO(b"do not emit"),
         )
-        opener = _Opener([failure])
+        opener = _sequence_opener(failure)
         api = provisioner.TimewebCreateApi("synthetic-token", opener=opener)
+        payload = provisioner._create_payload(
+            provider_type="postgres18",
+            preset_id=777,
+            project_id="42",
+        )
         with self.assertRaisesRegex(
             provisioner.AmbiguousCreate,
             "TIMEWEB_CLUSTER_CREATE_AMBIGUOUS",
         ):
-            api.post_once(
-                provisioner._create_payload(
-                    provider_type="postgres18",
-                    preset_id=777,
-                    project_id="42",
-                )
-            )
-        self.assertEqual(len(opener.requests), 1)
+            api.post_once(payload)
+        self.assertEqual(opener.open.call_count, 1)
 
     def test_post_create_shape_requires_no_paid_addons(self) -> None:
         payload = {
