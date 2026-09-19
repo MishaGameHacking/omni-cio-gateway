@@ -170,6 +170,11 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
                 "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
             ),
             (
+                "runtime_ref_kind_enforcement_required",
+                True,
+                "TIMEWEB_CONTROL_PLANE_WORKFLOW_AUTHORITY_INVALID",
+            ),
+            (
                 "secret_consumption_allowed_before_environment_gate",
                 False,
                 "TIMEWEB_CONTROL_PLANE_SECRET_AUTHORITY_INVALID",

@@ -7,6 +7,7 @@ import tempfile
 from unittest import mock
 import unittest
 from urllib.error import HTTPError
+from urllib.request import Request
 
 from scripts import check_v10_timeweb_postgres_control_plane as guard
 from scripts import probe_v10_timeweb_postgres_control_plane as probe
@@ -33,9 +34,9 @@ class _Response:
 class _Opener:
     def __init__(self, outcomes: list[object]) -> None:
         self._outcomes = list(outcomes)
-        self.requests: list[object] = []
+        self.requests: list[Request] = []
 
-    def open(self, request: object, *, timeout: float) -> _Response:
+    def open(self, request: Request, *, timeout: float) -> _Response:
         del timeout
         self.requests.append(request)
         outcome = self._outcomes.pop(0)
@@ -75,6 +76,9 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertEqual(
             payload["environment_gate"]["exact_custom_branch_patterns"],
             ["main"],
+        )
+        self.assertTrue(
+            payload["environment_gate"]["runtime_ref_kind_enforcement_required"]
         )
 
     def test_live_workflow_is_manual_main_only_and_read_only(self) -> None:
@@ -137,6 +141,17 @@ class TimewebControlPlaneTests(unittest.TestCase):
             opener.requests[1].full_url.endswith(
                 "/deployment-branch-policies?per_page=100&page=1"
             )
+        )
+
+    def test_environment_machine_gate_accepts_documented_omitted_type(self) -> None:
+        policies = self._main_policy_payload()
+        policies["branch_policies"] = [{"id": 7, "name": "main"}]
+        opener = _Opener([_Response(self._environment_payload()), _Response(policies)])
+        environment_gate.verify_environment_policy(
+            "synthetic-token",
+            "MishaGameHacking/omni-cio-gateway",
+            opener=opener,
+            sleeper=lambda _seconds: None,
         )
 
     def test_environment_machine_gate_rejects_unrestricted_mode(self) -> None:

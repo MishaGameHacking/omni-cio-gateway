@@ -210,6 +210,9 @@ def _validate_branch_policies(payload: dict[str, Any]) -> None:
             "TIMEWEB_GITHUB_ENVIRONMENT_GATE_PATTERN_INVALID"
         )
 
+    # GitHub's documented list-response example omits the policy type. When it is
+    # omitted, the provider job's environment protection on refs/heads/main remains
+    # the authoritative branch-vs-tag enforcement boundary.
     policy_type = policy.get("type")
     if policy_type is not None and policy_type != "branch":
         raise EnvironmentGateError(

@@ -40,7 +40,8 @@
     "api_endpoints": [
       "/repos/{owner}/{repo}/environments/timeweb-synthetic",
       "/repos/{owner}/{repo}/environments/timeweb-synthetic/deployment-branch-policies?per_page=100&page=1"
-    ]
+    ],
+    "runtime_ref_kind_enforcement_required": true
   },
   "api_boundary": {
     "allowed_methods": [

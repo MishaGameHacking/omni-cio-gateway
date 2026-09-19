@@ -34,6 +34,13 @@ requires:
 - if GitHub exposes a policy `type` field, it must be `branch`;
 - no wildcard or second policy is accepted.
 
+GitHub's documented list-response example does not include a policy `type` field.
+When that field is absent, branch-vs-tag semantics are still enforced by GitHub
+itself: the provider job references `timeweb-synthetic` from
+`GITHUB_REF=refs/heads/main`, and GitHub documents that branch and tag patterns are
+configured separately and matched against `GITHUB_REF`. A tag-only `main` rule
+therefore cannot admit the branch-backed provider job.
+
 The pre-secret job does **not** reference the Timeweb provider secret. It uses only
 the workflow `GITHUB_TOKEN` with `actions: read`, because GitHub documents that
 the environment and deployment-branch-policy read endpoints require Actions read
