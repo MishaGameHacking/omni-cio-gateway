@@ -26,9 +26,7 @@ from omni_cio.persistence.migration import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_SQL = (
-    ROOT / "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql"
-)
+RUNTIME_SQL = ROOT / "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql"
 DSN_ENV = "OMNI_V10_RU_PG_BOOTSTRAP_DSN"
 ACK_ENV = "OMNI_V10_RU_PG_SYNTHETIC_ACK"
 ACK_VALUE = "TIMEWEB_SYNTHETIC_ONLY"
@@ -98,8 +96,7 @@ def _record_sha256(payload: dict[str, object]) -> str:
 
 def _verify_tls(connection: psycopg.Connection[Any]) -> None:
     row = connection.execute(
-        "SELECT ssl FROM pg_catalog.pg_stat_ssl "
-        "WHERE pid = pg_catalog.pg_backend_pid()"
+        "SELECT ssl FROM pg_catalog.pg_stat_ssl WHERE pid = pg_catalog.pg_backend_pid()"
     ).fetchone()
     if row != (True,):
         raise ParityStopped("RU_PG_TLS_SESSION_REQUIRED")
@@ -169,9 +166,7 @@ def _converge_runtime_role(
             )
         except psycopg.Error as exc:
             if exc.sqlstate == "42501":
-                raise ParityStopped(
-                    "RU_PG_RUNTIME_ROLE_CREATE_FORBIDDEN"
-                ) from None
+                raise ParityStopped("RU_PG_RUNTIME_ROLE_CREATE_FORBIDDEN") from None
             raise
         return
     if tuple(state) != expected:
@@ -328,10 +323,7 @@ def _verify_rls_negatives(
 
 
 def _expected_migration_state() -> tuple[tuple[int, str], ...]:
-    return tuple(
-        (item.version, item.sha256)
-        for item in discover_migrations()
-    )
+    return tuple((item.version, item.sha256) for item in discover_migrations())
 
 
 def prove() -> None:

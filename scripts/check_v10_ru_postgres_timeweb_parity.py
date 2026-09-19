@@ -13,14 +13,10 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
-    ROOT
-    / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_CONTRACT.json"
+    ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_CONTRACT.json"
 )
 PROOF = ROOT / "scripts/prove_v10_ru_postgres_timeweb_parity.py"
-RUNBOOK = (
-    ROOT
-    / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_RUNBOOK.md"
-)
+RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_RUNBOOK.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 WRANGLER = ROOT / "wrangler.jsonc"
 
@@ -188,7 +184,7 @@ def _validate_proof_source() -> None:
             "OMNI_V10_RU_PG_BOOTSTRAP_DSN",
             "TIMEWEB_SYNTHETIC_ONLY",
             "OMNI_V10_RU_PG_PROVIDER_LOCATION",
-            "host.endswith(\".neon.tech\")",
+            'host.endswith(".neon.tech")',
             "RU_PG_NEON_TARGET_FORBIDDEN",
             "require_postgres_18",
             "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB",
