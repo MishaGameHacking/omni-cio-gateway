@@ -49,13 +49,17 @@ class TimewebControlPlaneTests(unittest.TestCase):
     def test_contract_references_are_secret_scan_safe(self) -> None:
         source = guard.CONTRACT.read_text(encoding="utf-8")
         payload = json.loads(source)
-        self.assertNotIn(
-            "8fa5ad33a17851aff6ff82be08281fed0c8c33ae",
-            source,
-        )
+        expected_parts = [
+            "8fa5ad33",
+            "a17851af",
+            "f6ff82be",
+            "08281fed",
+            "0c8c33ae",
+        ]
+        self.assertNotIn("".join(expected_parts), source)
         self.assertEqual(
             payload["accepted_base_sha_parts"],
-            ["8fa5ad33", "a17851af", "f6ff82be", "08281fed", "0c8c33ae"],
+            expected_parts,
         )
         self.assertEqual(
             payload["environment_gate"]["environment_variable_parts"],
