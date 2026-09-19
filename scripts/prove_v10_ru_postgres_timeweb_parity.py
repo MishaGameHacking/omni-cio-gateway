@@ -224,8 +224,11 @@ def _verify_rls_negatives(
                 "VALUES (%s, %s, 't_invest', 'read', 'ACTIVE', %s, %s, %s)",
                 (CROSS_CONNECTION, TENANT_B, CROSS_SECRET, NOW, NOW),
             )
-    except psycopg.Error:
-        pass
+    except psycopg.Error as exc:
+        if exc.sqlstate != "42501":
+            raise ParityStopped(
+                "RU_PG_RLS_CROSS_TENANT_WRITE_WRONG_FAILURE"
+            ) from None
     else:
         raise ParityStopped("RU_PG_RLS_CROSS_TENANT_WRITE_ALLOWED")
 

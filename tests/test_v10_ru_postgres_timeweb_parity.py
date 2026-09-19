@@ -47,6 +47,14 @@ class RuPostgresTimewebParitySourceTests(unittest.TestCase):
             finally:
                 guard.CONTRACT = original
 
+    def test_cross_tenant_write_requires_rls_sqlstate(self) -> None:
+        source = guard.PROOF.read_text(encoding="utf-8")
+        self.assertIn('exc.sqlstate != "42501"', source)
+        self.assertIn(
+            "RU_PG_RLS_CROSS_TENANT_WRITE_WRONG_FAILURE",
+            source,
+        )
+
     def test_source_does_not_gain_provider_api_secret_authority(self) -> None:
         source = guard.PROOF.read_text(encoding="utf-8")
         self.assertNotIn("TIMEWEB_CLOUD_TOKEN", source)

@@ -255,6 +255,8 @@ def _validate_proof_source() -> None:
             "RU_PG_RLS_UNSCOPED_READ_LEAK",
             "RU_PG_RLS_CROSS_TENANT_READ_LEAK",
             "RU_PG_RLS_CROSS_TENANT_WRITE_ALLOWED",
+            "RU_PG_RLS_CROSS_TENANT_WRITE_WRONG_FAILURE",
+            'exc.sqlstate != "42501"',
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
         ),
         "RU_PG_B_PROOF_SOURCE_DRIFT",
