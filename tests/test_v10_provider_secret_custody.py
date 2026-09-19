@@ -14,7 +14,9 @@ CONTRACT_PATH = Path("docs/architecture/V10_PROVIDER_SECRET_CUSTODY_CONTRACT.jso
 PROVIDER_WORKFLOW = Path(".github/workflows/v10-cloudflare-provider-readiness.yml")
 PRODUCTION_WORKFLOW = Path(".github/workflows/v10-cloudflare-production-release.yml")
 TIMEWEB_WORKFLOW = Path(".github/workflows/v10-timeweb-postgres-readonly-proof.yml")
-TIMEWEB_CREATE_WORKFLOW = Path(\n    ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"\n)
+TIMEWEB_CREATE_WORKFLOW = Path(
+    ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
+)
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 
