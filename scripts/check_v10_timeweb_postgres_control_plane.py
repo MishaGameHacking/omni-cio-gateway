@@ -322,7 +322,10 @@ def _validate_timeweb_secret_scope() -> None:
             source = _read(path)
             if _SECRET_NAME in source and path.resolve() != allowed:
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD")
-            if f"environment: {_ENVIRONMENT_NAME}" in source and path.resolve() != allowed:
+            if (
+                f"environment: {_ENVIRONMENT_NAME}" in source
+                and path.resolve() != allowed
+            ):
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_SCOPE_TOO_BROAD")
 
 
