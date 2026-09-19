@@ -130,6 +130,9 @@ jobs:
       - name: Verify RU-PG-B Timeweb synthetic parity source contract
         run: python scripts/check_v10_ru_postgres_timeweb_parity.py
 
+      - name: Verify RU-PG-B Timeweb read-only control-plane contract
+        run: python scripts/check_v10_timeweb_postgres_control_plane.py
+
       - name: Verify hosted release post-merge alignment governance
         run: python scripts/check_v10_hosted_release_alignment_governance.py
 
@@ -170,6 +173,8 @@ jobs:
           scripts/check_v10_ru_postgres_data_residency_migration.py
           scripts/check_v10_ru_postgres_timeweb_parity.py
           scripts/prove_v10_ru_postgres_timeweb_parity.py
+          scripts/check_v10_timeweb_postgres_control_plane.py
+          scripts/probe_v10_timeweb_postgres_control_plane.py
           scripts/provision_v10_cloudflare_neon_runtime.py
           scripts/bootstrap_v10_cloudflare_builds.py
           scripts/write_v10_cloudflare_build_info.py
@@ -207,6 +212,7 @@ jobs:
           tests.test_v10_telegram_public_user_readiness
           tests.test_v10_ru_postgres_data_residency_migration
           tests.test_v10_ru_postgres_timeweb_parity
+          tests.test_v10_timeweb_postgres_control_plane
           tests.test_v10_jsonc
 
       - name: Clean self-hosted workspace

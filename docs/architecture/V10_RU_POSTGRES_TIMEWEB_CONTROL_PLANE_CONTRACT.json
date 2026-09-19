@@ -1,0 +1,84 @@
+{
+  "schema": "omni-cio.v10.ru-postgres-timeweb-control-plane-readonly.v1",
+  "stage": "RU-PG-B_TIMEWEB_CONTROL_PLANE_READ_ONLY_PREFLIGHT",
+  "status": "SOURCE_CHECKPOINT_ENVIRONMENT_HARDENING_PENDING",
+  "owning_issue": 559,
+  "provider": {
+    "name": "Timeweb Cloud",
+    "api_base": "https://api.timeweb.cloud",
+    "service": "Managed PostgreSQL",
+    "target_engine": "PostgreSQL",
+    "target_major": 18,
+    "target_project_name": "Общий проект",
+    "target_cluster_name": "omni-cio-v10-ru-pg-synthetic",
+    "target_location": "ru-3",
+    "target_availability_zone": "MSK-1"
+  },
+  "environment_gate": {
+    "name": "timeweb-synthetic",
+    "selected_branch_required": "main",
+    "unrestricted_deployment_refs_allowed": false,
+    "secret_consumption_allowed_in_this_checkpoint": false,
+    "owner_ui_hardening_evidence_required": true,
+    "environment_variable_parts": [
+      "TIMEWEB_CLOUD_API_",
+      "TOKEN"
+    ]
+  },
+  "api_boundary": {
+    "allowed_methods": [
+      "GET"
+    ],
+    "mutation_methods_allowed": false,
+    "response_body_logging_allowed": false,
+    "provider_identifiers_in_output_allowed": false,
+    "redirects_allowed": false,
+    "max_response_bytes": 1048576,
+    "bounded_get_retries": true,
+    "endpoints": [
+      "/api/v1/projects",
+      "/api/v1/database-types",
+      "/api/v2/presets/dbs",
+      "/api/v1/projects/{project_id}/resources/databases"
+    ]
+  },
+  "beta_target": {
+    "cpu": 1,
+    "ram_mb": 2048,
+    "disk_mb": 20480,
+    "base_monthly_price_rub": 790,
+    "public_ipv4_authorized": false,
+    "backup_storage_addon_authorized": false,
+    "replica_count": 1,
+    "auto_scaling_authorized": false
+  },
+  "infrastructure_as_code": {
+    "timeweb_terraform_mutation_allowed": false,
+    "reason": "DELETE_CONFIRMATION_AND_STATE_CUSTODY_NOT_ACCEPTED_IN_RU_PG_B",
+    "direct_public_api_adapter_selected": true,
+    "existing_postgresql_runtime_primitives_reused": true
+  },
+  "provider_mutation": {
+    "cluster_create_allowed": false,
+    "cluster_update_allowed": false,
+    "cluster_delete_allowed": false,
+    "public_ip_create_allowed": false,
+    "network_mutation_allowed": false,
+    "production_dsn_mutation_allowed": false,
+    "neon_production_authority_preserved": true
+  },
+  "exit_gate": {
+    "read_only_marker": "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
+    "live_secret_consuming_workflow_required_later": true,
+    "real_cluster_creation_required_later": true,
+    "ru_pg_b_certified_green": false,
+    "ru_pg_c_allowed": false
+  },
+  "accepted_base_sha_parts": [
+    "8fa5ad33",
+    "a17851af",
+    "f6ff82be",
+    "08281fed",
+    "0c8c33ae"
+  ]
+}
