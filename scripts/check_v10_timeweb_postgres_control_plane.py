@@ -16,6 +16,7 @@ RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_RUNBOOK.
 WORKFLOWS = ROOT / ".github/workflows"
 LIVE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-readonly-proof.yml"
 SYNTHETIC_CREATE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-synthetic-create.yml"
+PUBLIC_IPV4_TLS_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-public-ipv4-tls.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
 _ENVIRONMENT_GATE_MARKER = "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY"
@@ -429,6 +430,7 @@ def _validate_timeweb_secret_scope() -> None:
     allowed = {
         LIVE_WORKFLOW.resolve(),
         SYNTHETIC_CREATE_WORKFLOW.resolve(),
+        PUBLIC_IPV4_TLS_WORKFLOW.resolve(),
     }
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):

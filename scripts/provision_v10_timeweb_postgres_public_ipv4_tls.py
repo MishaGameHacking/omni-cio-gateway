@@ -523,8 +523,7 @@ def _verify_safe_narrow_rule(
         "protocol": "tcp",
     }
     actual = {
-        key: rule.get(key)
-        for key in ("description", "direction", "port", "protocol")
+        key: rule.get(key) for key in ("description", "direction", "port", "protocol")
     }
     if actual != expected:
         raise _provider_base.ProvisioningStopped(
@@ -554,7 +553,9 @@ def _verify_floating_ip_row(row: dict[str, Any]) -> str:
     try:
         address = ipaddress.ip_address(str(row.get("ip", "")))
     except ValueError:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_FLOATING_IP_INVALID") from None
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_FLOATING_IP_INVALID"
+        ) from None
     if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
         raise _provider_base.ProvisioningStopped("TIMEWEB_FLOATING_IP_INVALID")
     if (
@@ -600,8 +601,7 @@ def _create_floating_ip(
     if any(_is_unbound(row) for row in before):
         raise _provider_base.ProvisioningStopped("TIMEWEB_UNMANAGED_FREE_IPV4_PRESENT")
     before_ids = {
-        _safe_id(row.get("id"), "TIMEWEB_FLOATING_IP_ID_INVALID")
-        for row in before
+        _safe_id(row.get("id"), "TIMEWEB_FLOATING_IP_ID_INVALID") for row in before
     }
     body = {"is_ddos_guard": False, "availability_zone": TARGET_ZONE}
     try:
@@ -839,10 +839,17 @@ def _fetch_ca_file(
     return path
 
 
-def _probe_postgres_tls(hostname: str, ca_path: Path) -> None:
-    context = ssl.create_default_context(cafile=str(ca_path))
+def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = True
     context.verify_mode = ssl.CERT_REQUIRED
+    context.load_verify_locations(cafile=str(ca_path))
+    return context
+
+
+def _probe_postgres_tls(hostname: str, ca_path: Path) -> None:
+    context = _tls_client_context(ca_path)
     raw_socket: socket.socket | None = None
     try:
         raw_socket = socket.create_connection(
@@ -858,7 +865,7 @@ def _probe_postgres_tls(hostname: str, ca_path: Path) -> None:
                 raise _provider_base.ProvisioningStopped(
                     "TIMEWEB_POSTGRES_TLS_CERT_MISSING"
                 )
-    except (OSError, ssl.SSLError):
+    except OSError:
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
         ) from None
@@ -877,73 +884,122 @@ def _verify_bound_ipv4(
         raise _provider_base.ProvisioningStopped("TIMEWEB_FLOATING_IP_BINDING_DRIFT")
 
 
-def provision() -> None:
-    _required_confirmation()
-    cidr = _required_verifier_cidr()
-    token = _provider_base._required_env(read_only.TOKEN_ENV)
-    api = read_only.TimewebReadOnlyApi(token)
-    mutation = TimewebMutationApi(token)
-
-    cluster_id = _target_cluster_id(api)
-    initial = _cluster(api, cluster_id)
-
+def _prepare_preexisting_exposure(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    initial: dict[str, Any],
+) -> bool:
     if initial.get("is_enabled_public_ipv6") is True:
         _close_public_network(mutation, api, cluster_id)
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_PREEXISTING_PUBLIC_IPV6_UNSAFE"
         )
 
-    if initial.get("is_enabled_public_network") is True:
+    public_network_enabled = initial.get("is_enabled_public_network") is True
+    if not public_network_enabled:
+        return False
+
+    try:
         existing_group = _group_id_by_name(api)
-        try:
-            if existing_group is None:
-                raise _provider_base.ProvisioningStopped(
-                    "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE"
-                )
-            _verify_group(api, existing_group)
-            _verify_safe_narrow_rule(api, existing_group)
-            _verify_resource_link(api, existing_group, cluster_id)
-            _verify_exclusive_firewall(api, existing_group, cluster_id)
-        except _provider_base.ProvisioningStopped:
-            _close_public_network(mutation, api, cluster_id)
+        if existing_group is None:
             raise _provider_base.ProvisioningStopped(
                 "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE"
-            ) from None
+            )
+        _verify_group(api, existing_group)
+        _verify_safe_narrow_rule(api, existing_group)
+        _verify_resource_link(api, existing_group, cluster_id)
+        _verify_exclusive_firewall(api, existing_group, cluster_id)
+    except _provider_base.ProvisioningStopped:
+        _close_public_network(mutation, api, cluster_id)
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE"
+        ) from None
+    return True
 
+
+def _converge_firewall(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    cidr: str,
+) -> str:
     group_id = _ensure_group(mutation, api)
     _ensure_rule(mutation, api, group_id, cidr)
     _ensure_resource_link(mutation, api, group_id, cluster_id)
     _verify_group(api, group_id)
     _verify_exclusive_firewall(api, group_id, cluster_id)
+    return group_id
 
-    try:
-        existing_bound = _bound_ip_for_cluster(_floating_ips(api), cluster_id)
-    except _provider_base.ProvisioningStopped:
-        if initial.get("is_enabled_public_network") is True:
-            _close_public_network(mutation, api, cluster_id)
-        raise
-    created_this_run = False
-    floating_id = ""
+
+def _resolve_transport_ipv4(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    *,
+    preexisting_public_network: bool,
+) -> tuple[str, str, bool]:
+    existing_bound = _bound_ip_for_cluster(_floating_ips(api), cluster_id)
     if existing_bound is not None:
         floating_id = _safe_id(
             existing_bound.get("id"),
             "TIMEWEB_FLOATING_IP_ID_INVALID",
         )
-        try:
-            address = _verify_floating_ip_row(existing_bound)
-        except _provider_base.ProvisioningStopped:
-            if initial.get("is_enabled_public_network") is True:
-                _close_public_network(mutation, api, cluster_id)
-            raise
-    else:
-        if initial.get("is_enabled_public_network") is True:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_PUBLIC_NETWORK_WITHOUT_MANAGED_IPV4"
-            )
-        floating_id, address, created_this_run = _create_floating_ip(mutation, api)
+        return floating_id, _verify_floating_ip_row(existing_bound), False
 
-    public_exposure_possible = initial.get("is_enabled_public_network") is True
+    if preexisting_public_network:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_PUBLIC_NETWORK_WITHOUT_MANAGED_IPV4"
+        )
+    return _create_floating_ip(mutation, api)
+
+
+def _verify_tls_transport(cluster: dict[str, Any]) -> None:
+    hostname = _issued_domain(cluster)
+    if hostname is None:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_DOMAIN_NOT_READY")
+    ca_path = _fetch_ca_file()
     try:
+        _probe_postgres_tls(hostname, ca_path)
+    finally:
+        ca_path.unlink(missing_ok=True)
+
+
+def _rollback_failed_transport(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    *,
+    public_exposure_possible: bool,
+    created_this_run: bool,
+    floating_id: str,
+) -> None:
+    if public_exposure_possible:
+        _close_public_network(mutation, api, cluster_id)
+    if created_this_run and floating_id:
+        _delete_created_ipv4_if_unbound(mutation, api, floating_id)
+
+
+def _configure_transport(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    initial: dict[str, Any],
+    cidr: str,
+    *,
+    preexisting_public_network: bool,
+) -> None:
+    floating_id = ""
+    created_this_run = False
+    public_exposure_possible = preexisting_public_network
+    try:
+        group_id = _converge_firewall(mutation, api, cluster_id, cidr)
+        floating_id, address, created_this_run = _resolve_transport_ipv4(
+            mutation,
+            api,
+            cluster_id,
+            preexisting_public_network=preexisting_public_network,
+        )
         if _network_ready(initial):
             cluster = initial
         else:
@@ -954,25 +1010,48 @@ def provision() -> None:
                 cluster_id,
                 address,
             )
+
         _verify_group(api, group_id)
         _ensure_rule(mutation, api, group_id, cidr)
         _ensure_resource_link(mutation, api, group_id, cluster_id)
         _verify_exclusive_firewall(api, group_id, cluster_id)
         _verify_bound_ipv4(api, cluster_id, address)
-        hostname = _issued_domain(cluster)
-        if hostname is None:
-            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_DOMAIN_NOT_READY")
-        ca_path = _fetch_ca_file()
-        try:
-            _probe_postgres_tls(hostname, ca_path)
-        finally:
-            ca_path.unlink(missing_ok=True)
+        _verify_tls_transport(cluster)
     except Exception:
-        if public_exposure_possible:
-            _close_public_network(mutation, api, cluster_id)
-        if created_this_run and floating_id:
-            _delete_created_ipv4_if_unbound(mutation, api, floating_id)
+        _rollback_failed_transport(
+            mutation,
+            api,
+            cluster_id,
+            public_exposure_possible=public_exposure_possible,
+            created_this_run=created_this_run,
+            floating_id=floating_id,
+        )
         raise
+
+
+def provision() -> None:
+    _required_confirmation()
+    cidr = _required_verifier_cidr()
+    token = _provider_base._required_env(read_only.TOKEN_ENV)
+    api = read_only.TimewebReadOnlyApi(token)
+    mutation = TimewebMutationApi(token)
+
+    cluster_id = _target_cluster_id(api)
+    initial = _cluster(api, cluster_id)
+    preexisting_public_network = _prepare_preexisting_exposure(
+        mutation,
+        api,
+        cluster_id,
+        initial,
+    )
+    _configure_transport(
+        mutation,
+        api,
+        cluster_id,
+        initial,
+        cidr,
+        preexisting_public_network=preexisting_public_network,
+    )
 
     _provider_base._emit(
         "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY "
@@ -985,9 +1064,7 @@ def main() -> int:
     try:
         provision()
     except _provider_base.ProvisioningStopped as exc:
-        _provider_base._emit(
-            f"TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code={exc.code}"
-        )
+        _provider_base._emit(f"TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code={exc.code}")
         return 1
     except AmbiguousMutation:
         _provider_base._emit(

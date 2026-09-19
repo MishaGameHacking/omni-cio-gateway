@@ -85,8 +85,10 @@ network surface with:
 The Timeweb technical database domain must reach certificate status `issued`.
 The verifier downloads the provider CA from
 `https://st.timeweb.com/cloud-static/ca.crt` to a temporary permission-hardened
-file. It then sends the PostgreSQL SSLRequest on TCP/5432 and upgrades the socket
-using `ssl.CERT_REQUIRED` with hostname verification.
+file. It then sends the PostgreSQL SSLRequest on TCP/5432 and enforces
+`sslmode=verify-full` semantics by upgrading the socket using
+`ssl.PROTOCOL_TLS_CLIENT`, a minimum protocol version of TLS 1.2,
+`ssl.CERT_REQUIRED`, and hostname verification.
 
 This is a credential-free network/TLS proof. Database credentials remain outside
 this checkpoint.

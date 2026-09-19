@@ -64,6 +64,7 @@
     "certificate_status_required": "issued",
     "ca_url": "https://st.timeweb.com/cloud-static/ca.crt",
     "sslmode": "verify-full",
+    "minimum_tls_version": "TLSv1.2",
     "hostname_verification_required": true,
     "postgres_sslrequest_probe_required": true
   },

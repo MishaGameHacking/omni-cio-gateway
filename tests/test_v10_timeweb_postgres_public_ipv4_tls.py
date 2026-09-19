@@ -98,6 +98,26 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             expected_statuses=frozenset({200}),
         )
 
+    def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
+        context = mock.Mock()
+        with mock.patch.object(
+            provisioner.ssl,
+            "SSLContext",
+            return_value=context,
+        ) as constructor:
+            actual = provisioner._tls_client_context(Path("provider-ca.crt"))
+        self.assertIs(actual, context)
+        constructor.assert_called_once_with(provisioner.ssl.PROTOCOL_TLS_CLIENT)
+        self.assertEqual(
+            context.minimum_version,
+            provisioner.ssl.TLSVersion.TLSv1_2,
+        )
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, provisioner.ssl.CERT_REQUIRED)
+        context.load_verify_locations.assert_called_once_with(
+            cafile="provider-ca.crt"
+        )
+
     def test_multiple_firewall_groups_are_rejected(self) -> None:
         api = mock.Mock()
         with mock.patch.object(
@@ -216,6 +236,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             mock.patch.object(provisioner, "_ensure_rule"),
             mock.patch.object(provisioner, "_ensure_resource_link"),
             mock.patch.object(provisioner, "_verify_group"),
+            mock.patch.object(provisioner, "_verify_exclusive_firewall"),
             mock.patch.object(
                 provisioner,
                 "_floating_ips",
@@ -254,6 +275,75 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 provisioner._provider_base.ProvisioningStopped,
                 "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT",
+            ):
+                provisioner.provision()
+        close.assert_called_once_with(mutation, api, 91)
+
+    def test_preexisting_public_network_without_managed_ipv4_is_closed(self) -> None:
+        initial = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+        }
+        api = mock.Mock()
+        mutation = mock.Mock()
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner,
+                "_required_verifier_cidr",
+                return_value="8.8.8.8/32",
+            ),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                provisioner,
+                "TimewebMutationApi",
+                return_value=mutation,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_target_cluster_id",
+                return_value=91,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_cluster",
+                return_value=initial,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_group_id_by_name",
+                return_value="group-1",
+            ),
+            mock.patch.object(provisioner, "_verify_group"),
+            mock.patch.object(provisioner, "_verify_safe_narrow_rule"),
+            mock.patch.object(provisioner, "_verify_resource_link"),
+            mock.patch.object(provisioner, "_verify_exclusive_firewall"),
+            mock.patch.object(
+                provisioner,
+                "_ensure_group",
+                return_value="group-1",
+            ),
+            mock.patch.object(provisioner, "_ensure_rule"),
+            mock.patch.object(provisioner, "_ensure_resource_link"),
+            mock.patch.object(
+                provisioner,
+                "_floating_ips",
+                return_value=[],
+            ),
+            mock.patch.object(provisioner, "_close_public_network") as close,
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_PUBLIC_NETWORK_WITHOUT_MANAGED_IPV4",
             ):
                 provisioner.provision()
         close.assert_called_once_with(mutation, api, 91)

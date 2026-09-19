@@ -23,6 +23,7 @@ _STAGE = "RU-PG-B_TIMEWEB_PUBLIC_IPV4_TLS_TRANSPORT"
 _STATUS = "SOURCE_READY_PROVIDER_MUTATION_PENDING_MAIN_ACCEPTANCE"
 _CONFIRMATION = "ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
+_READY_MARKER = "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY"
 
 
 def _read(path: Path) -> str:
@@ -185,6 +186,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             "certificate_status_required": "issued",
             "ca_url": "https://st.timeweb.com/cloud-static/ca.crt",
             "sslmode": "verify-full",
+            "minimum_tls_version": "TLSv1.2",
             "hostname_verification_required": True,
             "postgres_sslrequest_probe_required": True,
         },
@@ -267,7 +269,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _require(
         success,
         {
-            "sanitized_marker": "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+            "sanitized_marker": _READY_MARKER,
             "does_not_certify_ru_pg_b_parity": True,
             "ru_pg_c_unlocked": False,
         },
@@ -383,6 +385,8 @@ def _validate_sources() -> None:
             '"is_enabled_public_network": True',
             '"is_enabled_public_ipv6": False',
             '"is_secure_connection_enable": True',
+            "ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)",
+            "context.minimum_version = ssl.TLSVersion.TLSv1_2",
             "context.check_hostname = True",
             "context.verify_mode = ssl.CERT_REQUIRED",
             'struct.pack("!II", 8, 80877103)',
@@ -391,7 +395,7 @@ def _validate_sources() -> None:
             "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE",
             "TIMEWEB_PREEXISTING_PUBLIC_IPV6_UNSAFE",
             'f"/api/v1/firewall/service/{FIREWALL_RESOURCE_TYPE}/{cluster_id}"',
-            "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+            _READY_MARKER,
         ),
         "TIMEWEB_PUBLIC_IPV4_PROVISIONER_DRIFT",
     )
@@ -438,7 +442,7 @@ def _validate_sources() -> None:
             "TCP/5432",
             "/32",
             "verify-full",
-            "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+            _READY_MARKER,
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
             "RU-PG-C remains locked",
         ),
