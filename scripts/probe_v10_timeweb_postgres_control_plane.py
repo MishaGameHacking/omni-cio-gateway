@@ -95,9 +95,8 @@ class TimewebReadOnlyApi:
                 return self._open_once(request, timeout)
             except HTTPError as exc:
                 status = int(exc.code)
-                if (
-                    status in _TRANSIENT_HTTP_STATUSES
-                    and self._retry_available(attempt, attempts)
+                if status in _TRANSIENT_HTTP_STATUSES and self._retry_available(
+                    attempt, attempts
                 ):
                     self._sleep_before_retry(attempt)
                     continue
@@ -157,11 +156,7 @@ def _select_project(payload: object) -> str:
         "projects",
         "TIMEWEB_PROJECTS_RESPONSE_INVALID",
     )
-    matches = [
-        row
-        for row in rows
-        if row.get("name") == TARGET_PROJECT_NAME
-    ]
+    matches = [row for row in rows if row.get("name") == TARGET_PROJECT_NAME]
     if len(matches) != 1:
         raise _provider_base.ProvisioningStopped("TIMEWEB_TARGET_PROJECT_NOT_UNIQUE")
     return _project_id(matches[0].get("id"))
@@ -285,16 +280,12 @@ def probe() -> None:
     token = _provider_base._required_env(TOKEN_ENV)
     api = TimewebReadOnlyApi(token)
     project_id = _select_project(api.get("/api/v1/projects"))
-    provider_type = _select_postgres18_type(
-        api.get("/api/v1/database-types")
-    )
+    provider_type = _select_postgres18_type(api.get("/api/v1/database-types"))
     _select_target_preset(
         api.get("/api/v2/presets/dbs"),
         provider_type,
     )
-    project_path = (
-        f"/api/v1/projects/{project_id}/resources/databases"
-    )
+    project_path = f"/api/v1/projects/{project_id}/resources/databases"
     _verify_cluster_name_available(api.get(project_path))
     _provider_base._emit(
         "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY "
