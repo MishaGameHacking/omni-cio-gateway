@@ -16,6 +16,7 @@ CONTRACT = (
     ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_CONTRACT.json"
 )
 PROOF = ROOT / "scripts/prove_v10_ru_postgres_timeweb_parity.py"
+NEON_RUNTIME = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_RUNBOOK.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 WRANGLER = ROOT / "wrangler.jsonc"
@@ -239,8 +240,6 @@ def _validate_proof_source() -> None:
             'host.endswith(".neon.tech")',
             "RU_PG_NEON_TARGET_FORBIDDEN",
             "require_postgres_18",
-            "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB",
-            "NOCREATEROLE NOREPLICATION NOBYPASSRLS",
             "validate_hosted_postgres_runtime_sql",
             "apply_migrations",
             "provision_v10_cloudflare_neon_runtime as neon_runtime",
@@ -269,6 +268,24 @@ def _validate_proof_source() -> None:
     ):
         if forbidden in source:
             raise RuntimeError("RU_PG_B_PROOF_AUTHORITY_WIDENED")
+
+
+def _validate_reused_neon_runtime() -> None:
+    source = _read(NEON_RUNTIME)
+    _require_markers(
+        source,
+        (
+            "def _runtime_sql(runtime_role: str) -> str:",
+            "def _converge_runtime_role(",
+            "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB ",
+            "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}",
+            "def _verify_runtime(connection: Any, runtime_role: str) -> None:",
+            "CLOUDFLARE_RUNTIME_ROLE_DRIFT",
+            "CLOUDFLARE_RUNTIME_ROLE_MEMBERSHIP_PRESENT",
+            "CLOUDFLARE_RUNTIME_FORCE_RLS_DRIFT",
+        ),
+        "RU_PG_B_REUSED_NEON_RUNTIME_DRIFT",
+    )
 
 
 def _validate_docs() -> None:
@@ -343,6 +360,7 @@ def _validate_fail_closed_flags() -> None:
 def validate() -> None:
     _validate_contract(_load_contract())
     _validate_proof_source()
+    _validate_reused_neon_runtime()
     _validate_docs()
     _validate_fail_closed_flags()
 
