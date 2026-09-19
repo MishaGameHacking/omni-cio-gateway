@@ -193,7 +193,8 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
                 "api_endpoints",
                 [
                     "/repos/{owner}/{repo}/environments/timeweb-synthetic",
-                    "/repos/{owner}/{repo}/environments/timeweb-synthetic/deployment-branch-policies?per_page=100&page=1",
+                    "/repos/{owner}/{repo}/environments/timeweb-synthetic/"
+                    "deployment-branch-policies?per_page=100&page=1",
                 ],
                 "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
             ),
@@ -305,7 +306,6 @@ def _validate_probe_source() -> None:
             'api.get("/api/v2/presets/dbs")',
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT",
             "TIMEWEB_TARGET_CLUSTER_ALREADY_EXISTS",
-            "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         ),
         "TIMEWEB_CONTROL_PLANE_PROBE_DRIFT",
@@ -359,7 +359,9 @@ def _validate_environment_verifier_source() -> None:
         "OMNI_V10_POSTGRES_DSN",
     )
     if any(marker in source for marker in forbidden):
-        raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_VERIFIER_MUTATION_SURFACE")
+        raise RuntimeError(
+            "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_VERIFIER_MUTATION_SURFACE"
+        )
 
 
 def _validate_live_workflow() -> None:
@@ -445,6 +447,7 @@ def _validate_runbook() -> None:
             "Terraform",
             "Public API",
             "Neon production authority",
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         ),
         "TIMEWEB_CONTROL_PLANE_RUNBOOK_DRIFT",
@@ -468,7 +471,8 @@ def main() -> int:
         return 1
     print(
         "V10 Timeweb RU-PG-B source workflow check passed; "
-        "live provider access remains blocked until the machine environment gate passes."
+        "live provider access remains blocked until the machine environment "
+        "gate passes."
     )
     return 0
 

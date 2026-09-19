@@ -1,26 +1,27 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 import os
 import re
 import sys
 import time
-from typing import Any
-from urllib.error import HTTPError, URLError
+from typing import Any, NoReturn
+from urllib.error import HTTPError
 from urllib.parse import quote
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, OpenerDirector, Request, build_opener
 
 
 API_BASE = "https://api.github.com"
 API_VERSION = "2026-03-10"
 ENVIRONMENT_NAME = "timeweb-synthetic"
 EXPECTED_BRANCH_PATTERN = "main"
-MAX_RESPONSE_BYTES = 1_048_576
-MAX_ATTEMPTS = 3
-REQUEST_TIMEOUT_SECONDS = 15.0
-_TRANSIENT_HTTP = {429, 500, 502, 503, 504}
+MAX_RESPONSE_BYTES = 1024 * 1024
+_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+_TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GITHUB_BINDING = "GITHUB_" + "TOKEN"
+Sleep = Callable[[float], None]
 
 
 class EnvironmentGateError(RuntimeError):
@@ -36,7 +37,7 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         msg: str,
         headers: object,
         newurl: str,
-    ) -> None:
+    ) -> Request | None:
         del req, fp, code, msg, headers, newurl
         return None
 
@@ -59,16 +60,83 @@ def _required_environment(name: str) -> str:
 
 def _repository_slug(value: str) -> str:
     if not _REPOSITORY_RE.fullmatch(value):
-        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_REPOSITORY_INVALID")
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_REPOSITORY_INVALID"
+        )
     return value
+
+
+def _open_once(
+    request: Request,
+    opener: OpenerDirector | Any,
+) -> tuple[int, bytes]:
+    with opener.open(request, timeout=15.0) as response:
+        return int(response.status), response.read(MAX_RESPONSE_BYTES + 1)
+
+
+def _retry_available(attempt: int) -> bool:
+    return attempt < len(_RETRY_DELAYS_SECONDS)
+
+
+def _raise_http_failure(status: int) -> NoReturn:
+    if status in {401, 403, 404}:
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_UNAVAILABLE"
+        ) from None
+    if status in _TRANSIENT_HTTP_STATUSES:
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_TRANSIENT_EXHAUSTED"
+        ) from None
+    raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_HTTP_FAILURE") from None
+
+
+def _open_with_retries(
+    request: Request,
+    *,
+    opener: OpenerDirector | Any,
+    sleeper: Sleep,
+) -> tuple[int, bytes]:
+    attempts = len(_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            return _open_once(request, opener)
+        except HTTPError as exc:
+            status = int(exc.code)
+            if status in _TRANSIENT_HTTP_STATUSES and _retry_available(attempt):
+                sleeper(_RETRY_DELAYS_SECONDS[attempt])
+                continue
+            _raise_http_failure(status)
+        except OSError:
+            if not _retry_available(attempt):
+                raise EnvironmentGateError(
+                    "TIMEWEB_GITHUB_ENVIRONMENT_GATE_TRANSPORT_FAILURE"
+                ) from None
+            sleeper(_RETRY_DELAYS_SECONDS[attempt])
+    raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_RETRY_STATE_INVALID")
+
+
+def _decode_response(status: int, raw: bytes) -> dict[str, Any]:
+    if status != 200:
+        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_HTTP_FAILURE")
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_TOO_LARGE"
+        )
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_INVALID"
+        ) from None
+    return _mapping(payload, "TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_INVALID")
 
 
 def _request_json(
     path: str,
     token: str,
     *,
-    opener: object = _NO_REDIRECT_OPENER,
-    sleeper: object = time.sleep,
+    opener: OpenerDirector | Any | None = None,
+    sleeper: Sleep = time.sleep,
 ) -> dict[str, Any]:
     if not path.startswith("/repos/"):
         raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_PATH_INVALID")
@@ -83,51 +151,12 @@ def _request_json(
         },
         method="GET",
     )
-
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            with opener.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-                if getattr(response, "status", 0) != 200:
-                    raise EnvironmentGateError(
-                        "TIMEWEB_GITHUB_ENVIRONMENT_GATE_HTTP_FAILURE"
-                    )
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
-                if len(raw) > MAX_RESPONSE_BYTES:
-                    raise EnvironmentGateError(
-                        "TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_TOO_LARGE"
-                    )
-        except HTTPError as exc:
-            if exc.code in _TRANSIENT_HTTP and attempt < MAX_ATTEMPTS:
-                sleeper(float(attempt))
-                continue
-            if exc.code in {401, 403, 404}:
-                raise EnvironmentGateError(
-                    "TIMEWEB_GITHUB_ENVIRONMENT_GATE_UNAVAILABLE"
-                ) from None
-            if exc.code in _TRANSIENT_HTTP:
-                raise EnvironmentGateError(
-                    "TIMEWEB_GITHUB_ENVIRONMENT_GATE_TRANSIENT_EXHAUSTED"
-                ) from None
-            raise EnvironmentGateError(
-                "TIMEWEB_GITHUB_ENVIRONMENT_GATE_HTTP_FAILURE"
-            ) from None
-        except URLError:
-            if attempt < MAX_ATTEMPTS:
-                sleeper(float(attempt))
-                continue
-            raise EnvironmentGateError(
-                "TIMEWEB_GITHUB_ENVIRONMENT_GATE_TRANSPORT_FAILURE"
-            ) from None
-
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise EnvironmentGateError(
-                "TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_INVALID"
-            ) from None
-        return _mapping(payload, "TIMEWEB_GITHUB_ENVIRONMENT_GATE_RESPONSE_INVALID")
-
-    raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_TRANSIENT_EXHAUSTED")
+    status, raw = _open_with_retries(
+        request,
+        opener=opener or _NO_REDIRECT_OPENER,
+        sleeper=sleeper,
+    )
+    return _decode_response(status, raw)
 
 
 def _validate_environment(payload: dict[str, Any]) -> None:
@@ -164,37 +193,46 @@ def _validate_environment(payload: dict[str, Any]) -> None:
 def _validate_branch_policies(payload: dict[str, Any]) -> None:
     policies = payload.get("branch_policies")
     if payload.get("total_count") != 1 or not isinstance(policies, list):
-        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_COUNT_INVALID")
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_COUNT_INVALID"
+        )
     if len(policies) != 1:
-        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_COUNT_INVALID")
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_COUNT_INVALID"
+        )
 
     policy = _mapping(
         policies[0],
         "TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_INVALID",
     )
     if policy.get("name") != EXPECTED_BRANCH_PATTERN:
-        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_PATTERN_INVALID")
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_PATTERN_INVALID"
+        )
 
     policy_type = policy.get("type")
     if policy_type is not None and policy_type != "branch":
-        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_TYPE_INVALID")
+        raise EnvironmentGateError(
+            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_POLICY_TYPE_INVALID"
+        )
 
 
 def verify_environment_policy(
     token: str,
     repository: str,
     *,
-    opener: object = _NO_REDIRECT_OPENER,
-    sleeper: object = time.sleep,
+    opener: OpenerDirector | Any | None = None,
+    sleeper: Sleep = time.sleep,
 ) -> None:
     slug = _repository_slug(repository)
     encoded_environment = quote(ENVIRONMENT_NAME, safe="")
     base = f"/repos/{slug}/environments/{encoded_environment}"
+    active_opener = opener or _NO_REDIRECT_OPENER
 
     environment = _request_json(
         base,
         token,
-        opener=opener,
+        opener=active_opener,
         sleeper=sleeper,
     )
     _validate_environment(environment)
@@ -202,7 +240,7 @@ def verify_environment_policy(
     policies = _request_json(
         base + "/deployment-branch-policies?per_page=100&page=1",
         token,
-        opener=opener,
+        opener=active_opener,
         sleeper=sleeper,
     )
     _validate_branch_policies(policies)
