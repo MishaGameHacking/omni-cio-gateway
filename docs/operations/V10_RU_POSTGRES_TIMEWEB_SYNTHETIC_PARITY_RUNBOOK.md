@@ -20,6 +20,21 @@ Official Timeweb facts revalidated on 2026-09-19:
 - PostgreSQL user privileges include CREATE_ROLE;
 - public, private and domain-based database connectivity are documented.
 
+OWNER-selected beta configuration recorded on 2026-09-19:
+
+- PostgreSQL 18;
+- Moscow / MSK-1 / `ru-3`;
+- 1 CPU;
+- 2 GB RAM;
+- 20 GB NVMe;
+- base compute/database tariff: 790 RUB/month.
+
+The 790 RUB decision covers the base DBaaS configuration only. Public IPv4 and backup-storage add-ons are separate provider charges and are not silently authorized by this source change.
+
+The selected 2 GB configuration is intentionally above Timeweb's restricted 1 GB minimum. Timeweb documents that additional DB users and additional databases are unavailable only on the 1 CPU / 1 GB RAM / 8 GB NVMe minimum tier.
+
+Timeweb documents scale-up as supported and scale-down as unsupported. Start small, measure beta load, and increase resources only when observed CPU/RAM/query/connection evidence requires it.
+
 References:
 
 - https://timeweb.cloud/docs/dbaas/dbaas-create
@@ -85,7 +100,7 @@ The marker contains no DSN, username, password, host, account ID or private payl
 
 Do not assume that SQL `CREATE ROLE` bypasses Timeweb's documented minimum-tier one-user limit.
 
-The minimum tier stays rejected until the real provider proof actually succeeds with a distinct runtime login. If the provider blocks role creation, RU-PG-B remains RED and the next cheapest configuration that supports the required identity split needs fresh OWNER cost approval.
+The restricted 1 GB minimum tier remains rejected. The OWNER-selected 1 CPU / 2 GB RAM / 20 GB NVMe tier at the recorded 790 RUB/month base price is the RU-PG-B beta target. A distinct runtime login still has to succeed in real provider evidence; cost selection never weakens the identity boundary.
 
 Security boundaries must not be collapsed to fit the cheapest tariff.
 

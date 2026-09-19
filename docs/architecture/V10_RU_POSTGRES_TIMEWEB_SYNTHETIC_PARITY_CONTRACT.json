@@ -89,5 +89,25 @@
     "protected_v9_entrypoint": "app:app",
     "wp23_unlocked": false,
     "web_visual_started": false
+  },
+  "beta_configuration": {
+    "owner_selected_on": "2026-09-19",
+    "provider": "Timeweb Cloud",
+    "service": "Managed PostgreSQL",
+    "postgres_major": 18,
+    "region": "Moscow",
+    "availability_zone": "MSK-1",
+    "terraform_location": "ru-3",
+    "cpu": 1,
+    "ram_gb": 2,
+    "nvme_gb": 20,
+    "base_monthly_price_rub": 790,
+    "owner_base_cost_approval_recorded": true,
+    "public_ipv4_addon_included_in_base_price": false,
+    "public_ipv4_addon_authorized": false,
+    "backup_storage_addon_included_in_base_price": false,
+    "backup_storage_addon_authorized": false,
+    "scale_up_only_after_capacity_evidence": true,
+    "scale_down_supported_by_provider": false
   }
 }

@@ -90,6 +90,36 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "RU_PG_B_COST_AUTHORITY_INVALID",
     )
 
+    beta = _mapping(
+        payload.get("beta_configuration"),
+        "RU_PG_B_BETA_CONFIGURATION_INVALID",
+    )
+    expected_beta = {
+        "owner_selected_on": "2026-09-19",
+        "provider": "Timeweb Cloud",
+        "service": "Managed PostgreSQL",
+        "postgres_major": 18,
+        "region": "Moscow",
+        "availability_zone": "MSK-1",
+        "terraform_location": "ru-3",
+        "cpu": 1,
+        "ram_gb": 2,
+        "nvme_gb": 20,
+        "base_monthly_price_rub": 790,
+        "owner_base_cost_approval_recorded": True,
+        "public_ipv4_addon_included_in_base_price": False,
+        "public_ipv4_addon_authorized": False,
+        "backup_storage_addon_included_in_base_price": False,
+        "backup_storage_addon_authorized": False,
+        "scale_up_only_after_capacity_evidence": True,
+        "scale_down_supported_by_provider": False,
+    }
+    _require(
+        beta,
+        expected_beta,
+        "RU_PG_B_BETA_CONFIGURATION_INVALID",
+    )
+
     runtime = _mapping(
         payload.get("proof_runtime"),
         "RU_PG_B_RUNTIME_INVALID",
