@@ -14,6 +14,12 @@ class RuPostgresTimewebParityTests(unittest.TestCase):
     def test_current_source_contract_is_valid(self) -> None:
         guard.validate()
 
+    def test_guard_supports_direct_script_entrypoint(self) -> None:
+        source = Path(guard.__file__).read_text(encoding="utf-8")
+        self.assertIn("if __package__:", source)
+        self.assertIn("from .v10_jsonc import loads_jsonc", source)
+        self.assertIn("from v10_jsonc import loads_jsonc", source)
+
     def test_proof_requires_explicit_synthetic_ack(self) -> None:
         env = {
             proof.DSN_ENV: (
