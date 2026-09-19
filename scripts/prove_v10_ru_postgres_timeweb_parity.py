@@ -35,15 +35,18 @@ ACK_VALUE = "TIMEWEB_SYNTHETIC_ONLY"
 LOCATION_ENV = "OMNI_V10_RU_PG_PROVIDER_LOCATION"
 LOCATION_VALUE = "ru-3"
 RUNTIME_ROLE = "omni_cio_hosted_api"
+_BROKER_CONNECTION_PREFIX = "broker-connection:v1:"
+_READ_CONNECTION_PREFIX = "read-connection:v1:"
+_SET_TENANT_SCOPE_SQL = "SELECT set_config('omni_cio.tenant_id', %s, true)"
 NOW = datetime(2026, 9, 19, 9, 0, tzinfo=timezone.utc)
 TENANT_A = "tenant:v1:ru_pg_a"
 TENANT_B = "tenant:v1:ru_pg_b"
-CONNECTION_A = "broker-connection:v1:" + "1" * 64
-CONNECTION_B = "broker-connection:v1:" + "2" * 64
-CROSS_CONNECTION = "broker-connection:v1:" + "3" * 64
-SECRET_A = "read-connection:v1:" + "4" * 64
-SECRET_B = "read-connection:v1:" + "5" * 64
-CROSS_SECRET = "read-connection:v1:" + "6" * 64
+CONNECTION_A = _BROKER_CONNECTION_PREFIX + "1" * 64
+CONNECTION_B = _BROKER_CONNECTION_PREFIX + "2" * 64
+CROSS_CONNECTION = _BROKER_CONNECTION_PREFIX + "3" * 64
+SECRET_A = _READ_CONNECTION_PREFIX + "4" * 64
+SECRET_B = _READ_CONNECTION_PREFIX + "5" * 64
+CROSS_SECRET = _READ_CONNECTION_PREFIX + "6" * 64
 
 
 class ParityStopped(RuntimeError):
@@ -216,7 +219,7 @@ def _seed_connection(
 ) -> None:
     with connection.transaction():
         connection.execute(
-            "SELECT set_config('omni_cio.tenant_id', %s, true)",
+            _SET_TENANT_SCOPE_SQL,
             (tenant_id,),
         )
         connection.execute(
@@ -295,7 +298,7 @@ def _verify_rls_negatives(
 
     with connection.transaction():
         connection.execute(
-            "SELECT set_config('omni_cio.tenant_id', %s, true)",
+            _SET_TENANT_SCOPE_SQL,
             (TENANT_A,),
         )
         visible = connection.execute(
@@ -308,7 +311,7 @@ def _verify_rls_negatives(
     try:
         with connection.transaction():
             connection.execute(
-                "SELECT set_config('omni_cio.tenant_id', %s, true)",
+                _SET_TENANT_SCOPE_SQL,
                 (TENANT_A,),
             )
             connection.execute(
