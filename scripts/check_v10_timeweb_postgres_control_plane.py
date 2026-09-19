@@ -17,6 +17,7 @@ WORKFLOWS = ROOT / ".github/workflows"
 LIVE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-readonly-proof.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
+_ENVIRONMENT_GATE_MARKER = "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY"
 
 
 def _read(path: Path) -> str:
@@ -141,7 +142,7 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
             ),
             (
                 "machine_gate_marker",
-                "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
+                _ENVIRONMENT_GATE_MARKER,
                 "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_EVIDENCE_INVALID",
             ),
             (
@@ -347,7 +348,7 @@ def _validate_environment_verifier_source() -> None:
             "custom_branch_policies",
             "protected_branches",
             "branch_policies",
-            "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
+            _ENVIRONMENT_GATE_MARKER,
         ),
         "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_VERIFIER_DRIFT",
     )
@@ -452,7 +453,7 @@ def _validate_runbook() -> None:
             "Terraform",
             "Public API",
             "Neon production authority",
-            "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
+            _ENVIRONMENT_GATE_MARKER,
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         ),
         "TIMEWEB_CONTROL_PLANE_RUNBOOK_DRIFT",
