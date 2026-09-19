@@ -275,9 +275,7 @@ def _validate_migrations(root: Path) -> None:
         if any(token in source for token in forbidden):
             raise RuntimeError("RU_POSTGRES_MIGRATION_PROVIDER_COUPLING")
         if "create extension" in source:
-            raise RuntimeError(
-                "RU_POSTGRES_MIGRATION_EXTENSION_DEPENDENCY_UNPROVEN"
-            )
+            raise RuntimeError("RU_POSTGRES_MIGRATION_EXTENSION_DEPENDENCY_UNPROVEN")
 
 
 def _validate_runtime_sql(root: Path) -> None:
