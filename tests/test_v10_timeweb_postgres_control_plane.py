@@ -400,13 +400,149 @@ class TimewebControlPlaneTests(unittest.TestCase):
         ):
             probe._select_target_preset(payload, "postgres18")
 
-    def test_existing_target_cluster_fails_closed(self) -> None:
+    def test_target_cluster_id_is_exact_and_optional(self) -> None:
+        self.assertIsNone(probe._target_cluster_id({"databases": []}))
         payload = {"databases": [{"id": 99, "name": probe.TARGET_CLUSTER_NAME}]}
+        self.assertEqual(probe._target_cluster_id(payload), "99")
+
+    def test_target_cluster_id_rejects_duplicate_target(self) -> None:
+        payload = {
+            "databases": [
+                {"id": 99, "name": probe.TARGET_CLUSTER_NAME},
+                {"id": 100, "name": probe.TARGET_CLUSTER_NAME},
+            ]
+        }
         with self.assertRaisesRegex(
             probe._provider_base.ProvisioningStopped,
-            "TIMEWEB_TARGET_CLUSTER_ALREADY_EXISTS",
+            "TIMEWEB_TARGET_CLUSTER_NOT_UNIQUE",
         ):
-            probe._verify_cluster_name_available(payload)
+            probe._target_cluster_id(payload)
+
+    def test_replica_topology_observation_is_cluster_bound(self) -> None:
+        payload = {
+            "db": {
+                "id": 99,
+                "name": probe.TARGET_CLUSTER_NAME,
+                "replica_list": [
+                    {
+                        "id": 501,
+                        "db_id": 99,
+                        "status": "started",
+                        "local_ip": "10.0.0.5",
+                    }
+                ],
+            }
+        }
+        self.assertEqual(
+            probe._replica_topology_observation(
+                payload,
+                expected_cluster_id="99",
+            ),
+            1,
+        )
+
+    def test_replica_topology_rejects_cross_cluster_row(self) -> None:
+        payload = {
+            "db": {
+                "id": 99,
+                "name": probe.TARGET_CLUSTER_NAME,
+                "replica_list": [{"id": 501, "db_id": 100}],
+            }
+        }
+        with self.assertRaisesRegex(
+            probe._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT",
+        ):
+            probe._replica_topology_observation(
+                payload,
+                expected_cluster_id="99",
+            )
+
+    def test_replica_topology_marker_is_sanitized_and_semantics_unresolved(
+        self,
+    ) -> None:
+        with mock.patch.object(probe._provider_base, "_emit") as emit:
+            probe._emit_replica_topology_observation(1)
+        marker = emit.call_args.args[0]
+        self.assertEqual(
+            marker,
+            "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED "
+            "replica_list_count=1 contract_replica_count=1 "
+            "relation=matches_contract_count semantics=UNRESOLVED",
+        )
+        self.assertNotIn("cluster_id", marker)
+        self.assertNotIn("replica_id", marker)
+        self.assertNotIn("local_ip", marker)
+
+    def test_probe_existing_target_gets_detail_and_emits_no_provider_ids(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        api.get.side_effect = [
+            {"projects": [{"id": 7, "name": probe.TARGET_PROJECT_NAME}]},
+            {
+                "types": [
+                    {
+                        "name": "PostgreSQL",
+                        "version": "18",
+                        "type": "postgres18",
+                        "is_deprecated": False,
+                    }
+                ]
+            },
+            {
+                "databases_presets": [
+                    {
+                        "id": 777,
+                        "type": "postgres",
+                        "location": "ru-3",
+                        "cpu": 1,
+                        "ram": 2048,
+                        "disk": 20480,
+                        "price": 790,
+                    }
+                ]
+            },
+            {"databases": [{"id": 99, "name": probe.TARGET_CLUSTER_NAME}]},
+            {
+                "db": {
+                    "id": 99,
+                    "name": probe.TARGET_CLUSTER_NAME,
+                    "replica_list": [
+                        {
+                            "id": 501,
+                            "db_id": 99,
+                            "status": "started",
+                            "local_ip": "10.0.0.5",
+                        }
+                    ],
+                }
+            },
+        ]
+        with mock.patch.object(
+            probe._provider_base,
+            "_required_env",
+            return_value="synthetic-token",
+        ), mock.patch.object(
+            probe,
+            "TimewebReadOnlyApi",
+            return_value=api,
+        ), mock.patch.object(
+            probe._provider_base,
+            "_emit",
+        ) as emit:
+            probe.probe()
+
+        api.get.assert_any_call("/api/v1/databases/99")
+        rendered = " ".join(call.args[0] for call in emit.call_args_list)
+        self.assertIn("TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED", rendered)
+        self.assertIn("replica_list_count=1", rendered)
+        self.assertIn("semantics=UNRESOLVED", rendered)
+        self.assertNotIn("cluster_id", rendered)
+        self.assertNotIn("replica_id", rendered)
+        self.assertNotIn("local_ip", rendered)
+        self.assertNotIn("10.0.0.5", rendered)
+        self.assertNotIn("501", rendered)
 
     def test_read_only_api_masks_auth_failure(self) -> None:
         request = HTTPError(
