@@ -16,6 +16,7 @@ CANDIDATE_WORKFLOW = ".github/workflows/v10-cloudflare-candidate-deploy.yml"
 PRODUCTION_WORKFLOW = ".github/workflows/v10-cloudflare-production-release.yml"
 TIMEWEB_READONLY_WORKFLOW = ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
 TIMEWEB_CREATE_WORKFLOW = ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
+TIMEWEB_NETWORK_WORKFLOW = ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
 RETIRED_HOSTED_WORKFLOW = ".github/workflows/v10-hosted-release-alignment.yml"
 RETIRED_PREVIEW_WORKFLOW = ".github/workflows/v10-phase4-free-preview-deploy.yml"
 
@@ -62,7 +63,9 @@ _EXPECTED_INVENTORY = frozenset(
 _CLOUDFLARE_WORKFLOWS = frozenset(
     {PROVIDER_WORKFLOW, CANDIDATE_WORKFLOW, PRODUCTION_WORKFLOW}
 )
-_TIMEWEB_WORKFLOWS = frozenset({TIMEWEB_READONLY_WORKFLOW, TIMEWEB_CREATE_WORKFLOW})
+_TIMEWEB_WORKFLOWS = frozenset(
+    {TIMEWEB_READONLY_WORKFLOW, TIMEWEB_CREATE_WORKFLOW, TIMEWEB_NETWORK_WORKFLOW}
+)
 _ACTIVE_WORKFLOWS = _CLOUDFLARE_WORKFLOWS | _TIMEWEB_WORKFLOWS
 _EXPECTED_RETIRED = frozenset({RETIRED_HOSTED_WORKFLOW, RETIRED_PREVIEW_WORKFLOW})
 _EXPECTED_FORBIDDEN = frozenset({REMOVED_FUNCTION_INVOKE_TOKEN, RETIRED_RENDER_BINDING})
@@ -87,6 +90,7 @@ _EXPECTED_ROLES: dict[str, object] = {
     "timeweb_allowed_workflows": [
         TIMEWEB_READONLY_WORKFLOW,
         TIMEWEB_CREATE_WORKFLOW,
+        TIMEWEB_NETWORK_WORKFLOW,
     ],
 }
 _EXPECTED_INVARIANTS: dict[str, object] = {

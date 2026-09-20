@@ -1,6 +1,6 @@
 # V10 RU-PG-B — Timeweb Synthetic PostgreSQL 18 Create Runbook
 
-Status: **SOURCE READY / PAID MUTATION BLOCKED ON PARITY TRANSPORT PROOF**
+Status: **SOURCE READY / PUBLIC IPv4 TRANSPORT SOURCE SELECTED; LIVE MUTATION STILL MANUAL**
 
 Owning issue: #559
 
@@ -48,10 +48,18 @@ separate accepted transport checkpoint selects and proves exactly one of these m
   approved and security-reviewed. Timeweb currently lists public IPv4 as a separate
   200 RUB/month option, outside the recorded 790 RUB/month base DBaaS approval.
 
-Until one mode is accepted, the machine-readable transport status remains
-`BLOCKED_PENDING_PROOF` and the paid create job cannot reach the Timeweb credential.
-This is intentionally stricter than merely creating an unreachable recurring-cost
-resource and discovering the networking blocker afterwards.
+The accepted transport source now selects `PUBLIC_IPV4_OWNER_APPROVED` after the
+OWNER separately approved one public IPv4 up to 200 RUB/month and the repository
+added the dedicated firewall/TLS checkpoint.
+
+This does not make the database public during cluster creation. The create POST stays
+private-only. Public exposure is a separate manual protected-main mutation that must
+first install and verify a DROP firewall with exactly one TCP/5432 verifier /32 rule,
+keep IPv6 and the DDoS add-on off, and require provider TLS plus hostname
+verification.
+
+The /32 verifier allowlist is RU-PG-B synthetic-proof authority only. It is not
+Cloudflare production-network authority and is not inherited by RU-PG-C.
 
 ## Cost and add-on boundary
 
@@ -67,9 +75,12 @@ configuration:
 Before POST, the workflow re-reads the provider presets and fails closed if the exact
 resource tuple or base price has drifted.
 
+The separately accepted network checkpoint authorizes one public IPv4 up to
+200 RUB/month for RU-PG-B synthetic verification, but this cluster-create request
+does not purchase or attach it. The network workflow owns that later mutation.
+
 This checkpoint does not authorize:
 
-- public IPv4 purchase;
 - public IPv6;
 - provider backup add-ons;
 - replicas;

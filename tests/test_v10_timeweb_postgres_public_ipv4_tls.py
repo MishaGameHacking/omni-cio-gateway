@@ -1,0 +1,434 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest import mock
+
+from scripts import check_v10_timeweb_postgres_public_ipv4_tls as guard
+from scripts import discover_v10_ru_pg_verifier_ipv4 as discoverer
+from scripts import provision_v10_timeweb_postgres_public_ipv4_tls as provisioner
+
+
+class TimewebPublicIpv4TlsTests(unittest.TestCase):
+    def test_source_contract_passes(self) -> None:
+        guard.validate()
+
+    def test_verifier_cidr_requires_exact_global_ipv4_32(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {provisioner.VERIFIER_CIDR_ENV: "203.0.113.7/32"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_VERIFIER_CIDR_INVALID",
+            ):
+                provisioner._required_verifier_cidr()
+
+        with mock.patch.dict(
+            os.environ,
+            {provisioner.VERIFIER_CIDR_ENV: "8.8.8.8/32"},
+            clear=True,
+        ):
+            self.assertEqual(provisioner._required_verifier_cidr(), "8.8.8.8/32")
+
+    def test_wildcard_firewall_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_FIREWALL_WILDCARD_FORBIDDEN",
+        ):
+            provisioner._rule_body("0.0.0.0/0")
+
+    def test_firewall_rule_shape_is_exact(self) -> None:
+        self.assertEqual(
+            provisioner._rule_body("8.8.8.8/32"),
+            {
+                "description": "Omni-CIO RU-PG-B verifier PostgreSQL",
+                "direction": "ingress",
+                "port": "5432",
+                "protocol": "tcp",
+                "cidr": "8.8.8.8/32",
+            },
+        )
+
+    def test_public_patch_keeps_ipv6_off_and_tls_on(self) -> None:
+        mutation = mock.Mock()
+        api = mock.Mock()
+        ready = {
+            "name": "omni-cio-v10-ru-pg-synthetic",
+            "location": "ru-3",
+            "availability_zone": "msk-1",
+            "cpu": 1,
+            "ram": 2048,
+            "port": 5432,
+            "disk": {"size": 20480},
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": True,
+            "is_autobackups_enabled": False,
+            "is_backup_schedule_enabled": False,
+            "replica_list": [],
+            "disk_autoscaling": {"is_enabled": False},
+            "status": "started",
+            "domains": [{"fqdn": "example.twc1.net", "cert_status": "issued"}],
+        }
+        with mock.patch.object(
+            provisioner,
+            "_wait_network_ready",
+            return_value=ready,
+        ):
+            provisioner._patch_public_network(
+                mutation,
+                api,
+                91,
+                "8.8.4.4",
+            )
+        mutation.mutate_once.assert_called_once_with(
+            "PATCH",
+            "/api/v2/databases/91",
+            body={
+                "floating_ip": "8.8.4.4",
+                "is_enabled_public_network": True,
+                "is_enabled_public_ipv6": False,
+                "is_secure_connection_enable": True,
+            },
+            expected_statuses=frozenset({200}),
+        )
+
+    def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
+        context = mock.Mock()
+        with mock.patch.object(
+            provisioner.ssl,
+            "SSLContext",
+            return_value=context,
+        ) as constructor:
+            actual = provisioner._tls_client_context(Path("provider-ca.crt"))
+        self.assertIs(actual, context)
+        constructor.assert_called_once_with(provisioner.ssl.PROTOCOL_TLS_CLIENT)
+        self.assertEqual(
+            context.minimum_version,
+            provisioner.ssl.TLSVersion.TLSv1_2,
+        )
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, provisioner.ssl.CERT_REQUIRED)
+        context.load_verify_locations.assert_called_once_with(
+            cafile="provider-ca.crt"
+        )
+
+    def test_multiple_firewall_groups_are_rejected(self) -> None:
+        api = mock.Mock()
+        with mock.patch.object(
+            provisioner,
+            "_service_groups",
+            return_value=[{"id": "group-1"}, {"id": "group-2"}],
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE",
+            ):
+                provisioner._verify_exclusive_firewall(api, "group-1", 91)
+
+    def test_safe_preexisting_rule_must_be_single_global_ipv4_32(self) -> None:
+        api = mock.Mock()
+        safe = {
+            "description": "Omni-CIO RU-PG-B verifier PostgreSQL",
+            "direction": "ingress",
+            "port": "5432",
+            "protocol": "tcp",
+            "cidr": "8.8.8.8/32",
+        }
+        with mock.patch.object(provisioner, "_rules", return_value=[safe]):
+            provisioner._verify_safe_narrow_rule(api, "group-1")
+
+        unsafe = dict(safe)
+        unsafe["cidr"] = "0.0.0.0/0"
+        with mock.patch.object(provisioner, "_rules", return_value=[unsafe]):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_PREEXISTING_FIREWALL_NOT_NARROW",
+            ):
+                provisioner._verify_safe_narrow_rule(api, "group-1")
+
+    def test_preexisting_public_ipv6_is_closed_and_rejected(self) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        initial = {
+            "is_enabled_public_network": False,
+            "is_enabled_public_ipv6": True,
+        }
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner,
+                "_required_verifier_cidr",
+                return_value="8.8.8.8/32",
+            ),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                provisioner,
+                "TimewebMutationApi",
+                return_value=mutation,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_target_cluster_id",
+                return_value=91,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_cluster",
+                return_value=initial,
+            ),
+            mock.patch.object(provisioner, "_close_public_network") as close,
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_PREEXISTING_PUBLIC_IPV6_UNSAFE",
+            ):
+                provisioner.provision()
+        close.assert_called_once_with(mutation, api, 91)
+
+    def test_public_patch_failure_triggers_public_network_rollback(self) -> None:
+        initial = {
+            "is_enabled_public_network": False,
+        }
+        api = mock.Mock()
+        mutation = mock.Mock()
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner,
+                "_required_verifier_cidr",
+                return_value="8.8.8.8/32",
+            ),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner,
+                "_target_cluster_id",
+                return_value=91,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_cluster",
+                return_value=initial,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_ensure_group",
+                return_value="group-1",
+            ),
+            mock.patch.object(provisioner, "_ensure_rule"),
+            mock.patch.object(provisioner, "_ensure_resource_link"),
+            mock.patch.object(provisioner, "_verify_group"),
+            mock.patch.object(provisioner, "_verify_exclusive_firewall"),
+            mock.patch.object(
+                provisioner,
+                "_floating_ips",
+                return_value=[],
+            ),
+            mock.patch.object(
+                provisioner,
+                "_create_floating_ip",
+                return_value=("ip-1", "8.8.4.4", True),
+            ),
+            mock.patch.object(
+                provisioner,
+                "_network_ready",
+                return_value=False,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_patch_public_network",
+                side_effect=provisioner._provider_base.ProvisioningStopped(
+                    "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
+                ),
+            ),
+            mock.patch.object(provisioner, "_close_public_network") as close,
+            mock.patch.object(provisioner, "_delete_created_ipv4_if_unbound"),
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                provisioner,
+                "TimewebMutationApi",
+                return_value=mutation,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT",
+            ):
+                provisioner.provision()
+        close.assert_called_once_with(mutation, api, 91)
+
+    def test_preexisting_public_network_without_managed_ipv4_is_closed(self) -> None:
+        initial = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+        }
+        api = mock.Mock()
+        mutation = mock.Mock()
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner,
+                "_required_verifier_cidr",
+                return_value="8.8.8.8/32",
+            ),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                provisioner,
+                "TimewebMutationApi",
+                return_value=mutation,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_target_cluster_id",
+                return_value=91,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_cluster",
+                return_value=initial,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_group_id_by_name",
+                return_value="group-1",
+            ),
+            mock.patch.object(provisioner, "_verify_group"),
+            mock.patch.object(provisioner, "_verify_safe_narrow_rule"),
+            mock.patch.object(provisioner, "_verify_resource_link"),
+            mock.patch.object(provisioner, "_verify_exclusive_firewall"),
+            mock.patch.object(
+                provisioner,
+                "_ensure_group",
+                return_value="group-1",
+            ),
+            mock.patch.object(provisioner, "_ensure_rule"),
+            mock.patch.object(provisioner, "_ensure_resource_link"),
+            mock.patch.object(
+                provisioner,
+                "_floating_ips",
+                return_value=[],
+            ),
+            mock.patch.object(provisioner, "_close_public_network") as close,
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_PUBLIC_NETWORK_WITHOUT_MANAGED_IPV4",
+            ):
+                provisioner.provision()
+        close.assert_called_once_with(mutation, api, 91)
+
+    def test_floating_ip_create_shape_has_no_ddos_authority(self) -> None:
+        mutation = mock.Mock()
+        mutation.mutate_once.return_value = {
+            "ip": {
+                "id": "abc-123",
+                "ip": "8.8.4.4",
+                "is_ddos_guard": False,
+                "availability_zone": "msk-1",
+                "resource_type": None,
+                "resource_id": None,
+            }
+        }
+        api = mock.Mock()
+        with mock.patch.object(provisioner, "_floating_ips", return_value=[]):
+            ip_id, address, created = provisioner._create_floating_ip(
+                mutation,
+                api,
+            )
+        self.assertEqual(
+            (ip_id, address, created),
+            ("abc-123", "8.8.4.4", True),
+        )
+        mutation.mutate_once.assert_called_once_with(
+            "POST",
+            "/api/v1/floating-ips",
+            body={"is_ddos_guard": False, "availability_zone": "msk-1"},
+            expected_statuses=frozenset({201}),
+        )
+
+    def test_discoverer_requires_two_equal_samples_and_masks_value(self) -> None:
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            env_path = handle.name
+        self.addCleanup(lambda: Path(env_path).unlink(missing_ok=True))
+        with (
+            mock.patch.dict(os.environ, {"GITHUB_ENV": env_path}, clear=True),
+            mock.patch.object(
+                discoverer,
+                "_fetch_public_ipv4",
+                side_effect=["8.8.8.8", "8.8.8.8"],
+            ),
+            mock.patch("builtins.print") as output,
+        ):
+            cidr = discoverer.discover(sleeper=lambda _seconds: None)
+        self.assertEqual(cidr, "8.8.8.8/32")
+        self.assertEqual(
+            Path(env_path).read_text(encoding="utf-8"),
+            f"{discoverer.CIDR_ENV}=8.8.8.8/32\n",
+        )
+        rendered = " ".join(str(call) for call in output.call_args_list)
+        self.assertIn("::add-mask::8.8.8.8", rendered)
+        self.assertIn(
+            "RU_PG_VERIFIER_EGRESS=READY source=/32",
+            rendered,
+        )
+
+    def test_discoverer_rejects_unstable_egress(self) -> None:
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            env_path = handle.name
+        self.addCleanup(lambda: Path(env_path).unlink(missing_ok=True))
+        with (
+            mock.patch.dict(os.environ, {"GITHUB_ENV": env_path}, clear=True),
+            mock.patch.object(
+                discoverer,
+                "_fetch_public_ipv4",
+                side_effect=["8.8.8.8", "1.1.1.1"],
+            ),
+        ):
+            with self.assertRaisesRegex(
+                discoverer.EgressStopped,
+                "RU_PG_VERIFIER_EGRESS_NOT_STABLE",
+            ):
+                discoverer.discover(sleeper=lambda _seconds: None)
+
+    def test_contract_does_not_record_full_base_sha_literal(self) -> None:
+        source = Path(guard.CONTRACT).read_text(encoding="utf-8")
+        payload = json.loads(source)
+        self.assertNotIn(
+            "".join(payload["accepted_base_sha_parts"]),
+            source,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

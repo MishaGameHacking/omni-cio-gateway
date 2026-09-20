@@ -1,0 +1,122 @@
+{
+  "schema": "omni-cio.v10.ru-postgres-timeweb-public-ipv4-tls.v1",
+  "stage": "RU-PG-B_TIMEWEB_PUBLIC_IPV4_TLS_TRANSPORT",
+  "status": "SOURCE_READY_PROVIDER_MUTATION_PENDING_MAIN_ACCEPTANCE",
+  "owning_issue": 559,
+  "accepted_base_sha_parts": [
+    "b45d110d",
+    "92d6642b",
+    "9f29a686",
+    "6c4c2e06",
+    "eab76dd4"
+  ],
+  "selected_transport": "PUBLIC_IPV4_OWNER_APPROVED",
+  "authority": {
+    "owner_ipv4_cost_approval_recorded": true,
+    "authorized_ipv4_monthly_price_rub": 200,
+    "funding_evidence_recorded": true,
+    "manual_workflow_dispatch_required": true,
+    "exact_main_ref_required": true,
+    "environment": "timeweb-synthetic",
+    "environment_machine_gate_required": true,
+    "provider_secret_step_scope_required": true,
+    "synthetic_cluster_must_preexist": true,
+    "production_data_allowed": false
+  },
+  "verifier_egress": {
+    "discovery_url": "https://cloudflare.com/cdn-cgi/trace",
+    "two_sample_consensus_required": true,
+    "ipv4_global_unicast_required": true,
+    "source_prefix_length": 32,
+    "value_may_be_logged": false,
+    "value_may_be_persisted": false,
+    "purpose": "RU_PG_B_SYNTHETIC_VERIFIER_ONLY"
+  },
+  "firewall": {
+    "group_name": "omni-cio-v10-ru-pg-synthetic-verifier",
+    "policy": "DROP",
+    "api_resource_type": "dbaas",
+    "direction": "ingress",
+    "protocol": "tcp",
+    "port": "5432",
+    "exact_rule_count": 1,
+    "wildcard_ipv4_allowed": false,
+    "other_resource_links_allowed": false,
+    "must_be_verified_before_public_network_enable": true,
+    "must_be_reverified_after_public_network_enable": true,
+    "exclusive_service_group_required": true,
+    "preexisting_public_network_requires_safe_narrow_firewall": true
+  },
+  "public_ipv4": {
+    "authorized": true,
+    "monthly_price_rub": 200,
+    "availability_zone": "msk-1",
+    "ddos_addon_authorized": false,
+    "reuse_unmanaged_free_ip_allowed": false,
+    "create_endpoint": "POST /api/v1/floating-ips",
+    "database_patch_endpoint": "PATCH /api/v2/databases/{cluster_id}",
+    "ambiguous_create_requires_get_reconciliation": true,
+    "blind_mutation_retry_allowed": false
+  },
+  "tls": {
+    "provider_secure_connection_required": true,
+    "technical_domain_required": true,
+    "certificate_status_required": "issued",
+    "ca_url": "https://st.timeweb.com/cloud-static/ca.crt",
+    "sslmode": "verify-full",
+    "minimum_tls_version": "TLSv1.2",
+    "hostname_verification_required": true,
+    "postgres_sslrequest_probe_required": true
+  },
+  "network_shape": {
+    "public_ipv4_authorized": true,
+    "public_ipv6_authorized": false,
+    "ddos_addon_authorized": false,
+    "firewall_first_required": true,
+    "public_network_rollback_on_tls_or_verification_failure": true
+  },
+  "provider_api": {
+    "get_endpoints": [
+      "/api/v1/projects",
+      "/api/v1/projects/{project_id}/resources/databases",
+      "/api/v1/databases/{cluster_id}",
+      "/api/v1/firewall/groups",
+      "/api/v1/firewall/groups/{group_id}",
+      "/api/v1/firewall/groups/{group_id}/rules",
+      "/api/v1/firewall/groups/{group_id}/resources",
+      "/api/v1/floating-ips",
+      "/api/v1/firewall/service/dbaas/{cluster_id}"
+    ],
+    "post_endpoints": [
+      "/api/v1/firewall/groups?policy=DROP",
+      "/api/v1/firewall/groups/{group_id}/rules",
+      "/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?resource_type=dbaas",
+      "/api/v1/floating-ips"
+    ],
+    "patch_endpoints": [
+      "/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
+      "/api/v2/databases/{cluster_id}"
+    ],
+    "delete_endpoint_for_created_ipv4_cleanup_only": "/api/v1/floating-ips/{floating_ip_id}",
+    "redirects_allowed": false,
+    "response_body_logging_allowed": false,
+    "provider_identifiers_in_output_allowed": false
+  },
+  "success": {
+    "sanitized_marker": "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+    "does_not_certify_ru_pg_b_parity": true,
+    "ru_pg_c_unlocked": false
+  },
+  "protected_invariants": {
+    "current_neon_production_authority_preserved": true,
+    "production_postgres_dsn_mutation_allowed": false,
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "protected_v9_entrypoint": "app:app",
+    "ru_pg_c_allowed": false
+  }
+}

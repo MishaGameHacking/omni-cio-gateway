@@ -33,12 +33,33 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
     def test_source_contract_passes(self) -> None:
         guard.validate()
 
-    def test_paid_create_is_blocked_until_parity_transport_is_accepted(self) -> None:
+    def test_paid_create_transport_is_owner_approved_ipv4(self) -> None:
+        guard._require_parity_transport_ready()
+        payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
+        transport = payload["parity_transport_gate"]
+        target = payload["target"]
+        self.assertEqual(transport["status"], "READY")
+        self.assertEqual(
+            transport["selected_mode"],
+            "PUBLIC_IPV4_OWNER_APPROVED",
+        )
+        self.assertTrue(transport["public_ipv4_owner_approval_recorded"])
+        self.assertTrue(target["public_ipv4_authorized"])
+        self.assertFalse(target["public_ipv6_authorized"])
+
+    def test_blocked_transport_copy_still_fails_closed(self) -> None:
+        payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
+        transport = payload["parity_transport_gate"]
+        target = payload["target"]
+        transport["status"] = "BLOCKED_PENDING_PROOF"
+        transport["selected_mode"] = None
+        transport["public_ipv4_owner_approval_recorded"] = False
+        guard._validate_transport_state(transport, target, require_ready=False)
         with self.assertRaisesRegex(
             RuntimeError,
             "TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_BLOCKED",
         ):
-            guard._require_parity_transport_ready()
+            guard._validate_transport_state(transport, target, require_ready=True)
 
     def test_transport_state_machine_accepts_exactly_one_proved_ready_mode(self) -> None:
         payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
@@ -46,6 +67,8 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
         transport["status"] = "READY"
         transport["selected_mode"] = "TIMEWEB_PRIVATE_VPC_RUNNER"
         transport["private_vpc_runner_evidence_accepted"] = True
+        transport["public_ipv6_reachability_accepted"] = False
+        transport["public_ipv4_owner_approval_recorded"] = False
         target = payload["target"]
         guard._validate_transport_state(transport, target, require_ready=True)
 
@@ -61,6 +84,9 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
         transport = payload["parity_transport_gate"]
         transport["status"] = "READY"
         transport["selected_mode"] = "PUBLIC_IPV6_PROVEN"
+        transport["private_vpc_runner_evidence_accepted"] = False
+        transport["public_ipv6_reachability_accepted"] = False
+        transport["public_ipv4_owner_approval_recorded"] = False
         target = payload["target"]
         with self.assertRaisesRegex(
             RuntimeError,
@@ -74,23 +100,31 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
         target = payload["target"]
         transport["status"] = "READY"
         transport["selected_mode"] = "PUBLIC_IPV6_PROVEN"
+        transport["private_vpc_runner_evidence_accepted"] = False
         transport["public_ipv6_reachability_accepted"] = True
+        transport["public_ipv4_owner_approval_recorded"] = False
         with self.assertRaisesRegex(
             RuntimeError,
             "TIMEWEB_SYNTHETIC_CREATE_PARITY_TRANSPORT_INVALID",
         ):
             guard._validate_transport_state(transport, target, require_ready=True)
 
-    def test_transport_gate_records_no_silent_public_network_authority(self) -> None:
+    def test_transport_gate_records_explicit_ipv4_security_authority(self) -> None:
         payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
         transport = payload["parity_transport_gate"]
         target = payload["target"]
-        self.assertEqual(transport["status"], "BLOCKED_PENDING_PROOF")
-        self.assertIsNone(transport["selected_mode"])
-        self.assertFalse(target["public_ipv4_authorized"])
+        self.assertEqual(transport["status"], "READY")
+        self.assertEqual(
+            transport["selected_mode"],
+            "PUBLIC_IPV4_OWNER_APPROVED",
+        )
+        self.assertTrue(target["public_ipv4_authorized"])
         self.assertFalse(target["public_ipv6_authorized"])
         self.assertEqual(transport["public_ipv4_recurring_price_rub"], 200)
         self.assertTrue(transport["public_ipv4_price_is_separate_from_base_790"])
+        self.assertTrue(transport["public_ipv4_security_source_required"])
+        self.assertTrue(transport["public_ipv4_firewall_drop_required"])
+        self.assertTrue(transport["public_ipv4_tls_verify_full_required"])
 
     def test_read_only_preset_returns_exact_provider_id(self) -> None:
         payload = {

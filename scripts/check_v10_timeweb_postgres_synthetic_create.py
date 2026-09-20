@@ -15,6 +15,12 @@ READ_ONLY_PROBE = ROOT / "scripts/probe_v10_timeweb_postgres_control_plane.py"
 ENVIRONMENT_VERIFIER = ROOT / "scripts/verify_v10_timeweb_github_environment.py"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_CREATE_RUNBOOK.md"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
+PUBLIC_IPV4_CONTRACT = (
+    ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_PUBLIC_IPV4_TLS_CONTRACT.json"
+)
+PUBLIC_IPV4_WORKFLOW = (
+    ROOT / ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
+)
 
 _SCHEMA = "omni-cio.v10.ru-postgres-timeweb-synthetic-create.v1"
 _STAGE = "RU-PG-B_TIMEWEB_SYNTHETIC_CLUSTER_CREATE"
@@ -182,6 +188,16 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         True,
         "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
     )
+    for key in (
+        "public_ipv4_security_source_required",
+        "public_ipv4_firewall_drop_required",
+        "public_ipv4_tls_verify_full_required",
+    ):
+        _require(
+            transport.get(key),
+            True,
+            "TIMEWEB_SYNTHETIC_CREATE_TRANSPORT_GATE_INVALID",
+        )
     target = _mapping(payload.get("target"), "TIMEWEB_SYNTHETIC_CREATE_TARGET_INVALID")
     expected_target = {
         "provider": "Timeweb Cloud",
@@ -193,7 +209,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "cpu": 1,
         "ram_mb": 2048,
         "disk_mb": 20480,
-        "public_ipv4_authorized": False,
+        "public_ipv4_authorized": True,
         "public_ipv6_authorized": False,
         "backup_addon_authorized": False,
         "replicas_authorized": False,
@@ -386,6 +402,34 @@ def _validate_provisioner() -> None:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_POST_SURFACE_INVALID")
 
 
+def _validate_public_ipv4_source() -> None:
+    contract = _read(PUBLIC_IPV4_CONTRACT)
+    workflow = _read(PUBLIC_IPV4_WORKFLOW)
+    _require_markers(
+        contract,
+        (
+            '"status": "SOURCE_READY_PROVIDER_MUTATION_PENDING_MAIN_ACCEPTANCE"',
+            '"selected_transport": "PUBLIC_IPV4_OWNER_APPROVED"',
+            '"policy": "DROP"',
+            '"port": "5432"',
+            '"source_prefix_length": 32',
+            '"public_ipv6_authorized": false',
+            '"ddos_addon_authorized": false',
+            '"sslmode": "verify-full"',
+        ),
+        "TIMEWEB_SYNTHETIC_CREATE_PUBLIC_IPV4_SOURCE_DRIFT",
+    )
+    _require_markers(
+        workflow,
+        (
+            "workflow_dispatch:",
+            "environment: timeweb-synthetic",
+            "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py",
+        ),
+        "TIMEWEB_SYNTHETIC_CREATE_PUBLIC_IPV4_SOURCE_DRIFT",
+    )
+
+
 def _validate_environment_verifier() -> None:
     source = _read(ENVIRONMENT_VERIFIER)
     _require_markers(
@@ -477,6 +521,7 @@ def validate() -> None:
     _validate_contract(_load_contract())
     _validate_read_only_probe_reuse()
     _validate_provisioner()
+    _validate_public_ipv4_source()
     _validate_environment_verifier()
     _validate_workflow()
     _validate_runbook()

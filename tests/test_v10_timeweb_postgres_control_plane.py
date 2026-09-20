@@ -245,18 +245,26 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertEqual(sleeps, [1.0])
         self.assertEqual(len(opener.requests), 3)
 
-    def test_timeweb_secret_scope_allows_exact_create_workflow_only(self) -> None:
+    def test_timeweb_secret_scope_allows_exact_authorized_workflows_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             workflows = root / ".github/workflows"
             workflows.mkdir(parents=True)
             readonly = workflows / "v10-timeweb-postgres-readonly-proof.yml"
             create = workflows / "v10-timeweb-postgres-synthetic-create.yml"
+            public_ipv4_tls = (
+                workflows / "v10-timeweb-postgres-public-ipv4-tls.yml"
+            )
             readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
             )
             create.write_text(
+                "environment: timeweb-synthetic\n"
+                "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                encoding="utf-8",
+            )
+            public_ipv4_tls.write_text(
                 "environment: timeweb-synthetic\n"
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -269,6 +277,10 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 guard,
                 "SYNTHETIC_CREATE_WORKFLOW",
                 create,
+            ), mock.patch.object(
+                guard,
+                "PUBLIC_IPV4_TLS_WORKFLOW",
+                public_ipv4_tls,
             ):
                 guard._validate_timeweb_secret_scope()
                 (workflows / "other.yml").write_text(
