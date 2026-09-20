@@ -264,7 +264,11 @@ def _require_exact(
         raise _provider_base.ProvisioningStopped(code)
 
 
-def _reject_explicit_unsafe_starting_state(cluster: dict[str, Any]) -> None:
+def _reject_explicit_unsafe_starting_state(
+    cluster: dict[str, Any],
+    *,
+    expected_cluster_id: int,
+) -> None:
     if cluster.get("is_enabled_public_network") is True:
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT")
     if cluster.get("is_enabled_public_ipv6") is True:
@@ -275,20 +279,18 @@ def _reject_explicit_unsafe_starting_state(cluster: dict[str, Any]) -> None:
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_CLUSTER_BACKUP_SCHEDULE_DRIFT"
         )
-    replicas = cluster.get("replica_list")
-    if replicas is not None:
-        rows = _provider_base._json_list(
-            replicas,
-            "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
-        )
-        if rows:
-            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_REPLICAS_PRESENT")
+    read_only._require_target_replica_topology(
+        cluster,
+        expected_cluster_id=str(expected_cluster_id),
+        allow_transient_empty=True,
+    )
     _verify_disk_autoscaling(cluster)
 
 
 def _verify_terminal_shape(
     cluster: dict[str, Any],
     *,
+    expected_cluster_id: int,
     provider_type: str,
     preset_id: int,
 ) -> None:
@@ -331,18 +333,17 @@ def _verify_terminal_shape(
         cluster,
         drift_code="TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
     )
-    replicas = _provider_base._json_list(
-        cluster.get("replica_list"),
-        "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
+    read_only._require_target_replica_topology(
+        cluster,
+        expected_cluster_id=str(expected_cluster_id),
     )
-    if replicas:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_REPLICAS_PRESENT")
     _verify_disk_autoscaling(cluster)
 
 
 def _verify_starting_shape(
     cluster: dict[str, Any],
     *,
+    expected_cluster_id: int,
     provider_type: str,
     preset_id: int,
 ) -> None:
@@ -376,7 +377,10 @@ def _verify_starting_shape(
                 drift_code="TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
             )
 
-    _reject_explicit_unsafe_starting_state(cluster)
+    _reject_explicit_unsafe_starting_state(
+        cluster,
+        expected_cluster_id=expected_cluster_id,
+    )
 
 
 def _verify_cluster_shape(
@@ -401,6 +405,7 @@ def _verify_cluster_shape(
     if status == "starting":
         _verify_starting_shape(
             cluster,
+            expected_cluster_id=expected_cluster_id,
             provider_type=provider_type,
             preset_id=preset_id,
         )
@@ -410,6 +415,7 @@ def _verify_cluster_shape(
 
     _verify_terminal_shape(
         cluster,
+        expected_cluster_id=expected_cluster_id,
         provider_type=provider_type,
         preset_id=preset_id,
     )

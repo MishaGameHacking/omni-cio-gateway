@@ -68,13 +68,41 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 "is_enabled_public_ipv6": False,
                 "is_autobackups_enabled": False,
                 "is_backup_schedule_enabled": False,
-                "replica_list": [],
+                "replica_list": [{"id": 501, "db_id": 91}],
                 "disk_autoscaling": {"is_enabled": False},
             }
         }
         with self.assertRaisesRegex(
             provisioner._provider_base.ProvisioningStopped,
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
+        ):
+            provisioner._cluster(api, 91)
+
+    def test_cluster_shape_rejects_replica_topology_count_drift(self) -> None:
+        api = mock.Mock()
+        api.get.return_value = {
+            "db": {
+                "name": "omni-cio-v10-ru-pg-synthetic",
+                "location": "ru-3",
+                "availability_zone": "msk-1",
+                "cpu": 1,
+                "ram": 2048,
+                "port": 5432,
+                "disk": {"size": 20_971_520},
+                "is_enabled_public_ipv6": False,
+                "is_autobackups_enabled": False,
+                "is_backup_schedule_enabled": False,
+                "replica_list": [
+                    {"id": 501, "db_id": 91},
+                    {"id": 502, "db_id": 91},
+                    {"id": 503, "db_id": 91},
+                ],
+                "disk_autoscaling": {"is_enabled": False},
+            }
+        }
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
         ):
             provisioner._cluster(api, 91)
 
@@ -94,7 +122,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "is_secure_connection_enabled": True,
             "is_autobackups_enabled": False,
             "is_backup_schedule_enabled": False,
-            "replica_list": [],
+            "replica_list": [{"id": 501, "db_id": 91}],
             "disk_autoscaling": {"is_enabled": False},
             "status": "started",
             "domains": [{"fqdn": "example.twc1.net", "cert_status": "issued"}],

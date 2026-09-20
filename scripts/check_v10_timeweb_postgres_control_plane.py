@@ -286,7 +286,7 @@ def _validate_replica_topology_contract(payload: dict[str, Any]) -> None:
             "accepted_marker": _REPLICA_TOPOLOGY_MARKER,
             "sanitized_output_fields": [
                 "replica_list_count",
-                "contract_replica_count",
+                "contract_replica_list_count",
                 "relation",
                 "semantics",
             ],
@@ -295,6 +295,16 @@ def _validate_replica_topology_contract(payload: dict[str, Any]) -> None:
             "mutation_allowed": False,
             "provider_semantics_resolved": False,
             "paid_replica_authority_inferred_from_observation": False,
+            "accepted_provider_baseline_count": 1,
+            "accepted_live_evidence_workflow_run": 35507498165,
+            "accepted_live_evidence_exact_main_sha_parts": [
+                "3a96dfe8",
+                "8e99aac7",
+                "54d89497",
+                "25122295",
+                "dd957429",
+            ],
+            "additional_paid_replication_authorized": False,
         },
         "TIMEWEB_REPLICA_TOPOLOGY_CONTRACT_INVALID",
     )
@@ -309,10 +319,39 @@ def _validate_beta_contract(payload: dict[str, Any]) -> None:
         "base_monthly_price_rub": 790,
         "public_ipv4_authorized": False,
         "backup_storage_addon_authorized": False,
-        "replica_count": 1,
+        "provider_replica_list_count": 1,
+        "additional_paid_replication_authorized": False,
         "auto_scaling_authorized": False,
     }
     _require(beta, expected_beta, "TIMEWEB_CONTROL_PLANE_BETA_INVALID")
+
+    canonical = _mapping(
+        payload.get("canonical_replica_topology"),
+        "TIMEWEB_REPLICA_TOPOLOGY_CONTRACT_INVALID",
+    )
+    _require(
+        canonical,
+        {
+            "provider_field": "replica_list",
+            "expected_provider_replica_list_count": 1,
+            "accepted_live_evidence_workflow_run": 35507498165,
+            "accepted_live_evidence_exact_main_sha_parts": [
+                "3a96dfe8",
+                "8e99aac7",
+                "54d89497",
+                "25122295",
+                "dd957429",
+            ],
+            "terminal_exact_count_required": True,
+            "starting_missing_or_empty_allowed": True,
+            "cluster_custody_field": "db_id",
+            "cross_cluster_members_forbidden": True,
+            "duplicate_member_ids_forbidden": True,
+            "additional_paid_replication_authorized": False,
+            "provider_semantics_resolved": False,
+        },
+        "TIMEWEB_REPLICA_TOPOLOGY_CONTRACT_INVALID",
+    )
 
 
 def _validate_mutation_contract(payload: dict[str, Any]) -> None:
@@ -373,7 +412,12 @@ def _validate_probe_source() -> None:
             "def _cluster_disk_size_kb(",
             "def _require_target_cluster_disk(",
             'TARGET_PRICE_RUB = Decimal("790")',
-            "TARGET_REPLICA_COUNT = 1",
+            "TARGET_PROVIDER_REPLICA_LIST_COUNT = 1",
+            "ADDITIONAL_PAID_REPLICATION_AUTHORIZED = False",
+            "def _provider_replica_list_count(",
+            "def _require_target_replica_topology(",
+            "TIMEWEB_CLUSTER_REPLICA_MEMBER_DUPLICATE",
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
             'method="GET"',
             "_NO_REDIRECT_OPENER",
             "MAX_RESPONSE_BYTES + 1",
@@ -386,7 +430,8 @@ def _validate_probe_source() -> None:
             "def _replica_topology_observation(",
             'api.get(f"' + _CLUSTER_DETAIL_ENDPOINT + '")',
             _REPLICA_TOPOLOGY_MARKER,
-            "semantics=UNRESOLVED",
+            "contract_replica_list_count=",
+            "semantics=COUNT_ONLY_BASELINE",
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         ),
         "TIMEWEB_CONTROL_PLANE_PROBE_DRIFT",
@@ -546,7 +591,8 @@ def _validate_runbook() -> None:
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
             _REPLICA_TOPOLOGY_MARKER,
             _CLUSTER_DETAIL_ENDPOINT,
-            "semantics remain unresolved",
+            "COUNT_ONLY_BASELINE",
+            "additional paid replication remains unauthorized",
         ),
         "TIMEWEB_CONTROL_PLANE_RUNBOOK_DRIFT",
     )

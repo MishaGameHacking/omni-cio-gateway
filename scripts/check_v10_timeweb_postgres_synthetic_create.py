@@ -208,7 +208,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_SYNTHETIC_CREATE_PREREQUISITE_INVALID",
     )
     expected_prerequisite = {
-        "read_only_workflow_run": 35465650177,
+        "read_only_workflow_run": 35507498165,
         "environment_gate_marker": "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
         "read_only_marker": "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         "postgres_major": 18,
@@ -217,7 +217,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "ram_mb": 2048,
         "disk_mb": 20480,
         "base_monthly_price_rub": 790,
-        "target_cluster_name_available": True,
+        "target_cluster_name_available": False,
+        "existing_target": True,
+        "replica_list_count": 1,
+        "replica_topology_relation": "matches_contract_count",
     }
     _require(
         prerequisite,
@@ -300,12 +303,40 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "public_ipv4_authorized": True,
         "public_ipv6_authorized": False,
         "backup_addon_authorized": False,
-        "replicas_authorized": False,
+        "additional_paid_replication_authorized": False,
         "disk_autoscaling_authorized": False,
         "production_data_allowed": False,
     }
     _require(target, expected_target, "TIMEWEB_SYNTHETIC_CREATE_TARGET_INVALID")
     _validate_transport_state(transport, target, require_ready=False)
+
+    topology = _mapping(
+        payload.get("provider_replica_topology"),
+        "TIMEWEB_SYNTHETIC_CREATE_REPLICA_TOPOLOGY_INVALID",
+    )
+    _require(
+        topology,
+        {
+            "provider_field": "replica_list",
+            "expected_provider_replica_list_count": 1,
+            "accepted_live_evidence_workflow_run": 35507498165,
+            "accepted_live_evidence_exact_main_sha_parts": [
+                "3a96dfe8",
+                "8e99aac7",
+                "54d89497",
+                "25122295",
+                "dd957429",
+            ],
+            "terminal_exact_count_required": True,
+            "starting_missing_or_empty_allowed": True,
+            "cluster_custody_field": "db_id",
+            "cross_cluster_members_forbidden": True,
+            "duplicate_member_ids_forbidden": True,
+            "additional_paid_replication_authorized": False,
+            "provider_semantics_resolved": False,
+        },
+        "TIMEWEB_SYNTHETIC_CREATE_REPLICA_TOPOLOGY_INVALID",
+    )
 
     disk_units = _mapping(
         payload.get("provider_disk_units"),
@@ -419,7 +450,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "public_ipv6_must_be_disabled",
         "autobackups_must_be_disabled",
         "backup_schedule_must_be_disabled",
-        "replica_list_must_be_empty",
+        "canonical_replica_topology_verification_required",
         "disk_autoscaling_must_be_disabled",
     ):
         _require(
@@ -427,6 +458,12 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             True,
             "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
         )
+
+    _require(
+        verification.get("provider_replica_list_count_must_equal"),
+        1,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
 
     invariants = _mapping(
         payload.get("protected_invariants"),
@@ -471,6 +508,13 @@ def _validate_read_only_probe_reuse() -> None:
             "def _cluster_disk_size_kb(",
             "def _require_target_cluster_disk(",
             'TARGET_PRICE_RUB = Decimal("790")',
+            "TARGET_PROVIDER_REPLICA_LIST_COUNT = 1",
+            "ADDITIONAL_PAID_REPLICATION_AUTHORIZED = False",
+            "def _provider_replica_list_count(",
+            "def _require_target_replica_topology(",
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
+            "TIMEWEB_CLUSTER_REPLICA_MEMBER_DUPLICATE",
+            "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT",
             "def _select_target_preset(payload: object, provider_type: str) -> int:",
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT",
         ),
@@ -497,6 +541,7 @@ def _validate_provisioner() -> None:
             "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
             "read_only._require_target_cluster_disk(",
+            "read_only._require_target_replica_topology(",
             '"disk_autoscaling": {"is_enabled": False}',
             '"is_public_ipv6": False',
             '"TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY "',
@@ -518,6 +563,7 @@ def _validate_provisioner() -> None:
         '"backup_schedule":',
         '"replication":',
         '"network":',
+        "TIMEWEB_CLUSTER_REPLICAS_PRESENT",
         '"admin":',
         '"instance":',
     )
@@ -622,6 +668,8 @@ def _validate_runbook() -> None:
             _CONFIRMATION,
             "TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY",
             "20971520 KB",
+            "provider replica-list baseline count is exactly `1`",
+            "additional paid replication remains unauthorized",
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
             "Neon production authority",
             "RU-PG-C remains",

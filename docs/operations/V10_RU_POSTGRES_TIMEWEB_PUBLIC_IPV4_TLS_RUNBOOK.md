@@ -20,8 +20,8 @@ protected-`main` only and uses GitHub Environment `timeweb-synthetic`.
 The OWNER separately approved one Timeweb public IPv4 up to 200 RUB/month and
 provided sanitized evidence of sufficient Timeweb balance.
 
-This does not authorize IPv6, the DDoS add-on, backup storage, replicas, wider
-firewall rules, `0.0.0.0/0`, production data, production DSN cutover, RU-PG-C,
+This does not authorize IPv6, the DDoS add-on, backup storage, additional paid
+replication, wider firewall rules, `0.0.0.0/0`, production data, production DSN cutover, RU-PG-C,
 public-user activation or broker-write authority.
 
 ## Verifier source boundary
@@ -43,6 +43,10 @@ synthetic-create recovery path: DB preset `disk` is MB, but
 is therefore `20480 MB` at preset selection and exactly `20971520 KB` at
 cluster verification. Fractional, undersized, oversized or malformed values fail
 closed before firewall or public-network mutation.
+
+## Canonical replica topology precondition
+
+Accepted automatic Read-Only Proof run `35507498165` on exact main `3a96dfe88e99aac754d8949725122295dd957429` observed `replica_list_count=1` for the approved base cluster. Before any firewall or public-network mutation, this workflow reuses the same canonical count-only topology verifier as Synthetic Create: provider replica-list baseline count is exactly `1`, every member must belong to the exact target cluster, duplicate member IDs are forbidden, and any count drift fails closed. This count-only baseline preserves the rule that additional paid replication remains unauthorized; a non-empty raw provider list is not by itself treated as proof of a paid add-on.
 
 ## Firewall-first invariant
 

@@ -23,7 +23,8 @@ TARGET_DISK_MB = 20 * 1024
 PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB = 1024
 TARGET_DISK_KB = TARGET_DISK_MB * PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB
 TARGET_PRICE_RUB = Decimal("790")
-TARGET_REPLICA_COUNT = 1
+TARGET_PROVIDER_REPLICA_LIST_COUNT = 1
+ADDITIONAL_PAID_REPLICATION_AUTHORIZED = False
 MAX_RESPONSE_BYTES = 1024 * 1024
 _RETRY_DELAYS_SECONDS = (1.0, 2.0)
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
@@ -335,6 +336,64 @@ def _target_cluster_id(payload: object) -> str | None:
     return _cluster_id(matches[0].get("id"))
 
 
+def _provider_replica_list_count(
+    cluster: dict[str, Any],
+    *,
+    expected_cluster_id: str,
+    allow_transient_empty: bool = False,
+) -> int:
+    raw = cluster.get("replica_list")
+    if raw is None:
+        if allow_transient_empty:
+            return 0
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_REPLICA_LIST_INVALID")
+
+    replicas = _provider_base._json_list(
+        raw,
+        "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
+    )
+    if not replicas:
+        return 0
+
+    member_ids: set[str] = set()
+    for value in replicas:
+        row = _provider_base._json_object(
+            value,
+            "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
+        )
+        member_id = _cluster_id(row.get("id"))
+        if member_id in member_ids:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_CLUSTER_REPLICA_MEMBER_DUPLICATE"
+            )
+        member_ids.add(member_id)
+        if _cluster_id(row.get("db_id")) != expected_cluster_id:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT"
+            )
+    return len(replicas)
+
+
+def _require_target_replica_topology(
+    cluster: dict[str, Any],
+    *,
+    expected_cluster_id: str,
+    allow_transient_empty: bool = False,
+) -> int:
+    count = _provider_replica_list_count(
+        cluster,
+        expected_cluster_id=expected_cluster_id,
+        allow_transient_empty=allow_transient_empty,
+    )
+    if allow_transient_empty and count == 0:
+        return count
+    if count != TARGET_PROVIDER_REPLICA_LIST_COUNT:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT"
+        )
+    return count
+
+
 def _replica_topology_observation(
     payload: object,
     *,
@@ -352,34 +411,24 @@ def _replica_topology_observation(
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_NAME_DRIFT")
     if _cluster_id(cluster.get("id")) != expected_cluster_id:
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_CUSTODY_DRIFT")
-
-    replicas = _provider_base._json_list(
-        cluster.get("replica_list"),
-        "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
+    return _provider_replica_list_count(
+        cluster,
+        expected_cluster_id=expected_cluster_id,
     )
-    for value in replicas:
-        row = _provider_base._json_object(
-            value,
-            "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
-        )
-        if _cluster_id(row.get("db_id")) != expected_cluster_id:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT"
-            )
-    return len(replicas)
 
 
 def _emit_replica_topology_observation(replica_list_count: int) -> None:
     relation = (
         "matches_contract_count"
-        if replica_list_count == TARGET_REPLICA_COUNT
+        if replica_list_count == TARGET_PROVIDER_REPLICA_LIST_COUNT
         else "differs_contract_count"
     )
     _provider_base._emit(
         "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED "
         f"replica_list_count={replica_list_count} "
-        f"contract_replica_count={TARGET_REPLICA_COUNT} "
-        f"relation={relation} semantics=UNRESOLVED"
+        "contract_replica_list_count="
+        f"{TARGET_PROVIDER_REPLICA_LIST_COUNT} "
+        f"relation={relation} semantics=COUNT_ONLY_BASELINE"
     )
 
 

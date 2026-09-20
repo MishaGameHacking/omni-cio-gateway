@@ -227,12 +227,10 @@ def _cluster(
         cluster,
         drift_code="TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
     )
-    replicas = _provider_base._json_list(
-        cluster.get("replica_list"),
-        "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
+    read_only._require_target_replica_topology(
+        cluster,
+        expected_cluster_id=str(cluster_id),
     )
-    if replicas:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_REPLICAS_PRESENT")
     autoscaling = cluster.get("disk_autoscaling")
     if autoscaling is not None:
         settings = _provider_base._json_object(

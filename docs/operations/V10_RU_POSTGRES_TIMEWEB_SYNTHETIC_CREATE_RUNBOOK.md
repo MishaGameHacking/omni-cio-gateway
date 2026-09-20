@@ -179,6 +179,8 @@ provisioner enters `existing-recovery` mode. That mode is GET-only until the
 existing resource has passed the same exact terminal verification. A second
 cluster-create POST is forbidden.
 
+Accepted automatic Read-Only Proof run `35507498165` on exact main `3a96dfe88e99aac754d8949725122295dd957429` observed the existing approved cluster with `replica_list_count=1`. Synthetic create/recovery therefore no longer assumes that the raw provider list must be empty. Terminal verification requires exactly the accepted provider count of `1`, validates member custody against the target cluster and rejects duplicate members. During provider `starting` convergence only a missing or empty transient list is tolerated; an explicit non-baseline count fails closed immediately. This count-only contract does not authorize Timeweb's separately priced replication option.
+
 The Timeweb API documents that a newly-created resource may be returned while
 still starting. Verification is therefore state-aware:
 
@@ -223,7 +225,8 @@ Before emitting success, the provider GET evidence must prove:
 - public IPv6 disabled;
 - automatic backups disabled;
 - backup schedule disabled;
-- no replicas;
+- provider replica-list baseline count is exactly `1`;
+- additional paid replication remains unauthorized;
 - disk autoscaling disabled;
 - cluster status `started`;
 - the exact cluster remains attached to the selected project.

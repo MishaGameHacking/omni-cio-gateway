@@ -184,8 +184,8 @@ Accepted sanitized observation marker:
 `TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED`
 
 The marker may contain only `replica_list_count`, the source-controlled
-`contract_replica_count=1`, a numeric relation, and
-`semantics=UNRESOLVED`. It must never emit cluster IDs, replica IDs, private IPs,
+`contract_replica_list_count=1`, a numeric relation, and
+`semantics=COUNT_ONLY_BASELINE`. It must never emit cluster IDs, replica IDs, private IPs,
 response bodies or provider credentials.
 
 This observation is deliberately not an authorization decision. Timeweb's current
@@ -196,6 +196,8 @@ choices and recurring cost, while the DBaaS Operator documents
 with those documented semantics, a matching numeric count must not be interpreted
 as proof that paid replication is authorized or absent. The existing synthetic
 create and public IPv4/TLS guards therefore remain fail-closed.
+
+Accepted automatic Read-Only Proof run `35507498165` on exact main `3a96dfe88e99aac754d8949725122295dd957429` observed `replica_list_count=1` with `relation=matches_contract_count`. This count is the canonical RU-PG-B provider baseline. The runtime verifier requires exactly one provider-list member for terminal state, validates cluster custody and unique member IDs, and rejects count drift. This count-only baseline does not grant Timeweb's separately priced replication option; additional paid replication remains unauthorized.
 
 Official replica references:
 
@@ -216,8 +218,7 @@ Accepted sanitized success marker:
 `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
 
 When the exact target exists, the same successful read-only run must also emit
-`TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED`; provider replica semantics remain unresolved
-until that evidence is reviewed against current provider documentation and cost authority.
+`TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED`; provider terminology remains count-only and additional paid replication remains unauthorized.
 
 No token, project ID, preset ID, account ID, response body, database hostname, DSN,
 password or private payload may appear in accepted evidence.
