@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+from urllib.error import HTTPError
 
 from scripts import check_v10_timeweb_postgres_public_ipv4_tls as guard
 from scripts import discover_v10_ru_pg_verifier_ipv4 as discoverer
@@ -141,6 +143,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         mutation.mutate_once.assert_called_once_with(
             "PATCH",
             "/api/v2/databases/91",
+            operation="DATABASE_PUBLIC_NETWORK_PATCH",
             body={
                 "floating_ip": "8.8.4.4",
                 "is_enabled_public_network": True,
@@ -148,6 +151,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 "is_secure_connection_enable": True,
             },
             expected_statuses=frozenset({200}),
+            reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
 
     def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
@@ -425,8 +429,85 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         mutation.mutate_once.assert_called_once_with(
             "POST",
             "/api/v1/floating-ips",
+            operation="FLOATING_IP_CREATE",
             body={"is_ddos_guard": False, "availability_zone": "msk-1"},
             expected_statuses=frozenset({201}),
+            reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
+        )
+
+    def test_bodyless_mutation_uses_json_content_type_like_provider_sdk(self) -> None:
+        api = provisioner.TimewebMutationApi("synthetic-token", opener=mock.Mock())
+        request = api._request(
+            "POST",
+            "/api/v1/firewall/groups/group-1/resources/91?resource_type=dbaas",
+        )
+        headers = {key.lower(): value for key, value in request.header_items()}
+        self.assertEqual(headers.get("content-type"), "application/json")
+        self.assertIsNone(request.data)
+
+    def test_rejection_keeps_operation_and_status_without_response_body(self) -> None:
+        opener = mock.Mock()
+        opener.open.side_effect = HTTPError(
+            "https://api.timeweb.cloud/api/v1/firewall/groups",
+            400,
+            "Bad Request",
+            hdrs=None,
+            fp=io.BytesIO(b'{"message":"do-not-log-provider-body"}'),
+        )
+        api = provisioner.TimewebMutationApi("synthetic-token", opener=opener)
+        expected_statuses = frozenset({201})
+        with self.assertRaises(
+            provisioner._provider_base.ProvisioningStopped
+        ) as raised:
+            api.mutate_once(
+                "POST",
+                "/api/v1/firewall/groups?policy=DROP",
+                operation="FIREWALL_GROUP_CREATE",
+                body={"name": "synthetic"},
+                expected_statuses=expected_statuses,
+            )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_FIREWALL_GROUP_CREATE_REJECTED",
+        )
+        self.assertEqual(raised.exception.status, 400)
+        self.assertNotIn("do-not-log-provider-body", str(raised.exception))
+
+    def test_documented_conflict_enters_get_reconciliation_not_blind_retry(
+        self,
+    ) -> None:
+        opener = mock.Mock()
+        opener.open.side_effect = HTTPError(
+            "https://api.timeweb.cloud/api/v1/floating-ips",
+            409,
+            "Conflict",
+            hdrs=None,
+            fp=io.BytesIO(b'{"message":"conflict"}'),
+        )
+        api = provisioner.TimewebMutationApi("synthetic-token", opener=opener)
+        expected_statuses = frozenset({201})
+        with self.assertRaises(provisioner.AmbiguousMutation) as raised:
+            api.mutate_once(
+                "POST",
+                "/api/v1/floating-ips",
+                operation="FLOATING_IP_CREATE",
+                body={"is_ddos_guard": False, "availability_zone": "msk-1"},
+                expected_statuses=expected_statuses,
+                reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
+            )
+        self.assertEqual(raised.exception.operation, "FLOATING_IP_CREATE")
+        self.assertEqual(raised.exception.status, 409)
+        self.assertEqual(opener.open.call_count, 1)
+
+    def test_stopped_marker_exposes_only_sanitized_operation_status(self) -> None:
+        exc = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_RESOURCE_LINK_REJECTED",
+            status=400,
+        )
+        self.assertEqual(
+            provisioner._stopped_marker(exc),
+            "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED "
+            "code=TIMEWEB_FIREWALL_RESOURCE_LINK_REJECTED http_status=400",
         )
 
     def test_discoverer_requires_two_equal_samples_and_masks_value(self) -> None:

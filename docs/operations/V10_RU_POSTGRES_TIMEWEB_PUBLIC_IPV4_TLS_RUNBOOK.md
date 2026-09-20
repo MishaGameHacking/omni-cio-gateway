@@ -131,6 +131,47 @@ Before Timeweb secret access it:
 
 The Timeweb credential is injected only into the single provider-mutation step.
 
+
+## Live RED #1 — mutation rejection recovery
+
+Manual workflow run `35515788859` on exact protected main
+`51b4e37492987bf034dbf44247b03e23a0dd5aff` reached the provider mutation step
+after all pre-mutation gates passed:
+
+- source contract: PASS;
+- verifier egress discovery: `RU_PG_VERIFIER_EGRESS=READY source=/32`;
+- GitHub Environment gate: `TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY`;
+- exact cost confirmation: PASS.
+
+The provider step then stopped with only:
+
+`TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code=TIMEWEB_MUTATION_REJECTED`.
+
+That original marker does **not** prove which mutation or HTTP rejection status failed.
+The old adapter intentionally discarded the provider response body, but it also collapsed
+every non-authentication deterministic HTTP rejection into the same stop code. Therefore
+the exact external rejection cause cannot be reconstructed from run #1 and must not be
+invented.
+
+The repair keeps response bodies, response IDs, resource IDs, IP addresses, hostnames and
+secrets out of logs while making future evidence actionable:
+
+- each provider mutation has a stable operation-specific stop code;
+- a numeric HTTP status may be emitted because it contains no credential/private payload;
+- provider response bodies remain unread/unlogged;
+- bodyless mutating POST requests use `Content-Type: application/json`, matching the
+  current generated Timeweb SDK wire contract for firewall resource linking;
+- conflict/locked states `409/423` enter GET-only reconciliation where the caller
+  already has an exact state verifier; they never trigger a blind second mutation;
+- expected success statuses are tightened to the current provider SDK contract
+  (`201` for firewall/floating-IP creates and resource linking, `200` for PATCH,
+  `204` for cleanup DELETE).
+
+This is a recovery/diagnostic hardening checkpoint, not evidence that public IPv4 or TLS
+is already ready. A fresh protected-main live run is still required after this repair is
+accepted. Any new RED must be diagnosed from its operation-specific sanitized marker
+before another provider mutation attempt.
+
 ## Success marker
 
 Only this sanitized marker is accepted:
