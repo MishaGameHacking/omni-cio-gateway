@@ -141,7 +141,7 @@ class ProtocolGuardTests(unittest.TestCase):
             "scripts/timeweb_ipv4_allocation_windows.py",
             "scripts/check_v10_timeweb_ipv4_allocation.py",
         }
-        self.assertTrue(expected <= targets)
+        self.assertLessEqual(expected, targets)
 
     def test_generic_cost_approval_does_not_replace_owner_allocation(self) -> None:
         changed = copy.deepcopy(self.data)
