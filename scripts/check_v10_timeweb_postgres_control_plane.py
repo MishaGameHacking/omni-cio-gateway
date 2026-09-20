@@ -362,7 +362,7 @@ def _validate_probe_source() -> None:
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT",
             "def _target_cluster_id(",
             "def _replica_topology_observation(",
-            'api.get(f_CLUSTER_DETAIL_ENDPOINT)',
+            'api.get(f"' + _CLUSTER_DETAIL_ENDPOINT + '")',
             _REPLICA_TOPOLOGY_MARKER,
             "semantics=UNRESOLVED",
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
