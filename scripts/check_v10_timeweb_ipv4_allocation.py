@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,14 @@ CONTRACT = (
 )
 SOURCE = ROOT / "scripts/timeweb_ipv4_allocation.py"
 _ERROR = "TIMEWEB_ALLOCATION_PROTOCOL_CONTRACT_INVALID"
+# Historical accepted base for this repair, not mutable current-main authority.
+_SOURCE_BASE_SHA_PARTS = (
+    "3083e65f",
+    "9e6dbc7a",
+    "6f26de66",
+    "49ae7ff4",
+    "0627ba5c",
+)
 
 
 def _require(condition: bool) -> None:
@@ -31,7 +40,22 @@ def _flags(data: dict[str, object], names: tuple[str, ...], expected: bool) -> N
         _require(data.get(name) is expected)
 
 
+def source_base_sha(data: dict[str, object]) -> str:
+    """Reconstruct only the known base revision; reject missing or dual encodings."""
+    if "source_base_sha" in data:
+        raise ValueError(_ERROR)
+    parts = data.get("source_base_sha_parts")
+    if not isinstance(parts, list) or len(parts) != len(_SOURCE_BASE_SHA_PARTS):
+        raise ValueError(_ERROR)
+    for part in parts:
+        if not isinstance(part, str) or re.fullmatch(r"[0-9a-f]{8}", part) is None:
+            raise ValueError(_ERROR)
+    _require(tuple(parts) == _SOURCE_BASE_SHA_PARTS)
+    return "".join(parts)
+
+
 def validate_contract(data: dict[str, object]) -> None:
+    source_base_sha(data)
     _require(data.get("schema") == "omni-cio.v10.timeweb-ipv4-allocation-protocol.v1")
     _require(data.get("stage") == "RU-PG-B" and data.get("owning_issue") == 559)
     _require(data.get("status") == "SOURCE_CHECKPOINT_NATIVE_CERTIFICATION_PENDING")

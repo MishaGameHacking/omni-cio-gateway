@@ -3,7 +3,13 @@
   "status": "SOURCE_CHECKPOINT_NATIVE_CERTIFICATION_PENDING",
   "owning_issue": 559,
   "stage": "RU-PG-B",
-  "source_base_sha": "3083e65f9e6dbc7a6f26de6649ae7ff40627ba5c",
+  "source_base_sha_parts": [
+    "3083e65f",
+    "9e6dbc7a",
+    "6f26de66",
+    "49ae7ff4",
+    "0627ba5c"
+  ],
   "purpose": "EXPLICIT_ASSIGNMENT_OF_ONE_EXISTING_UNBOUND_IPV4",
   "implementation": {
     "pure_protocol": true,

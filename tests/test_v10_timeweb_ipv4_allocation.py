@@ -10,8 +10,9 @@ from scripts import timeweb_ipv4_allocation as allocation
 from scripts import timeweb_ipv4_custody as custody
 
 
-MAIN = "3083e65f9e6dbc7a6f26de6649ae7ff40627ba5c"
-OTHER = "514bfae805f7bdbd74dfc6610191d0ca211b4c94"
+# Revision fixtures are synthetic; accepted source provenance belongs in the contract.
+MAIN = "a" * 40
+OTHER = "b" * 40
 NOW = 1_800_468_000
 CONTEXT = allocation.Context(MAIN, MAIN)
 SNAPSHOT = allocation.Snapshot(
