@@ -22,6 +22,7 @@ _ENVIRONMENT_NAME = "timeweb-synthetic"
 _ENVIRONMENT_GATE_MARKER = "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY"
 _CLUSTER_DETAIL_ENDPOINT = "/api/v1/databases/{cluster_id}"
 _REPLICA_TOPOLOGY_MARKER = "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED"
+_CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW = "V10 Cloudflare Production Release"
 
 
 def _read(path: Path) -> str:
@@ -220,7 +221,7 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
         {
             "enabled": True,
             "trigger_event": "workflow_run",
-            "upstream_workflow": "V10 Cloudflare Production Release",
+            "upstream_workflow": _CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW,
             "upstream_conclusion_required": "success",
             "upstream_event_required": "workflow_run",
             "upstream_head_branch_required": "main",
@@ -451,7 +452,7 @@ def _validate_live_workflow() -> None:
         (
             "workflow_dispatch:",
             "workflow_run:",
-            "V10 Cloudflare Production Release",
+            _CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW,
             "github.event.workflow_run.conclusion == 'success'",
             "github.event.workflow_run.event == 'workflow_run'",
             "github.event.workflow_run.head_branch == 'main'",
@@ -537,7 +538,7 @@ def _validate_runbook() -> None:
             "`main`",
             "workflow_dispatch",
             "workflow_run",
-            "V10 Cloudflare Production Release",
+            _CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW,
             "Terraform",
             "Public API",
             "Neon production authority",
