@@ -41,7 +41,20 @@
       "/repos/{owner}/{repo}/environments/timeweb-synthetic",
       "/repos/{owner}/{repo}/environments/timeweb-synthetic/deployment-branch-policies?per_page=100&page=1"
     ],
-    "runtime_ref_kind_enforcement_required": true
+    "runtime_ref_kind_enforcement_required": true,
+    "automatic_read_only_proof": {
+      "enabled": true,
+      "trigger_event": "workflow_run",
+      "upstream_workflow": "V10 Cloudflare Production Release",
+      "upstream_conclusion_required": "success",
+      "upstream_event_required": "workflow_run",
+      "upstream_head_branch_required": "main",
+      "expected_head_source": "github.event.workflow_run.head_sha",
+      "current_main_equality_required": true,
+      "manual_workflow_dispatch_fallback_preserved": true,
+      "provider_mutation_authority_inherited": false,
+      "paid_transition_authority_inherited": false
+    }
   },
   "api_boundary": {
     "allowed_methods": [

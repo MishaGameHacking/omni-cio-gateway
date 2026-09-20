@@ -211,6 +211,27 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
             ),
         ),
     )
+    automatic = _mapping(
+        environment.get("automatic_read_only_proof"),
+        "TIMEWEB_CONTROL_PLANE_AUTO_PROOF_INVALID",
+    )
+    _require(
+        automatic,
+        {
+            "enabled": True,
+            "trigger_event": "workflow_run",
+            "upstream_workflow": "V10 Cloudflare Production Release",
+            "upstream_conclusion_required": "success",
+            "upstream_event_required": "workflow_run",
+            "upstream_head_branch_required": "main",
+            "expected_head_source": "github.event.workflow_run.head_sha",
+            "current_main_equality_required": True,
+            "manual_workflow_dispatch_fallback_preserved": True,
+            "provider_mutation_authority_inherited": False,
+            "paid_transition_authority_inherited": False,
+        },
+        "TIMEWEB_CONTROL_PLANE_AUTO_PROOF_INVALID",
+    )
 
 
 def _validate_api_contract(payload: dict[str, Any]) -> None:
@@ -429,11 +450,19 @@ def _validate_live_workflow() -> None:
         source,
         (
             "workflow_dispatch:",
+            "workflow_run:",
+            "V10 Cloudflare Production Release",
+            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.event == 'workflow_run'",
+            "github.event.workflow_run.head_branch == 'main'",
+            "github.event.workflow_run.head_sha",
+            'test "$EXPECTED_BRANCH" = "main"',
+            "refs/heads/main:refs/remotes/origin/main",
+            'test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_HEAD"',
             "actions: read",
             "contents: read",
             "environment-policy-proof:",
             "needs: environment-policy-proof",
-            "if: github.ref == 'refs/heads/main'",
             f"environment: {_ENVIRONMENT_NAME}",
             f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}",
             "python scripts/check_v10_timeweb_postgres_control_plane.py",
@@ -507,6 +536,8 @@ def _validate_runbook() -> None:
             "Selected branches and tags",
             "`main`",
             "workflow_dispatch",
+            "workflow_run",
+            "V10 Cloudflare Production Release",
             "Terraform",
             "Public API",
             "Neon production authority",
