@@ -144,5 +144,26 @@
     "duplicate_member_ids_forbidden": true,
     "additional_paid_replication_authorized": false,
     "provider_semantics_resolved": false
+  },
+  "mutation_recovery": {
+    "accepted_failed_run": 35515788859,
+    "accepted_failed_main_sha_parts": [
+      "51b4e374",
+      "92987bf0",
+      "34dbf442",
+      "47b03e23",
+      "a0dd5aff"
+    ],
+    "observed_terminal_code": "TIMEWEB_MUTATION_REJECTED",
+    "exact_provider_rejection_unresolved_from_original_log": true,
+    "operation_specific_rejection_code_required": true,
+    "sanitized_http_status_allowed": true,
+    "provider_response_body_logging_allowed": false,
+    "bodyless_mutation_content_type": "application/json",
+    "reconcilable_http_statuses": [
+      409,
+      423
+    ],
+    "blind_mutation_retry_allowed": false
   }
 }

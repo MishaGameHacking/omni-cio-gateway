@@ -307,6 +307,33 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             "TIMEWEB_PUBLIC_IPV4_API_BOUNDARY_INVALID",
         )
 
+    recovery = _mapping(
+        payload.get("mutation_recovery"),
+        "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",
+    )
+    _require(
+        recovery,
+        {
+            "accepted_failed_run": 35515788859,
+            "accepted_failed_main_sha_parts": [
+                "51b4e374",
+                "92987bf0",
+                "34dbf442",
+                "47b03e23",
+                "a0dd5aff",
+            ],
+            "observed_terminal_code": "TIMEWEB_MUTATION_REJECTED",
+            "exact_provider_rejection_unresolved_from_original_log": True,
+            "operation_specific_rejection_code_required": True,
+            "sanitized_http_status_allowed": True,
+            "provider_response_body_logging_allowed": False,
+            "bodyless_mutation_content_type": "application/json",
+            "reconcilable_http_statuses": [409, 423],
+            "blind_mutation_retry_allowed": False,
+        },
+        "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",
+    )
+
     success = _mapping(
         payload.get("success"),
         "TIMEWEB_PUBLIC_IPV4_SUCCESS_INVALID",
@@ -450,6 +477,15 @@ def _validate_sources() -> None:
             "context.check_hostname = True",
             "context.verify_mode = ssl.CERT_REQUIRED",
             'struct.pack("!II", 8, 80877103)',
+            "_RECONCILABLE_MUTATION_HTTP_STATUSES = frozenset({409, 423})",
+            'if body is not None or method in {"POST", "PUT", "PATCH"}:',
+            'f"TIMEWEB_{operation}_REJECTED"',
+            'operation="FIREWALL_GROUP_CREATE"',
+            'operation="FIREWALL_RULE_CREATE"',
+            'operation="FIREWALL_RESOURCE_LINK"',
+            'operation="FLOATING_IP_CREATE"',
+            'operation="DATABASE_PUBLIC_NETWORK_PATCH"',
+            "http_status={exc.status}",
             "TIMEWEB_PUBLIC_NETWORK_ROLLBACK_MANUAL_RECONCILIATION_REQUIRED",
             "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE",
             "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE",
@@ -462,6 +498,9 @@ def _validate_sources() -> None:
         ),
         "TIMEWEB_PUBLIC_IPV4_PROVISIONER_DRIFT",
     )
+    if "exc.read(" in provisioner:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RESPONSE_BODY_READ_FORBIDDEN")
+
     for forbidden in (
         '"is_ddos_guard": True',
         '"is_enabled_public_ipv6": True',

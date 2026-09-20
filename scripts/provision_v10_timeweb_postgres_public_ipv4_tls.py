@@ -32,10 +32,12 @@ CA_URL = "https://st.timeweb.com/cloud-static/ca.crt"
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_CA_BYTES = 128 * 1024
 _ID_RE = re.compile(r"^[A-Za-z0-9-]{1,96}$", re.ASCII)
+_OPERATION_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$", re.ASCII)
 _HOST_RE = re.compile(
     r"^(?=.{1,253}\.?$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\.?$"
 )
 _RECONCILE_DELAYS_SECONDS = (1.0, 2.0, 4.0)
+_RECONCILABLE_MUTATION_HTTP_STATUSES = frozenset({409, 423})
 _STATE_DELAYS_SECONDS = (2.0, 3.0, 5.0, 8.0, 15.0, 20.0, 30.0)
 _TRANSITIONAL_STATUSES = frozenset(
     {"starting", "rebooting", "lan_transfer", "transfer", "turning_on"}
@@ -44,7 +46,23 @@ Sleep = Callable[[float], None]
 
 
 class AmbiguousMutation(RuntimeError):
-    pass
+    def __init__(
+        self,
+        code: str,
+        *,
+        operation: str | None = None,
+        status: int | None = None,
+    ) -> None:
+        self.code = code
+        self.operation = operation
+        self.status = status
+        details = []
+        if operation is not None:
+            details.append(f"operation={operation}")
+        if status is not None:
+            details.append(f"status={status}")
+        suffix = f" {' '.join(details)}" if details else ""
+        super().__init__(f"{code}{suffix}")
 
 
 class TimewebMutationApi:
@@ -80,6 +98,10 @@ class TimewebMutationApi:
                 separators=(",", ":"),
                 sort_keys=True,
             ).encode("utf-8")
+        # Timeweb's generated SDK sends application/json for mutating POST/PATCH
+        # requests even when the endpoint has no request body (for example
+        # firewall resource linking). Mirror that wire contract exactly.
+        if body is not None or method in {"POST", "PUT", "PATCH"}:
             headers["Content-Type"] = "application/json"
         return Request(
             f"{read_only.API_BASE}{path}",
@@ -93,10 +115,16 @@ class TimewebMutationApi:
         method: str,
         path: str,
         *,
+        operation: str,
         body: dict[str, object] | None = None,
         expected_statuses: frozenset[int],
+        reconcile_statuses: frozenset[int] = frozenset(),
         timeout: float = 30.0,
     ) -> Any:
+        if _OPERATION_RE.fullmatch(operation) is None:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_MUTATION_OPERATION_INVALID"
+            )
         request = self._request(method, path, body)
         try:
             with self._opener.open(request, timeout=timeout) as response:
@@ -104,25 +132,40 @@ class TimewebMutationApi:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
             status = int(exc.code)
-            if status in {408, 429, 500, 502, 503, 504}:
-                raise AmbiguousMutation("TIMEWEB_MUTATION_AMBIGUOUS") from None
+            if status in {408, 429, 500, 502, 503, 504} or status in reconcile_statuses:
+                raise AmbiguousMutation(
+                    "TIMEWEB_MUTATION_AMBIGUOUS",
+                    operation=operation,
+                    status=status,
+                ) from None
             if status in {401, 403}:
                 raise _provider_base.ProvisioningStopped(
                     "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
                     status=status,
                 ) from None
             raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_MUTATION_REJECTED",
+                f"TIMEWEB_{operation}_REJECTED",
                 status=status,
             ) from None
         except OSError:
-            raise AmbiguousMutation("TIMEWEB_MUTATION_AMBIGUOUS") from None
+            raise AmbiguousMutation(
+                "TIMEWEB_MUTATION_AMBIGUOUS",
+                operation=operation,
+            ) from None
 
         if status not in expected_statuses:
-            if status in {408, 429, 500, 502, 503, 504} or 200 <= status < 300:
-                raise AmbiguousMutation("TIMEWEB_MUTATION_AMBIGUOUS")
+            if (
+                status in {408, 429, 500, 502, 503, 504}
+                or status in reconcile_statuses
+                or 200 <= status < 300
+            ):
+                raise AmbiguousMutation(
+                    "TIMEWEB_MUTATION_AMBIGUOUS",
+                    operation=operation,
+                    status=status,
+                )
             raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_MUTATION_UNEXPECTED_STATUS",
+                f"TIMEWEB_{operation}_UNEXPECTED_STATUS",
                 status=status,
             )
         if len(raw) > MAX_RESPONSE_BYTES:
@@ -299,8 +342,10 @@ def _ensure_group(
         response = mutation.mutate_once(
             "POST",
             "/api/v1/firewall/groups?policy=DROP",
+            operation="FIREWALL_GROUP_CREATE",
             body=body,
-            expected_statuses=frozenset({200, 201}),
+            expected_statuses=frozenset({201}),
+            reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
     except AmbiguousMutation:
         response = None
@@ -366,8 +411,10 @@ def _ensure_rule(
             mutation.mutate_once(
                 "POST",
                 f"/api/v1/firewall/groups/{group_id}/rules",
+                operation="FIREWALL_RULE_CREATE",
                 body=expected,
-                expected_statuses=frozenset({200, 201}),
+                expected_statuses=frozenset({201}),
+                reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
             )
         except AmbiguousMutation:
             pass
@@ -391,8 +438,10 @@ def _ensure_rule(
                 mutation.mutate_once(
                     "PATCH",
                     f"/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
+                    operation="FIREWALL_RULE_PATCH",
                     body=expected,
                     expected_statuses=frozenset({200}),
+                    reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
                 )
             except AmbiguousMutation:
                 pass
@@ -489,7 +538,9 @@ def _ensure_resource_link(
             mutation.mutate_once(
                 "POST",
                 path,
-                expected_statuses=frozenset({200, 201}),
+                operation="FIREWALL_RESOURCE_LINK",
+                expected_statuses=frozenset({201}),
+                reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
             )
         except AmbiguousMutation:
             pass
@@ -602,8 +653,10 @@ def _create_floating_ip(
         response = mutation.mutate_once(
             "POST",
             "/api/v1/floating-ips",
+            operation="FLOATING_IP_CREATE",
             body=body,
             expected_statuses=frozenset({201}),
+            reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
     except AmbiguousMutation:
         response = None
@@ -719,8 +772,10 @@ def _patch_public_network(
         mutation.mutate_once(
             "PATCH",
             f"/api/v2/databases/{cluster_id}",
+            operation="DATABASE_PUBLIC_NETWORK_PATCH",
             body=body,
             expected_statuses=frozenset({200}),
+            reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
     except AmbiguousMutation:
         pass
@@ -742,8 +797,10 @@ def _close_public_network(
         mutation.mutate_once(
             "PATCH",
             f"/api/v2/databases/{cluster_id}",
+            operation="DATABASE_PUBLIC_NETWORK_ROLLBACK",
             body=body,
             expected_statuses=frozenset({200}),
+            reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
     except AmbiguousMutation:
         pass
@@ -779,7 +836,9 @@ def _delete_created_ipv4_if_unbound(
         mutation.mutate_once(
             "DELETE",
             f"/api/v1/floating-ips/{floating_id}",
+            operation="FLOATING_IP_CLEANUP_DELETE",
             expected_statuses=frozenset({204}),
+            reconcile_statuses=frozenset({404, 409, 423}),
         )
     except AmbiguousMutation:
         return
@@ -1054,17 +1113,29 @@ def provision() -> None:
     )
 
 
+def _stopped_marker(exc: _provider_base.ProvisioningStopped) -> str:
+    marker = f"TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code={exc.code}"
+    if exc.status is not None:
+        marker += f" http_status={exc.status}"
+    return marker
+
+
 def main() -> int:
     try:
         provision()
     except _provider_base.ProvisioningStopped as exc:
-        _provider_base._emit(f"TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code={exc.code}")
+        _provider_base._emit(_stopped_marker(exc))
         return 1
-    except AmbiguousMutation:
-        _provider_base._emit(
+    except AmbiguousMutation as exc:
+        marker = (
             "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED "
             "code=TIMEWEB_MUTATION_MANUAL_RECONCILIATION_REQUIRED"
         )
+        if exc.operation is not None:
+            marker += f" operation={exc.operation}"
+        if exc.status is not None:
+            marker += f" http_status={exc.status}"
+        _provider_base._emit(marker)
         return 1
     except Exception:
         _provider_base._emit(
