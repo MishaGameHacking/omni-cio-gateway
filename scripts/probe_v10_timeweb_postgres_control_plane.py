@@ -346,9 +346,7 @@ def _provider_replica_list_count(
     if raw is None:
         if allow_transient_empty:
             return 0
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_REPLICA_LIST_INVALID")
 
     replicas = _provider_base._json_list(
         raw,
