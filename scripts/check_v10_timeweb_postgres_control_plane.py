@@ -98,6 +98,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _validate_environment_contract(payload)
     _validate_api_contract(payload)
+    _validate_replica_topology_contract(payload)
     _validate_beta_contract(payload)
     _validate_mutation_contract(payload)
     _validate_iac_contract(payload)
@@ -232,7 +233,46 @@ def _validate_api_contract(payload: dict[str, Any]) -> None:
                 False,
                 "TIMEWEB_CONTROL_PLANE_OUTPUT_INVALID",
             ),
+            (
+                "endpoints",
+                [
+                    "/api/v1/projects",
+                    "/api/v1/database-types",
+                    "/api/v2/presets/dbs",
+                    "/api/v1/projects/{project_id}/resources/databases",
+                    "/api/v1/databases/{cluster_id}",
+                ],
+                "TIMEWEB_CONTROL_PLANE_API_INVALID",
+            ),
         ),
+    )
+
+
+def _validate_replica_topology_contract(payload: dict[str, Any]) -> None:
+    topology = _mapping(
+        payload.get("replica_topology_diagnostic"),
+        "TIMEWEB_REPLICA_TOPOLOGY_CONTRACT_INVALID",
+    )
+    _require(
+        topology,
+        {
+            "enabled": True,
+            "existing_target_only": True,
+            "cluster_detail_endpoint": "/api/v1/databases/{cluster_id}",
+            "accepted_marker": "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED",
+            "sanitized_output_fields": [
+                "replica_list_count",
+                "contract_replica_count",
+                "relation",
+                "semantics",
+            ],
+            "provider_identifiers_in_output_allowed": False,
+            "response_body_logging_allowed": False,
+            "mutation_allowed": False,
+            "provider_semantics_resolved": False,
+            "paid_replica_authority_inferred_from_observation": False,
+        },
+        "TIMEWEB_REPLICA_TOPOLOGY_CONTRACT_INVALID",
     )
 
 
@@ -309,6 +349,7 @@ def _validate_probe_source() -> None:
             "def _cluster_disk_size_kb(",
             "def _require_target_cluster_disk(",
             'TARGET_PRICE_RUB = Decimal("790")',
+            "TARGET_REPLICA_COUNT = 1",
             'method="GET"',
             "_NO_REDIRECT_OPENER",
             "MAX_RESPONSE_BYTES + 1",
@@ -317,7 +358,11 @@ def _validate_probe_source() -> None:
             'api.get("/api/v1/database-types")',
             'api.get("/api/v2/presets/dbs")',
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT",
-            "TIMEWEB_TARGET_CLUSTER_ALREADY_EXISTS",
+            "def _target_cluster_id(",
+            "def _replica_topology_observation(",
+            'api.get(f"/api/v1/databases/{cluster_id}")',
+            "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED",
+            "semantics=UNRESOLVED",
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
         ),
         "TIMEWEB_CONTROL_PLANE_PROBE_DRIFT",
@@ -465,6 +510,9 @@ def _validate_runbook() -> None:
             "Neon production authority",
             _ENVIRONMENT_GATE_MARKER,
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
+            "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED",
+            "/api/v1/databases/{cluster_id}",
+            "semantics remain unresolved",
         ),
         "TIMEWEB_CONTROL_PLANE_RUNBOOK_DRIFT",
     )

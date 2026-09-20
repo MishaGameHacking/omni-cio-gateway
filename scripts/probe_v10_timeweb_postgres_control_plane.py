@@ -23,6 +23,7 @@ TARGET_DISK_MB = 20 * 1024
 PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB = 1024
 TARGET_DISK_KB = TARGET_DISK_MB * PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB
 TARGET_PRICE_RUB = Decimal("790")
+TARGET_REPLICA_COUNT = 1
 MAX_RESPONSE_BYTES = 1024 * 1024
 _RETRY_DELAYS_SECONDS = (1.0, 2.0)
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
@@ -307,16 +308,79 @@ def _select_target_preset(payload: object, provider_type: str) -> int:
     return preset_id
 
 
-def _verify_cluster_name_available(payload: object) -> None:
+def _cluster_id(value: object) -> str:
+    if isinstance(value, int) and not isinstance(value, bool):
+        text = str(value)
+    elif isinstance(value, str):
+        text = value.strip()
+    else:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_ID_INVALID")
+    if _PROVIDER_ID_PATTERN.fullmatch(text) is None or int(text) <= 0:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_ID_INVALID")
+    return text
+
+
+def _target_cluster_id(payload: object) -> str | None:
     rows = _rows(
         payload,
         "databases",
         "TIMEWEB_PROJECT_DATABASES_RESPONSE_INVALID",
     )
-    if any(row.get("name") == TARGET_CLUSTER_NAME for row in rows):
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_TARGET_CLUSTER_ALREADY_EXISTS"
+    matches = [row for row in rows if row.get("name") == TARGET_CLUSTER_NAME]
+    if len(matches) > 1:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_TARGET_CLUSTER_NOT_UNIQUE")
+    if not matches:
+        return None
+    return _cluster_id(matches[0].get("id"))
+
+
+def _replica_topology_observation(
+    payload: object,
+    *,
+    expected_cluster_id: str,
+) -> int:
+    body = _provider_base._json_object(
+        payload,
+        "TIMEWEB_CLUSTER_RESPONSE_INVALID",
+    )
+    cluster = _provider_base._json_object(
+        body.get("db"),
+        "TIMEWEB_CLUSTER_RESPONSE_INVALID",
+    )
+    if cluster.get("name") != TARGET_CLUSTER_NAME:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_NAME_DRIFT")
+    if _cluster_id(cluster.get("id")) != expected_cluster_id:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_CUSTODY_DRIFT")
+
+    replicas = _provider_base._json_list(
+        cluster.get("replica_list"),
+        "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
+    )
+    for value in replicas:
+        row = _provider_base._json_object(
+            value,
+            "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
         )
+        _cluster_id(row.get("id"))
+        if _cluster_id(row.get("db_id")) != expected_cluster_id:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT"
+            )
+    return len(replicas)
+
+
+def _emit_replica_topology_observation(replica_list_count: int) -> None:
+    relation = (
+        "matches_contract_count"
+        if replica_list_count == TARGET_REPLICA_COUNT
+        else "differs_contract_count"
+    )
+    _provider_base._emit(
+        "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED "
+        f"replica_list_count={replica_list_count} "
+        f"contract_replica_count={TARGET_REPLICA_COUNT} "
+        f"relation={relation} semantics=UNRESOLVED"
+    )
 
 
 def probe() -> None:
@@ -329,11 +393,26 @@ def probe() -> None:
         provider_type,
     )
     project_path = f"/api/v1/projects/{project_id}/resources/databases"
-    _verify_cluster_name_available(api.get(project_path))
+    cluster_id = _target_cluster_id(api.get(project_path))
+    if cluster_id is None:
+        _provider_base._emit(
+            "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY "
+            "pg=18 location=ru-3 cpu=1 ram_mb=2048 disk_gb=20 "
+            "base_price_rub=790 project=verified cluster_name_available=true "
+            "existing_target=false"
+        )
+        return
+
+    replica_list_count = _replica_topology_observation(
+        api.get(f"/api/v1/databases/{cluster_id}"),
+        expected_cluster_id=cluster_id,
+    )
+    _emit_replica_topology_observation(replica_list_count)
     _provider_base._emit(
         "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY "
         "pg=18 location=ru-3 cpu=1 ram_mb=2048 disk_gb=20 "
-        "base_price_rub=790 project=verified cluster_name_available=true"
+        "base_price_rub=790 project=verified cluster_name_available=false "
+        "existing_target=true replica_topology_observed=true"
     )
 
 

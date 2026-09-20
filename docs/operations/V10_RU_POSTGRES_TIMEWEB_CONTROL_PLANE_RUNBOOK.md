@@ -125,7 +125,8 @@ Official references:
 - `GET /api/v1/projects`;
 - `GET /api/v1/database-types`;
 - `GET /api/v2/presets/dbs`;
-- `GET /api/v1/projects/{project_id}/resources/databases`.
+- `GET /api/v1/projects/{project_id}/resources/databases`;
+- when the exact target already exists, `GET /api/v1/databases/{cluster_id}`.
 
 The probe must verify, without emitting provider identifiers:
 
@@ -136,7 +137,42 @@ The probe must verify, without emitting provider identifiers:
 - 2048 MB RAM;
 - 20480 MB / 20 GB disk;
 - exact approved base price 790 RUB/month;
-- no existing cluster named `omni-cio-v10-ru-pg-synthetic`.
+- the target cluster name is either absent or resolves to exactly one provider
+  object;
+- if that exact target already exists, its cluster detail is read with GET only
+  and only the sanitized `replica_list_count` is emitted.
+
+### Existing-target replica topology diagnostic
+
+Live Synthetic Create run #3 on accepted main reached
+`TIMEWEB_CLUSTER_REPLICAS_PRESENT` after the disk-unit defect had already been
+repaired. The read-only control-plane proof therefore owns a count-only diagnostic
+for the exact existing target.
+
+Accepted sanitized observation marker:
+
+`TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED`
+
+The marker may contain only `replica_list_count`, the source-controlled
+`contract_replica_count=1`, a numeric relation, and
+`semantics=UNRESOLVED`. It must never emit cluster IDs, replica IDs, private IPs,
+response bodies or provider credentials.
+
+This observation is deliberately not an authorization decision. Timeweb's current
+documentation uses different replica wording across surfaces: the DBaaS creation
+flow describes optional PostgreSQL/MySQL replication with additional replica
+choices and recurring cost, while the DBaaS Operator documents
+`replica_count` values including `1`. Until live provider shape is correlated
+with those documented semantics, a matching numeric count must not be interpreted
+as proof that paid replication is authorized or absent. The existing synthetic
+create and public IPv4/TLS guards therefore remain fail-closed.
+
+Official replica references:
+
+- https://timeweb.cloud/docs/dbaas/dbaas-create
+- https://timeweb.cloud/docs/k8s/addons/dbaas-operator
+- https://github.com/timeweb-cloud/sdk-go/blob/main/docs/DatabaseCluster.md
+- https://github.com/timeweb-cloud/sdk-go/blob/main/docs/DatabaseClusterReplicaListInner.md
 
 Timeweb documents PostgreSQL 18 support. It also documents that the minimum
 1 CPU / 1 GB / 8 GB tier cannot create additional PostgreSQL users, so that tier
@@ -148,6 +184,10 @@ silently selecting a different resource.
 Accepted sanitized success marker:
 
 `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
+
+When the exact target exists, the same successful read-only run must also emit
+`TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED`; provider replica semantics remain unresolved
+until that evidence is reviewed against current provider documentation and cost authority.
 
 No token, project ID, preset ID, account ID, response body, database hostname, DSN,
 password or private payload may appear in accepted evidence.

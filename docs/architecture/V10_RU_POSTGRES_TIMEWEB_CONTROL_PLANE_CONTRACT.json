@@ -57,7 +57,8 @@
       "/api/v1/projects",
       "/api/v1/database-types",
       "/api/v2/presets/dbs",
-      "/api/v1/projects/{project_id}/resources/databases"
+      "/api/v1/projects/{project_id}/resources/databases",
+      "/api/v1/databases/{cluster_id}"
     ]
   },
   "beta_target": {
@@ -101,5 +102,22 @@
     "5f73a72f",
     "93199f4e",
     "2944f94b"
-  ]
+  ],
+  "replica_topology_diagnostic": {
+    "enabled": true,
+    "existing_target_only": true,
+    "cluster_detail_endpoint": "/api/v1/databases/{cluster_id}",
+    "accepted_marker": "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED",
+    "sanitized_output_fields": [
+      "replica_list_count",
+      "contract_replica_count",
+      "relation",
+      "semantics"
+    ],
+    "provider_identifiers_in_output_allowed": false,
+    "response_body_logging_allowed": false,
+    "mutation_allowed": false,
+    "provider_semantics_resolved": false,
+    "paid_replica_authority_inferred_from_observation": false
+  }
 }
