@@ -1,0 +1,178 @@
+# RU-PG-B existing IPv4 allocation - source checkpoint
+
+Owning issue: #559. Execution unit: FOCUSED_CHANGE.
+Base: `3083e65f9e6dbc7a6f26de6649ae7ff40627ba5c` (accepted PR #574).
+This document describes a branch checkpoint, not another program-status ledger.
+
+## Observed defect and authority
+
+Public IPv4 TLS #3 / run `35527766579` stopped with
+`TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`. Read-Only Proof #6 / `35527611769`
+already reported the blocked disposition. The inventory was one unbound row,
+zone-compatible and without DDoS, but with no matching management association.
+The counts do not establish that the comment is empty or prove who created it.
+The current unknown-resource refusal is correct; do not remove it.
+
+The missing transition is explicit assignment of an existing resource, not a
+retry, TLS or formatter fix. Generic development approval, an earlier cost
+confirmation, a source merge and successful read-only observation do not assign
+that resource. An exact live plan and separate OWNER decision remain required.
+No provider writes, purchases, attachment, deletion, source authority migration,
+product activation or production DSN changes occur when this source is tested.
+
+## Checkpoint boundary and next milestone
+
+M1 contains the allocation protocol, a concrete transactional SQLite journal,
+CurrentUser DPAPI/Windows ACL custody adapter and GitHub OWNER-comment verifier.
+The native custody boundary must be certified on the trusted Windows runner
+before M2 wires provider credentials or an operational PLAN/APPLY/RECONCILE job.
+This is the security/toolchain verification boundary, not permission to substitute
+test doubles for production dependencies. One focused branch owns both milestones;
+no competing branch or temporary verifier PR is needed.
+
+M1 is SOURCE_CHECKPOINT_NATIVE_CERTIFICATION_PENDING, not INTEGRATION_READY for
+live allocation. The contract distinguishes source adapter existence from their
+production integration/acceptance. No executable provider entry point or new
+workflow is included at this checkpoint. After exact-head M1 certification,
+finish M2 on the same branch and repeat exact-head certification before landing.
+
+## Protocol and reuse
+
+The accepted `scripts/timeweb_ipv4_custody.py` remains unchanged. Its strict
+inventory parser and exact v1 marker construction are reused, not replaced.
+
+`prepare` requires two identical complete snapshots. Only one unbound IPv4,
+EMPTY comment, MSK-1, no DDoS, exact target, public network OFF and IPv6 OFF are
+eligible for a plan. Private context includes provider scope, project, cluster,
+resource identity, address, source, previous state and one-hour expiry. Public
+output contains only a random non-authorizing plan handle. The private checksum
+is an integrity comparison within authenticated custody, not an authorization.
+
+`apply` requires independent plan-bound OWNER evidence and the distinct
+`ALLOCATE_EXISTING_TIMEWEB_IPV4_NO_CREATE_NO_DELETE` confirmation. It checks
+expiry/revocation, two fresh snapshots and current main, atomically claims the
+plan, rereads the claim, and rechecks source/approval/resource before the only
+metadata write. The writer can change comment only. No create/delete/bind/TLS
+operation is part of this protocol. Two matching GETs plus a saved journal receipt
+are required before ALLOCATED_VERIFIED.
+
+`reconcile` accepts no provider writer. An ambiguous attempt stays ATTEMPTED even
+past expiry, and replayed APPLY is forbidden. Reconciliation uses provider GETs
+and can complete a receipt. It does not purchase, rewrite, delete or enable
+networking. Source drift requires a separate recovery review rather than silently
+applying old plans under new source authority.
+
+## Concrete closed-journal source
+
+SQLite is used solely as a local engineering-operation journal on the existing
+trusted Windows verifier. It is NOT a new application database, tenant store,
+Gateway, production origin or substitute for Neon/PostgreSQL.
+
+The fixed runtime location is below LOCALAPPDATA/OmniCIO/TimewebIpv4AllocationV1,
+outside the disposable Actions workspace. APPLY cannot initialize a missing
+store. Only initial journal provisioning may create it; an existing empty or
+invalid store is rejected. No private values appear in file names or SQLite keys.
+
+Each payload is sealed with Windows CurrentUser DPAPI, which provides encryption
+and integrity checking. No new encryption key is requested from OWNER. The
+non-interactive flag is required; machine-wide decryption is not enabled. The
+SQLite main and rollback files contain ciphertext, not private plan JSON. The
+random public handle is the primary key. The decoded payload must bind that handle
+and pass the protocol validators.
+
+The directory is created with a protected ACL for the current Windows identity
+and SYSTEM. Existing loose ACLs are rejected rather than silently repaired.
+Reparse points, unexpected children and locations inside GITHUB_WORKSPACE are
+rejected. ACL/location evidence is rechecked before each transaction.
+
+`BEGIN IMMEDIATE` serializes claims across independent connections. DELETE journal
+mode and synchronous=EXTRA are required and checked. A successful durable COMMIT
+must precede the provider call. Expired unattempted plans may be superseded but
+not overwritten; ATTEMPTED and ALLOCATED conflicts remain blocked. Record count is
+bounded. Lost acknowledgements, invalid ciphertext, malformed records and failure
+to persist an allocation receipt remain STOPPED.
+
+This protects against process restart and concurrent callers under the trusted
+runner/storage model. It does NOT prove safety against a compromised Windows
+identity, a malicious provider administrator, arbitrary restoration of an old
+database, loss of the entire runner profile, or storage hardware that ignores
+sync. Do not restore or delete the journal to clear a claim. Runner replacement,
+total journal loss or backup restoration needs explicit reconciliation before
+any APPLY; a copied old journal is not a new authorization. Native CI is not a
+physical power-loss test. No global exactly-once guarantee is claimed.
+
+## Concrete OWNER evidence source
+
+The GitHub verifier reuses the accepted bounded GET/no-redirect HTTP transport
+from `verify_v10_timeweb_github_environment.py`. It fetches repository ownership,
+the exact issue #559 comment and current main on each verification. It accepts
+only an unedited User comment whose numeric identity and login match the current
+personal-repository owner and whose author association is OWNER.
+
+`performed_via_github_app` must be explicitly null. Missing attribution, bots and
+connector/app-authored comments are rejected even when attributed to OWNER.
+The exact body binds the random plan handle, source SHA, expiry and the
+NO_CREATE/NO_DELETE/NO_NETWORK_ENABLE purpose. The closed journal prohibits plan
+replacement, binding the handle to the private digest without publishing it.
+
+Revocation means editing or deleting that exact approval comment. A separate
+unrelated comment is not an implemented revocation channel. The verifier refetches
+evidence immediately before the write and does not cache approval. GitHub account
+identity is not a claim of physical presence or MFA. Owner credentials and the
+trusted runner remain part of the trust boundary. Cross-service revocation cannot
+be atomic with a Timeweb write, so external writers must remain frozen during the
+bounded operation and observed drift always blocks it.
+
+GitHub Environment access alone is not OWNER approval. Required deployment
+reviewers have private-repository plan restrictions. No new permissions are
+introduced by M1; M2 must explicitly review the minimal read scope for issue
+comments before an operational job can use this verifier.
+
+## Executed proof and remaining acceptance
+
+Local Python 3.13.5 executes 89 focused scenarios: 88 pass and the explicit
+Windows-only DPAPI/ACL case is not applicable in Linux. The original 68 protocol
+and guard scenarios are preserved; the new tests exercise real SQLite restart,
+independent-connection claim contention, ciphertext corruption, transaction
+failure, expiry, approval scope, connector rejection and revocation checks.
+The local reversible codec is test-only and is not encryption evidence.
+
+On Windows, the native test must actually execute DPAPI sealing/unsealing, tamper
+rejection, private values absent from database bytes, ACL checks and reopening the
+real protected store. A Linux skip does not certify that requirement. Production
+GitHub/provider credentials and actual OWNER approval are not used in tests.
+
+Before publication the changed Python must compile/parse for Python 3.12, the
+source contract and focused tests must pass, and the complete changed surface
+must be reviewed for secret/authority expansion. Canonical Ruff 0.16.1, mypy,
+repository-wide tests/coverage, dependency/security checks and exact-head
+Sonar/Gitar/review remain mandatory remote certification when approved local
+executables or full checkout are unavailable. No alternate tool result is labeled
+equivalent; no lock or check is weakened. CI failures require one coherent repair
+of the observed defect set, not unrelated feature advancement.
+
+## M2 acceptance before any live plan/application
+
+Finish the canonical provider snapshot/comment-only adapter, protected-main
+PLAN/APPLY/RECONCILE orchestration and distinct safe job summaries. Validate
+GitHub environment policy, exact current-main equality, secret step scope and the
+same resource concurrency boundary. Rehearse the real adapters using synthetic
+HTTP responses, then full exact-head CI/Sonar/reviews, squash and post-merge
+verification. Only then generate a real read-only plan and request its separate
+bounded OWNER decision. Do not run the current paid transport workflow while
+allocation remains unresolved.
+
+After allocation is independently verified, reuse the existing exclusive DROP
+firewall / one verifier /32 TCP/5432 / hostname-verified TLS path. Preserve the
+pre-existing resource during network rollback. Allocation verification is not
+transport READY or SQL parity PASS. RU-PG-C, production cutover, public auth,
+broker-write, trading_methods and REAL_TRADING_ENABLED remain locked.
+
+## Primary references
+
+- https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
+- https://sqlite.org/pragma.html#pragma_synchronous
+- https://sqlite.org/atomiccommit.html
+- https://docs.github.com/en/rest/issues/comments#get-an-issue-comment
+- https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
+- https://timeweb.cloud/docs/public-ip
