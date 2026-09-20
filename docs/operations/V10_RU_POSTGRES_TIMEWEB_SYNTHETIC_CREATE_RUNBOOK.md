@@ -145,8 +145,37 @@ backups, backup schedule, inline admin, extra database instance or configuration
 override.
 
 The Timeweb API documents that a successful create may return while the resource is
-still starting. The workflow therefore verifies the resulting cluster through GET
-until `status=started` or a bounded timeout is reached.
+still starting. The workflow therefore uses state-aware GET verification until
+`status=started` or a bounded timeout is reached; exact terminal shape is required
+before READY is emitted.
+
+## Live recovery after accepted POST
+
+Live run `35479350478` proved an important recovery case: the provider POST
+succeeded far enough for the exact target cluster to exist, while the first
+post-create verification stopped with `TIMEWEB_CLUSTER_POST_CREATE_DRIFT`.
+
+A subsequent safe read-only proof confirmed the exact target already exists.
+Therefore a retry of this workflow must never issue a second POST merely because
+the previous run did not reach the READY marker.
+
+If exactly one target cluster already exists in the selected project, the
+provisioner enters `existing-recovery` mode. That mode is GET-only until the
+existing resource has passed the same exact terminal verification. A second
+cluster-create POST is forbidden.
+
+The Timeweb API documents that a newly-created resource may be returned while
+still starting. Verification is therefore state-aware:
+
+- while `status=starting`, explicit unsafe values (public network/IPv6,
+  backups, replicas or disk autoscaling) fail closed immediately, while
+  provider fields that have not materialized yet are allowed to converge
+  within the existing bounded start window;
+- at `status=started`, every required identity/configuration field is
+  mandatory and must match exactly;
+- terminal drift emits field-specific sanitized stop codes so provider-state
+  mismatches can be diagnosed without logging response bodies, provider IDs or
+  secrets.
 
 ## Ambiguous-create recovery
 

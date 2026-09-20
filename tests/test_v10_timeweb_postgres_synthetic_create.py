@@ -33,6 +33,31 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
     def test_source_contract_passes(self) -> None:
         guard.validate()
 
+    def test_terminal_invariant_guard_accepts_equivalent_tuple_syntax(self) -> None:
+        source = """
+def _verify_terminal_shape():
+    expected = [
+        ('is_enabled_public_network', False, 'TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT'),
+        ('is_autobackups_enabled', False, 'TIMEWEB_CLUSTER_AUTOBACKUPS_DRIFT'),
+        ('is_backup_schedule_enabled', False, 'TIMEWEB_CLUSTER_BACKUP_SCHEDULE_DRIFT'),
+    ]
+"""
+        guard._validate_terminal_false_invariants(source)
+
+    def test_terminal_invariant_guard_rejects_missing_required_invariant(self) -> None:
+        source = """
+def _verify_terminal_shape():
+    expected = (
+        ("is_enabled_public_network", False, "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT"),
+        ("is_autobackups_enabled", False, "TIMEWEB_CLUSTER_AUTOBACKUPS_DRIFT"),
+    )
+"""
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_SYNTHETIC_CREATE_PROVISIONER_DRIFT",
+        ):
+            guard._validate_terminal_false_invariants(source)
+
     def test_paid_create_transport_is_owner_approved_ipv4(self) -> None:
         guard._require_parity_transport_ready()
         payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
@@ -356,7 +381,7 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(
             provisioner._provider_base.ProvisioningStopped,
-            "TIMEWEB_CLUSTER_POST_CREATE_DRIFT",
+            "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
         ):
             provisioner._verify_cluster_shape(
                 payload,
@@ -364,6 +389,107 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
                 provider_type="postgres18",
                 preset_id=777,
             )
+
+    def test_starting_shape_allows_transient_missing_terminal_fields(self) -> None:
+        payload = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "status": "starting",
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+            }
+        }
+        self.assertEqual(
+            provisioner._verify_cluster_shape(
+                payload,
+                expected_cluster_id=91,
+                provider_type="postgres18",
+                preset_id=777,
+            ),
+            "starting",
+        )
+
+    def test_starting_shape_rejects_explicit_unsafe_public_network(self) -> None:
+        payload = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "status": "starting",
+                "is_enabled_public_network": True,
+                "is_enabled_public_ipv6": False,
+            }
+        }
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
+        ):
+            provisioner._verify_cluster_shape(
+                payload,
+                expected_cluster_id=91,
+                provider_type="postgres18",
+                preset_id=777,
+            )
+
+    def test_terminal_shape_uses_field_specific_sanitized_drift_code(self) -> None:
+        payload = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "availability_zone": "msk-1",
+                "cpu": 2,
+                "ram": 2048,
+                "preset_id": 777,
+                "disk": {"size": 20480},
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+                "is_autobackups_enabled": False,
+                "is_backup_schedule_enabled": False,
+                "replica_list": [],
+                "disk_autoscaling": {"is_enabled": False},
+                "status": "started",
+            }
+        }
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_CPU_DRIFT",
+        ):
+            provisioner._verify_cluster_shape(
+                payload,
+                expected_cluster_id=91,
+                provider_type="postgres18",
+                preset_id=777,
+            )
+
+    def test_existing_exact_target_enters_get_only_recovery_without_post(self) -> None:
+        mutation_api = mock.Mock()
+        read_api = mock.Mock()
+        read_api.get.return_value = {
+            "databases": [
+                {
+                    "id": 91,
+                    "name": read_only.TARGET_CLUSTER_NAME,
+                }
+            ]
+        }
+        cluster_id, mode = provisioner._resolve_existing_or_create(
+            mutation_api,
+            read_api,
+            "/api/v1/projects/42/resources/databases",
+            provisioner._create_payload(
+                provider_type="postgres18",
+                preset_id=777,
+                project_id="42",
+            ),
+        )
+        self.assertEqual((cluster_id, mode), (91, "existing-recovery"))
+        mutation_api.post_once.assert_not_called()
 
     def test_duplicate_target_cluster_fails_closed(self) -> None:
         payload = {

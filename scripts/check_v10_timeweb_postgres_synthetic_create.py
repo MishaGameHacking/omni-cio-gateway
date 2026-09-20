@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import sys
@@ -61,6 +62,93 @@ def _require_markers(source: str, markers: tuple[str, ...], code: str) -> None:
     for marker in markers:
         if marker not in source:
             raise RuntimeError(code)
+
+
+_PROVISIONER_DRIFT = "TIMEWEB_SYNTHETIC_CREATE_PROVISIONER_DRIFT"
+
+
+def _parse_python_source(source: str) -> ast.Module:
+    try:
+        return ast.parse(source)
+    except SyntaxError as exc:
+        raise RuntimeError(_PROVISIONER_DRIFT) from exc
+
+
+def _find_function(tree: ast.Module, name: str) -> ast.FunctionDef:
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise RuntimeError(_PROVISIONER_DRIFT)
+
+
+def _find_assignment(function: ast.FunctionDef, name: str) -> ast.Assign:
+    for node in function.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in node.targets
+        ):
+            return node
+    raise RuntimeError(_PROVISIONER_DRIFT)
+
+
+def _assignment_sequence(assignment: ast.Assign) -> ast.Tuple | ast.List:
+    if isinstance(assignment.value, (ast.Tuple, ast.List)):
+        return assignment.value
+    raise RuntimeError(_PROVISIONER_DRIFT)
+
+
+def _decode_expected_entry(
+    item: ast.expr,
+) -> tuple[str, tuple[object, str]] | None:
+    if not isinstance(item, (ast.Tuple, ast.List)) or len(item.elts) != 3:
+        return None
+    key_node, value_node, code_node = item.elts
+    if not isinstance(key_node, ast.Constant) or not isinstance(key_node.value, str):
+        return None
+    if not isinstance(value_node, ast.Constant):
+        return None
+    if not isinstance(code_node, ast.Constant) or not isinstance(code_node.value, str):
+        return None
+    return key_node.value, (value_node.value, code_node.value)
+
+
+def _terminal_expected_entries(source: str) -> dict[str, tuple[object, str]]:
+    tree = _parse_python_source(source)
+    function = _find_function(tree, "_verify_terminal_shape")
+    assignment = _find_assignment(function, "expected")
+    sequence = _assignment_sequence(assignment)
+
+    entries: dict[str, tuple[object, str]] = {}
+    for item in sequence.elts:
+        decoded = _decode_expected_entry(item)
+        if decoded is None:
+            continue
+        key, value = decoded
+        entries[key] = value
+    return entries
+
+
+def _validate_terminal_false_invariants(source: str) -> None:
+    entries = _terminal_expected_entries(source)
+    required = {
+        "is_enabled_public_network": (
+            False,
+            "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
+        ),
+        "is_autobackups_enabled": (
+            False,
+            "TIMEWEB_CLUSTER_AUTOBACKUPS_DRIFT",
+        ),
+        "is_backup_schedule_enabled": (
+            False,
+            "TIMEWEB_CLUSTER_BACKUP_SCHEDULE_DRIFT",
+        ),
+    }
+    for key, expected in required.items():
+        if entries.get(key) != expected:
+            raise RuntimeError(_PROVISIONER_DRIFT)
 
 
 def _validate_transport_state(
@@ -244,6 +332,16 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
     _require(
+        api.get("existing_exact_target_recovery_get_only"),
+        True,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
+        api.get("second_post_for_existing_target_allowed"),
+        False,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
         api.get("max_response_bytes"),
         1048576,
         "TIMEWEB_SYNTHETIC_CREATE_API_BOUNDARY_INVALID",
@@ -297,6 +395,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "exact_cluster_get_required",
         "exact_project_membership_recheck_required",
         "started_status_required",
+        "starting_state_uses_bounded_state_aware_verification",
+        "starting_explicit_unsafe_values_fail_closed",
+        "terminal_started_exact_shape_required",
+        "field_specific_sanitized_drift_codes_required",
         "public_network_must_be_disabled",
         "public_ipv6_must_be_disabled",
         "autobackups_must_be_disabled",
@@ -370,16 +472,18 @@ def _validate_provisioner() -> None:
             "TIMEWEB_CLUSTER_CREATE_AMBIGUOUS_RECONCILIATION_REQUIRED",
             "def _reconcile_cluster_id(",
             "def _create_or_reconcile(",
+            "def _resolve_existing_or_create(",
+            '"existing-recovery"',
+            "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
+            "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
             '"disk_autoscaling": {"is_enabled": False}',
             '"is_public_ipv6": False',
-            '"is_enabled_public_network": False',
-            '"is_autobackups_enabled": False',
-            '"is_backup_schedule_enabled": False',
             '"TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY "',
             "create_mode={create_mode}",
         ),
         "TIMEWEB_SYNTHETIC_CREATE_PROVISIONER_DRIFT",
     )
+    _validate_terminal_false_invariants(source)
     forbidden = (
         'method="PUT"',
         'method="PATCH"',
