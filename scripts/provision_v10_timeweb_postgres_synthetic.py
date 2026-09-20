@@ -257,42 +257,89 @@ def _verify_disk_autoscaling(cluster: dict[str, Any]) -> None:
         )
 
 
-def _verify_cluster_shape(
-    payload: object,
-    *,
-    expected_cluster_id: int,
-    provider_type: str,
-    preset_id: int,
-) -> str:
+def _cluster_object(payload: object) -> dict[str, Any]:
     body = _provider_base._json_object(payload, "TIMEWEB_CLUSTER_RESPONSE_INVALID")
-    cluster = _provider_base._json_object(
+    return _provider_base._json_object(
         body.get("db"),
         "TIMEWEB_CLUSTER_RESPONSE_INVALID",
     )
-    if _numeric_id(cluster.get("id"), "TIMEWEB_TARGET_CLUSTER_ID_INVALID") != (
-        expected_cluster_id
-    ):
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_ID_DRIFT")
-    expected = {
-        "name": read_only.TARGET_CLUSTER_NAME,
-        "type": provider_type,
-        "location": read_only.TARGET_LOCATION,
-        "availability_zone": TARGET_AVAILABILITY_ZONE,
-        "cpu": read_only.TARGET_CPU,
-        "ram": read_only.TARGET_RAM_MB,
-        "preset_id": preset_id,
-        "is_enabled_public_network": False,
-        "is_enabled_public_ipv6": False,
-        "is_autobackups_enabled": False,
-        "is_backup_schedule_enabled": False,
-    }
-    for key, value in expected.items():
-        if cluster.get(key) != value:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_CLUSTER_POST_CREATE_DRIFT"
-            )
+
+
+def _require_exact(
+    cluster: dict[str, Any],
+    key: str,
+    expected: object,
+    code: str,
+) -> None:
+    if cluster.get(key) != expected:
+        raise _provider_base.ProvisioningStopped(code)
+
+
+def _reject_explicit_unsafe_starting_state(cluster: dict[str, Any]) -> None:
+    if cluster.get("is_enabled_public_network") is True:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT")
+    if cluster.get("is_enabled_public_ipv6") is True:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_PUBLIC_IPV6_DRIFT")
+    if cluster.get("is_autobackups_enabled") is True:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_AUTOBACKUPS_DRIFT")
+    if cluster.get("is_backup_schedule_enabled") is True:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_CLUSTER_BACKUP_SCHEDULE_DRIFT"
+        )
+    replicas = cluster.get("replica_list")
+    if replicas is not None:
+        rows = _provider_base._json_list(
+            replicas,
+            "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
+        )
+        if rows:
+            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_REPLICAS_PRESENT")
+    _verify_disk_autoscaling(cluster)
+
+
+def _verify_terminal_shape(
+    cluster: dict[str, Any],
+    *,
+    provider_type: str,
+    preset_id: int,
+) -> None:
+    expected = (
+        ("name", read_only.TARGET_CLUSTER_NAME, "TIMEWEB_CLUSTER_NAME_DRIFT"),
+        ("type", provider_type, "TIMEWEB_CLUSTER_TYPE_DRIFT"),
+        ("location", read_only.TARGET_LOCATION, "TIMEWEB_CLUSTER_LOCATION_DRIFT"),
+        (
+            "availability_zone",
+            TARGET_AVAILABILITY_ZONE,
+            "TIMEWEB_CLUSTER_AVAILABILITY_ZONE_DRIFT",
+        ),
+        ("cpu", read_only.TARGET_CPU, "TIMEWEB_CLUSTER_CPU_DRIFT"),
+        ("ram", read_only.TARGET_RAM_MB, "TIMEWEB_CLUSTER_RAM_DRIFT"),
+        ("preset_id", preset_id, "TIMEWEB_CLUSTER_PRESET_DRIFT"),
+        (
+            "is_enabled_public_network",
+            False,
+            "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
+        ),
+        (
+            "is_enabled_public_ipv6",
+            False,
+            "TIMEWEB_CLUSTER_PUBLIC_IPV6_DRIFT",
+        ),
+        (
+            "is_autobackups_enabled",
+            False,
+            "TIMEWEB_CLUSTER_AUTOBACKUPS_DRIFT",
+        ),
+        (
+            "is_backup_schedule_enabled",
+            False,
+            "TIMEWEB_CLUSTER_BACKUP_SCHEDULE_DRIFT",
+        ),
+    )
+    for key, value, code in expected:
+        _require_exact(cluster, key, value, code)
     if _disk_size(cluster) != read_only.TARGET_DISK_MB:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_POST_CREATE_DRIFT")
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_DISK_SIZE_DRIFT")
     replicas = _provider_base._json_list(
         cluster.get("replica_list"),
         "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
@@ -300,9 +347,77 @@ def _verify_cluster_shape(
     if replicas:
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_REPLICAS_PRESENT")
     _verify_disk_autoscaling(cluster)
+
+
+def _verify_starting_shape(
+    cluster: dict[str, Any],
+    *,
+    provider_type: str,
+    preset_id: int,
+) -> None:
+    expected = (
+        ("name", read_only.TARGET_CLUSTER_NAME, "TIMEWEB_CLUSTER_NAME_DRIFT"),
+        ("type", provider_type, "TIMEWEB_CLUSTER_TYPE_DRIFT"),
+        ("location", read_only.TARGET_LOCATION, "TIMEWEB_CLUSTER_LOCATION_DRIFT"),
+        (
+            "availability_zone",
+            TARGET_AVAILABILITY_ZONE,
+            "TIMEWEB_CLUSTER_AVAILABILITY_ZONE_DRIFT",
+        ),
+        ("preset_id", preset_id, "TIMEWEB_CLUSTER_PRESET_DRIFT"),
+        ("cpu", read_only.TARGET_CPU, "TIMEWEB_CLUSTER_CPU_DRIFT"),
+        ("ram", read_only.TARGET_RAM_MB, "TIMEWEB_CLUSTER_RAM_DRIFT"),
+    )
+    for key, value, code in expected:
+        actual = cluster.get(key)
+        if actual is not None and actual != value:
+            raise _provider_base.ProvisioningStopped(code)
+
+    disk = cluster.get("disk")
+    if (
+        isinstance(disk, dict)
+        and disk.get("size") is not None
+        and _disk_size(cluster) != read_only.TARGET_DISK_MB
+    ):
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_DISK_SIZE_DRIFT")
+
+    _reject_explicit_unsafe_starting_state(cluster)
+
+
+def _verify_cluster_shape(
+    payload: object,
+    *,
+    expected_cluster_id: int,
+    provider_type: str,
+    preset_id: int,
+) -> str:
+    cluster = _cluster_object(payload)
+    actual_cluster_id = _numeric_id(
+        cluster.get("id"),
+        "TIMEWEB_TARGET_CLUSTER_ID_INVALID",
+    )
+    if actual_cluster_id != expected_cluster_id:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_ID_DRIFT")
+
     status = cluster.get("status")
     if not isinstance(status, str):
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_STATUS_INVALID")
+
+    if status == "starting":
+        _verify_starting_shape(
+            cluster,
+            provider_type=provider_type,
+            preset_id=preset_id,
+        )
+        return status
+    if status != "started":
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
+
+    _verify_terminal_shape(
+        cluster,
+        provider_type=provider_type,
+        preset_id=preset_id,
+    )
     return status
 
 
@@ -326,11 +441,26 @@ def _wait_for_started(
         )
         if status == "started":
             return
-        if status != "starting":
-            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
         if attempt < len(delays):
             sleeper(delays[attempt])
     raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_START_TIMEOUT")
+
+
+def _resolve_existing_or_create(
+    mutation_api: TimewebCreateApi,
+    read_api: read_only.TimewebReadOnlyApi,
+    project_path: str,
+    payload: dict[str, object],
+) -> tuple[int, str]:
+    existing = _target_cluster_id(read_api.get(project_path))
+    if existing is not None:
+        return existing, "existing-recovery"
+    return _create_or_reconcile(
+        mutation_api,
+        read_api,
+        project_path,
+        payload,
+    )
 
 
 def provision() -> None:
@@ -348,17 +478,12 @@ def provision() -> None:
         provider_type,
     )
     project_path = f"/api/v1/projects/{project_id}/resources/databases"
-    if _target_cluster_id(read_api.get(project_path)) is not None:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_TARGET_CLUSTER_ALREADY_EXISTS"
-        )
-
     payload = _create_payload(
         provider_type=provider_type,
         preset_id=preset_id,
         project_id=project_id,
     )
-    cluster_id, create_mode = _create_or_reconcile(
+    cluster_id, create_mode = _resolve_existing_or_create(
         mutation_api,
         read_api,
         project_path,
