@@ -474,6 +474,76 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertNotIn("replica_id", marker)
         self.assertNotIn("local_ip", marker)
 
+    def test_probe_existing_target_gets_detail_and_emits_no_provider_ids(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        api.get.side_effect = [
+            {"projects": [{"id": 7, "name": probe.TARGET_PROJECT_NAME}]},
+            {
+                "types": [
+                    {
+                        "name": "PostgreSQL",
+                        "version": "18",
+                        "type": "postgres18",
+                        "is_deprecated": False,
+                    }
+                ]
+            },
+            {
+                "databases_presets": [
+                    {
+                        "id": 777,
+                        "type": "postgres",
+                        "location": "ru-3",
+                        "cpu": 1,
+                        "ram": 2048,
+                        "disk": 20480,
+                        "price": 790,
+                    }
+                ]
+            },
+            {"databases": [{"id": 99, "name": probe.TARGET_CLUSTER_NAME}]},
+            {
+                "db": {
+                    "id": 99,
+                    "name": probe.TARGET_CLUSTER_NAME,
+                    "replica_list": [
+                        {
+                            "id": 501,
+                            "db_id": 99,
+                            "status": "started",
+                            "local_ip": "10.0.0.5",
+                        }
+                    ],
+                }
+            },
+        ]
+        with mock.patch.object(
+            probe._provider_base,
+            "_required_env",
+            return_value="synthetic-token",
+        ), mock.patch.object(
+            probe,
+            "TimewebReadOnlyApi",
+            return_value=api,
+        ), mock.patch.object(
+            probe._provider_base,
+            "_emit",
+        ) as emit:
+            probe.probe()
+
+        api.get.assert_any_call("/api/v1/databases/99")
+        rendered = " ".join(call.args[0] for call in emit.call_args_list)
+        self.assertIn("TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED", rendered)
+        self.assertIn("replica_list_count=1", rendered)
+        self.assertIn("semantics=UNRESOLVED", rendered)
+        self.assertNotIn("cluster_id", rendered)
+        self.assertNotIn("replica_id", rendered)
+        self.assertNotIn("local_ip", rendered)
+        self.assertNotIn("10.0.0.5", rendered)
+        self.assertNotIn("501", rendered)
+
     def test_read_only_api_masks_auth_failure(self) -> None:
         request = HTTPError(
             "https://api.timeweb.cloud/api/v1/projects",
