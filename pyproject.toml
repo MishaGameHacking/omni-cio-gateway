@@ -83,6 +83,11 @@ files = [
   "scripts/rehearse_v10_wp15_owner.py",
   "scripts/validate_v10_wp15_owner_evidence.py",
   "scripts/check_v10_wp17_web_security.py",
+  "scripts/timeweb_ipv4_allocation.py",
+  "scripts/timeweb_ipv4_allocation_github.py",
+  "scripts/timeweb_ipv4_allocation_journal.py",
+  "scripts/timeweb_ipv4_allocation_windows.py",
+  "scripts/check_v10_timeweb_ipv4_allocation.py",
 ]
 
 [tool.pytest.ini_options]

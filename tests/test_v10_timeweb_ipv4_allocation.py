@@ -228,11 +228,13 @@ class AllocationTests(unittest.TestCase):
 
     def test_legacy_unmarked_state_is_still_rejected_by_ordinary_custody(self) -> None:
         row = provider_row(SNAPSHOT)
+        parsed = custody.inventory([row])
         with self.assertRaisesRegex(custody.CustodyStopped, "PROVENANCE_REQUIRED"):
-            custody.select(custody.inventory([row]), 91, public_enabled=False)
+            custody.select(parsed, 91, public_enabled=False)
         self.prepare()
+        parsed = custody.inventory([row])
         with self.assertRaisesRegex(custody.CustodyStopped, "PROVENANCE_REQUIRED"):
-            custody.select(custody.inventory([row]), 91, public_enabled=False)
+            custody.select(parsed, 91, public_enabled=False)
 
     def test_actual_approved_allocation_uses_same_ip_and_existing_marker_protocol(
         self,
@@ -423,8 +425,9 @@ class AllocationTests(unittest.TestCase):
 
     def test_source_drift_cannot_mutate(self) -> None:
         identifier = self.prepare()
+        changed_context = allocation.Context(OTHER, OTHER)
         with self.assertRaisesRegex(allocation.AllocationStopped, "SOURCE_DRIFT"):
-            self.apply(identifier, context=allocation.Context(OTHER, OTHER))
+            self.apply(identifier, context=changed_context)
         self.assertEqual(self.provider.writes, [])
 
     def test_nonmain_wrong_repo_or_environment_context_is_rejected(self) -> None:

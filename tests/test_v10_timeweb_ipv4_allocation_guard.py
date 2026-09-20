@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import io
 import contextlib
 import runpy
+import tomllib
 import unittest
 
 from scripts import check_v10_timeweb_ipv4_allocation as guard
@@ -102,6 +104,44 @@ class ProtocolGuardTests(unittest.TestCase):
         changed = self.source + "\nif __name__ == '__main__':\n    apply()\n"
         with self.assertRaises(ValueError):
             guard.validate_source(changed)
+
+    def test_exception_assertions_isolate_the_operation_under_test(self) -> None:
+        tests = guard.ROOT / "tests"
+        for path in tests.glob("test_v10_timeweb_ipv4_allocation*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.With):
+                    continue
+                contexts = [item.context_expr for item in node.items]
+                raises = any(
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Attribute)
+                    and value.func.attr in {"assertRaises", "assertRaisesRegex"}
+                    for value in contexts
+                )
+                if raises:
+                    calls = [
+                        child
+                        for statement in node.body
+                        for child in ast.walk(statement)
+                        if isinstance(child, ast.Call)
+                    ]
+                    with self.subTest(path=path.name, line=node.lineno):
+                        self.assertEqual(len(calls), 1)
+
+    def test_allocation_modules_are_in_canonical_mypy_targets(self) -> None:
+        configuration = tomllib.loads(
+            (guard.ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        targets = set(configuration["tool"]["mypy"]["files"])
+        expected = {
+            "scripts/timeweb_ipv4_allocation.py",
+            "scripts/timeweb_ipv4_allocation_github.py",
+            "scripts/timeweb_ipv4_allocation_journal.py",
+            "scripts/timeweb_ipv4_allocation_windows.py",
+            "scripts/check_v10_timeweb_ipv4_allocation.py",
+        }
+        self.assertTrue(expected <= targets)
 
     def test_generic_cost_approval_does_not_replace_owner_allocation(self) -> None:
         changed = copy.deepcopy(self.data)

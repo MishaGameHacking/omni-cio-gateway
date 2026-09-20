@@ -92,8 +92,9 @@ class JournalTests(unittest.TestCase):
         self.journal.create(self.plan)
         self.journal.claim(self.plan.identifier, self.plan.digest, "7")
         later = make_plan("2" * 32, issued_at=self.plan.expires_at + 1)
+        reopened = self.open()
         with self.assertRaises(storage.JournalError):
-            self.open().create(later)
+            reopened.create(later)
         self.assertIs(
             self.open().read(self.plan.identifier).phase,
             protocol.Phase.ATTEMPTED,
@@ -110,8 +111,9 @@ class JournalTests(unittest.TestCase):
         self.journal.create(self.plan)
         later = make_plan("2" * 32, issued_at=self.plan.expires_at + 1)
         self.journal.create(later)
+        reopened = self.open()
         with self.assertRaises(storage.JournalError):
-            self.open().claim(self.plan.identifier, self.plan.digest, "7")
+            reopened.claim(self.plan.identifier, self.plan.digest, "7")
         self.assertTrue(self.open().claim(later.identifier, later.digest, "8"))
 
     def test_existing_empty_store_is_not_silently_reinitialized(self) -> None:
@@ -123,8 +125,9 @@ class JournalTests(unittest.TestCase):
         self.journal.create(self.plan)
         for candidate in (self.plan, make_plan("2" * 32)):
             with self.subTest(identifier=candidate.identifier):
+                reopened = self.open()
                 with self.assertRaises(storage.JournalError):
-                    self.open().create(candidate)
+                    reopened.create(candidate)
 
     def test_completion_without_claim_or_with_wrong_digest_is_rejected(self) -> None:
         self.journal.create(self.plan)
@@ -137,8 +140,9 @@ class JournalTests(unittest.TestCase):
             self.journal.complete(self.plan.identifier, "wrong")
 
     def test_unknown_id_missing_store_and_corrupt_record_fail_closed(self) -> None:
+        reopened = self.open()
         with self.assertRaises(storage.JournalError):
-            self.open().read("2" * 32)
+            reopened.read("2" * 32)
         other = self.path.with_name("missing.sqlite3")
         with self.assertRaises(storage.JournalError):
             storage.SqliteJournal(other, verify_location=lambda: None)

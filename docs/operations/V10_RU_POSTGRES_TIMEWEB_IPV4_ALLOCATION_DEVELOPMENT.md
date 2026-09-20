@@ -176,3 +176,45 @@ broker-write, trading_methods and REAL_TRADING_ENABLED remain locked.
 - https://docs.github.com/en/rest/issues/comments#get-an-issue-comment
 - https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments
 - https://timeweb.cloud/docs/public-ip
+
+## M1 independent review findings and repair
+
+Initial source head `8c845b5...` reached Governance #1758 / run `35531378453`.
+Its exact-head external review gate rejected seven Sonar findings in exception
+assertions. These were ambiguous test boundaries: parsing/constructing a context
+or reopening a journal occurred inside the same assertion as the operation under
+test. An exception in setup could therefore satisfy the assertion without proving
+the intended refusal. The affected operations are allocation selection, source
+drift, journal conflicts, superseded claims and unknown plan reads.
+
+The correction moves all such setup outside the exception assertion. It preserves
+every tested exception and postcondition and adds an AST regression checking that
+these exception assertions contain exactly one possible invocation. Focused tests
+exercise the corrected modules; independent exact-head Sonar is still required.
+The local preflight had not included this test-structure property or Sonar's rule;
+the new regression prevents copying the same pattern within this subsystem.
+No source guard, security check or approval requirement is suppressed.
+
+The independent Windows authoritative run #2973 / `35531378435`, job
+`106132465885`, then passed locked dependencies, PostgreSQL 18 runtime-role
+rehearsal, repository/security boundaries, compilation and Ruff lint. Canonical
+Ruff 0.16.1 formatting rejected one list-comprehension wrapping in
+`timeweb_ipv4_allocation_journal.py`. Applied the exact formatter-reported change;
+the formatting-only old/new ASTs are identical. Mypy, full tests, native DPAPI/ACL,
+coverage and later security scans were NOT reached in that failed run.
+
+Adjacent static-gate inspection found that pyproject.toml enumerates mypy targets
+explicitly and did not yet include these five new modules. Add all five targets
+without removing any baseline target or changing any option/lock. A regression
+pins their inclusion. The DPAPI description temporary is explicitly annotated
+`str | None` to represent both native call variants. This expands static coverage;
+it is not a toolchain version change or a suppression of type errors.
+
+Correction preflight executes 91 focused scenarios on Python 3.13.5: 90 pass and
+the Windows-only case is not executed on Linux. The assertion-shape regression
+also rejects an injected nested-call mutation. Python 3.12 grammar/compilation,
+source contract and TOML validation pass. Whole correction review confirms that
+existing tests/security assertions, dependency locks, live flags, database and
+provider permissions remain unchanged. Approved local Ruff/mypy and the full
+repository are still unavailable; the exact replacement head requires new
+canonical CI evidence, including real native Windows execution, before M2 work.

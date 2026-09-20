@@ -48,6 +48,7 @@ def dpapi(data: bytes, *, decrypt: bool = False) -> bytes:
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.LocalFree.argtypes = [ctypes.c_void_p]
     kernel.LocalFree.restype = ctypes.c_void_p
+    second: str | None
     if decrypt:
         action = crypto.CryptUnprotectData
         action.argtypes = [
@@ -209,9 +210,7 @@ class SqliteJournal:
 
     def _get(self, db: sqlite3.Connection, identifier: str) -> protocol.Entry:
         matches = [
-            entry
-            for entry in self._entries(db)
-            if entry.plan.identifier == identifier
+            entry for entry in self._entries(db) if entry.plan.identifier == identifier
         ]
         if len(matches) != 1:
             raise JournalError("TIMEWEB_JOURNAL_PLAN_NOT_FOUND")
