@@ -80,14 +80,44 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertTrue(
             payload["environment_gate"]["runtime_ref_kind_enforcement_required"]
         )
+        self.assertEqual(
+            payload["environment_gate"]["automatic_read_only_proof"],
+            {
+                "enabled": True,
+                "trigger_event": "workflow_run",
+                "upstream_workflow": "V10 Cloudflare Production Release",
+                "upstream_conclusion_required": "success",
+                "upstream_event_required": "workflow_run",
+                "upstream_head_branch_required": "main",
+                "expected_head_source": "github.event.workflow_run.head_sha",
+                "current_main_equality_required": True,
+                "manual_workflow_dispatch_fallback_preserved": True,
+                "provider_mutation_authority_inherited": False,
+                "paid_transition_authority_inherited": False,
+            },
+        )
 
-    def test_live_workflow_is_manual_main_only_and_read_only(self) -> None:
+    def test_live_workflow_is_postmerge_auto_main_only_and_read_only(self) -> None:
         source = guard.LIVE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", source)
+        self.assertIn("workflow_run:", source)
+        self.assertIn("- V10 Cloudflare Production Release", source)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", source)
+        self.assertIn("github.event.workflow_run.event == 'workflow_run'", source)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'", source)
+        self.assertIn("github.event.workflow_run.head_sha", source)
+        self.assertIn('test "$EXPECTED_BRANCH" = "main"', source)
+        self.assertIn(
+            "refs/heads/main:refs/remotes/origin/main",
+            source,
+        )
+        self.assertIn(
+            'test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_HEAD"',
+            source,
+        )
         self.assertIn("actions: read", source)
         self.assertIn("environment-policy-proof:", source)
         self.assertIn("needs: environment-policy-proof", source)
-        self.assertIn("if: github.ref == 'refs/heads/main'", source)
         self.assertIn("environment: timeweb-synthetic", source)
         self.assertEqual(
             source.count("python -m scripts.verify_v10_timeweb_github_environment"),
@@ -97,6 +127,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",
             source,
         )
+        self.assertNotIn("on:\n  push:", source)
         self.assertNotIn("pull_request:", source)
         self.assertNotIn("schedule:", source)
 

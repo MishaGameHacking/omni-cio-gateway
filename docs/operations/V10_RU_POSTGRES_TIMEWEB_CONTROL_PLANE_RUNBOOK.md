@@ -88,8 +88,16 @@ Canonical workflow:
 
 Properties:
 
-- manual `workflow_dispatch` only;
-- exact ref must be `refs/heads/main`;
+- automatic read-only execution is triggered only after a successful
+  `V10 Cloudflare Production Release` `workflow_run` for branch `main`;
+- the upstream release itself must be the normal automatic `workflow_run` path,
+  not a manually dispatched release recovery;
+- manual `workflow_dispatch` on `main` remains an explicit fallback;
+- the exact target SHA is taken from `github.event.workflow_run.head_sha` for the
+  automatic path and is re-checked against the current `refs/heads/main` before
+  any provider secret can be consumed;
+- if a newer `main` supersedes the accepted upstream SHA while this proof is
+  queued, the proof fails closed instead of observing stale provider state;
 - repository permissions are limited to `contents: read` and `actions: read`;
 - a first job proves the exact GitHub environment policy without referencing the
   Timeweb provider credential;
@@ -100,6 +108,28 @@ Properties:
 - source contract verification runs before any provider-secret consumption;
 - both self-hosted workspaces are cleaned in `always()` steps;
 - no provider identifiers or response bodies are accepted output.
+
+### Automatic post-merge sequencing
+
+The automatic trigger exists to remove a proven human/workflow sequencing hazard:
+after PR #570 accepted the count-only replica diagnostic, Synthetic Create #4 was
+manually dispatched before the new Read-Only Proof had collected the required
+topology evidence. That run correctly failed closed on the still-existing raw
+replica guard, but it could not exercise the diagnostic introduced by #570.
+
+The read-only proof therefore follows the already accepted post-merge production
+release automatically. It inherits **no** provider mutation or paid-transition
+authority. GitHub documents that `workflow_run` can access secrets, so this
+workflow treats that event as privileged: it accepts only a successful trusted
+main release, bootstraps only the upstream exact SHA, verifies that SHA is still
+current `main`, retains read-only `GITHUB_TOKEN` permissions, re-verifies the
+protected environment immediately before access, and executes only the GET-only
+Timeweb adapter. It never consumes artifacts or code from an untrusted PR.
+
+Official GitHub references:
+
+- https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows
+- https://docs.github.com/en/actions/reference/security/secure-use
 
 ## Why Public API, not Timeweb Terraform mutation yet
 

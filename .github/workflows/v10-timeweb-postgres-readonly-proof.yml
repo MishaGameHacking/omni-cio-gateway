@@ -1,6 +1,13 @@
 name: V10 RU-PG-B Timeweb Read-Only Proof
 
 on:
+  workflow_run:
+    workflows:
+      - V10 Cloudflare Production Release
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,11 +21,16 @@ concurrency:
 jobs:
   environment-policy-proof:
     name: Verify Timeweb environment main-only policy
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
     env:
-      EXPECTED_HEAD: ${{ github.sha }}
+      EXPECTED_HEAD: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      EXPECTED_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
 
     steps:
       - name: Expose installed Git Bash
@@ -36,7 +48,7 @@ jobs:
           GCM_INTERACTIVE: "0"
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/main"
+          test "$EXPECTED_BRANCH" = "main"
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           bootstrap_succeeded=0
           for bootstrap_attempt in 1 2 3; do
@@ -49,7 +61,9 @@ jobs:
             git config --local http.lowSpeedLimit 1000
             git config --local http.lowSpeedTime 60
             fetch_status=0
-            git fetch --no-tags --prune --depth=1 origin "$EXPECTED_HEAD" || fetch_status=$?
+            git fetch --no-tags --prune --depth=1 origin \
+              "$EXPECTED_HEAD" \
+              refs/heads/main:refs/remotes/origin/main || fetch_status=$?
             git config --local --unset-all credential.helper 2>/dev/null || true
             if [ "$fetch_status" -eq 0 ]; then
               bootstrap_succeeded=1
@@ -63,6 +77,7 @@ jobs:
           test "$bootstrap_succeeded" -eq 1
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
       - name: Bootstrap protected runner Python
@@ -94,12 +109,17 @@ jobs:
   read-only-proof:
     name: Timeweb PostgreSQL 18 read-only provider proof
     needs: environment-policy-proof
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main')
     environment: timeweb-synthetic
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
     env:
-      EXPECTED_HEAD: ${{ github.sha }}
+      EXPECTED_HEAD: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      EXPECTED_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
 
     steps:
       - name: Expose installed Git Bash
@@ -117,7 +137,7 @@ jobs:
           GCM_INTERACTIVE: "0"
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/main"
+          test "$EXPECTED_BRANCH" = "main"
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           bootstrap_succeeded=0
           for bootstrap_attempt in 1 2 3; do
@@ -130,7 +150,9 @@ jobs:
             git config --local http.lowSpeedLimit 1000
             git config --local http.lowSpeedTime 60
             fetch_status=0
-            git fetch --no-tags --prune --depth=1 origin "$EXPECTED_HEAD" || fetch_status=$?
+            git fetch --no-tags --prune --depth=1 origin \
+              "$EXPECTED_HEAD" \
+              refs/heads/main:refs/remotes/origin/main || fetch_status=$?
             git config --local --unset-all credential.helper 2>/dev/null || true
             if [ "$fetch_status" -eq 0 ]; then
               bootstrap_succeeded=1
@@ -144,6 +166,7 @@ jobs:
           test "$bootstrap_succeeded" -eq 1
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
       - name: Bootstrap protected runner Python
