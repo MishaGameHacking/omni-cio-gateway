@@ -17,6 +17,7 @@ RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_PUBLIC_IPV4_TLS_RUNBOO
 CREATE_CONTRACT = (
     ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_CREATE_CONTRACT.json"
 )
+READ_ONLY_PROBE = ROOT / "scripts/probe_v10_timeweb_postgres_control_plane.py"
 
 _SCHEMA = "omni-cio.v10.ru-postgres-timeweb-public-ipv4-tls.v1"
 _STAGE = "RU-PG-B_TIMEWEB_PUBLIC_IPV4_TLS_TRANSPORT"
@@ -396,6 +397,7 @@ def _validate_create_transport() -> None:
 
 def _validate_sources() -> None:
     provisioner = _read(PROVISIONER)
+    read_only_probe = _read(READ_ONLY_PROBE)
     discoverer = _read(DISCOVERER)
     workflow = _read(WORKFLOW)
     runbook = _read(RUNBOOK)
@@ -414,6 +416,20 @@ def _validate_sources() -> None:
     )
     if "print(cidr)" in discoverer or "print(first)" in discoverer:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_VERIFIER_LOGGING_FORBIDDEN")
+
+    _markers(
+        read_only_probe,
+        (
+            "TARGET_PROVIDER_REPLICA_LIST_COUNT = 1",
+            "ADDITIONAL_PAID_REPLICATION_AUTHORIZED = False",
+            "def _provider_replica_list_count(",
+            "def _require_target_replica_topology(",
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
+            "TIMEWEB_CLUSTER_REPLICA_MEMBER_DUPLICATE",
+            "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT",
+        ),
+        "TIMEWEB_PUBLIC_IPV4_REPLICA_ADAPTER_DRIFT",
+    )
 
     _markers(
         provisioner,
@@ -441,7 +457,6 @@ def _validate_sources() -> None:
             "read_only._require_target_cluster_disk(",
             "read_only._require_target_replica_topology(",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
-            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
             'f"/api/v1/firewall/service/{FIREWALL_RESOURCE_TYPE}/{cluster_id}"',
             _READY_MARKER,
         ),
