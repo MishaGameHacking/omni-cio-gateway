@@ -209,6 +209,22 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PUBLIC_IPV4_NETWORK_SHAPE_INVALID",
     )
 
+    disk_units = _mapping(
+        payload.get("provider_disk_units"),
+        "TIMEWEB_PUBLIC_IPV4_DISK_UNITS_INVALID",
+    )
+    _require(
+        disk_units,
+        {
+            "preset_disk_unit": "MB",
+            "cluster_disk_size_unit": "KB",
+            "cluster_kb_per_preset_mb": 1024,
+            "exact_integer_cluster_size_required": True,
+            "target_cluster_disk_kb": 20971520,
+        },
+        "TIMEWEB_PUBLIC_IPV4_DISK_UNITS_INVALID",
+    )
+
     provider_api = _mapping(
         payload.get("provider_api"),
         "TIMEWEB_PUBLIC_IPV4_API_BOUNDARY_INVALID",
@@ -394,6 +410,8 @@ def _validate_sources() -> None:
             "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE",
             "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE",
             "TIMEWEB_PREEXISTING_PUBLIC_IPV6_UNSAFE",
+            "read_only._require_target_cluster_disk(",
+            "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
             'f"/api/v1/firewall/service/{FIREWALL_RESOURCE_TYPE}/{cluster_id}"',
             _READY_MARKER,
         ),
@@ -442,6 +460,7 @@ def _validate_sources() -> None:
             "TCP/5432",
             "/32",
             "verify-full",
+            "20971520 KB",
             _READY_MARKER,
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
             "RU-PG-C remains locked",

@@ -35,6 +35,15 @@ The exact address is not repository content and is not emitted in the sanitized
 success marker. This /32 is RU-PG-B synthetic-proof authority only. It is not a
 Cloudflare production-egress contract and is not inherited by RU-PG-C.
 
+## Provider disk unit contract
+
+The pre-mutation cluster-shape proof reuses the same Timeweb unit contract as the
+synthetic-create recovery path: DB preset `disk` is MB, but
+`DatabaseCluster.disk.size` returned by cluster GET is KB. The accepted target
+is therefore `20480 MB` at preset selection and exactly `20971520 KB` at
+cluster verification. Fractional, undersized, oversized or malformed values fail
+closed before firewall or public-network mutation.
+
 ## Firewall-first invariant
 
 Before public networking may be enabled, provider evidence must prove:
@@ -152,3 +161,5 @@ RU-PG-C remains locked.
 - https://developers.cloudflare.com/fundamentals/reference/cdn-cgi-endpoint/
 - https://github.com/timeweb-cloud/twc
 - https://github.com/timeweb-cloud/sdk-javascript
+- https://github.com/timeweb-cloud/sdk-go/blob/main/docs/PresetsDbs.md
+- https://github.com/timeweb-cloud/sdk-go/blob/main/docs/DatabaseClusterDisk.md

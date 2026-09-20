@@ -102,6 +102,8 @@ Official references:
 - https://timeweb.cloud/docs/dbaas/postgresql/roles
 - https://github.com/timeweb-cloud/sdk-go/blob/main/docs/DatabasesAPI.md
 - https://github.com/timeweb-cloud/sdk-go/blob/main/docs/CreateCluster.md
+- https://github.com/timeweb-cloud/sdk-go/blob/main/docs/PresetsDbs.md
+- https://github.com/timeweb-cloud/sdk-go/blob/main/docs/DatabaseClusterDisk.md
 
 ## Manual workflow
 
@@ -148,6 +150,19 @@ The Timeweb API documents that a successful create may return while the resource
 still starting. The workflow therefore uses state-aware GET verification until
 `status=started` or a bounded timeout is reached; exact terminal shape is required
 before READY is emitted.
+
+### Provider disk unit contract
+
+Timeweb exposes two different disk units on the provider surfaces used here. The
+DB preset field `disk` is reported in MB, while the created
+`DatabaseCluster.disk.size` field returned by cluster GET is reported in KB.
+Therefore the accepted 20 GB target is `20480 MB` during preset selection and
+must be exactly `20971520 KB` during cluster verification.
+
+The verifier accepts only an exact positive integral provider value. It does not
+round, truncate or apply tolerance: undersize, oversize, fractional or malformed
+cluster disk values fail closed. This prevents a provider-unit mismatch from
+either producing a false drift or hiding a real disk drift.
 
 ## Live recovery after accepted POST
 

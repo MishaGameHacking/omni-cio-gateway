@@ -223,14 +223,10 @@ def _cluster(
         POSTGRES_PORT
     ):
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_PORT_DRIFT")
-    disk = _provider_base._json_object(
-        cluster.get("disk"),
-        "TIMEWEB_CLUSTER_DISK_INVALID",
+    read_only._require_target_cluster_disk(
+        cluster,
+        drift_code="TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
     )
-    if _numeric_id(disk.get("size"), "TIMEWEB_CLUSTER_DISK_INVALID") != (
-        read_only.TARGET_DISK_MB
-    ):
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_SHAPE_DRIFT")
     replicas = _provider_base._json_list(
         cluster.get("replica_list"),
         "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",

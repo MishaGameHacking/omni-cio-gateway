@@ -355,6 +355,31 @@ class TimewebControlPlaneTests(unittest.TestCase):
         }
         probe._select_target_preset(payload, "postgres18")
 
+    def test_cluster_disk_unit_contract_accepts_exact_target(self) -> None:
+        cluster = {"disk": {"size": 20_971_520}}
+        self.assertEqual(probe._cluster_disk_size_kb(cluster), probe.TARGET_DISK_KB)
+        probe._require_target_cluster_disk(cluster, drift_code="TEST_DISK_DRIFT")
+
+    def test_cluster_disk_unit_contract_rejects_true_drift(self) -> None:
+        for size in (20_971_519, 20_971_521):
+            with self.subTest(size=size), self.assertRaisesRegex(
+                probe._provider_base.ProvisioningStopped,
+                "TEST_DISK_DRIFT",
+            ):
+                probe._require_target_cluster_disk(
+                    {"disk": {"size": size}},
+                    drift_code="TEST_DISK_DRIFT",
+                )
+
+    def test_cluster_disk_unit_contract_rejects_fractional_provider_value(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            probe._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_DISK_INVALID",
+        ):
+            probe._cluster_disk_size_kb({"disk": {"size": 20_971_520.5}})
+
     def test_beta_preset_price_drift_fails_closed(self) -> None:
         payload = {
             "databases_presets": [
