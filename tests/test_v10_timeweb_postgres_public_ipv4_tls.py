@@ -300,7 +300,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             ),
             mock.patch.object(
                 provisioner,
-                "_create_floating_ip",
+                "_resolve_transport_ipv4",
                 return_value=("ip-1", "8.8.4.4", True),
             ),
             mock.patch.object(

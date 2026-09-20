@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 import ipaddress
 import json
 import os
@@ -18,6 +19,7 @@ from urllib.request import OpenerDirector, Request
 
 from scripts import probe_v10_timeweb_postgres_control_plane as read_only
 from scripts import provision_v10_render_neon_preview as _provider_base
+from scripts import timeweb_ipv4_custody as custody
 
 
 CONFIRMATION = "ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH"
@@ -210,7 +212,10 @@ def _safe_id(value: object, code: str) -> str:
 
 
 def _numeric_id(value: object, code: str) -> int:
-    if isinstance(value, bool):
+    if type(value) is not int and (
+        not isinstance(value, str)
+        or re.fullmatch(r"[1-9][0-9]{0,19}", value, re.ASCII) is None
+    ):
         raise _provider_base.ProvisioningStopped(code)
     try:
         number = int(value)
@@ -591,7 +596,7 @@ def _verify_safe_narrow_rule(
 
 
 def _floating_ips(api: read_only.TimewebReadOnlyApi) -> list[dict[str, Any]]:
-    return _rows(api, "/api/v1/floating-ips", "ips")
+    return custody.raw_inventory(api.get("/api/v1/floating-ips"))
 
 
 def _verify_floating_ip_row(row: dict[str, Any]) -> str:
@@ -615,27 +620,23 @@ def _bound_ip_for_cluster(
     rows: list[dict[str, Any]],
     cluster_id: int,
 ) -> dict[str, Any] | None:
-    matches: list[dict[str, Any]] = []
-    for row in rows:
-        if row.get("resource_type") != "database":
-            continue
-        try:
-            resource_id = int(row.get("resource_id"))
-        except (TypeError, ValueError):
-            continue
-        if resource_id == cluster_id:
-            matches.append(row)
+    # Canonical binding parser rejects missing fields and numeric coercion.
+    parsed = custody.inventory(rows)
+    matches = [
+        row
+        for row in parsed
+        if row.resource_type in {"database", "dbaas"}
+        and row.resource_id == str(cluster_id)
+    ]
     if len(matches) > 1:
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_MULTIPLE_IPV4_BOUND")
-    return matches[0] if matches else None
+    if not matches:
+        return None
+    return next(row for row in rows if row["id"] == matches[0].identifier)
 
 
 def _is_unbound(row: dict[str, Any]) -> bool:
-    return row.get("resource_type") in {None, ""} and row.get("resource_id") in {
-        None,
-        0,
-        "",
-    }
+    return custody.is_unbound(row)
 
 
 def _create_floating_ip(
@@ -690,15 +691,14 @@ def _create_floating_ip(
             and row.get("availability_zone") == TARGET_ZONE
             and row.get("is_ddos_guard") is False
         ]
-        if len(safe) == 1:
-            row = safe[0]
-            return (
-                _safe_id(row.get("id"), "TIMEWEB_FLOATING_IP_ID_INVALID"),
-                _verify_floating_ip_row(row),
-                True,
-            )
         if len(new_rows) > 1:
             break
+        if len(safe) == 1:
+            # Visibility is not a create receipt: another account operator could
+            # have created the only delta. Preserve it; never stamp guessed custody.
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_FLOATING_IP_CREATE_RECEIPT_UNPROVEN"
+            )
         time.sleep(delay)
     raise _provider_base.ProvisioningStopped(
         "TIMEWEB_FLOATING_IP_CREATE_RECONCILIATION_REQUIRED"
@@ -830,7 +830,9 @@ def _delete_created_ipv4_if_unbound(
     ]
     if not target:
         return
-    if len(target) != 1 or not _is_unbound(target[0]):
+    if len(target) != 1:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_IPV4_CLEANUP_NOT_UNIQUE")
+    if not _is_unbound(target[0]):
         return
     try:
         mutation.mutate_once(
@@ -841,7 +843,14 @@ def _delete_created_ipv4_if_unbound(
             reconcile_statuses=frozenset({404, 409, 423}),
         )
     except AmbiguousMutation:
-        return
+        pass
+    for attempt in range(len(_RECONCILE_DELAYS_SECONDS) + 1):
+        rows = _floating_ips(api)
+        if not any(row.get("id") == floating_id for row in rows):
+            return
+        if attempt < len(_RECONCILE_DELAYS_SECONDS):
+            time.sleep(_RECONCILE_DELAYS_SECONDS[attempt])
+    raise _provider_base.ProvisioningStopped("TIMEWEB_IPV4_CLEANUP_ABSENCE_UNPROVEN")
 
 
 def _fetch_ca_file(
@@ -985,6 +994,41 @@ def _converge_firewall(
     return group_id
 
 
+def _stamp_created_ipv4(
+    mutation: TimewebMutationApi,
+    floating_id: str,
+    management_marker: str,
+) -> None:
+    # The caller has just verified the current-create receipt and exact GET delta.
+    # This is metadata only; never send ptr or change another resource's comment.
+    try:
+        mutation.mutate_once(
+            "PATCH",
+            f"/api/v1/floating-ips/{floating_id}",
+            operation="FLOATING_IP_CUSTODY_STAMP",
+            body={"comment": management_marker},
+            expected_statuses=frozenset({200}),
+            reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
+        )
+    except AmbiguousMutation:
+        # The caller proves the exact stored association by bounded GETs.
+        return
+
+
+def _preflight_ipv4_custody(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    initial: dict[str, Any],
+) -> None:
+    rows = custody.inventory(_floating_ips(api))
+    _provider_base._emit(custody.observation(rows, cluster_id))
+    custody.select(
+        rows,
+        cluster_id,
+        public_enabled=initial.get("is_enabled_public_network"),
+    )
+
+
 def _resolve_transport_ipv4(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
@@ -992,19 +1036,15 @@ def _resolve_transport_ipv4(
     *,
     preexisting_public_network: bool,
 ) -> tuple[str, str, bool]:
-    existing_bound = _bound_ip_for_cluster(_floating_ips(api), cluster_id)
-    if existing_bound is not None:
-        floating_id = _safe_id(
-            existing_bound.get("id"),
-            "TIMEWEB_FLOATING_IP_ID_INVALID",
-        )
-        return floating_id, _verify_floating_ip_row(existing_bound), False
-
-    if preexisting_public_network:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PUBLIC_NETWORK_WITHOUT_MANAGED_IPV4"
-        )
-    return _create_floating_ip(mutation, api)
+    return custody.resolve(
+        partial(_floating_ips, api),
+        partial(_create_floating_ip, mutation, api),
+        partial(_stamp_created_ipv4, mutation),
+        partial(_delete_created_ipv4_if_unbound, mutation, api),
+        cluster_id,
+        public_enabled=preexisting_public_network,
+        emit=_provider_base._emit,
+    )
 
 
 def _verify_tls_transport(cluster: dict[str, Any]) -> None:
@@ -1046,6 +1086,7 @@ def _configure_transport(
     created_this_run = False
     public_exposure_possible = preexisting_public_network
     try:
+        _preflight_ipv4_custody(api, cluster_id, initial)
         group_id = _converge_firewall(mutation, api, cluster_id, cidr)
         floating_id, address, created_this_run = _resolve_transport_ipv4(
             mutation,
@@ -1082,7 +1123,7 @@ def _configure_transport(
         raise
 
 
-def provision() -> None:
+def _provision_transport() -> None:
     _required_confirmation()
     cidr = _required_verifier_cidr()
     token = _provider_base._required_env(read_only.TOKEN_ENV)
@@ -1111,6 +1152,13 @@ def provision() -> None:
         "firewall=DROP ingress=tcp/5432 source=/32 ipv4=verified "
         "ipv6=off ddos=off tls=verify-full"
     )
+
+
+def provision() -> None:
+    try:
+        _provision_transport()
+    except custody.CustodyStopped as exc:
+        raise _provider_base.ProvisioningStopped(str(exc)) from None
 
 
 def _stopped_marker(exc: _provider_base.ProvisioningStopped) -> str:

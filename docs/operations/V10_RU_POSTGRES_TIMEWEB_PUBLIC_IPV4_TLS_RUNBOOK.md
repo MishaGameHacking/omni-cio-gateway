@@ -172,6 +172,105 @@ is already ready. A fresh protected-main live run is still required after this r
 accepted. Any new RED must be diagnosed from its operation-specific sanitized marker
 before another provider mutation attempt.
 
+## Live RED #2 - IPv4 custody and restart recovery
+
+Run `35519666168`, after PR #573, stopped before another IPv4 create with
+`TIMEWEB_UNMANAGED_FREE_IPV4_PRESENT`. That proves that the old parser saw an
+unbound-shaped row, not its origin, zone, exact identity or ownership. A missing
+binding field was also previously treated as empty. Do not infer that run #1
+created this address or that it is safe to adopt it.
+
+The defect class is `TIMEWEB_PUBLIC_IPV4_RECOVERY_PROVENANCE_GAP`. The old state
+machine remembered `created_this_run` only in process memory, had no durable
+management association, and stopped on every unbound row. Its source guard checked
+happy-path markers, while mutation mocks did not exercise crash/restart custody,
+ambiguous create attribution or cleanup confirmation. The guard against arbitrary
+IP adoption was correct and is retained, not suppressed.
+
+The shared custody adapter now normalizes complete inventories, rejects duplicate
+IDs/addresses, missing/malformed binding fields and incomplete `meta.total`, and
+emits only aggregate counts. The inventory preflight occurs before firewall
+convergence; unsafe pre-existing public exposure still takes the existing emergency
+close path first. No caller may interpret `None`, an invalid response or a failed
+GET as an empty account.
+
+Selection is intentionally narrow:
+
+- an exact target-bound IPv4 may be reused after two agreeing GET observations;
+- one unbound IPv4 can be recovered only with an exact management association for
+  this repository, stage, target cluster, address identity and address value;
+- an unmarked or unrelated unbound IPv4 still stops with
+  `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`;
+- ambiguous/multiple candidates, wrong zone, DDoS-enabled resources, reassignment
+  or conflicting target associations stop before purchase/bind authority;
+- a new address is eligible only when no conflicting resource exists. There is
+  exactly one POST. A successful create receipt must match the unique fresh GET
+  delta before any comment is stamped.
+
+A unique GET delta alone is not a create receipt: an independent account operator
+could have created it. An ambiguous create therefore reconciles visibility by GET
+but does not stamp, adopt, delete or blindly retry a resource without a receipt.
+`TIMEWEB_FLOATING_IP_CREATE_RECEIPT_UNPROVEN` is a reconciliation boundary.
+
+The current Timeweb SDK separates `CreateFloatingIp` from `UpdateFloatingIp`:
+create accepts zone/DDoS fields; `comment` is set by a separate PATCH returning
+HTTP 200. The sole added mutation is
+`PATCH /api/v1/floating-ips/{floating_ip_id}` with a comment-only body and operation
+`FLOATING_IP_CUSTODY_STAMP`. It cannot change PTR, zone, DDoS or a binding. The
+comment prefix is `omni-cio:ru-pg-b:ipv4:v1:` with a SHA-256 target/resource digest.
+Neither that digest nor private identifiers enter log output.
+
+This comment is a management association inside the already trusted provider
+account. It is not a signature, immutable creation history or protection against
+an administrator with provider-write authority. It must never be retroactively
+written to today's unmarked address merely because it has compatible settings.
+The workflow concurrency lock does not serialize unrelated dashboard/API writers;
+those writers must remain frozen during the transition. Repeated GETs detect
+observed drift but do not provide provider-side atomic compare-and-set semantics.
+
+Create and stamp are NOT atomic. A crash before stamping can leave an unmarked
+resource requiring separate external reconciliation. A confirmed managed orphan
+can be recovered without another purchase; its `created_this_run` remains false,
+so same-run cleanup cannot delete it. A stamp failure may clean only the exact
+verified resource created during that attempt, while still unbound and without a
+foreign comment. DELETE is not retried; GET must prove absence. Failed rollback or
+unproven cleanup stays STOPPED and requires reconciliation.
+
+### Read-only evidence and current legacy blocker
+
+The existing protected-main Read-Only Proof also executes
+`python -m scripts.probe_v10_timeweb_ipv4_custody` using the existing single
+step-scoped Timeweb credential. Its source gate runs before provider access.
+The observer uses GET only and does not import the mutation adapter. It emits:
+
+`TIMEWEB_RU_PG_IPV4_INVENTORY=OBSERVED`
+
+and a separate static `TIMEWEB_RU_PG_IPV4_RECOVERY=BLOCKED` or
+`TIMEWEB_RU_PG_IPV4_RECOVERY=ELIGIBLE` disposition. A successful read-only run can
+correctly report BLOCKED; it proves observation, not transport or SQL readiness.
+Malformed/unavailable evidence makes the observer itself fail, rather than making
+an empty-inventory or activation claim.
+
+For today's unmarked IPv4, first obtain this sanitized observation on accepted
+main. If provenance remains unproved, stop. Do not request keys, addresses, account
+IDs or DSNs in chat, purchase another IP, delete it, or stamp a guessed association.
+A later bounded reconciliation needs provider-verifiable custody or separate
+explicit OWNER allocation authority, plus its own accepted contract. This repair
+does not grant that authority. Unbound addresses continue to be billed by Timeweb;
+"free" means unattached, not zero-cost. No additional purchase is authorized here.
+
+Only after source acceptance and the relevant custody disposition is resolved may
+one new main-bound manual transport verification run proceed. The required result
+remains `TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY`; RU-PG-B SQL parity and RU-PG-C remain
+separate and locked until their prerequisites are proved.
+
+Provider schema references checked on 2026-09-20:
+
+- https://github.com/timeweb-cloud/sdk-python/blob/main/docs/CreateFloatingIp.md
+- https://github.com/timeweb-cloud/sdk-python/blob/main/docs/UpdateFloatingIp.md
+- https://github.com/timeweb-cloud/sdk-python/blob/main/docs/FloatingIp.md
+- https://github.com/timeweb-cloud/sdk-python/blob/main/timeweb_cloud_api/api/floating_ip_api.py
+
 ## Success marker
 
 Only this sanitized marker is accepted:

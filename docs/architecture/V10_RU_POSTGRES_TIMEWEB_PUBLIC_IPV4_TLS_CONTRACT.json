@@ -95,7 +95,8 @@
     ],
     "patch_endpoints": [
       "/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
-      "/api/v2/databases/{cluster_id}"
+      "/api/v2/databases/{cluster_id}",
+      "/api/v1/floating-ips/{floating_ip_id}"
     ],
     "delete_endpoint_for_created_ipv4_cleanup_only": "/api/v1/floating-ips/{floating_ip_id}",
     "redirects_allowed": false,
@@ -165,5 +166,32 @@
       423
     ],
     "blind_mutation_retry_allowed": false
+  },
+  "ipv4_custody": {
+    "observed_failed_run": 35519666168,
+    "observed_terminal_code": "TIMEWEB_UNMANAGED_FREE_IPV4_PRESENT",
+    "unmarked_existing_adoption_allowed": false,
+    "managed_orphan_recovery_requires_exact_association": true,
+    "marker_prefix": "omni-cio:ru-pg-b:ipv4:v1:",
+    "marker_is_cryptographic_authentication": false,
+    "stamp_requires_current_create_receipt_and_exact_get_delta": true,
+    "stamp_operation": "FLOATING_IP_CUSTODY_STAMP",
+    "stamp_body_fields": [
+      "comment"
+    ],
+    "stamp_http_status": 200,
+    "pre_firewall_inventory_required": true,
+    "recovery_requires_two_equal_get_observations": true,
+    "recovered_resource_cleanup_allowed": false,
+    "created_resource_cleanup_requires_get_absence_proof": true,
+    "create_and_stamp_are_atomic": false,
+    "crash_before_stamp_requires_external_reconciliation": true,
+    "diagnostic_methods": [
+      "GET"
+    ],
+    "diagnostic_output": "COUNTS_AND_STATIC_DISPOSITION_ONLY",
+    "diagnostic_proves_network_readiness": false,
+    "diagnostic_proves_sql_parity": false,
+    "ambiguous_create_delta_is_ownership_proof": false
   }
 }
