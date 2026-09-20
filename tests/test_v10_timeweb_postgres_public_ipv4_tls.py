@@ -54,6 +54,30 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             },
         )
 
+    def test_cluster_shape_rejects_mb_value_on_kb_provider_surface(self) -> None:
+        api = mock.Mock()
+        api.get.return_value = {
+            "db": {
+                "name": "omni-cio-v10-ru-pg-synthetic",
+                "location": "ru-3",
+                "availability_zone": "msk-1",
+                "cpu": 1,
+                "ram": 2048,
+                "port": 5432,
+                "disk": {"size": 20480},
+                "is_enabled_public_ipv6": False,
+                "is_autobackups_enabled": False,
+                "is_backup_schedule_enabled": False,
+                "replica_list": [],
+                "disk_autoscaling": {"is_enabled": False},
+            }
+        }
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
+        ):
+            provisioner._cluster(api, 91)
+
     def test_public_patch_keeps_ipv6_off_and_tls_on(self) -> None:
         mutation = mock.Mock()
         api = mock.Mock()
@@ -64,7 +88,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "cpu": 1,
             "ram": 2048,
             "port": 5432,
-            "disk": {"size": 20480},
+            "disk": {"size": 20_971_520},
             "is_enabled_public_network": True,
             "is_enabled_public_ipv6": False,
             "is_secure_connection_enabled": True,

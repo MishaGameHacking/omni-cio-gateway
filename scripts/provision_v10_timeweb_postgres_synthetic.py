@@ -232,17 +232,6 @@ def _create_or_reconcile(
         )
 
 
-def _disk_size(cluster: dict[str, Any]) -> int:
-    disk = _provider_base._json_object(
-        cluster.get("disk"),
-        "TIMEWEB_CLUSTER_DISK_INVALID",
-    )
-    return read_only._number(
-        disk.get("size"),
-        "TIMEWEB_CLUSTER_DISK_INVALID",
-    )
-
-
 def _verify_disk_autoscaling(cluster: dict[str, Any]) -> None:
     value = cluster.get("disk_autoscaling")
     if value is None:
@@ -338,8 +327,10 @@ def _verify_terminal_shape(
     )
     for key, value, code in expected:
         _require_exact(cluster, key, value, code)
-    if _disk_size(cluster) != read_only.TARGET_DISK_MB:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_DISK_SIZE_DRIFT")
+    read_only._require_target_cluster_disk(
+        cluster,
+        drift_code="TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
+    )
     replicas = _provider_base._json_list(
         cluster.get("replica_list"),
         "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
@@ -374,12 +365,16 @@ def _verify_starting_shape(
             raise _provider_base.ProvisioningStopped(code)
 
     disk = cluster.get("disk")
-    if (
-        isinstance(disk, dict)
-        and disk.get("size") is not None
-        and _disk_size(cluster) != read_only.TARGET_DISK_MB
-    ):
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_DISK_SIZE_DRIFT")
+    if disk is not None:
+        disk_object = _provider_base._json_object(
+            disk,
+            "TIMEWEB_CLUSTER_DISK_INVALID",
+        )
+        if disk_object.get("size") is not None:
+            read_only._require_target_cluster_disk(
+                cluster,
+                drift_code="TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
+            )
 
     _reject_explicit_unsafe_starting_state(cluster)
 

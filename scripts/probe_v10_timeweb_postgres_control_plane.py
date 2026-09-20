@@ -20,6 +20,8 @@ TARGET_LOCATION = "ru-3"
 TARGET_CPU = 1
 TARGET_RAM_MB = 2048
 TARGET_DISK_MB = 20 * 1024
+PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB = 1024
+TARGET_DISK_KB = TARGET_DISK_MB * PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB
 TARGET_PRICE_RUB = Decimal("790")
 MAX_RESPONSE_BYTES = 1024 * 1024
 _RETRY_DELAYS_SECONDS = (1.0, 2.0)
@@ -205,6 +207,40 @@ def _number(value: object, code: str) -> int:
     except (TypeError, ValueError):
         raise _provider_base.ProvisioningStopped(code) from None
     return number
+
+
+def _exact_provider_positive_integer(value: object, code: str) -> int:
+    if isinstance(value, bool):
+        raise _provider_base.ProvisioningStopped(code)
+    if isinstance(value, int):
+        number = value
+    elif isinstance(value, float) and value.is_integer():
+        number = int(value)
+    else:
+        raise _provider_base.ProvisioningStopped(code)
+    if number <= 0:
+        raise _provider_base.ProvisioningStopped(code)
+    return number
+
+
+def _cluster_disk_size_kb(cluster: dict[str, Any]) -> int:
+    disk = _provider_base._json_object(
+        cluster.get("disk"),
+        "TIMEWEB_CLUSTER_DISK_INVALID",
+    )
+    return _exact_provider_positive_integer(
+        disk.get("size"),
+        "TIMEWEB_CLUSTER_DISK_INVALID",
+    )
+
+
+def _require_target_cluster_disk(
+    cluster: dict[str, Any],
+    *,
+    drift_code: str,
+) -> None:
+    if _cluster_disk_size_kb(cluster) != TARGET_DISK_KB:
+        raise _provider_base.ProvisioningStopped(drift_code)
 
 
 def _price(value: object) -> Decimal:

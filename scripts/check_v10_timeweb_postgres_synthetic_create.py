@@ -307,6 +307,22 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _require(target, expected_target, "TIMEWEB_SYNTHETIC_CREATE_TARGET_INVALID")
     _validate_transport_state(transport, target, require_ready=False)
 
+    disk_units = _mapping(
+        payload.get("provider_disk_units"),
+        "TIMEWEB_SYNTHETIC_CREATE_DISK_UNITS_INVALID",
+    )
+    _require(
+        disk_units,
+        {
+            "preset_disk_unit": "MB",
+            "cluster_disk_size_unit": "KB",
+            "cluster_kb_per_preset_mb": 1024,
+            "exact_integer_cluster_size_required": True,
+            "target_cluster_disk_kb": 20971520,
+        },
+        "TIMEWEB_SYNTHETIC_CREATE_DISK_UNITS_INVALID",
+    )
+
     api = _mapping(
         payload.get("api_boundary"),
         "TIMEWEB_SYNTHETIC_CREATE_API_BOUNDARY_INVALID",
@@ -450,6 +466,10 @@ def _validate_read_only_probe_reuse() -> None:
         (
             'TARGET_CLUSTER_NAME = "omni-cio-v10-ru-pg-synthetic"',
             'TARGET_LOCATION = "ru-3"',
+            "PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB = 1024",
+            "TARGET_DISK_KB = TARGET_DISK_MB * PROVIDER_CLUSTER_DISK_KB_PER_PRESET_MB",
+            "def _cluster_disk_size_kb(",
+            "def _require_target_cluster_disk(",
             'TARGET_PRICE_RUB = Decimal("790")',
             "def _select_target_preset(payload: object, provider_type: str) -> int:",
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT",
@@ -476,6 +496,7 @@ def _validate_provisioner() -> None:
             '"existing-recovery"',
             "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
+            "read_only._require_target_cluster_disk(",
             '"disk_autoscaling": {"is_enabled": False}',
             '"is_public_ipv6": False',
             '"TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY "',
@@ -600,6 +621,7 @@ def _validate_runbook() -> None:
             "Reconciliation",
             _CONFIRMATION,
             "TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY",
+            "20971520 KB",
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
             "Neon production authority",
             "RU-PG-C remains",

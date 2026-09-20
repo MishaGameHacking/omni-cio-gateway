@@ -143,5 +143,12 @@
     "REAL_TRADING_ENABLED": false,
     "protected_v9_entrypoint": "app:app",
     "ru_pg_c_allowed": false
+  },
+  "provider_disk_units": {
+    "preset_disk_unit": "MB",
+    "cluster_disk_size_unit": "KB",
+    "cluster_kb_per_preset_mb": 1024,
+    "exact_integer_cluster_size_required": true,
+    "target_cluster_disk_kb": 20971520
   }
 }
