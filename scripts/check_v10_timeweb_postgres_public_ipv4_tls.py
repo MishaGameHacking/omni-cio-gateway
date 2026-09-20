@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import sys
@@ -288,6 +289,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         {
             "/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
             "/api/v2/databases/{cluster_id}",
+            "/api/v1/floating-ips/{floating_ip_id}",
         },
         "TIMEWEB_PUBLIC_IPV4_API_BOUNDARY_INVALID",
     )
@@ -556,8 +558,189 @@ def _validate_sources() -> None:
     )
 
 
+def _validate_ipv4_custody_contract(payload: dict[str, Any]) -> None:
+    expected = {
+        "observed_failed_run": 35519666168,
+        "observed_terminal_code": "TIMEWEB_UNMANAGED_FREE_IPV4_PRESENT",
+        "unmarked_existing_adoption_allowed": False,
+        "managed_orphan_recovery_requires_exact_association": True,
+        "marker_prefix": "omni-cio:ru-pg-b:ipv4:v1:",
+        "marker_is_cryptographic_authentication": False,
+        "stamp_requires_current_create_receipt_and_exact_get_delta": True,
+        "stamp_operation": "FLOATING_IP_CUSTODY_STAMP",
+        "stamp_body_fields": ["comment"],
+        "stamp_http_status": 200,
+        "pre_firewall_inventory_required": True,
+        "recovery_requires_two_equal_get_observations": True,
+        "recovered_resource_cleanup_allowed": False,
+        "created_resource_cleanup_requires_get_absence_proof": True,
+        "create_and_stamp_are_atomic": False,
+        "crash_before_stamp_requires_external_reconciliation": True,
+        "diagnostic_methods": ["GET"],
+        "diagnostic_output": "COUNTS_AND_STATIC_DISPOSITION_ONLY",
+        "diagnostic_proves_network_readiness": False,
+        "diagnostic_proves_sql_parity": False,
+        "ambiguous_create_delta_is_ownership_proof": False,
+    }
+    _require(
+        payload.get("ipv4_custody"),
+        expected,
+        "TIMEWEB_IPV4_CUSTODY_CONTRACT_INVALID",
+    )
+
+
+def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
+    matches = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("TIMEWEB_IPV4_CUSTODY_SOURCE_INVALID")
+    return matches[0]
+
+
+def _validate_custody_stamp(tree: ast.Module) -> None:
+    function = _function(tree, "_stamp_created_ipv4")
+    calls = [
+        node
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "mutate_once"
+    ]
+    if len(calls) != 1:
+        raise RuntimeError("TIMEWEB_IPV4_CUSTODY_STAMP_INVALID")
+    expected = ast.parse(
+        'mutation.mutate_once("PATCH", '
+        'f"/api/v1/floating-ips/{floating_id}", '
+        'operation="FLOATING_IP_CUSTODY_STAMP", '
+        'body={"comment": management_marker}, '
+        "expected_statuses=frozenset({200}), "
+        "reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES)",
+        mode="eval",
+    ).body
+    _require(
+        ast.dump(calls[0]),
+        ast.dump(expected),
+        "TIMEWEB_IPV4_CUSTODY_STAMP_INVALID",
+    )
+
+
+def _validate_custody_order(tree: ast.Module) -> None:
+    function = _function(tree, "_configure_transport")
+    blocks = [node for node in function.body if isinstance(node, ast.Try)]
+    if len(blocks) != 1 or len(blocks[0].body) < 2:
+        raise RuntimeError("TIMEWEB_IPV4_CUSTODY_ORDER_INVALID")
+    first, second = blocks[0].body[:2]
+    _require(
+        ast.dump(first),
+        ast.dump(
+            ast.parse("_preflight_ipv4_custody(api, cluster_id, initial)").body[0]
+        ),
+        "TIMEWEB_IPV4_CUSTODY_ORDER_INVALID",
+    )
+    _require(
+        ast.dump(second),
+        ast.dump(
+            ast.parse(
+                "group_id = _converge_firewall(mutation, api, cluster_id, cidr)"
+            ).body[0]
+        ),
+        "TIMEWEB_IPV4_CUSTODY_ORDER_INVALID",
+    )
+
+
+def _validate_custody_probe(source: str) -> None:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if isinstance(node.func.value, ast.Name) and node.func.value.id == "api":
+                _require(node.func.attr, "get", "TIMEWEB_IPV4_DIAGNOSTIC_WRITE")
+    for forbidden in (
+        "TimewebMutationApi",
+        "mutate_once",
+        "provision_v10_timeweb_postgres_public_ipv4_tls",
+        "::add-mask::",
+        "getattr(",
+        "__import__(",
+        "eval(",
+        "exec(",
+        "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+        "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
+    ):
+        if forbidden in source:
+            raise RuntimeError("TIMEWEB_IPV4_DIAGNOSTIC_WRITE_OR_OVERCLAIM")
+    _markers(
+        source,
+        (
+            'api.get("/api/v1/floating-ips")',
+            "custody.raw_inventory(",
+            "custody.observation(",
+            "custody.disposition(",
+            "TIMEWEB_RU_PG_IPV4_INVENTORY=STOPPED",
+        ),
+        "TIMEWEB_IPV4_DIAGNOSTIC_SOURCE_INVALID",
+    )
+
+
+def _validate_ipv4_custody_sources() -> None:
+    source = _read(PROVISIONER)
+    tree = ast.parse(source)
+    _validate_custody_stamp(tree)
+    _validate_custody_order(tree)
+    _markers(
+        source,
+        (
+            "custody.resolve(",
+            "custody.raw_inventory(",
+            "custody.is_unbound(",
+            "except custody.CustodyStopped as exc:",
+            "TIMEWEB_FLOATING_IP_CREATE_RECEIPT_UNPROVEN",
+            "TIMEWEB_IPV4_CLEANUP_ABSENCE_UNPROVEN",
+        ),
+        "TIMEWEB_IPV4_CUSTODY_SOURCE_INVALID",
+    )
+    helper = _read(ROOT / "scripts/timeweb_ipv4_custody.py")
+    _markers(
+        helper,
+        (
+            "TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED",
+            "TIMEWEB_IPV4_CUSTODY_RECOVERY_DRIFT",
+            "TIMEWEB_IPV4_CREATE_RECEIPT_NOT_UNIQUE",
+            "TIMEWEB_IPV4_CUSTODY_CLEANUP_UNPROVEN",
+            "TIMEWEB_IPV4_INVENTORY_INCOMPLETE",
+            "TIMEWEB_RU_PG_IPV4_INVENTORY=OBSERVED",
+            "TIMEWEB_RU_PG_IPV4_RECOVERY=BLOCKED",
+        ),
+        "TIMEWEB_IPV4_CUSTODY_HELPER_INVALID",
+    )
+    _validate_custody_probe(_read(ROOT / "scripts/probe_v10_timeweb_ipv4_custody.py"))
+    workflow = _read(ROOT / ".github/workflows/v10-timeweb-postgres-readonly-proof.yml")
+    command = "python -m scripts.probe_v10_timeweb_ipv4_custody"
+    _require(workflow.count(command), 1, "TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID")
+    _require(
+        workflow.count("python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py"),
+        2,
+        "TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID",
+    )
+    _require(
+        workflow.count("secrets.TIMEWEB_CLOUD_API_TOKEN"),
+        1,
+        "TIMEWEB_IPV4_DIAGNOSTIC_SECRET_SCOPE_INVALID",
+    )
+    _markers(
+        workflow,
+        (command + "\n          if errorlevel 1 exit /b 1",),
+        "TIMEWEB_IPV4_DIAGNOSTIC_FAILURE_PROPAGATION_INVALID",
+    )
+
+
 def validate() -> None:
-    _validate_contract(_load(CONTRACT))
+    payload = _load(CONTRACT)
+    _validate_contract(payload)
+    _validate_ipv4_custody_contract(payload)
+    _validate_ipv4_custody_sources()
     _validate_create_transport()
     _validate_sources()
 
