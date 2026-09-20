@@ -309,14 +309,15 @@ def _select_target_preset(payload: object, provider_type: str) -> int:
 
 
 def _cluster_id(value: object) -> str:
+    invalid_code = "TIMEWEB_CLUSTER_ID_INVALID"
     if isinstance(value, int) and not isinstance(value, bool):
         text = str(value)
     elif isinstance(value, str):
         text = value.strip()
     else:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_ID_INVALID")
+        raise _provider_base.ProvisioningStopped(invalid_code)
     if _PROVIDER_ID_PATTERN.fullmatch(text) is None or int(text) <= 0:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_ID_INVALID")
+        raise _provider_base.ProvisioningStopped(invalid_code)
     return text
 
 
@@ -361,7 +362,6 @@ def _replica_topology_observation(
             value,
             "TIMEWEB_CLUSTER_REPLICA_LIST_INVALID",
         )
-        _cluster_id(row.get("id"))
         if _cluster_id(row.get("db_id")) != expected_cluster_id:
             raise _provider_base.ProvisioningStopped(
                 "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT"
