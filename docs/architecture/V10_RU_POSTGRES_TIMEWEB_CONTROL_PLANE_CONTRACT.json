@@ -81,8 +81,9 @@
     "base_monthly_price_rub": 790,
     "public_ipv4_authorized": false,
     "backup_storage_addon_authorized": false,
-    "replica_count": 1,
-    "auto_scaling_authorized": false
+    "auto_scaling_authorized": false,
+    "provider_replica_list_count": 1,
+    "additional_paid_replication_authorized": false
   },
   "infrastructure_as_code": {
     "timeweb_terraform_mutation_allowed": false,
@@ -123,7 +124,7 @@
     "accepted_marker": "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED",
     "sanitized_output_fields": [
       "replica_list_count",
-      "contract_replica_count",
+      "contract_replica_list_count",
       "relation",
       "semantics"
     ],
@@ -131,6 +132,35 @@
     "response_body_logging_allowed": false,
     "mutation_allowed": false,
     "provider_semantics_resolved": false,
-    "paid_replica_authority_inferred_from_observation": false
+    "paid_replica_authority_inferred_from_observation": false,
+    "accepted_provider_baseline_count": 1,
+    "accepted_live_evidence_workflow_run": 35507498165,
+    "accepted_live_evidence_exact_main_sha_parts": [
+      "3a96dfe8",
+      "8e99aac7",
+      "54d89497",
+      "25122295",
+      "dd957429"
+    ],
+    "additional_paid_replication_authorized": false
+  },
+  "canonical_replica_topology": {
+    "provider_field": "replica_list",
+    "expected_provider_replica_list_count": 1,
+    "accepted_live_evidence_workflow_run": 35507498165,
+    "accepted_live_evidence_exact_main_sha_parts": [
+      "3a96dfe8",
+      "8e99aac7",
+      "54d89497",
+      "25122295",
+      "dd957429"
+    ],
+    "terminal_exact_count_required": true,
+    "starting_missing_or_empty_allowed": true,
+    "cluster_custody_field": "db_id",
+    "cross_cluster_members_forbidden": true,
+    "duplicate_member_ids_forbidden": true,
+    "additional_paid_replication_authorized": false,
+    "provider_semantics_resolved": false
   }
 }

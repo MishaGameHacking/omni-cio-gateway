@@ -125,5 +125,24 @@
     "cluster_kb_per_preset_mb": 1024,
     "exact_integer_cluster_size_required": true,
     "target_cluster_disk_kb": 20971520
+  },
+  "provider_replica_topology": {
+    "provider_field": "replica_list",
+    "expected_provider_replica_list_count": 1,
+    "accepted_live_evidence_workflow_run": 35507498165,
+    "accepted_live_evidence_exact_main_sha_parts": [
+      "3a96dfe8",
+      "8e99aac7",
+      "54d89497",
+      "25122295",
+      "dd957429"
+    ],
+    "terminal_exact_count_required": true,
+    "starting_missing_or_empty_allowed": true,
+    "cluster_custody_field": "db_id",
+    "cross_cluster_members_forbidden": true,
+    "duplicate_member_ids_forbidden": true,
+    "additional_paid_replication_authorized": false,
+    "provider_semantics_resolved": false
   }
 }

@@ -11,7 +11,7 @@
     "30c995d3"
   ],
   "prerequisite_evidence": {
-    "read_only_workflow_run": 35465650177,
+    "read_only_workflow_run": 35507498165,
     "environment_gate_marker": "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY",
     "read_only_marker": "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
     "postgres_major": 18,
@@ -20,7 +20,10 @@
     "ram_mb": 2048,
     "disk_mb": 20480,
     "base_monthly_price_rub": 790,
-    "target_cluster_name_available": true
+    "target_cluster_name_available": false,
+    "existing_target": true,
+    "replica_list_count": 1,
+    "replica_topology_relation": "matches_contract_count"
   },
   "authority": {
     "owner_base_cost_approval_recorded": true,
@@ -65,9 +68,9 @@
     "public_ipv4_authorized": true,
     "public_ipv6_authorized": false,
     "backup_addon_authorized": false,
-    "replicas_authorized": false,
     "disk_autoscaling_authorized": false,
-    "production_data_allowed": false
+    "production_data_allowed": false,
+    "additional_paid_replication_authorized": false
   },
   "api_boundary": {
     "get_endpoints": [
@@ -128,9 +131,10 @@
     "public_ipv6_must_be_disabled": true,
     "autobackups_must_be_disabled": true,
     "backup_schedule_must_be_disabled": true,
-    "replica_list_must_be_empty": true,
     "disk_autoscaling_must_be_disabled": true,
-    "sanitized_marker": "TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY"
+    "sanitized_marker": "TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY",
+    "canonical_replica_topology_verification_required": true,
+    "provider_replica_list_count_must_equal": 1
   },
   "protected_invariants": {
     "current_neon_production_authority_preserved": true,
@@ -150,5 +154,24 @@
     "cluster_kb_per_preset_mb": 1024,
     "exact_integer_cluster_size_required": true,
     "target_cluster_disk_kb": 20971520
+  },
+  "provider_replica_topology": {
+    "provider_field": "replica_list",
+    "expected_provider_replica_list_count": 1,
+    "accepted_live_evidence_workflow_run": 35507498165,
+    "accepted_live_evidence_exact_main_sha_parts": [
+      "3a96dfe8",
+      "8e99aac7",
+      "54d89497",
+      "25122295",
+      "dd957429"
+    ],
+    "terminal_exact_count_required": true,
+    "starting_missing_or_empty_allowed": true,
+    "cluster_custody_field": "db_id",
+    "cross_cluster_members_forbidden": true,
+    "duplicate_member_ids_forbidden": true,
+    "additional_paid_replication_authorized": false,
+    "provider_semantics_resolved": false
   }
 }

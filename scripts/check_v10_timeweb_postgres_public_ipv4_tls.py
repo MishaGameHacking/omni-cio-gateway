@@ -209,6 +209,34 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PUBLIC_IPV4_NETWORK_SHAPE_INVALID",
     )
 
+    topology = _mapping(
+        payload.get("provider_replica_topology"),
+        "TIMEWEB_PUBLIC_IPV4_REPLICA_TOPOLOGY_INVALID",
+    )
+    _require(
+        topology,
+        {
+            "provider_field": "replica_list",
+            "expected_provider_replica_list_count": 1,
+            "accepted_live_evidence_workflow_run": 35507498165,
+            "accepted_live_evidence_exact_main_sha_parts": [
+                "3a96dfe8",
+                "8e99aac7",
+                "54d89497",
+                "25122295",
+                "dd957429",
+            ],
+            "terminal_exact_count_required": True,
+            "starting_missing_or_empty_allowed": True,
+            "cluster_custody_field": "db_id",
+            "cross_cluster_members_forbidden": True,
+            "duplicate_member_ids_forbidden": True,
+            "additional_paid_replication_authorized": False,
+            "provider_semantics_resolved": False,
+        },
+        "TIMEWEB_PUBLIC_IPV4_REPLICA_TOPOLOGY_INVALID",
+    )
+
     disk_units = _mapping(
         payload.get("provider_disk_units"),
         "TIMEWEB_PUBLIC_IPV4_DISK_UNITS_INVALID",
@@ -411,7 +439,9 @@ def _validate_sources() -> None:
             "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE",
             "TIMEWEB_PREEXISTING_PUBLIC_IPV6_UNSAFE",
             "read_only._require_target_cluster_disk(",
+            "read_only._require_target_replica_topology(",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
             'f"/api/v1/firewall/service/{FIREWALL_RESOURCE_TYPE}/{cluster_id}"',
             _READY_MARKER,
         ),
@@ -424,6 +454,7 @@ def _validate_sources() -> None:
         "NEON_API_KEY",
         "ssl.CERT_NONE",
         "check_hostname = False",
+        "TIMEWEB_CLUSTER_REPLICAS_PRESENT",
     ):
         if forbidden in provisioner:
             raise RuntimeError("TIMEWEB_PUBLIC_IPV4_AUTHORITY_WIDENED")
@@ -461,6 +492,8 @@ def _validate_sources() -> None:
             "/32",
             "verify-full",
             "20971520 KB",
+            "provider replica-list baseline count is exactly `1`",
+            "additional paid replication remains unauthorized",
             _READY_MARKER,
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
             "RU-PG-C remains locked",

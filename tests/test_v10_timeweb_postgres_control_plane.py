@@ -472,6 +472,53 @@ class TimewebControlPlaneTests(unittest.TestCase):
             1,
         )
 
+    def test_target_replica_topology_accepts_live_baseline(self) -> None:
+        cluster = {
+            "replica_list": [
+                {"id": 501, "db_id": 99},
+            ]
+        }
+        self.assertEqual(
+            probe._require_target_replica_topology(
+                cluster,
+                expected_cluster_id="99",
+            ),
+            1,
+        )
+
+    def test_target_replica_topology_rejects_count_drift(self) -> None:
+        cluster = {
+            "replica_list": [
+                {"id": 501, "db_id": 99},
+                {"id": 502, "db_id": 99},
+                {"id": 503, "db_id": 99},
+            ]
+        }
+        with self.assertRaisesRegex(
+            probe._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
+        ):
+            probe._require_target_replica_topology(
+                cluster,
+                expected_cluster_id="99",
+            )
+
+    def test_target_replica_topology_rejects_duplicate_member_id(self) -> None:
+        cluster = {
+            "replica_list": [
+                {"id": 501, "db_id": 99},
+                {"id": 501, "db_id": 99},
+            ]
+        }
+        with self.assertRaisesRegex(
+            probe._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_REPLICA_MEMBER_DUPLICATE",
+        ):
+            probe._require_target_replica_topology(
+                cluster,
+                expected_cluster_id="99",
+            )
+
     def test_replica_topology_rejects_cross_cluster_row(self) -> None:
         payload = {
             "db": {
@@ -489,7 +536,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 expected_cluster_id="99",
             )
 
-    def test_replica_topology_marker_is_sanitized_and_semantics_unresolved(
+    def test_replica_topology_marker_is_sanitized_count_only_baseline(
         self,
     ) -> None:
         with mock.patch.object(probe._provider_base, "_emit") as emit:
@@ -498,8 +545,8 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertEqual(
             marker,
             "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED "
-            "replica_list_count=1 contract_replica_count=1 "
-            "relation=matches_contract_count semantics=UNRESOLVED",
+            "replica_list_count=1 contract_replica_list_count=1 "
+            "relation=matches_contract_count semantics=COUNT_ONLY_BASELINE",
         )
         self.assertNotIn("cluster_id", marker)
         self.assertNotIn("replica_id", marker)
@@ -568,7 +615,8 @@ class TimewebControlPlaneTests(unittest.TestCase):
         rendered = " ".join(call.args[0] for call in emit.call_args_list)
         self.assertIn("TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED", rendered)
         self.assertIn("replica_list_count=1", rendered)
-        self.assertIn("semantics=UNRESOLVED", rendered)
+        self.assertIn("contract_replica_list_count=1", rendered)
+        self.assertIn("semantics=COUNT_ONLY_BASELINE", rendered)
         self.assertNotIn("cluster_id", rendered)
         self.assertNotIn("replica_id", rendered)
         self.assertNotIn("local_ip", rendered)

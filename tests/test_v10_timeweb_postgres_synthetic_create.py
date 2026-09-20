@@ -343,7 +343,7 @@ def _verify_terminal_shape():
                 "is_enabled_public_ipv6": False,
                 "is_autobackups_enabled": False,
                 "is_backup_schedule_enabled": False,
-                "replica_list": [],
+                "replica_list": [{"id": 501, "db_id": 91}],
                 "disk_autoscaling": {"is_enabled": False},
                 "status": "started",
             }
@@ -357,6 +357,70 @@ def _verify_terminal_shape():
             ),
             "started",
         )
+
+    def test_terminal_shape_rejects_replica_topology_count_drift(self) -> None:
+        payload = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "availability_zone": "msk-1",
+                "cpu": 1,
+                "ram": 2048,
+                "preset_id": 777,
+                "disk": {"size": 20_971_520},
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+                "is_autobackups_enabled": False,
+                "is_backup_schedule_enabled": False,
+                "replica_list": [
+                    {"id": 501, "db_id": 91},
+                    {"id": 502, "db_id": 91},
+                    {"id": 503, "db_id": 91},
+                ],
+                "disk_autoscaling": {"is_enabled": False},
+                "status": "started",
+            }
+        }
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
+        ):
+            provisioner._verify_cluster_shape(
+                payload,
+                expected_cluster_id=91,
+                provider_type="postgres18",
+                preset_id=777,
+            )
+
+    def test_starting_shape_rejects_explicit_replica_topology_drift(self) -> None:
+        payload = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "status": "starting",
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+                "replica_list": [
+                    {"id": 501, "db_id": 91},
+                    {"id": 502, "db_id": 91},
+                    {"id": 503, "db_id": 91},
+                ],
+            }
+        }
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_CLUSTER_REPLICA_TOPOLOGY_DRIFT",
+        ):
+            provisioner._verify_cluster_shape(
+                payload,
+                expected_cluster_id=91,
+                provider_type="postgres18",
+                preset_id=777,
+            )
 
     def test_public_network_after_create_fails_closed(self) -> None:
         payload = {
@@ -374,7 +438,7 @@ def _verify_terminal_shape():
                 "is_enabled_public_ipv6": False,
                 "is_autobackups_enabled": False,
                 "is_backup_schedule_enabled": False,
-                "replica_list": [],
+                "replica_list": [{"id": 501, "db_id": 91}],
                 "disk_autoscaling": {"is_enabled": False},
                 "status": "started",
             }
@@ -451,7 +515,7 @@ def _verify_terminal_shape():
                 "is_enabled_public_ipv6": False,
                 "is_autobackups_enabled": False,
                 "is_backup_schedule_enabled": False,
-                "replica_list": [],
+                "replica_list": [{"id": 501, "db_id": 91}],
                 "disk_autoscaling": {"is_enabled": False},
                 "status": "started",
             }
