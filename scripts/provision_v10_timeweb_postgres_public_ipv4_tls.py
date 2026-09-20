@@ -214,7 +214,7 @@ def _safe_id(value: object, code: str) -> str:
 def _numeric_id(value: object, code: str) -> int:
     if type(value) is not int and (
         not isinstance(value, str)
-        or re.fullmatch(r"[1-9][0-9]{0,19}", value, re.ASCII) is None
+        or re.fullmatch(r"[1-9]\d{0,19}", value, re.ASCII) is None
     ):
         raise _provider_base.ProvisioningStopped(code)
     try:

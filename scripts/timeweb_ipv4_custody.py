@@ -32,7 +32,7 @@ class CustodyStopped(RuntimeError):
 @dataclass(frozen=True, slots=True, repr=False)
 class Address:
     identifier: str
-    address: str
+    ip_address: str
     zone: str
     ddos: bool
     resource_type: str | None
@@ -66,7 +66,10 @@ def _binding_identifier(kind: str, identifier: object) -> str:
     if type(identifier) is int and identifier > 0:
         return str(identifier)
     if isinstance(identifier, str) and _ID.fullmatch(identifier) is not None:
-        if kind in _DB_TYPES and re.fullmatch(r"[1-9][0-9]{0,19}", identifier) is None:
+        if (
+            kind in _DB_TYPES
+            and re.fullmatch(r"[1-9]\d{0,19}", identifier, re.ASCII) is None
+        ):
             raise CustodyStopped("TIMEWEB_IPV4_BINDING_STATE_UNKNOWN")
         return identifier
     raise CustodyStopped("TIMEWEB_IPV4_BINDING_STATE_UNKNOWN")
@@ -127,7 +130,7 @@ def inventory(payload: object) -> tuple[Address, ...]:
     result = tuple(_row(row) for row in payload)
     if len({row.identifier for row in result}) != len(result):
         raise CustodyStopped("TIMEWEB_IPV4_INVENTORY_DUPLICATE_ID")
-    if len({row.address for row in result}) != len(result):
+    if len({row.ip_address for row in result}) != len(result):
         raise CustodyStopped("TIMEWEB_IPV4_INVENTORY_DUPLICATE_ADDRESS")
     return result
 
@@ -164,7 +167,7 @@ def marker(cluster_id: int, row: Address) -> str:
         _target(cluster_id),
         ZONE,
         row.identifier,
-        row.address,
+        row.ip_address,
     ]
     encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()
@@ -266,7 +269,7 @@ DeleteOnce = Callable[[str], None]
 def _same_identity(actual: Address, expected: Address) -> bool:
     return (
         actual.identifier == expected.identifier
-        and actual.address == expected.address
+        and actual.ip_address == expected.ip_address
         and actual.zone == expected.zone
         and actual.ddos == expected.ddos
     )
@@ -287,7 +290,7 @@ def _created_receipt(
     if len(new_rows) != 1:
         raise CustodyStopped("TIMEWEB_IPV4_CREATE_RECEIPT_NOT_UNIQUE")
     row = new_rows[0]
-    if row.identifier != identifier or row.address != address or not row.unbound:
+    if row.identifier != identifier or row.ip_address != address or not row.unbound:
         raise CustodyStopped("TIMEWEB_IPV4_CREATE_RECEIPT_DRIFT")
     _shape(row)
     if row.comment:
@@ -392,7 +395,7 @@ def resolve(
         )
         if fresh != selected:
             raise CustodyStopped("TIMEWEB_IPV4_CUSTODY_RECOVERY_DRIFT")
-        return selected.identifier, selected.address, False
+        return selected.identifier, selected.ip_address, False
     receipt = create_once()
     created = _wait_created_receipt(read_rows, before, receipt, sleeper=sleeper)
     try:
@@ -404,4 +407,4 @@ def resolve(
         except Exception:
             raise CustodyStopped("TIMEWEB_IPV4_CUSTODY_CLEANUP_UNPROVEN") from None
         raise
-    return verified.identifier, verified.address, True
+    return verified.identifier, verified.ip_address, True

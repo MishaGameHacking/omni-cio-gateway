@@ -616,8 +616,8 @@ def _validate_custody_stamp(tree: ast.Module) -> None:
         'f"/api/v1/floating-ips/{floating_id}", '
         'operation="FLOATING_IP_CUSTODY_STAMP", '
         'body={"comment": management_marker}, '
-        'expected_statuses=frozenset({200}), '
-        'reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES)',
+        "expected_statuses=frozenset({200}), "
+        "reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES)",
         mode="eval",
     ).body
     _require(
@@ -635,7 +635,9 @@ def _validate_custody_order(tree: ast.Module) -> None:
     first, second = blocks[0].body[:2]
     _require(
         ast.dump(first),
-        ast.dump(ast.parse("_preflight_ipv4_custody(api, cluster_id, initial)").body[0]),
+        ast.dump(
+            ast.parse("_preflight_ipv4_custody(api, cluster_id, initial)").body[0]
+        ),
         "TIMEWEB_IPV4_CUSTODY_ORDER_INVALID",
     )
     _require(
@@ -714,9 +716,7 @@ def _validate_ipv4_custody_sources() -> None:
         "TIMEWEB_IPV4_CUSTODY_HELPER_INVALID",
     )
     _validate_custody_probe(_read(ROOT / "scripts/probe_v10_timeweb_ipv4_custody.py"))
-    workflow = _read(
-        ROOT / ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
-    )
+    workflow = _read(ROOT / ".github/workflows/v10-timeweb-postgres-readonly-proof.yml")
     command = "python -m scripts.probe_v10_timeweb_ipv4_custody"
     _require(workflow.count(command), 1, "TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID")
     _require(
