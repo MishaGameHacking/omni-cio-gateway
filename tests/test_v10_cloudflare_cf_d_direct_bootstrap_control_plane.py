@@ -43,15 +43,19 @@ def _workflow_job(source: str, job_id: str, next_job_id: str | None) -> str:
     return source[start:end]
 
 
+def _workflow_job_header(section: str) -> str:
+    return section.split("    steps:\n", 1)[0]
+
+
 _load_legacy_tests()
 
 
-def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
+def test_archived_production_release_preserves_runtime_provisioner_evidence() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     adapter = HOSTED_ADAPTER.read_text(encoding="utf-8")
     rehearse = _workflow_job(source, "rehearse", "bootstrap_production_database")
     hosted = _workflow_job(source, "bootstrap_production_database", "promote")
-    promote = _workflow_job(source, "promote", None)
+    promote = _workflow_job(source, "promote", "release_outcome")
 
     anchor_name = (
         "      - name: Bootstrap production Worker anchor without public route if "
@@ -74,7 +78,16 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert "NEON_API_KEY:" not in probe
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in probe
 
-    assert "needs.rehearse.outputs.production_bootstrap_required == 'true'" in hosted
+    rehearse_header = _workflow_job_header(rehearse)
+    hosted_header = _workflow_job_header(hosted)
+    promote_header = _workflow_job_header(promote)
+    for header in (rehearse_header, hosted_header, promote_header):
+        assert "if: ${{ false }}" in header
+        assert "false &&" not in header
+
+    assert "needs.rehearse.outputs.production_bootstrap_required == 'true'" not in (
+        hosted_header
+    )
     assert "runs-on: ubuntu-24.04" in hosted
     assert "python -m scripts.bootstrap_v10_cloudflare_neon_hosted_egress" in bootstrap
     assert "bootstrap-production" in bootstrap
@@ -108,8 +121,8 @@ def test_production_release_uses_project_scoped_runtime_provisioner() -> None:
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in confirm
     assert "NEON_FUNCTION_DEPLOY_API_KEY" not in source
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in source
-    assert (
-        "needs.bootstrap_production_database.result == 'success'" in promote
+    assert "needs.bootstrap_production_database.result == 'success'" not in (
+        promote_header
     )
 
 

@@ -41,8 +41,8 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - First checkpoint state: `RED_REPAIR_ONLY`
 - First material RED: Engineering Governance on PR #582
 - Root cause of that RED: historical Cloudflare closeout guard still required a former current-state status marker after Amendment 18 reclassified the accepted Cloudflare update as historical archive evidence
-- Replacement checkpoint: pending after a consolidated authority-drift correction batch
-- Next exact action: publish one replacement head containing formatter, archive-regression and current Telegram/Timeweb authority corrections, then run a fresh exact-head DRAFT cycle
+- Replacement checkpoint: `9527e5974b3cf673a870386590fac228e80a87a3` completed all observed DRAFT checks except the authoritative Windows Regression Shield
+- Next exact action: publish one coherent historical-test-consumer correction head, then run a fresh exact-head DRAFT cycle
 - Scope/non-goals still intact: YES
 - Main drift since accepted base: NONE observed at branch creation
 
@@ -122,6 +122,9 @@ Split decision: **PR #582 is the mandatory security/authority + live-evidence ac
 - Adjacent regression review found `tests/test_v10_cloudflare_cf_d_hosted_egress_recovery.py` still asserting the retired live CF-D DAG rather than archive-in-place hard-disable semantics.
 - Current-state review found Telegram legal/readiness contracts, runbooks, privacy inventory/policy and activation ledger still treating former Cloudflare/Neon evidence as current readiness. Amendment 18 makes that state false: Timeweb revalidation is required and Cloudflare/Neon evidence is historical only.
 - Correction batch rule: repair all three classes together, remove current readiness dependence on retired `wrangler.jsonc`, preserve historical evidence, keep public-user flags false, and add regression tests before publishing the next head.
+- Fifth exact-head RED on `9527e5974b3cf673a870386590fac228e80a87a3`: Engineering Governance, Fast PR, Toolchain and all observed WP audits succeeded; authoritative Windows static quality also succeeded, then full Regression Shield failed only 3 assertions after `3629 passed`.
+- Exact failing consumers: `tests/test_v10_cloudflare_cf_d_direct_bootstrap_control_plane.py` and `tests/test_v10_cloudflare_neon_authority_preflight.py` still required former conditional live activation expressions (`needs.*bootstrap_required == 'true'`) even though Amendment 18 correctly hard-disables every retired production-release job with unconditional `if: ${{ false }}`.
+- Systemic correction: historical tests must prove two facts simultaneously — legacy recovery implementation/evidence remains preserved, while every retired provider job is unconditionally non-executable and no old `needs.*` expression can reactivate it. Job extraction is bounded so assertions cannot accidentally pass by matching a later historical job.
 
 Only `CERTIFIED_GREEN` permits TW-B.
 
@@ -136,6 +139,7 @@ Only `CERTIFIED_GREEN` permits TW-B.
 | Ruff formatting drift in authority guards | correction commits changed Python guard layout without a final local formatter pass | 5 changed guard files | authoritative Windows static-quality gate | exact-head RED before deeper tests | pre-publish batch review did not include formatter-equivalent verification on the replacement head | canonical formatting correction plus fresh exact-head verification |
 | Retired CF-D regression consumer remained live-shaped | workflow producer became archive-in-place but one test still asserted former live dependency/result semantics | CF-D archive workflow + recovery regression test | pytest / Regression Shield | hidden future RED after formatter repair | provider-retirement guard checked workflow itself but not every historical test consumer | rewrite the test to assert archive/hard-disable invariants and preserve historical evidence markers |
 | Telegram activation state still bound to retired Cloudflare/Neon | provider authority changed without invalidating capability-specific readiness evidence and Cloudflare deployment-config dependencies | Telegram readiness/legal contracts, guards, runbooks, privacy docs, activation ledger | future TW-F activation | false readiness / unsafe activation decision / stale privacy statements | Amendment-18 guard validated general service set but not every capability-specific current-state consumer | rebind current readiness to Timeweb, mark old proof historical, remove active `wrangler.jsonc` dependency, keep activation fail-closed |
+| Historical Cloudflare tests still required live job conditions | archived workflow producer changed to unconditional hard-disable while two test consumers preserved former conditional activation assertions | 2 test modules / 3 assertions, plus adjacent job-slicing helpers | full Regression Shield | authoritative merge RED; future false-positive assertions by matching later job text | initial retirement review covered workflow/guards and one recovery test but missed two independent historical consumers | assert unconditional archive disable, forbid former conditional activation in job headers, bound job slicing to the exact historical job |
 
 ## 9. Integration-ready preflight
 

@@ -63,6 +63,12 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
                 marker_index = source.index(marker)
                 self.assertLess(probe_index, marker_index)
 
+    def _assert_archived_job(self, section: str) -> str:
+        header = section.split("    steps:\n", 1)[0]
+        self.assertIn("if: ${{ false }}", header)
+        self.assertNotIn("false &&", header)
+        return header
+
     def _assert_hosted_runtime_authority_chain(self, environment: str) -> None:
         adapter = self._read(HOSTED_ADAPTER)
         runtime = self._read(RUNTIME_PROVISIONER)
@@ -77,8 +83,10 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         mutation_index = runtime.index("import psycopg", provider_index)
         self.assertLess(provider_index, mutation_index)
 
-    def test_candidate_neon_authority_is_read_before_provider_mutation(self) -> None:
+    def test_archived_candidate_preserves_neon_preflight_evidence(self) -> None:
         source = self._read(CANDIDATE_WORKFLOW)
+        candidate = self._workflow_job(source, "candidate", None)
+        self._assert_archived_job(candidate)
         self._assert_probe_precedes(
             source,
             (
@@ -130,10 +138,15 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertNotIn("NEON_ORG_ID:", probe)
         self.assertNotIn("NEON_PROJECT_ID:", probe)
 
-        self.assertIn(
+        inspect_header = self._assert_archived_job(inspect)
+        hosted_staging_header = self._assert_archived_job(hosted_staging)
+        rehearse_header = self._assert_archived_job(rehearse)
+        self.assertNotIn(
             "needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'",
-            hosted_staging,
+            hosted_staging_header,
         )
+        self.assertIn("if: ${{ false }}", inspect_header)
+        self.assertIn("if: ${{ false }}", rehearse_header)
         self.assertIn("runs-on: ubuntu-24.04", hosted_staging)
         self.assertIn(HOSTED_BOOTSTRAP, bootstrap)
         self.assertIn("bootstrap-staging", bootstrap)
@@ -163,7 +176,7 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
             "bootstrap_production_database",
             "promote",
         )
-        promote = self._workflow_job(source, "promote", None)
+        promote = self._workflow_job(source, "promote", "release_outcome")
         probe = self._workflow_step(rehearse, "Probe production database secret")
         bootstrap = self._workflow_step(
             hosted_production,
@@ -179,10 +192,15 @@ class CloudflareNeonAuthorityPreflightTests(unittest.TestCase):
         self.assertIn(RUNTIME_AUTHORITY_BINDING, bootstrap)
         self.assertIn(NEON_ORG_BINDING, bootstrap)
         self.assertIn(FUNCTION_PROJECT_BINDING, bootstrap)
-        self.assertIn(
+        rehearse_header = self._assert_archived_job(rehearse)
+        hosted_production_header = self._assert_archived_job(hosted_production)
+        promote_header = self._assert_archived_job(promote)
+        self.assertNotIn(
             "needs.rehearse.outputs.production_bootstrap_required == 'true'",
-            hosted_production,
+            hosted_production_header,
         )
+        self.assertIn("if: ${{ false }}", rehearse_header)
+        self.assertIn("if: ${{ false }}", promote_header)
         self.assertNotIn(LEGACY_FUNCTION_BOOTSTRAP, bootstrap)
         self.assertNotIn(FUNCTION_DEPLOY_BINDING, bootstrap)
         self.assertNotIn("NEON_FUNCTION_INVOKE_API_TOKEN", bootstrap)
