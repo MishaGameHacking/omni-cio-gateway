@@ -312,8 +312,8 @@ def _validate_documents() -> None:
         "Timeweb Cloud",
         "Telegram Login",
         "VK ID — RETIRED",
-        "Cloudflare — RETIRE",
-        "Neon — RETIRE",
+        "Cloudflare — OWNER reports its external account/resources/domain zone/secrets",
+        "Neon — OWNER reports its project/organization/API keys/account",
     ):
         _require(marker in amendment, "TIMEWEB_CONSOLIDATION_AMENDMENT_DRIFT")
 
