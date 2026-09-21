@@ -208,10 +208,14 @@ jobs:
       - name: Verify V10 Regression Shield and WP4 release contract
         run: python scripts\check_v10_regression_shield.py
 
-      - name: Compile policy release and boundary sources
+      - name: Compile complete repository Python surface
         run: >-
-          python -m compileall -q scripts omni_cio\contracts
-          omni_cio\plan_execution omni_cio\sandbox omni_cio\real_trading
+          python -m compileall -q
+          app.py app_v371.py app_v360.py main.py
+          portfolio_market.py portfolio_analytics.py cash_liquidity.py
+          purchase_capacity.py purchase_capacity_integrity.py
+          operations_analytics.py broker_report_reconciliation
+          omni_cio apps tests scripts
 
       - name: Run CI and release guard unit tests
         run: >-

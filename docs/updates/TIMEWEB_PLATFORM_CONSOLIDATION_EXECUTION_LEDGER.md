@@ -132,6 +132,7 @@ Split decision: **PR #582 is the mandatory security/authority + live-evidence ac
 - Seventh exact-head RED on `bbd14ec29260300090a0aa96eb6997c884042a71`: all observed non-Windows gates completed `success`, but the authoritative Windows gate failed during `compileall` before pytest. The generated correction in `tests/test_v10_cloudflare_system_update_closeout.py` contained literal `\\n` escape text inside a Python assertion, producing `SyntaxError: unexpected character after line continuation character`.
 - Root cause: correction publishing did not perform a syntax-equivalent preflight on every changed Python test after text substitution. The existing remote compile gate caught the defect correctly; no guard was weakened.
 - Correction: replace the malformed assertion with ordinary Python syntax, normalize the adjacent Timeweb regression-test formatting in the same batch, and require focused syntax/format review before publishing the replacement head.
+- Guard-gap follow-up: `V10 Fast PR Checks` compiled only `scripts` and selected `omni_cio` policy packages, so malformed Python in `tests/` or `apps/` could reach the authoritative Windows gate. The fast compile step is expanded to the complete repository Python source/test surface and a regression test freezes that coverage.
 
 Only `CERTIFIED_GREEN` permits TW-B.
 

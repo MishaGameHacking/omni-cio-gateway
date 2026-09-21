@@ -16,6 +16,7 @@ AMENDMENT = (
 )
 RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
 TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
+FAST_PR_WORKFLOW = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
 
 LIVE_GUIDANCE = (
     ROOT / "AGENTS.md",
@@ -189,6 +190,17 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert sonar["post_merge_in_progress_fallback_forbidden"] is True
         assert sonar["post_merge_in_progress_check_run_fallback_forbidden"] is True
         assert sonar["post_merge_failure_or_findings_fallback_forbidden"] is True
+
+    def test_fast_pr_compile_gate_covers_source_apps_and_tests(self) -> None:
+        workflow = FAST_PR_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Compile complete repository Python surface", workflow)
+        for marker in (
+            "python -m compileall -q",
+            "broker_report_reconciliation",
+            "omni_cio apps tests scripts",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, workflow)
 
     def test_targeted_workflow_pins_exact_requested_sha_and_toolchain(self) -> None:
         workflow = TARGETED_WORKFLOW.read_text(encoding="utf-8")
