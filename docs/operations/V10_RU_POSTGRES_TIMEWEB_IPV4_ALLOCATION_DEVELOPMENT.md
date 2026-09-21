@@ -161,6 +161,9 @@ The workflow shares the existing Timeweb network/TLS concurrency group so metada
 allocation and network mutation cannot race. PLAN and RECONCILE construct a
 read-only provider; APPLY alone constructs the comment writer after the durable
 claim and fresh OWNER/source/resource rechecks performed by the M1 protocol.
+Workflow-dispatch plan/approval/confirmation values are passed to Python through
+the process environment and validated there; they are never interpolated into a
+trusted Windows shell command.
 
 The provider adapter reuses the accepted bounded Timeweb GET and mutation
 transports. It requires the exact project/cluster shape, public network OFF,

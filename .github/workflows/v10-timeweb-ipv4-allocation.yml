@@ -213,10 +213,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
-        run: >-
-          python -m scripts.run_v10_timeweb_ipv4_allocation
-          --mode RECONCILE
-          --plan-id "${{ inputs.plan_id }}"
+          TIMEWEB_ALLOCATION_PLAN_ID: ${{ inputs.plan_id }}
+        run: python -m scripts.run_v10_timeweb_ipv4_allocation --mode RECONCILE
 
       - name: Clean protected runner workspace
         if: always()
@@ -306,12 +304,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
-        run: >-
-          python -m scripts.run_v10_timeweb_ipv4_allocation
-          --mode APPLY
-          --plan-id "${{ inputs.plan_id }}"
-          --approval-reference "${{ inputs.approval_comment_id }}"
-          --confirmation "${{ inputs.confirmation }}"
+          TIMEWEB_ALLOCATION_PLAN_ID: ${{ inputs.plan_id }}
+          TIMEWEB_ALLOCATION_APPROVAL_REFERENCE: ${{ inputs.approval_comment_id }}
+          TIMEWEB_ALLOCATION_CONFIRMATION: ${{ inputs.confirmation }}
+        run: python -m scripts.run_v10_timeweb_ipv4_allocation --mode APPLY
 
       - name: Clean protected runner workspace
         if: always()

@@ -261,6 +261,24 @@ class AllocationRunnerTests(unittest.TestCase):
                 )
             )
 
+    def test_parser_reads_dispatch_values_from_environment_without_shell(self) -> None:
+        plan_id = "1" * 32
+        with mock.patch.dict(
+            runner.os.environ,
+            {
+                "TIMEWEB_ALLOCATION_PLAN_ID": plan_id,
+                "TIMEWEB_ALLOCATION_APPROVAL_REFERENCE": "17",
+                "TIMEWEB_ALLOCATION_CONFIRMATION": allocation.ALLOCATE_CONFIRMATION,
+            },
+            clear=False,
+        ):
+            args = runner._parser().parse_args(["--mode", "APPLY"])
+
+        self.assertEqual(args.plan_id, plan_id)
+        self.assertEqual(args.approval_reference, "17")
+        self.assertEqual(args.confirmation, allocation.ALLOCATE_CONFIRMATION)
+        runner._validate_mode_inputs(args)
+
     def test_plan_constructs_read_only_provider(self) -> None:
         source = "a" * 40
         context = allocation.Context(source, source)

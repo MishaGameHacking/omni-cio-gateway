@@ -84,7 +84,9 @@
       "GET"
     ],
     "summary_private_identifiers_allowed": false,
-    "allocation_success_implies_transport_ready": false
+    "allocation_success_implies_transport_ready": false,
+    "dispatch_inputs_passed_via_environment_only": true,
+    "direct_shell_interpolation_of_dispatch_inputs_allowed": false
   },
   "protected_invariants": {
     "new_ipv4_purchase_allowed": false,

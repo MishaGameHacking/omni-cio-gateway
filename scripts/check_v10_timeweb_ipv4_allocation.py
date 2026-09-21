@@ -194,7 +194,11 @@ def validate_contract(data: dict[str, object]) -> None:
     _require(workflow.get("reconcile_provider_methods") == ["GET"])
     _flags(
         workflow,
-        ("protected_main_only", "provider_secret_step_scoped"),
+        (
+            "protected_main_only",
+            "provider_secret_step_scoped",
+            "dispatch_inputs_passed_via_environment_only",
+        ),
         True,
     )
     _flags(
@@ -203,6 +207,7 @@ def validate_contract(data: dict[str, object]) -> None:
             "initialize_provider_access_allowed",
             "summary_private_identifiers_allowed",
             "allocation_success_implies_transport_ready",
+            "direct_shell_interpolation_of_dispatch_inputs_allowed",
         ),
         False,
     )
@@ -401,6 +406,9 @@ def _validate_workflow() -> None:
         "--mode RECONCILE",
         "--mode APPLY",
         "ALLOCATE_EXISTING_TIMEWEB_IPV4_NO_CREATE_NO_DELETE",
+        "TIMEWEB_ALLOCATION_PLAN_ID: ${{ inputs.plan_id }}",
+        "TIMEWEB_ALLOCATION_APPROVAL_REFERENCE: ${{ inputs.approval_comment_id }}",
+        "TIMEWEB_ALLOCATION_CONFIRMATION: ${{ inputs.confirmation }}",
         "python scripts/check_v10_timeweb_ipv4_allocation.py",
         "python scripts/check_v10_provider_secret_custody.py",
         "python scripts/check_v10_timeweb_postgres_control_plane.py",
@@ -417,6 +425,9 @@ def _validate_workflow() -> None:
         "curl ",
         "Invoke-RestMethod",
         "Invoke-WebRequest",
+        '--plan-id "${{ inputs.plan_id }}"',
+        '--approval-reference "${{ inputs.approval_comment_id }}"',
+        '--confirmation "${{ inputs.confirmation }}"',
     ):
         _require(forbidden not in source)
     _require(

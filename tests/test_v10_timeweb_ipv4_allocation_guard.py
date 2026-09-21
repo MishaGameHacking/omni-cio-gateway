@@ -146,6 +146,8 @@ class ProtocolGuardTests(unittest.TestCase):
             ("initialize_provider_access_allowed", True),
             ("summary_private_identifiers_allowed", True),
             ("allocation_success_implies_transport_ready", True),
+            ("direct_shell_interpolation_of_dispatch_inputs_allowed", True),
+            ("dispatch_inputs_passed_via_environment_only", False),
             ("apply_github_permission", "issues: write"),
             ("non_apply_issue_permission", "issues: read"),
         )

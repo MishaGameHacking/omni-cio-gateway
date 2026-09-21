@@ -286,9 +286,18 @@ def _validate_mode_inputs(args: argparse.Namespace) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--mode", required=True, choices=sorted(_MODES))
-    parser.add_argument("--plan-id", default="")
-    parser.add_argument("--approval-reference", default="")
-    parser.add_argument("--confirmation", default="")
+    parser.add_argument(
+        "--plan-id",
+        default=os.environ.get("TIMEWEB_ALLOCATION_PLAN_ID", ""),
+    )
+    parser.add_argument(
+        "--approval-reference",
+        default=os.environ.get("TIMEWEB_ALLOCATION_APPROVAL_REFERENCE", ""),
+    )
+    parser.add_argument(
+        "--confirmation",
+        default=os.environ.get("TIMEWEB_ALLOCATION_CONFIRMATION", ""),
+    )
     return parser
 
 
