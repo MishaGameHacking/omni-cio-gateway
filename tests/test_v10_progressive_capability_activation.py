@@ -55,7 +55,6 @@ class ProgressiveCapabilityActivationTests(unittest.TestCase):
         }
         assert set(capabilities) == {
             "telegram_login",
-            "vk_id",
             "public_multi_user_tenant_access",
             "tinvest_read",
         }
@@ -115,10 +114,15 @@ class ProgressiveCapabilityActivationTests(unittest.TestCase):
         assert isinstance(runtime, dict)
         assert authority["product_progress_effect"] == "NONE"
         assert authority["runtime_mutation_effect"] == "NONE"
-        assert authority["product_implementation_paused_after_acceptance"] is True
-        assert authority["owner_start_command"] == (
-            "START V10 WEB VISUAL SYSTEM UPDATE"
+        assert authority["product_implementation_paused_after_acceptance"] is False
+        assert (
+            authority["current_system_update"]
+            == "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
         )
+        assert authority["owner_start_command"] is None
+        assert authority["amendment_18_current_overlay"] is True
+        assert authority["web_visual_paused"] is True
+        assert authority["wp23_plus_locked"] is True
         assert runtime["app_entrypoint"] == "app:app"
         assert runtime["PUBLIC_MULTI_USER_ENABLED"] is False
         assert runtime["trading_methods"] is False
@@ -160,7 +164,8 @@ class ProgressiveCapabilityActivationTests(unittest.TestCase):
 
         status = STATUS.read_text(encoding="utf-8")
         for marker in (
-            "PRODUCT IMPLEMENTATION PAUSED",
+            "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+            "Telegram Login = sole selected human product login provider",
             "Amendment 13 — progressive capability activation",
             "current runtime state, not a V10-wide release lock",
         ):
