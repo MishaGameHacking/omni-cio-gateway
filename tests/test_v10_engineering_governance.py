@@ -118,13 +118,13 @@ def test_owner_handoff_requires_direct_verified_link_and_stop_contract() -> None
     assert "Mandatory OWNER handoff format" in text
 
 
-def test_v10_public_runtime_is_cloudflare_workers_paid_and_not_owner_home() -> None:
+def test_v10_public_runtime_is_timeweb_and_not_owner_home() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     runtime = contract["runtime_hosting"]
 
     assert (
         runtime["v10_public_production_host"]
-        == "CLOUDFLARE_WORKERS_PAID_AFTER_OWNING_CUTOVER_GATE"
+        == "TIMEWEB_APP_PLATFORM_AFTER_OWNING_CUTOVER_GATE"
     )
     assert runtime["managed_cloud_runtime_required_for_public_product"] is True
     assert runtime["owner_home_or_lenovo_public_dependency_allowed"] is False
@@ -145,10 +145,20 @@ def test_v10_public_runtime_is_cloudflare_workers_paid_and_not_owner_home() -> N
     assert runtime["render_com_new_v10_release_acceptance_allowed"] is False
     assert runtime["cloudru_new_v10_runtime_target_selected"] is False
     assert runtime["protected_v9_render_app_app_baseline_preserved"] is True
-    assert runtime["cloudflare_workers_paid_selected"] is True
+    assert runtime["timeweb_cloud_selected"] is True
+    assert (
+        runtime["timeweb_role"]
+        == "PRIMARY_V10_MANAGED_APPLICATION_DATABASE_DOMAIN_PLATFORM_NOT_PRODUCT_IDENTITY"
+    )
+    assert runtime["timeweb_governance_acceptance_mutates_provider"] is False
+    assert (
+        runtime["timeweb_governance_acceptance_authorizes_production_cutover"] is False
+    )
+    assert runtime["timeweb_exact_main_release_required"] is True
+    assert runtime["cloudflare_workers_paid_selected"] is False
     assert (
         runtime["cloudflare_role"]
-        == "PRIMARY_NEW_V10_MANAGED_APPLICATION_EDGE_BUILD_PLATFORM_NOT_PRODUCT_IDENTITY"
+        == "HISTORICAL_ACCEPTED_PLATFORM_RETIRED_BY_AMENDMENT_18"
     )
     assert runtime["cloudflare_governance_acceptance_mutates_provider"] is False
     assert (
@@ -324,13 +334,13 @@ def test_validator_rejects_owner_home_or_lenovo_public_dependency(
     )
 
 
-def test_validator_rejects_cloudflare_identity_or_cutover_widening(
+def test_validator_rejects_timeweb_cutover_widening(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     contract["runtime_hosting"][
-        "cloudflare_governance_acceptance_authorizes_production_cutover"
+        "timeweb_governance_acceptance_authorizes_production_cutover"
     ] = True
     modified = tmp_path / "quality-contract.json"
     modified.write_text(json.dumps(contract), encoding="utf-8")
@@ -340,7 +350,7 @@ def test_validator_rejects_cloudflare_identity_or_cutover_widening(
     governance.validate_contract(failures)
 
     assert any(
-        "cloudflare_governance_acceptance_authorizes_production_cutover must be False"
+        "timeweb_governance_acceptance_authorizes_production_cutover must be False"
         in failure
         for failure in failures
     )
