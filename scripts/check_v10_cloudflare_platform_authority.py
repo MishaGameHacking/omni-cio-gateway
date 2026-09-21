@@ -411,6 +411,8 @@ def _validate_repository_markers(
             "Cloudflare Workers Paid",
             "PUBLIC_MULTI_USER_ENABLED=false",
             "Render/Neon historical technical evidence",
+            "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+            "Amendment 18 — Timeweb-only platform consolidation",
         ),
         failures,
     )
@@ -500,11 +502,17 @@ def main() -> int:
         return 1
 
     print("V10 Cloudflare platform authority check passed.")
-    print("Authority: GitHub rank 1; Cloudflare Workers Paid platform rank 2")
+    print(
+        "Historical authority evidence: GitHub rank 1; "
+        "Cloudflare Workers Paid platform rank 2 before Amendment 18"
+    )
     print("Legacy Render new-V10 deployment/alignment: retired and fail-closed")
     print("Continuous release: exact-main candidate -> acceptance -> promotion")
     print("Paid overage: forbidden without fresh OWNER approval")
-    print("Next stage: CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION")
+    print(
+        "Current next stage is governed by Amendment 18: "
+        "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
+    )
     return 0
 
 
