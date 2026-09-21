@@ -236,30 +236,29 @@ class TimewebAllocationProviderTests(unittest.TestCase):
 
 class AllocationRunnerTests(unittest.TestCase):
     def test_mode_inputs_keep_apply_authority_distinct(self) -> None:
+        apply_args = argparse.Namespace(
+            mode="APPLY",
+            plan_id="1" * 32,
+            approval_reference="17",
+            confirmation="NONE",
+        )
         with self.assertRaisesRegex(
             allocation.AllocationStopped,
             "TIMEWEB_ALLOCATION_CONFIRMATION_REQUIRED",
         ):
-            runner._validate_mode_inputs(
-                argparse.Namespace(
-                    mode="APPLY",
-                    plan_id="1" * 32,
-                    approval_reference="17",
-                    confirmation="NONE",
-                )
-            )
+            runner._validate_mode_inputs(apply_args)
+
+        reconcile_args = argparse.Namespace(
+            mode="RECONCILE",
+            plan_id="1" * 32,
+            approval_reference="17",
+            confirmation="NONE",
+        )
         with self.assertRaisesRegex(
             allocation.AllocationStopped,
             "TIMEWEB_ALLOCATION_DISPATCH_INPUT_INVALID",
         ):
-            runner._validate_mode_inputs(
-                argparse.Namespace(
-                    mode="RECONCILE",
-                    plan_id="1" * 32,
-                    approval_reference="17",
-                    confirmation="NONE",
-                )
-            )
+            runner._validate_mode_inputs(reconcile_args)
 
     def test_parser_reads_dispatch_values_from_environment_without_shell(self) -> None:
         plan_id = "1" * 32
