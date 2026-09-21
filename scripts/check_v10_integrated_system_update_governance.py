@@ -42,8 +42,9 @@ CERTIFIED_GREEN = "CERTIFIED_GREEN"
 RED_REPAIR_ONLY = "RED_REPAIR_ONLY"
 PRODUCT_IMPLEMENTATION_PAUSED = "PRODUCT IMPLEMENTATION PAUSED"
 WEB_VISUAL_INTEGRATED = "WEB-VISUAL-INTEGRATED"
-OWNER_START_REQUIRED = "OWNER START REQUIRED"
 OWNER_START_COMMAND = "START V10 WEB VISUAL SYSTEM UPDATE"
+TIMEWEB_INTEGRATED = "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
+TIMEWEB_MILESTONES = [f"TW-{letter}" for letter in "ABCDEFG"]
 BRANCH_LEDGER_BANNER = "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY"
 ACCEPTED_PROGRESS_MARKER = "Accepted implementation progress is **54%**"
 PROTECTED_INVARIANTS = "protected_invariants"
@@ -175,10 +176,9 @@ SURFACE_MARKERS = {
         "Mandatory split-trigger review",
     ),
     "status": (
-        PRODUCT_IMPLEMENTATION_PAUSED,
-        WEB_VISUAL_INTEGRATED,
-        OWNER_START_REQUIRED,
-        OWNER_START_COMMAND,
+        TIMEWEB_INTEGRATED,
+        "WEB-VISUAL remains paused",
+        "WP23+ remains locked",
         ACCEPTED_PROGRESS_MARKER,
     ),
     "agents": (
@@ -188,17 +188,17 @@ SURFACE_MARKERS = {
         INTEGRATED_SYSTEM_UPDATE,
         RED_REPAIR_ONLY,
         CERTIFIED_GREEN,
-        OWNER_START_COMMAND,
+        TIMEWEB_INTEGRATED,
     ),
     "readme": (
-        WEB_VISUAL_INTEGRATED,
-        PRODUCT_IMPLEMENTATION_PAUSED,
-        OWNER_START_REQUIRED,
+        TIMEWEB_INTEGRATED,
+        "WEB-VISUAL remains paused",
+        "WP23+ remains locked",
     ),
     "master_context": (
-        WEB_VISUAL_INTEGRATED,
-        PRODUCT_IMPLEMENTATION_PAUSED,
-        OWNER_START_REQUIRED,
+        TIMEWEB_INTEGRATED,
+        "Timeweb Cloud",
+        "Telegram Login",
     ),
     "workflow": (
         "python scripts/check_v10_integrated_system_update_governance.py",
@@ -282,18 +282,20 @@ def validate_authority(payload: dict[str, Any], failures: list[str]) -> None:
         {
             "product_progress_effect": "NONE",
             "runtime_authority_effect": "NONE",
-            "product_implementation_paused_after_acceptance": True,
-            "next_prepared_system_update": WEB_VISUAL_INTEGRATED,
-            "owner_start_required": True,
-            "owner_start_command": OWNER_START_COMMAND,
+            "product_implementation_paused_after_acceptance": False,
+            "next_prepared_system_update": TIMEWEB_INTEGRATED,
+            "owner_start_required": False,
+            "owner_start_command": None,
+            "amendment_18_authority_required": True,
+            "web_visual_paused": True,
+            "wp23_plus_locked": True,
         },
         "authority",
         failures,
     )
     fail_unless(
-        authority.get("next_prepared_member_milestones")
-        == [f"WEB-VISUAL-{letter}" for letter in "ABCDEFG"],
-        "WEB VISUAL member milestone order mismatch",
+        authority.get("next_prepared_member_milestones") == TIMEWEB_MILESTONES,
+        "Timeweb member milestone order mismatch",
         failures,
     )
 
@@ -453,7 +455,10 @@ def main() -> int:
         "full exact-SHA recertification"
     )
     print("Accepted progress: main/post-merge only")
-    print("Product implementation: PAUSED until exact OWNER START")
+    print(
+        "Current System Update: TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED; "
+        "split gates remain fail-closed"
+    )
     return 0
 
 
