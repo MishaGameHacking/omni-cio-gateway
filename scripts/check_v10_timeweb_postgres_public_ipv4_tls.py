@@ -28,6 +28,12 @@ _STATUS = "SOURCE_READY_PROVIDER_MUTATION_PENDING_MAIN_ACCEPTANCE"
 _CONFIRMATION = "ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _READY_MARKER = "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY"
+_PUBLIC_IPV4_GUARD_MODULE = (
+    "python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls"
+)
+_PUBLIC_IPV4_GUARD_SCRIPT = (
+    "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py"
+)
 
 
 def _read(path: Path) -> str:
@@ -585,7 +591,7 @@ def _validate_sources() -> None:
             "contents: read",
             "if: github.ref == 'refs/heads/main'",
             "environment: timeweb-synthetic",
-            "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py",
+            _PUBLIC_IPV4_GUARD_MODULE,
             "python -m scripts.discover_v10_ru_pg_verifier_ipv4",
             "python -m scripts.provision_v10_timeweb_postgres_public_ipv4_tls",
             "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",
@@ -594,6 +600,13 @@ def _validate_sources() -> None:
         ),
         "TIMEWEB_PUBLIC_IPV4_WORKFLOW_DRIFT",
     )
+    _require(
+        workflow.count(_PUBLIC_IPV4_GUARD_MODULE),
+        2,
+        "TIMEWEB_PUBLIC_IPV4_WORKFLOW_ENTRYPOINT_INVALID",
+    )
+    if _PUBLIC_IPV4_GUARD_SCRIPT in workflow:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_WORKFLOW_ENTRYPOINT_INVALID")
     if workflow.count("secrets.TIMEWEB_CLOUD_API_TOKEN") != 1:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_SECRET_SCOPE_INVALID")
     for forbidden_workflow in ("on:\n  push:", "pull_request:", "schedule:"):
@@ -784,10 +797,12 @@ def _validate_ipv4_custody_sources() -> None:
     command = "python -m scripts.probe_v10_timeweb_ipv4_custody"
     _require(workflow.count(command), 1, "TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID")
     _require(
-        workflow.count("python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py"),
+        workflow.count(_PUBLIC_IPV4_GUARD_MODULE),
         2,
         "TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID",
     )
+    if _PUBLIC_IPV4_GUARD_SCRIPT in workflow:
+        raise RuntimeError("TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID")
     _require(
         workflow.count("secrets.TIMEWEB_CLOUD_API_TOKEN"),
         1,

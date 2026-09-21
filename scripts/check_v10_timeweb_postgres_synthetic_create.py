@@ -30,6 +30,18 @@ _STAGE = "RU-PG-B_TIMEWEB_SYNTHETIC_CLUSTER_CREATE"
 _STATUS = "SOURCE_READY_PAID_MUTATION_GATED_ON_PARITY_TRANSPORT"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _CONFIRMATION = "CREATE_TIMEWEB_RU_PG_SYNTHETIC_790_RUB_MONTH"
+_PUBLIC_IPV4_GUARD_MODULE = (
+    "python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls"
+)
+_PUBLIC_IPV4_GUARD_SCRIPT = (
+    "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py"
+)
+_SYNTHETIC_GUARD_MODULE = (
+    "python -m scripts.check_v10_timeweb_postgres_synthetic_create"
+)
+_SYNTHETIC_GUARD_SCRIPT = (
+    "python scripts/check_v10_timeweb_postgres_synthetic_create.py"
+)
 
 
 def _read(path: Path) -> str:
@@ -616,10 +628,12 @@ def _validate_public_ipv4_source() -> None:
         (
             "workflow_dispatch:",
             "environment: timeweb-synthetic",
-            "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py",
+            _PUBLIC_IPV4_GUARD_MODULE,
         ),
         "TIMEWEB_SYNTHETIC_CREATE_PUBLIC_IPV4_SOURCE_DRIFT",
     )
+    if _PUBLIC_IPV4_GUARD_SCRIPT in workflow:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_PUBLIC_IPV4_SOURCE_DRIFT")
 
 
 def _validate_environment_verifier() -> None:
@@ -649,8 +663,8 @@ def _validate_workflow() -> None:
             "environment-policy-proof:",
             "needs: environment-policy-proof",
             "environment: timeweb-synthetic",
-            "python scripts/check_v10_timeweb_postgres_synthetic_create.py",
-            "python scripts/check_v10_timeweb_postgres_synthetic_create.py --require-parity-transport-ready",
+            _SYNTHETIC_GUARD_MODULE,
+            _SYNTHETIC_GUARD_MODULE + " --require-parity-transport-ready",
             "python -m scripts.verify_v10_timeweb_github_environment",
             "python -m scripts.provision_v10_timeweb_postgres_synthetic",
             f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}",
@@ -658,6 +672,10 @@ def _validate_workflow() -> None:
         ),
         "TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_DRIFT",
     )
+    if source.count(_SYNTHETIC_GUARD_MODULE) != 3:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
+    if _SYNTHETIC_GUARD_SCRIPT in source:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
     if source.count(f"secrets.{_TIMEWEB_BINDING}") != 1:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_SECRET_SCOPE_INVALID")
     forbidden = (
