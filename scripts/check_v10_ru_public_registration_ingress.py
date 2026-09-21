@@ -53,8 +53,7 @@ def _require(condition: bool, code: str) -> None:
 
 def _validate_service_model(payload: dict[str, Any]) -> None:
     _require(
-        payload.get("schema")
-        == "omni-cio.v10.timeweb-only-platform-consolidation.v1",
+        payload.get("schema") == "omni-cio.v10.timeweb-only-platform-consolidation.v1",
         "TIMEWEB_CONSOLIDATION_SCHEMA_INVALID",
     )
     _require(
