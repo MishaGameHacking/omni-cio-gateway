@@ -14,6 +14,7 @@ AMENDMENT = ROOT / (
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+LEDGER = ROOT / "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 TIMEWEB_PROOF_WORKFLOW = ROOT / (
     ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
@@ -235,6 +236,15 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
         execution.get("source_one_branch_default") is True,
         "TIMEWEB_CONSOLIDATION_BRANCH_INVALID",
     )
+    _require(
+        execution.get("branch_execution_ledger")
+        == "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md",
+        "TIMEWEB_CONSOLIDATION_LEDGER_INVALID",
+    )
+    _require(
+        execution.get("branch_execution_ledger_required") is True,
+        "TIMEWEB_CONSOLIDATION_LEDGER_INVALID",
+    )
 
 
 def _validate_external_decommission(payload: dict[str, Any]) -> None:
@@ -407,6 +417,18 @@ def _validate_active_workflow_graph() -> None:
 
 def _validate_documents() -> None:
     amendment = _read(AMENDMENT)
+    ledger = _read(LEDGER)
+    for marker in (
+        "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY",
+        "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+        "system/timeweb-platform-consolidation",
+        "TW-A-CI-AUTHORITY-GRAPH-REPAIR",
+        "PR #582",
+        "PUBLIC_MULTI_USER_ENABLED=false",
+        "trading_methods=false",
+        "REAL_TRADING_ENABLED=false",
+    ):
+        _require(marker in ledger, "TIMEWEB_CONSOLIDATION_LEDGER_DRIFT")
     for marker in (
         "Timeweb-Only Platform Consolidation & Telegram-Only Login Authority",
         "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
