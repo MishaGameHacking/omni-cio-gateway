@@ -616,7 +616,7 @@ def _validate_public_ipv4_source() -> None:
         (
             "workflow_dispatch:",
             "environment: timeweb-synthetic",
-            "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py",
+            "python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls",
         ),
         "TIMEWEB_SYNTHETIC_CREATE_PUBLIC_IPV4_SOURCE_DRIFT",
     )
@@ -649,8 +649,8 @@ def _validate_workflow() -> None:
             "environment-policy-proof:",
             "needs: environment-policy-proof",
             "environment: timeweb-synthetic",
-            "python scripts/check_v10_timeweb_postgres_synthetic_create.py",
-            "python scripts/check_v10_timeweb_postgres_synthetic_create.py --require-parity-transport-ready",
+            "python -m scripts.check_v10_timeweb_postgres_synthetic_create",
+            "python -m scripts.check_v10_timeweb_postgres_synthetic_create --require-parity-transport-ready",
             "python -m scripts.verify_v10_timeweb_github_environment",
             "python -m scripts.provision_v10_timeweb_postgres_synthetic",
             f"{_TIMEWEB_BINDING}: ${{{{ secrets.{_TIMEWEB_BINDING} }}}}",
