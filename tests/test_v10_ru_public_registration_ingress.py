@@ -76,10 +76,18 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         self.assertFalse(database["neon_new_feature_work_allowed"])
         self.assertFalse(database["neon_delete_before_timeweb_cutover_allowed"])
 
-    def test_cleanup_does_not_rewrite_git_history(self) -> None:
+    def test_legacy_provider_files_are_archive_in_place(self) -> None:
         cleanup = _contract()["cleanup"]
         self.assertIsInstance(cleanup, dict)
         assert isinstance(cleanup, dict)
+        self.assertTrue(cleanup["retired_provider_files_may_remain_archive_in_place"])
+        self.assertFalse(cleanup["mass_repository_deletion_required"])
+        self.assertFalse(
+            cleanup["historical_artifacts_may_define_current_authority"]
+        )
+        self.assertFalse(
+            cleanup["new_feature_dependencies_on_retired_providers_allowed"]
+        )
         self.assertFalse(cleanup["git_history_rewrite_for_cleanup_allowed"])
         self.assertFalse(cleanup["provider_physical_media_erasure_claim_allowed"])
 
@@ -97,7 +105,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             execution["mandatory_split_boundaries"],
         )
         self.assertIn(
-            "DESTRUCTIVE_PROVIDER_DECOMMISSION",
+            "EXTERNAL_PROVIDER_DECOMMISSION",
             execution["mandatory_split_boundaries"],
         )
 
