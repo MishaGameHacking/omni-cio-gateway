@@ -9,7 +9,7 @@ Machine contract: `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CON
 ONE CHECKPOINT
 -> focused preflight
 -> publish exact SHA
--> CI + Sonar + independent review
+-> GitHub-native CI/security + independent review
 -> RED = REPAIR ONLY
 -> immediate root-cause repair
 -> TARGETED RECHECK
@@ -61,9 +61,9 @@ Canonical lanes are `ruff`, `format`, `mypy`, `pytest`, `governance`, `repositor
 
 A targeted verifier PASS proves only the chosen repair surface. It never replaces full applicable certification of the final replacement SHA.
 
-## 6. Sonar and review
+## 6. Quality, security and review
 
-For changed code, checkpoint certification requires applicable Sonar Quality Gate PASS, zero new issues by default, zero unresolved new Security Hotspots and zero unresolved material Reliability/Security/Maintainability findings. Inspect Gitar/SAST/check annotations and review threads as well.
+For current/future V10 work after Amendment 18, checkpoint certification uses GitHub-native lint/type/test/coverage/dependency/SAST/secret/security checks plus independent review. Unresolved material correctness/security/maintainability findings are not GREEN. Inspect check annotations and review threads as well. Historical Sonar evidence may remain in the repository, but external Sonar is not active acceptance authority.
 
 ## 7. Green definition
 
