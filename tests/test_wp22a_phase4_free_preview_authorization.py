@@ -33,10 +33,10 @@ def test_wp22a_and_cloudflare_history_remain_accepted_before_timeweb_update() ->
     assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
     assert "Block E / WP22A overall — **COMPLETE**" in text
     assert "Accepted implementation progress is **54%**" in text
-    assert "PRODUCT IMPLEMENTATION PAUSED" in text
+    assert "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in text
     assert "WEB-VISUAL-INTEGRATED" in text
-    assert "OWNER START REQUIRED" in text
-    assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
+    assert "WEB-VISUAL" in text
+    assert "WP23+ remains locked" in text
     assert "Amendment 13 — progressive capability activation" in text
     assert "current runtime state, not a V10-wide release lock" in text
     assert "current user-facing activation transitions — **BLOCKED_EXTERNAL" in text
