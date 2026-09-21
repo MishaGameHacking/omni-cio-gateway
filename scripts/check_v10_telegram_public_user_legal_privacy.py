@@ -189,24 +189,29 @@ def _validate_public_docs(root: Path) -> None:
     consent = _read(root, CONSENT)
     runbook = _read(root, RUNBOOK)
     for marker in (
-        "ПРЕДЗАПУСКОВАЯ РЕДАКЦИЯ",
-        "публичная регистрация граждан Российской Федерации",
-        "15 минут",
-        "24 часа",
-        "30 дней",
-        "российской базе данных",
+        "# Политика Omni-CIO в отношении обработки персональных данных",
+        "**Статус:** ПРЕДЗАПУСКОВАЯ РЕДАКЦИЯ",
+        "## 3. Цели и правовые основания",
+        "## 7. Локализация и внешние поставщики",
+        "## 9. Условия публикации финальной политики",
     ):
         if marker not in policy:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_POLICY_DRIFT")
     for marker in (
-        "ПРЕДЗАПУСКОВОЙ ШАБЛОН",
-        "оформляется отдельно",
-        "пункт 5 части 1 статьи 6",
-        "30 дней",
+        "# Отдельное согласие на обработку персональных данных Omni-CIO",
+        "**Статус:** ПРЕДЗАПУСКОВОЙ ШАБЛОН",
+        "## 1. Граница согласия",
+        "## 3. Отзыв",
     ):
         if marker not in consent:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_CONSENT_DRIFT")
-    for marker in ("RU-PG-D", "article 22", "Cloudflare", "Russian-hosted", "Gmail"):
+    for marker in (
+        "# V10 Telegram Public User Legal / Privacy Activation Runbook",
+        "Status: **FOCUSED CAPABILITY ACTIVATION GATE / LIVE REGISTRATION BLOCKED**",
+        "## 2. Current hard localization blocker",
+        "## 6. Regulator gates",
+        "## 7. Activation boundary",
+    ):
         if marker not in runbook:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_RUNBOOK_DRIFT")
 
@@ -238,7 +243,10 @@ def _validate_current_state(root: Path) -> None:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_PREMATURE_ACTIVATION")
 
 
-def _validate_existing_readiness_gate(root: Path) -> None:
+def _validate_readiness_link(
+    root: Path,
+    contract: dict[str, Any],
+) -> None:
     readiness = _load_json(
         root,
         READINESS,
@@ -253,6 +261,39 @@ def _validate_existing_readiness_gate(root: Path) -> None:
         False,
         "TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID",
     )
+    _require(
+        legal.get("status"),
+        "OPERATOR_IDENTITY_ACCEPTED_DATA_RESIDENCY_AND_REGULATORY_GATES_OPEN",
+        "TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID",
+    )
+    _require(
+        legal.get("contract_path"),
+        str(CONTRACT).replace("\\", "/"),
+        "TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID",
+    )
+    _require(
+        legal.get("contract_schema"),
+        contract.get("schema"),
+        "TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID",
+    )
+    resolved = legal.get("resolved_inputs")
+    if (
+        not isinstance(resolved, list)
+        or "operator_controller_identity_and_contact" not in resolved
+    ):
+        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID")
+    readiness_blockers = legal.get("blocking_conditions")
+    activation = _mapping(
+        contract.get("activation_gate"),
+        "TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID",
+    )
+    contract_blockers = activation.get("blocking_conditions")
+    if (
+        not isinstance(readiness_blockers, list)
+        or not isinstance(contract_blockers, list)
+        or set(readiness_blockers) != set(contract_blockers)
+    ):
+        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID")
 
 
 def validate(root: Path = ROOT) -> None:
@@ -264,7 +305,7 @@ def validate(root: Path = ROOT) -> None:
     _validate_contract(contract)
     _validate_public_docs(root)
     _validate_current_state(root)
-    _validate_existing_readiness_gate(root)
+    _validate_readiness_link(root, contract)
 
 
 def main() -> int:
