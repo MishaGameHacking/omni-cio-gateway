@@ -14,7 +14,8 @@ def test_cloudflare_system_update_is_accepted_complete() -> None:
     status = STATUS.read_text(encoding="utf-8")
 
     for marker in (
-        "Cloudflare Public Product System Update — **HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**",
+        "Cloudflare Public Product System Update — "
+        "**HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**",
         "V10 Cloudflare Production Release #78",
         "Regression Shield #1617",
         "V10 Engineering Governance #1607",
