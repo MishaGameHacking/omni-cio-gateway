@@ -9,6 +9,10 @@ on:
         type: choice
         options:
           - ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH
+      allocation_plan_id:
+        description: Verified existing-IPv4 allocation plan handle
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -181,6 +185,7 @@ jobs:
         env:
           TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
           TIMEWEB_RU_PG_PUBLIC_IPV4_CONFIRMATION: ${{ inputs.confirmation }}
+          TIMEWEB_ALLOCATION_PLAN_ID: ${{ inputs.allocation_plan_id }}
         run: python -m scripts.provision_v10_timeweb_postgres_public_ipv4_tls
 
       - name: Clean self-hosted workspace

@@ -19,12 +19,16 @@ from urllib.request import OpenerDirector, Request
 
 from scripts import probe_v10_timeweb_postgres_control_plane as read_only
 from scripts import provision_v10_render_neon_preview as _provider_base
+from scripts import timeweb_ipv4_allocation as allocation
+from scripts import timeweb_ipv4_allocation_provider as allocation_provider
 from scripts import timeweb_ipv4_custody as custody
+from scripts.timeweb_ipv4_allocation_windows import open_journal
 
 
 CONFIRMATION = "ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH"
 CONFIRMATION_ENV = "TIMEWEB_RU_PG_PUBLIC_IPV4_CONFIRMATION"
 VERIFIER_CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"
+ALLOCATION_PLAN_ENV = "TIMEWEB_ALLOCATION_PLAN_ID"
 TARGET_ZONE = "msk-1"
 FIREWALL_NAME = "omni-cio-v10-ru-pg-synthetic-verifier"
 FIREWALL_DESCRIPTION = "Omni-CIO V10 RU-PG-B synthetic verifier only"
@@ -1123,11 +1127,39 @@ def _configure_transport(
         raise
 
 
+def _verify_allocation_prerequisite(
+    api: read_only.TimewebReadOnlyApi,
+) -> None:
+    identifier = _provider_base._required_env(ALLOCATION_PLAN_ENV)
+    try:
+        journal = open_journal(initialize=False)
+        adapter = allocation_provider.TimewebAllocationProvider(api)
+        result = allocation.verify_transport_prerequisite(
+            identifier,
+            adapter.transport_snapshot,
+            journal,
+        )
+    except (
+        allocation.AllocationStopped,
+        allocation_provider.ProviderStopped,
+    ) as exc:
+        raise _provider_base.ProvisioningStopped(str(exc)) from None
+    except Exception:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_ALLOCATION_TRANSPORT_PREREQUISITE_UNAVAILABLE"
+        ) from None
+    if result is not allocation.Outcome.RECEIPT_REVERIFIED:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_ALLOCATION_TRANSPORT_PREREQUISITE_UNPROVEN"
+        )
+
+
 def _provision_transport() -> None:
     _required_confirmation()
     cidr = _required_verifier_cidr()
     token = _provider_base._required_env(read_only.TOKEN_ENV)
     api = read_only.TimewebReadOnlyApi(token)
+    _verify_allocation_prerequisite(api)
     mutation = TimewebMutationApi(token)
 
     cluster_id = _target_cluster_id(api)

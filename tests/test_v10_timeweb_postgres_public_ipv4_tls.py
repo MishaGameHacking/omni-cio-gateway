@@ -216,6 +216,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "is_enabled_public_ipv6": True,
         }
         with (
+            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
                 provisioner,
@@ -263,6 +264,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         api = mock.Mock()
         mutation = mock.Mock()
         with (
+            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
                 provisioner,
@@ -343,6 +345,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         api = mock.Mock()
         mutation = mock.Mock()
         with (
+            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
                 provisioner,
@@ -403,6 +406,88 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             ):
                 provisioner.provision()
         close.assert_called_once_with(mutation, api, 91)
+
+    def test_allocation_prerequisite_uses_canonical_transport_snapshot(self) -> None:
+        api = mock.Mock()
+        journal = mock.Mock()
+        adapter = mock.Mock()
+        with (
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="1" * 32,
+            ),
+            mock.patch.object(provisioner, "open_journal", return_value=journal),
+            mock.patch.object(
+                provisioner.allocation_provider,
+                "TimewebAllocationProvider",
+                return_value=adapter,
+            ),
+            mock.patch.object(
+                provisioner.allocation,
+                "verify_transport_prerequisite",
+                return_value=provisioner.allocation.Outcome.RECEIPT_REVERIFIED,
+            ) as verify,
+        ):
+            provisioner._verify_allocation_prerequisite(api)
+
+        verify.assert_called_once_with("1" * 32, adapter.transport_snapshot, journal)
+
+    def test_allocation_prerequisite_failure_is_sanitized(self) -> None:
+        api = mock.Mock()
+        with (
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="1" * 32,
+            ),
+            mock.patch.object(
+                provisioner,
+                "open_journal",
+                side_effect=OSError("private-path"),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TIMEWEB_ALLOCATION_TRANSPORT_PREREQUISITE_UNAVAILABLE",
+            ) as raised:
+                provisioner._verify_allocation_prerequisite(api)
+        self.assertNotIn("private-path", str(raised.exception))
+
+    def test_prerequisite_failure_prevents_mutation_adapter_construction(self) -> None:
+        api = mock.Mock()
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner,
+                "_required_verifier_cidr",
+                return_value="8.8.8.8/32",
+            ),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_verify_allocation_prerequisite",
+                side_effect=provisioner._provider_base.ProvisioningStopped(
+                    "TIMEWEB_ALLOCATION_TRANSPORT_RECEIPT_REQUIRED"
+                ),
+            ),
+            mock.patch.object(provisioner, "TimewebMutationApi") as mutation,
+        ):
+            with self.assertRaisesRegex(
+                provisioner._provider_base.ProvisioningStopped,
+                "TRANSPORT_RECEIPT_REQUIRED",
+            ):
+                provisioner._provision_transport()
+        mutation.assert_not_called()
 
     def test_floating_ip_create_shape_has_no_ddos_authority(self) -> None:
         mutation = mock.Mock()

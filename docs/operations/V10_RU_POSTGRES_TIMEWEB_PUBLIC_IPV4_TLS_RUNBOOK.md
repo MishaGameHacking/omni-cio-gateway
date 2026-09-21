@@ -111,6 +111,32 @@ access may have been enabled, the workflow immediately attempts to disable publi
 networking again. If GET cannot prove the rollback, the run stops in a manual
 reconciliation state and is never GREEN.
 
+## Durable allocation prerequisite
+
+Live transport run #4 on exact main `0b2eabed43ba7a60696c1f24ccb33833cba9091b`
+proved that source/environment/cost gates can all pass while the provider still
+contains one `unproven_unbound` IPv4. It stopped before firewall/network/TLS
+mutation with `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`.
+
+The transport workflow now requires the safe non-authorizing
+`allocation_plan_id` produced by the existing-IPv4 allocation workflow. Inside
+the sole provider-secret step, the code opens the protected Windows journal,
+requires a durable `ALLOCATED` allocation receipt, then performs two equal GET-only canonical
+provider snapshots and binds the receipt to the same account/project/cluster/IP
+identity plus the accepted custody marker before `TimewebMutationApi` exists.
+
+The receipt permits only the same managed IP while it is either unbound or bound
+to the exact target database. Public-network and IPv6 booleans are intentionally
+not receipt identity: the existing transport recovery code owns those states and
+can safely close an unexpected exposure. Any foreign binding, changed address,
+changed target, changed marker or inconsistent GET pair is a hard stop. The
+existing custody preflight rechecks provider state again immediately before
+firewall/network/TLS mutation.
+
+A `PLANNED`, `ATTEMPTED`, missing or corrupt receipt is also a hard stop. An
+ambiguous allocation attempt must use GET-only `RECONCILE`; transport is never
+allocation recovery.
+
 ## Manual workflow
 
 Workflow:
@@ -121,15 +147,21 @@ Exact confirmation:
 
 `ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH`
 
-Before Timeweb secret access it:
+Required safe allocation input:
+
+`allocation_plan_id=<safe plan handle from verified allocation>`
+
+Before provider mutation authority is constructed it:
 
 1. bootstraps the exact protected-main SHA;
 2. validates this source contract;
 3. verifies the `timeweb-synthetic` main-only environment policy;
 4. discovers and masks the current verifier /32;
-5. validates the exact cost confirmation.
+5. validates the exact cost confirmation;
+6. proves the durable ALLOCATED receipt against two current provider GET snapshots.
 
-The Timeweb credential is injected only into the single provider-mutation step.
+The Timeweb credential is injected only into the single provider step; mutation
+authority is constructed only after the receipt/resource proof succeeds.
 
 
 ## Live RED #1 — mutation rejection recovery

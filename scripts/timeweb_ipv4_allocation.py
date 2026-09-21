@@ -67,6 +67,26 @@ class Context:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class TransportSnapshot:
+    """Current provider state used only to prove allocation before transport."""
+
+    account_scope: str
+    project_id: str
+    cluster_id: int
+    floating_id: str
+    ip_address: str
+    comment: str
+    inventory_count: int = 1
+    target_name: str = TARGET_NAME
+    zone: str = ZONE
+    ddos_enabled: bool = False
+    resource_type: str | None = None
+    resource_id: str | None = None
+    public_enabled: bool = False
+    ipv6_enabled: bool = False
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class Snapshot:
     """Exact private values returned by the canonical read-only provider adapter.
 
@@ -154,6 +174,7 @@ class ApprovalVerifier(Protocol):
 
 
 ReadSnapshot = Callable[[], Snapshot]
+ReadTransportSnapshot = Callable[[], TransportSnapshot]
 WriteCommentOnce = Callable[[str, str], None]
 Clock = Callable[[], int]
 ReadContext = Callable[[], Context]
@@ -191,9 +212,7 @@ def _instant(value: int) -> int:
     return value
 
 
-def _snapshot(snapshot: Snapshot) -> None:
-    if not isinstance(snapshot, Snapshot):
-        raise AllocationStopped("TIMEWEB_ALLOCATION_SNAPSHOT_INVALID")
+def _snapshot_common(snapshot: Snapshot | TransportSnapshot) -> None:
     for identifier in (
         snapshot.account_scope,
         snapshot.project_id,
@@ -212,10 +231,8 @@ def _snapshot(snapshot: Snapshot) -> None:
         or snapshot.target_name != TARGET_NAME
         or snapshot.zone != ZONE
         or snapshot.ddos_enabled is not False
-        or snapshot.resource_type is not None
-        or snapshot.resource_id is not None
-        or snapshot.public_enabled is not False
-        or snapshot.ipv6_enabled is not False
+        or type(snapshot.public_enabled) is not bool
+        or type(snapshot.ipv6_enabled) is not bool
     ):
         raise AllocationStopped("TIMEWEB_ALLOCATION_SHAPE_OR_BINDING_DRIFT")
     if not isinstance(snapshot.ip_address, str):
@@ -232,6 +249,32 @@ def _snapshot(snapshot: Snapshot) -> None:
         raise AllocationStopped("TIMEWEB_ALLOCATION_IP_INVALID")
     if not isinstance(snapshot.comment, str) or len(snapshot.comment) > 4096:
         raise AllocationStopped("TIMEWEB_ALLOCATION_COMMENT_INVALID")
+
+
+def _snapshot(snapshot: Snapshot) -> None:
+    if not isinstance(snapshot, Snapshot):
+        raise AllocationStopped("TIMEWEB_ALLOCATION_SNAPSHOT_INVALID")
+    _snapshot_common(snapshot)
+    if (
+        snapshot.resource_type is not None
+        or snapshot.resource_id is not None
+        or snapshot.public_enabled is not False
+        or snapshot.ipv6_enabled is not False
+    ):
+        raise AllocationStopped("TIMEWEB_ALLOCATION_SHAPE_OR_BINDING_DRIFT")
+
+
+def _transport_snapshot(snapshot: TransportSnapshot) -> None:
+    if not isinstance(snapshot, TransportSnapshot):
+        raise AllocationStopped("TIMEWEB_ALLOCATION_TRANSPORT_SNAPSHOT_INVALID")
+    _snapshot_common(snapshot)
+    unbound = snapshot.resource_type is None and snapshot.resource_id is None
+    target_bound = snapshot.resource_type in {
+        "database",
+        "dbaas",
+    } and snapshot.resource_id == str(snapshot.cluster_id)
+    if not (unbound or target_bound):
+        raise AllocationStopped("TIMEWEB_ALLOCATION_TRANSPORT_RESOURCE_DRIFT")
 
 
 def expected_marker(snapshot: Snapshot) -> str:
@@ -324,6 +367,19 @@ def _fresh(plan: Plan, now: int) -> None:
     now = _instant(now)
     if not plan.issued_at <= now < plan.expires_at:
         raise AllocationStopped("TIMEWEB_ALLOCATION_PLAN_EXPIRED_OR_FUTURE")
+
+
+def _read_transport(
+    read_snapshot: ReadTransportSnapshot,
+) -> TransportSnapshot:
+    try:
+        snapshot = read_snapshot()
+        _transport_snapshot(snapshot)
+        return snapshot
+    except AllocationStopped:
+        raise
+    except Exception:
+        raise AllocationStopped("TIMEWEB_ALLOCATION_OBSERVATION_UNAVAILABLE") from None
 
 
 def _read(read_snapshot: ReadSnapshot) -> Snapshot:
@@ -545,6 +601,58 @@ def apply(
         pass
     _observe_result(read_snapshot, journal, claimed_entry, sleeper=sleeper)
     return Outcome.ALLOCATED_VERIFIED
+
+
+def _transport_matches(
+    current: TransportSnapshot,
+    planned: Snapshot,
+    expected_comment: str,
+) -> bool:
+    return (
+        current.account_scope == planned.account_scope
+        and current.project_id == planned.project_id
+        and current.cluster_id == planned.cluster_id
+        and current.floating_id == planned.floating_id
+        and current.ip_address == planned.ip_address
+        and current.comment == expected_comment
+        and current.inventory_count == planned.inventory_count
+        and current.target_name == planned.target_name
+        and current.zone == planned.zone
+        and current.ddos_enabled == planned.ddos_enabled
+    )
+
+
+def verify_transport_prerequisite(
+    identifier: str,
+    read_snapshot: ReadTransportSnapshot,
+    journal: ClosedJournal,
+) -> Outcome:
+    """Bind a durable ALLOCATED receipt to the current exact managed resource."""
+    if not isinstance(identifier, str) or _HANDLE.fullmatch(identifier) is None:
+        raise AllocationStopped("TIMEWEB_ALLOCATION_PLAN_ID_INVALID")
+    try:
+        entry = journal.read(identifier)
+    except Exception:
+        raise AllocationStopped("TIMEWEB_ALLOCATION_JOURNAL_UNAVAILABLE") from None
+    if not isinstance(entry, Entry) or not isinstance(entry.phase, Phase):
+        raise AllocationStopped("TIMEWEB_ALLOCATION_JOURNAL_INVALID")
+    _plan(entry.plan, entry.plan.context)
+    if entry.plan.identifier != identifier:
+        raise AllocationStopped("TIMEWEB_ALLOCATION_JOURNAL_ID_DRIFT")
+    if (
+        entry.phase is not Phase.ALLOCATED
+        or not isinstance(entry.approval_reference, str)
+        or not entry.approval_reference
+    ):
+        raise AllocationStopped("TIMEWEB_ALLOCATION_TRANSPORT_RECEIPT_REQUIRED")
+
+    expected = expected_marker(entry.plan.snapshot)
+    current = _read_transport(read_snapshot)
+    if not _transport_matches(current, entry.plan.snapshot, expected):
+        raise AllocationStopped("TIMEWEB_ALLOCATION_TRANSPORT_RESOURCE_DRIFT")
+    if _read_transport(read_snapshot) != current:
+        raise AllocationStopped("TIMEWEB_ALLOCATION_TRANSPORT_RESOURCE_DRIFT")
+    return Outcome.RECEIPT_REVERIFIED
 
 
 def safe_summary(identifier: str, state: str) -> str:
