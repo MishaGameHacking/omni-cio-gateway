@@ -69,7 +69,7 @@ CI is an independent verifier and active checkpoint certifier; it is not a subst
 
 Canonical flow after Amendment 16 acceptance:
 
-`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> GitHub-native CI/security + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
 On any applicable RED or material review finding:
 
@@ -84,8 +84,8 @@ Rules:
 - repeated identical transient failure becomes a workflow/infrastructure defect rather than an endless rerun loop;
 - source/config/test/governance change creates a replacement SHA and invalidates previous final evidence;
 - targeted proof verifies the reported defect; the replacement exact SHA still needs full applicable certification before new functional work;
-- Sonar Quality Gate must pass when applicable; default new-code issues = 0, unresolved new Security Hotspots = 0 and unresolved material new Reliability/Security/Maintainability findings = 0;
-- inspect Gitar, SAST/security, check annotations and review threads; bot approval never replaces engineering review;
+- GitHub-native lint/type/test/coverage/dependency/SAST/secret/security checks must pass when applicable; unresolved material correctness/security/maintainability findings are not GREEN;
+- inspect GitHub-native SAST/security/dependency/secret checks, check annotations and review threads; bot approval never replaces engineering review;
 - `continue-on-error` must not manufacture required GREEN;
 - safety abort takes precedence for secret/private-data exposure, broker/Real reachability, destructive migration/provider mutation, uncontrolled spend or cross-tenant risk;
 - post-merge applicable RED on current `main` means `MAIN_RED_STOP`; ordinary feature progress pauses until an accepted focused repair restores GREEN;
@@ -100,8 +100,8 @@ Any content-changing commit invalidates old final exact-head GREEN/review eviden
 Before merge:
 
 - review all Files changed;
-- inspect inline threads, annotations, Sonar, Gitar and applicable SAST/security/code-review output;
-- Quality Gate success does not excuse non-zero Sonar issues/annotations/hotspots;
+- inspect inline threads, annotations and applicable GitHub-native lint/type/test/coverage/dependency/SAST/secret/security/code-review output;
+- a nominal GREEN summary does not excuse unresolved material findings;
 - classify and fix/block material findings;
 - unresolved blocking threads = 0;
 - repeat Files changed/review after every correction/replacement head;
