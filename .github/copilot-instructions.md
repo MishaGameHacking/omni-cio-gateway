@@ -13,59 +13,53 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 
 - accepted implementation: 54%;
 - WP0–WP22A COMPLETE;
-- `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` is accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
-- current authorized functional implementation package: NONE;
-- current next prepared package: `WEB-VISUAL-INTEGRATED` / OWNER START REQUIRED;
-- `WEB-VISUAL-INTEGRATED` remains PRODUCT IMPLEMENTATION PAUSED until its separate OWNER start/sequence permits source work;
-- exact visual start remains `START V10 WEB VISUAL SYSTEM UPDATE`;
-- WP23+ locked;
-- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until the remaining capability-specific gates;
+- current authorized System Update after Amendment 18 acceptance: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`;
+- target active service model: ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
+- Timeweb Cloud is the selected production runtime/database/domain platform;
+- Telegram Login is the only selected human login provider;
+- Cloudflare, Neon, Render, Cloud.ru and VK ID are historical/retirement targets with no new feature authority;
+- historical provider files remain archive-in-place by default;
+- WEB-VISUAL and WP23+ remain paused/locked during consolidation;
+- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-Before any material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 current status, V10 Program Lock/Master Plan/Amendments Index, all applicable active amendments/contracts including Amendments 14/15 and, when accepted, Amendment 16 Green Checkpoint / Targeted CI Repair, current V10 status, current execution-unit docs, open PR/issues and GitHub Actions.
+Before material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 status, V10 Program Lock/Master Plan/Amendments Index, Amendment 18, current status, owning contracts, open PR/issues and GitHub Actions.
 
-## GitHub / Cloudflare authority
+## GitHub / Timeweb authority
 
-GitHub is engineering authority rank 1: source, review, exact SHA, accepted status and provenance.
+GitHub is engineering authority for source, review, CI evidence and exact-SHA provenance.
 
-Cloudflare Workers Paid is platform rank 2 for **new V10** application/edge/build work after Amendment 14 and the owning internal gates are accepted.
+Timeweb Cloud is the selected production infrastructure platform after Amendment 18 acceptance:
 
-For new V10 work:
+- App Platform for Web/API runtime;
+- Managed PostgreSQL 18 for relational data;
+- domain/DNS/TLS/network/backup/monitoring as their owning gates accept them;
+- production deployment must use an accepted GitHub exact SHA;
+- autodeploy must never bypass accepted GitHub verification.
 
-- Cloud.ru Evolution is no longer the selected provider target;
-- Render is retired from active new-V10 deployment, zero-charge attestation, hosted-release alignment and recovery authority;
-- historical WP22A Render/Neon evidence remains historical evidence;
-- protected V9 Render `app:app` remains protected;
-- Amendments 14/15 alone do not deploy Cloudflare, mutate DNS/domain/provider state, create secrets, activate users or authorize Real money.
+Telegram is identity only. It cannot mint tenant/infrastructure authority.
 
-The final public product uses a managed-cloud Omni-CIO Web/API independent of OWNER home availability. Cloudflare edge controls are additive security; Cloudflare Access is not product identity.
+Cloudflare, Neon, Render, Cloud.ru and VK ID are not current implementation targets. Their files may remain in the repository as archive-in-place historical evidence, but new code must not depend on them. Do not mass-delete historical provider files.
 
-Amendment 15 integrates the Cloudflare implementation into one ordered System Update:
-
-1. `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — portable repository verification/shard/impact/provenance/cost contract; no candidate/public promotion;
-2. `CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive/Containers evidence;
-3. `CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation only after CF-A/CF-B gates;
-4. `CF-D / CLOUDFLARE-PUBLIC-CUTOVER` — domain/DNS/TLS/security/promotion/rollback and capability-specific live acceptance.
-
-Separate protected-main acceptance between CF-A…CF-D is not required after Amendment 15 acceptance, but never skip an internal Exit Gate. A real mandatory split trigger still forces a stop/split.
+Retired provider workflows/resources/secrets may be disabled/revoked only after the replacement Timeweb cutover/recovery gate.
 
 ## Continuous public releases
 
 A new accepted protected `main` SHA is a product revision candidate, not an automatic production deployment.
 
-Required path:
+Target path:
 
-`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
+`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> exact Timeweb candidate -> candidate acceptance -> production promotion`.
 
-Re-check `main` before promotion. Never promote a superseded candidate. If the latest `main` is blocked, keep last-known-good production and expose a truthful pending/blocked/out-of-sync state.
+Re-check `main` before promotion. Never promote a superseded candidate. If the latest `main` is blocked, keep last-known-good production and expose truthful pending/blocked state.
 
-Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source/Cloudflare version metadata; do not create a source-code version-bump commit only to update the display version.
+Production Timeweb autodeploy must not bypass this exact-SHA chain.
 
 ## Execution-unit discipline
 
 Governed by the **Integrated System Update Execution Law**. Every material change is exactly one `FOCUSED_CHANGE` or one OWNER-authorized `INTEGRATED_SYSTEM_UPDATE` with ordered internal member milestones.
 
-`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` is accepted COMPLETE. No new functional execution unit is active until a later package is explicitly authorized. Future Integrated System Updates still may not bypass DB/migration, security/authority, dependency/toolchain, OWNER/provider, live/temporal, production-cutover, Real-money or reviewability split triggers.
+`TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update after Amendment 18 acceptance. One integrated source branch is the default, but DB cutover, public DNS/ingress cutover, destructive external-provider decommission, security/authority, OWNER/legal/payment, recovery and Real-money boundaries still require their own fail-closed acceptance.
 
 `INTEGRATION_READY` remains the final whole-update readiness state before final landing review. Under Amendment 16, earlier logical checkpoints may be published/certified, but no dependent functional checkpoint may build on them until they are `CERTIFIED_GREEN`.
 
@@ -135,21 +129,23 @@ Tenant scope must be server-derived with PostgreSQL RLS/FORCE-RLS and cross-tena
 
 Implemented capability states are exactly `IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`. A ready capability need not wait unrelated later V10 blocks, but every owning external/security/runtime gate must be real and accepted.
 
-## Cloudflare runtime/data discipline
+## Timeweb runtime/data discipline
 
-Reuse existing architecture by default:
+Reuse existing product architecture by default:
 
 `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite Web is canonical source and targets Workers Static Assets when CF-B proves the runtime path. FastAPI support in Python Workers does not prove all CPython/native dependencies work there; compatibility is mandatory evidence. Cloudflare Containers may be used only for a proven full-Linux/native runtime need with accepted cost/recovery semantics.
+Keep React/Vite and the Python/FastAPI product API provider-neutral. Timeweb-specific behavior belongs in thin deployment/infrastructure adapters.
 
-Neon/PostgreSQL 18 remains tenant/data authority unless an explicit equivalent migration changes it. Do not assume Hyperdrive supports PostgreSQL 18; test it. Do not replace financial/tenant truth with D1 merely to use a Cloudflare feature.
+Timeweb Managed PostgreSQL 18 is the final relational target. Preserve migrations, exact numeric storage, least-privilege roles, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and migrated-data verification.
 
-Prefer Cloudflare services over replaceable external infrastructure only when semantics, security, recovery and cost are equivalent. Never remove GitHub or the PostgreSQL/Neon authority merely to claim a Cloudflare-only stack.
+Do not introduce new Cloudflare/Neon/Render/Cloud.ru/VK dependencies. Historical files may remain archive-in-place and are not deleted merely to clean keyword searches.
 
-Workers Paid included capacity may be used inside the owning milestone, but mutable provider limits/pricing must be revalidated before material configuration. No uncontrolled paid overage or higher plan without fresh OWNER approval.
+Telegram Login is the only selected human authentication provider. Product path remains:
 
-Current GitHub/Lenovo CI routing stays authoritative until CF-A lanes are accepted. Never fake Windows/PowerShell/ACL/PostgreSQL-native semantics as portable GREEN.
+`Telegram -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
+
+Timeweb App Platform/DNS/database/provider state never becomes product identity or tenant authority.
 
 ## WEB VISUAL lock
 
