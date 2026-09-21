@@ -81,3 +81,36 @@ PLAN / APPLY / RECONCILE workflow after M1 passes all applicable gates.
 
 Primary detector reference:
 https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/plugins/high_entropy_strings.py
+
+## M2 pre-publication integration findings
+
+The M2 full-diff review found two adjacent defect classes before any live
+allocation was authorized.
+
+First, canonical cluster-shape validation compared the provider CPU field with
+the integer target using ordinary Python equality. A boolean true or integral
+numeric lookalike can compare equal to integer 1, so the live adapter now uses an
+exact positive-integer validator for CPU and RAM. Regression coverage exercises
+boolean and fractional CPU values. This strengthens provider-shape evidence and
+does not broaden accepted provider state.
+
+Second, the first operational workflow draft placed workflow_dispatch plan,
+approval-comment and confirmation expressions directly inside Windows command
+lines. Those values are authority inputs and must not become shell syntax on the
+trusted self-hosted runner. The workflow now transfers them only as process
+environment values; the Python parser reads and validates them without shell
+expansion. The contract and source guard explicitly require environment-only
+dispatch transport and reject direct shell interpolation.
+
+The initial M2 source guard checked mode separation, permissions, secret scope,
+provider methods and safe summaries but did not encode this shell-input boundary.
+That gap is now a regression property. The blast radius is limited to the new M2
+workflow source; M1 protocol/journal/OWNER evidence, the existing Timeweb
+network/TLS workflow, production DSN and provider resources were not changed by
+the review.
+
+These findings were corrected before any M2 workflow could be run from protected
+main. They are not live provider evidence and do not authorize allocation.
+Exact-head canonical CI, secret scan, Sonar and review still decide whether the
+replacement M2 source can advance.
+
