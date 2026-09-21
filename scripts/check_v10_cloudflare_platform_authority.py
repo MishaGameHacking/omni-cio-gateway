@@ -464,8 +464,17 @@ def _validate_quality_contract_overlay(
     if not isinstance(runtime, dict):
         failures.append("engineering quality runtime_hosting must be an object")
         return
-    if runtime.get("cloudflare_workers_paid_selected") is not True:
-        failures.append("engineering quality contract must select Workers Paid")
+    if runtime.get("timeweb_cloud_selected") is not True:
+        failures.append("engineering quality contract must select Timeweb Cloud")
+    if runtime.get("cloudflare_workers_paid_selected") is not False:
+        failures.append(
+            "engineering quality contract must mark Cloudflare retired by Amendment 18"
+        )
+    if (
+        runtime.get("cloudflare_role")
+        != "HISTORICAL_ACCEPTED_PLATFORM_RETIRED_BY_AMENDMENT_18"
+    ):
+        failures.append("engineering quality contract Cloudflare role is not historical")
     if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
         failures.append("engineering quality contract must retire Cloud.ru for new V10")
     if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
