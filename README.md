@@ -111,7 +111,13 @@ Timeweb PostgreSQL 18 / tenant-scoped private state
 
 PROJECT OWNER home connectivity and VPN are not allowed to be required production dependencies.
 
+PROJECT OWNER is an ordinary product USER. Engineering access to GitHub/Timeweb does not create product tenant authority.
+
+
 One account owns one isolated tenant in the baseline. Tenant scope is derived from authenticated server-side sessions, not client-supplied user/tenant IDs. PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory.
+
+Public broker credentials remain tenant-owned `BrokerConnection` credentials. There is no shared/global user broker token: no shared/global user broker token is allowed.
+
 
 Cloudflare/Neon/Render/Cloud.ru/VK files remain archive-in-place project history. They are not current implementation authority and new code must not depend on them.
 
