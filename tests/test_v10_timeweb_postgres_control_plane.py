@@ -85,15 +85,16 @@ class TimewebControlPlaneTests(unittest.TestCase):
             {
                 "enabled": True,
                 "trigger_event": "workflow_run",
-                "upstream_workflow": "V10 Cloudflare Production Release",
+                "upstream_workflow": "Regression Shield",
                 "upstream_conclusion_required": "success",
-                "upstream_event_required": "workflow_run",
+                "upstream_event_required": "push",
                 "upstream_head_branch_required": "main",
                 "expected_head_source": "github.event.workflow_run.head_sha",
                 "current_main_equality_required": True,
                 "manual_workflow_dispatch_fallback_preserved": True,
                 "provider_mutation_authority_inherited": False,
                 "paid_transition_authority_inherited": False,
+                "retired_provider_dependency_allowed": False,
             },
         )
 
@@ -101,9 +102,10 @@ class TimewebControlPlaneTests(unittest.TestCase):
         source = guard.LIVE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", source)
         self.assertIn("workflow_run:", source)
-        self.assertIn("- V10 Cloudflare Production Release", source)
+        self.assertIn("- Regression Shield", source)
+        self.assertNotIn("- V10 Cloudflare Production Release", source)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", source)
-        self.assertIn("github.event.workflow_run.event == 'workflow_run'", source)
+        self.assertIn("github.event.workflow_run.event == 'push'", source)
         self.assertIn("github.event.workflow_run.head_branch == 'main'", source)
         self.assertIn("github.event.workflow_run.head_sha", source)
         self.assertIn('test "$EXPECTED_BRANCH" = "main"', source)
