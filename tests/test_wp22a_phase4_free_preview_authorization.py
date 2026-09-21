@@ -44,7 +44,11 @@ def test_wp22a_and_cloudflare_history_remain_accepted_before_timeweb_update() ->
         "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
         in text
     )
-    assert "Cloudflare Public Product System Update — **HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**" in text
+    assert (
+        "Cloudflare Public Product System Update — "
+        "**HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**"
+        in text
+    )
     assert "CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION" in text
     assert "CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY" in text
     assert "CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT" in text
