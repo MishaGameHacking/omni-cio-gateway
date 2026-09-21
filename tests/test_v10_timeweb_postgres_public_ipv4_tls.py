@@ -4,8 +4,8 @@ import io
 import json
 import os
 from pathlib import Path
-from typing import Any
 import tempfile
+from typing import Any
 import unittest
 from unittest import mock
 from urllib.error import HTTPError
