@@ -449,6 +449,50 @@ def _validate_create_transport() -> None:
     )
 
 
+def _validate_provisioner_safety(provisioner: str) -> None:
+    tree = ast.parse(provisioner)
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_provision_transport"
+    ]
+    if len(functions) != 1:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_PROVISIONER_DRIFT")
+    function = functions[0]
+
+    credential = call_lines(
+        function,
+        owner="read_only",
+        name="verify_credential_health",
+    )
+    prerequisite = call_lines(
+        function,
+        owner=None,
+        name="_verify_allocation_prerequisite",
+    )
+    writer = call_lines(function, owner=None, name="TimewebMutationApi")
+    if len(credential) != 1 or len(prerequisite) != 1 or len(writer) != 1:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_CREDENTIAL_SEQUENCE_INVALID")
+    if not credential[0] < prerequisite[0] < writer[0]:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_CREDENTIAL_SEQUENCE_INVALID")
+    if "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT" in provisioner:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_AUTH_CLASSIFICATION_DRIFT")
+    if "exc.read(" in provisioner:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RESPONSE_BODY_READ_FORBIDDEN")
+
+    forbidden_markers = (
+        '"is_ddos_guard": True',
+        '"is_enabled_public_ipv6": True',
+        "OMNI_V10_POSTGRES_DSN",
+        "NEON_API_KEY",
+        "ssl.CERT_NONE",
+        "check_hostname = False",
+        "TIMEWEB_CLUSTER_REPLICAS_PRESENT",
+    )
+    if any(marker in provisioner for marker in forbidden_markers):
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_AUTHORITY_WIDENED")
+
+
 def _validate_sources() -> None:
     provisioner = _read(PROVISIONER)
     read_only_probe = _read(READ_ONLY_PROBE)
@@ -529,47 +573,7 @@ def _validate_sources() -> None:
         ),
         "TIMEWEB_PUBLIC_IPV4_PROVISIONER_DRIFT",
     )
-    tree = ast.parse(provisioner)
-    functions = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_provision_transport"
-    ]
-    if len(functions) != 1:
-        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_PROVISIONER_DRIFT")
-    function = functions[0]
-
-    credential = call_lines(
-        function,
-        owner="read_only",
-        name="verify_credential_health",
-    )
-    prerequisite = call_lines(
-        function,
-        owner=None,
-        name="_verify_allocation_prerequisite",
-    )
-    writer = call_lines(function, owner=None, name="TimewebMutationApi")
-    if len(credential) != 1 or len(prerequisite) != 1 or len(writer) != 1:
-        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_CREDENTIAL_SEQUENCE_INVALID")
-    if not credential[0] < prerequisite[0] < writer[0]:
-        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_CREDENTIAL_SEQUENCE_INVALID")
-    if "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT" in provisioner:
-        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_AUTH_CLASSIFICATION_DRIFT")
-    if "exc.read(" in provisioner:
-        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RESPONSE_BODY_READ_FORBIDDEN")
-
-    for forbidden in (
-        '"is_ddos_guard": True',
-        '"is_enabled_public_ipv6": True',
-        "OMNI_V10_POSTGRES_DSN",
-        "NEON_API_KEY",
-        "ssl.CERT_NONE",
-        "check_hostname = False",
-        "TIMEWEB_CLUSTER_REPLICAS_PRESENT",
-    ):
-        if forbidden in provisioner:
-            raise RuntimeError("TIMEWEB_PUBLIC_IPV4_AUTHORITY_WIDENED")
+    _validate_provisioner_safety(provisioner)
 
     _markers(
         workflow,
