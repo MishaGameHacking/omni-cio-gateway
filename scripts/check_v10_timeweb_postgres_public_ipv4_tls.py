@@ -585,7 +585,7 @@ def _validate_sources() -> None:
             "contents: read",
             "if: github.ref == 'refs/heads/main'",
             "environment: timeweb-synthetic",
-            "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py",
+            "python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls",
             "python -m scripts.discover_v10_ru_pg_verifier_ipv4",
             "python -m scripts.provision_v10_timeweb_postgres_public_ipv4_tls",
             "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",
@@ -784,7 +784,7 @@ def _validate_ipv4_custody_sources() -> None:
     command = "python -m scripts.probe_v10_timeweb_ipv4_custody"
     _require(workflow.count(command), 1, "TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID")
     _require(
-        workflow.count("python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py"),
+        workflow.count("python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls"),
         2,
         "TIMEWEB_IPV4_DIAGNOSTIC_WORKFLOW_INVALID",
     )
