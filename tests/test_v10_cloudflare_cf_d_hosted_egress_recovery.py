@@ -37,26 +37,25 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
         cls.workflow = _WORKFLOW.read_text(encoding="utf-8")
         cls.adapter = _ADAPTER.read_text(encoding="utf-8")
 
-    def test_workflow_keeps_exact_main_release_gates(self) -> None:
-        for marker in (
-            "workflow_run:",
-            "- Regression Shield",
-            "github.event.workflow_run.conclusion == 'success'",
+    def test_workflow_is_archive_in_place_and_cannot_mutate_provider(self) -> None:
+        self.assertIn("ARCHIVE-IN-PLACE", self.workflow)
+        self.assertIn("workflow_dispatch:", self.workflow)
+        self.assertNotIn("workflow_run:", self.workflow)
+        self.assertNotIn("- Regression Shield", self.workflow)
+        self.assertEqual(self.workflow.count("      false &&"), 6)
+
+        for historical_marker in (
             "check_v10_cloudflare_postmerge_release_gate",
             "--source-branch main",
             "validate-domain-config",
             "probe-runtime-secret",
-            "Quarantine stale production Builds before rollback snapshot",
-            "--quarantine-only",
-            "snapshot-active-deployment",
             "run_v10_cloudflare_gated_production",
             "attach-domain",
             "probe_v10_cloudflare_live_release.sh",
             "wrangler rollback",
-            "previous_version_id",
-            "OMNI_V10_PRODUCTION_DEPLOY_ATTEMPTED=1",
         ):
-            self.assertIn(marker, self.workflow)
+            self.assertIn(historical_marker, self.workflow)
+
         self.assertNotIn("continue-on-error: true", self.workflow)
         self.assertNotIn("actions/checkout@", self.workflow)
         self.assertNotIn("actions/upload-artifact@", self.workflow)
