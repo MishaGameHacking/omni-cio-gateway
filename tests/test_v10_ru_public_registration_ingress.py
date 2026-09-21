@@ -16,7 +16,7 @@ def _contract() -> dict[str, object]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
-class RuPublicRegistrationIngressTests(unittest.TestCase):
+class TimewebPlatformConsolidationTests(unittest.TestCase):
     def test_guard_passes_current_repository(self) -> None:
         completed = subprocess.run(
             [sys.executable, str(GUARD)],
@@ -26,83 +26,93 @@ class RuPublicRegistrationIngressTests(unittest.TestCase):
             text=True,
             timeout=30,
         )
-        assert completed.returncode == 0, completed.stderr or completed.stdout
-        assert "Russia public-registration ingress authority passed" in completed.stdout
-
-    def test_provider_set_is_exact_and_has_no_legacy_active_platform(self) -> None:
-        providers = _contract()["providers"]
-        assert isinstance(providers, dict)
-        assert providers["exact_public_launch_set"] == [
-            "GitHub",
-            "Cloudflare",
-            "Timeweb Cloud",
-        ]
-        assert providers["render_active_v10_allowed"] is False
-        assert providers["cloud_ru_active_v10_allowed"] is False
-
-    def test_cloudflare_is_not_sole_russia_ingress_authority(self) -> None:
-        reachability = _contract()["cloudflare_russia_reachability"]
-        assert isinstance(reachability, dict)
-        assert (
-            reachability["cloudflare_only_public_ingress_accepted_for_russia_launch"]
-            is False
-        )
-        assert (
-            reachability["representative_russian_network_no_vpn_evidence_required"]
-            is True
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+        self.assertIn(
+            "Timeweb-only platform consolidation authority passed",
+            completed.stdout,
         )
 
-    def test_timeweb_app_candidate_is_exact_sha_and_not_auto_deployed(self) -> None:
-        app = _contract()["timeweb_app_platform_candidate"]
-        assert isinstance(app, dict)
-        assert app["explicit_accepted_main_commit_required"] is True
-        assert app["production_autodeploy_allowed"] is False
-        assert app["runtime_secrets_in_repository_allowed"] is False
-        assert app["live_public_deploy_authorized_by_contract"] is False
+    def test_active_service_set_is_exact(self) -> None:
+        payload = _contract()
+        self.assertEqual(
+            payload["active_general_service_set"],
+            ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"],
+        )
+        self.assertEqual(
+            payload["retired_active_services"],
+            ["Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"],
+        )
 
-    def test_neon_cannot_be_deleted_before_timeweb_cutover(self) -> None:
-        database = _contract()["database_end_state"]
+    def test_timeweb_is_only_production_platform_and_pg18(self) -> None:
+        payload = _contract()
+        service = payload["service_model"]
+        timeweb = payload["timeweb"]
+        database = payload["database"]
+        self.assertIsInstance(service, dict)
+        self.assertIsInstance(timeweb, dict)
+        self.assertIsInstance(database, dict)
+        assert isinstance(service, dict)
+        assert isinstance(timeweb, dict)
         assert isinstance(database, dict)
-        assert database["final_production_provider"] == (
-            "Timeweb Cloud Managed PostgreSQL 18"
+        self.assertEqual(service["production_platform"], "Timeweb Cloud")
+        self.assertEqual(timeweb["managed_postgresql_major"], 18)
+        self.assertEqual(
+            database["final_provider"],
+            "Timeweb Cloud Managed PostgreSQL 18",
         )
-        assert database["migration_sequence"] == [
-            "RU-PG-B",
-            "RU-PG-C",
-            "RU-PG-D",
-            "RU-PG-E",
-        ]
-        assert database["neon_active_production_retirement_stage"] == "RU-PG-E"
-        assert database["neon_delete_before_ru_pg_d_allowed"] is False
-        assert database["real_russian_user_data_before_ru_pg_d_allowed"] is False
 
-    def test_single_giant_pr_is_forbidden_at_material_boundaries(self) -> None:
+    def test_vk_and_session_bypasses_are_retired(self) -> None:
+        auth = _contract()["auth"]
+        self.assertIsInstance(auth, dict)
+        assert isinstance(auth, dict)
+        self.assertEqual(auth["human_identity_providers"], ["telegram"])
+        self.assertFalse(auth["vk_id_active_allowed"])
+        self.assertFalse(auth["owner_admin_demo_preview_session_bypass_allowed"])
+
+    def test_neon_cannot_be_deleted_before_cutover(self) -> None:
+        database = _contract()["database"]
+        self.assertIsInstance(database, dict)
+        assert isinstance(database, dict)
+        self.assertFalse(database["neon_new_feature_work_allowed"])
+        self.assertFalse(database["neon_delete_before_timeweb_cutover_allowed"])
+
+    def test_cleanup_does_not_rewrite_git_history(self) -> None:
+        cleanup = _contract()["cleanup"]
+        self.assertIsInstance(cleanup, dict)
+        assert isinstance(cleanup, dict)
+        self.assertFalse(cleanup["git_history_rewrite_for_cleanup_allowed"])
+        self.assertFalse(cleanup["provider_physical_media_erasure_claim_allowed"])
+
+    def test_one_branch_default_preserves_split_boundaries(self) -> None:
         execution = _contract()["execution"]
+        self.assertIsInstance(execution, dict)
         assert isinstance(execution, dict)
-        assert execution["umbrella_program_issue"] == 580
-        assert execution["one_unbounded_pr_for_all_stages_allowed"] is False
-        assert "RU-PG-D_PRODUCTION_DATABASE_CUTOVER" in (
-            execution["mandatory_split_boundaries"]
+        self.assertTrue(execution["source_one_branch_default"])
+        self.assertEqual(
+            execution["milestones"],
+            ["TW-A", "TW-B", "TW-C", "TW-D", "TW-E", "TW-F", "TW-G"],
         )
-        assert "PUBLIC_USER_ACTIVATION" in execution["mandatory_split_boundaries"]
+        self.assertIn(
+            "PRODUCTION_DATABASE_CUTOVER",
+            execution["mandatory_split_boundaries"],
+        )
+        self.assertIn(
+            "DESTRUCTIVE_PROVIDER_DECOMMISSION",
+            execution["mandatory_split_boundaries"],
+        )
 
-    def test_public_activation_and_real_money_remain_off(self) -> None:
-        activation = _contract()["activation"]
+    def test_public_and_real_money_flags_remain_fail_closed(self) -> None:
         protected = _contract()["protected_invariants"]
-        assert isinstance(activation, dict)
+        self.assertIsInstance(protected, dict)
         assert isinstance(protected, dict)
-        assert activation["public_registration_allowed_by_contract"] is False
-        assert activation["telegram_first_allowed_after_owning_gates"] is True
         for key in (
             "PUBLIC_MULTI_USER_ENABLED",
             "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
-            "OMNI_V10_VK_ID_LOGIN_ENABLED",
             "broker_write",
             "trading_methods",
             "REAL_TRADING_ENABLED",
         ):
-            assert protected[key] is False
-        assert protected["protected_v9_entrypoint"] == "app:app"
+            self.assertFalse(protected[key])
 
 
 if __name__ == "__main__":
