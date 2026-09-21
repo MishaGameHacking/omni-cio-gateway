@@ -600,9 +600,19 @@ def _verify_terminal_shape():
 
     def test_existing_exact_target_enters_get_only_recovery_without_writer(self) -> None:
         read_api = mock.Mock()
-        read_api.get.side_effect = [
-            {"types": [{"id": "postgres18", "type": "postgres", "version": "18"}]},
-            {
+        project_path = "/api/v1/projects/42/resources/databases"
+        responses = {
+            "/api/v1/database-types": {
+                "types": [
+                    {
+                        "name": "PostgreSQL",
+                        "version": "18",
+                        "type": "postgres18",
+                        "is_deprecated": False,
+                    }
+                ]
+            },
+            "/api/v2/presets/dbs": {
                 "databases_presets": [
                     {
                         "id": 777,
@@ -615,12 +625,12 @@ def _verify_terminal_shape():
                     }
                 ]
             },
-            {
+            project_path: {
                 "databases": [
                     {"id": 91, "name": read_only.TARGET_CLUSTER_NAME},
                 ]
             },
-            {
+            "/api/v1/databases/91": {
                 "db": {
                     "id": 91,
                     "name": read_only.TARGET_CLUSTER_NAME,
@@ -640,12 +650,8 @@ def _verify_terminal_shape():
                     "status": "started",
                 }
             },
-            {
-                "databases": [
-                    {"id": 91, "name": read_only.TARGET_CLUSTER_NAME},
-                ]
-            },
-        ]
+        }
+        read_api.get.side_effect = responses.__getitem__
         with (
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
