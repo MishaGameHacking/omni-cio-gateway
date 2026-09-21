@@ -37,7 +37,7 @@ The active System Update is `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`, with or
 
 No new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized. OWNER reported on 2026-09-21 that the previous Cloudflare and Neon external resources/accounts, domains, databases, keys and secrets were manually removed. Screenshots support substantial decommission activity, but provider-side physical deletion/retention is not independently verifiable from GitHub. Cloudflare/Neon must therefore be treated as unavailable rollback targets.
 
-Canonical-domain verification is now a hard blocker: accepted repository/Telegram evidence uses `omnicio.ru`, while OWNER-supplied Cloudflare screenshots show deletion of `omni-cio.ru`. These are different DNS names. Timeweb canonical DNS and Telegram production-origin mutation remain blocked until OWNER confirms the exact registered V10 domain and control is re-verified.
+Canonical-domain ambiguity is resolved: OWNER confirmed on 2026-09-21 that **`omnicio.ru`** is the canonical V10 production domain. The `omni-cio.ru` Cloudflare zone shown in the decommission screenshots is not the target production domain. Timeweb DNS/TLS and Telegram production activation remain fail-closed until their technical/provider gates pass.
 
 Git history is not rewritten to remove old provider names. Legacy provider files remain archive-in-place by default; after cutover their live workflow/provider authority is disabled or revoked while historical provenance remains intact.
 
