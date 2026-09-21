@@ -25,6 +25,10 @@ RETIRED_CLOUDFLARE_WORKFLOWS = (
     ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml",
     ROOT / ".github/workflows/v10-cloudflare-production-release.yml",
 )
+RETIRED_NEON_EGRESS_WORKFLOW = ROOT / ".github/workflows/v10-neon-egress-boundary.yml"
+RETIRED_PROVIDER_WORKFLOWS = RETIRED_CLOUDFLARE_WORKFLOWS + (
+    RETIRED_NEON_EGRESS_WORKFLOW,
+)
 
 EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
 EXPECTED_RETIRED = ["Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"]
@@ -198,6 +202,16 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
         ],
         "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
     )
+    _require(
+        ci.get("retired_provider_workflows")
+        == [
+            ".github/workflows/v10-cloudflare-provider-readiness.yml",
+            ".github/workflows/v10-cloudflare-candidate-deploy.yml",
+            ".github/workflows/v10-cloudflare-production-release.yml",
+            ".github/workflows/v10-neon-egress-boundary.yml",
+        ],
+        "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
+    )
     for key in (
         "retired_provider_live_workflow_auto_trigger_allowed",
         "retired_provider_manual_mutation_allowed",
@@ -358,9 +372,9 @@ def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
 
 def _validate_active_workflow_graph() -> None:
     manual_disable_marker = "if: $" + "{{ false }}"
-    expected_disabled_jobs = (1, 1, 6)
+    expected_disabled_jobs = (1, 1, 6, 3)
     for path, expected_count in zip(
-        RETIRED_CLOUDFLARE_WORKFLOWS,
+        RETIRED_PROVIDER_WORKFLOWS,
         expected_disabled_jobs,
         strict=True,
     ):

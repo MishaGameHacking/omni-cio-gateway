@@ -158,6 +158,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ".github/workflows/v10-cloudflare-provider-readiness.yml": 1,
             ".github/workflows/v10-cloudflare-candidate-deploy.yml": 1,
             ".github/workflows/v10-cloudflare-production-release.yml": 6,
+            ".github/workflows/v10-neon-egress-boundary.yml": 3,
         }
         for relative, count in expected.items():
             source = (ROOT / relative).read_text(encoding="utf-8")
@@ -183,6 +184,15 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
                 ".github/workflows/v10-cloudflare-provider-readiness.yml",
                 ".github/workflows/v10-cloudflare-candidate-deploy.yml",
                 ".github/workflows/v10-cloudflare-production-release.yml",
+            ],
+        )
+        self.assertEqual(
+            ci["retired_provider_workflows"],
+            [
+                ".github/workflows/v10-cloudflare-provider-readiness.yml",
+                ".github/workflows/v10-cloudflare-candidate-deploy.yml",
+                ".github/workflows/v10-cloudflare-production-release.yml",
+                ".github/workflows/v10-neon-egress-boundary.yml",
             ],
         )
         self.assertFalse(ci["retired_provider_live_workflow_auto_trigger_allowed"])

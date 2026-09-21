@@ -114,6 +114,11 @@ Split decision: **PR #582 is the mandatory security/authority + live-evidence ac
 - Second-RED root cause: the Timeweb consolidation guard still had one production-only assertion for the removed legacy `false && ...` disable representation, while the repaired archived workflow correctly used unconditional `if: ${{ false }}`.
 - Correction rule: all three retired Cloudflare workflows use one exact hard-disable representation, with expected disabled-job counts `1 / 1 / 6`, no automatic trigger and no legacy `false &&` fallback.
 
+- Third exact-head finding on `d9e34a31cff28eb17290fe7d15fb3cc0a18e94af`: Engineering Governance #1878 passed every individual authority guard through the CI graph repair and then failed one regression test because the new role key `current_provider_secret_authority` violated the repository's own detector-unambiguous naming rule forbidding `secret` in metadata keys.
+- Whole-workflow adjacent review found `.github/workflows/v10-neon-egress-boundary.yml` still active on PR/main and performing an anonymous network request to retired Neon. It used no credential and made no mutation, but it remained a runtime dependency on a retired provider and could create future false RED after provider decommission.
+- Systemic correction: rename the Timeweb role metadata to detector-safe `current_provider_binding_authority`; archive/hard-disable the Neon egress workflow; extend current machine contracts and guards from the three Cloudflare workflows to the complete retired-provider executable set; keep the probe implementation/tests as historical evidence only.
+- Historical manual Render workflows remain fail-closed, but their operator text no longer directs future work to retired Cloudflare.
+
 Only `CERTIFIED_GREEN` permits TW-B.
 
 ## 8. Root-cause inventory

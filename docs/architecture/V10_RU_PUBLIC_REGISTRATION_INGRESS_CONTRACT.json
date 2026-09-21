@@ -114,6 +114,12 @@
       "Regression Shield",
       "V10 authoritative merge gate",
       "V10 Engineering Governance"
+    ],
+    "retired_provider_workflows": [
+      ".github/workflows/v10-cloudflare-provider-readiness.yml",
+      ".github/workflows/v10-cloudflare-candidate-deploy.yml",
+      ".github/workflows/v10-cloudflare-production-release.yml",
+      ".github/workflows/v10-neon-egress-boundary.yml"
     ]
   },
   "execution": {

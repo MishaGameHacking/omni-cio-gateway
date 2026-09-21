@@ -1,26 +1,17 @@
 name: V10 Neon Egress Boundary Diagnostic
 
+# ARCHIVE-IN-PLACE: Amendment 18 retired Neon from active V10 authority.
+# Manual dispatch remains only so historical Actions provenance stays resolvable.
+# Every job is hard-disabled; the retired provider must not be contacted by CI.
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/v10-neon-egress-boundary.yml"
-      - "scripts/probe_v10_neon_egress_boundary.py"
-      - "tests/test_v10_neon_egress_boundary.py"
-      - "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL156.md"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/v10-neon-egress-boundary.yml"
-      - "scripts/probe_v10_neon_egress_boundary.py"
-      - "tests/test_v10_neon_egress_boundary.py"
-      - "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL156.md"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   self_hosted:
+    if: ${{ false }}
     name: Neon egress control / self-hosted Windows
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 15
@@ -94,6 +85,7 @@ jobs:
           fi
 
   github_hosted:
+    if: ${{ false }}
     name: Neon egress control / GitHub-hosted Ubuntu
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -126,6 +118,7 @@ jobs:
         run: python3 -m scripts.probe_v10_neon_egress_boundary probe
 
   classify:
+    if: ${{ false }}
     name: Neon egress boundary classification
     needs:
       - self_hosted

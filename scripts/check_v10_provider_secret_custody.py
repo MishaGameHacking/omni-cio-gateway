@@ -20,6 +20,7 @@ TIMEWEB_NETWORK_WORKFLOW = ".github/workflows/v10-timeweb-postgres-public-ipv4-t
 TIMEWEB_ALLOCATION_WORKFLOW = ".github/workflows/v10-timeweb-ipv4-allocation.yml"
 RETIRED_HOSTED_WORKFLOW = ".github/workflows/v10-hosted-release-alignment.yml"
 RETIRED_PREVIEW_WORKFLOW = ".github/workflows/v10-phase4-free-preview-deploy.yml"
+RETIRED_NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
 
 CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID"
 CLOUDFLARE_API_TOKEN = "CLOUDFLARE_API_TOKEN"
@@ -74,7 +75,13 @@ _TIMEWEB_WORKFLOWS = frozenset(
 )
 _ACTIVE_WORKFLOWS = _TIMEWEB_WORKFLOWS
 _RETIRED_SECRET_BEARING_WORKFLOWS = _CLOUDFLARE_WORKFLOWS
-_EXPECTED_RETIRED = frozenset({RETIRED_HOSTED_WORKFLOW, RETIRED_PREVIEW_WORKFLOW})
+_EXPECTED_RETIRED = frozenset(
+    {
+        RETIRED_HOSTED_WORKFLOW,
+        RETIRED_PREVIEW_WORKFLOW,
+        RETIRED_NEON_EGRESS_WORKFLOW,
+    }
+)
 _ARCHIVE_MARKER = (
     "ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
 )
@@ -93,7 +100,7 @@ _RETAINED_FUNCTION_COMPONENTS = frozenset(
     }
 )
 _EXPECTED_ROLES: dict[str, object] = {
-    "current_provider_secret_authority": TIMEWEB_CONTROL_PLANE_BINDING,
+    "current_provider_binding_authority": TIMEWEB_CONTROL_PLANE_BINDING,
     "historical_neon_runtime_management_binding": NEON_RUNTIME_BINDING,
     "legacy_neon_function_deploy_binding": NEON_FUNCTION_DEPLOY_BINDING,
     "legacy_function_transport_active": False,

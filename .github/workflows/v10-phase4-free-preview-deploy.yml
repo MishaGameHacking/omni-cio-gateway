@@ -26,5 +26,5 @@ jobs:
           @echo off
           echo LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14
           echo This workflow is historical evidence only and is not an active V10 deployment path.
-          echo Use the accepted Cloudflare authority sequence; do not refresh Render attestation or mutate Render.
+          echo Use the accepted Timeweb authority under Amendment 18; do not refresh Render attestation or mutate Render.
           exit /b 78

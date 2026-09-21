@@ -26,5 +26,5 @@ jobs:
           @echo off
           echo LEGACY_RENDER_ALIGNMENT_RETIRED_AMENDMENT_14
           echo Render hosted-release alignment is historical evidence only.
-          echo Current V10 release authority must use the accepted Cloudflare candidate and promotion sequence.
+          echo Current V10 provider authority is Timeweb under Amendment 18; this historical workflow cannot accept releases.
           exit /b 79

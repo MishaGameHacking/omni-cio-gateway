@@ -25,6 +25,7 @@ TIMEWEB_ALLOCATION_WORKFLOW = Path(
 )
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
+RETIRED_NEON_EGRESS_WORKFLOW = Path(".github/workflows/v10-neon-egress-boundary.yml")
 
 
 def _fixture(parent: Path) -> Path:
@@ -67,7 +68,11 @@ def _fixture(parent: Path) -> Path:
             + "\n".join(jobs) + "\n", encoding="utf-8"
         )
 
-    for relative in (RETIRED_HOSTED_WORKFLOW, RETIRED_PREVIEW_WORKFLOW):
+    for relative in (
+        RETIRED_HOSTED_WORKFLOW,
+        RETIRED_PREVIEW_WORKFLOW,
+        RETIRED_NEON_EGRESS_WORKFLOW,
+    ):
         (root / relative).write_text(
             "name: retired\njobs:\n  retired:\n    runs-on: test\n    steps:\n"
             "      - run: exit 79\n",
@@ -106,7 +111,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
     def test_secret_name_metadata_is_detector_unambiguous(self) -> None:
         contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
         roles = contract["role_separation"]
-        self.assertEqual(roles["current_provider_secret_authority"], "TIMEWEB_CLOUD_API_TOKEN")
+        self.assertEqual(roles["current_provider_binding_authority"], "TIMEWEB_CLOUD_API_TOKEN")
         self.assertEqual(roles["historical_neon_runtime_management_binding"], "NEON_API_KEY")
         self.assertFalse(roles["retired_provider_workflow_execution_allowed"])
         self.assertEqual(

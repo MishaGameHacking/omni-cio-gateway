@@ -62,7 +62,14 @@ class HostedReleaseAlignmentGovernanceTests(unittest.TestCase):
             "Legacy Render hosted alignment: manual-only and fail-closed",
             completed.stdout,
         )
-        self.assertIn("Cloudflare sequence owned by Amendment 14", completed.stdout)
+        self.assertIn(
+            "Historical Amendment-14 Cloudflare release authority: preserved evidence only",
+            completed.stdout,
+        )
+        self.assertIn(
+            "Current/future V10 provider authority: Timeweb under Amendment 18",
+            completed.stdout,
+        )
 
     def test_validator_rejects_reactivated_workflow_run_trigger(self) -> None:
         governance = _module()
