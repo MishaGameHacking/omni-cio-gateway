@@ -147,6 +147,21 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         )
         self.assertTrue(activation["telegram_canonical_origin_reconfirmation_required"])
 
+    def test_active_ci_graph_is_github_to_timeweb_only(self) -> None:
+        ci = _contract()["ci"]
+        self.assertIsInstance(ci, dict)
+        assert isinstance(ci, dict)
+        self.assertEqual(ci["active_service"], "GitHub")
+        self.assertEqual(ci["postmerge_upstream_workflow"], "Regression Shield")
+        self.assertEqual(
+            ci["timeweb_read_only_proof_workflow"],
+            ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
+        )
+        self.assertFalse(ci["retired_provider_live_workflow_auto_trigger_allowed"])
+        self.assertFalse(ci["retired_provider_manual_mutation_allowed"])
+        self.assertFalse(ci["timeweb_proof_may_depend_on_retired_provider_workflow"])
+        self.assertFalse(ci["sonar_required_final"])
+
     def test_public_and_real_money_flags_remain_fail_closed(self) -> None:
         protected = _contract()["protected_invariants"]
         self.assertIsInstance(protected, dict)
