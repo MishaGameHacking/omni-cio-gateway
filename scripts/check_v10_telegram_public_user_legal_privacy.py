@@ -22,6 +22,9 @@ POLICY = Path("docs/legal/V10_OMNI_CIO_PRIVACY_POLICY_RU.md")
 CONSENT = Path("docs/legal/V10_OMNI_CIO_PERSONAL_DATA_CONSENT_RU.md")
 RUNBOOK = Path("docs/operations/V10_TELEGRAM_PUBLIC_USER_LEGAL_PRIVACY_RUNBOOK.md")
 STATUS = Path("knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
+PLATFORM_AUTHORITY = Path(
+    "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
+)
 WRANGLER = Path("wrangler.jsonc")
 
 _EXPECTED_FLAGS = {
@@ -219,12 +222,23 @@ def _validate_public_docs(root: Path) -> None:
 def _validate_current_state(root: Path) -> None:
     status = _read(root, STATUS)
     for marker in (
-        "current Neon production authority remains accepted until an explicit later cutover",
-        "RU-PG-C remains locked until RU-PG-B",
+        "Amendment 18 is accepted on protected `main` through PR #581",
+        "current authorized System Update — **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**",
+        "`ChatGPT + GitHub + Timeweb Cloud + Telegram Login`",
     ):
         if marker not in status:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_CURRENT_STATE_DRIFT")
-
+    authority = _load_json(root, PLATFORM_AUTHORITY, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    _require(authority.get("schema"), "omni-cio.v10.timeweb-only-platform-consolidation.v1", "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    _require(authority.get("active_general_service_set"), ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"], "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    retired = authority.get("retired_active_services")
+    if not isinstance(retired, list) or set(retired) != {"Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"}:
+        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    database = _mapping(authority.get("database"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    _require(database.get("final_provider"), "Timeweb Cloud Managed PostgreSQL 18", "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    _require(database.get("neon_current_rollback_available"), False, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    cleanup = _mapping(authority.get("cleanup"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    _require(cleanup.get("historical_artifacts_may_define_current_authority"), False, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
     try:
         wrangler = loads_jsonc(_read(root, WRANGLER))
     except (ValueError, TypeError) as exc:
@@ -241,7 +255,6 @@ def _validate_current_state(root: Path) -> None:
     for key, expected in _EXPECTED_FLAGS.items():
         if production.get(key) != expected or staging["vars"].get(key) != expected:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_PREMATURE_ACTIVATION")
-
 
 def _validate_readiness_link(
     root: Path,

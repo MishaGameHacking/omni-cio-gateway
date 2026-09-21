@@ -15,6 +15,12 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
     def test_repository_release_contract_is_valid(self) -> None:
         guard.validate()
 
+    def test_archived_production_workflow_is_hard_disabled(self) -> None:
+        source = guard.PRODUCTION_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(guard._ARCHIVE_MARKER, source)
+        self.assertEqual(source.count("    if: ${{ false }}"), guard._ARCHIVE_DISABLED_JOB_COUNT)
+        self.assertNotIn("on:\n  workflow_run:", source)
+
     def test_guard_rejects_implicit_public_multi_user_expectation(self) -> None:
         payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
         payload["live_assertions"][

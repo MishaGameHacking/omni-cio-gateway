@@ -33,9 +33,8 @@ def _fixture(parent: Path) -> Path:
     (root / CONTRACT_PATH.parent).mkdir(parents=True)
     shutil.copy2(ROOT / CONTRACT_PATH, root / CONTRACT_PATH)
 
-    active: dict[str, list[str]] = json.loads(
-        (ROOT / CONTRACT_PATH).read_text(encoding="utf-8")
-    )["active_workflows"]
+    contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
+    active: dict[str, list[str]] = contract["active_workflows"]
     for relative, names in active.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,6 +46,25 @@ def _fixture(parent: Path) -> Path:
             "      - name: bounded\n        env:\n"
             f"{env_lines}\n        run: echo guarded\n",
             encoding="utf-8",
+        )
+
+    retired_secret_bearing: dict[str, list[str]] = contract["retired_secret_bearing_workflows"]
+    for relative, names in retired_secret_bearing.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        env_lines = "\n".join(f"          {name}: ${{{{ secrets.{name} }}}}" for name in names)
+        count = guard._ARCHIVED_DISABLED_JOB_COUNTS[relative]
+        jobs: list[str] = []
+        for index in range(count):
+            body = [f"  archive_{index}:", "    if: ${{ false }}", "    runs-on: test", "    steps:"]
+            if index == 0:
+                body.extend(["      - name: bounded", "        env:", env_lines, "        run: echo archived"])
+            else:
+                body.append("      - run: echo archived")
+            jobs.extend(body)
+        path.write_text(
+            "name: archived\n# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority.\non:\n  workflow_dispatch:\njobs:\n"
+            + "\n".join(jobs) + "\n", encoding="utf-8"
         )
 
     for relative in (RETIRED_HOSTED_WORKFLOW, RETIRED_PREVIEW_WORKFLOW):
@@ -88,7 +106,9 @@ class ProviderSecretCustodyTests(unittest.TestCase):
     def test_secret_name_metadata_is_detector_unambiguous(self) -> None:
         contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
         roles = contract["role_separation"]
-        self.assertEqual(roles["active_neon_runtime_management_binding"], "NEON_API_KEY")
+        self.assertEqual(roles["current_provider_secret_authority"], "TIMEWEB_CLOUD_API_TOKEN")
+        self.assertEqual(roles["historical_neon_runtime_management_binding"], "NEON_API_KEY")
+        self.assertFalse(roles["retired_provider_workflow_execution_allowed"])
         self.assertEqual(
             roles["legacy_neon_function_deploy_binding"],
             "NEON_FUNCTION_DEPLOY_API_KEY",
@@ -149,7 +169,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         )
         self._assert_rejected(
             root,
-            "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
+            "PROVIDER_SECRET_CUSTODY_RETIRED_BINDINGS_MISMATCH",
         )
 
     def test_cloudflare_binding_cannot_enter_timeweb_workflow(self) -> None:
@@ -209,7 +229,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
             "PROVIDER_SECRET_CUSTODY_DEPRECATED_SECRET_REFERENCED",
         )
 
-    def test_dormant_function_deploy_key_cannot_enter_active_workflow(self) -> None:
+    def test_dormant_function_deploy_key_cannot_enter_retired_archive(self) -> None:
         root = self._root()
         _append(
             root,
@@ -218,7 +238,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         )
         self._assert_rejected(
             root,
-            "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
+            "PROVIDER_SECRET_CUSTODY_RETIRED_BINDINGS_MISMATCH",
         )
 
     def test_protected_identifier_variable_fallback_is_rejected(self) -> None:
@@ -249,7 +269,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         )
         self._assert_rejected(
             root,
-            "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
+            "PROVIDER_SECRET_CUSTODY_RETIRED_BINDINGS_MISMATCH",
         )
 
     def test_lowercase_secret_reference_normalizes_to_canonical_name(self) -> None:
@@ -312,6 +332,16 @@ class ProviderSecretCustodyTests(unittest.TestCase):
             ),
         )
         self._assert_rejected(root, "PROVIDER_SECRET_CUSTODY_JOB_SCOPE_TOO_BROAD")
+
+    def test_retired_provider_workflow_auto_trigger_is_rejected(self) -> None:
+        root = self._root()
+        _replace(root, PROVIDER_WORKFLOW, "on:\n  workflow_dispatch:", "on:\n  push:\n    branches:\n      - main")
+        self._assert_rejected(root, "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_DISPATCH_MISSING")
+
+    def test_retired_provider_workflow_must_remain_hard_disabled(self) -> None:
+        root = self._root()
+        _replace(root, PROVIDER_WORKFLOW, "    if: ${{ false }}\n", "")
+        self._assert_rejected(root, "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_NOT_HARD_DISABLED")
 
     def test_inventory_state_drift_is_rejected(self) -> None:
         root = self._root()

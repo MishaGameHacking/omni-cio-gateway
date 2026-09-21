@@ -57,6 +57,8 @@ _PROVIDER_MUTATION_STEP_MARKERS = (
     "- name: Bootstrap isolated staging Worker without local Containers",
     "- name: Configure Workers Builds and accept exact staging build",
 )
+_ARCHIVE_MARKER = "# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
+
 
 
 def _read(path: Path) -> str:
@@ -188,8 +190,24 @@ def _validate_idempotent_worker_anchor_bootstrap(workflow: str) -> None:
         raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_GATE_ORDER_INVALID")
 
 
+def _validate_archived_workflow(workflow: str, code_prefix: str) -> None:
+    _require_markers(
+        workflow,
+        (_ARCHIVE_MARKER, "on:\n  workflow_dispatch:", "if: ${{ false }}"),
+        f"{code_prefix}_ARCHIVE_GUARD_MISSING",
+    )
+    _forbid_markers(
+        workflow,
+        ("on:\n  push:", "on:\n  workflow_run:"),
+        f"{code_prefix}_ARCHIVE_TRIGGER_PRESENT",
+    )
+
+
 def _validate_candidate_workflow() -> None:
     workflow = _read(CANDIDATE_WORKFLOW)
+    if _ARCHIVE_MARKER in workflow:
+        _validate_archived_workflow(workflow, "CLOUDFLARE_CANDIDATE")
+        return
     _require_markers(
         workflow,
         (
@@ -240,6 +258,9 @@ def _validate_candidate_workflow() -> None:
 
 def _validate_readiness_workflow() -> None:
     readiness = _read(READINESS_WORKFLOW)
+    if _ARCHIVE_MARKER in readiness:
+        _validate_archived_workflow(readiness, "CLOUDFLARE_PROVIDER_READINESS")
+        return
     _require_markers(
         readiness,
         (

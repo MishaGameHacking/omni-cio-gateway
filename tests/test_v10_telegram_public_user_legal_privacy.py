@@ -16,6 +16,7 @@ _REQUIRED = (
     guard.CONSENT,
     guard.RUNBOOK,
     guard.STATUS,
+    guard.PLATFORM_AUTHORITY,
     guard.WRANGLER,
 )
 
@@ -30,6 +31,17 @@ def _copy_fixture(root: Path) -> None:
 class TelegramPublicUserLegalPrivacyTests(unittest.TestCase):
     def test_current_repository_contract_is_valid(self) -> None:
         guard.validate()
+
+    def test_guard_rejects_retired_provider_reentry_as_current_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.PLATFORM_AUTHORITY
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["database"]["neon_current_rollback_available"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"):
+                guard.validate(root)
 
     def test_guard_rejects_foreign_database_as_localized(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
