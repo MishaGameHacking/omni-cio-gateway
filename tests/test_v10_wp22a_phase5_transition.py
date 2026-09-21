@@ -149,7 +149,7 @@ def test_status_closes_wp22a_and_preserves_history_before_timeweb_update() -> No
     assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
     assert "Block E / WP22A overall — **COMPLETE**" in text
     assert "Block E — **COMPLETE (14%)**" in text
-    assert "PRODUCT IMPLEMENTATION PAUSED" in text
+    assert "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in text
     assert (
         "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
         in text
