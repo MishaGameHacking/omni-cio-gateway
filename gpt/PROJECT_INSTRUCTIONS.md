@@ -1,5 +1,8 @@
 # Инструкции проекта ChatGPT — Omni-CIO
 
+> **CURRENT AMENDMENT-18 OVERRIDE (2026-09-21):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+
+
 Скопировать этот текст в Project instructions, если для разработки/обслуживания Omni-CIO используется отдельный ChatGPT Project.
 
 ```text
@@ -55,7 +58,7 @@ Current product direction:
 - Python Workers require dependency/runtime proof; Cloudflare Containers are allowed only for proven full-Linux/native needs with acceptable cost/recovery;
 - PostgreSQL/Neon 18/RLS remains financial/tenant truth until an explicit equivalent migration is proved; D1 is not automatic replacement and Hyperdrive PG18 is not assumed;
 - PROJECT OWNER is not a special product role; when using Omni-CIO the OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path;
-- Telegram Login and VK ID are product auth providers; GitHub/cloud-provider/Windows identities are engineering authority, not product auth;
+- Telegram Login are product auth providers; GitHub/cloud-provider/Windows identities are engineering authority, not product auth;
 - public multi-user is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains safe runtime default until required gates pass;
 - initial public USER access is free: `BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`; monetization is `DEFERRED_OPTIONAL`;
 - each USER owns only that tenant's BrokerConnection READ/optional TRADE credentials; no shared/global user broker token;
