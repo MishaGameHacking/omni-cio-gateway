@@ -423,8 +423,10 @@ def _validate_static_surfaces(failures: list[str]) -> None:
         AUTHORITATIVE_WORKFLOW: (
             "checks: read",
             AUTHORITATIVE_CHECK_NAME,
-            "Verify exact-head Sonar review gate",
-            f"python {EXTERNAL_REVIEW_GUARD_PATH}",
+            "Run protected Regression Shield with coverage",
+            "Audit protected runtime dependencies",
+            "Run protected SAST",
+            "Scan tracked content for potential secrets",
         ),
         EXTERNAL_REVIEW_GUARD: (
             SONAR_POSTMERGE_CHECK_NAME,
@@ -502,8 +504,14 @@ def main() -> int:
     print(
         "Targeted verifier: exact dispatch head + accepted frontend toolchain enforced"
     )
-    print("Required merge gate: exact-head Sonar zero-issue enforcement enabled")
-    print("Post-merge release gate: exact-main Sonar success enforcement enabled")
+    print(
+        "Required merge gate: GitHub-native exact-head regression/security "
+        "enforcement enabled"
+    )
+    print(
+        "External Sonar is historical evidence only; active merge/release "
+        "authority is GitHub-native"
+    )
     print(
         "Post-merge cancelled Sonar: equivalent-tree PR provenance is fail-closed; "
         "valid merge-SHA convergence uses the outer bounded release wait"
