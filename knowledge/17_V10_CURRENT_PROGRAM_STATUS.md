@@ -4,7 +4,7 @@ Updated: 2026-09-18
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CLOUDFLARE WORKERS PAID PLATFORM AUTHORITY ACCEPTED / CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED ACCEPTED COMPLETE / NO ACTIVE FUNCTIONAL IMPLEMENTATION PACKAGE / CURRENT NEXT PACKAGE WEB-VISUAL-INTEGRATED / OWNER START REQUIRED / WP23+ LOCKED / CURRENT USER-FACING ACTIVATIONS BLOCKED_EXTERNAL WHERE REAL GATES REMAIN**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 TIMEWEB-ONLY PLATFORM CONSOLIDATION OWNER-APPROVED PENDING GREEN MERGE / CURRENT NEXT PACKAGE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -18,7 +18,26 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 
 `PUBLIC_MULTI_USER_ENABLED=false` remains the **current runtime state, not a V10-wide release lock**. Under Amendment 13, completed capabilities may become live as soon as their own real authentication/runtime/privacy/security/capacity/monitoring gates pass; unrelated unfinished V10 blocks are not a reason to hold a ready capability forever.
 
-Product implementation is **PRODUCT IMPLEMENTATION PAUSED** after the accepted Cloudflare System Update. `WEB-VISUAL-INTEGRATED` is now the current next prepared product System Update, but it remains OWNER-locked and still requires the exact command `START V10 WEB VISUAL SYSTEM UPDATE` before any visual-refresh source branch or implementation begins. WP23+ remains locked.
+Amendment 18 records the OWNER decision to retire Cloudflare/Neon/Render/Cloud.ru/VK from active future V10 authority and consolidate production on Timeweb with Telegram-only human login. Once this governance change is accepted, `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
+
+## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
+
+Accepted historical Cloudflare/Render/Neon chains remain evidence of what earlier code proved, but they do not remain future platform authority after Amendment 18 acceptance.
+
+Final selected operating model:
+
+- ChatGPT = engineering assistant only;
+- GitHub = source/review/CI/release provenance;
+- Timeweb Cloud = sole selected production infrastructure platform;
+- Telegram Login = sole selected human product login provider.
+
+Retirement targets are Cloudflare, Neon, Render, Cloud.ru and VK ID. External review/CI SaaS is also to be removed from the required path after equivalent-or-stronger GitHub-native checks are proven.
+
+The active System Update is `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`, with ordered milestones TW-A→TW-G. It delivers provider-neutral application source, Timeweb App Platform exact-SHA deployment, Timeweb PostgreSQL 18 production cutover, Timeweb DNS/TLS/no-VPN Russian ingress, Telegram-only activation, then legacy-provider decommission/current-tree cleanup.
+
+No new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized. During migration the last-known-good provider remains only until its owning replacement/cutover gate succeeds.
+
+Git history is not rewritten to remove old provider names. Current-tree active integrations are removed after cutover; historical provenance remains in Git.
 
 ## Latest accepted Cloudflare runtime/release baseline
 
@@ -393,33 +412,31 @@ Future monetization remains `DEFERRED_OPTIONAL`.
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED |
 | **TOTAL** | **100% planned** | **54% ACCEPTED** |
 
-## Current next package — WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED
+## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED — Timeweb-only runtime/database/DNS/Telegram consolidation
 
-The Cloudflare Public Product System Update is accepted complete. The next prepared product package is `WEB-VISUAL-INTEGRATED`, but preparation is not authorization to implement it.
+OWNER authorization is recorded by Amendment 18.
 
-Exact OWNER start command required before source work:
+Target stack:
 
-`START V10 WEB VISUAL SYSTEM UPDATE`
+`ChatGPT + GitHub + Timeweb Cloud + Telegram Login`
 
-Until that exact command is recorded by current authority:
+Default source branch after Amendment 18 acceptance:
 
-- do not create the visual-refresh implementation branch;
-- do not modify `apps/web` merely for the visual redesign;
-- do not start WEB-VISUAL-A or any dependent B→G milestone;
-- do not start WP23+ / Telegram, AI/Cortex, Guardian or broker-write/Real execution work;
-- continue only focused maintenance/defect/security/recovery/governance work that is actually required by accepted main.
+`system/timeweb-platform-consolidation`
 
-Prepared visual member order remains:
+Ordered internal milestones:
 
-1. `WEB-VISUAL-A` — design-system foundation;
-2. `WEB-VISUAL-B` — spatial shell/navigation;
-3. `WEB-VISUAL-C` — Portfolio/Assets presentation;
-4. `WEB-VISUAL-D` — Watchtower/Research/Risk/Decisions/Plans presentation;
-5. `WEB-VISUAL-E` — Execution/Journal/System/Settings presentation;
-6. `WEB-VISUAL-F` — atmosphere/optional spatial brand layer;
-7. `WEB-VISUAL-G` — visual/performance/accessibility hardening.
+1. `TW-A` — provider/dependency inventory and authority cleanup;
+2. `TW-B` — provider-neutral runtime + Timeweb deployment source + Telegram-only auth + GitHub-native quality replacement;
+3. `TW-C` — exact-SHA Timeweb App Platform candidate;
+4. `TW-D` — Timeweb PostgreSQL 18 production cutover;
+5. `TW-E` — Timeweb canonical DNS/TLS and Russia no-VPN acceptance;
+6. `TW-F` — Telegram public registration/multi-user activation after legal/privacy/capacity gates;
+7. `TW-G` — destructive legacy-provider decommission and current-tree cleanup.
 
-Accepted Cloudflare runtime/release authority remains in force while this next package is OWNER-locked.
+WEB-VISUAL and WP23+ remain paused. No broker-write or Real-money authority changes.
+
+Amendment-12 mandatory split triggers remain stronger than the one-branch preference. Production DB cutover, DNS/public cutover, destructive provider deletion, OWNER/legal actions and recovery boundaries require independent acceptance.
 
 ## Canonical authority
 
