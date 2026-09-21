@@ -2,7 +2,7 @@
   "schema": "omni-cio.v10.telegram-public-user-legal-privacy.v1",
   "status": "LEGAL_PRIVACY_ENGINEERING_READY_LIVE_ACTIVATION_BLOCKED",
   "capability_id": "telegram_login",
-  "evidence_date": "2026-09-21",
+  "evidence_date": "2026-09-22",
   "operator": {
     "legal_form": "NATURAL_PERSON_NPD_NOT_INDIVIDUAL_ENTREPRENEUR",
     "operator_identity_input_accepted": true,
@@ -78,13 +78,17 @@
     "destruction_impossible_block_then_destroy_max_months": 6
   },
   "current_data_residency": {
-    "primary_database_provider": "NEON_POSTGRESQL_18",
-    "primary_database_region": "FRANKFURT",
+    "primary_database_provider": "NO_ACCEPTED_LIVE_PRODUCTION_DATABASE",
+    "primary_database_region": "NONE",
     "russian_localization_accepted": false,
     "live_russian_user_collection_allowed": false,
-    "required_before_activation": "RU_PG_D_PRODUCTION_DATABASE_CUTOVER_TO_RUSSIAN_FEDERATION",
-    "russian_candidate": "TIMEWEB_CLOUD_POSTGRESQL_18_MOSCOW_RU_3",
-    "candidate_is_production_authority": false
+    "required_before_activation": "TW_D_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_ACCEPTED",
+    "russian_candidate": "TIMEWEB_CLOUD_MANAGED_POSTGRESQL_18",
+    "candidate_region": "RUSSIAN_FEDERATION",
+    "candidate_is_production_authority": false,
+    "historical_neon_authority_retired": true,
+    "neon_rollback_available": false,
+    "neon_state_source": "OWNER_REPORTED_EXTERNAL_DECOMMISSION"
   },
   "external_processors_and_flows": {
     "telegram": {
@@ -93,18 +97,22 @@
       "profile_scope_requested": false,
       "phone_scope_requested": false
     },
-    "cloudflare": {
-      "role": "EDGE_APPLICATION_RUNTIME_PROCESSOR",
-      "foreign_processor_assessment_required": true,
-      "cross_border_notification_decision_required": true,
-      "workers_logs_runtime_setting_must_be_verified_before_activation": true,
-      "stored_workers_logs_required_for_activation": false,
-      "tracing_required_for_activation": false
+    "timeweb": {
+      "role": "SELECTED_RUSSIAN_APPLICATION_DATABASE_INFRASTRUCTURE_PROVIDER",
+      "production_app_cutover_accepted": false,
+      "production_database_cutover_accepted": false,
+      "runtime_secret_custody_accepted": false,
+      "canonical_dns_tls_cutover_accepted": false
+    },
+    "retired_foreign_platforms": {
+      "cloudflare_current_processor": false,
+      "neon_current_database": false,
+      "historical_evidence_preserved": true
     },
     "general_contact": {
       "role": "GENERAL_CONTACT_ONLY_PRE_LAUNCH",
       "accepted_for_personal_data_subject_request_intake": false,
-      "reason": "FOREIGN_DATABASE_LOCALIZATION_AND_TRANSFER_REVIEW_REQUIRED"
+      "reason": "RU_HOSTED_SUBJECT_REQUEST_CHANNEL_REQUIRED"
     }
   },
   "regulator_and_public_notice": {
@@ -118,6 +126,9 @@
     "accepted": false,
     "blocking_conditions": [
       "RUSSIAN_PRIMARY_DATABASE_CUTOVER_NOT_ACCEPTED",
+      "TIMEWEB_APP_PRODUCTION_RELEASE_NOT_ACCEPTED",
+      "TIMEWEB_TELEGRAM_RUNTIME_SECRET_CUSTODY_NOT_ACCEPTED",
+      "CANONICAL_TIMEWEB_DNS_TLS_NOT_ACCEPTED",
       "ROSKOMNADZOR_PROCESSING_NOTIFICATION_NOT_ACCEPTED",
       "CROSS_BORDER_PROCESSOR_FLOW_ASSESSMENT_NOT_ACCEPTED",
       "RU_HOSTED_DATA_SUBJECT_REQUEST_CHANNEL_NOT_ACCEPTED",

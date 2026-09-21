@@ -28,18 +28,27 @@ Current source behavior:
 
 ## Public request metadata
 
-Cloudflare receives ordinary Internet request metadata as the public edge. The Worker validates `CF-Connecting-IP`, replaces any client-supplied forwarding headers and passes the validated address only into the internal request scope used by server-side request handling and abuse controls.
+Amendment 18 retired the former Cloudflare edge/runtime. The current Timeweb public
+ingress/proxy contract is not yet accepted, so this document does not assume a trusted
+forwarded-client-IP header until TW-C/TW-E prove the exact provider behavior.
 
-The current Omni-CIO application source does not intentionally write that client address into product identity/session tables. This statement is a source-behavior claim, not a claim about every infrastructure/provider log or legal classification.
+The Omni-CIO application must treat browser-supplied forwarding headers as untrusted
+unless the accepted Timeweb ingress contract authenticates that boundary. The application
+must not intentionally write client addresses into product identity/session tables unless
+a separately reviewed security/legal purpose requires it.
 
 ## Current processors / infrastructure surfaces
 
-Engineering topology relevant to initial Telegram login:
+Current/future topology selected by accepted Amendment 18:
 
-- Telegram — external authentication provider;
-- Cloudflare Workers/Containers — public edge/runtime and release platform;
-- Neon PostgreSQL 18 — relational account/tenant/session/auth-transaction data plane, constrained to the accepted Frankfurt region contract;
-- GitHub — source/review/release-provenance authority, not a product identity provider and not a store for provider secret values.
+- Telegram — the only human authentication provider;
+- Timeweb Cloud App Platform — selected future public Web/API runtime;
+- Timeweb Cloud Managed PostgreSQL 18 — selected future relational account/tenant/session/auth-transaction authority;
+- GitHub — source/review/CI/release-provenance authority, not a product identity provider and not a store for provider secret values.
+
+The Timeweb production app/database/DNS cutovers are not yet accepted. Former
+Cloudflare/Neon evidence is archive-in-place historical evidence and is not current
+activation authority.
 
 No provider secret value, raw Telegram subject, raw browser proof, raw OAuth state or private portfolio payload belongs in GitHub source, PR comments, CI output or artifacts.
 
@@ -49,7 +58,7 @@ No provider secret value, raw Telegram subject, raw browser proof, raw OAuth sta
 - server-side session idle/absolute expiry and revoke/logout are enforced by accepted session code;
 - raw Telegram subject: not persisted;
 - raw OAuth state/browser proof: not persisted;
-- provider secrets: Cloudflare secret custody only, not repository values.
+- provider secrets: future Timeweb runtime custody only after its owning gate; never repository values.
 
 A final public privacy notice still needs the real operator/controller identity and contact, applicable legal basis, final retention/deletion policy, processor/transfer determination and user rights/contact wording. Those are deliberately left fail-closed.
 

@@ -17,7 +17,7 @@ _REQUIRED = (
     guard.RUNBOOK,
     guard.STATUS,
     guard.PLATFORM_AUTHORITY,
-    guard.WRANGLER,
+    guard.AUTH_RUNTIME,
 )
 
 
@@ -40,7 +40,10 @@ class TelegramPublicUserLegalPrivacyTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["database"]["neon_current_rollback_available"] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+            ):
                 guard.validate(root)
 
     def test_guard_rejects_foreign_database_as_localized(self) -> None:
@@ -61,16 +64,16 @@ class TelegramPublicUserLegalPrivacyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
-            path = root / guard.WRANGLER
+            path = root / guard.AUTH_RUNTIME
             source = path.read_text(encoding="utf-8").replace(
-                '"PUBLIC_MULTI_USER_ENABLED": "false"',
-                '"PUBLIC_MULTI_USER_ENABLED": "true"',
+                "if not value:\n        return False",
+                "if not value:\n        return True",
                 1,
             )
             path.write_text(source, encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
-                "TELEGRAM_LEGAL_PRIVACY_PREMATURE_ACTIVATION",
+                "TELEGRAM_LEGAL_PRIVACY_ACTIVATION_DEFAULT_DRIFT",
             ):
                 guard.validate(root)
 
@@ -117,7 +120,7 @@ class TelegramPublicUserLegalPrivacyTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
-    def test_guard_requires_ru_pg_d_cutover_blocker(self) -> None:
+    def test_guard_requires_timeweb_production_cutover_blocker(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
@@ -125,7 +128,7 @@ class TelegramPublicUserLegalPrivacyTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["current_data_residency"][
                 "required_before_activation"
-            ] = "RU_PG_B_SYNTHETIC_PARITY"
+            ] = "HISTORICAL_RU_PG_B_SYNTHETIC_PARITY"
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,

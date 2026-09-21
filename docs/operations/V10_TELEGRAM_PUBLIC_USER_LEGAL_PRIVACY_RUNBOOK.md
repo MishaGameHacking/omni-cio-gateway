@@ -23,23 +23,26 @@ This closes only `operator_controller_identity_and_contact`. It does not activat
 
 ## 2. Current hard localization blocker
 
-Repository evidence currently preserves Neon PostgreSQL 18 in Frankfurt as
-production database authority while Amendment 17 keeps Timeweb Moscow as the
-Russian migration candidate.
+Amendment 18 retired the former Neon/Frankfurt production authority after the
+OWNER-reported external decommission and selected Timeweb Cloud Managed PostgreSQL
+18 as the only future production relational authority. There is currently no
+accepted live production database for real public users.
 
 Russian Federal Law 152-FZ article 18(5), in the current localization model,
 requires the primary collection/storage operations for personal data of Russian
 citizens to use databases in the Russian Federation, subject only to statutory
 exceptions that Omni-CIO does not assume.
 
-Therefore Telegram/public-user activation remains false while production
-`OMNI_V10_POSTGRES_DSN` uses the accepted Frankfurt authority.
+Therefore Telegram/public-user activation remains false until the Timeweb
+PostgreSQL production cutover is accepted with migration, RLS/FORCE-RLS,
+least-privilege runtime identity, recovery and exact data verification.
 
 Required migration dependency:
 
-`RU-PG-B -> RU-PG-C -> RU-PG-D -> production cutover acceptance -> Telegram activation review`.
+`TW-B source/runtime consolidation -> TW-C Timeweb app candidate -> TW-D Timeweb PostgreSQL production cutover -> TW-E public ingress/DNS -> TW-F Telegram activation review`.
 
-RU-PG-B synthetic parity alone is not production cutover.
+Historical RU-PG/Neon/Cloudflare evidence remains archive-in-place and is not
+current runtime authority.
 
 ## 3. Processor / transfer boundary
 
@@ -55,23 +58,21 @@ Telegram remains identity-provider-only for the initial launch:
 Before launch, document the actual foreign-recipient flow and complete the
 article 12 cross-border assessment/notification where applicable.
 
-### Cloudflare
+### Timeweb Cloud
 
-Cloudflare is a foreign edge/application runtime processor. The Worker receives
-the browser request and the current source forwards canonical client IP evidence
-to the Container for security semantics.
+Timeweb Cloud is the selected Russian application/database infrastructure
+provider under Amendment 18. Before public activation:
 
-Before public activation:
+- accept an exact-main Timeweb App Platform release and sanitized /healthz identity;
+- place Telegram/runtime secrets only in approved Timeweb environment custody;
+- prove PostgreSQL 18 production cutover, TLS/network controls, backup/restore and
+  tenant-isolation parity;
+- accept canonical omnicio.ru DNS/TLS cutover and representative Russian no-VPN
+  reachability;
+- document actual infrastructure metadata/logging and retention behavior.
 
-- inspect the actual production observability and Workers Logs settings;
-- ensure request bodies, auth codes, cookies, session credentials and provider payloads are not intentionally logged;
-- document metadata categories and retention;
-- complete the article 12 cross-border assessment/notification where applicable;
-- do not treat EU/US localization products as Russian database localization.
-
-Cloudflare Customer Metadata Boundary currently offers EU/US boundaries rather
-than a Russian boundary, so it cannot replace the Russian primary PostgreSQL
-localization gate.
+Retired Cloudflare/Neon evidence remains historical only and must not satisfy a
+current Timeweb activation gate.
 
 ### Support / subject requests
 
@@ -127,7 +128,7 @@ Before the first real public registration:
    Roskomnadzor form;
 2. record only sanitized registry/acceptance evidence in GitHub;
 3. complete the article 12 cross-border assessment and separate notification for
-   actual foreign-recipient flows where required;
+   actual foreign-recipient flows where required, including Telegram;
 4. publish the final privacy policy on every personal-data collection surface;
 5. deploy the accepted Russian-hosted subject-request channel;
 6. keep incident handling ready for the article 21 24h initial / 72h investigation window.

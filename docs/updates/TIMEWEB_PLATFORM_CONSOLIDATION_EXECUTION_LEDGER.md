@@ -41,8 +41,8 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - First checkpoint state: `RED_REPAIR_ONLY`
 - First material RED: Engineering Governance on PR #582
 - Root cause of that RED: historical Cloudflare closeout guard still required a former current-state status marker after Amendment 18 reclassified the accepted Cloudflare update as historical archive evidence
-- Replacement checkpoint: pending exact-head recertification after systemic marker/test repair
-- Next exact action: finish DRAFT exact-head checks and inspect every material RED before READY
+- Replacement checkpoint: pending after a consolidated authority-drift correction batch
+- Next exact action: publish one replacement head containing formatter, archive-regression and current Telegram/Timeweb authority corrections, then run a fresh exact-head DRAFT cycle
 - Scope/non-goals still intact: YES
 - Main drift since accepted base: NONE observed at branch creation
 
@@ -118,6 +118,10 @@ Split decision: **PR #582 is the mandatory security/authority + live-evidence ac
 - Whole-workflow adjacent review found `.github/workflows/v10-neon-egress-boundary.yml` still active on PR/main and performing an anonymous network request to retired Neon. It used no credential and made no mutation, but it remained a runtime dependency on a retired provider and could create future false RED after provider decommission.
 - Systemic correction: rename the Timeweb role metadata to detector-safe `current_provider_binding_authority`; archive/hard-disable the Neon egress workflow; extend current machine contracts and guards from the three Cloudflare workflows to the complete retired-provider executable set; keep the probe implementation/tests as historical evidence only.
 - Historical manual Render workflows remain fail-closed, but their operator text no longer directs future work to retired Cloudflare.
+- Fourth exact-head RED on `1fc3c75d28cc0c03df7eb2bad5f134b03bb1ad72`: authoritative Windows CI reached `ruff format --check` after `ruff check` success and found five guard files requiring canonical formatting.
+- Adjacent regression review found `tests/test_v10_cloudflare_cf_d_hosted_egress_recovery.py` still asserting the retired live CF-D DAG rather than archive-in-place hard-disable semantics.
+- Current-state review found Telegram legal/readiness contracts, runbooks, privacy inventory/policy and activation ledger still treating former Cloudflare/Neon evidence as current readiness. Amendment 18 makes that state false: Timeweb revalidation is required and Cloudflare/Neon evidence is historical only.
+- Correction batch rule: repair all three classes together, remove current readiness dependence on retired `wrangler.jsonc`, preserve historical evidence, keep public-user flags false, and add regression tests before publishing the next head.
 
 Only `CERTIFIED_GREEN` permits TW-B.
 
@@ -129,6 +133,9 @@ Only `CERTIFIED_GREEN` permits TW-B.
 | Timeweb proof depends on retired Cloudflare release | Old RU-PG-B chain encoded Cloudflare as upstream authority | workflow + control-plane contract/guard/tests/runbook | Regression Shield, Timeweb environment gate | Timeweb evidence skipped whenever retired workflow fails | provider proof guard checked safety of old chain, not Amendment 18 service-set compatibility | direct Regression Shield -> Timeweb proof, exact-main equality preserved |
 | Sonar remains active merge dependency | Amendment 16 historical external-review law survived service-set consolidation | Engineering Governance + authoritative merge gate + guidance | PR certification | external SaaS outage/cancel blocks current service set | no Amendment 18 active-CI graph invariant | GitHub-native lint/type/test/coverage/dependency/SAST/secret authority; Sonar historical only |
 | Cloudflare closeout guard rejects historical status wording | historical accepted-completion proof used former current-state literal as eternal marker | guard + 3 regression tests | current status ledger | false RED when authority is correctly superseded | no distinction between immutable event fact and mutable current-state label | require explicit historical archive marker instead |
+| Ruff formatting drift in authority guards | correction commits changed Python guard layout without a final local formatter pass | 5 changed guard files | authoritative Windows static-quality gate | exact-head RED before deeper tests | pre-publish batch review did not include formatter-equivalent verification on the replacement head | canonical formatting correction plus fresh exact-head verification |
+| Retired CF-D regression consumer remained live-shaped | workflow producer became archive-in-place but one test still asserted former live dependency/result semantics | CF-D archive workflow + recovery regression test | pytest / Regression Shield | hidden future RED after formatter repair | provider-retirement guard checked workflow itself but not every historical test consumer | rewrite the test to assert archive/hard-disable invariants and preserve historical evidence markers |
+| Telegram activation state still bound to retired Cloudflare/Neon | provider authority changed without invalidating capability-specific readiness evidence and Cloudflare deployment-config dependencies | Telegram readiness/legal contracts, guards, runbooks, privacy docs, activation ledger | future TW-F activation | false readiness / unsafe activation decision / stale privacy statements | Amendment-18 guard validated general service set but not every capability-specific current-state consumer | rebind current readiness to Timeweb, mark old proof historical, remove active `wrangler.jsonc` dependency, keep activation fail-closed |
 
 ## 9. Integration-ready preflight
 

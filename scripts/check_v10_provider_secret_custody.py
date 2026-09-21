@@ -316,6 +316,7 @@ def _validate_retired_secret_bearing_workflows(
         "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOWS_MISMATCH",
     )
 
+
 def _validate_named_set(
     contract: dict[str, Any],
     key: str,

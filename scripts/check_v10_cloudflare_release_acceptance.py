@@ -487,6 +487,7 @@ def _validate_production_workflow(live: dict[str, Any]) -> None:
         "CLOUDFLARE_RELEASE_DIRECT_PRODUCTION_AUTODEPLOY_FORBIDDEN",
     )
 
+
 def validate() -> None:
     contract = _load(CONTRACT)
     _validate_contract(contract)

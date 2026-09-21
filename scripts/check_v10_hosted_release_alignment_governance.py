@@ -191,7 +191,9 @@ def main() -> int:
     print("V10 hosted-release alignment governance check passed.")
     print("Legacy Render Phase-4 deployment: manual-only and fail-closed")
     print("Legacy Render hosted alignment: manual-only and fail-closed")
-    print("Historical Amendment-14 Cloudflare release authority: preserved evidence only")
+    print(
+        "Historical Amendment-14 Cloudflare release authority: preserved evidence only"
+    )
     print("Current/future V10 provider authority: Timeweb under Amendment 18")
     return 0
 

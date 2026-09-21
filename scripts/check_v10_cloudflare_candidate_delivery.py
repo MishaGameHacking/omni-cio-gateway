@@ -62,7 +62,6 @@ _ARCHIVE_MARKER = (
 )
 
 
-
 def _read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
