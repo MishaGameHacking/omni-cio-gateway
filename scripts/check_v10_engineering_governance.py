@@ -119,7 +119,7 @@ SURFACE_MARKERS: dict[Path, tuple[str, ...]] = {
         "All applicable exact-head checks must be SUCCESS",
         "OWNER product acceptance only after merge",
         "Failure Learning Ledger",
-        "managed-cloud Omni-CIO Web/API",
+        "Timeweb Cloud is the selected production infrastructure platform",
         "RED_REPAIR_ONLY",
     ),
     WP_TEMPLATE: (
