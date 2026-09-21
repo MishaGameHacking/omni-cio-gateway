@@ -27,7 +27,7 @@ Current synchronized snapshot:
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-PROJECT OWNER is not a special product role. Product users, including OWNER, use the same Telegram -> account -> tenant -> server-side session path.
+PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session.
 
 The WP22A technical gate is complete only through its accepted evidence chain. Amendments 14/15 remain historical evidence; Amendment 18 does not fabricate public activation, expand broker-write authority or start WP23.
 
