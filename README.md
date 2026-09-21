@@ -18,7 +18,7 @@ Repository-front-door snapshot of accepted/current program authority:
 - Timeweb Managed PostgreSQL 18 is the final relational target;
 - Telegram Login is the only selected human login provider; VK ID is a retirement target;
 - Cloudflare, Neon, Render and Cloud.ru are retirement targets; no new feature authority is granted to them;
-- equivalent-or-stronger GitHub-native verification must replace external CI/review SaaS before removal;
+- GitHub-native verification is the active quality/security authority; external CI/review SaaS is historical and not required for current/future V10 work;
 - public multi-user and capability activation remain fail-closed until their Timeweb/Telegram/privacy/legal/capacity gates pass;
 - WEB-VISUAL remains paused during platform consolidation; WP23+ remains locked;
 - broker-write / Real-execution authority remains unchanged;
@@ -189,13 +189,13 @@ GitHub main -> Render / omni-cio-gateway (`app:app`)
                   `-- protected Real-execution contour (disabled by kill switch)
 ```
 
-This is the protected V9 production/recovery baseline, not current new-V10 provider authority. New V10 Render deployment is forbidden. V10 public cutover to Cloudflare occurs only through the ordered CF-A/CF-B/CF-C/CF-D internal gates of `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`.
+This is the protected V9 production/recovery baseline, not current new-V10 provider authority. New V10 Render deployment is forbidden. The former V10 Cloudflare cutover remains historical accepted evidence only. Current/future V10 public deployment authority is Timeweb under Amendment 18.
 
 ## V10 development law
 
 Use the current execution unit from accepted authority:
 
-`restore authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> one logical checkpoint -> focused preflight/root-cause/blast-radius/coupled-surface review -> publish exact checkpoint SHA -> CI + Sonar + independent review -> RED_REPAIR_ONLY on any material RED -> targeted proof -> replacement SHA if content changed -> full exact-SHA recertification -> CERTIFIED_GREEN -> next functional checkpoint -> final Files changed/review -> squash merge -> exact-main post-merge verification -> status -> next authorized execution unit`.
+`restore authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> one logical checkpoint -> focused preflight/root-cause/blast-radius/coupled-surface review -> publish exact checkpoint SHA -> GitHub-native CI/security/review -> RED_REPAIR_ONLY on any material RED -> targeted proof -> replacement SHA if content changed -> full exact-SHA recertification -> CERTIFIED_GREEN -> next functional checkpoint -> final Files changed/review -> squash merge -> exact-main post-merge verification -> status -> next authorized execution unit`.
 
 Do not start Telegram, AI, Real execution or later packages out of sequence. Do not call RED, skipped, queued or pending GREEN. Do not synthesize OWNER physical evidence. Do not create a second Web App/repository/Core/broker stack.
 
