@@ -24,8 +24,8 @@ No other general-purpose hosting, database, edge, identity or CI SaaS belongs in
 
 For current/future active V10 authority, this Amendment supersedes conflicting provider-selection language in Amendments 14/15 and the earlier draft of Amendment 18:
 
-- Cloudflare — RETIRE from active V10 runtime/edge/DNS/build/release authority after Timeweb cutover;
-- Neon — RETIRE from active V10 database/recovery authority after accepted Timeweb PostgreSQL cutover;
+- Cloudflare — OWNER reports its external account/resources/domain zone/secrets were manually decommissioned on 2026-09-21; treat Cloudflare as unavailable for rollback and grant no new authority;
+- Neon — OWNER reports its project/organization/API keys/account were manually decommissioned on 2026-09-21; treat Neon as unavailable for rollback and grant no new authority;
 - Render — RETIRE from active V10; protected legacy runtime retires only after its owning parity/decommission gate;
 - Cloud.ru — RETIRED / no return;
 - VK ID — RETIRED from product authentication; no public VK login path;
@@ -99,17 +99,19 @@ Migration must preserve:
 - restart/redeploy recovery;
 - deterministic migrated-data verification.
 
-No new Neon feature work is authorized. Neon remains last-known-good only until accepted Timeweb production DB cutover.
+No new Neon feature work is authorized. The OWNER-reported external Neon decommission means Neon is no longer an available rollback target. Timeweb PostgreSQL migration/recovery evidence must therefore stand on its own; provider-side physical erasure is not independently provable from GitHub.
 
 ## 7. Network / DNS / Russia reachability
 
 Final ordinary-user path:
 
-`Russian user -> omnicio.ru -> Timeweb public ingress -> Omni-CIO -> Timeweb PostgreSQL`.
+`Russian user -> OWNER-confirmed canonical domain -> Timeweb public ingress -> Omni-CIO -> Timeweb PostgreSQL`.
 
-Cloudflare must not remain an unavoidable final hop.
+Cloudflare is no longer an available final hop or rollback provider.
 
-Timeweb domain/DNS/TLS becomes the target canonical public boundary. A technical Timeweb candidate is proven before canonical DNS cutover.
+A domain-authority mismatch is currently fail-closed: accepted repository/Telegram evidence uses `omnicio.ru`, while OWNER-supplied Cloudflare screenshots show deletion of the zone `omni-cio.ru`. These are distinct domain names. No Timeweb canonical DNS cutover or Telegram production-origin mutation may occur until the OWNER confirms which registered domain is the canonical V10 domain and ownership/control is re-verified.
+
+A technical Timeweb candidate is proven before canonical DNS cutover.
 
 Prefer private Timeweb app-to-database networking only when the exact provider configuration is proven. If unavailable, use explicit TLS/firewall/least-privilege evidence. Never guess a trusted proxy/client-IP contract.
 
@@ -221,7 +223,9 @@ Until owning gates accept transitions:
 - tenant isolation/RLS/FORCE-RLS mandatory;
 - no secret/private payload disclosure;
 - no direct development in `main`;
-- accepted production remains last-known-good until replacement passes.
+- external Cloudflare/Neon rollback is unavailable by OWNER-reported decommission;
+- Timeweb candidate/backup/restore evidence must be established before public activation;
+- canonical DNS/Telegram origin remains blocked until the exact domain is OWNER-confirmed.
 
 ## 16. Immediate effect after acceptance
 
