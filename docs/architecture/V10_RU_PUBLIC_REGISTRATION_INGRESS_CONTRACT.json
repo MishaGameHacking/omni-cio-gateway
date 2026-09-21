@@ -105,21 +105,23 @@
     "mandatory_split_boundaries": [
       "PRODUCTION_DATABASE_CUTOVER",
       "PUBLIC_DNS_INGRESS_CUTOVER",
-      "DESTRUCTIVE_PROVIDER_DECOMMISSION",
+      "EXTERNAL_PROVIDER_DECOMMISSION",
       "SECURITY_AUTHORITY_TRANSITION",
       "OWNER_ONLY_PROVIDER_OR_LEGAL_ACTION",
       "RECOVERY_BOUNDARY"
     ]
   },
   "cleanup": {
-    "current_tree_active_cloudflare_allowed_after_tw_g": false,
-    "current_tree_active_neon_allowed_after_tw_g": false,
-    "current_tree_active_render_allowed_after_tw_g": false,
-    "current_tree_active_cloudru_allowed_after_tw_g": false,
-    "current_tree_active_vk_id_allowed_after_tw_g": false,
-    "current_tree_required_external_ci_saas_allowed_after_tw_g": false,
+    "retired_provider_files_may_remain_archive_in_place": true,
+    "mass_repository_deletion_required": false,
+    "historical_artifacts_may_define_current_authority": false,
+    "new_feature_dependencies_on_retired_providers_allowed": false,
+    "retired_live_workflow_actions_allowed_after_cutover": false,
+    "retired_required_merge_checks_allowed_after_equivalent_github_proof": false,
+    "provider_credentials_remain_active_after_decommission": false,
+    "vk_id_deployed_product_composition_allowed_after_tw_g": false,
     "git_history_rewrite_for_cleanup_allowed": false,
-    "concise_historical_migration_record_allowed": true,
+    "future_historical_file_removal_requires_separate_owner_authority": true,
     "provider_physical_media_erasure_claim_allowed": false
   },
   "activation": {
