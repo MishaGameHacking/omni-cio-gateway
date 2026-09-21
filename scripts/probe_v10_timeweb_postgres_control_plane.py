@@ -28,6 +28,8 @@ ADDITIONAL_PAID_REPLICATION_AUTHORIZED = False
 MAX_RESPONSE_BYTES = 1024 * 1024
 _RETRY_DELAYS_SECONDS = (1.0, 2.0)
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
+AUTHENTICATION_REJECTED_CODE = "TIMEWEB_API_AUTHENTICATION_REJECTED"
+AUTHORIZATION_REJECTED_CODE = "TIMEWEB_API_AUTHORIZATION_REJECTED"
 _PROVIDER_TYPE_PATTERN = re.compile(r"^[a-z0-9_-]{1,64}$")
 _PROVIDER_ID_PATTERN = re.compile(r"^\d{1,20}$", re.ASCII)
 Sleep = Callable[[float], None]
@@ -79,10 +81,7 @@ class TimewebReadOnlyApi:
 
     def _raise_http_failure(self, status: int) -> NoReturn:
         if status in {401, 403}:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
-                status=status,
-            ) from None
+            raise_timeweb_auth_failure(status)
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_API_HTTP_ERROR",
             status=status,
@@ -154,6 +153,19 @@ def _project_id(value: object) -> str:
     return text
 
 
+def raise_timeweb_auth_failure(status: int) -> NoReturn:
+    if status == 401:
+        code = AUTHENTICATION_REJECTED_CODE
+    elif status == 403:
+        code = AUTHORIZATION_REJECTED_CODE
+    else:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_API_AUTH_FAILURE_CLASSIFICATION_INVALID",
+            status=status,
+        ) from None
+    raise _provider_base.ProvisioningStopped(code, status=status) from None
+
+
 def _select_project(payload: object) -> str:
     rows = _rows(
         payload,
@@ -164,6 +176,11 @@ def _select_project(payload: object) -> str:
     if len(matches) != 1:
         raise _provider_base.ProvisioningStopped("TIMEWEB_TARGET_PROJECT_NOT_UNIQUE")
     return _project_id(matches[0].get("id"))
+
+
+def verify_credential_health(api: TimewebReadOnlyApi) -> str:
+    """Prove authenticated read access to the exact RU-PG-B project."""
+    return _select_project(api.get("/api/v1/projects"))
 
 
 def _major_version(value: object) -> int | None:
@@ -435,7 +452,7 @@ def _emit_replica_topology_observation(replica_list_count: int) -> None:
 def probe() -> None:
     token = _provider_base._required_env(TOKEN_ENV)
     api = TimewebReadOnlyApi(token)
-    project_id = _select_project(api.get("/api/v1/projects"))
+    project_id = verify_credential_health(api)
     provider_type = _select_postgres18_type(api.get("/api/v1/database-types"))
     _select_target_preset(
         api.get("/api/v2/presets/dbs"),

@@ -145,10 +145,7 @@ class TimewebMutationApi:
                     status=status,
                 ) from None
             if status in {401, 403}:
-                raise _provider_base.ProvisioningStopped(
-                    "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
-                    status=status,
-                ) from None
+                read_only.raise_timeweb_auth_failure(status)
             raise _provider_base.ProvisioningStopped(
                 f"TIMEWEB_{operation}_REJECTED",
                 status=status,
@@ -1159,6 +1156,7 @@ def _provision_transport() -> None:
     cidr = _required_verifier_cidr()
     token = _provider_base._required_env(read_only.TOKEN_ENV)
     api = read_only.TimewebReadOnlyApi(token)
+    read_only.verify_credential_health(api)
     _verify_allocation_prerequisite(api)
     mutation = TimewebMutationApi(token)
 

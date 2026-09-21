@@ -74,10 +74,7 @@ class TimewebCreateApi:
             if status in _AMBIGUOUS_HTTP_STATUSES:
                 raise AmbiguousCreate("TIMEWEB_CLUSTER_CREATE_AMBIGUOUS") from None
             if status in {401, 403}:
-                raise _provider_base.ProvisioningStopped(
-                    "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
-                    status=status,
-                ) from None
+                read_only.raise_timeweb_auth_failure(status)
             raise _provider_base.ProvisioningStopped(
                 "TIMEWEB_CLUSTER_CREATE_REJECTED",
                 status=status,
@@ -447,30 +444,12 @@ def _wait_for_started(
     raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_START_TIMEOUT")
 
 
-def _resolve_existing_or_create(
-    mutation_api: TimewebCreateApi,
-    read_api: read_only.TimewebReadOnlyApi,
-    project_path: str,
-    payload: dict[str, object],
-) -> tuple[int, str]:
-    existing = _target_cluster_id(read_api.get(project_path))
-    if existing is not None:
-        return existing, "existing-recovery"
-    return _create_or_reconcile(
-        mutation_api,
-        read_api,
-        project_path,
-        payload,
-    )
-
-
 def provision() -> None:
     _required_confirmation()
     token = _provider_base._required_env(read_only.TOKEN_ENV)
     read_api = read_only.TimewebReadOnlyApi(token)
-    mutation_api = TimewebCreateApi(token)
 
-    project_id = read_only._select_project(read_api.get("/api/v1/projects"))
+    project_id = read_only.verify_credential_health(read_api)
     provider_type = read_only._select_postgres18_type(
         read_api.get("/api/v1/database-types")
     )
@@ -479,17 +458,22 @@ def provision() -> None:
         provider_type,
     )
     project_path = f"/api/v1/projects/{project_id}/resources/databases"
+    existing_cluster_id = _target_cluster_id(read_api.get(project_path))
     payload = _create_payload(
         provider_type=provider_type,
         preset_id=preset_id,
         project_id=project_id,
     )
-    cluster_id, create_mode = _resolve_existing_or_create(
-        mutation_api,
-        read_api,
-        project_path,
-        payload,
-    )
+    if existing_cluster_id is not None:
+        cluster_id, create_mode = existing_cluster_id, "existing-recovery"
+    else:
+        mutation_api = TimewebCreateApi(token)
+        cluster_id, create_mode = _create_or_reconcile(
+            mutation_api,
+            read_api,
+            project_path,
+            payload,
+        )
     _wait_for_started(
         read_api,
         cluster_id,

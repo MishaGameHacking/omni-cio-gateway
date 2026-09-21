@@ -148,6 +148,27 @@ Official references:
 - https://timeweb.cloud/docs/dbaas/dbaas-create
 - https://timeweb.cloud/docs/dbaas/postgresql/users-and-privileges
 
+## Credential-health classification
+
+Timeweb credential lifecycle is an external provider-authority boundary. A GitHub
+environment secret being present does not prove that the provider still accepts it.
+
+Every write-capable Timeweb path must first complete a GET-only credential/read
+preflight against the exact RU-PG-B project. The shared adapter classifies the two
+authorization outcomes without reading or logging the provider response body:
+
+- HTTP `401` -> `TIMEWEB_API_AUTHENTICATION_REJECTED`;
+- HTTP `403` -> `TIMEWEB_API_AUTHORIZATION_REJECTED`.
+
+Neither status is retried. Bounded retries remain limited to the separately accepted
+transient network/rate/service-unavailable statuses. Token values and provider response
+bodies must never appear in logs, issues, PRs, artifacts or chat.
+
+Timeweb documents that API tokens have an explicit lifetime, may have restricted
+permissions, and that reissuing a token invalidates the previous value. Provider-token
+repair or GitHub environment-secret rotation is therefore an external OWNER action and
+does not itself grant database/network mutation authority.
+
 ## Live discovery contract
 
 `scripts/probe_v10_timeweb_postgres_control_plane.py` queries only:

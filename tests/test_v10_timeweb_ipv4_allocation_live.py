@@ -263,6 +263,48 @@ class TimewebAllocationProviderTests(unittest.TestCase):
         self.assertNotIn("provider-private-payload", str(raised.exception))
 
 
+    def test_write_capable_live_provider_requires_read_credential_preflight(self) -> None:
+        reader = mock.Mock()
+        with (
+            mock.patch(
+                "scripts.probe_v10_timeweb_postgres_control_plane.TimewebReadOnlyApi",
+                return_value=reader,
+            ),
+            mock.patch(
+                "scripts.probe_v10_timeweb_postgres_control_plane.verify_credential_health",
+                side_effect=RuntimeError("auth rejected"),
+            ),
+            mock.patch(
+                "scripts.provision_v10_timeweb_postgres_public_ipv4_tls.TimewebMutationApi"
+            ) as writer,
+        ):
+            with self.assertRaisesRegex(
+                provider.ProviderStopped,
+                "TIMEWEB_ALLOCATION_PROVIDER_INIT_FAILED",
+            ):
+                provider.live_provider("synthetic-token", allow_write=True)
+        writer.assert_not_called()
+
+    def test_read_only_live_provider_does_not_construct_writer(self) -> None:
+        reader = mock.Mock()
+        with (
+            mock.patch(
+                "scripts.probe_v10_timeweb_postgres_control_plane.TimewebReadOnlyApi",
+                return_value=reader,
+            ),
+            mock.patch(
+                "scripts.probe_v10_timeweb_postgres_control_plane.verify_credential_health"
+            ) as preflight,
+            mock.patch(
+                "scripts.provision_v10_timeweb_postgres_public_ipv4_tls.TimewebMutationApi"
+            ) as writer,
+        ):
+            adapter = provider.live_provider("synthetic-token", allow_write=False)
+        self.assertIsInstance(adapter, provider.TimewebAllocationProvider)
+        preflight.assert_not_called()
+        writer.assert_not_called()
+
+
 class AllocationRunnerTests(unittest.TestCase):
     def test_mode_inputs_keep_apply_authority_distinct(self) -> None:
         apply_args = argparse.Namespace(

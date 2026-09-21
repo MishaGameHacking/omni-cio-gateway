@@ -536,7 +536,10 @@ def _validate_provisioner() -> None:
             "TIMEWEB_CLUSTER_CREATE_AMBIGUOUS_RECONCILIATION_REQUIRED",
             "def _reconcile_cluster_id(",
             "def _create_or_reconcile(",
-            "def _resolve_existing_or_create(",
+            "read_only.verify_credential_health(read_api)",
+            "existing_cluster_id = _target_cluster_id(read_api.get(project_path))",
+            "mutation_api = TimewebCreateApi(token)",
+            "read_only.raise_timeweb_auth_failure(status)",
             '"existing-recovery"',
             "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
@@ -571,6 +574,16 @@ def _validate_provisioner() -> None:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_AUTHORITY_WIDENED")
     if source.count('method="POST"') != 1:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_POST_SURFACE_INVALID")
+    if source.index("read_only.verify_credential_health(read_api)") > source.index(
+        "mutation_api = TimewebCreateApi(token)"
+    ):
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_CREDENTIAL_SEQUENCE_INVALID")
+    if source.index("existing_cluster_id = _target_cluster_id(") > source.index(
+        "mutation_api = TimewebCreateApi(token)"
+    ):
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_CREDENTIAL_SEQUENCE_INVALID")
+    if "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT" in source:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_AUTH_CLASSIFICATION_DRIFT")
 
 
 def _validate_public_ipv4_source() -> None:

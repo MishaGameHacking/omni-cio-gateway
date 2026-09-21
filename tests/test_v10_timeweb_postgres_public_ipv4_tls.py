@@ -558,6 +558,79 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         self.assertEqual(raised.exception.status, 400)
         self.assertNotIn("do-not-log-provider-body", str(raised.exception))
 
+    def test_mutation_api_distinguishes_authentication_and_authorization(self) -> None:
+        cases = (
+            (401, provisioner.read_only.AUTHENTICATION_REJECTED_CODE),
+            (403, provisioner.read_only.AUTHORIZATION_REJECTED_CODE),
+        )
+        for status, expected_code in cases:
+            with self.subTest(status=status):
+                opener = mock.Mock()
+                opener.open.side_effect = HTTPError(
+                    "https://api.timeweb.cloud/api/v1/floating-ips",
+                    status,
+                    "auth rejected",
+                    hdrs=None,
+                    fp=io.BytesIO(b"provider-private-body"),
+                )
+                api = provisioner.TimewebMutationApi(
+                    "synthetic-token",
+                    opener=opener,
+                )
+                with self.assertRaises(
+                    provisioner._provider_base.ProvisioningStopped
+                ) as raised:
+                    api.mutate_once(
+                        "POST",
+                        "/api/v1/floating-ips",
+                        operation="FLOATING_IP_CREATE",
+                        body={"availability_zone": "msk-1"},
+                        expected_statuses=frozenset({201}),
+                    )
+                self.assertEqual(raised.exception.code, expected_code)
+                self.assertEqual(raised.exception.status, status)
+                self.assertNotIn("provider-private-body", str(raised.exception))
+                self.assertEqual(opener.open.call_count, 1)
+
+    def test_read_auth_failure_prevents_transport_writer_construction(self) -> None:
+        api = mock.Mock()
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner,
+                "_required_verifier_cidr",
+                return_value="8.8.8.8/32",
+            ),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "verify_credential_health",
+                side_effect=provisioner._provider_base.ProvisioningStopped(
+                    provisioner.read_only.AUTHORIZATION_REJECTED_CODE,
+                    status=403,
+                ),
+            ),
+            mock.patch.object(provisioner, "TimewebMutationApi") as writer,
+        ):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._provision_transport()
+        self.assertEqual(
+            raised.exception.code,
+            provisioner.read_only.AUTHORIZATION_REJECTED_CODE,
+        )
+        writer.assert_not_called()
+
     def test_documented_conflict_enters_get_reconciliation_not_blind_retry(
         self,
     ) -> None:

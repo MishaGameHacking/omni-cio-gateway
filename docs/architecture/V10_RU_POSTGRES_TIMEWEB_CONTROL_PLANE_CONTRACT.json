@@ -162,5 +162,18 @@
     "duplicate_member_ids_forbidden": true,
     "additional_paid_replication_authorized": false,
     "provider_semantics_resolved": false
+  },
+  "credential_health": {
+    "preflight_endpoint": "/api/v1/projects",
+    "exact_project_selection_required": true,
+    "authentication_status": 401,
+    "authentication_code": "TIMEWEB_API_AUTHENTICATION_REJECTED",
+    "authorization_status": 403,
+    "authorization_code": "TIMEWEB_API_AUTHORIZATION_REJECTED",
+    "auth_failures_retryable": false,
+    "response_body_logging_allowed": false,
+    "token_value_logging_allowed": false,
+    "mutation_adapter_requires_successful_read_preflight": true,
+    "credential_rotation_is_external_owner_action": true
   }
 }

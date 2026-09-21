@@ -519,6 +519,8 @@ def _validate_sources() -> None:
             "read_only._require_target_replica_topology(",
             "allocation.verify_transport_prerequisite(",
             "adapter.transport_snapshot",
+            "read_only.verify_credential_health(api)",
+            "read_only.raise_timeweb_auth_failure(status)",
             "_verify_allocation_prerequisite(api)",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
             'f"/api/v1/firewall/service/{FIREWALL_RESOURCE_TYPE}/{cluster_id}"',
@@ -530,6 +532,12 @@ def _validate_sources() -> None:
         "mutation = TimewebMutationApi(token)"
     ):
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_ALLOCATION_SEQUENCE_INVALID")
+    if provisioner.index("read_only.verify_credential_health(api)") > provisioner.index(
+        "_verify_allocation_prerequisite(api)"
+    ):
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_CREDENTIAL_SEQUENCE_INVALID")
+    if "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT" in provisioner:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_AUTH_CLASSIFICATION_DRIFT")
     if "exc.read(" in provisioner:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RESPONSE_BODY_READ_FORBIDDEN")
 

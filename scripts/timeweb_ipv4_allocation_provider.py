@@ -345,6 +345,8 @@ def live_provider(token: str, *, allow_write: bool) -> TimewebAllocationProvider
         from scripts import provision_v10_timeweb_postgres_public_ipv4_tls as network
 
         reader = read_only.TimewebReadOnlyApi(token)
+        if allow_write:
+            read_only.verify_credential_health(reader)
         writer: MutationApi | None = (
             network.TimewebMutationApi(token) if allow_write else None
         )

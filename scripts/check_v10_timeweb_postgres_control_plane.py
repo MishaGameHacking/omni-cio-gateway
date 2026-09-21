@@ -102,6 +102,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _validate_environment_contract(payload)
     _validate_api_contract(payload)
+    _validate_credential_health_contract(payload)
     _validate_replica_topology_contract(payload)
     _validate_beta_contract(payload)
     _validate_mutation_contract(payload)
@@ -273,6 +274,30 @@ def _validate_api_contract(payload: dict[str, Any]) -> None:
     )
 
 
+def _validate_credential_health_contract(payload: dict[str, Any]) -> None:
+    health = _mapping(
+        payload.get("credential_health"),
+        "TIMEWEB_CONTROL_PLANE_CREDENTIAL_HEALTH_INVALID",
+    )
+    _require(
+        health,
+        {
+            "preflight_endpoint": "/api/v1/projects",
+            "exact_project_selection_required": True,
+            "authentication_status": 401,
+            "authentication_code": "TIMEWEB_API_AUTHENTICATION_REJECTED",
+            "authorization_status": 403,
+            "authorization_code": "TIMEWEB_API_AUTHORIZATION_REJECTED",
+            "auth_failures_retryable": False,
+            "response_body_logging_allowed": False,
+            "token_value_logging_allowed": False,
+            "mutation_adapter_requires_successful_read_preflight": True,
+            "credential_rotation_is_external_owner_action": True,
+        },
+        "TIMEWEB_CONTROL_PLANE_CREDENTIAL_HEALTH_INVALID",
+    )
+
+
 def _validate_replica_topology_contract(payload: dict[str, Any]) -> None:
     topology = _mapping(
         payload.get("replica_topology_diagnostic"),
@@ -422,8 +447,11 @@ def _validate_probe_source() -> None:
             'method="GET"',
             "_NO_REDIRECT_OPENER",
             "MAX_RESPONSE_BYTES + 1",
-            "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
-            'api.get("/api/v1/projects")',
+            'AUTHENTICATION_REJECTED_CODE = "TIMEWEB_API_AUTHENTICATION_REJECTED"',
+            'AUTHORIZATION_REJECTED_CODE = "TIMEWEB_API_AUTHORIZATION_REJECTED"',
+            "def raise_timeweb_auth_failure(",
+            "def verify_credential_health(",
+            "project_id = verify_credential_health(api)",
             'api.get("/api/v1/database-types")',
             'api.get("/api/v2/presets/dbs")',
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT",
@@ -451,6 +479,8 @@ def _validate_probe_source() -> None:
     )
     if any(marker in source for marker in forbidden):
         raise RuntimeError("TIMEWEB_CONTROL_PLANE_MUTATION_SOURCE_PRESENT")
+    if "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT" in source:
+        raise RuntimeError("TIMEWEB_CONTROL_PLANE_AUTH_CLASSIFICATION_DRIFT")
 
 
 def _validate_environment_verifier_source() -> None:
@@ -595,6 +625,8 @@ def _validate_runbook() -> None:
             _CLUSTER_DETAIL_ENDPOINT,
             "COUNT_ONLY_BASELINE",
             "additional paid replication remains unauthorized",
+            "TIMEWEB_API_AUTHENTICATION_REJECTED",
+            "TIMEWEB_API_AUTHORIZATION_REJECTED",
         ),
         "TIMEWEB_CONTROL_PLANE_RUNBOOK_DRIFT",
     )
