@@ -42,7 +42,8 @@ class CloudflarePlatformAuthorityTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
         self.assertIn(
-            "GitHub rank 1; Cloudflare Workers Paid platform rank 2",
+            "Historical authority evidence: GitHub rank 1; "
+            "Cloudflare Workers Paid platform rank 2 before Amendment 18",
             completed.stdout,
         )
         self.assertIn(
@@ -50,7 +51,7 @@ class CloudflarePlatformAuthorityTests(unittest.TestCase):
             completed.stdout,
         )
         self.assertIn(
-            "Next stage: CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION",
+            "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
             completed.stdout,
         )
 
