@@ -1,4 +1,4 @@
-# RU-PG-B existing IPv4 allocation - source checkpoint
+# RU-PG-B existing IPv4 allocation - source integration
 
 Owning issue: #559. Execution unit: FOCUSED_CHANGE.
 Base: `3083e65f9e6dbc7a6f26de6649ae7ff40627ba5c` (accepted PR #574).
@@ -151,15 +151,33 @@ executables or full checkout are unavailable. No alternate tool result is labele
 equivalent; no lock or check is weakened. CI failures require one coherent repair
 of the observed defect set, not unrelated feature advancement.
 
-## M2 acceptance before any live plan/application
+## M2 source integration and acceptance before any live plan/application
 
-Finish the canonical provider snapshot/comment-only adapter, protected-main
-PLAN/APPLY/RECONCILE orchestration and distinct safe job summaries. Validate
-GitHub environment policy, exact current-main equality, secret step scope and the
-same resource concurrency boundary. Rehearse the real adapters using synthetic
-HTTP responses, then full exact-head CI/Sonar/reviews, squash and post-merge
-verification. Only then generate a real read-only plan and request its separate
-bounded OWNER decision. Do not run the current paid transport workflow while
+M2 source now includes the canonical Timeweb complete-snapshot/comment-only
+adapter, protected-main INITIALIZE/PLAN/APPLY/RECONCILE runner and workflow,
+provider-secret/control-plane guard integration, minimal APPLY-only issue-read
+permission, and safe summaries that explicitly stop short of transport readiness.
+The workflow shares the existing Timeweb network/TLS concurrency group so metadata
+allocation and network mutation cannot race. PLAN and RECONCILE construct a
+read-only provider; APPLY alone constructs the comment writer after the durable
+claim and fresh OWNER/source/resource rechecks performed by the M1 protocol.
+
+The provider adapter reuses the accepted bounded Timeweb GET and mutation
+transports. It requires the exact project/cluster shape, public network OFF,
+IPv6 OFF, one complete floating-IP row, matching list/detail state, no PTR,
+EMPTY comment and the accepted custody-v1 marker preimage. The only provider
+mutation exposed by this subsystem is one PATCH of the selected floating IP's
+comment field. No create/delete/bind/unbind, firewall, network-enable, TLS or SQL
+operation is part of allocation.
+
+This source state is still branch-local and requires new exact-head
+Ruff/mypy/tests/security/Sonar/review certification. It is not live allocation
+acceptance. After source acceptance, INITIALIZE provisions the protected
+persistent journal without provider access; PLAN is read-only and emits only the
+non-authorizing handle plus exact OWNER-comment template; APPLY still requires a
+fresh direct OWNER comment bound to that plan and the exact allocation
+confirmation; RECONCILE is GET-only. Only after post-merge verification may a
+real PLAN be generated. Do not run the current paid transport workflow while
 allocation remains unresolved.
 
 After allocation is independently verified, reuse the existing exclusive DROP

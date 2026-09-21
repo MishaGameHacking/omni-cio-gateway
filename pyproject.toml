@@ -87,6 +87,8 @@ files = [
   "scripts/timeweb_ipv4_allocation_github.py",
   "scripts/timeweb_ipv4_allocation_journal.py",
   "scripts/timeweb_ipv4_allocation_windows.py",
+  "scripts/timeweb_ipv4_allocation_provider.py",
+  "scripts/run_v10_timeweb_ipv4_allocation.py",
   "scripts/check_v10_timeweb_ipv4_allocation.py",
 ]
 

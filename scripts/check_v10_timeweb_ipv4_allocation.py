@@ -13,6 +13,9 @@ CONTRACT = (
     ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_IPV4_ALLOCATION_CONTRACT.json"
 )
 SOURCE = ROOT / "scripts/timeweb_ipv4_allocation.py"
+PROVIDER = ROOT / "scripts/timeweb_ipv4_allocation_provider.py"
+RUNNER = ROOT / "scripts/run_v10_timeweb_ipv4_allocation.py"
+WORKFLOW = ROOT / ".github/workflows/v10-timeweb-ipv4-allocation.yml"
 _ERROR = "TIMEWEB_ALLOCATION_PROTOCOL_CONTRACT_INVALID"
 # Historical accepted base for this repair, not mutable current-main authority.
 _SOURCE_BASE_SHA_PARTS = (
@@ -58,18 +61,19 @@ def validate_contract(data: dict[str, object]) -> None:
     source_base_sha(data)
     _require(data.get("schema") == "omni-cio.v10.timeweb-ipv4-allocation-protocol.v1")
     _require(data.get("stage") == "RU-PG-B" and data.get("owning_issue") == 559)
-    _require(data.get("status") == "SOURCE_CHECKPOINT_NATIVE_CERTIFICATION_PENDING")
+    _require(data.get("status") == "M2_SOURCE_INTEGRATION_PENDING_CERTIFICATION")
     implementation = _mapping(data.get("implementation"))
-    _flags(implementation, ("pure_protocol", "ready_for_remote_certification"), True)
     _flags(
         implementation,
         (
+            "pure_protocol",
             "live_entrypoint_enabled",
             "production_closed_journal_implemented",
             "production_owner_approval_verifier_implemented",
             "production_provider_adapter_implemented",
+            "ready_for_remote_certification",
         ),
-        False,
+        True,
     )
     adapters = _mapping(data.get("source_adapters"))
     _require(adapters.get("sqlite_synchronous") == "EXTRA")
@@ -80,7 +84,9 @@ def validate_contract(data: dict[str, object]) -> None:
             "sqlite_immediate_transaction",
             "native_acl_required",
             "github_owner_comment_verifier",
-            "native_windows_evidence_required_before_live_wiring",
+            "timeweb_snapshot_comment_only_adapter",
+            "operational_workflow_source_present",
+            "native_windows_evidence_required_before_live_apply",
         ),
         True,
     )
@@ -166,6 +172,40 @@ def validate_contract(data: dict[str, object]) -> None:
         ),
         False,
     )
+    workflow = _mapping(data.get("operational_workflow"))
+    _require(
+        workflow.get("path") == ".github/workflows/v10-timeweb-ipv4-allocation.yml"
+    )
+    _require(
+        workflow.get("dispatch_modes")
+        == ["INITIALIZE", "PLAN", "APPLY", "RECONCILE"]
+    )
+    _require(workflow.get("environment") == "timeweb-synthetic")
+    _require(workflow.get("apply_github_permission") == "issues: read")
+    _require(workflow.get("non_apply_issue_permission") == "none")
+    _require(
+        workflow.get("shared_provider_mutation_concurrency_group")
+        == "v10-timeweb-postgres-public-ipv4-tls"
+    )
+    _require(workflow.get("plan_provider_methods") == ["GET"])
+    _require(
+        workflow.get("apply_provider_methods") == ["GET", "PATCH_COMMENT_ONCE"]
+    )
+    _require(workflow.get("reconcile_provider_methods") == ["GET"])
+    _flags(
+        workflow,
+        ("protected_main_only", "provider_secret_step_scoped"),
+        True,
+    )
+    _flags(
+        workflow,
+        (
+            "initialize_provider_access_allowed",
+            "summary_private_identifiers_allowed",
+            "allocation_success_implies_transport_ready",
+        ),
+        False,
+    )
     invariants = _mapping(data.get("protected_invariants"))
     _require(invariants.get("protected_v9_entrypoint") == "app:app")
     _require(invariants.get("neon_production_authority_preserved") is True)
@@ -240,7 +280,7 @@ def _adapter_source(name: str) -> str:
     return (ROOT / "scripts" / name).read_text(encoding="utf-8")
 
 
-def validate_adapters() -> None:
+def _validate_m1_adapters() -> None:
     journal = _adapter_source("timeweb_ipv4_allocation_journal.py")
     approval = _adapter_source("timeweb_ipv4_allocation_github.py")
     windows = _adapter_source("timeweb_ipv4_allocation_windows.py")
@@ -280,6 +320,124 @@ def validate_adapters() -> None:
             _require(forbidden not in source)
 
 
+def _validate_provider() -> None:
+    source = PROVIDER.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    classes = {
+        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    _require("TimewebAllocationProvider" in classes)
+    methods = {
+        node.name: node
+        for node in classes["TimewebAllocationProvider"].body
+        if isinstance(node, ast.FunctionDef)
+    }
+    _require({"snapshot", "write_comment_once"} <= methods.keys())
+    writes = [
+        node
+        for node in ast.walk(methods["write_comment_once"])
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "mutate_once"
+    ]
+    _require(len(writes) == 1)
+    call = writes[0]
+    _require(
+        bool(call.args)
+        and isinstance(call.args[0], ast.Constant)
+        and call.args[0].value == "PATCH"
+    )
+    for forbidden in (
+        '"POST"',
+        '"PUT"',
+        '"DELETE"',
+        '"/bind"',
+        '"/unbind"',
+        "/firewall/",
+        "/api/v2/databases/",
+        "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+        "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
+    ):
+        _require(forbidden not in source)
+    _require('body={"comment": marker}' in source)
+    _require('self._read_api.get("/api/v1/floating-ips")' in source)
+    _require('/api/v1/floating-ips/{parsed.identifier}' in source)
+
+
+def _validate_runner() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+    for marker in (
+        'frozenset({"INITIALIZE", "PLAN", "APPLY", "RECONCILE"})',
+        '"refs/heads/main"',
+        'allocation.safe_summary(identifier, "OWNER_APPROVAL_REQUIRED")',
+        '"ALLOCATION_VERIFIED_TRANSPORT_NOT_VERIFIED"',
+        "allow_write=False",
+        "allow_write=True",
+        "allocation.reconcile(",
+        "allocation.apply(",
+        "open_journal(initialize=initialize)",
+    ):
+        _require(marker in source)
+    for forbidden in (
+        "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+        "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
+        "plan.digest, output",
+        "snapshot.ip_address, output",
+    ):
+        _require(forbidden not in source)
+
+
+def _validate_workflow() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    for marker in (
+        "workflow_dispatch:",
+        "group: v10-timeweb-postgres-public-ipv4-tls",
+        "environment: timeweb-synthetic",
+        "issues: read",
+        "inputs.mode != 'APPLY'",
+        "inputs.mode == 'APPLY'",
+        "--mode INITIALIZE",
+        "--mode PLAN",
+        "--mode RECONCILE",
+        "--mode APPLY",
+        "ALLOCATE_EXISTING_TIMEWEB_IPV4_NO_CREATE_NO_DELETE",
+        "python scripts/check_v10_timeweb_ipv4_allocation.py",
+        "python scripts/check_v10_provider_secret_custody.py",
+        "python scripts/check_v10_timeweb_postgres_control_plane.py",
+        "python -m scripts.verify_v10_timeweb_github_environment",
+    ):
+        _require(marker in source)
+    for forbidden in (
+        "on:\n  push:",
+        "pull_request:",
+        "schedule:",
+        "issues: write",
+        "contents: write",
+        "actions: write",
+        "curl ",
+        "Invoke-RestMethod",
+        "Invoke-WebRequest",
+    ):
+        _require(forbidden not in source)
+    _require(
+        source.count(
+            "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}"
+        )
+        == 3
+    )
+    non_apply = source[source.index("  non-apply:") : source.index("  apply:")]
+    apply = source[source.index("  apply:") :]
+    _require("issues: read" not in non_apply)
+    _require("issues: read" in apply)
+
+
+def validate_adapters() -> None:
+    _validate_m1_adapters()
+    _validate_provider()
+    _validate_runner()
+    _validate_workflow()
+
+
 def validate() -> None:
     data = json.loads(CONTRACT.read_text(encoding="utf-8"))
     _require(isinstance(data, dict))
@@ -288,6 +446,14 @@ def validate() -> None:
     validate_adapters()
 
 
-if __name__ == "__main__":
+def main() -> int:
     validate()
-    print("Allocation source checks passed; live integration remains disabled.")
+    print(
+        "Allocation M2 source integration checks passed; "
+        "live allocation remains unaccepted."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

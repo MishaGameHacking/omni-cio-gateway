@@ -5,7 +5,6 @@ import copy
 import json
 import io
 import contextlib
-import runpy
 import tomllib
 import unittest
 
@@ -20,11 +19,8 @@ class ProtocolGuardTests(unittest.TestCase):
     def test_cli_does_not_claim_live_readiness(self) -> None:
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            runpy.run_path(
-                str(guard.ROOT / "scripts/check_v10_timeweb_ipv4_allocation.py"),
-                run_name="__main__",
-            )
-        self.assertIn("live integration remains disabled", output.getvalue())
+            self.assertEqual(guard.main(), 0)
+        self.assertIn("live allocation remains unaccepted", output.getvalue())
         self.assertNotIn("CERTIFIED_GREEN", output.getvalue())
 
     def test_missing_contract_section_is_rejected(self) -> None:
@@ -139,9 +135,31 @@ class ProtocolGuardTests(unittest.TestCase):
             "scripts/timeweb_ipv4_allocation_github.py",
             "scripts/timeweb_ipv4_allocation_journal.py",
             "scripts/timeweb_ipv4_allocation_windows.py",
+            "scripts/timeweb_ipv4_allocation_provider.py",
+            "scripts/run_v10_timeweb_ipv4_allocation.py",
             "scripts/check_v10_timeweb_ipv4_allocation.py",
         }
         self.assertLessEqual(expected, targets)
+
+    def test_m2_workflow_authority_widening_is_rejected(self) -> None:
+        changes = (
+            ("initialize_provider_access_allowed", True),
+            ("summary_private_identifiers_allowed", True),
+            ("allocation_success_implies_transport_ready", True),
+            ("apply_github_permission", "issues: write"),
+            ("non_apply_issue_permission", "issues: read"),
+        )
+        for key, value in changes:
+            changed = copy.deepcopy(self.data)
+            changed["operational_workflow"][key] = value
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):
+                    guard.validate_contract(changed)
+
+    def test_provider_and_workflow_guards_pass_current_source(self) -> None:
+        guard._validate_provider()
+        guard._validate_runner()
+        guard._validate_workflow()
 
     def test_generic_cost_approval_does_not_replace_owner_allocation(self) -> None:
         changed = copy.deepcopy(self.data)
