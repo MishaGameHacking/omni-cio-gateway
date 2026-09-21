@@ -39,7 +39,6 @@ EXPECTED_STATES = [
 ]
 CURRENT_CAPABILITY_STATES = {
     "telegram_login": "BLOCKED_EXTERNAL",
-    "vk_id": "BLOCKED_EXTERNAL",
     "public_multi_user_tenant_access": "BLOCKED_EXTERNAL",
     "tinvest_read": "BLOCKED_EXTERNAL",
 }
@@ -402,10 +401,14 @@ def _validate_documents(failures: list[str]) -> None:
         "telegram_login | `BLOCKED_EXTERNAL`",
         "tinvest_read | `BLOCKED_EXTERNAL`",
         "current runtime state, not a V10-wide release lock",
-        "PRODUCT IMPLEMENTATION PAUSED",
-        "START V10 WEB VISUAL SYSTEM UPDATE",
+        "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+        "Telegram Login = sole selected human product login provider",
+        "WEB-VISUAL remains paused",
+        "WP23+ remains locked",
     ):
         _require(status, marker, "current status", failures)
+    if "| vk_id |" in status:
+        failures.append("current status must not expose VK ID as an active capability")
 
     agents = _read(AGENTS, failures)
     contributing = _read(CONTRIBUTING, failures)
