@@ -6,9 +6,12 @@
     "product_progress_effect": "NONE",
     "runtime_mutation_effect": "NONE",
     "current_status_authority": "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md",
-    "product_implementation_paused_after_acceptance": true,
-    "next_prepared_system_update": "WEB-VISUAL-INTEGRATED",
-    "owner_start_command": "START V10 WEB VISUAL SYSTEM UPDATE"
+    "product_implementation_paused_after_acceptance": false,
+    "current_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+    "owner_start_command": null,
+    "amendment_18_current_overlay": true,
+    "web_visual_paused": true,
+    "wp23_plus_locked": true
   },
   "activation_states": [
     "IMPLEMENTED",
@@ -59,18 +62,8 @@
       "implementation_complete": true,
       "state": "BLOCKED_EXTERNAL",
       "blockers": [
-        "REAL_PROVIDER_REGISTRATION_AND_CALLBACK",
-        "RUNTIME_PROVIDER_SECRET_PROVISIONING",
-        "PUBLIC_RUNTIME_SECURITY_PRIVACY_CAPACITY_MONITORING_ACCEPTANCE"
-      ]
-    },
-    {
-      "id": "vk_id",
-      "implementation_complete": true,
-      "state": "BLOCKED_EXTERNAL",
-      "blockers": [
-        "REAL_PROVIDER_REGISTRATION_AND_CALLBACK",
-        "RUNTIME_PROVIDER_SECRET_PROVISIONING",
+        "TIMEWEB_CANONICAL_RUNTIME_AND_CALLBACK_ACCEPTANCE",
+        "RUNTIME_TELEGRAM_SECRET_CUSTODY",
         "PUBLIC_RUNTIME_SECURITY_PRIVACY_CAPACITY_MONITORING_ACCEPTANCE"
       ]
     },
@@ -80,9 +73,9 @@
       "state": "BLOCKED_EXTERNAL",
       "runtime_flag": "PUBLIC_MULTI_USER_ENABLED=false",
       "blockers": [
-        "LIVE_PROVIDER_AUTHENTICATION",
+        "LIVE_TELEGRAM_AUTHENTICATION",
         "PUBLIC_USER_PRIVACY_LEGAL_CAPACITY_MONITORING_ACCEPTANCE",
-        "MANAGED_RUNTIME_CUTOVER_ACCEPTANCE"
+        "TIMEWEB_RUNTIME_DATABASE_DNS_CUTOVER_ACCEPTANCE"
       ]
     },
     {
