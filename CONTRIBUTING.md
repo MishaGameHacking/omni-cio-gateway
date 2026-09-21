@@ -102,7 +102,7 @@ CI is an independent verifier and active checkpoint certifier. Fast CI is used w
 
 Canonical flow:
 
-`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> GitHub-native CI/security/review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
 Any material RED immediately changes branch mode to `RED_REPAIR_ONLY`. The next functional checkpoint is forbidden until the current checkpoint is repaired and fully certified.
 
