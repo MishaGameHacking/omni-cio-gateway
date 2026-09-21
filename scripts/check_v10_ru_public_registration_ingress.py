@@ -18,6 +18,8 @@ WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
 EXPECTED_PROVIDERS = ["GitHub", "Cloudflare", "Timeweb Cloud"]
 EXPECTED_MIGRATION = ["RU-PG-B", "RU-PG-C", "RU-PG-D", "RU-PG-E"]
+_PRODUCT_INVALID = "RU_PUBLIC_INGRESS_PRODUCT_INVALID"
+
 EXPECTED_SPLITS = [
     "RU-PG-B_PROVIDER_PARITY",
     "RU-PG-C_RUNTIME_TLS_RECOVERY",
@@ -97,21 +99,21 @@ def _validate_contract(payload: dict[str, Any]) -> None:
 
     product = _mapping(
         payload.get("product_model"),
-        "RU_PUBLIC_INGRESS_PRODUCT_INVALID",
+        _PRODUCT_INVALID,
     )
     for key in (
         "one_canonical_web",
         "one_account_tenant_session_authority",
         "same_exact_source_sha_required",
     ):
-        _require(product.get(key) is True, "RU_PUBLIC_INGRESS_PRODUCT_INVALID")
+        _require(product.get(key) is True, _PRODUCT_INVALID)
     for key in (
         "second_user_facing_product_allowed",
         "auth_bypass_allowed",
         "dual_primary_database_allowed",
         "dual_primary_session_authority_allowed",
     ):
-        _require(product.get(key) is False, "RU_PUBLIC_INGRESS_PRODUCT_INVALID")
+        _require(product.get(key) is False, _PRODUCT_INVALID)
 
     reachability = _mapping(
         payload.get("cloudflare_russia_reachability"),
