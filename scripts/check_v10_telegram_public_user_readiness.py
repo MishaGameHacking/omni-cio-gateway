@@ -341,7 +341,10 @@ def _validate_legal_gate(contract: dict[str, Any]) -> None:
         "TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID",
     )
     resolved = legal.get("resolved_inputs")
-    if not isinstance(resolved, list) or set(resolved) != _REQUIRED_LEGAL_RESOLVED_INPUTS:
+    if (
+        not isinstance(resolved, list)
+        or set(resolved) != _REQUIRED_LEGAL_RESOLVED_INPUTS
+    ):
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID")
     blockers = legal.get("blocking_conditions")
     if not isinstance(blockers, list) or set(blockers) != _REQUIRED_LEGAL_BLOCKERS:
