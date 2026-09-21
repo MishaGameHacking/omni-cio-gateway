@@ -38,22 +38,28 @@ Chat memory, screenshots, old PR descriptions, Cloudflare dashboard state and hi
 
 ## 3. Current convenience snapshot
 
-This is a convenience snapshot only; exact details remain in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+Omni-CIO V10 remains at **54% accepted implementation** with WP0–WP22A COMPLETE.
 
-Current V10 snapshot after Amendments 14/15 are accepted:
+**TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** is the current next package after Amendment 18 acceptance.
 
-- **54% accepted implementation**;
-- WP0–WP22A / Blocks A–E COMPLETE;
-- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED** accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
-- no active authorized functional implementation package;
-- **WEB-VISUAL-INTEGRATED** as the current next package, with **PRODUCT IMPLEMENTATION PAUSED** and **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` before its separate source work;
-- WP23+ LOCKED;
-- current `PUBLIC_MULTI_USER_ENABLED=false` until the remaining capability-specific live gates;
-- Telegram Login / VK ID / public multi-user tenant access / public T-Invest READ remain `BLOCKED_EXTERNAL` until their own live gates;
-- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
-- protected V9 `app:app` rollback remains intact.
+Target operating model:
 
-## 4. GitHub / Cloudflare authority model
+- ChatGPT — engineering assistant;
+- GitHub — source/review/CI/release provenance;
+- Timeweb Cloud — sole selected production infrastructure platform;
+- Telegram Login — sole selected human product authentication provider.
+
+Cloudflare, Neon, Render, Cloud.ru and VK ID are migration/decommission targets. WEB-VISUAL and WP23+ remain paused while platform consolidation/public activation is completed.
+
+This is a convenience snapshot only; exact state remains `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+## 4. Current GitHub / Timeweb authority model
+
+GitHub remains the engineering source of truth. Timeweb is the target runtime/database/domain platform. Telegram is identity only. Provider-specific infrastructure must stay outside the product core.
+
+The accepted historical Cloudflare section below remains provenance only and is superseded for future provider selection by Amendment 18.
+
+## 4B. Historical GitHub / Cloudflare authority model — superseded for future provider selection
 
 GitHub is authority rank 1 for engineering:
 
