@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import re
-from typing import Any, Protocol
+from typing import Any, NoReturn, Protocol
 
 from scripts import timeweb_ipv4_allocation as allocation
 from scripts import timeweb_ipv4_custody as custody
@@ -62,7 +62,7 @@ class MutationApi(Protocol):
 Emitter = Callable[[str], None]
 
 
-def _stop(code: str) -> None:
+def _stop(code: str) -> NoReturn:
     raise ProviderStopped(code)
 
 
@@ -294,7 +294,8 @@ class TimewebAllocationProvider:
 
     def write_comment_once(self, floating_id: str, marker: str) -> None:
         """Perform exactly one PATCH after a fresh complete empty-comment snapshot."""
-        if self._mutation_api is None:
+        mutation_api = self._mutation_api
+        if mutation_api is None:
             _stop("TIMEWEB_ALLOCATION_PROVIDER_WRITE_UNAVAILABLE")
         if not isinstance(floating_id, str) or _ID.fullmatch(floating_id) is None:
             _stop("TIMEWEB_ALLOCATION_IPV4_ID_INVALID")
@@ -306,7 +307,7 @@ class TimewebAllocationProvider:
         if marker != allocation.expected_marker(current):
             _stop("TIMEWEB_ALLOCATION_MARKER_INVALID")
         try:
-            self._mutation_api.mutate_once(
+            mutation_api.mutate_once(
                 "PATCH",
                 f"/api/v1/floating-ips/{floating_id}",
                 operation="FLOATING_IP_ALLOCATION_COMMENT_PATCH",
