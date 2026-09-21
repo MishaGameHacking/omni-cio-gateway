@@ -474,7 +474,9 @@ def _validate_quality_contract_overlay(
         runtime.get("cloudflare_role")
         != "HISTORICAL_ACCEPTED_PLATFORM_RETIRED_BY_AMENDMENT_18"
     ):
-        failures.append("engineering quality contract Cloudflare role is not historical")
+        failures.append(
+            "engineering quality contract Cloudflare role is not historical"
+        )
     if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
         failures.append("engineering quality contract must retire Cloud.ru for new V10")
     if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
