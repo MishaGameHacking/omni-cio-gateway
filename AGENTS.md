@@ -29,6 +29,8 @@ Current synchronized snapshot:
 
 PROJECT OWNER is not a special product role. Product users, including OWNER, use the same Telegram -> account -> tenant -> server-side session path.
 
+The WP22A technical gate is complete only through its accepted evidence chain. Amendments 14/15 remain historical evidence; Amendment 18 does not fabricate public activation, expand broker-write authority or start WP23.
+
 ## 3. Mandatory authority restore
 
 Before material work restore from current GitHub `main`, not chat memory:
