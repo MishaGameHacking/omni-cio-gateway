@@ -97,7 +97,14 @@
       "governance",
       "files_changed_review"
     ],
-    "external_saas_required_final": false
+    "external_saas_required_final": false,
+    "postmerge_upstream_workflow": "Regression Shield",
+    "timeweb_read_only_proof_workflow": ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
+    "retired_cloudflare_release_workflow": ".github/workflows/v10-cloudflare-production-release.yml",
+    "retired_provider_live_workflow_auto_trigger_allowed": false,
+    "retired_provider_manual_mutation_allowed": false,
+    "timeweb_proof_may_depend_on_retired_provider_workflow": false,
+    "sonar_required_final": false
   },
   "execution": {
     "update_id": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
