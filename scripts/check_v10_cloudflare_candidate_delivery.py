@@ -57,7 +57,9 @@ _PROVIDER_MUTATION_STEP_MARKERS = (
     "- name: Bootstrap isolated staging Worker without local Containers",
     "- name: Configure Workers Builds and accept exact staging build",
 )
-_ARCHIVE_MARKER = "# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
+_ARCHIVE_MARKER = (
+    "# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
+)
 
 
 

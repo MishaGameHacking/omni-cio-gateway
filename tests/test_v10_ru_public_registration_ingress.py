@@ -152,6 +152,21 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         )
         self.assertTrue(activation["telegram_canonical_origin_reconfirmation_required"])
 
+    def test_retired_cloudflare_workflows_are_exactly_hard_disabled(self) -> None:
+        marker = "if: $" + "{{ false }}"
+        expected = {
+            ".github/workflows/v10-cloudflare-provider-readiness.yml": 1,
+            ".github/workflows/v10-cloudflare-candidate-deploy.yml": 1,
+            ".github/workflows/v10-cloudflare-production-release.yml": 6,
+        }
+        for relative, count in expected.items():
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("ARCHIVE-IN-PLACE", source)
+            self.assertNotIn("workflow_run:", source)
+            self.assertNotIn("\n  push:", source)
+            self.assertNotIn("false &&", source)
+            self.assertEqual(source.count(marker), count)
+
     def test_active_ci_graph_is_github_to_timeweb_only(self) -> None:
         ci = _contract()["ci"]
         self.assertIsInstance(ci, dict)

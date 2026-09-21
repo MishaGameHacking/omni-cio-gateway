@@ -358,7 +358,12 @@ def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
 
 def _validate_active_workflow_graph() -> None:
     manual_disable_marker = "if: $" + "{{ false }}"
-    for path in RETIRED_CLOUDFLARE_WORKFLOWS:
+    expected_disabled_jobs = (1, 1, 6)
+    for path, expected_count in zip(
+        RETIRED_CLOUDFLARE_WORKFLOWS,
+        expected_disabled_jobs,
+        strict=True,
+    ):
         retired = _read(path)
         _require(
             "ARCHIVE-IN-PLACE" in retired,
@@ -369,15 +374,13 @@ def _validate_active_workflow_graph() -> None:
             "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_AUTO_TRIGGER",
         )
         _require(
-            manual_disable_marker in retired or "      false &&" in retired,
+            retired.count(manual_disable_marker) == expected_count,
             "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED",
         )
-
-    production = _read(RETIRED_CLOUDFLARE_WORKFLOWS[-1])
-    _require(
-        production.count("      false &&") == 6,
-        "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED",
-    )
+        _require(
+            "false &&" not in retired,
+            "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_AMBIGUOUS_DISABLE",
+        )
 
     for active_workflow in (WORKFLOW, AUTHORITATIVE_MERGE_WORKFLOW):
         active_source = _read(active_workflow)

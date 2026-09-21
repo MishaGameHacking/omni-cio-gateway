@@ -228,17 +228,49 @@ def _validate_current_state(root: Path) -> None:
     ):
         if marker not in status:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_CURRENT_STATE_DRIFT")
-    authority = _load_json(root, PLATFORM_AUTHORITY, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
-    _require(authority.get("schema"), "omni-cio.v10.timeweb-only-platform-consolidation.v1", "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
-    _require(authority.get("active_general_service_set"), ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"], "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    authority = _load_json(
+        root, PLATFORM_AUTHORITY, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"
+    )
+    _require(
+        authority.get("schema"),
+        "omni-cio.v10.timeweb-only-platform-consolidation.v1",
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    _require(
+        authority.get("active_general_service_set"),
+        ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"],
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
     retired = authority.get("retired_active_services")
-    if not isinstance(retired, list) or set(retired) != {"Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"}:
+    if not isinstance(retired, list) or set(retired) != {
+        "Cloudflare",
+        "Neon",
+        "Render",
+        "Cloud.ru",
+        "VK ID",
+    }:
         raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
-    database = _mapping(authority.get("database"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
-    _require(database.get("final_provider"), "Timeweb Cloud Managed PostgreSQL 18", "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
-    _require(database.get("neon_current_rollback_available"), False, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
-    cleanup = _mapping(authority.get("cleanup"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
-    _require(cleanup.get("historical_artifacts_may_define_current_authority"), False, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    database = _mapping(
+        authority.get("database"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"
+    )
+    _require(
+        database.get("final_provider"),
+        "Timeweb Cloud Managed PostgreSQL 18",
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    _require(
+        database.get("neon_current_rollback_available"),
+        False,
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    cleanup = _mapping(
+        authority.get("cleanup"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"
+    )
+    _require(
+        cleanup.get("historical_artifacts_may_define_current_authority"),
+        False,
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
     try:
         wrangler = loads_jsonc(_read(root, WRANGLER))
     except (ValueError, TypeError) as exc:

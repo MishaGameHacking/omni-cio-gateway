@@ -108,6 +108,12 @@ Split decision: **PR #582 is the mandatory security/authority + live-evidence ac
 - Repair: guard and all known regression consumers now require the historical archive marker rather than reinstating old current Cloudflare authority
 - Replacement exact-head full certification: PENDING
 
+- Second replacement head `72967eb53db2fcb43eded016299371d756c7c43f`: DRAFT checks completed with two material RED results:
+  - Self-Hosted Windows CI #3086 failed only at protected static quality because four changed Python guards were not Ruff-formatted;
+  - V10 Engineering Governance #1877 passed every preceding authority guard and failed at `TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED`.
+- Second-RED root cause: the Timeweb consolidation guard still had one production-only assertion for the removed legacy `false && ...` disable representation, while the repaired archived workflow correctly used unconditional `if: ${{ false }}`.
+- Correction rule: all three retired Cloudflare workflows use one exact hard-disable representation, with expected disabled-job counts `1 / 1 / 6`, no automatic trigger and no legacy `false &&` fallback.
+
 Only `CERTIFIED_GREEN` permits TW-B.
 
 ## 8. Root-cause inventory

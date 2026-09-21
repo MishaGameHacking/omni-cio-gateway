@@ -28,7 +28,9 @@ _SECURE_WEB_BUILD = (
     "npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
 )
 _CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
-_ARCHIVE_MARKER = "# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
+_ARCHIVE_MARKER = (
+    "# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
+)
 _ARCHIVE_DISABLED_JOB_COUNT = 6
 
 
@@ -455,19 +457,30 @@ def _validate_production_workflow(live: dict[str, Any]) -> None:
     staging_block = workflow[staging_start:production_start]
     production_block = workflow[production_start:]
     if staging_probe not in staging_block or production_probe not in production_block:
-        raise RuntimeError("CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_EXPECTATION_WIRING_INVALID")
+        raise RuntimeError(
+            "CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_EXPECTATION_WIRING_INVALID"
+        )
     markers = (
-        "workflow_run:", "- Regression Shield",
+        "workflow_run:",
+        "- Regression Shield",
         "github.event.workflow_run.conclusion == 'success'",
-        "check_v10_cloudflare_postmerge_release_gate", "--source-branch main",
-        "validate-domain-config", "probe-runtime-secret",
+        "check_v10_cloudflare_postmerge_release_gate",
+        "--source-branch main",
+        "validate-domain-config",
+        "probe-runtime-secret",
         "Quarantine stale production Builds before rollback snapshot",
-        "--quarantine-only", "snapshot-active-deployment",
-        "run_v10_cloudflare_gated_production", "attach-domain",
-        "probe_v10_cloudflare_live_release.sh", "wrangler rollback",
-        "previous_version_id", "OMNI_V10_PRODUCTION_DEPLOY_ATTEMPTED=1",
+        "--quarantine-only",
+        "snapshot-active-deployment",
+        "run_v10_cloudflare_gated_production",
+        "attach-domain",
+        "probe_v10_cloudflare_live_release.sh",
+        "wrangler rollback",
+        "previous_version_id",
+        "OMNI_V10_PRODUCTION_DEPLOY_ATTEMPTED=1",
     )
-    _require_markers(workflow, markers, "CLOUDFLARE_RELEASE_PRODUCTION_WORKFLOW_GUARD_MISSING")
+    _require_markers(
+        workflow, markers, "CLOUDFLARE_RELEASE_PRODUCTION_WORKFLOW_GUARD_MISSING"
+    )
     _forbid_markers(
         workflow,
         ("on:\n  push:\n    branches:\n      - main", "continue-on-error: true"),
