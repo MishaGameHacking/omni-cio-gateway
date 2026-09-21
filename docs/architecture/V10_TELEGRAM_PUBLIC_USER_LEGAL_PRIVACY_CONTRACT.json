@@ -1,0 +1,137 @@
+{
+  "schema": "omni-cio.v10.telegram-public-user-legal-privacy.v1",
+  "status": "LEGAL_PRIVACY_ENGINEERING_READY_LIVE_ACTIVATION_BLOCKED",
+  "capability_id": "telegram_login",
+  "evidence_date": "2026-09-21",
+  "operator": {
+    "legal_form": "NATURAL_PERSON_NPD_NOT_INDIVIDUAL_ENTREPRENEUR",
+    "operator_identity_input_accepted": true,
+    "responsible_person": "OPERATOR_SELF",
+    "public_contact_custody": "OWNER_ATTESTED_PUBLIC_CONTACT",
+    "official_address_custody": "OWNER_PRIVATE_REGULATORY_RECORD",
+    "tax_identifier_custody": "OWNER_PRIVATE_REGULATORY_RECORD",
+    "identity_document_required_in_repository": false
+  },
+  "applicable_law": {
+    "primary_launch_jurisdiction": "RUSSIAN_FEDERATION",
+    "federal_law_152_fz": true,
+    "article_18_5_russian_database_localization_required": true,
+    "article_22_processing_notification_required": true,
+    "article_12_cross_border_notification_required_if_transfer_occurs": true,
+    "article_9_separate_consent_document_required_when_consent_is_used": true,
+    "article_21_incident_notice_hours": 24,
+    "article_21_internal_investigation_hours": 72
+  },
+  "purposes_and_legal_bases": [
+    {
+      "purpose": "account_registration_authentication_tenant_session_and_service_delivery",
+      "basis": "152_FZ_ARTICLE_6_PART_1_POINT_5",
+      "data": [
+        "identity_provider",
+        "protected_provider_subject_binding_hmac_sha256",
+        "internal_user_id",
+        "internal_tenant_id",
+        "session_token_sha256",
+        "authentication_transaction_security_material",
+        "timestamps"
+      ]
+    },
+    {
+      "purpose": "security_abuse_prevention_and_session_protection",
+      "basis": "152_FZ_ARTICLE_6_PART_1_POINT_7",
+      "data": [
+        "ip_address_in_transit",
+        "request_security_metadata",
+        "rate_limit_state",
+        "security_events"
+      ]
+    },
+    {
+      "purpose": "data_subject_requests_and_statutory_compliance",
+      "basis": "152_FZ_ARTICLE_6_PART_1_POINT_2",
+      "data": [
+        "request_identity_evidence",
+        "request_content",
+        "operator_response_record"
+      ]
+    }
+  ],
+  "prohibited_by_launch_scope": {
+    "marketing_without_separate_prior_consent": true,
+    "biometric_data": true,
+    "special_category_data": true,
+    "telegram_profile_scope": true,
+    "telegram_phone_scope": true,
+    "public_dissemination_of_user_personal_data": true
+  },
+  "retention": {
+    "provider_auth_transaction_max_minutes": 15,
+    "production_session_idle_hours": 2,
+    "production_session_absolute_hours": 24,
+    "access_request_response_business_days": 10,
+    "access_request_max_extension_business_days": 5,
+    "correction_business_days": 7,
+    "unlawful_processing_stop_business_days": 3,
+    "unlawful_data_destroy_business_days": 10,
+    "consent_withdrawal_destroy_max_days": 30,
+    "purpose_completion_destroy_max_days": 30,
+    "destruction_impossible_block_then_destroy_max_months": 6
+  },
+  "current_data_residency": {
+    "primary_database_provider": "NEON_POSTGRESQL_18",
+    "primary_database_region": "FRANKFURT",
+    "russian_localization_accepted": false,
+    "live_russian_user_collection_allowed": false,
+    "required_before_activation": "RU_PG_D_PRODUCTION_DATABASE_CUTOVER_TO_RUSSIAN_FEDERATION",
+    "russian_candidate": "TIMEWEB_CLOUD_POSTGRESQL_18_MOSCOW_RU_3",
+    "candidate_is_production_authority": false
+  },
+  "external_processors_and_flows": {
+    "telegram": {
+      "role": "IDENTITY_PROVIDER",
+      "foreign_recipient_assessment_required": true,
+      "profile_scope_requested": false,
+      "phone_scope_requested": false
+    },
+    "cloudflare": {
+      "role": "EDGE_APPLICATION_RUNTIME_PROCESSOR",
+      "foreign_processor_assessment_required": true,
+      "cross_border_notification_decision_required": true,
+      "workers_logs_runtime_setting_must_be_verified_before_activation": true,
+      "stored_workers_logs_required_for_activation": false,
+      "tracing_required_for_activation": false
+    },
+    "general_contact": {
+      "role": "GENERAL_CONTACT_ONLY_PRE_LAUNCH",
+      "accepted_for_personal_data_subject_request_intake": false,
+      "reason": "FOREIGN_DATABASE_LOCALIZATION_AND_TRANSFER_REVIEW_REQUIRED"
+    }
+  },
+  "regulator_and_public_notice": {
+    "roskomnadzor_processing_notification_accepted": false,
+    "cross_border_notification_accepted": false,
+    "public_privacy_policy_deployed": false,
+    "personal_data_request_channel_accepted": false,
+    "required_personal_data_request_channel": "RU_HOSTED_MAILBOX_OR_IN_PRODUCT_RU_STORED_REQUEST_CHANNEL"
+  },
+  "activation_gate": {
+    "accepted": false,
+    "blocking_conditions": [
+      "RUSSIAN_PRIMARY_DATABASE_CUTOVER_NOT_ACCEPTED",
+      "ROSKOMNADZOR_PROCESSING_NOTIFICATION_NOT_ACCEPTED",
+      "CROSS_BORDER_PROCESSOR_FLOW_ASSESSMENT_NOT_ACCEPTED",
+      "RU_HOSTED_DATA_SUBJECT_REQUEST_CHANNEL_NOT_ACCEPTED",
+      "PUBLIC_PRIVACY_POLICY_NOT_DEPLOYED",
+      "POST_ACTIVATION_REAL_USER_ISOLATION_EVIDENCE_NOT_AVAILABLE"
+    ]
+  },
+  "protected_invariants": {
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "gateway_entrypoint": "app:app"
+  }
+}

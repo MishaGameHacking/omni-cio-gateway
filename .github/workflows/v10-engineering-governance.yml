@@ -124,6 +124,9 @@ jobs:
       - name: Verify Telegram public-user pre-activation readiness contract
         run: python scripts/check_v10_telegram_public_user_readiness.py
 
+      - name: Verify Telegram public-user legal/privacy activation gate
+        run: python scripts/check_v10_telegram_public_user_legal_privacy.py
+
       - name: Verify RU PostgreSQL data-residency migration authority
         run: python scripts/check_v10_ru_postgres_data_residency_migration.py
 
@@ -170,6 +173,7 @@ jobs:
           scripts/check_v10_cloudflare_candidate_delivery.py
           scripts/check_v10_provider_secret_custody.py
           scripts/check_v10_telegram_public_user_readiness.py
+          scripts/check_v10_telegram_public_user_legal_privacy.py
           scripts/check_v10_ru_postgres_data_residency_migration.py
           scripts/check_v10_ru_postgres_timeweb_parity.py
           scripts/prove_v10_ru_postgres_timeweb_parity.py
@@ -210,6 +214,7 @@ jobs:
           tests.test_v10_cloudflare_candidate_provider
           tests.test_v10_provider_secret_custody
           tests.test_v10_telegram_public_user_readiness
+          tests.test_v10_telegram_public_user_legal_privacy
           tests.test_v10_ru_postgres_data_residency_migration
           tests.test_v10_ru_postgres_timeweb_parity
           tests.test_v10_timeweb_postgres_control_plane
