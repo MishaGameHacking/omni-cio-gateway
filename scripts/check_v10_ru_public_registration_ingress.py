@@ -16,6 +16,7 @@ INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 TIMEWEB_PROOF_WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
+AUTHORITATIVE_MERGE_WORKFLOW = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 RETIRED_CLOUDFLARE_WORKFLOWS = (
     ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml",
     ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml",
@@ -199,8 +200,18 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
         "retired_provider_manual_mutation_allowed",
         "timeweb_proof_may_depend_on_retired_provider_workflow",
         "sonar_required_final",
+        "active_external_review_saas_allowed",
     ):
         _require(ci.get(key) is False, "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID")
+    _require(
+        ci.get("github_native_quality_authority")
+        == [
+            "Regression Shield",
+            "V10 authoritative merge gate",
+            "V10 Engineering Governance",
+        ],
+        "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
+    )
 
     execution = _mapping(
         payload.get("execution"),
@@ -355,6 +366,19 @@ def _validate_active_workflow_graph() -> None:
         production.count("      false &&") == 6,
         "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED",
     )
+
+    for active_workflow in (WORKFLOW, AUTHORITATIVE_MERGE_WORKFLOW):
+        active_source = _read(active_workflow)
+        _require(
+            "run: python scripts/check_v10_pr_external_review_gate.py"
+            not in active_source,
+            "TIMEWEB_CONSOLIDATION_EXTERNAL_REVIEW_SAAS_ACTIVE",
+        )
+        _require(
+            "Verify exact-head Sonar review gate" not in active_source
+            and "Fail fast on exact-head Sonar findings" not in active_source,
+            "TIMEWEB_CONSOLIDATION_EXTERNAL_REVIEW_SAAS_ACTIVE",
+        )
 
     timeweb = _read(TIMEWEB_PROOF_WORKFLOW)
     for required in (
