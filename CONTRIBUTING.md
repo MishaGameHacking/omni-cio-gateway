@@ -180,9 +180,9 @@ Implemented capability states are exactly:
 
 One canonical Omni-CIO Web remains the user-facing product. Telegram is the only selected human login provider after Amendment 18 acceptance. A completed capability may become `LIVE_OPERABLE` when all its own technical/security/external gates pass.
 
-Human product authentication remains Telegram Login / VK ID -> verified identity -> `OmniCIOUserAccount -> Tenant -> server-side Session`.
+Human product authentication is `Telegram Login -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
 
-Cloudflare Access/WAF/Turnstile are additive infrastructure security, not product tenant authority.
+Timeweb ingress/network controls are additive infrastructure security, not product tenant authority.
 
 `EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`.
 
@@ -192,21 +192,21 @@ Use the migration preference:
 
 `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite Web remains canonical source. Python Workers/FastAPI availability does not prove current native/CPython dependencies compatible; test them. Cloudflare Containers may be used only when CF-B proves a concrete full-Linux/native runtime need and cost/recovery semantics are acceptable.
+Existing React/Vite Web and Python/FastAPI product API remain canonical/provider-neutral. Timeweb-specific deployment logic belongs in thin infrastructure adapters.
 
-Neon/PostgreSQL 18 tenant/RLS authority remains intact unless an explicit equivalent migration changes it. Do not assume Hyperdrive supports PostgreSQL 18. D1 does not silently replace financial/tenant truth.
+Timeweb Managed PostgreSQL 18 is the final relational target after the owning production cutover. Preserve migrations, exact numeric semantics, least-privilege runtime role, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery evidence.
 
-Prefer Cloudflare services over replaceable external infrastructure only when semantics are equivalent. Do not remove GitHub or a PostgreSQL/Neon authority boundary simply to claim “Cloudflare-only”.
+Cloudflare/Neon/Render/Cloud.ru/VK files stay archive-in-place by default. Do not add new dependencies on them and do not mass-delete them merely to simplify the tree. Their live provider resources/secrets/actions are decommissioned only after replacement acceptance.
 
-Current GitHub/Lenovo CI routing stays authoritative until CF-A proves Cloudflare build lanes. Do not fake Windows/PowerShell/ACL/PostgreSQL-native semantics as portable GREEN.
+GitHub/self-hosted verification remains authoritative until a stronger GitHub-executed replacement is accepted. External CI/review SaaS may not be removed by weakening quality gates.
 
 ## Security / secrets
 
 Never commit or paste real secrets into source, chat, PR comments, CI logs, screenshots or artifacts.
 
-Never disclose/request when avoidable broker tokens, Telegram/VK secrets, provider API tokens, DB passwords, encryption/recovery keys, full account IDs or private portfolio payloads.
+Never disclose/request when avoidable broker tokens, Telegram secrets, Timeweb/GitHub provider credentials, DB passwords, encryption/recovery keys, full account IDs or private portfolio payloads.
 
-Cloudflare API tokens/secrets are provisioned only through approved secret custody at the owning provider-action milestone.
+Runtime/provider secrets are provisioned only through approved Timeweb/GitHub secret custody at the owning provider-action milestone.
 
 ## Broker / Real-money boundary
 
