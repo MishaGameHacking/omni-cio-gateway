@@ -277,7 +277,11 @@ def _validate_cloudflare_engineering_overlay(
     if not isinstance(update, dict):
         failures.append("Cloudflare engineering overlay lacks runtime_hosting_update")
         return
-    for key in ("cloudflare_decision_date", "cloudflare_amendment", "cloudflare_contract"):
+    for key in (
+        "cloudflare_decision_date",
+        "cloudflare_amendment",
+        "cloudflare_contract",
+    ):
         if not update.get(key):
             failures.append(f"Cloudflare engineering overlay {key} missing")
 
