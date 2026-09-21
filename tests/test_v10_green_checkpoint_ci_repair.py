@@ -53,7 +53,11 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             in completed.stdout
         )
         assert (
-            "Post-merge release gate: exact-main Sonar success enforcement enabled"
+            "GitHub-native exact-head regression/security enforcement enabled"
+            in completed.stdout
+        )
+        assert (
+            "External Sonar is historical evidence only"
             in completed.stdout
         )
         assert (
