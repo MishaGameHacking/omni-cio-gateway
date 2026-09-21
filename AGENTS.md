@@ -10,26 +10,23 @@ For public V10, broker credentials are tenant-scoped `BrokerConnection` credenti
 
 ## 2. Current program state
 
-Dynamic progress/current execution authority всегда берётся из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; этот файл не второй progress ledger.
+Dynamic progress/current execution authority always comes from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 Current synchronized snapshot:
 
-- WP0–WP22A / Blocks A–E accepted COMPLETE;
+- WP0–WP22A / Blocks A–E remain accepted COMPLETE;
 - accepted V10 progress is **54%**;
-- complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate is accepted;
-- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update** is accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
-- current authorized functional implementation package is NONE;
-- PRODUCT IMPLEMENTATION remains PAUSED pending a new authorized System Update;
-- **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G** is the current next prepared package / OWNER START REQUIRED and still requires `START V10 WEB VISUAL SYSTEM UPDATE` before its separate source work;
-- WP23+ LOCKED;
-- `PUBLIC_MULTI_USER_ENABLED=false` current fail-closed state until the remaining capability-specific live gates actually accept a transition;
-- Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ remain `BLOCKED_EXTERNAL` until their own gates;
-- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
-- protected V9 `app:app` rollback intact.
+- accepted Cloudflare/Render/Neon chains remain historical evidence, not future provider authority;
+- **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED — Timeweb-only runtime/database/DNS/Telegram consolidation** is the current next package after Amendment 18 acceptance;
+- target active service model is ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
+- Timeweb is the only selected V10 production infrastructure target;
+- Telegram is the only selected human product login provider;
+- Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets;
+- WEB-VISUAL and WP23+ are paused;
+- public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
+- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-PROJECT OWNER is not a special Omni-CIO product role. When using the product, OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path. Engineering/provider authority cannot mint/select a product tenant.
-
-The WP22A technical gate is complete only through its accepted evidence chain. Amendments 14/15 do not reopen it, fabricate public activation, expand broker-write authority or start WP23.
+PROJECT OWNER is not a special product role. Product users, including OWNER, use the same Telegram -> account -> tenant -> server-side session path.
 
 ## 3. Mandatory authority restore
 
@@ -43,15 +40,36 @@ Before material work restore from current GitHub `main`, not chat memory:
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-9. all applicable active amendments, especially Amendments 8–16;
+9. all applicable active amendments, especially Amendments 8–18;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. owning execution-unit contracts/runbooks/ledgers;
 13. exact `main`, recent commits, open PR/issues and GitHub Actions.
 
-Key current authority includes Amendments 14/15 plus the later Green Checkpoint / Targeted CI Repair law when accepted, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` and `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`. Old chat/screenshots/stale PR text/provider dashboard state never override accepted GitHub authority.
+Key current authority includes Amendment 18 and `docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json`. Amendments 14/15 become historical Cloudflare evidence after Amendment 18 acceptance. Old chat/screenshots/stale PR text/provider dashboard state never override accepted GitHub authority.
 
-## 4. GitHub #1 / Cloudflare #2
+## 4A. Current provider law — GitHub #1 / Timeweb production / Telegram identity
+
+After Amendment 18 acceptance:
+
+- GitHub is engineering/source/review/CI/release-provenance authority;
+- Timeweb Cloud is the sole selected V10 production infrastructure provider;
+- Telegram Login is the sole selected human product login provider;
+- ChatGPT is an engineering assistant only and never runtime/data authority;
+- Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets;
+- no new feature work may add dependencies on retired providers;
+- external CI/review SaaS may be removed only after equivalent-or-stronger GitHub-executed verification is proven;
+- provider-specific code belongs in thin infrastructure adapters, not business/account/tenant/security logic;
+- production DB authority moves to Timeweb PostgreSQL 18 only through the owning cutover/recovery gate;
+- during migration, last-known-good legacy production remains only until replacement acceptance.
+
+Target release flow:
+
+`PR GREEN -> squash -> exact-main GREEN -> exact Timeweb candidate -> live proof -> production`.
+
+A Timeweb deployment, GitHub merge or Telegram login never grants broker-write/Real-money authority.
+
+## 4B. Historical GitHub #1 / Cloudflare #2 — superseded for future provider selection
 
 After Amendment 14 acceptance:
 
@@ -201,9 +219,11 @@ Prefer Cloudflare services over replaceable external infrastructure only when se
 
 ## 11. Product / tenant / activation
 
-One canonical Omni-CIO Web is the ordinary user-facing product. Human product auth remains Telegram Login and VK ID unless later authority changes it:
+One canonical Omni-CIO Web is the ordinary user-facing product. Human product auth is Telegram Login only after Amendment 18 acceptance:
 
-`Telegram Login | VK ID -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
+`Telegram Login -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
+
+VK ID is a retirement target and must not remain a deployed session-minting path after TW-G.
 
 Tenant scope is server-derived; PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory. Cloudflare WAF/Access/Turnstile is additive outer security, not tenant authorization.
 
@@ -215,7 +235,7 @@ Progressive Capability Activation: capability states are exactly `IMPLEMENTED | 
 
 Never place real secrets in GitHub, chat, commits, PR comments, CI logs, screenshots or artifacts. Never request real credentials when the task can be completed without receiving them.
 
-Do not disclose broker tokens, Telegram/VK secrets, provider API secrets, DB passwords, encryption/recovery keys, full account IDs or private portfolio payloads. `.env` is local-only from `.env.example`. Cloudflare tokens/secrets belong only in approved secret custody at the owning provider-action gate.
+Do not disclose broker tokens, Telegram secrets, Timeweb/GitHub provider credentials, DB passwords, encryption/recovery keys, full account IDs or private portfolio payloads. `.env` is local-only from `.env.example`. Runtime secrets belong only in approved Timeweb/provider secret custody at the owning gate.
 
 ## 13. Broker / Real-money boundary
 
