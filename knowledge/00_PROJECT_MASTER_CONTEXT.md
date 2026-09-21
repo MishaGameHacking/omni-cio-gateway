@@ -40,7 +40,7 @@ Chat memory, screenshots, old PR descriptions, Cloudflare dashboard state and hi
 
 Omni-CIO V10 remains at **54% accepted implementation** with WP0–WP22A COMPLETE.
 
-**TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** is the current next package after Amendment 18 acceptance.
+Amendment 18 selects **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** as the current next package after acceptance.
 
 Target operating model:
 
