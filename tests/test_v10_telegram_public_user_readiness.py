@@ -98,6 +98,33 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_guard_rejects_missing_legal_blocker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["legal_privacy_gate"]["blocking_conditions"].pop()
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_tolerates_human_ledger_prose_reflow(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.LEDGER
+            source = path.read_text(encoding="utf-8").replace(
+                "Russian primary PostgreSQL production cutover is accepted",
+                "Accepted Russian production database cutover is recorded",
+                1,
+            )
+            path.write_text(source, encoding="utf-8")
+            guard.validate(root)
+
     def test_guard_rejects_provider_readiness_marker_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

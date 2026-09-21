@@ -116,6 +116,23 @@ _EXPECTED_SOURCE_FLAGS = {
     "OMNI_V10_VK_ID_LOGIN_ENABLED": "false",
 }
 
+_REQUIRED_LEGAL_RESOLVED_INPUTS = {
+    "operator_controller_identity_and_contact",
+    "applicable_jurisdictions_and_operator_role",
+    "purposes_and_legal_basis",
+    "retention_deletion_and_account_erasure_semantics",
+    "incident_notification_and_localization_obligations",
+}
+
+_REQUIRED_LEGAL_BLOCKERS = {
+    "RUSSIAN_PRIMARY_DATABASE_CUTOVER_NOT_ACCEPTED",
+    "ROSKOMNADZOR_PROCESSING_NOTIFICATION_NOT_ACCEPTED",
+    "CROSS_BORDER_PROCESSOR_FLOW_ASSESSMENT_NOT_ACCEPTED",
+    "RU_HOSTED_DATA_SUBJECT_REQUEST_CHANNEL_NOT_ACCEPTED",
+    "PUBLIC_PRIVACY_POLICY_NOT_DEPLOYED",
+    "POST_ACTIVATION_REAL_USER_ISOLATION_EVIDENCE_NOT_AVAILABLE",
+}
+
 
 def _read(root: Path, relative: Path) -> str:
     try:
@@ -310,15 +327,27 @@ def _validate_legal_gate(contract: dict[str, Any]) -> None:
     )
     _require_equal(
         legal.get("status"),
-        "OWNER_OR_QUALIFIED_REVIEW_REQUIRED",
+        "OPERATOR_IDENTITY_ACCEPTED_DATA_RESIDENCY_AND_REGULATORY_GATES_OPEN",
         "TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID",
     )
-    required = legal.get("required_before_activation")
-    if not isinstance(required, list):
+    _require_equal(
+        legal.get("contract_path"),
+        "docs/architecture/V10_TELEGRAM_PUBLIC_USER_LEGAL_PRIVACY_CONTRACT.json",
+        "TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID",
+    )
+    _require_equal(
+        legal.get("contract_schema"),
+        "omni-cio.v10.telegram-public-user-legal-privacy.v1",
+        "TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID",
+    )
+    resolved = legal.get("resolved_inputs")
+    if (
+        not isinstance(resolved, list)
+        or set(resolved) != _REQUIRED_LEGAL_RESOLVED_INPUTS
+    ):
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID")
-    if len(required) < 6:
-        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID")
-    if not all(isinstance(item, str) and item for item in required):
+    blockers = legal.get("blocking_conditions")
+    if not isinstance(blockers, list) or set(blockers) != _REQUIRED_LEGAL_BLOCKERS:
         raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID")
     _require_equal(
         legal.get("no_legal_conclusion_inferred_from_pseudonymization"),
@@ -515,8 +544,10 @@ def _validate_ledger_source(root: Path) -> None:
     _require_text_markers(
         ledger,
         (
+            "# Omni-CIO V10 — Telegram Login Capability Activation Ledger",
             "Current accepted capability state: `BLOCKED_EXTERNAL`",
-            "Public-user legal/operator/privacy-notice sign-off",
+            "## External blocker inventory",
+            "## State transition decision",
         ),
         "TELEGRAM_PUBLIC_USER_READINESS_LEDGER_STATE_INVALID",
     )
@@ -529,9 +560,9 @@ def _validate_runbook_source(root: Path) -> None:
     _require_text_markers(
         runbook,
         (
-            "OWNER attestation already preserved in merged PR #551",
-            "repository pre-activation readiness contract passes",
-            "public-user legal/operator/privacy-notice sign-off",
+            "# V10 Telegram Login Production Activation Runbook",
+            "## Public activation flags",
+            "## Acceptance sequence",
         ),
         "TELEGRAM_PUBLIC_USER_READINESS_RUNBOOK_DRIFT",
     )

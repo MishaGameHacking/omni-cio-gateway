@@ -25,7 +25,9 @@
     "marker": "CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY production_bindings=4 staging_bindings=0"
   },
   "data_minimization": {
-    "telegram_oidc_scopes": ["openid"],
+    "telegram_oidc_scopes": [
+      "openid"
+    ],
     "profile_scope_requested": false,
     "phone_scope_requested": false,
     "raw_telegram_subject_persisted": false,
@@ -73,15 +75,23 @@
   },
   "legal_privacy_gate": {
     "accepted": false,
-    "status": "OWNER_OR_QUALIFIED_REVIEW_REQUIRED",
-    "required_before_activation": [
+    "status": "OPERATOR_IDENTITY_ACCEPTED_DATA_RESIDENCY_AND_REGULATORY_GATES_OPEN",
+    "contract_path": "docs/architecture/V10_TELEGRAM_PUBLIC_USER_LEGAL_PRIVACY_CONTRACT.json",
+    "contract_schema": "omni-cio.v10.telegram-public-user-legal-privacy.v1",
+    "resolved_inputs": [
       "operator_controller_identity_and_contact",
       "applicable_jurisdictions_and_operator_role",
       "purposes_and_legal_basis",
-      "data_locations_processors_and_cross_border_flows",
       "retention_deletion_and_account_erasure_semantics",
-      "user_notice_rights_and_contact_channel",
       "incident_notification_and_localization_obligations"
+    ],
+    "blocking_conditions": [
+      "RUSSIAN_PRIMARY_DATABASE_CUTOVER_NOT_ACCEPTED",
+      "ROSKOMNADZOR_PROCESSING_NOTIFICATION_NOT_ACCEPTED",
+      "CROSS_BORDER_PROCESSOR_FLOW_ASSESSMENT_NOT_ACCEPTED",
+      "RU_HOSTED_DATA_SUBJECT_REQUEST_CHANNEL_NOT_ACCEPTED",
+      "PUBLIC_PRIVACY_POLICY_NOT_DEPLOYED",
+      "POST_ACTIVATION_REAL_USER_ISOLATION_EVIDENCE_NOT_AVAILABLE"
     ],
     "no_legal_conclusion_inferred_from_pseudonymization": true
   },

@@ -81,12 +81,17 @@ run is the accepted checker on protected `main`, before the separate activation 
 4. Cloudflare secret provisioning without exposing values;
 5. read-only/sanitized readiness check proving named bindings exist;
 6. repository pre-activation readiness contract passes: data minimization, bounded capacity/abuse controls, monitoring/rollback baseline and explicit unresolved legal/operator gate;
-7. public-user legal/operator/privacy-notice sign-off is accepted for the actual launch context;
-8. focused activation PR changing only the owning public-user activation state;
-9. production release SUCCESS;
-10. real canonical-Web USER login -> callback -> ordinary product account -> Tenant ->
+7. operator/controller legal model and processing-purpose/legal-basis inventory are accepted without placing private regulatory identifiers in GitHub;
+8. Russian production PostgreSQL cutover is accepted; Frankfurt Neon is no longer the primary collection/storage authority for real Russian users;
+9. Roskomnadzor processing notification is accepted with sanitized evidence;
+10. Telegram/Cloudflare cross-border processor-flow assessment plus any required notification is accepted;
+11. Russian-hosted or in-product/Russian-stored data-subject request channel is accepted;
+12. final Privacy Policy is deployed on every personal-data collection surface;
+13. focused activation PR changes only the owning public-user activation state;
+14. production release SUCCESS;
+15. real canonical-Web USER login -> callback -> ordinary product account -> Tenant ->
     server-side Session;
-11. logout/revoke, provider-availability and multi-user isolation negatives;
-12. update capability state only from accepted real evidence.
+16. logout/revoke, provider-availability and multi-user isolation negatives;
+17. capability state updates only from accepted real evidence.
 
 At no point does login activation authorize broker write or Real-money execution.

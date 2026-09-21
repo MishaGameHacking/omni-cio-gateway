@@ -53,7 +53,13 @@ Repository preparation in this branch:
 - [x] Public-user technical data-minimization inventory is frozen by `V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json`.
 - [x] Engineering capacity/rate-limit/DoS controls are frozen and regression-guarded for the current one-Container launch envelope.
 - [x] Monitoring/rollback baseline is frozen: Cloudflare Workers metrics + exact-main `/healthz` release acceptance + bounded rollback; no paid logs/tracing expansion is assumed.
-- [ ] Public-user legal/operator/privacy-notice sign-off is accepted for the actual operator, jurisdictions and data flows.
+- [x] Operator/controller legal form and responsible-person model are OWNER-attested; private regulatory identifiers remain outside GitHub.
+- [x] Russian launch jurisdiction, core processing-purpose/legal-basis model and statutory incident/retention timing are frozen by the legal/privacy checkpoint.
+- [ ] Russian primary PostgreSQL production cutover is accepted; current Frankfurt Neon authority remains a hard localization blocker for real Russian-user collection.
+- [ ] Roskomnadzor processing notification is accepted with sanitized evidence.
+- [ ] Telegram/Cloudflare cross-border processor-flow assessment and any required notification are accepted.
+- [ ] A Russian-hosted or in-product/Russian-stored data-subject request channel is accepted.
+- [ ] Final public Privacy Policy is deployed on every personal-data collection surface.
 - [ ] `PUBLIC_MULTI_USER_ENABLED=true` accepted only after all owning gates close.
 - [ ] `OMNI_V10_TELEGRAM_LOGIN_ENABLED=true` accepted only for the Telegram capability.
 - [x] `OMNI_V10_VK_ID_LOGIN_ENABLED=false` remains fail-closed in this activation.
@@ -103,7 +109,7 @@ FROM: BLOCKED_EXTERNAL
 TO: LIVE_OPERABLE
 DECISION: BLOCKED
 EXTERNAL GATES CLOSED: canonical Cloudflare ingress/release + production runtime secret custody
-REMAINING BLOCKERS: public-user legal/operator/privacy-notice sign-off plus post-activation real-user/provider-availability and tenant-isolation evidence
+REMAINING BLOCKERS: Russian production DB cutover + Roskomnadzor processing notification + cross-border processor-flow acceptance + Russian data-subject request channel + deployed Privacy Policy, then post-activation real-user/provider-availability and tenant-isolation evidence
 EXACT EVIDENCE: issue #549 + current activation branch/PR
 ```
 
