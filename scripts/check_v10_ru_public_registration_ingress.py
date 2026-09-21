@@ -193,6 +193,54 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
     )
 
 
+def _validate_external_decommission(payload: dict[str, Any]) -> None:
+    decommission = _mapping(
+        payload.get("external_decommission"),
+        "TIMEWEB_CONSOLIDATION_DECOMMISSION_INVALID",
+    )
+    for key in (
+        "owner_supplied_visual_evidence",
+        "cloudflare_external_resources_and_account_reported_deleted",
+        "neon_project_organization_keys_and_account_reported_deleted",
+        "repository_history_and_archived_files_preserved",
+    ):
+        _require(
+            decommission.get(key) is True,
+            "TIMEWEB_CONSOLIDATION_DECOMMISSION_INVALID",
+        )
+    for key in (
+        "cloudflare_rollback_available",
+        "neon_rollback_available",
+        "provider_side_physical_erasure_independently_verified",
+    ):
+        _require(
+            decommission.get(key) is False,
+            "TIMEWEB_CONSOLIDATION_DECOMMISSION_INVALID",
+        )
+
+    timeweb = _mapping(
+        payload.get("timeweb"),
+        "TIMEWEB_CONSOLIDATION_TIMEWEB_INVALID",
+    )
+    _require(
+        timeweb.get("canonical_domain_target") is None,
+        "TIMEWEB_CONSOLIDATION_DOMAIN_MUST_REMAIN_UNRESOLVED",
+    )
+    _require(
+        timeweb.get("canonical_domain_candidates_observed")
+        == ["omnicio.ru", "omni-cio.ru"],
+        "TIMEWEB_CONSOLIDATION_DOMAIN_EVIDENCE_INVALID",
+    )
+    _require(
+        timeweb.get("canonical_domain_owner_confirmation_required") is True,
+        "TIMEWEB_CONSOLIDATION_DOMAIN_CONFIRMATION_REQUIRED",
+    )
+    _require(
+        timeweb.get("dns_cutover_allowed_before_domain_confirmation") is False,
+        "TIMEWEB_CONSOLIDATION_PREMATURE_DNS_CUTOVER",
+    )
+
+
 def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
     cleanup = _mapping(
         payload.get("cleanup"),
@@ -292,6 +340,7 @@ def main() -> int:
         _validate_service_model(payload)
         _validate_product_timeweb_auth(payload)
         _validate_database_ci_execution(payload)
+        _validate_external_decommission(payload)
         _validate_cleanup_activation(payload)
         _validate_documents()
     except RuntimeError as exc:
