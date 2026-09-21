@@ -185,36 +185,27 @@ Current public-facing activation remains fail-closed where evidence is missing:
 
 V10 is controlled migration/productization, not a greenfield rewrite.
 
-Default decision preference:
+Default preference:
 
 `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite `apps/web` remains canonical Web source.
+Existing React/Vite `apps/web` remains canonical Web source. Python/FastAPI product logic stays provider-neutral.
 
-FastAPI support in Cloudflare Python Workers does not prove current CPython/native dependencies are compatible. Exact compatibility evidence is required before migration. Cloudflare Containers may be used when CF-B proves a concrete full-Linux/native dependency need and its cost/recovery semantics are acceptable.
+Timeweb App Platform is the selected runtime target. Timeweb Managed PostgreSQL 18 is the final relational target after the owning production cutover. Preserve migrations, exact numeric semantics, least-privilege roles, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery evidence.
 
-Accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact until an explicit equivalent migration is proved. D1 does not replace financial/tenant truth by default. Hyperdrive + PostgreSQL 18 compatibility is not assumed and requires focused evidence.
+Do not create a second Gateway, second Web product, competing DB authority or competing scheduler merely to fit provider products.
 
-Do not create a second Gateway, second Web product, competing DB authority or competing scheduler simply to use more Cloudflare features.
+Cloudflare/Neon/Render/Cloud.ru/VK files remain archive-in-place by default. They are historical evidence, not templates for new implementation. Do not mass-delete them merely to simplify keyword searches.
 
-## 11. Cloudflare-first dependency / capacity / cost boundary
+## 11. Timeweb-first dependency / capacity / cost boundary
 
-Prefer an appropriate Cloudflare service over replaceable external infrastructure when semantics are equivalent and security, recovery, authority and cost are not weakened. Do not adopt a Cloudflare feature merely because it exists on the plan.
+Prefer Timeweb services for active infrastructure when the current accepted milestone requires them and semantics/security/recovery are adequate.
 
-The OWNER has an active Workers Paid baseline. The Amendment-14 contract records the 2026-08-29 official-reference values as mutable facts that must be revalidated before material configuration:
+Do not buy or enable spare capacity merely because it is available. Revalidate exact current price before creating a paid resource. Use existing prepaid Timeweb funds first; a new top-up or materially higher recurring commitment requires fresh OWNER approval.
 
-- 6000 included build minutes/month;
-- up to 6 concurrent builds/account;
-- 20-minute build timeout;
-- 4 vCPU/build;
-- 8 GB memory/build;
-- 20 GB disk/build.
+Production Timeweb autodeploy must not bypass accepted GitHub exact-SHA verification.
 
-The existing subscription authorizes use of included capacity inside the owning integrated milestone. It does not authorize uncontrolled paid overage or a higher paid plan.
-
-Current GitHub/Lenovo CI routing does not change merely because Cloudflare Builds capacity exists. Portable verification migrates only when semantics are equivalent. Windows/PowerShell/ACL/PostgreSQL-18-native contracts remain on trusted Lenovo self-hosted runners until an accepted equivalence proof exists.
-
-GitHub remains engineering authority rank 1. Telegram/VK/T-Invest remain external product/provider interfaces. PostgreSQL/Neon may remain where Cloudflare does not provide an accepted equivalent of the current PostgreSQL 18/RLS financial truth boundary.
+Retiring external CI/review SaaS may not weaken lint/type/test/security/coverage/review requirements; equivalent-or-stronger GitHub-executed verification is required first.
 
 ## 12. Engineering / CI law
 
