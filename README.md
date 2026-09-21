@@ -19,7 +19,7 @@ Repository-front-door snapshot of accepted/current program authority:
 - Cloudflare, Neon, Render and Cloud.ru are retirement targets; no new feature authority is granted to them;
 - equivalent-or-stronger GitHub-native verification must replace external CI/review SaaS before removal;
 - public multi-user and capability activation remain fail-closed until their Timeweb/Telegram/privacy/legal/capacity gates pass;
-- WEB-VISUAL and WP23+ remain paused during platform consolidation;
+- WEB-VISUAL remains paused during platform consolidation; WP23+ remains locked;
 - broker-write / Real-execution authority remains unchanged;
 - `trading_methods=false`, `REAL_TRADING_ENABLED=false` and tenant/RLS protections remain intact.
 
