@@ -149,9 +149,8 @@ A separate user-facing staging product is not required. Local/CI/provider double
 
 | Capability | Current activation state | Current blocker summary |
 |---|---|---|
-| telegram_login | `BLOCKED_EXTERNAL` | real Telegram registration/callback/runtime secret plus canonical public runtime privacy/capacity/monitoring acceptance |
-| vk_id | `BLOCKED_EXTERNAL` | real VK ID registration/callback/runtime secret plus canonical public runtime privacy/capacity/monitoring acceptance |
-| public_multi_user_tenant_access | `BLOCKED_EXTERNAL` | live provider auth + public-user privacy/legal/capacity/monitoring + accepted CF-D public cutover |
+| telegram_login | `BLOCKED_EXTERNAL` | Timeweb canonical runtime/callback + Telegram secret custody + public runtime privacy/capacity/monitoring acceptance |
+| public_multi_user_tenant_access | `BLOCKED_EXTERNAL` | live Telegram auth + public-user privacy/legal/capacity/monitoring + accepted Timeweb runtime/database/DNS cutover |
 | tinvest_read | `BLOCKED_EXTERNAL` | `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION` + tenant secret-custody/security/privacy/live-connection acceptance |
 
 Current user-facing activation transitions — **BLOCKED_EXTERNAL where listed above**.
