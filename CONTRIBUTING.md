@@ -120,7 +120,7 @@ When RED appears:
 
 Repeated identical “transient” failure becomes an infrastructure/workflow defect and must not be blindly retried until GREEN.
 
-For changed code, applicable Sonar Quality Gate must pass; default new-code requirement is 0 new issues, 0 unresolved new Security Hotspots and 0 unresolved material Reliability/Security/Maintainability findings. Gitar/SAST/check annotations and review threads must also be inspected.
+For changed code, applicable GitHub-native lint/type/test/coverage/dependency/SAST/secret/security checks must pass and unresolved material correctness/security/maintainability findings are not GREEN. Check annotations and review threads must also be inspected.
 
 Only `CERTIFIED_GREEN` permits the next functional checkpoint. An applicable post-merge RED on current `main` means `MAIN_RED_STOP` and blocks ordinary feature development until an accepted focused repair restores GREEN.
 
@@ -133,7 +133,7 @@ Canonical targeted verifier: `.github/workflows/v10-targeted-repair.yml`.
 Для каждого опубликованного PR head до merge:
 
 1. просмотрите полный GitHub **Files changed** против accepted base;
-2. проверьте inline review threads, check annotations, Sonar, Gitar, SAST/security и другие applicable review outputs;
+2. проверьте inline review threads, check annotations, GitHub-native SAST/security/dependency/secret checks и другие applicable review outputs;
 3. классифицируйте material findings по root cause, blast radius, analogous locations, directly coupled surfaces и adjacent failure modes;
 4. исправьте реальные correctness/security/maintainability defects и добавьте regression guard для reusable defect class;
 5. требуйте `unresolved blocking review threads = 0`;
@@ -154,7 +154,7 @@ Checkpoint lifecycle:
 3. one authorized logical checkpoint;
 4. deterministic tests/guards + focused preflight;
 5. publish exact checkpoint SHA;
-6. CI + Sonar + applicable independent review;
+6. GitHub-native CI/security + applicable independent review;
 7. any RED -> `RED_REPAIR_ONLY` and immediate targeted repair;
 8. source change -> replacement SHA + targeted proof + full exact-SHA certification;
 9. only `CERTIFIED_GREEN` -> next functional checkpoint allowed.
