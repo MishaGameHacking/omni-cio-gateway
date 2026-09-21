@@ -1,6 +1,6 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-09-18
+Updated: 2026-09-21
 
 ## Executive state
 
