@@ -115,5 +115,18 @@
     "operational_workflow_source_present": true,
     "real_provider_integration_certified": false,
     "native_windows_evidence_required_before_live_apply": true
+  },
+  "transport_prerequisite": {
+    "verification_function": "verify_transport_prerequisite",
+    "required_receipt_phase": "ALLOCATED",
+    "requires_two_equal_current_provider_gets": true,
+    "allowed_current_binding_states": [
+      "MANAGED_UNBOUND",
+      "MANAGED_TARGET_BOUND"
+    ],
+    "expected_provider_comment": "CUSTODY_MARKER_V1",
+    "network_state_is_not_receipt_identity": true,
+    "provider_write_allowed": false,
+    "provider_custody_recheck_still_required": true
   }
 }

@@ -237,6 +237,91 @@ class AllocationTests(unittest.TestCase):
         with self.assertRaisesRegex(custody.CustodyStopped, "PROVENANCE_REQUIRED"):
             custody.select(parsed, 91, public_enabled=False)
 
+    def transport_snapshot(
+        self,
+        *,
+        bound: bool = False,
+        public_enabled: bool = False,
+    ) -> allocation.TransportSnapshot:
+        current = self.provider.snapshot
+        return allocation.TransportSnapshot(
+            account_scope=current.account_scope,
+            project_id=current.project_id,
+            cluster_id=current.cluster_id,
+            floating_id=current.floating_id,
+            ip_address=current.ip_address,
+            comment=current.comment,
+            inventory_count=current.inventory_count,
+            target_name=current.target_name,
+            zone=current.zone,
+            ddos_enabled=current.ddos_enabled,
+            resource_type="dbaas" if bound else None,
+            resource_id=str(current.cluster_id) if bound else None,
+            public_enabled=public_enabled,
+            ipv6_enabled=False,
+        )
+
+    def test_transport_prerequisite_requires_allocated_receipt(self) -> None:
+        identifier = self.prepare()
+        with self.assertRaisesRegex(
+            allocation.AllocationStopped,
+            "TRANSPORT_RECEIPT_REQUIRED",
+        ):
+            allocation.verify_transport_prerequisite(
+                identifier,
+                self.transport_snapshot,
+                self.journal,
+            )
+
+    def test_transport_prerequisite_accepts_managed_unbound_and_target_bound(
+        self,
+    ) -> None:
+        identifier = self.prepare()
+        self.apply(identifier)
+        self.assertEqual(
+            allocation.verify_transport_prerequisite(
+                identifier,
+                self.transport_snapshot,
+                self.journal,
+            ),
+            allocation.Outcome.RECEIPT_REVERIFIED,
+        )
+        self.assertEqual(
+            allocation.verify_transport_prerequisite(
+                identifier,
+                lambda: self.transport_snapshot(
+                    bound=True,
+                    public_enabled=True,
+                ),
+                self.journal,
+            ),
+            allocation.Outcome.RECEIPT_REVERIFIED,
+        )
+
+    def test_transport_prerequisite_rejects_identity_and_binding_drift(self) -> None:
+        identifier = self.prepare()
+        self.apply(identifier)
+        current = self.transport_snapshot()
+        for changed in (
+            replace(current, ip_address="8.8.8.8"),
+            replace(
+                current,
+                resource_type="dbaas",
+                resource_id="999",
+            ),
+            replace(current, comment="foreign"),
+        ):
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(
+                    allocation.AllocationStopped,
+                    "TRANSPORT_RESOURCE_DRIFT",
+                ):
+                    allocation.verify_transport_prerequisite(
+                        identifier,
+                        lambda changed=changed: changed,
+                        self.journal,
+                    )
+
     def test_actual_approved_allocation_uses_same_ip_and_existing_marker_protocol(
         self,
     ) -> None:

@@ -99,6 +99,29 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PUBLIC_IPV4_AUTHORITY_INVALID",
     )
 
+    allocation_prerequisite = _mapping(
+        payload.get("allocation_prerequisite"),
+        "TIMEWEB_PUBLIC_IPV4_ALLOCATION_PREREQUISITE_INVALID",
+    )
+    _require(
+        allocation_prerequisite,
+        {
+            "workflow": ".github/workflows/v10-timeweb-ipv4-allocation.yml",
+            "required_transport_input": "allocation_plan_id",
+            "required_phase": "ALLOCATED",
+            "durable_receipt_required_before_mutation_adapter": True,
+            "provider_methods_during_receipt_check": ["GET"],
+            "allowed_current_binding_states": [
+                "MANAGED_UNBOUND",
+                "MANAGED_TARGET_BOUND",
+            ],
+            "network_state_is_not_receipt_identity": True,
+            "provider_custody_rechecked_before_network_mutation": True,
+            "plan_handle_is_non_authorizing_reference": True,
+        },
+        "TIMEWEB_PUBLIC_IPV4_ALLOCATION_PREREQUISITE_INVALID",
+    )
+
     verifier = _mapping(
         payload.get("verifier_egress"),
         "TIMEWEB_PUBLIC_IPV4_VERIFIER_INVALID",
@@ -494,12 +517,19 @@ def _validate_sources() -> None:
             "TIMEWEB_PREEXISTING_PUBLIC_IPV6_UNSAFE",
             "read_only._require_target_cluster_disk(",
             "read_only._require_target_replica_topology(",
+            "allocation.verify_transport_prerequisite(",
+            "adapter.transport_snapshot",
+            "_verify_allocation_prerequisite(api)",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
             'f"/api/v1/firewall/service/{FIREWALL_RESOURCE_TYPE}/{cluster_id}"',
             _READY_MARKER,
         ),
         "TIMEWEB_PUBLIC_IPV4_PROVISIONER_DRIFT",
     )
+    if provisioner.index("_verify_allocation_prerequisite(api)") > provisioner.index(
+        "mutation = TimewebMutationApi(token)"
+    ):
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_ALLOCATION_SEQUENCE_INVALID")
     if "exc.read(" in provisioner:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RESPONSE_BODY_READ_FORBIDDEN")
 
@@ -520,6 +550,7 @@ def _validate_sources() -> None:
         (
             "workflow_dispatch:",
             _CONFIRMATION,
+            "allocation_plan_id:",
             "actions: read",
             "contents: read",
             "if: github.ref == 'refs/heads/main'",
@@ -528,6 +559,7 @@ def _validate_sources() -> None:
             "python -m scripts.discover_v10_ru_pg_verifier_ipv4",
             "python -m scripts.provision_v10_timeweb_postgres_public_ipv4_tls",
             "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",
+            "TIMEWEB_ALLOCATION_PLAN_ID: ${{ inputs.allocation_plan_id }}",
             "git clean -ffdx",
         ),
         "TIMEWEB_PUBLIC_IPV4_WORKFLOW_DRIFT",
@@ -550,6 +582,8 @@ def _validate_sources() -> None:
             "20971520 KB",
             "provider replica-list baseline count is exactly `1`",
             "additional paid replication remains unauthorized",
+            "durable `ALLOCATED` allocation receipt",
+            "allocation_plan_id",
             _READY_MARKER,
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
             "RU-PG-C remains locked",

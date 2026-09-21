@@ -235,7 +235,7 @@ class TimewebAllocationProvider:
         self._read_api = read_api
         self._mutation_api = mutation_api
 
-    def snapshot(self) -> allocation.Snapshot:
+    def transport_snapshot(self) -> allocation.TransportSnapshot:
         try:
             project_id = _select_project(self._read_api.get("/api/v1/projects"))
             cluster_id = _select_cluster(
@@ -254,7 +254,7 @@ class TimewebAllocationProvider:
                 _stop("TIMEWEB_ALLOCATION_IPV4_LIST_DETAIL_DRIFT")
             if _ptr(detail_row) != "":
                 _stop("TIMEWEB_ALLOCATION_IPV4_PTR_PRESENT")
-            snapshot = allocation.Snapshot(
+            snapshot = allocation.TransportSnapshot(
                 account_scope=account_scope,
                 project_id=project_id,
                 cluster_id=cluster_id,
@@ -270,14 +270,40 @@ class TimewebAllocationProvider:
                 public_enabled=public_enabled,
                 ipv6_enabled=ipv6_enabled,
             )
-            allocation._snapshot(snapshot)
+            allocation._transport_snapshot(snapshot)
             return snapshot
         except ProviderStopped:
             raise
         except allocation.AllocationStopped:
-            raise ProviderStopped("TIMEWEB_ALLOCATION_SNAPSHOT_INVALID") from None
+            raise ProviderStopped(
+                "TIMEWEB_ALLOCATION_TRANSPORT_SNAPSHOT_INVALID"
+            ) from None
         except Exception:
             raise ProviderStopped("TIMEWEB_ALLOCATION_PROVIDER_READ_FAILED") from None
+
+    def snapshot(self) -> allocation.Snapshot:
+        current = self.transport_snapshot()
+        try:
+            snapshot = allocation.Snapshot(
+                account_scope=current.account_scope,
+                project_id=current.project_id,
+                cluster_id=current.cluster_id,
+                floating_id=current.floating_id,
+                ip_address=current.ip_address,
+                comment=current.comment,
+                inventory_count=current.inventory_count,
+                target_name=current.target_name,
+                zone=current.zone,
+                ddos_enabled=current.ddos_enabled,
+                resource_type=current.resource_type,
+                resource_id=current.resource_id,
+                public_enabled=current.public_enabled,
+                ipv6_enabled=current.ipv6_enabled,
+            )
+            allocation._snapshot(snapshot)
+            return snapshot
+        except allocation.AllocationStopped:
+            raise ProviderStopped("TIMEWEB_ALLOCATION_SNAPSHOT_INVALID") from None
 
     def write_comment_once(self, floating_id: str, marker: str) -> None:
         """Perform exactly one PATCH after a fresh complete empty-comment snapshot."""

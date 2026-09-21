@@ -134,6 +134,35 @@ class TimewebAllocationProviderTests(unittest.TestCase):
             ],
         )
 
+    def test_transport_snapshot_accepts_exact_target_bound_public_state(self) -> None:
+        payloads = _provider_payloads(allocation.expected_marker(_snapshot()))
+        inventory = payloads["/api/v1/floating-ips"]
+        assert isinstance(inventory, dict)
+        rows = inventory["ips"]
+        assert isinstance(rows, list)
+        row = rows[0]
+        assert isinstance(row, dict)
+        row["resource_type"] = "dbaas"
+        row["resource_id"] = "123"
+        payloads["/api/v1/floating-ips/float-1"] = {"ip": copy.deepcopy(row)}
+        cluster = payloads["/api/v1/databases/123"]
+        assert isinstance(cluster, dict)
+        db = cluster["db"]
+        assert isinstance(db, dict)
+        db["is_enabled_public_network"] = True
+        adapter = provider.TimewebAllocationProvider(_ReadApi(payloads))
+
+        observed = adapter.transport_snapshot()
+
+        self.assertEqual(observed.resource_type, "dbaas")
+        self.assertEqual(observed.resource_id, "123")
+        self.assertTrue(observed.public_enabled)
+        with self.assertRaisesRegex(
+            provider.ProviderStopped,
+            "TIMEWEB_ALLOCATION_SNAPSHOT_INVALID",
+        ):
+            adapter.snapshot()
+
     def test_snapshot_rejects_list_detail_drift(self) -> None:
         payloads = _provider_payloads()
         detail = copy.deepcopy(payloads["/api/v1/floating-ips/float-1"])

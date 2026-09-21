@@ -211,6 +211,23 @@ def validate_contract(data: dict[str, object]) -> None:
         ),
         False,
     )
+    transport = _mapping(data.get("transport_prerequisite"))
+    _require(
+        transport
+        == {
+            "verification_function": "verify_transport_prerequisite",
+            "required_receipt_phase": "ALLOCATED",
+            "requires_two_equal_current_provider_gets": True,
+            "allowed_current_binding_states": [
+                "MANAGED_UNBOUND",
+                "MANAGED_TARGET_BOUND",
+            ],
+            "expected_provider_comment": "CUSTODY_MARKER_V1",
+            "network_state_is_not_receipt_identity": True,
+            "provider_write_allowed": False,
+            "provider_custody_recheck_still_required": True,
+        }
+    )
     invariants = _mapping(data.get("protected_invariants"))
     _require(invariants.get("protected_v9_entrypoint") == "app:app")
     _require(invariants.get("neon_production_authority_preserved") is True)
@@ -239,7 +256,10 @@ def validate_source(source: str) -> None:
     functions = {
         node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
     }
-    _require({"prepare", "apply", "reconcile", "safe_summary"} <= functions.keys())
+    _require(
+        {"prepare", "apply", "reconcile", "verify_transport_prerequisite", "safe_summary"}
+        <= functions.keys()
+    )
     _require(not any(isinstance(node, ast.If) for node in tree.body))
     forbidden_imports = {"os", "subprocess", "socket", "urllib", "requests", "httpx"}
     for node in ast.walk(tree):
@@ -261,6 +281,14 @@ def validate_source(source: str) -> None:
     ]
     _require(len(writers) == 1)
     _require(writers[0] in list(ast.walk(functions["apply"])))
+    transport = functions["verify_transport_prerequisite"]
+    _require("read_snapshot" in {arg.arg for arg in transport.args.args})
+    _require("journal" in {arg.arg for arg in transport.args.args})
+    transport_names = {
+        node.id for node in ast.walk(transport) if isinstance(node, ast.Name)
+    }
+    _require("write_comment_once" not in transport_names)
+
     reconcile_names = {
         node.id
         for node in ast.walk(functions["reconcile"])
@@ -354,6 +382,7 @@ def _validate_provider() -> None:
         '"POST"',
         '"PUT"',
         '"DELETE"',
+        '"POST"',
         '"/bind"',
         '"/unbind"',
         "/firewall/",
@@ -363,6 +392,8 @@ def _validate_provider() -> None:
     ):
         _require(forbidden not in source)
     _require('body={"comment": marker}' in source)
+    _require("def transport_snapshot(" in source)
+    _require("allocation.TransportSnapshot(" in source)
     _require('self._read_api.get("/api/v1/floating-ips")' in source)
     _require("/api/v1/floating-ips/{parsed.identifier}" in source)
 
