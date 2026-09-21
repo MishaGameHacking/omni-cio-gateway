@@ -5,6 +5,7 @@ import copy
 from unittest import mock
 import unittest
 
+from scripts import probe_v10_timeweb_postgres_control_plane as read_only
 from scripts import run_v10_timeweb_ipv4_allocation as runner
 from scripts import timeweb_ipv4_allocation as allocation
 from scripts import timeweb_ipv4_allocation_provider as provider
@@ -263,27 +264,38 @@ class TimewebAllocationProviderTests(unittest.TestCase):
         self.assertNotIn("provider-private-payload", str(raised.exception))
 
 
-    def test_write_capable_live_provider_requires_read_credential_preflight(self) -> None:
-        reader = mock.Mock()
-        with (
-            mock.patch(
-                "scripts.probe_v10_timeweb_postgres_control_plane.TimewebReadOnlyApi",
-                return_value=reader,
-            ),
-            mock.patch(
-                "scripts.probe_v10_timeweb_postgres_control_plane.verify_credential_health",
-                side_effect=RuntimeError("auth rejected"),
-            ),
-            mock.patch(
-                "scripts.provision_v10_timeweb_postgres_public_ipv4_tls.TimewebMutationApi"
-            ) as writer,
-        ):
-            with self.assertRaisesRegex(
-                provider.ProviderStopped,
-                "TIMEWEB_ALLOCATION_PROVIDER_INIT_FAILED",
-            ):
-                provider.live_provider("synthetic-token", allow_write=True)
-        writer.assert_not_called()
+    def test_write_capable_live_provider_preserves_safe_auth_rejection(self) -> None:
+        cases = (
+            (401, read_only.AUTHENTICATION_REJECTED_CODE),
+            (403, read_only.AUTHORIZATION_REJECTED_CODE),
+        )
+        for status, code in cases:
+            with self.subTest(status=status):
+                reader = mock.Mock()
+                failure = read_only._provider_base.ProvisioningStopped(
+                    code,
+                    status=status,
+                )
+                with (
+                    mock.patch(
+                        "scripts.probe_v10_timeweb_postgres_control_plane.TimewebReadOnlyApi",
+                        return_value=reader,
+                    ),
+                    mock.patch(
+                        "scripts.probe_v10_timeweb_postgres_control_plane.verify_credential_health",
+                        side_effect=failure,
+                    ),
+                    mock.patch(
+                        "scripts.provision_v10_timeweb_postgres_public_ipv4_tls.TimewebMutationApi"
+                    ) as writer,
+                ):
+                    with self.assertRaisesRegex(
+                        provider.ProviderStopped,
+                        code,
+                    ) as raised:
+                        provider.live_provider("synthetic-token", allow_write=True)
+                self.assertNotIn("status=", str(raised.exception))
+                writer.assert_not_called()
 
     def test_read_only_live_provider_does_not_construct_writer(self) -> None:
         reader = mock.Mock()
