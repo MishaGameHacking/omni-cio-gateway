@@ -322,8 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except Exception:
         _emit(
-            "TIMEWEB_IPV4_ALLOCATION=STOPPED "
-            "code=TIMEWEB_ALLOCATION_UNEXPECTED_FAILURE"
+            "TIMEWEB_IPV4_ALLOCATION=STOPPED code=TIMEWEB_ALLOCATION_UNEXPECTED_FAILURE"
         )
         return 1
     return 0

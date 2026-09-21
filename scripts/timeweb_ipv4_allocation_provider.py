@@ -135,13 +135,9 @@ def _cluster(payload: object, expected_id: int) -> tuple[str, bool, bool]:
         or row.get("name") != allocation.TARGET_NAME
         or row.get("location") != TARGET_LOCATION
         or row.get("availability_zone") != TARGET_ZONE
-        or _exact_positive_int(
-            row.get("cpu"), "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID"
-        )
+        or _exact_positive_int(row.get("cpu"), "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID")
         != TARGET_CPU
-        or _exact_positive_int(
-            row.get("ram"), "TIMEWEB_ALLOCATION_CLUSTER_RAM_INVALID"
-        )
+        or _exact_positive_int(row.get("ram"), "TIMEWEB_ALLOCATION_CLUSTER_RAM_INVALID")
         != TARGET_RAM_MB
         or row.get("status") != "started"
         or row.get("is_autobackups_enabled") is not False
@@ -173,9 +169,7 @@ def _cluster(payload: object, expected_id: int) -> tuple[str, bool, bool]:
         _stop("TIMEWEB_ALLOCATION_CLUSTER_REPLICA_DRIFT")
     replica = _mapping(replicas[0], "TIMEWEB_ALLOCATION_CLUSTER_REPLICA_DRIFT")
     if (
-        _numeric_id(
-            replica.get("db_id"), "TIMEWEB_ALLOCATION_CLUSTER_REPLICA_DRIFT"
-        )
+        _numeric_id(replica.get("db_id"), "TIMEWEB_ALLOCATION_CLUSTER_REPLICA_DRIFT")
         != expected_id
     ):
         _stop("TIMEWEB_ALLOCATION_CLUSTER_REPLICA_DRIFT")
@@ -245,17 +239,13 @@ class TimewebAllocationProvider:
         try:
             project_id = _select_project(self._read_api.get("/api/v1/projects"))
             cluster_id = _select_cluster(
-                self._read_api.get(
-                    f"/api/v1/projects/{project_id}/resources/databases"
-                )
+                self._read_api.get(f"/api/v1/projects/{project_id}/resources/databases")
             )
             account_scope, public_enabled, ipv6_enabled = _cluster(
                 self._read_api.get(f"/api/v1/databases/{cluster_id}"),
                 cluster_id,
             )
-            list_row = _raw_inventory(
-                self._read_api.get("/api/v1/floating-ips")
-            )[0]
+            list_row = _raw_inventory(self._read_api.get("/api/v1/floating-ips"))[0]
             parsed = _address(list_row)
             detail_row = _detail(
                 self._read_api.get(f"/api/v1/floating-ips/{parsed.identifier}")

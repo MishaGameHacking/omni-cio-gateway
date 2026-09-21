@@ -180,8 +180,7 @@ def validate_contract(data: dict[str, object]) -> None:
         workflow.get("path") == ".github/workflows/v10-timeweb-ipv4-allocation.yml"
     )
     _require(
-        workflow.get("dispatch_modes")
-        == ["INITIALIZE", "PLAN", "APPLY", "RECONCILE"]
+        workflow.get("dispatch_modes") == ["INITIALIZE", "PLAN", "APPLY", "RECONCILE"]
     )
     _require(workflow.get("environment") == "timeweb-synthetic")
     _require(workflow.get("apply_github_permission") == _ISSUES_READ)
@@ -191,9 +190,7 @@ def validate_contract(data: dict[str, object]) -> None:
         == "v10-timeweb-postgres-public-ipv4-tls"
     )
     _require(workflow.get("plan_provider_methods") == ["GET"])
-    _require(
-        workflow.get("apply_provider_methods") == ["GET", "PATCH_COMMENT_ONCE"]
-    )
+    _require(workflow.get("apply_provider_methods") == ["GET", "PATCH_COMMENT_ONCE"])
     _require(workflow.get("reconcile_provider_methods") == ["GET"])
     _flags(
         workflow,
@@ -331,9 +328,7 @@ def _validate_m1_adapters() -> None:
 def _validate_provider() -> None:
     source = PROVIDER.read_text(encoding="utf-8")
     tree = ast.parse(source)
-    classes = {
-        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
-    }
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     _require("TimewebAllocationProvider" in classes)
     methods = {
         node.name: node
@@ -369,7 +364,7 @@ def _validate_provider() -> None:
         _require(forbidden not in source)
     _require('body={"comment": marker}' in source)
     _require('self._read_api.get("/api/v1/floating-ips")' in source)
-    _require('/api/v1/floating-ips/{parsed.identifier}' in source)
+    _require("/api/v1/floating-ips/{parsed.identifier}" in source)
 
 
 def _validate_runner() -> None:
@@ -434,9 +429,7 @@ def _validate_workflow() -> None:
     ):
         _require(forbidden not in source)
     _require(
-        source.count(
-            "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}"
-        )
+        source.count("TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}")
         == 3
     )
     non_apply = source[source.index("  non-apply:") : source.index("  apply:")]
