@@ -295,7 +295,7 @@ def _validate_runtime_hosting(data: dict[str, Any], failures: list[str]) -> None
     _expect_values(
         _section(data, "runtime_hosting", failures),
         {
-            "v10_public_production_host": "CLOUDFLARE_WORKERS_PAID_AFTER_OWNING_CUTOVER_GATE",
+            "v10_public_production_host": "TIMEWEB_APP_PLATFORM_AFTER_OWNING_CUTOVER_GATE",
             "managed_cloud_runtime_required_for_public_product": True,
             "owner_home_or_lenovo_public_dependency_allowed": False,
             "owner_home_power_or_internet_public_sla_dependency_allowed": False,
@@ -309,8 +309,13 @@ def _validate_runtime_hosting(data: dict[str, Any], failures: list[str]) -> None
             "render_com_new_v10_release_acceptance_allowed": False,
             "cloudru_new_v10_runtime_target_selected": False,
             "protected_v9_render_app_app_baseline_preserved": True,
-            "cloudflare_role": "PRIMARY_NEW_V10_MANAGED_APPLICATION_EDGE_BUILD_PLATFORM_NOT_PRODUCT_IDENTITY",
-            "cloudflare_workers_paid_selected": True,
+            "timeweb_cloud_selected": True,
+            "timeweb_role": "PRIMARY_V10_MANAGED_APPLICATION_DATABASE_DOMAIN_PLATFORM_NOT_PRODUCT_IDENTITY",
+            "timeweb_governance_acceptance_mutates_provider": False,
+            "timeweb_governance_acceptance_authorizes_production_cutover": False,
+            "timeweb_exact_main_release_required": True,
+            "cloudflare_role": "HISTORICAL_ACCEPTED_PLATFORM_RETIRED_BY_AMENDMENT_18",
+            "cloudflare_workers_paid_selected": False,
             "cloudflare_governance_acceptance_mutates_provider": False,
             "cloudflare_governance_acceptance_authorizes_production_cutover": False,
             "cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting": False,
@@ -436,7 +441,7 @@ def main() -> int:
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
     print("OWNER handoff: direct official link + bounded action contract enforced")
     print(
-        "V10 public runtime: Cloudflare Workers Paid target after owning cutover gate"
+        "V10 public runtime: Timeweb App Platform target after owning cutover gate"
     )
     print("Failure-learning and bounded fault-isolation contracts: enforced")
     return 0
