@@ -15,6 +15,10 @@ AMENDMENT = ROOT / (
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
+TIMEWEB_PROOF_WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
+RETIRED_CLOUDFLARE_RELEASE_WORKFLOW = (
+    ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
+)
 
 EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
 EXPECTED_RETIRED = ["Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"]
@@ -170,6 +174,27 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
         ci.get("external_saas_required_final") is False,
         "TIMEWEB_CONSOLIDATION_CI_INVALID",
     )
+    _require(
+        ci.get("postmerge_upstream_workflow") == "Regression Shield",
+        "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
+    )
+    _require(
+        ci.get("timeweb_read_only_proof_workflow")
+        == ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
+        "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
+    )
+    _require(
+        ci.get("retired_cloudflare_release_workflow")
+        == ".github/workflows/v10-cloudflare-production-release.yml",
+        "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
+    )
+    for key in (
+        "retired_provider_live_workflow_auto_trigger_allowed",
+        "retired_provider_manual_mutation_allowed",
+        "timeweb_proof_may_depend_on_retired_provider_workflow",
+        "sonar_required_final",
+    ):
+        _require(ci.get(key) is False, "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID")
 
     execution = _mapping(
         payload.get("execution"),
@@ -302,6 +327,44 @@ def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
         )
 
 
+def _validate_active_workflow_graph() -> None:
+    retired = _read(RETIRED_CLOUDFLARE_RELEASE_WORKFLOW)
+    _require(
+        "ARCHIVE-IN-PLACE" in retired,
+        "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_NOT_ARCHIVED",
+    )
+    _require(
+        "workflow_run:" not in retired,
+        "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_AUTO_TRIGGER",
+    )
+    _require(
+        retired.count("      false &&") == 6,
+        "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED",
+    )
+
+    timeweb = _read(TIMEWEB_PROOF_WORKFLOW)
+    for required in (
+        "workflow_run:",
+        "- Regression Shield",
+        "github.event.workflow_run.conclusion == 'success'",
+        "github.event.workflow_run.event == 'push'",
+        "github.event.workflow_run.head_branch == 'main'",
+    ):
+        _require(required in timeweb, "TIMEWEB_CONSOLIDATION_TIMEWEB_GRAPH_DRIFT")
+    for forbidden in (
+        "- V10 Cloudflare Production Release",
+        "secrets.CLOUDFLARE_API_TOKEN",
+        "secrets.CLOUDFLARE_ACCOUNT_ID",
+        "secrets.NEON_API_KEY",
+        "secrets.NEON_ORG_ID",
+        "secrets.NEON_PROJECT_ID",
+    ):
+        _require(
+            forbidden not in timeweb,
+            "TIMEWEB_CONSOLIDATION_TIMEWEB_GRAPH_RETIRED_DEPENDENCY",
+        )
+
+
 def _validate_documents() -> None:
     amendment = _read(AMENDMENT)
     for marker in (
@@ -350,6 +413,7 @@ def main() -> int:
         _validate_database_ci_execution(payload)
         _validate_external_decommission(payload)
         _validate_cleanup_activation(payload)
+        _validate_active_workflow_graph()
         _validate_documents()
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
