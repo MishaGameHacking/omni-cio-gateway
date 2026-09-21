@@ -9,6 +9,7 @@ Current V10 progress and current/next execution authority are defined only by `k
 Repository-front-door snapshot of accepted/current program authority:
 
 - accepted V10 implementation progress: **54%**;
+- Amendment 16 governs Green Checkpoint / targeted CI repair; `RED_REPAIR_ONLY` and `CERTIFIED_GREEN` remain mandatory execution states;
 - WP0–WP22A remain accepted COMPLETE;
 - historical Cloudflare/Render/Neon work remains evidence only;
 - OWNER target operating model: **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**;
