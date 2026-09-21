@@ -109,9 +109,17 @@ Final ordinary-user path:
 
 Cloudflare is no longer an available final hop or rollback provider.
 
-A domain-authority mismatch is currently fail-closed: accepted repository/Telegram evidence uses `omnicio.ru`, while OWNER-supplied Cloudflare screenshots show deletion of the zone `omni-cio.ru`. These are distinct domain names. No Timeweb canonical DNS cutover or Telegram production-origin mutation may occur until the OWNER confirms which registered domain is the canonical V10 domain and ownership/control is re-verified.
+The OWNER confirmed on 2026-09-21 that the canonical V10 production domain is **`omnicio.ru`**. The deleted Cloudflare zone shown as `omni-cio.ru` is not the canonical production domain.
 
-A technical Timeweb candidate is proven before canonical DNS cutover.
+Canonical public origin:
+
+`https://omnicio.ru`
+
+Canonical Telegram OIDC redirect URI:
+
+`https://omnicio.ru/api/v10/web/auth/telegram/callback`
+
+Domain confirmation alone does not authorize DNS mutation. A technical Timeweb candidate, domain control, TLS, callback/origin verification and rollback/recovery evidence are still required before canonical DNS cutover.
 
 Prefer private Timeweb app-to-database networking only when the exact provider configuration is proven. If unavailable, use explicit TLS/firewall/least-privilege evidence. Never guess a trusted proxy/client-IP contract.
 
@@ -225,7 +233,7 @@ Until owning gates accept transitions:
 - no direct development in `main`;
 - external Cloudflare/Neon rollback is unavailable by OWNER-reported decommission;
 - Timeweb candidate/backup/restore evidence must be established before public activation;
-- canonical DNS/Telegram origin remains blocked until the exact domain is OWNER-confirmed.
+- canonical domain is OWNER-confirmed as `omnicio.ru`, but DNS/Telegram production activation remains blocked until its Timeweb/TLS/provider gates pass.
 
 ## 16. Immediate effect after acceptance
 
