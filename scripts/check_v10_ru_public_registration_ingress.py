@@ -15,7 +15,9 @@ AMENDMENT = ROOT / (
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
-TIMEWEB_PROOF_WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
+TIMEWEB_PROOF_WORKFLOW = ROOT / (
+    ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
+)
 AUTHORITATIVE_MERGE_WORKFLOW = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 RETIRED_CLOUDFLARE_WORKFLOWS = (
     ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml",
