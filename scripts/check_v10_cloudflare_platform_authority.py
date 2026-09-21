@@ -411,6 +411,8 @@ def _validate_repository_markers(
             "Cloudflare Workers Paid",
             "PUBLIC_MULTI_USER_ENABLED=false",
             "Render/Neon historical technical evidence",
+            "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+            "Amendment 18 — Timeweb-only platform consolidation",
         ),
         failures,
     )
@@ -462,8 +464,19 @@ def _validate_quality_contract_overlay(
     if not isinstance(runtime, dict):
         failures.append("engineering quality runtime_hosting must be an object")
         return
-    if runtime.get("cloudflare_workers_paid_selected") is not True:
-        failures.append("engineering quality contract must select Workers Paid")
+    if runtime.get("timeweb_cloud_selected") is not True:
+        failures.append("engineering quality contract must select Timeweb Cloud")
+    if runtime.get("cloudflare_workers_paid_selected") is not False:
+        failures.append(
+            "engineering quality contract must mark Cloudflare retired by Amendment 18"
+        )
+    if (
+        runtime.get("cloudflare_role")
+        != "HISTORICAL_ACCEPTED_PLATFORM_RETIRED_BY_AMENDMENT_18"
+    ):
+        failures.append(
+            "engineering quality contract Cloudflare role is not historical"
+        )
     if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
         failures.append("engineering quality contract must retire Cloud.ru for new V10")
     if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
@@ -500,11 +513,17 @@ def main() -> int:
         return 1
 
     print("V10 Cloudflare platform authority check passed.")
-    print("Authority: GitHub rank 1; Cloudflare Workers Paid platform rank 2")
+    print(
+        "Historical authority evidence: GitHub rank 1; "
+        "Cloudflare Workers Paid platform rank 2 before Amendment 18"
+    )
     print("Legacy Render new-V10 deployment/alignment: retired and fail-closed")
     print("Continuous release: exact-main candidate -> acceptance -> promotion")
     print("Paid overage: forbidden without fresh OWNER approval")
-    print("Next stage: CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION")
+    print(
+        "Current next stage is governed by Amendment 18: "
+        "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
+    )
     return 0
 
 

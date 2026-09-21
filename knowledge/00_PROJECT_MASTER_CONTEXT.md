@@ -38,22 +38,28 @@ Chat memory, screenshots, old PR descriptions, Cloudflare dashboard state and hi
 
 ## 3. Current convenience snapshot
 
-This is a convenience snapshot only; exact details remain in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+Omni-CIO V10 remains at **54% accepted implementation** with WP0–WP22A COMPLETE.
 
-Current V10 snapshot after Amendments 14/15 are accepted:
+Amendment 18 selects **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** as the current next package after acceptance.
 
-- **54% accepted implementation**;
-- WP0–WP22A / Blocks A–E COMPLETE;
-- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED** accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
-- no active authorized functional implementation package;
-- **WEB-VISUAL-INTEGRATED** as the current next package, with **PRODUCT IMPLEMENTATION PAUSED** and **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` before its separate source work;
-- WP23+ LOCKED;
-- current `PUBLIC_MULTI_USER_ENABLED=false` until the remaining capability-specific live gates;
-- Telegram Login / VK ID / public multi-user tenant access / public T-Invest READ remain `BLOCKED_EXTERNAL` until their own live gates;
-- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
-- protected V9 `app:app` rollback remains intact.
+Target operating model:
 
-## 4. GitHub / Cloudflare authority model
+- ChatGPT — engineering assistant;
+- GitHub — source/review/CI/release provenance;
+- Timeweb Cloud — sole selected production infrastructure platform;
+- Telegram Login — sole selected human product authentication provider.
+
+Cloudflare, Neon, Render, Cloud.ru and VK ID are migration/decommission targets. WEB-VISUAL and WP23+ remain paused while platform consolidation/public activation is completed.
+
+This is a convenience snapshot only; exact state remains `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+## 4. Current GitHub / Timeweb authority model
+
+GitHub remains the engineering source of truth. Timeweb is the target runtime/database/domain platform. Telegram is identity only. Provider-specific infrastructure must stay outside the product core.
+
+The accepted historical Cloudflare section below remains provenance only and is superseded for future provider selection by Amendment 18.
+
+## 4B. Historical GitHub / Cloudflare authority model — superseded for future provider selection
 
 GitHub is authority rank 1 for engineering:
 
@@ -179,36 +185,27 @@ Current public-facing activation remains fail-closed where evidence is missing:
 
 V10 is controlled migration/productization, not a greenfield rewrite.
 
-Default decision preference:
+Default preference:
 
 `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite `apps/web` remains canonical Web source.
+Existing React/Vite `apps/web` remains canonical Web source. Python/FastAPI product logic stays provider-neutral.
 
-FastAPI support in Cloudflare Python Workers does not prove current CPython/native dependencies are compatible. Exact compatibility evidence is required before migration. Cloudflare Containers may be used when CF-B proves a concrete full-Linux/native dependency need and its cost/recovery semantics are acceptable.
+Timeweb App Platform is the selected runtime target. Timeweb Managed PostgreSQL 18 is the final relational target after the owning production cutover. Preserve migrations, exact numeric semantics, least-privilege roles, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery evidence.
 
-Accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact until an explicit equivalent migration is proved. D1 does not replace financial/tenant truth by default. Hyperdrive + PostgreSQL 18 compatibility is not assumed and requires focused evidence.
+Do not create a second Gateway, second Web product, competing DB authority or competing scheduler merely to fit provider products.
 
-Do not create a second Gateway, second Web product, competing DB authority or competing scheduler simply to use more Cloudflare features.
+Cloudflare/Neon/Render/Cloud.ru/VK files remain archive-in-place by default. They are historical evidence, not templates for new implementation. Do not mass-delete them merely to simplify keyword searches.
 
-## 11. Cloudflare-first dependency / capacity / cost boundary
+## 11. Timeweb-first dependency / capacity / cost boundary
 
-Prefer an appropriate Cloudflare service over replaceable external infrastructure when semantics are equivalent and security, recovery, authority and cost are not weakened. Do not adopt a Cloudflare feature merely because it exists on the plan.
+Prefer Timeweb services for active infrastructure when the current accepted milestone requires them and semantics/security/recovery are adequate.
 
-The OWNER has an active Workers Paid baseline. The Amendment-14 contract records the 2026-08-29 official-reference values as mutable facts that must be revalidated before material configuration:
+Do not buy or enable spare capacity merely because it is available. Revalidate exact current price before creating a paid resource. Use existing prepaid Timeweb funds first; a new top-up or materially higher recurring commitment requires fresh OWNER approval.
 
-- 6000 included build minutes/month;
-- up to 6 concurrent builds/account;
-- 20-minute build timeout;
-- 4 vCPU/build;
-- 8 GB memory/build;
-- 20 GB disk/build.
+Production Timeweb autodeploy must not bypass accepted GitHub exact-SHA verification.
 
-The existing subscription authorizes use of included capacity inside the owning integrated milestone. It does not authorize uncontrolled paid overage or a higher paid plan.
-
-Current GitHub/Lenovo CI routing does not change merely because Cloudflare Builds capacity exists. Portable verification migrates only when semantics are equivalent. Windows/PowerShell/ACL/PostgreSQL-18-native contracts remain on trusted Lenovo self-hosted runners until an accepted equivalence proof exists.
-
-GitHub remains engineering authority rank 1. Telegram/VK/T-Invest remain external product/provider interfaces. PostgreSQL/Neon may remain where Cloudflare does not provide an accepted equivalent of the current PostgreSQL 18/RLS financial truth boundary.
+Retiring external CI/review SaaS may not weaken lint/type/test/security/coverage/review requirements; equivalent-or-stronger GitHub-executed verification is required first.
 
 ## 12. Engineering / CI law
 

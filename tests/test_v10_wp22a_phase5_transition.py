@@ -142,17 +142,16 @@ def test_phase5_closeout_evidence_maps_accepted_exact_main_chain() -> None:
     assert locks["protected_v9_entrypoint"] == "app:app"
 
 
-def test_status_closes_wp22a_and_stages_integrated_cloudflare_before_prepared_visual_update() -> None:
+def test_status_closes_wp22a_and_preserves_history_before_timeweb_update() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert "WP0–WP22A COMPLETE" in text
     assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
     assert "Block E / WP22A overall — **COMPLETE**" in text
     assert "Block E — **COMPLETE (14%)**" in text
-    assert "PRODUCT IMPLEMENTATION PAUSED" in text
+    assert "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in text
     assert (
-        "## Current next package — WEB-VISUAL-INTEGRATED — "
-        "Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED"
+        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
         in text
     )
     assert "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE" in text
@@ -162,7 +161,7 @@ def test_status_closes_wp22a_and_stages_integrated_cloudflare_before_prepared_vi
     assert "CF-D / CLOUDFLARE-PUBLIC-CUTOVER" in text
     assert "### Prepared product package — WEB-VISUAL-INTEGRATED" in text
     assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
-    assert "WP23+ LOCKED" in text
+    assert "WP23+ remains locked" in text
     assert "Accepted implementation progress is **54%**" in text
     assert "`PUBLIC_MULTI_USER_ENABLED=false`" in text
     assert "current runtime state, not a V10-wide release lock" in text

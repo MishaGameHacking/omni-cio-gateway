@@ -332,6 +332,37 @@ Locks the 2026-09-19 OWNER data-residency/provider-migration direction that:
 
 Amendment 17 supersedes only the assumption that Neon is the permanent future production PostgreSQL provider. It does not self-certify Russian legal compliance, activate users, authorize provider purchase by itself, weaken security roles/RLS/recovery or erase historical Neon evidence.
 
+
+### 18. Timeweb-Only Platform Consolidation & Telegram-Only Login Authority
+
+`OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json`;
+- `../../scripts/check_v10_ru_public_registration_ingress.py`;
+- `../../tests/test_v10_ru_public_registration_ingress.py`;
+- issue #580;
+- database migration issue #559;
+- Telegram activation issue #549;
+- `.github/workflows/v10-engineering-governance.yml`.
+
+Locks the 2026-09-21 OWNER final simplification direction:
+
+- active general service set = ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
+- GitHub remains source/review/CI/release-provenance authority;
+- Timeweb Cloud is the only selected future/current V10 production infrastructure platform;
+- Timeweb Managed PostgreSQL 18 is the final relational authority;
+- Telegram Login is the only selected human product login provider;
+- Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority;
+- external CI/review SaaS must be replaced by equivalent-or-stronger GitHub-executed checks before removal;
+- `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the next authorized System Update after this amendment is accepted;
+- one integrated source branch is preferred, while database cutover, DNS/public cutover, external-provider decommission, OWNER/legal actions and recovery boundaries remain mandatory independent acceptance gates;
+- historical provider files remain archive-in-place by default; after accepted cutover their live actions/required-check role/secrets may be disabled or revoked without mass repository deletion;
+- protected Git history is not rewritten.
+
+Amendment 18 supersedes Amendments 14/15 only for current/future provider selection and release target. Their accepted Cloudflare evidence remains historical. It also narrows human product login from Telegram/VK to Telegram only. It does not activate users, mutate providers or authorize Real money.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -345,7 +376,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13/14/15/16 for current product/public-hosting/delivery/activation/platform/engineering semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14/15/16/17/18 for current product/public-hosting/delivery/activation/platform/engineering/data-residency/Russia-ingress semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;

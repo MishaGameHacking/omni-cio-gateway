@@ -1,7 +1,7 @@
 {
   "schema": "omni-cio.v10.engineering-quality-gate.v5",
-  "status": "ACTIVE_ACCEPTED_ON_MAIN_WITH_CLOUDFLARE_AUTHORITY_UPDATE",
-  "date": "2026-08-29",
+  "status": "ACTIVE_ACCEPTED_ON_MAIN_WITH_TIMEWEB_AUTHORITY_UPDATE",
+  "date": "2026-09-21",
   "acceptance_evidence": {
     "accepted_pr": 322,
     "main_sha_encoding": "HEX_CHUNKS",
@@ -23,7 +23,10 @@
     "cloudflare_decision_date": "2026-08-29",
     "cloudflare_amendment": "docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md",
     "cloudflare_contract": "docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json",
-    "effective_on_green_merge": true
+    "effective_on_green_merge": true,
+    "timeweb_decision_date": "2026-09-21",
+    "timeweb_amendment": "docs/master-plan/OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md",
+    "timeweb_contract": "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
   },
   "scope": [
     "V10_IMPLEMENTATION",
@@ -141,7 +144,7 @@
     "cost_or_authority_consequence_before_confirmation": true
   },
   "runtime_hosting": {
-    "v10_public_production_host": "CLOUDFLARE_WORKERS_PAID_AFTER_OWNING_CUTOVER_GATE",
+    "v10_public_production_host": "TIMEWEB_APP_PLATFORM_AFTER_OWNING_CUTOVER_GATE",
     "managed_cloud_runtime_required_for_public_product": true,
     "owner_home_or_lenovo_public_dependency_allowed": false,
     "owner_home_power_or_internet_public_sla_dependency_allowed": false,
@@ -155,14 +158,19 @@
     "render_com_new_v10_release_acceptance_allowed": false,
     "cloudru_new_v10_runtime_target_selected": false,
     "protected_v9_render_app_app_baseline_preserved": true,
-    "cloudflare_role": "PRIMARY_NEW_V10_MANAGED_APPLICATION_EDGE_BUILD_PLATFORM_NOT_PRODUCT_IDENTITY",
-    "cloudflare_workers_paid_selected": true,
+    "cloudflare_role": "HISTORICAL_ACCEPTED_PLATFORM_RETIRED_BY_AMENDMENT_18",
+    "cloudflare_workers_paid_selected": false,
     "cloudflare_governance_acceptance_mutates_provider": false,
     "cloudflare_governance_acceptance_authorizes_production_cutover": false,
     "cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting": false,
     "continuous_exact_main_release_required": true,
     "hosted_tenant_private_state_allowed_after_security_privacy_legal_gates": true,
-    "external_access_provider_may_become_product_identity": false
+    "external_access_provider_may_become_product_identity": false,
+    "timeweb_cloud_selected": true,
+    "timeweb_role": "PRIMARY_V10_MANAGED_APPLICATION_DATABASE_DOMAIN_PLATFORM_NOT_PRODUCT_IDENTITY",
+    "timeweb_governance_acceptance_mutates_provider": false,
+    "timeweb_governance_acceptance_authorizes_production_cutover": false,
+    "timeweb_exact_main_release_required": true
   },
   "ci_cost_control": {
     "standard": "docs/operations/V10_CI_COST_CONTROL_STANDARD.md",

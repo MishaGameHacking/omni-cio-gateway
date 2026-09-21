@@ -17,7 +17,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` для V9;
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12, 13, 14, 15 и 16;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–18;
 9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` и остальные owning contracts;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
@@ -28,20 +28,26 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 
 ## Текущее удобное резюме
 
-Это не второй progress ledger; точное состояние всегда берётся из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+- accepted progress: **54%**;
+- WP0–WP22A remain COMPLETE;
+- current next package: **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
+- target active services: ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
+- Timeweb is the only selected V10 production infrastructure target;
+- Telegram is the only selected human login provider;
+- Cloudflare/Neon/Render/Cloud.ru/VK ID are retirement targets;
+- WEB-VISUAL and WP23+ remain paused during consolidation;
+- public multi-user remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
+- broker-write and Real-money remain disabled.
 
-- WP0–WP22A / Blocks A–E accepted COMPLETE; progress 54%.
-- `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` is accepted COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones.
-- Current authorized functional implementation package: NONE.
-- Product implementation remains PAUSED pending a new authorized System Update.
-- Current next prepared package: `WEB-VISUAL-INTEGRATED` / OWNER START REQUIRED.
-- `WEB-VISUAL-INTEGRATED` requires its separate exact OWNER start command `START V10 WEB VISUAL SYSTEM UPDATE` before source work.
-- WP23+ locked.
-- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until the remaining capability-specific live gates.
-- Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ remain `BLOCKED_EXTERNAL` until their own gates.
-- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
+Exact dynamic state still comes only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-## GitHub #1 / Cloudflare #2
+## GitHub #1 / Timeweb production / Telegram identity
+
+GitHub owns code, reviews, CI evidence and exact-SHA provenance. Timeweb owns the target public runtime, PostgreSQL 18, domain/DNS/TLS, backups/monitoring and network controls. Telegram is product identity only.
+
+The old Cloudflare section below is migration history and no longer selects future/current provider work after Amendment 18 acceptance.
+
+## Historical GitHub #1 / Cloudflare #2 — superseded for future provider selection
 
 After Amendment 14 acceptance:
 
@@ -172,11 +178,11 @@ Implemented capability states are exactly:
 
 `IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`.
 
-One canonical Omni-CIO Web remains the user-facing product. A completed capability may become `LIVE_OPERABLE` when all its own technical/security/external gates pass; unfinished unrelated V10 work is not itself a blocker.
+One canonical Omni-CIO Web remains the user-facing product. Telegram is the only selected human login provider after Amendment 18 acceptance. A completed capability may become `LIVE_OPERABLE` when all its own technical/security/external gates pass.
 
-Human product authentication remains Telegram Login / VK ID -> verified identity -> `OmniCIOUserAccount -> Tenant -> server-side Session`.
+Human product authentication is `Telegram Login -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
 
-Cloudflare Access/WAF/Turnstile are additive infrastructure security, not product tenant authority.
+Timeweb ingress/network controls are additive infrastructure security, not product tenant authority.
 
 `EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`.
 
@@ -186,21 +192,21 @@ Use the migration preference:
 
 `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite Web remains canonical source. Python Workers/FastAPI availability does not prove current native/CPython dependencies compatible; test them. Cloudflare Containers may be used only when CF-B proves a concrete full-Linux/native runtime need and cost/recovery semantics are acceptable.
+Existing React/Vite Web and Python/FastAPI product API remain canonical/provider-neutral. Timeweb-specific deployment logic belongs in thin infrastructure adapters.
 
-Neon/PostgreSQL 18 tenant/RLS authority remains intact unless an explicit equivalent migration changes it. Do not assume Hyperdrive supports PostgreSQL 18. D1 does not silently replace financial/tenant truth.
+Timeweb Managed PostgreSQL 18 is the final relational target after the owning production cutover. Preserve migrations, exact numeric semantics, least-privilege runtime role, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery evidence.
 
-Prefer Cloudflare services over replaceable external infrastructure only when semantics are equivalent. Do not remove GitHub or a PostgreSQL/Neon authority boundary simply to claim “Cloudflare-only”.
+Cloudflare/Neon/Render/Cloud.ru/VK files stay archive-in-place by default. Do not add new dependencies on them and do not mass-delete them merely to simplify the tree. Their live provider resources/secrets/actions are decommissioned only after replacement acceptance.
 
-Current GitHub/Lenovo CI routing stays authoritative until CF-A proves Cloudflare build lanes. Do not fake Windows/PowerShell/ACL/PostgreSQL-native semantics as portable GREEN.
+GitHub/self-hosted verification remains authoritative until a stronger GitHub-executed replacement is accepted. External CI/review SaaS may not be removed by weakening quality gates.
 
 ## Security / secrets
 
 Never commit or paste real secrets into source, chat, PR comments, CI logs, screenshots or artifacts.
 
-Never disclose/request when avoidable broker tokens, Telegram/VK secrets, provider API tokens, DB passwords, encryption/recovery keys, full account IDs or private portfolio payloads.
+Never disclose/request when avoidable broker tokens, Telegram secrets, Timeweb/GitHub provider credentials, DB passwords, encryption/recovery keys, full account IDs or private portfolio payloads.
 
-Cloudflare API tokens/secrets are provisioned only through approved secret custody at the owning provider-action milestone.
+Runtime/provider secrets are provisioned only through approved Timeweb/GitHub secret custody at the owning provider-action milestone.
 
 ## Broker / Real-money boundary
 

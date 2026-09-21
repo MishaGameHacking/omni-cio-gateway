@@ -285,8 +285,8 @@ def _validate_surfaces(failures: list[str]) -> None:
         (
             "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE",
             "V10 Cloudflare Production Release #78",
-            "## Current next package — WEB-VISUAL-INTEGRATED",
-            "Current authorized functional implementation package: **NONE**",
+            "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+            "Amendment 18 — Timeweb-only platform consolidation",
             "CF-A",
             "CF-B",
             "CF-C",
@@ -312,7 +312,12 @@ def _validate_surfaces(failures: list[str]) -> None:
         ("CONTRIBUTING", contributing),
         ("Master Context", master_context),
     ):
-        _require_markers(label, text, (UPDATE_ID, OWNER_START_COMMAND), failures)
+        _require_markers(
+            label,
+            text,
+            (UPDATE_ID, "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"),
+            failures,
+        )
 
 
 def main() -> int:
@@ -331,7 +336,10 @@ def main() -> int:
     print(f"Accepted execution unit: {UPDATE_ID}")
     print(f"Historical implementation branch: {BRANCH}")
     print("Internal milestones: CF-A -> CF-B -> CF-C -> CF-D ACCEPTED COMPLETE")
-    print("Current next package: WEB-VISUAL-INTEGRATED / OWNER START REQUIRED")
+    print(
+        "Historical Cloudflare update remains accepted evidence; "
+        "current next package: TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
+    )
     print("Broker/Real-money authority: unchanged and fail-closed")
     return 0
 

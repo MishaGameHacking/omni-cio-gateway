@@ -119,7 +119,7 @@ def test_live_authority_uses_product_auth_not_owner_product_auth() -> None:
         assert "WP22A — External Web Access / Product Authentication Security Gate" in _text(path)
 
     readme = _text(ROOT / "README.md")
-    assert "product authentication (Telegram Login / VK ID)" in readme
+    assert "Telegram Login is the only selected human login provider" in readme
     assert "PROJECT OWNER is an ordinary product USER" in readme
 
 

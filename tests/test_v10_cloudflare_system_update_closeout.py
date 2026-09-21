@@ -23,17 +23,16 @@ def test_cloudflare_system_update_is_accepted_complete() -> None:
         assert marker in status
 
 
-def test_visual_package_is_next_but_owner_locked() -> None:
+def test_timeweb_consolidation_supersedes_visual_as_current_package() -> None:
     status = STATUS.read_text(encoding="utf-8")
 
     assert (
-        "## Current next package — WEB-VISUAL-INTEGRATED — "
-        "Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED"
+        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
         in status
     )
-    assert "START V10 WEB VISUAL SYSTEM UPDATE" in status
-    assert "do not create the visual-refresh implementation branch" in status
-    assert "WP23+ / Telegram" in status
+    assert "Amendment 18 — Timeweb-only platform consolidation" in status
+    assert "WEB-VISUAL remains paused" in status
+    assert "WP23+ remains locked" in status
 
 
 def test_candidate_guard_accepts_historical_closeout_ledger() -> None:

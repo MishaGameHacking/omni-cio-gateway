@@ -25,7 +25,7 @@ def _contract() -> dict[str, Any]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
-def test_wp22a_is_accepted_and_integrated_cloudflare_is_next_while_visual_is_prepared() -> None:
+def test_wp22a_and_cloudflare_history_remain_accepted_before_timeweb_update() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert "Block E / WP22A Phase 3 — **ACCEPTED**" in text
@@ -33,16 +33,15 @@ def test_wp22a_is_accepted_and_integrated_cloudflare_is_next_while_visual_is_pre
     assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
     assert "Block E / WP22A overall — **COMPLETE**" in text
     assert "Accepted implementation progress is **54%**" in text
-    assert "PRODUCT IMPLEMENTATION PAUSED" in text
+    assert "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in text
     assert "WEB-VISUAL-INTEGRATED" in text
-    assert "OWNER START REQUIRED" in text
-    assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
+    assert "WEB-VISUAL" in text
+    assert "WP23+ remains locked" in text
     assert "Amendment 13 — progressive capability activation" in text
     assert "current runtime state, not a V10-wide release lock" in text
     assert "current user-facing activation transitions — **BLOCKED_EXTERNAL" in text
     assert (
-        "## Current next package — WEB-VISUAL-INTEGRATED — "
-        "Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED"
+        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
         in text
     )
     assert "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE" in text

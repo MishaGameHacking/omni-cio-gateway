@@ -45,7 +45,7 @@ class IntegratedSystemUpdateGovernanceTests(unittest.TestCase):
         )
         assert "Verification: Green Checkpoint immediate repair" in completed.stdout
         assert (
-            "Product implementation: PAUSED until exact OWNER START"
+            "Current System Update: TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
             in completed.stdout
         )
 
@@ -132,24 +132,30 @@ class IntegratedSystemUpdateGovernanceTests(unittest.TestCase):
         assert banner in LEDGER.read_text(encoding="utf-8")
         assert banner in ISSUE_TEMPLATE.read_text(encoding="utf-8")
 
-    def test_governance_acceptance_pauses_product_until_owner_start(self) -> None:
+    def test_governance_acceptance_authorizes_timeweb_current_update(self) -> None:
         authority = _contract()["authority"]
         assert isinstance(authority, dict)
         assert authority["product_progress_effect"] == "NONE"
         assert authority["runtime_authority_effect"] == "NONE"
-        assert authority["product_implementation_paused_after_acceptance"] is True
-        assert authority["next_prepared_system_update"] == "WEB-VISUAL-INTEGRATED"
+        assert authority["product_implementation_paused_after_acceptance"] is False
+        assert (
+            authority["next_prepared_system_update"]
+            == "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
+        )
         assert authority["next_prepared_member_milestones"] == [
-            f"WEB-VISUAL-{letter}" for letter in "ABCDEFG"
+            f"TW-{letter}" for letter in "ABCDEFG"
         ]
-        assert authority["owner_start_required"] is True
-        assert authority["owner_start_command"] == "START V10 WEB VISUAL SYSTEM UPDATE"
+        assert authority["owner_start_required"] is False
+        assert authority["owner_start_command"] is None
+        assert authority["amendment_18_authority_required"] is True
+        assert authority["web_visual_paused"] is True
+        assert authority["wp23_plus_locked"] is True
 
         status = STATUS.read_text(encoding="utf-8")
         for marker in (
-            "PRODUCT IMPLEMENTATION PAUSED",
-            "WEB-VISUAL-INTEGRATED",
-            "OWNER START REQUIRED",
+            "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+            "WEB-VISUAL remains paused",
+            "WP23+ remains locked",
             "Accepted implementation progress is **54%**",
         ):
             assert marker in status

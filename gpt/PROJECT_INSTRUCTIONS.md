@@ -1,5 +1,8 @@
 # Инструкции проекта ChatGPT — Omni-CIO
 
+> **CURRENT AMENDMENT-18 OVERRIDE (2026-09-21):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+
+
 Скопировать этот текст в Project instructions, если для разработки/обслуживания Omni-CIO используется отдельный ChatGPT Project.
 
 ```text
@@ -31,46 +34,52 @@
 
 Затем проверь actual main SHA, open PR/issues, applicable exact-head CI/security, post-merge Regression Shield и authorized current execution unit.
 
-Current accepted/convenience state after Amendment 15 acceptance:
-- WP0–WP22A COMPLETE; accepted implementation progress 54%;
-- CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED = ACCEPTED COMPLETE; CF-A -> CF-B -> CF-C -> CF-D are completed historical milestones;
-- current authorized functional implementation package = NONE;
-- WEB-VISUAL-INTEGRATED is the current next prepared package;
-- PRODUCT IMPLEMENTATION PAUSED until its separate OWNER start;
-- OWNER START REQUIRED before WEB VISUAL source work: exact command `START V10 WEB VISUAL SYSTEM UPDATE`;
-- WP23+, broker write and Real execution remain locked;
-- public capability activation remains fail-closed until the remaining capability-specific external gates.
+Current accepted/convenience state after Amendment 18 acceptance:
+- WP0–WP22A remain accepted COMPLETE; accepted implementation progress stays 54% until a later accepted product-progress gate changes it;
+- current authorized System Update = `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`;
+- target active service model = ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
+- ChatGPT is engineering assistance only, never runtime/data authority;
+- GitHub is source/review/CI/exact-SHA provenance authority;
+- Timeweb Cloud is the selected production runtime/database/domain/network/backup/monitoring platform;
+- Telegram Login is the only selected human product login provider;
+- Cloudflare, Neon, Render, Cloud.ru and VK ID receive no new feature authority;
+- their repository artifacts stay archive-in-place unless separate OWNER authority later approves cleanup;
+- WEB-VISUAL and WP23+ remain paused/locked behind the platform-consolidation path;
+- public activation remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
+- broker write, `trading_methods` and Real execution remain disabled.
 Never trust this snapshot over accepted current status/main.
 
-Current product direction:
-- final V10 target is a public modern multi-user Web service reachable from ordinary Internet-connected modern phone/desktop browsers;
-- final public production must NOT depend on PROJECT OWNER home IP, Wi-Fi/router/LAN, home Internet/power or Lenovo;
-- Lenovo remains engineering/self-hosted CI/controlled acceptance/recovery/rollback;
-- GitHub is engineering/source/review/provenance authority rank 1;
-- Cloudflare Workers Paid is the selected new-V10 managed application/edge/build platform rank 2;
-- Cloud.ru Evolution is NOT the selected new-V10 provider;
-- Render is retired from active new-V10 deployment/attestation/release-alignment authority; historical WP22A Render/Neon evidence and protected V9 Render `app:app` remain preserved;
-- Cloudflare-first means use Workers/Static Assets/Builds/Containers/KV/R2/DO/Queues/Workflows/security/observability only when an owning milestone proves semantic equivalence and need; do not adopt features just because they are available;
-- existing React/Vite remains canonical Web source;
-- Python Workers require dependency/runtime proof; Cloudflare Containers are allowed only for proven full-Linux/native needs with acceptable cost/recovery;
-- PostgreSQL/Neon 18/RLS remains financial/tenant truth until an explicit equivalent migration is proved; D1 is not automatic replacement and Hyperdrive PG18 is not assumed;
-- PROJECT OWNER is not a special product role; when using Omni-CIO the OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path;
-- Telegram Login and VK ID are product auth providers; GitHub/cloud-provider/Windows identities are engineering authority, not product auth;
-- public multi-user is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains safe runtime default until required gates pass;
-- initial public USER access is free: `BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`; monetization is `DEFERRED_OPTIONAL`;
-- each USER owns only that tenant's BrokerConnection READ/optional TRADE credentials; no shared/global user broker token;
-- raw credentials never return to browser storage and never enter GitHub/CI/artifacts;
-- T-Invest public connector remains separate/fail-closed until broker terms/permission are accepted;
-- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, no transfer/withdrawal/margin/leverage/uncovered-short and protected V9 rollback remain active.
+Current product/platform direction:
+- one public modern multi-user Omni-CIO Web product for ordinary Russian Internet-connected phone/desktop browsers;
+- ordinary production users must not require OWNER home connectivity or VPN;
+- existing React/Vite Web remains canonical frontend source;
+- existing Python/FastAPI product API remains canonical unless a separately accepted architecture change proves otherwise;
+- product/account/tenant/session/security/business logic remains provider-neutral;
+- provider-specific deployment code is a thin Timeweb adapter, not product identity;
+- Timeweb App Platform is the selected application runtime target;
+- Timeweb Managed PostgreSQL 18 is the final relational target;
+- target user path: `omnicio.ru -> Timeweb -> Omni-CIO -> Timeweb PostgreSQL`;
+- Telegram OIDC is the only human login path: `Telegram -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`;
+- VK ID is historical/retired and must not be composed into the deployed product;
+- Cloudflare/Neon/Render/Cloud.ru code and docs may remain as historical project memory but must not be used for new implementation;
+- no mass repository deletion is required; archive-in-place is the default;
+- retired provider workflows/secrets/resources are disabled/revoked only after the replacement cutover/recovery gate;
+- GitHub-native checks must replace any required external CI/review SaaS before that SaaS is removed;
+- production Timeweb autodeploy must not bypass accepted GitHub exact-SHA release gates;
+- PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory;
+- PROJECT OWNER is not a product superuser; OWNER uses the same account/tenant/session path as every USER;
+- `PUBLIC_MULTI_USER_ENABLED=false` remains the safe runtime default until activation gates pass;
+- initial public USER access remains free unless a later monetization amendment changes it;
+- T-Invest/broker capabilities remain separate fail-closed external boundaries;
+- protected V9 `app:app` compatibility remains until its own decommission gate; Amendment 18 does not grant broker/Real authority.
 
-Integrated Cloudflare delivery:
-- Amendment 15 supersedes only Amendment-14 four-separate-main-state delivery granularity;
-- CF-A→CF-B→CF-C→CF-D order remains mandatory;
-- do not start milestone N+1 until milestone N branch-local Exit Gate passes;
-- CF-A/CF-B do not authorize provider candidate/public production mutation;
-- CF-C may create immutable candidate only after CF-A/CF-B;
-- CF-D may perform public cutover/promotion only after candidate acceptance and capability-specific gates;
-- one integrated branch is not a bypass for DB/migration, security/authority, dependency/toolchain, OWNER/provider, live/temporal, production-cutover, Real-money or reviewability split triggers; a real trigger forces stop/split.
+Timeweb consolidation execution:
+- default source branch after authority acceptance: `system/timeweb-platform-consolidation`;
+- ordered milestones TW-A -> TW-B -> TW-C -> TW-D -> TW-E -> TW-F -> TW-G;
+- use one integrated source branch by default;
+- production DB cutover, canonical DNS/public cutover, destructive external-provider decommission, security/authority changes, OWNER/legal/payment actions and recovery boundaries still force independent acceptance gates;
+- historical provider files are not deleted merely to make searches look clean;
+- current guidance and runtime composition, not keyword absence, define active authority.
 
 Integrated System Update Execution Law:
 - every material change is either `FOCUSED_CHANGE` or `INTEGRATED_SYSTEM_UPDATE`;

@@ -8,19 +8,22 @@
   "authority": {
     "product_progress_effect": "NONE",
     "runtime_authority_effect": "NONE",
-    "product_implementation_paused_after_acceptance": true,
-    "next_prepared_system_update": "WEB-VISUAL-INTEGRATED",
+    "product_implementation_paused_after_acceptance": false,
+    "next_prepared_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
     "next_prepared_member_milestones": [
-      "WEB-VISUAL-A",
-      "WEB-VISUAL-B",
-      "WEB-VISUAL-C",
-      "WEB-VISUAL-D",
-      "WEB-VISUAL-E",
-      "WEB-VISUAL-F",
-      "WEB-VISUAL-G"
+      "TW-A",
+      "TW-B",
+      "TW-C",
+      "TW-D",
+      "TW-E",
+      "TW-F",
+      "TW-G"
     ],
-    "owner_start_required": true,
-    "owner_start_command": "START V10 WEB VISUAL SYSTEM UPDATE"
+    "owner_start_required": false,
+    "owner_start_command": null,
+    "amendment_18_authority_required": true,
+    "web_visual_paused": true,
+    "wp23_plus_locked": true
   },
   "integrated_update": {
     "one_branch_default": true,

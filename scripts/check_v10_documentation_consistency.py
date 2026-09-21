@@ -277,31 +277,49 @@ def _validate_cloudflare_engineering_overlay(
     if not isinstance(update, dict):
         failures.append("Cloudflare engineering overlay lacks runtime_hosting_update")
         return
+    for key in (
+        "cloudflare_decision_date",
+        "cloudflare_amendment",
+        "cloudflare_contract",
+    ):
+        if not update.get(key):
+            failures.append(f"Cloudflare engineering overlay {key} missing")
+
+
+def _validate_timeweb_engineering_overlay(
+    contract: dict[str, Any], failures: list[str]
+) -> None:
+    update = contract.get("runtime_hosting_update")
+    if not isinstance(update, dict):
+        failures.append("Timeweb engineering overlay lacks runtime_hosting_update")
+        return
 
     expected = {
-        "cloudflare_decision_date": "2026-08-29",
-        "cloudflare_amendment": (
+        "timeweb_decision_date": "2026-09-21",
+        "timeweb_amendment": (
             "docs/master-plan/"
-            "OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md"
+            "OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md"
         ),
-        "cloudflare_contract": (
-            "docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json"
+        "timeweb_contract": (
+            "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
         ),
     }
     for key, value in expected.items():
         if update.get(key) != value:
-            failures.append(f"Cloudflare engineering overlay {key} mismatch")
+            failures.append(f"Timeweb engineering overlay {key} mismatch")
     if update.get("effective_on_green_merge") is not True:
         failures.append(
-            "Cloudflare engineering overlay must remain effective-on-green-merge"
+            "Timeweb engineering overlay must remain effective-on-green-merge"
         )
 
     runtime = contract.get("runtime_hosting")
     if not isinstance(runtime, dict):
         failures.append("engineering-quality runtime_hosting must be object")
         return
-    if runtime.get("cloudflare_workers_paid_selected") is not True:
-        failures.append("engineering-quality contract must select Workers Paid")
+    if runtime.get("timeweb_cloud_selected") is not True:
+        failures.append("engineering-quality contract must select Timeweb Cloud")
+    if runtime.get("cloudflare_workers_paid_selected") is not False:
+        failures.append("engineering-quality contract must retire Cloudflare")
     if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
         failures.append("engineering-quality contract must retire Cloud.ru for new V10")
     if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
@@ -314,41 +332,54 @@ def _validate_cloudflare_engineering_overlay(
         )
 
 
+def _validate_pending_runtime_hosting_update(
+    contract: dict[str, Any], failures: list[str]
+) -> None:
+    update = contract.get("runtime_hosting_update")
+    if not isinstance(update, dict):
+        failures.append(
+            "pending runtime-hosting governance status lacks runtime_hosting_update"
+        )
+        return
+    if update.get("effective_on_merge") is not True:
+        failures.append(
+            "pending runtime-hosting governance update must remain effective-on-merge"
+        )
+    if (
+        update.get("amendment")
+        != "docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md"
+    ):
+        failures.append("pending runtime-hosting amendment path mismatch")
+    if (
+        update.get("public_runtime_contract")
+        != "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+    ):
+        failures.append("pending public runtime contract path mismatch")
+
+
 def _validate_engineering_contract_status(
     contract: dict[str, Any], failures: list[str]
 ) -> None:
     status = contract.get("status")
     accepted_status = "ACTIVE_ACCEPTED_ON_MAIN"
-    old_pending_status = "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
-    cloudflare_status = "ACTIVE_ACCEPTED_ON_MAIN_WITH_CLOUDFLARE_AUTHORITY_UPDATE"
-    if status not in {accepted_status, old_pending_status, cloudflare_status}:
+    validators = {
+        "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE": (
+            _validate_pending_runtime_hosting_update
+        ),
+        "ACTIVE_ACCEPTED_ON_MAIN_WITH_CLOUDFLARE_AUTHORITY_UPDATE": (
+            _validate_cloudflare_engineering_overlay
+        ),
+        "ACTIVE_ACCEPTED_ON_MAIN_WITH_TIMEWEB_AUTHORITY_UPDATE": (
+            _validate_timeweb_engineering_overlay
+        ),
+    }
+    if status == accepted_status:
+        return
+    validator = validators.get(status)
+    if validator is None:
         failures.append("engineering-quality contract status is not active/accepted")
         return
-
-    if status == old_pending_status:
-        update = contract.get("runtime_hosting_update")
-        if not isinstance(update, dict):
-            failures.append(
-                "pending runtime-hosting governance status lacks runtime_hosting_update"
-            )
-        else:
-            if update.get("effective_on_merge") is not True:
-                failures.append(
-                    "pending runtime-hosting governance update must remain effective-on-merge"
-                )
-            if (
-                update.get("amendment")
-                != "docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md"
-            ):
-                failures.append("pending runtime-hosting amendment path mismatch")
-            if (
-                update.get("public_runtime_contract")
-                != "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
-            ):
-                failures.append("pending public runtime contract path mismatch")
-
-    if status == cloudflare_status:
-        _validate_cloudflare_engineering_overlay(contract, failures)
+    validator(contract, failures)
 
 
 def _validate_program_lock_header(failures: list[str]) -> None:
