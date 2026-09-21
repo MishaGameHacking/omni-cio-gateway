@@ -53,7 +53,7 @@ def test_current_repository_satisfies_engineering_governance() -> None:
         in completed.stdout
     )
     assert "OWNER handoff: direct official link" in completed.stdout
-    assert "Cloudflare Workers Paid target after owning cutover gate" in completed.stdout
+    assert "Timeweb App Platform target after owning cutover gate" in completed.stdout
 
 
 def test_contract_accepts_only_success_for_applicable_merge_checks() -> None:
