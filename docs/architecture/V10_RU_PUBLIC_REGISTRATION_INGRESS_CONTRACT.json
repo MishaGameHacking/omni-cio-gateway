@@ -137,7 +137,9 @@
       "SECURITY_AUTHORITY_TRANSITION",
       "OWNER_ONLY_PROVIDER_OR_LEGAL_ACTION",
       "RECOVERY_BOUNDARY"
-    ]
+    ],
+    "branch_execution_ledger": "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md",
+    "branch_execution_ledger_required": true
   },
   "cleanup": {
     "retired_provider_files_may_remain_archive_in_place": true,
