@@ -35,20 +35,20 @@ Historical accepted commits, PRs and evidence remain facts of repository history
 
 A retired provider may return only through a fresh explicit OWNER-approved amendment.
 
-## 3. What removal means
+## 3. Archive-in-place rule
 
-After the owning cutover/decommission gates accept replacement, cleanup removes from the current tree, as applicable:
+The OWNER explicitly does **not** authorize mass repository cleanup or deletion of historical provider files.
 
-- provider runtime adapters;
-- provider provisioning/recovery scripts;
-- provider-specific workflows;
-- provider-specific infrastructure directories/config files;
-- obsolete secret/environment bindings and examples;
-- inactive VK ID implementation/config/tests;
-- unused external-review SaaS glue;
-- stale current-authority runbooks.
+Cloudflare/Neon/Render/Cloud.ru/VK/external-CI artifacts may remain in their existing repository locations as project memory and compatibility evidence. They are treated as **ARCHIVE-IN-PLACE**:
 
-Protected Git history is not force-rewritten. Rewriting immutable history would destroy exact-SHA provenance. Historical provider names may remain only as historical Git evidence or a bounded migration record.
+- no new feature work may depend on them;
+- they do not define current/future platform authority;
+- they may not be used as templates for new V10 implementation;
+- their active workflow triggers, required-check role, provider secrets and external resources may be disabled/revoked only after the owning replacement/cutover gate;
+- a historical artifact is modified only when required to keep repository checks consistent with the new current authority, not for cosmetic cleanup;
+- current guidance must clearly point engineers to Timeweb/Telegram paths instead.
+
+Protected Git history is never force-rewritten merely to erase provider names. Historical PR/SHA provenance remains intact.
 
 Provider-side physical media erasure cannot be asserted by repository code. The project can prove resource deletion, credential revocation and loss of active authority, not undocumented provider retention.
 
@@ -164,27 +164,26 @@ Ordered internal milestones:
 4. **TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER** — migrate and verify production PostgreSQL authority.
 5. **TW-E / TIMEWEB_PUBLIC_INGRESS_DNS** — canonical domain/DNS/TLS cutover and Russia no-VPN acceptance.
 6. **TW-F / TELEGRAM_PUBLIC_ACTIVATION** — real Telegram registration/public multi-user after legal/privacy/capacity gates.
-7. **TW-G / LEGACY_PROVIDER_DECOMMISSION** — revoke/delete retired provider resources/secrets/integrations and remove active repository surfaces.
+7. **TW-G / LEGACY_PROVIDER_DECOMMISSION** — revoke/delete retired external provider resources/secrets and disable their active execution/required-check role while leaving historical repository artifacts archive-in-place.
 
 One integrated source branch is the default. Amendment-12 split triggers remain stronger: DB cutover, DNS/public cutover, destructive provider deletion, security/authority transition, OWNER-only/legal/payment action and recovery boundaries require independent acceptance.
 
-## 11. Repository cleanup end-state
+## 11. Repository archive-in-place end-state
 
-At TW-G acceptance the current tree must contain no active:
+At TW-G acceptance:
 
-- `cloudflare/` runtime;
-- `infrastructure/cloudflare/`;
-- `wrangler.jsonc`;
-- Cloudflare candidate/release/provisioning workflow;
-- Neon management/bootstrap/recovery integration;
-- Render new-V10 deployment integration;
-- `infrastructure/cloudru/`;
-- VK ID runtime/config/client;
-- required external CI/review SaaS integration;
-- current docs that identify retired providers as current/future authority.
+- Timeweb/Telegram/GitHub documentation is the only current/future implementation authority;
+- retired provider files may remain in the current tree unchanged as historical project memory;
+- retired provider workflows must not perform live deploy/provisioning/provider actions;
+- retired provider checks must not remain required merge gates unless they validate provider-neutral invariants;
+- retired provider secrets/tokens are revoked from active provider/GitHub environments after replacement acceptance;
+- no new code imports or composes retired provider adapters into the production runtime;
+- VK ID is absent from deployed product composition even if historical source/tests remain;
+- external CI/review SaaS is not required after equivalent GitHub-native verification is accepted;
+- historical documents may retain exact old provider terminology and PR/SHA evidence;
+- no mass rename/delete is required merely to make keyword searches “clean”.
 
-A bounded historical migration record may point to historical PR/SHA evidence.
-
+A future cleanup may remove historical files only under separate OWNER authority if there is a demonstrated maintenance/security benefit.
 ## 12. Cost discipline
 
 Use Timeweb services only when required by the current accepted milestone.
@@ -232,8 +231,9 @@ After acceptance on protected `main`:
 - Amendment 17 remains the PostgreSQL migration/security foundation;
 - `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` becomes current authorized System Update;
 - WEB-VISUAL and WP23+ remain paused;
-- no new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized except bounded decommission/recovery;
-- destructive provider deletion still requires its own gate;
+- no new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized except bounded compatibility/decommission/recovery work;
+- historical repository files remain archive-in-place by default;
+- destructive external provider deletion still requires its own gate;
 - governance merge alone performs no provider mutation, data move, DNS change, activation or Real-money action.
 
 Acceptance requires exact-head SUCCESS, zero blocking threads, squash merge and exact-new-main post-merge SUCCESS.
