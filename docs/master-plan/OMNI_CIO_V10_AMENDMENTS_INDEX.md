@@ -357,8 +357,9 @@ Locks the 2026-09-21 OWNER final simplification direction:
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority;
 - external CI/review SaaS must be replaced by equivalent-or-stronger GitHub-executed checks before removal;
 - `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the next authorized System Update after this amendment is accepted;
-- one integrated source branch is preferred, while database cutover, DNS/public cutover, destructive provider decommission, OWNER/legal actions and recovery boundaries remain mandatory independent acceptance gates;
-- current-tree active integrations are removed after accepted cutover/decommission, but protected Git history is not rewritten.
+- one integrated source branch is preferred, while database cutover, DNS/public cutover, external-provider decommission, OWNER/legal actions and recovery boundaries remain mandatory independent acceptance gates;
+- historical provider files remain archive-in-place by default; after accepted cutover their live actions/required-check role/secrets may be disabled or revoked without mass repository deletion;
+- protected Git history is not rewritten.
 
 Amendment 18 supersedes Amendments 14/15 only for current/future provider selection and release target. Their accepted Cloudflare evidence remains historical. It also narrows human product login from Telegram/VK to Telegram only. It does not activate users, mutate providers or authorize Real money.
 
