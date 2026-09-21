@@ -16,35 +16,27 @@ INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
-EXPECTED_PROVIDERS = ["GitHub", "Cloudflare", "Timeweb Cloud"]
-EXPECTED_MIGRATION = ["RU-PG-B", "RU-PG-C", "RU-PG-D", "RU-PG-E"]
-_PRODUCT_INVALID = "RU_PUBLIC_INGRESS_PRODUCT_INVALID"
-
-EXPECTED_SPLITS = [
-    "RU-PG-B_PROVIDER_PARITY",
-    "RU-PG-C_RUNTIME_TLS_RECOVERY",
-    "RU-PG-D_PRODUCTION_DATABASE_CUTOVER",
-    "RU-PG-E_NEON_ACTIVE_AUTHORITY_RETIREMENT",
-    "RUSSIA_INGRESS_PROVIDER_SPEND_AND_DNS_CUTOVER",
-    "LEGAL_REGULATORY_OWNER_ACTIONS",
-    "PUBLIC_USER_ACTIVATION",
-]
+EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
+EXPECTED_RETIRED = ["Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"]
+EXPECTED_MILESTONES = ["TW-A", "TW-B", "TW-C", "TW-D", "TW-E", "TW-F", "TW-G"]
 
 
 def _read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
-        raise RuntimeError(f"RU_PUBLIC_INGRESS_SOURCE_UNREADABLE:{path.name}") from exc
+        raise RuntimeError(
+            f"TIMEWEB_CONSOLIDATION_SOURCE_UNREADABLE:{path.name}"
+        ) from exc
 
 
 def _load() -> dict[str, Any]:
     try:
         payload = json.loads(_read(CONTRACT))
     except json.JSONDecodeError as exc:
-        raise RuntimeError("RU_PUBLIC_INGRESS_CONTRACT_INVALID") from exc
+        raise RuntimeError("TIMEWEB_CONSOLIDATION_CONTRACT_INVALID") from exc
     if not isinstance(payload, dict):
-        raise RuntimeError("RU_PUBLIC_INGRESS_CONTRACT_INVALID")
+        raise RuntimeError("TIMEWEB_CONSOLIDATION_CONTRACT_INVALID")
     return payload
 
 
@@ -59,267 +51,251 @@ def _require(condition: bool, code: str) -> None:
         raise RuntimeError(code)
 
 
-def _validate_contract(payload: dict[str, Any]) -> None:
+def _validate_service_model(payload: dict[str, Any]) -> None:
     _require(
-        payload.get("schema") == "omni-cio.v10.ru-public-registration-ingress.v1",
-        "RU_PUBLIC_INGRESS_SCHEMA_INVALID",
+        payload.get("schema")
+        == "omni-cio.v10.timeweb-only-platform-consolidation.v1",
+        "TIMEWEB_CONSOLIDATION_SCHEMA_INVALID",
     )
     _require(
         payload.get("amendment_number") == 18,
-        "RU_PUBLIC_INGRESS_AUTHORITY_INVALID",
+        "TIMEWEB_CONSOLIDATION_AUTHORITY_INVALID",
     )
-    _require(payload.get("owning_issue") == 580, "RU_PUBLIC_INGRESS_DASHBOARD_INVALID")
     _require(
-        payload.get("supported_launch_population") == "RUSSIAN_FEDERATION",
-        "RU_PUBLIC_INGRESS_POPULATION_INVALID",
+        payload.get("owning_issue") == 580,
+        "TIMEWEB_CONSOLIDATION_DASHBOARD_INVALID",
+    )
+    _require(
+        payload.get("active_general_service_set") == EXPECTED_SERVICES,
+        "TIMEWEB_CONSOLIDATION_SERVICE_SET_INVALID",
+    )
+    _require(
+        payload.get("retired_active_services") == EXPECTED_RETIRED,
+        "TIMEWEB_CONSOLIDATION_RETIRED_SET_INVALID",
+    )
+    _require(
+        payload.get("provider_reentry_requires_fresh_owner_amendment") is True,
+        "TIMEWEB_CONSOLIDATION_PROVIDER_REENTRY_INVALID",
     )
 
-    providers = _mapping(payload.get("providers"), "RU_PUBLIC_INGRESS_PROVIDER_INVALID")
-    _require(
-        providers.get("exact_public_launch_set") == EXPECTED_PROVIDERS,
-        "RU_PUBLIC_INGRESS_PROVIDER_SET_INVALID",
-    )
-    _require(
-        providers.get("cloudflare_role") == "ACCEPTED_BUILD_RELEASE_STAGING_FALLBACK",
-        "RU_PUBLIC_INGRESS_CLOUDFLARE_ROLE_INVALID",
-    )
-    _require(
-        providers.get("timeweb_role")
-        == "RUSSIAN_POSTGRESQL_AND_RUSSIA_FACING_INGRESS_CANDIDATE",
-        "RU_PUBLIC_INGRESS_TIMEWEB_ROLE_INVALID",
-    )
-    _require(
-        providers.get("render_active_v10_allowed") is False,
-        "RU_PUBLIC_RENDER_REENABLED",
-    )
-    _require(
-        providers.get("cloud_ru_active_v10_allowed") is False,
-        "RU_PUBLIC_CLOUD_RU_REENABLED",
-    )
 
+def _validate_product_timeweb_auth(payload: dict[str, Any]) -> None:
     product = _mapping(
-        payload.get("product_model"),
-        _PRODUCT_INVALID,
+        payload.get("product"),
+        "TIMEWEB_CONSOLIDATION_PRODUCT_INVALID",
     )
     for key in (
         "one_canonical_web",
-        "one_account_tenant_session_authority",
-        "same_exact_source_sha_required",
+        "provider_neutral_core_required",
+        "server_side_session_authority",
     ):
-        _require(product.get(key) is True, _PRODUCT_INVALID)
-    for key in (
-        "second_user_facing_product_allowed",
-        "auth_bypass_allowed",
-        "dual_primary_database_allowed",
-        "dual_primary_session_authority_allowed",
-    ):
-        _require(product.get(key) is False, _PRODUCT_INVALID)
+        _require(product.get(key) is True, "TIMEWEB_CONSOLIDATION_PRODUCT_INVALID")
+    for key in ("second_product_allowed", "browser_selects_tenant"):
+        _require(product.get(key) is False, "TIMEWEB_CONSOLIDATION_PRODUCT_INVALID")
 
-    reachability = _mapping(
-        payload.get("cloudflare_russia_reachability"),
-        "RU_PUBLIC_INGRESS_REACHABILITY_INVALID",
+    timeweb = _mapping(
+        payload.get("timeweb"),
+        "TIMEWEB_CONSOLIDATION_TIMEWEB_INVALID",
     )
     _require(
-        reachability.get("cloudflare_only_public_ingress_accepted_for_russia_launch")
-        is False,
-        "RU_PUBLIC_INGRESS_CLOUDFLARE_ONLY_INVALID",
+        timeweb.get("app_platform_selected") is True,
+        "TIMEWEB_CONSOLIDATION_TIMEWEB_INVALID",
     )
     _require(
-        reachability.get("representative_russian_network_no_vpn_evidence_required")
-        is True,
-        "RU_PUBLIC_INGRESS_NO_VPN_EVIDENCE_REQUIRED",
-    )
-
-    app = _mapping(
-        payload.get("timeweb_app_platform_candidate"),
-        "RU_PUBLIC_INGRESS_APP_PLATFORM_INVALID",
-    )
-    _require(
-        app.get("approved_for_source_compatibility_work") is True,
-        "RU_PUBLIC_APP_SCOPE_INVALID",
-    )
-    _require(
-        app.get("live_public_deploy_authorized_by_contract") is False,
-        "RU_PUBLIC_APP_LIVE_WIDENED",
-    )
-    _require(
-        app.get("production_autodeploy_allowed") is False,
-        "RU_PUBLIC_APP_AUTODEPLOY_FORBIDDEN",
-    )
-    _require(
-        app.get("explicit_accepted_main_commit_required") is True,
-        "RU_PUBLIC_APP_SHA_REQUIRED",
-    )
-    _require(
-        app.get("runtime_secrets_in_repository_allowed") is False,
-        "RU_PUBLIC_APP_SECRET_INVALID",
-    )
-
-    ingress = _mapping(
-        payload.get("ingress_security"),
-        "RU_PUBLIC_INGRESS_SECURITY_INVALID",
+        timeweb.get("managed_postgresql_major") == 18,
+        "TIMEWEB_CONSOLIDATION_PG_MAJOR_INVALID",
     )
     for key in (
-        "provider_neutral_product_core_required",
-        "cloudflare_adapter_remains_thin",
-        "timeweb_adapter_must_not_assume_cloudflare_internal_headers",
-        "documented_or_empirically_verified_client_ip_contract_required",
-        "tls_required",
-        "canonical_host_origin_callback_validation_required",
-        "csrf_and_secure_cookie_equivalence_required",
-        "cross_tenant_negative_required",
-        "rollback_required",
+        "exact_accepted_main_commit_required",
+        "technical_candidate_before_canonical_dns",
+        "backups_required_before_production_cutover",
+        "restore_proof_required",
+        "representative_russia_no_vpn_evidence_required",
     ):
-        _require(ingress.get(key) is True, "RU_PUBLIC_INGRESS_SECURITY_INVALID")
+        _require(timeweb.get(key) is True, "TIMEWEB_CONSOLIDATION_TIMEWEB_INVALID")
+    for key in (
+        "production_autodeploy_may_bypass_github_acceptance",
+        "runtime_secrets_in_git_allowed",
+        "private_networking_assumed_without_provider_evidence",
+    ):
+        _require(timeweb.get(key) is False, "TIMEWEB_CONSOLIDATION_TIMEWEB_INVALID")
+
+    auth = _mapping(payload.get("auth"), "TIMEWEB_CONSOLIDATION_AUTH_INVALID")
     _require(
-        ingress.get("arbitrary_forwarded_headers_trusted") is False,
-        "RU_PUBLIC_INGRESS_FORWARDED_TRUST_FORBIDDEN",
+        auth.get("human_identity_providers") == ["telegram"],
+        "TIMEWEB_CONSOLIDATION_AUTH_INVALID",
+    )
+    _require(
+        auth.get("vk_id_active_allowed") is False,
+        "TIMEWEB_CONSOLIDATION_VK_RETIRED",
+    )
+    _require(
+        auth.get("owner_admin_demo_preview_session_bypass_allowed") is False,
+        "TIMEWEB_CONSOLIDATION_AUTH_BYPASS_FORBIDDEN",
     )
 
+
+def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
     database = _mapping(
-        payload.get("database_end_state"),
-        "RU_PUBLIC_INGRESS_DATABASE_INVALID",
+        payload.get("database"),
+        "TIMEWEB_CONSOLIDATION_DATABASE_INVALID",
     )
     _require(
-        database.get("final_production_provider")
-        == "Timeweb Cloud Managed PostgreSQL 18",
-        "RU_PUBLIC_INGRESS_DATABASE_PROVIDER_INVALID",
+        database.get("final_provider") == "Timeweb Cloud Managed PostgreSQL 18",
+        "TIMEWEB_CONSOLIDATION_DATABASE_PROVIDER_INVALID",
     )
     _require(
-        database.get("migration_sequence") == EXPECTED_MIGRATION,
-        "RU_PUBLIC_INGRESS_DATABASE_SEQUENCE_INVALID",
+        database.get("neon_new_feature_work_allowed") is False,
+        "TIMEWEB_CONSOLIDATION_NEON_RETIRED",
     )
     _require(
-        database.get("neon_active_production_retirement_stage") == "RU-PG-E",
-        "RU_PUBLIC_INGRESS_NEON_RETIREMENT_INVALID",
+        database.get("neon_delete_before_timeweb_cutover_allowed") is False,
+        "TIMEWEB_CONSOLIDATION_EARLY_DB_DELETE_FORBIDDEN",
     )
-    _require(
-        database.get("neon_delete_before_ru_pg_d_allowed") is False,
-        "RU_PUBLIC_INGRESS_NEON_EARLY_DELETE_FORBIDDEN",
-    )
-    _require(
-        database.get("real_russian_user_data_before_ru_pg_d_allowed") is False,
-        "RU_PUBLIC_INGRESS_PRECUTOVER_REAL_DATA_FORBIDDEN",
-    )
+    for key in (
+        "migrations_required",
+        "rls_force_rls_required",
+        "cross_tenant_negative_required",
+        "least_privilege_runtime_role_required",
+        "migrated_data_verification_required",
+    ):
+        _require(database.get(key) is True, "TIMEWEB_CONSOLIDATION_DATABASE_INVALID")
 
-    cost = _mapping(payload.get("cost_policy"), "RU_PUBLIC_INGRESS_COST_INVALID")
+    ci = _mapping(payload.get("ci"), "TIMEWEB_CONSOLIDATION_CI_INVALID")
+    _require(ci.get("active_service") == "GitHub", "TIMEWEB_CONSOLIDATION_CI_INVALID")
     _require(
-        cost.get("existing_prepaid_funds_first") is True,
-        "RU_PUBLIC_INGRESS_COST_INVALID",
+        ci.get("quality_weakening_for_saas_retirement_allowed") is False,
+        "TIMEWEB_CONSOLIDATION_CI_WEAKENING_FORBIDDEN",
     )
     _require(
-        cost.get("spare_capacity_preprovision_allowed") is False,
-        "RU_PUBLIC_SPARE_CAPACITY_FORBIDDEN",
-    )
-    _require(
-        cost.get("app_platform_exact_current_price_required_before_purchase") is True,
-        "RU_PUBLIC_APP_COST_EVIDENCE_REQUIRED",
-    )
-    _require(
-        cost.get("new_top_up_or_plan_commitment_requires_fresh_owner_approval") is True,
-        "RU_PUBLIC_NEW_PAYMENT_AUTHORITY_INVALID",
-    )
-
-    activation = _mapping(
-        payload.get("activation"),
-        "RU_PUBLIC_INGRESS_ACTIVATION_INVALID",
-    )
-    _require(
-        activation.get("public_registration_allowed_by_contract") is False,
-        "RU_PUBLIC_INGRESS_PREMATURE_ACTIVATION",
-    )
-    _require(
-        activation.get("telegram_first_allowed_after_owning_gates") is True,
-        "RU_PUBLIC_TELEGRAM_PROGRESSIVE_ACTIVATION_INVALID",
+        ci.get("external_saas_required_final") is False,
+        "TIMEWEB_CONSOLIDATION_CI_INVALID",
     )
 
     execution = _mapping(
         payload.get("execution"),
-        "RU_PUBLIC_INGRESS_EXECUTION_INVALID",
+        "TIMEWEB_CONSOLIDATION_EXECUTION_INVALID",
     )
     _require(
-        execution.get("umbrella_program_issue") == 580,
-        "RU_PUBLIC_INGRESS_DASHBOARD_INVALID",
+        execution.get("update_id")
+        == "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+        "TIMEWEB_CONSOLIDATION_UPDATE_ID_INVALID",
     )
     _require(
-        execution.get("one_unbounded_pr_for_all_stages_allowed") is False,
-        "RU_PUBLIC_INGRESS_SPLIT_BOUNDARY_INVALID",
+        execution.get("default_branch") == "system/timeweb-platform-consolidation",
+        "TIMEWEB_CONSOLIDATION_BRANCH_INVALID",
     )
     _require(
-        execution.get("mandatory_split_boundaries") == EXPECTED_SPLITS,
-        "RU_PUBLIC_INGRESS_SPLIT_BOUNDARY_INVALID",
+        execution.get("milestones") == EXPECTED_MILESTONES,
+        "TIMEWEB_CONSOLIDATION_MILESTONE_ORDER_INVALID",
+    )
+    _require(
+        execution.get("source_one_branch_default") is True,
+        "TIMEWEB_CONSOLIDATION_BRANCH_INVALID",
+    )
+
+
+def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
+    cleanup = _mapping(
+        payload.get("cleanup"),
+        "TIMEWEB_CONSOLIDATION_CLEANUP_INVALID",
+    )
+    for key in (
+        "current_tree_active_cloudflare_allowed_after_tw_g",
+        "current_tree_active_neon_allowed_after_tw_g",
+        "current_tree_active_render_allowed_after_tw_g",
+        "current_tree_active_cloudru_allowed_after_tw_g",
+        "current_tree_active_vk_id_allowed_after_tw_g",
+        "current_tree_required_external_ci_saas_allowed_after_tw_g",
+        "git_history_rewrite_for_cleanup_allowed",
+        "provider_physical_media_erasure_claim_allowed",
+    ):
+        _require(cleanup.get(key) is False, "TIMEWEB_CONSOLIDATION_CLEANUP_INVALID")
+
+    activation = _mapping(
+        payload.get("activation"),
+        "TIMEWEB_CONSOLIDATION_ACTIVATION_INVALID",
+    )
+    _require(
+        activation.get("public_registration_enabled_by_governance_alone") is False,
+        "TIMEWEB_CONSOLIDATION_PREMATURE_ACTIVATION",
+    )
+    _require(
+        activation.get("telegram_first_and_only_human_login") is True,
+        "TIMEWEB_CONSOLIDATION_TELEGRAM_ONLY_INVALID",
     )
 
     protected = _mapping(
         payload.get("protected_invariants"),
-        "RU_PUBLIC_INGRESS_INVARIANTS_INVALID",
+        "TIMEWEB_CONSOLIDATION_INVARIANTS_INVALID",
     )
     for key in (
         "PUBLIC_MULTI_USER_ENABLED",
         "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
-        "OMNI_V10_VK_ID_LOGIN_ENABLED",
         "broker_write",
         "trading_methods",
         "REAL_TRADING_ENABLED",
     ):
-        _require(protected.get(key) is False, "RU_PUBLIC_INGRESS_INVARIANTS_INVALID")
-    _require(
-        protected.get("protected_v9_entrypoint") == "app:app",
-        "RU_PUBLIC_INGRESS_V9_INVALID",
-    )
+        _require(
+            protected.get(key) is False,
+            "TIMEWEB_CONSOLIDATION_INVARIANTS_INVALID",
+        )
 
 
 def _validate_documents() -> None:
     amendment = _read(AMENDMENT)
     for marker in (
-        "Russian Public Registration & Reachable Ingress Authority / Amendment 18",
-        "one canonical Omni-CIO Web",
-        "Timeweb App Platform",
-        "RU-PG-B -> RU-PG-C -> RU-PG-D -> RU-PG-E",
-        "Neon must not be deleted before",
-        "issue #580",
-        "PUBLIC_MULTI_USER_ENABLED=false",
+        "Timeweb-Only Platform Consolidation & Telegram-Only Login Authority",
+        "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+        "ChatGPT",
+        "GitHub",
+        "Timeweb Cloud",
+        "Telegram Login",
+        "VK ID — RETIRED",
+        "Cloudflare — RETIRE",
+        "Neon — RETIRE",
     ):
-        _require(marker in amendment, "RU_PUBLIC_INGRESS_AMENDMENT_DRIFT")
+        _require(marker in amendment, "TIMEWEB_CONSOLIDATION_AMENDMENT_DRIFT")
 
     index = _read(INDEX)
     _require(
-        "### 18. Russian Public Registration & Reachable Ingress Authority" in index,
-        "RU_PUBLIC_INGRESS_INDEX_MISSING",
+        "### 18. Timeweb-Only Platform Consolidation & Telegram-Only Login Authority"
+        in index,
+        "TIMEWEB_CONSOLIDATION_INDEX_MISSING",
     )
-
     status = _read(STATUS)
     for marker in (
-        "Amendment 18 — Russia-only public registration / reachable ingress",
-        "Timeweb Read-Only Proof #11",
-        "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
-        "issue #580",
-        "Cloudflare-only public ingress is not sufficient evidence",
+        "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+        "ChatGPT + GitHub + Timeweb Cloud + Telegram Login",
+        "Cloudflare, Neon, Render, Cloud.ru and VK ID",
     ):
-        _require(marker in status, "RU_PUBLIC_INGRESS_STATUS_DRIFT")
+        _require(marker in status, "TIMEWEB_CONSOLIDATION_STATUS_DRIFT")
 
     workflow = _read(WORKFLOW)
     _require(
         "python scripts/check_v10_ru_public_registration_ingress.py" in workflow,
-        "RU_PUBLIC_INGRESS_GOVERNANCE_WORKFLOW_MISSING",
+        "TIMEWEB_CONSOLIDATION_GOVERNANCE_WORKFLOW_MISSING",
     )
     _require(
         "tests.test_v10_ru_public_registration_ingress" in workflow,
-        "RU_PUBLIC_INGRESS_GOVERNANCE_TEST_MISSING",
+        "TIMEWEB_CONSOLIDATION_GOVERNANCE_TEST_MISSING",
     )
 
 
 def main() -> int:
     try:
-        _validate_contract(_load())
+        payload = _load()
+        _validate_service_model(payload)
+        _validate_product_timeweb_auth(payload)
+        _validate_database_ci_execution(payload)
+        _validate_cleanup_activation(payload)
         _validate_documents()
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     print(
-        "V10 Russia public-registration ingress authority passed: one product, "
-        "Timeweb PostgreSQL end-state, Russia-reachable ingress evidence and "
-        "cutover/recovery splits remain fail-closed."
+        "V10 Timeweb-only platform consolidation authority passed: "
+        "ChatGPT + GitHub + Timeweb + Telegram Login target is fail-closed."
     )
     return 0
 
