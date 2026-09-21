@@ -1,125 +1,141 @@
 {
-  "schema": "omni-cio.v10.ru-public-registration-ingress.v1",
+  "schema": "omni-cio.v10.timeweb-only-platform-consolidation.v1",
   "amendment_number": 18,
   "decision_date": "2026-09-21",
   "owning_issue": 580,
   "status": "OWNER_APPROVED_EFFECTIVE_ONLY_AFTER_GREEN_MERGE",
-  "supported_launch_population": "RUSSIAN_FEDERATION",
-  "external_references": {
-    "revalidated_on": "2026-09-21",
-    "cloudflare_russia_disruption": "https://developers.cloudflare.com/support/troubleshooting/general-troubleshooting/service-disruption/",
-    "timeweb_app_platform": "https://timeweb.cloud/docs/apps",
-    "timeweb_dockerfile": "https://timeweb.cloud/docs/apps/deploying-with-dockerfile",
-    "timeweb_backend_deploy": "https://timeweb.cloud/docs/apps/deploying-backend-applications",
-    "timeweb_app_management": "https://timeweb.cloud/docs/apps/upravlenie-apps-v-paneli"
+  "active_general_service_set": [
+    "ChatGPT",
+    "GitHub",
+    "Timeweb Cloud",
+    "Telegram Login"
+  ],
+  "retired_active_services": [
+    "Cloudflare",
+    "Neon",
+    "Render",
+    "Cloud.ru",
+    "VK ID"
+  ],
+  "external_ci_saas_target_state": "RETIRED_AFTER_EQUIVALENT_GITHUB_NATIVE_PROOF",
+  "provider_reentry_requires_fresh_owner_amendment": true,
+  "service_model": {
+    "engineering_assistant": "ChatGPT",
+    "source_ci_provenance": "GitHub",
+    "production_platform": "Timeweb Cloud",
+    "human_login_provider": "Telegram Login",
+    "chatgpt_is_runtime_dependency": false,
+    "github_is_product_identity": false,
+    "timeweb_is_product_identity": false,
+    "telegram_is_infrastructure_authority": false
   },
-  "providers": {
-    "exact_public_launch_set": [
-      "GitHub",
-      "Cloudflare",
-      "Timeweb Cloud"
-    ],
-    "github_role": "SOURCE_REVIEW_CI_RELEASE_PROVENANCE",
-    "cloudflare_role": "ACCEPTED_BUILD_RELEASE_STAGING_FALLBACK",
-    "timeweb_role": "RUSSIAN_POSTGRESQL_AND_RUSSIA_FACING_INGRESS_CANDIDATE",
-    "render_active_v10_allowed": false,
-    "cloud_ru_active_v10_allowed": false
-  },
-  "product_model": {
+  "product": {
     "one_canonical_web": true,
-    "one_account_tenant_session_authority": true,
-    "second_user_facing_product_allowed": false,
-    "auth_bypass_allowed": false,
-    "same_exact_source_sha_required": true,
-    "dual_primary_database_allowed": false,
-    "dual_primary_session_authority_allowed": false
+    "second_product_allowed": false,
+    "provider_neutral_core_required": true,
+    "browser_selects_tenant": false,
+    "server_side_session_authority": true
   },
-  "cloudflare_russia_reachability": {
-    "cloudflare_only_public_ingress_accepted_for_russia_launch": false,
-    "representative_russian_network_no_vpn_evidence_required": true,
-    "cloudflare_build_release_fallback_evidence_preserved": true
+  "timeweb": {
+    "app_platform_selected": true,
+    "managed_postgresql_major": 18,
+    "exact_accepted_main_commit_required": true,
+    "production_autodeploy_may_bypass_github_acceptance": false,
+    "runtime_secrets_in_git_allowed": false,
+    "technical_candidate_before_canonical_dns": true,
+    "canonical_domain_target": "omnicio.ru",
+    "private_app_db_networking_preferred_if_proven": true,
+    "private_networking_assumed_without_provider_evidence": false,
+    "backups_required_before_production_cutover": true,
+    "restore_proof_required": true,
+    "representative_russia_no_vpn_evidence_required": true
   },
-  "timeweb_app_platform_candidate": {
-    "approved_for_source_compatibility_work": true,
-    "purchase_policy": "NECESSARY_ONLY_AFTER_OWNING_GATE_EXACT_COST_WITHIN_PREPAID_FUNDS",
-    "live_public_deploy_authorized_by_contract": false,
-    "github_repo": "MishaGameHacking/omni-cio-gateway",
-    "dockerfile_candidate": true,
-    "explicit_accepted_main_commit_required": true,
-    "production_autodeploy_allowed": false,
-    "technical_domain_before_canonical_domain": true,
-    "custom_domain_requires_owning_cutover": true,
-    "runtime_secrets_in_repository_allowed": false,
-    "exact_sha_health_release_proof_required": true
-  },
-  "ingress_security": {
-    "provider_neutral_product_core_required": true,
-    "cloudflare_adapter_remains_thin": true,
-    "timeweb_adapter_must_not_assume_cloudflare_internal_headers": true,
-    "arbitrary_forwarded_headers_trusted": false,
-    "documented_or_empirically_verified_client_ip_contract_required": true,
-    "tls_required": true,
-    "canonical_host_origin_callback_validation_required": true,
-    "csrf_and_secure_cookie_equivalence_required": true,
-    "cross_tenant_negative_required": true,
-    "rollback_required": true
-  },
-  "database_end_state": {
-    "final_production_provider": "Timeweb Cloud Managed PostgreSQL 18",
-    "final_production_country": "Russian Federation",
-    "migration_sequence": [
-      "RU-PG-B",
-      "RU-PG-C",
-      "RU-PG-D",
-      "RU-PG-E"
+  "auth": {
+    "human_identity_providers": [
+      "telegram"
     ],
-    "neon_active_production_retirement_stage": "RU-PG-E",
-    "neon_delete_before_ru_pg_d_allowed": false,
-    "neon_historical_evidence_preserved": true,
-    "real_russian_user_data_before_ru_pg_d_allowed": false,
-    "public_db_path_must_be_reassessed_after_timeweb_runtime": true,
-    "prefer_private_timeweb_app_to_db_after_acceptance": true
+    "vk_id_active_allowed": false,
+    "owner_admin_demo_preview_session_bypass_allowed": false,
+    "telegram_authorization_code_pkce_required": true,
+    "telegram_registered_urls_required": true,
+    "minimal_scopes_required": true
   },
-  "cost_policy": {
-    "existing_prepaid_funds_first": true,
-    "spare_capacity_preprovision_allowed": false,
-    "app_platform_exact_current_price_required_before_purchase": true,
-    "necessary_within_prepaid_funds_allowed_after_owning_gate": true,
-    "new_top_up_or_plan_commitment_requires_fresh_owner_approval": true,
-    "backup_and_monitoring_allowed_when_owning_gate_requires": true,
-    "replicas_and_scale_require_evidence": true
+  "database": {
+    "final_provider": "Timeweb Cloud Managed PostgreSQL 18",
+    "neon_new_feature_work_allowed": false,
+    "neon_delete_before_timeweb_cutover_allowed": false,
+    "migrations_required": true,
+    "rls_force_rls_required": true,
+    "cross_tenant_negative_required": true,
+    "least_privilege_runtime_role_required": true,
+    "migrated_data_verification_required": true
   },
-  "activation": {
-    "public_registration_allowed_by_contract": false,
-    "telegram_first_allowed_after_owning_gates": true,
-    "vk_may_remain_disabled": true,
-    "rosko_processing_notification_required_by_project_gate": true,
-    "cross_border_flow_assessment_required": true,
-    "public_privacy_policy_required": true,
-    "ru_subject_request_channel_required": true,
-    "real_login_logout_revoke_required": true,
-    "real_cross_tenant_negatives_required": true
+  "ci": {
+    "active_service": "GitHub",
+    "quality_weakening_for_saas_retirement_allowed": false,
+    "required_equivalent_checks": [
+      "ruff",
+      "mypy",
+      "pytest_coverage",
+      "frontend_quality",
+      "browser",
+      "dependency_scan",
+      "secret_scan",
+      "sast",
+      "postgresql18",
+      "governance",
+      "files_changed_review"
+    ],
+    "external_saas_required_final": false
   },
   "execution": {
-    "umbrella_program_issue": 580,
-    "one_unbounded_pr_for_all_stages_allowed": false,
+    "update_id": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+    "default_branch": "system/timeweb-platform-consolidation",
+    "execution_unit": "INTEGRATED_SYSTEM_UPDATE",
+    "milestones": [
+      "TW-A",
+      "TW-B",
+      "TW-C",
+      "TW-D",
+      "TW-E",
+      "TW-F",
+      "TW-G"
+    ],
+    "source_one_branch_default": true,
     "mandatory_split_boundaries": [
-      "RU-PG-B_PROVIDER_PARITY",
-      "RU-PG-C_RUNTIME_TLS_RECOVERY",
-      "RU-PG-D_PRODUCTION_DATABASE_CUTOVER",
-      "RU-PG-E_NEON_ACTIVE_AUTHORITY_RETIREMENT",
-      "RUSSIA_INGRESS_PROVIDER_SPEND_AND_DNS_CUTOVER",
-      "LEGAL_REGULATORY_OWNER_ACTIONS",
-      "PUBLIC_USER_ACTIVATION"
+      "PRODUCTION_DATABASE_CUTOVER",
+      "PUBLIC_DNS_INGRESS_CUTOVER",
+      "DESTRUCTIVE_PROVIDER_DECOMMISSION",
+      "SECURITY_AUTHORITY_TRANSITION",
+      "OWNER_ONLY_PROVIDER_OR_LEGAL_ACTION",
+      "RECOVERY_BOUNDARY"
     ]
+  },
+  "cleanup": {
+    "current_tree_active_cloudflare_allowed_after_tw_g": false,
+    "current_tree_active_neon_allowed_after_tw_g": false,
+    "current_tree_active_render_allowed_after_tw_g": false,
+    "current_tree_active_cloudru_allowed_after_tw_g": false,
+    "current_tree_active_vk_id_allowed_after_tw_g": false,
+    "current_tree_required_external_ci_saas_allowed_after_tw_g": false,
+    "git_history_rewrite_for_cleanup_allowed": false,
+    "concise_historical_migration_record_allowed": true,
+    "provider_physical_media_erasure_claim_allowed": false
+  },
+  "activation": {
+    "public_registration_enabled_by_governance_alone": false,
+    "telegram_first_and_only_human_login": true,
+    "legal_privacy_gate_required": true,
+    "capacity_monitoring_incident_gate_required": true,
+    "real_login_logout_revoke_required": true,
+    "cross_tenant_live_negative_required": true
   },
   "protected_invariants": {
     "PUBLIC_MULTI_USER_ENABLED": false,
     "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
-    "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
     "broker_write": false,
     "trading_methods": false,
     "REAL_TRADING_ENABLED": false,
-    "protected_v9_entrypoint": "app:app"
+    "no_direct_main_development": true
   }
 }
