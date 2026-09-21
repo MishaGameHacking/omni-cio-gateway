@@ -440,9 +440,7 @@ def main() -> int:
     print("Exact-head changed-files + independent review: enforced")
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
     print("OWNER handoff: direct official link + bounded action contract enforced")
-    print(
-        "V10 public runtime: Timeweb App Platform target after owning cutover gate"
-    )
+    print("V10 public runtime: Timeweb App Platform target after owning cutover gate")
     print("Failure-learning and bounded fault-isolation contracts: enforced")
     return 0
 
