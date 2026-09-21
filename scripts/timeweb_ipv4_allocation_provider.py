@@ -17,6 +17,7 @@ from collections.abc import Callable
 import re
 from typing import Any, NoReturn, Protocol
 
+from scripts import provision_v10_render_neon_preview as _provider_base
 from scripts import timeweb_ipv4_allocation as allocation
 from scripts import timeweb_ipv4_custody as custody
 
@@ -353,5 +354,7 @@ def live_provider(token: str, *, allow_write: bool) -> TimewebAllocationProvider
         return TimewebAllocationProvider(reader, writer)
     except ProviderStopped:
         raise
+    except _provider_base.ProvisioningStopped as exc:
+        raise ProviderStopped(exc.code) from None
     except Exception:
         raise ProviderStopped("TIMEWEB_ALLOCATION_PROVIDER_INIT_FAILED") from None
