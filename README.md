@@ -9,35 +9,39 @@ Current V10 progress and current/next execution authority are defined only by `k
 Repository-front-door snapshot of accepted/current program authority:
 
 - accepted V10 implementation progress: **54%**;
-- WP0–WP22A: accepted COMPLETE according to the canonical status/evidence chain;
-- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update** is accepted COMPLETE; accepted Cloudflare runtime/release baseline before documentation closeout is `b8b2721...` and Production Release #78 is `success`;
-- CF-A -> CF-B -> CF-C -> CF-D are complete historical implementation milestones; `system/cloudflare-public-product` is no longer the active functional implementation branch;
-- current functional implementation package: **NONE**;
-- **PRODUCT IMPLEMENTATION PAUSED** pending a new authorized System Update;
-- current next prepared package is **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G / OWNER START REQUIRED**;
-- exact product START required before visual implementation: `START V10 WEB VISUAL SYSTEM UPDATE`;
-- Amendment 12 still governs execution-unit law and mandatory split triggers except where later Amendment 16 supersedes verification publication/cadence rules;
-- Amendment 13 still governs progressive capability activation without waiting for all of V10;
-- Amendment 14 selects GitHub as engineering authority rank 1 and Cloudflare Workers Paid as new-V10 application/edge/build platform rank 2;
-- Amendment 15 changes only the delivery granularity of the four Cloudflare implementation stages into one integrated update and does not weaken their runtime/security/candidate/cutover gates;
-- Amendment 16 governs Green Checkpoint / targeted CI repair: no next functional checkpoint is allowed until the current exact checkpoint is `CERTIFIED_GREEN`;
-- historical WP22A Render/Neon hosted evidence remains evidence, while Render is retired from active **new V10** deployment/attestation/release-alignment authority;
-- Cloud.ru Evolution is no longer the selected provider target for new V10 work;
-- WP23+ remains locked;
-- **public multi-user/global browser service is the approved V10 target**;
-- canonical Cloudflare production ingress/release is accepted through CF-D, but **public multi-user and capability activation remain fail-closed until their own production security/privacy/provider/broker/legal/capacity gates pass**; infrastructure release acceptance is not capability activation;
-- final public production must not depend on PROJECT OWNER home IP, Wi-Fi, router/LAN, home Internet or Lenovo as the production origin;
-- final public Web/API/private-state runtime must use the approved Cloudflare managed-platform boundary after its owning internal compatibility/candidate/cutover gates;
-- PROJECT OWNER is an ordinary product USER when using Omni-CIO; GitHub/Cloudflare/Windows authority is separate from product identity;
-- initial registered-user access is free: billing, trial, subscription enforcement and premium feature gating are disabled for the initial launch;
-- normal broker READ and optional TRADE credentials belong only to the authenticated tenant's `BrokerConnection`; no shared/global user broker token is allowed;
-- current T-Invest public-service terms remain a separate fail-closed broker gate; user-supplied tokens do not waive broker restrictions;
+- WP0–WP22A remain accepted COMPLETE;
+- historical Cloudflare/Render/Neon work remains evidence only;
+- OWNER target operating model: **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**;
+- current next package: **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
+- Timeweb Cloud is the sole selected future/current V10 production infrastructure target after Amendment 18 acceptance;
+- Timeweb Managed PostgreSQL 18 is the final relational target;
+- Telegram Login is the only selected human login provider; VK ID is a retirement target;
+- Cloudflare, Neon, Render and Cloud.ru are retirement targets; no new feature authority is granted to them;
+- equivalent-or-stronger GitHub-native verification must replace external CI/review SaaS before removal;
+- public multi-user activation remains fail-closed until Timeweb DB/runtime/DNS plus privacy/legal/capacity/Telegram gates pass;
+- WEB-VISUAL and WP23+ remain paused during platform consolidation;
 - broker-write / Real-execution authority remains unchanged;
-- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, `PUBLIC_MULTI_USER_ENABLED=false` and protected V9 rollback remain intact until their own later gates.
+- `trading_methods=false`, `REAL_TRADING_ENABLED=false` and tenant/RLS protections remain intact.
 
-This box is a concise repository front door, **not a second progress ledger**. For exact evidence and transitions read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+This box is not a second progress ledger. Exact state is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-## Cloudflare platform / continuous release authority
+## Current platform authority — GitHub + Timeweb + Telegram
+
+Target deployment path:
+
+`accepted GitHub main SHA -> GitHub checks -> exact Timeweb candidate -> Timeweb production`.
+
+Timeweb owns the target App Platform runtime, PostgreSQL 18, domain/DNS/TLS, backups/monitoring and network controls. ChatGPT is an engineering assistant, never production authority. Telegram is identity only.
+
+Final ordinary-user path:
+
+`Russian browser -> omnicio.ru -> Timeweb -> Omni-CIO -> Timeweb PostgreSQL`.
+
+Cloudflare must not remain an unavoidable final hop. Neon must not remain the final DB. VK ID must not remain a product login path.
+
+The historical Cloudflare section below is retained temporarily as migration provenance and is superseded for future provider selection by Amendment 18.
+
+## Historical Cloudflare platform / continuous release authority — superseded for future work
 
 Amendment 14 establishes the new-V10 platform model without changing protected V9, while Amendment 15 groups its implementation stages into one integrated delivery unit:
 
