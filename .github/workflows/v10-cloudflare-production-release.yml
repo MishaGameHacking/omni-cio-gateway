@@ -1,13 +1,8 @@
 name: V10 Cloudflare Production Release
 
+# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority.
+# Manual dispatch is retained only as historical evidence; every job is hard-disabled below.
 on:
-  workflow_run:
-    workflows:
-      - Regression Shield
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       expected_sha:
@@ -26,6 +21,7 @@ jobs:
   inspect_database_state:
     name: CF-D exact-main database state and staging anchor
     if: >-
+      false &&
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
@@ -210,6 +206,7 @@ jobs:
     name: CF-D hosted staging database recovery
     needs: inspect_database_state
     if: >-
+      false &&
       !cancelled() &&
       needs.inspect_database_state.result == 'success' &&
       needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'
@@ -294,6 +291,7 @@ jobs:
       - inspect_database_state
       - bootstrap_staging_database
     if: >-
+      false &&
       !cancelled() &&
       needs.inspect_database_state.result == 'success' &&
       (needs.inspect_database_state.outputs.staging_bootstrap_required == 'false' ||
@@ -492,6 +490,7 @@ jobs:
     name: CF-D hosted production database recovery
     needs: rehearse
     if: >-
+      false &&
       !cancelled() &&
       needs.rehearse.result == 'success' &&
       needs.rehearse.outputs.production_bootstrap_required == 'true'
@@ -576,6 +575,7 @@ jobs:
       - rehearse
       - bootstrap_production_database
     if: >-
+      false &&
       !cancelled() &&
       needs.rehearse.result == 'success' &&
       (needs.rehearse.outputs.production_bootstrap_required == 'false' ||
@@ -815,6 +815,7 @@ jobs:
       - bootstrap_production_database
       - promote
     if: >-
+      false &&
       always() &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event.workflow_run.conclusion == 'success' &&
