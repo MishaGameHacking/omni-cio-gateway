@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from scripts.v10_ast_guard import call_lines
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
@@ -537,27 +539,17 @@ def _validate_sources() -> None:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_PROVISIONER_DRIFT")
     function = functions[0]
 
-    def call_lines(owner: str | None, name: str) -> list[int]:
-        lines: list[int] = []
-        for node in ast.walk(function):
-            if not isinstance(node, ast.Call):
-                continue
-            if owner is None:
-                if isinstance(node.func, ast.Name) and node.func.id == name:
-                    lines.append(node.lineno)
-                continue
-            if (
-                isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == owner
-                and node.func.attr == name
-            ):
-                lines.append(node.lineno)
-        return lines
-
-    credential = call_lines("read_only", "verify_credential_health")
-    prerequisite = call_lines(None, "_verify_allocation_prerequisite")
-    writer = call_lines(None, "TimewebMutationApi")
+    credential = call_lines(
+        function,
+        owner="read_only",
+        name="verify_credential_health",
+    )
+    prerequisite = call_lines(
+        function,
+        owner=None,
+        name="_verify_allocation_prerequisite",
+    )
+    writer = call_lines(function, owner=None, name="TimewebMutationApi")
     if len(credential) != 1 or len(prerequisite) != 1 or len(writer) != 1:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_CREDENTIAL_SEQUENCE_INVALID")
     if not credential[0] < prerequisite[0] < writer[0]:
