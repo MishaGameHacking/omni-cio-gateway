@@ -16,8 +16,10 @@ INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 TIMEWEB_PROOF_WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
-RETIRED_CLOUDFLARE_RELEASE_WORKFLOW = (
-    ROOT / ".github/workflows/v10-cloudflare-production-release.yml"
+RETIRED_CLOUDFLARE_WORKFLOWS = (
+    ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml",
+    ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml",
+    ROOT / ".github/workflows/v10-cloudflare-production-release.yml",
 )
 
 EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
@@ -184,8 +186,12 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
         "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
     )
     _require(
-        ci.get("retired_cloudflare_release_workflow")
-        == ".github/workflows/v10-cloudflare-production-release.yml",
+        ci.get("retired_cloudflare_workflows")
+        == [
+            ".github/workflows/v10-cloudflare-provider-readiness.yml",
+            ".github/workflows/v10-cloudflare-candidate-deploy.yml",
+            ".github/workflows/v10-cloudflare-production-release.yml",
+        ],
         "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
     )
     for key in (
@@ -328,17 +334,25 @@ def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
 
 
 def _validate_active_workflow_graph() -> None:
-    retired = _read(RETIRED_CLOUDFLARE_RELEASE_WORKFLOW)
+    manual_disable_marker = "if: $" + "{{ false }}"
+    for path in RETIRED_CLOUDFLARE_WORKFLOWS:
+        retired = _read(path)
+        _require(
+            "ARCHIVE-IN-PLACE" in retired,
+            "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_NOT_ARCHIVED",
+        )
+        _require(
+            "workflow_run:" not in retired and "\n  push:" not in retired,
+            "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_AUTO_TRIGGER",
+        )
+        _require(
+            manual_disable_marker in retired or "      false &&" in retired,
+            "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED",
+        )
+
+    production = _read(RETIRED_CLOUDFLARE_WORKFLOWS[-1])
     _require(
-        "ARCHIVE-IN-PLACE" in retired,
-        "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_NOT_ARCHIVED",
-    )
-    _require(
-        "workflow_run:" not in retired,
-        "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_AUTO_TRIGGER",
-    )
-    _require(
-        retired.count("      false &&") == 6,
+        production.count("      false &&") == 6,
         "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED",
     )
 
