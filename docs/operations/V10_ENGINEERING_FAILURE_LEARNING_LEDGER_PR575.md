@@ -146,3 +146,33 @@ A newer exact head must complete the canonical checks before this M2 source may
 advance. Old RED or old GREEN results are never final evidence for replacement
 bytes.
 
+## M2 replacement exact-head static-quality RED
+
+Exact-head verification for replacement head `d1a997a7...`
+completed with two RED workflow lanes that share one producer defect. Self-Hosted
+Windows CI run `35563139273` / job `106219680284` failed at protected-runtime
+static quality, and WP15 T-Invest Read Audit run `35563139201` / job
+`106219679630` failed while enforcing its independently captured static-quality
+result. Both report exactly `F401 sys imported but unused` in
+`scripts/run_v10_timeweb_ipv4_allocation.py`.
+
+This is not a Timeweb API, broker-read, runner, mypy or Sonar defect. WP15 reports
+canonical Ruff format clean and mypy success across 350 source files; exact-head
+Sonar also passed. The duplicate workflow failures are therefore one source
+hygiene defect fanning out through multiple consumers.
+
+The immediate correction removes only that unused standard-library import. The
+broader process failure is that the final combined replacement bytes were
+published after the earlier mypy/Sonar repair without proving the full canonical
+Ruff preflight on those final bytes. Existing repository policy already requires
+`focused preflight -> publish exact checkpoint -> CI verifier`; the corrective
+action is to apply that baseline to the final coherent batch rather than invent a
+second linter or weaken Ruff.
+
+Because authoritative Windows CI failed before Regression Shield, dependency
+audit, SAST, tracked-content secret scan and final exact-head Sonar verification,
+those later steps are not PASS evidence for `d1a997a7...`. The replacement SHA
+must complete the entire applicable sequence before M2 can advance. This finding
+does not change provider authority and does not authorize any live Timeweb
+workflow.
+
