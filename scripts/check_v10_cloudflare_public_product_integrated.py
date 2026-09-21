@@ -283,7 +283,8 @@ def _validate_surfaces(failures: list[str]) -> None:
         "current V10 status",
         status,
         (
-            "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE",
+            "Cloudflare Public Product System Update — "
+            "**HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**",
             "V10 Cloudflare Production Release #78",
             "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
             "Amendment 18 — Timeweb-only platform consolidation",
