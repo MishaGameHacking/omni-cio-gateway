@@ -434,7 +434,7 @@ Ordered internal milestones:
 6. `TW-F` — Telegram public registration/multi-user activation after legal/privacy/capacity gates;
 7. `TW-G` — destructive legacy-provider decommission and current-tree cleanup.
 
-WEB-VISUAL and WP23+ remain paused. No broker-write or Real-money authority changes.
+WEB-VISUAL remains paused. WP23+ remains locked. No broker-write or Real-money authority changes.
 
 Amendment-12 mandatory split triggers remain stronger than the one-branch preference. Production DB cutover, DNS/public cutover, destructive provider deletion, OWNER/legal actions and recovery boundaries require independent acceptance.
 
