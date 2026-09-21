@@ -120,7 +120,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             decommission["provider_side_physical_erasure_independently_verified"]
         )
 
-    def test_domain_mismatch_blocks_dns_and_telegram_cutover(self) -> None:
+    def test_omnicio_ru_is_confirmed_without_authorizing_cutover(self) -> None:
         payload = _contract()
         timeweb = payload["timeweb"]
         activation = payload["activation"]
@@ -128,13 +128,23 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         self.assertIsInstance(activation, dict)
         assert isinstance(timeweb, dict)
         assert isinstance(activation, dict)
-        self.assertIsNone(timeweb["canonical_domain_target"])
+        self.assertEqual(timeweb["canonical_domain_target"], "omnicio.ru")
         self.assertEqual(
             timeweb["canonical_domain_candidates_observed"],
             ["omnicio.ru", "omni-cio.ru"],
         )
-        self.assertTrue(timeweb["canonical_domain_owner_confirmation_required"])
+        self.assertFalse(timeweb["canonical_domain_owner_confirmation_required"])
+        self.assertTrue(timeweb["canonical_domain_owner_confirmed"])
         self.assertFalse(timeweb["dns_cutover_allowed_before_domain_confirmation"])
+        self.assertFalse(timeweb["dns_cutover_authorized_by_domain_confirmation_alone"])
+        self.assertEqual(
+            activation["telegram_canonical_origin"],
+            "https://omnicio.ru",
+        )
+        self.assertEqual(
+            activation["telegram_canonical_redirect_uri"],
+            "https://omnicio.ru/api/v10/web/auth/telegram/callback",
+        )
         self.assertTrue(activation["telegram_canonical_origin_reconfirmation_required"])
 
     def test_public_and_real_money_flags_remain_fail_closed(self) -> None:
