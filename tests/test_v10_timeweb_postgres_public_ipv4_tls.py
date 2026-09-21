@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+from typing import Any
 import tempfile
 import unittest
 from unittest import mock
@@ -16,7 +17,7 @@ from scripts import provision_v10_timeweb_postgres_public_ipv4_tls as provisione
 
 class TimewebPublicIpv4TlsTests(unittest.TestCase):
     @staticmethod
-    def _healthy_credential_preflight() -> mock._patch:
+    def _healthy_credential_preflight() -> Any:
         return mock.patch.object(
             provisioner.read_only,
             "verify_credential_health",
