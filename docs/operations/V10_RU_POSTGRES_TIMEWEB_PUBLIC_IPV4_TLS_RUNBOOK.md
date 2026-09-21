@@ -121,7 +121,7 @@ mutation with `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`.
 The transport workflow now requires the safe non-authorizing
 `allocation_plan_id` produced by the existing-IPv4 allocation workflow. Inside
 the sole provider-secret step, the code opens the protected Windows journal,
-requires a durable `ALLOCATED` receipt, then performs two equal GET-only canonical
+requires a durable `ALLOCATED` allocation receipt, then performs two equal GET-only canonical
 provider snapshots and binds the receipt to the same account/project/cluster/IP
 identity plus the accepted custody marker before `TimewebMutationApi` exists.
 

@@ -216,6 +216,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "is_enabled_public_ipv6": True,
         }
         with (
+            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
                 provisioner,
@@ -263,6 +264,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         api = mock.Mock()
         mutation = mock.Mock()
         with (
+            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
                 provisioner,
@@ -343,6 +345,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         api = mock.Mock()
         mutation = mock.Mock()
         with (
+            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
                 provisioner,
