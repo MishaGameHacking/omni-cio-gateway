@@ -61,10 +61,10 @@ After Amendment 18 acceptance:
 - ChatGPT is an engineering assistant only and never runtime/data authority;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets;
 - no new feature work may add dependencies on retired providers;
-- external CI/review SaaS may be removed only after equivalent-or-stronger GitHub-executed verification is proven;
+- GitHub-native quality/security/review checks are the active authority; external CI/review SaaS is historical and must not be required by current/future V10 workflows;
 - provider-specific code belongs in thin infrastructure adapters, not business/account/tenant/security logic;
 - production DB authority moves to Timeweb PostgreSQL 18 only through the owning cutover/recovery gate;
-- during migration, last-known-good legacy production remains only until replacement acceptance.
+- Cloudflare/Neon external rollback is unavailable by OWNER-reported decommission; Timeweb recovery evidence must stand on its own.
 
 Target release flow:
 
@@ -137,7 +137,7 @@ When Amendment 16 is accepted on protected `main`, it supersedes the old wait-al
 
 Canonical flow:
 
-`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> GitHub-native CI/security/review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
 If any applicable check or material review finding is RED:
 
@@ -153,8 +153,8 @@ Rules:
 - `git commit --amend` creates a replacement commit/SHA; it does not mutate an immutable existing commit;
 - never force-rewrite protected `main` or shared history merely to preserve a one-commit appearance;
 - repeated identical “transient” RED is an infrastructure/workflow defect, not a reason for blind reruns;
-- Sonar Quality Gate must pass when applicable; default new-code requirement is 0 new issues, 0 unresolved new Security Hotspots and 0 unresolved material Reliability/Security/Maintainability findings;
-- Gitar/SAST/check annotations/review threads are active engineering evidence, not decoration;
+- GitHub-native lint/type/test/coverage/dependency/SAST/secret checks must pass when applicable; unresolved material correctness/security/maintainability findings are not GREEN;
+- check annotations/review threads and repository-native security findings are active engineering evidence, not decoration;
 - unexpected reusable material RED still requires the Failure Learning Ledger;
 - `MAIN_RED_STOP`: an applicable post-merge RED on current `main` blocks ordinary feature progress until an accepted focused repair restores GREEN.
 
@@ -170,7 +170,7 @@ Never develop directly in `main`.
 
 Normal checkpoint lifecycle:
 
-`fresh accepted main -> branch -> authorized logical checkpoint -> focused preflight -> publish exact checkpoint -> CI/Sonar/review -> RED_REPAIR_ONLY if needed -> targeted repair proof -> exact replacement full certification -> CERTIFIED_GREEN -> next checkpoint`.
+`fresh accepted main -> branch -> authorized logical checkpoint -> focused preflight -> publish exact checkpoint -> GitHub-native CI/security/review -> RED_REPAIR_ONLY if needed -> targeted repair proof -> exact replacement full certification -> CERTIFIED_GREEN -> next checkpoint`.
 
 Final landing lifecycle:
 
@@ -184,7 +184,7 @@ Project law: every **applicable** exact-head V10 check must actually execute and
 
 ### Changed-files + independent code-review merge gate
 
-Before merge inspect **all** Files changed, inline review threads, annotations and applicable Sonar/Gitar/SAST/security/code-review outputs; classify material findings; unresolved blocking review threads = 0; perform final manual engineering diff review. Bot approval is supporting evidence only. After a correction/replacement head repeat Files changed + review on the new exact head.
+Before merge inspect **all** Files changed, inline review threads, annotations and applicable GitHub-native lint/type/test/coverage/dependency/SAST/secret/security/code-review outputs; classify material findings; unresolved blocking review threads = 0; perform final manual engineering diff review. Bot approval is supporting evidence only. After a correction/replacement head repeat Files changed + review on the new exact head.
 
 ## 9. Testing baseline
 
@@ -208,7 +208,7 @@ python -m pytest -q --cov --cov-branch --cov-fail-under=60
 
 Also run owning focused checks, dependency/security scans, frontend typecheck/lint/test/build/audit and browser/recovery checks when applicable.
 
-GitHub/Lenovo routing remains authoritative until CF-A proves an equivalent portable Cloudflare verifier lane. Windows/PowerShell/ACL/PostgreSQL-18-native semantics stay on trusted Lenovo until equivalent semantics are actually accepted. Quota/provider outage is never `success`.
+GitHub/self-hosted Windows routing remains authoritative for checks that require its semantics. Any future Timeweb-hosted verifier replacement must prove equivalent semantics before routing changes. Quota/provider outage is never `success`.
 
 ## 10. Dependencies / runtime compatibility
 
