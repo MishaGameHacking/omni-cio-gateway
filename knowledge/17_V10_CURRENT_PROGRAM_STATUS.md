@@ -33,11 +33,11 @@ Final selected operating model:
 
 Retirement targets are Cloudflare, Neon, Render, Cloud.ru and VK ID. External review/CI SaaS is also to be removed from the required path after equivalent-or-stronger GitHub-native checks are proven.
 
-The active System Update is `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`, with ordered milestones TW-A→TW-G. It delivers provider-neutral application source, Timeweb App Platform exact-SHA deployment, Timeweb PostgreSQL 18 production cutover, Timeweb DNS/TLS/no-VPN Russian ingress, Telegram-only activation, then legacy-provider decommission/current-tree cleanup.
+The active System Update is `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`, with ordered milestones TW-A→TW-G. It delivers provider-neutral application source, Timeweb App Platform exact-SHA deployment, Timeweb PostgreSQL 18 production cutover, Timeweb DNS/TLS/no-VPN Russian ingress, Telegram-only activation, then external-provider decommission with legacy repository artifacts left archive-in-place.
 
 No new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized. During migration the last-known-good provider remains only until its owning replacement/cutover gate succeeds.
 
-Git history is not rewritten to remove old provider names. Current-tree active integrations are removed after cutover; historical provenance remains in Git.
+Git history is not rewritten to remove old provider names. Legacy provider files remain archive-in-place by default; after cutover their live workflow/provider authority is disabled or revoked while historical provenance remains intact.
 
 ## Latest accepted Cloudflare runtime/release baseline
 
