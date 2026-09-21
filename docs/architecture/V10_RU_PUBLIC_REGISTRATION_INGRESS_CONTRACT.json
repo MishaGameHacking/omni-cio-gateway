@@ -43,12 +43,18 @@
     "production_autodeploy_may_bypass_github_acceptance": false,
     "runtime_secrets_in_git_allowed": false,
     "technical_candidate_before_canonical_dns": true,
-    "canonical_domain_target": "omnicio.ru",
+    "canonical_domain_target": null,
     "private_app_db_networking_preferred_if_proven": true,
     "private_networking_assumed_without_provider_evidence": false,
     "backups_required_before_production_cutover": true,
     "restore_proof_required": true,
-    "representative_russia_no_vpn_evidence_required": true
+    "representative_russia_no_vpn_evidence_required": true,
+    "canonical_domain_candidates_observed": [
+      "omnicio.ru",
+      "omni-cio.ru"
+    ],
+    "canonical_domain_owner_confirmation_required": true,
+    "dns_cutover_allowed_before_domain_confirmation": false
   },
   "auth": {
     "human_identity_providers": [
@@ -68,7 +74,9 @@
     "rls_force_rls_required": true,
     "cross_tenant_negative_required": true,
     "least_privilege_runtime_role_required": true,
-    "migrated_data_verification_required": true
+    "migrated_data_verification_required": true,
+    "neon_current_rollback_available": false,
+    "neon_state_source": "OWNER_REPORTED_EXTERNAL_DECOMMISSION"
   },
   "ci": {
     "active_service": "GitHub",
@@ -130,7 +138,8 @@
     "legal_privacy_gate_required": true,
     "capacity_monitoring_incident_gate_required": true,
     "real_login_logout_revoke_required": true,
-    "cross_tenant_live_negative_required": true
+    "cross_tenant_live_negative_required": true,
+    "telegram_canonical_origin_reconfirmation_required": true
   },
   "protected_invariants": {
     "PUBLIC_MULTI_USER_ENABLED": false,
@@ -139,5 +148,15 @@
     "trading_methods": false,
     "REAL_TRADING_ENABLED": false,
     "no_direct_main_development": true
+  },
+  "external_decommission": {
+    "owner_reported_at": "2026-09-21",
+    "owner_supplied_visual_evidence": true,
+    "cloudflare_external_resources_and_account_reported_deleted": true,
+    "neon_project_organization_keys_and_account_reported_deleted": true,
+    "cloudflare_rollback_available": false,
+    "neon_rollback_available": false,
+    "provider_side_physical_erasure_independently_verified": false,
+    "repository_history_and_archived_files_preserved": true
   }
 }
