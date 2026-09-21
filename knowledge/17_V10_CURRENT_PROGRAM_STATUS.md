@@ -35,7 +35,7 @@ Retirement targets are Cloudflare, Neon, Render, Cloud.ru and VK ID. External re
 
 The active System Update is `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`, with ordered milestones TW-A→TW-G. It delivers provider-neutral application source, Timeweb App Platform exact-SHA deployment, Timeweb PostgreSQL 18 production cutover, Timeweb DNS/TLS/no-VPN Russian ingress, Telegram-only activation, then external-provider decommission with legacy repository artifacts left archive-in-place.
 
-No new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized. During migration the last-known-good provider remains only until its owning replacement/cutover gate succeeds.
+No new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized. OWNER reported on 2026-09-21 that the previous Cloudflare and Neon external resources/accounts, domains, databases, keys and secrets were manually removed. Screenshots support substantial decommission activity, but provider-side physical deletion/retention is not independently verifiable from GitHub. Cloudflare/Neon must therefore be treated as unavailable rollback targets.
 
 Git history is not rewritten to remove old provider names. Legacy provider files remain archive-in-place by default; after cutover their live workflow/provider authority is disabled or revoked while historical provenance remains intact.
 
@@ -357,9 +357,9 @@ The approved final product remains one public modern multi-user Omni-CIO Web ser
 
 Canonical product identity remains:
 
-`Telegram Login or VK ID -> verified external identity -> OmniCIOUserAccount -> Tenant -> server-side Session -> tenant-scoped product state`
+`Telegram Login -> verified external identity -> OmniCIOUserAccount -> Tenant -> server-side Session -> tenant-scoped product state`
 
-The PROJECT OWNER is an ordinary USER when using the product. GitHub/Cloudflare/Windows/CI engineering authority cannot mint/select a tenant.
+The PROJECT OWNER is an ordinary USER when using the product. GitHub/Timeweb/Windows/CI engineering authority cannot mint/select a tenant.
 
 Initial USER access remains free:
 
