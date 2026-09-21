@@ -15,6 +15,14 @@ from scripts import provision_v10_timeweb_postgres_public_ipv4_tls as provisione
 
 
 class TimewebPublicIpv4TlsTests(unittest.TestCase):
+    @staticmethod
+    def _healthy_credential_preflight() -> mock._patch:
+        return mock.patch.object(
+            provisioner.read_only,
+            "verify_credential_health",
+            return_value="42",
+        )
+
     def test_source_contract_passes(self) -> None:
         guard.validate()
 
@@ -216,6 +224,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "is_enabled_public_ipv6": True,
         }
         with (
+            self._healthy_credential_preflight(),
             mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
@@ -264,6 +273,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         api = mock.Mock()
         mutation = mock.Mock()
         with (
+            self._healthy_credential_preflight(),
             mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
@@ -345,6 +355,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         api = mock.Mock()
         mutation = mock.Mock()
         with (
+            self._healthy_credential_preflight(),
             mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
@@ -473,6 +484,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 "TimewebReadOnlyApi",
                 return_value=api,
             ),
+            self._healthy_credential_preflight(),
             mock.patch.object(
                 provisioner,
                 "_verify_allocation_prerequisite",
@@ -577,6 +589,8 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                     "synthetic-token",
                     opener=opener,
                 )
+                body = {"availability_zone": "msk-1"}
+                expected_statuses = frozenset({201})
                 with self.assertRaises(
                     provisioner._provider_base.ProvisioningStopped
                 ) as raised:
@@ -584,8 +598,8 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                         "POST",
                         "/api/v1/floating-ips",
                         operation="FLOATING_IP_CREATE",
-                        body={"availability_zone": "msk-1"},
-                        expected_statuses=frozenset({201}),
+                        body=body,
+                        expected_statuses=expected_statuses,
                     )
                 self.assertEqual(raised.exception.code, expected_code)
                 self.assertEqual(raised.exception.status, status)
