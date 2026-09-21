@@ -17,6 +17,9 @@ PROVIDER = ROOT / "scripts/timeweb_ipv4_allocation_provider.py"
 RUNNER = ROOT / "scripts/run_v10_timeweb_ipv4_allocation.py"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-ipv4-allocation.yml"
 _ERROR = "TIMEWEB_ALLOCATION_PROTOCOL_CONTRACT_INVALID"
+_ISSUES_READ = "issues: read"
+_TRANSPORT_READY_MARKER = "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY"
+_PARITY_PASS_MARKER = "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS"
 # Historical accepted base for this repair, not mutable current-main authority.
 _SOURCE_BASE_SHA_PARTS = (
     "3083e65f",
@@ -181,7 +184,7 @@ def validate_contract(data: dict[str, object]) -> None:
         == ["INITIALIZE", "PLAN", "APPLY", "RECONCILE"]
     )
     _require(workflow.get("environment") == "timeweb-synthetic")
-    _require(workflow.get("apply_github_permission") == "issues: read")
+    _require(workflow.get("apply_github_permission") == _ISSUES_READ)
     _require(workflow.get("non_apply_issue_permission") == "none")
     _require(
         workflow.get("shared_provider_mutation_concurrency_group")
@@ -275,8 +278,8 @@ def validate_source(source: str) -> None:
         _require("read_context" in {a.arg for a in functions[name].args.kwonlyargs})
     for forbidden in (
         "CERTIFIED_GREEN",
-        "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
-        "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
+        _TRANSPORT_READY_MARKER,
+        _PARITY_PASS_MARKER,
     ):
         _require(forbidden not in source)
 
@@ -320,7 +323,7 @@ def _validate_m1_adapters() -> None:
             "fake_codec",
             "TimewebMutationApi",
             "CRYPTPROTECT_LOCAL_MACHINE",
-            "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
+            _TRANSPORT_READY_MARKER,
         ):
             _require(forbidden not in source)
 
@@ -360,8 +363,8 @@ def _validate_provider() -> None:
         '"/unbind"',
         "/firewall/",
         "/api/v2/databases/",
-        "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
-        "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
+        _TRANSPORT_READY_MARKER,
+        _PARITY_PASS_MARKER,
     ):
         _require(forbidden not in source)
     _require('body={"comment": marker}' in source)
@@ -384,8 +387,8 @@ def _validate_runner() -> None:
     ):
         _require(marker in source)
     for forbidden in (
-        "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
-        "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
+        _TRANSPORT_READY_MARKER,
+        _PARITY_PASS_MARKER,
         "plan.digest, output",
         "snapshot.ip_address, output",
     ):
@@ -398,7 +401,7 @@ def _validate_workflow() -> None:
         "workflow_dispatch:",
         "group: v10-timeweb-postgres-public-ipv4-tls",
         "environment: timeweb-synthetic",
-        "issues: read",
+        _ISSUES_READ,
         "inputs.mode != 'APPLY'",
         "inputs.mode == 'APPLY'",
         "--mode INITIALIZE",
@@ -438,8 +441,8 @@ def _validate_workflow() -> None:
     )
     non_apply = source[source.index("  non-apply:") : source.index("  apply:")]
     apply = source[source.index("  apply:") :]
-    _require("issues: read" not in non_apply)
-    _require("issues: read" in apply)
+    _require(_ISSUES_READ not in non_apply)
+    _require(_ISSUES_READ in apply)
 
 
 def validate_adapters() -> None:

@@ -227,10 +227,7 @@ def _ptr(row: dict[str, object]) -> str:
 
 
 def _same_provider_row(left: dict[str, object], right: dict[str, object]) -> bool:
-    try:
-        return _address(left) == _address(right) and _ptr(left) == _ptr(right)
-    except ProviderStopped:
-        raise
+    return _address(left) == _address(right) and _ptr(left) == _ptr(right)
 
 
 class TimewebAllocationProvider:
