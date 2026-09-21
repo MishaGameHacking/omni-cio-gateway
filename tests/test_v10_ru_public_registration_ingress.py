@@ -157,6 +157,14 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ci["timeweb_read_only_proof_workflow"],
             ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
         )
+        self.assertEqual(
+            ci["retired_cloudflare_workflows"],
+            [
+                ".github/workflows/v10-cloudflare-provider-readiness.yml",
+                ".github/workflows/v10-cloudflare-candidate-deploy.yml",
+                ".github/workflows/v10-cloudflare-production-release.yml",
+            ],
+        )
         self.assertFalse(ci["retired_provider_live_workflow_auto_trigger_allowed"])
         self.assertFalse(ci["retired_provider_manual_mutation_allowed"])
         self.assertFalse(ci["timeweb_proof_may_depend_on_retired_provider_workflow"])
