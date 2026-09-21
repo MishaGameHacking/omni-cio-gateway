@@ -80,7 +80,7 @@ jobs:
 
       - name: Verify public IPv4 firewall TLS source contract
         shell: cmd
-        run: python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py
+        run: python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls
 
       - name: Verify GitHub environment main-only policy before provider authority
         shell: cmd
@@ -160,7 +160,7 @@ jobs:
 
       - name: Re-verify network source contract before live egress discovery
         shell: cmd
-        run: python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py
+        run: python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls
 
       - name: Discover and mask exact verifier egress IPv4
         shell: cmd
