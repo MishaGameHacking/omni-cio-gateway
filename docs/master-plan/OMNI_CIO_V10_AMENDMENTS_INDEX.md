@@ -332,6 +332,37 @@ Locks the 2026-09-19 OWNER data-residency/provider-migration direction that:
 
 Amendment 17 supersedes only the assumption that Neon is the permanent future production PostgreSQL provider. It does not self-certify Russian legal compliance, activate users, authorize provider purchase by itself, weaken security roles/RLS/recovery or erase historical Neon evidence.
 
+
+### 18. Russian Public Registration & Reachable Ingress Authority
+
+`OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json`;
+- `../../scripts/check_v10_ru_public_registration_ingress.py`;
+- `../../tests/test_v10_ru_public_registration_ingress.py`;
+- issue #580;
+- database migration issue #559;
+- Telegram activation issue #549;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-09-21 OWNER Russia-only public-launch direction that:
+
+- supported initial public users are in the Russian Federation and must not require VPN access;
+- GitHub + Cloudflare + Timeweb Cloud are the bounded active V10 public-launch provider set;
+- Timeweb Cloud Managed PostgreSQL 18 is the intended final production relational provider after Amendment-17 cutover evidence;
+- Cloudflare remains accepted build/release/staging/fallback authority but Cloudflare-only client ingress is not sufficient Russian-user reachability evidence;
+- Timeweb App Platform is the first Russian public-ingress candidate using the same repository/product/account/session/tenant truth, never a second product;
+- production Timeweb App Platform auto-deploy is forbidden; exact accepted-main SHA and provider deployment evidence are required;
+- Neon remains last-known-good production continuity until RU-PG-D and is retired from active V10 production authority only through RU-PG-E;
+- necessary Timeweb spend may proceed after the owning gate proves exact need/configuration/current price within prepaid funds, without speculative spare capacity;
+- DB cutover, ingress/DNS cutover, legal actions and public-user activation remain mandatory independent recovery/authority boundaries;
+- Telegram may activate independently of VK only after its database/ingress/privacy/legal/runtime gates pass;
+- broker write and Real-money authority remain unchanged.
+
+Amendment 18 supersedes only the assumption that Cloudflare must remain the sole public HTTP ingress for the Russia-only launch and makes the Timeweb/Neon end-state explicit. It does not bypass Amendment 17, activate users, mutate DNS, deploy App Platform, delete Neon, weaken tenant isolation or authorize Real money.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -345,7 +376,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13/14/15/16 for current product/public-hosting/delivery/activation/platform/engineering semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14/15/16/17/18 for current product/public-hosting/delivery/activation/platform/engineering/data-residency/Russia-ingress semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;

@@ -257,6 +257,49 @@ RU-PG-B rules:
 - provider credentials never belong in source, chat, PR comments, CI logs or artifacts;
 - RU-PG-C remains locked until RU-PG-B is `CERTIFIED_GREEN`.
 
+
+## Amendment 18 — Russia-only public registration / reachable ingress
+
+The OWNER-approved Russia-only public-launch direction becomes authority only when the
+synchronized Amendment 18 checkpoint is accepted on protected `main`. It does not add
+product-progress percentage and does not activate users by itself.
+
+Current exact infrastructure evidence immediately preceding this checkpoint:
+
+- protected main `33a47a728b024e80590761e45d643e2ef1c5b538` is the squash merge of PR #579;
+- Regression Shield #1644 and V10 Engineering Governance #1793 completed `success`;
+- Cloudflare Production Release #105 / run `35604840698` completed `success`;
+- automatic Timeweb Read-Only Proof #11 / run `35606185512` completed `success`;
+- provider marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY` for PostgreSQL 18,
+  location `ru-3`, 1 CPU / 2 GB RAM / 20 GB disk, existing target present;
+- IPv4 inventory remains one unbound unproven address and recovery remains fail-closed with
+  `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`.
+
+The credential-health blocker is therefore closed. The current RU-PG-B live prerequisite
+remains the already-designed existing-IPv4 custody transition, followed by firewall/TLS and
+synthetic PostgreSQL parity.
+
+Russia public-launch direction:
+
+- issue #580 is the umbrella launch dashboard;
+- final V10 production PostgreSQL target is Timeweb Cloud Managed PostgreSQL 18 in Russia;
+- Neon remains current production/rollback authority until RU-PG-D cutover acceptance and
+  is retired from active V10 production authority only through RU-PG-E;
+- GitHub remains source/review/provenance authority;
+- Cloudflare remains accepted build/release/staging/fallback authority;
+- Cloudflare-only public ingress is not sufficient evidence for the supported Russia-only
+  launch because current Cloudflare evidence records ISP-side reachability disruption;
+- Timeweb App Platform is the first Russia-facing ingress/runtime candidate, but no live
+  deployment, DNS cutover or purchase occurs merely from governance acceptance;
+- one canonical Web/account/session/tenant/database truth is mandatory; no second product;
+- production App Platform auto-deploy is forbidden; an exact accepted-main commit and
+  release provenance are required;
+- public registration remains fail-closed until database cutover, Russia-reachable ingress,
+  privacy/legal/regulatory, monitoring and real-user isolation gates pass.
+
+WEB-VISUAL and WP23+ remain independently locked. This infrastructure/public-activation
+program does not start Telegram Bot, AI/Cortex, Guardian or broker-write work.
+
 ## Current external activation baseline — BLOCKED_EXTERNAL where gates remain
 
 Current facts after accepted CF-D infrastructure/release cutover:
@@ -265,7 +308,7 @@ Current facts after accepted CF-D infrastructure/release cutover:
 - the canonical Cloudflare Worker/Container/Custom Domain production release path is accepted on exact main `b8b2721...` through Production Release #78;
 - that infrastructure/release acceptance does not by itself activate Telegram/VK login, public multi-user tenant access, T-Invest public READ or any broker-write capability;
 - Render is historical new-V10 evidence only and must not receive new V10 mutation/attestation/alignment actions;
-- real Telegram/VK provider registration/runtime-secret provisioning is pending;
+- Telegram canonical origin/callback registration and production runtime-secret readiness are accepted; VK ID remains independently unactivated;
 - public-user privacy/personal-data/legal/capacity/monitoring/incident sign-off is pending;
 - included Workers Paid capacity is authorized baseline, but uncontrolled paid overage/higher-plan expansion is not;
 - public T-Invest remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
@@ -425,9 +468,10 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 ## Current next action
 
-1. no new functional implementation package is authorized while `WEB-VISUAL-INTEGRATED` remains OWNER-locked;
-2. keep `WEB-VISUAL-INTEGRATED` prepared but unstarted until the OWNER issues exactly `START V10 WEB VISUAL SYSTEM UPDATE`;
-3. if that command is issued, restore fresh accepted `main`, revalidate sequencing/authority, create the dedicated visual System Update branch, and begin only `WEB-VISUAL-A`;
-4. until then, continue only focused maintenance/defect/security/recovery/governance work that is actually required by accepted main;
-5. do not begin WP23+, Telegram Bot, AI/Cortex, Guardian, broker-write or Real execution;
-6. never treat Cloudflare deployment/public release, a GitHub merge, AI output or an OWNER visual START command as broker-submit authorization.
+1. keep the authorized RU-PG-B infrastructure stage moving on issue #559 until it is `CERTIFIED_GREEN`; the immediate live blocker is the existing-IPv4 custody transition proven by Timeweb Read-Only Proof #11;
+2. coordinate the complete Russia-only public-registration launch through issue #580 while preserving Amendment-12/17 split boundaries for provider mutation, recovery, DB cutover, ingress/DNS cutover, legal actions and user activation;
+3. do not delete or disable current Neon production authority before accepted RU-PG-D cutover and rollback evidence; retire active Neon authority only through RU-PG-E;
+4. do not deploy or purchase the Timeweb App Platform public candidate before its owning source/runtime/cost gate proves the exact accepted-main configuration;
+5. no new functional product package is authorized while `WEB-VISUAL-INTEGRATED` remains OWNER-locked; keep it prepared but unstarted until the exact OWNER START command;
+6. do not begin WP23+, Telegram Bot, AI/Cortex, Guardian, broker-write or Real execution;
+7. never treat Cloudflare/Timeweb deployment, a GitHub merge, AI output or an OWNER visual START command as broker-submit authorization.

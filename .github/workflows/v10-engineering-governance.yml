@@ -130,6 +130,9 @@ jobs:
       - name: Verify RU PostgreSQL data-residency migration authority
         run: python scripts/check_v10_ru_postgres_data_residency_migration.py
 
+      - name: Verify Russia public-registration ingress authority
+        run: python scripts/check_v10_ru_public_registration_ingress.py
+
       - name: Verify RU-PG-B Timeweb synthetic parity source contract
         run: python scripts/check_v10_ru_postgres_timeweb_parity.py
 
@@ -175,6 +178,7 @@ jobs:
           scripts/check_v10_telegram_public_user_readiness.py
           scripts/check_v10_telegram_public_user_legal_privacy.py
           scripts/check_v10_ru_postgres_data_residency_migration.py
+          scripts/check_v10_ru_public_registration_ingress.py
           scripts/check_v10_ru_postgres_timeweb_parity.py
           scripts/prove_v10_ru_postgres_timeweb_parity.py
           scripts/check_v10_timeweb_postgres_control_plane.py
@@ -216,6 +220,7 @@ jobs:
           tests.test_v10_telegram_public_user_readiness
           tests.test_v10_telegram_public_user_legal_privacy
           tests.test_v10_ru_postgres_data_residency_migration
+          tests.test_v10_ru_public_registration_ingress
           tests.test_v10_ru_postgres_timeweb_parity
           tests.test_v10_timeweb_postgres_control_plane
           tests.test_v10_jsonc
