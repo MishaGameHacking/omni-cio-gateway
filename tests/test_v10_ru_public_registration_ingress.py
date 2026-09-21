@@ -216,8 +216,9 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ],
         )
 
-
-    def test_current_guidance_has_no_retired_provider_authority_drift(self) -> None:
+    def test_current_guidance_has_no_retired_provider_authority_drift(
+        self,
+    ) -> None:
         status = STATUS.read_text(encoding="utf-8")
         for marker in (
             "OWNER-APPROVED PENDING GREEN MERGE",

@@ -21,7 +21,9 @@ def test_cloudflare_system_update_is_accepted_complete() -> None:
         "V10 Engineering Governance #1607",
     ):
         assert marker in status
-    assert (\n        "Current authorized functional implementation package: **NONE**" not in status\n    )
+    assert (
+        "Current authorized functional implementation package: **NONE**" not in status
+    )
 
 
 def test_timeweb_consolidation_supersedes_visual_as_current_package() -> None:
