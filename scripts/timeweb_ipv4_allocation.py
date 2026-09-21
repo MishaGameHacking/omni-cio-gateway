@@ -269,10 +269,10 @@ def _transport_snapshot(snapshot: TransportSnapshot) -> None:
         raise AllocationStopped("TIMEWEB_ALLOCATION_TRANSPORT_SNAPSHOT_INVALID")
     _snapshot_common(snapshot)
     unbound = snapshot.resource_type is None and snapshot.resource_id is None
-    target_bound = (
-        snapshot.resource_type in {"database", "dbaas"}
-        and snapshot.resource_id == str(snapshot.cluster_id)
-    )
+    target_bound = snapshot.resource_type in {
+        "database",
+        "dbaas",
+    } and snapshot.resource_id == str(snapshot.cluster_id)
     if not (unbound or target_bound):
         raise AllocationStopped("TIMEWEB_ALLOCATION_TRANSPORT_RESOURCE_DRIFT")
 

@@ -257,7 +257,13 @@ def validate_source(source: str) -> None:
         node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
     }
     _require(
-        {"prepare", "apply", "reconcile", "verify_transport_prerequisite", "safe_summary"}
+        {
+            "prepare",
+            "apply",
+            "reconcile",
+            "verify_transport_prerequisite",
+            "safe_summary",
+        }
         <= functions.keys()
     )
     _require(not any(isinstance(node, ast.If) for node in tree.body))
