@@ -45,15 +45,16 @@
     "automatic_read_only_proof": {
       "enabled": true,
       "trigger_event": "workflow_run",
-      "upstream_workflow": "V10 Cloudflare Production Release",
+      "upstream_workflow": "Regression Shield",
       "upstream_conclusion_required": "success",
-      "upstream_event_required": "workflow_run",
+      "upstream_event_required": "push",
       "upstream_head_branch_required": "main",
       "expected_head_source": "github.event.workflow_run.head_sha",
       "current_main_equality_required": true,
       "manual_workflow_dispatch_fallback_preserved": true,
       "provider_mutation_authority_inherited": false,
-      "paid_transition_authority_inherited": false
+      "paid_transition_authority_inherited": false,
+      "retired_provider_dependency_allowed": false
     }
   },
   "api_boundary": {
@@ -98,7 +99,9 @@
     "public_ip_create_allowed": false,
     "network_mutation_allowed": false,
     "production_dsn_mutation_allowed": false,
-    "neon_production_authority_preserved": true
+    "neon_production_authority_preserved": false,
+    "neon_rollback_available": false,
+    "neon_state_source": "OWNER_REPORTED_EXTERNAL_DECOMMISSION"
   },
   "exit_gate": {
     "read_only_marker": "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
@@ -175,5 +178,16 @@
     "token_value_logging_allowed": false,
     "mutation_adapter_requires_successful_read_preflight": true,
     "credential_rotation_is_external_owner_action": true
+  },
+  "active_service_graph": {
+    "current_services": [
+      "GitHub",
+      "Timeweb Cloud"
+    ],
+    "human_login_provider": "Telegram Login",
+    "retired_provider_workflow_may_auto_trigger": false,
+    "timeweb_proof_upstream": "Regression Shield",
+    "external_provider_recovery_dependency_allowed": false,
+    "archived_provider_files_may_remain": true
   }
 }
