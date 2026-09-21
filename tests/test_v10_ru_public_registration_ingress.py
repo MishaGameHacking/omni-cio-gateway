@@ -109,6 +109,34 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             execution["mandatory_split_boundaries"],
         )
 
+    def test_external_legacy_provider_rollback_is_unavailable(self) -> None:
+        decommission = _contract()["external_decommission"]
+        self.assertIsInstance(decommission, dict)
+        assert isinstance(decommission, dict)
+        self.assertTrue(decommission["owner_supplied_visual_evidence"])
+        self.assertFalse(decommission["cloudflare_rollback_available"])
+        self.assertFalse(decommission["neon_rollback_available"])
+        self.assertFalse(
+            decommission["provider_side_physical_erasure_independently_verified"]
+        )
+
+    def test_domain_mismatch_blocks_dns_and_telegram_cutover(self) -> None:
+        payload = _contract()
+        timeweb = payload["timeweb"]
+        activation = payload["activation"]
+        self.assertIsInstance(timeweb, dict)
+        self.assertIsInstance(activation, dict)
+        assert isinstance(timeweb, dict)
+        assert isinstance(activation, dict)
+        self.assertIsNone(timeweb["canonical_domain_target"])
+        self.assertEqual(
+            timeweb["canonical_domain_candidates_observed"],
+            ["omnicio.ru", "omni-cio.ru"],
+        )
+        self.assertTrue(timeweb["canonical_domain_owner_confirmation_required"])
+        self.assertFalse(timeweb["dns_cutover_allowed_before_domain_confirmation"])
+        self.assertTrue(activation["telegram_canonical_origin_reconfirmation_required"])
+
     def test_public_and_real_money_flags_remain_fail_closed(self) -> None:
         protected = _contract()["protected_invariants"]
         self.assertIsInstance(protected, dict)
