@@ -266,7 +266,7 @@ RU-PG-B rules:
 
 - first candidate: Timeweb Cloud Managed PostgreSQL 18 in Moscow / MSK-1 / Terraform location `ru-3`;
 - synthetic data only;
-- current Neon production authority remains accepted until an explicit later cutover;
+- at Amendment 17 acceptance, Neon was still production authority; Amendment 18 later superseded that current-state assumption after OWNER-reported external Neon decommission;
 - no production `OMNI_V10_POSTGRES_DSN` mutation;
 - no real Telegram/user/session/portfolio/broker data;
 - separate bootstrap and least-privilege runtime identities are mandatory;
