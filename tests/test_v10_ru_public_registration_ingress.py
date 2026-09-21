@@ -96,6 +96,11 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         self.assertIsInstance(execution, dict)
         assert isinstance(execution, dict)
         self.assertTrue(execution["source_one_branch_default"])
+        self.assertTrue(execution["branch_execution_ledger_required"])
+        self.assertEqual(
+            execution["branch_execution_ledger"],
+            "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md",
+        )
         self.assertEqual(
             execution["milestones"],
             ["TW-A", "TW-B", "TW-C", "TW-D", "TW-E", "TW-F", "TW-G"],
