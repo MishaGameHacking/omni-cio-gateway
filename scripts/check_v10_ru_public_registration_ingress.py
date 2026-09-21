@@ -8,9 +8,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
-AMENDMENT = (
-    ROOT
-    / "docs/master-plan/OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md"
+AMENDMENT = ROOT / (
+    "docs/master-plan/"
+    "OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md"
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
@@ -62,7 +62,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         payload.get("schema") == "omni-cio.v10.ru-public-registration-ingress.v1",
         "RU_PUBLIC_INGRESS_SCHEMA_INVALID",
     )
-    _require(payload.get("amendment_number") == 18, "RU_PUBLIC_INGRESS_AUTHORITY_INVALID")
+    _require(
+        payload.get("amendment_number") == 18,
+        "RU_PUBLIC_INGRESS_AUTHORITY_INVALID",
+    )
     _require(payload.get("owning_issue") == 580, "RU_PUBLIC_INGRESS_DASHBOARD_INVALID")
     _require(
         payload.get("supported_launch_population") == "RUSSIAN_FEDERATION",
@@ -83,13 +86,19 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         == "RUSSIAN_POSTGRESQL_AND_RUSSIA_FACING_INGRESS_CANDIDATE",
         "RU_PUBLIC_INGRESS_TIMEWEB_ROLE_INVALID",
     )
-    _require(providers.get("render_active_v10_allowed") is False, "RU_PUBLIC_RENDER_REENABLED")
+    _require(
+        providers.get("render_active_v10_allowed") is False,
+        "RU_PUBLIC_RENDER_REENABLED",
+    )
     _require(
         providers.get("cloud_ru_active_v10_allowed") is False,
         "RU_PUBLIC_CLOUD_RU_REENABLED",
     )
 
-    product = _mapping(payload.get("product_model"), "RU_PUBLIC_INGRESS_PRODUCT_INVALID")
+    product = _mapping(
+        payload.get("product_model"),
+        "RU_PUBLIC_INGRESS_PRODUCT_INVALID",
+    )
     for key in (
         "one_canonical_web",
         "one_account_tenant_session_authority",
@@ -123,13 +132,31 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         payload.get("timeweb_app_platform_candidate"),
         "RU_PUBLIC_INGRESS_APP_PLATFORM_INVALID",
     )
-    _require(app.get("approved_for_source_compatibility_work") is True, "RU_PUBLIC_APP_SCOPE_INVALID")
-    _require(app.get("live_public_deploy_authorized_by_contract") is False, "RU_PUBLIC_APP_LIVE_WIDENED")
-    _require(app.get("production_autodeploy_allowed") is False, "RU_PUBLIC_APP_AUTODEPLOY_FORBIDDEN")
-    _require(app.get("explicit_accepted_main_commit_required") is True, "RU_PUBLIC_APP_SHA_REQUIRED")
-    _require(app.get("runtime_secrets_in_repository_allowed") is False, "RU_PUBLIC_APP_SECRET_INVALID")
+    _require(
+        app.get("approved_for_source_compatibility_work") is True,
+        "RU_PUBLIC_APP_SCOPE_INVALID",
+    )
+    _require(
+        app.get("live_public_deploy_authorized_by_contract") is False,
+        "RU_PUBLIC_APP_LIVE_WIDENED",
+    )
+    _require(
+        app.get("production_autodeploy_allowed") is False,
+        "RU_PUBLIC_APP_AUTODEPLOY_FORBIDDEN",
+    )
+    _require(
+        app.get("explicit_accepted_main_commit_required") is True,
+        "RU_PUBLIC_APP_SHA_REQUIRED",
+    )
+    _require(
+        app.get("runtime_secrets_in_repository_allowed") is False,
+        "RU_PUBLIC_APP_SECRET_INVALID",
+    )
 
-    ingress = _mapping(payload.get("ingress_security"), "RU_PUBLIC_INGRESS_SECURITY_INVALID")
+    ingress = _mapping(
+        payload.get("ingress_security"),
+        "RU_PUBLIC_INGRESS_SECURITY_INVALID",
+    )
     for key in (
         "provider_neutral_product_core_required",
         "cloudflare_adapter_remains_thin",
@@ -174,8 +201,14 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
 
     cost = _mapping(payload.get("cost_policy"), "RU_PUBLIC_INGRESS_COST_INVALID")
-    _require(cost.get("existing_prepaid_funds_first") is True, "RU_PUBLIC_INGRESS_COST_INVALID")
-    _require(cost.get("spare_capacity_preprovision_allowed") is False, "RU_PUBLIC_SPARE_CAPACITY_FORBIDDEN")
+    _require(
+        cost.get("existing_prepaid_funds_first") is True,
+        "RU_PUBLIC_INGRESS_COST_INVALID",
+    )
+    _require(
+        cost.get("spare_capacity_preprovision_allowed") is False,
+        "RU_PUBLIC_SPARE_CAPACITY_FORBIDDEN",
+    )
     _require(
         cost.get("app_platform_exact_current_price_required_before_purchase") is True,
         "RU_PUBLIC_APP_COST_EVIDENCE_REQUIRED",
@@ -185,7 +218,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "RU_PUBLIC_NEW_PAYMENT_AUTHORITY_INVALID",
     )
 
-    activation = _mapping(payload.get("activation"), "RU_PUBLIC_INGRESS_ACTIVATION_INVALID")
+    activation = _mapping(
+        payload.get("activation"),
+        "RU_PUBLIC_INGRESS_ACTIVATION_INVALID",
+    )
     _require(
         activation.get("public_registration_allowed_by_contract") is False,
         "RU_PUBLIC_INGRESS_PREMATURE_ACTIVATION",
@@ -195,8 +231,14 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "RU_PUBLIC_TELEGRAM_PROGRESSIVE_ACTIVATION_INVALID",
     )
 
-    execution = _mapping(payload.get("execution"), "RU_PUBLIC_INGRESS_EXECUTION_INVALID")
-    _require(execution.get("umbrella_program_issue") == 580, "RU_PUBLIC_INGRESS_DASHBOARD_INVALID")
+    execution = _mapping(
+        payload.get("execution"),
+        "RU_PUBLIC_INGRESS_EXECUTION_INVALID",
+    )
+    _require(
+        execution.get("umbrella_program_issue") == 580,
+        "RU_PUBLIC_INGRESS_DASHBOARD_INVALID",
+    )
     _require(
         execution.get("one_unbounded_pr_for_all_stages_allowed") is False,
         "RU_PUBLIC_INGRESS_SPLIT_BOUNDARY_INVALID",
