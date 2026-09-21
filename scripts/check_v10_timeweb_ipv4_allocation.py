@@ -402,6 +402,14 @@ def _validate_provider() -> None:
     _require("allocation.TransportSnapshot(" in source)
     _require('self._read_api.get("/api/v1/floating-ips")' in source)
     _require("/api/v1/floating-ips/{parsed.identifier}" in source)
+    _require("read_only.verify_credential_health(reader)" in source)
+    _require("except _provider_base.ProvisioningStopped as exc:" in source)
+    _require("raise ProviderStopped(exc.code) from None" in source)
+    _require("network.TimewebMutationApi(token) if allow_write else None" in source)
+    _require(
+        source.index("read_only.verify_credential_health(reader)")
+        < source.index("network.TimewebMutationApi(token) if allow_write else None")
+    )
 
 
 def _validate_runner() -> None:

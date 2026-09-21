@@ -633,21 +633,48 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertNotIn("10.0.0.5", rendered)
         self.assertNotIn("501", rendered)
 
-    def test_read_only_api_masks_auth_failure(self) -> None:
-        request = HTTPError(
-            "https://api.timeweb.cloud/api/v1/projects",
-            403,
-            "forbidden",
-            {},
-            io.BytesIO(b'{"detail":"do not emit"}'),
+    def test_read_only_api_distinguishes_authentication_and_authorization(self) -> None:
+        cases = (
+            (401, probe.AUTHENTICATION_REJECTED_CODE),
+            (403, probe.AUTHORIZATION_REJECTED_CODE),
         )
-        opener = _Opener([request])
+        for status, expected_code in cases:
+            with self.subTest(status=status):
+                request = HTTPError(
+                    "https://api.timeweb.cloud/api/v1/projects",
+                    status,
+                    "auth rejected",
+                    {},
+                    io.BytesIO(b'{"detail":"do not emit"}'),
+                )
+                opener = _Opener([request])
+                api = probe.TimewebReadOnlyApi("synthetic-token", opener=opener)
+                with self.assertRaises(
+                    probe._provider_base.ProvisioningStopped
+                ) as raised:
+                    api.get("/api/v1/projects")
+                self.assertEqual(raised.exception.code, expected_code)
+                self.assertEqual(raised.exception.status, status)
+                self.assertNotIn("do not emit", str(raised.exception))
+                self.assertEqual(len(opener.requests), 1)
+
+    def test_credential_health_is_exact_project_read_only(self) -> None:
+        opener = _Opener(
+            [
+                _Response(
+                    {
+                        "projects": [
+                            {"id": 42, "name": probe.TARGET_PROJECT_NAME},
+                        ]
+                    }
+                )
+            ]
+        )
         api = probe.TimewebReadOnlyApi("synthetic-token", opener=opener)
-        with self.assertRaisesRegex(
-            probe._provider_base.ProvisioningStopped,
-            "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT",
-        ):
-            api.get("/api/v1/projects")
+        self.assertEqual(probe.verify_credential_health(api), "42")
+        self.assertEqual(len(opener.requests), 1)
+        self.assertEqual(opener.requests[0].get_method(), "GET")
+        self.assertTrue(opener.requests[0].full_url.endswith("/api/v1/projects"))
 
     def test_transient_get_retry_is_bounded(self) -> None:
         first = HTTPError(

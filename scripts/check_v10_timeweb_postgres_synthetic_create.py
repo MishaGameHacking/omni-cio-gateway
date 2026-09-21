@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from scripts.v10_ast_guard import call_lines
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
@@ -536,7 +538,10 @@ def _validate_provisioner() -> None:
             "TIMEWEB_CLUSTER_CREATE_AMBIGUOUS_RECONCILIATION_REQUIRED",
             "def _reconcile_cluster_id(",
             "def _create_or_reconcile(",
-            "def _resolve_existing_or_create(",
+            "read_only.verify_credential_health(read_api)",
+            "existing_cluster_id = _target_cluster_id(read_api.get(project_path))",
+            "mutation_api = TimewebCreateApi(token)",
+            "read_only.raise_timeweb_auth_failure(status)",
             '"existing-recovery"',
             "TIMEWEB_CLUSTER_PUBLIC_NETWORK_DRIFT",
             "TIMEWEB_CLUSTER_DISK_SIZE_DRIFT",
@@ -571,6 +576,22 @@ def _validate_provisioner() -> None:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_AUTHORITY_WIDENED")
     if source.count('method="POST"') != 1:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_POST_SURFACE_INVALID")
+    tree = _parse_python_source(source)
+    provision = _find_function(tree, "provision")
+
+    credential = call_lines(
+        provision,
+        owner="read_only",
+        name="verify_credential_health",
+    )
+    target_lookup = call_lines(provision, owner=None, name="_target_cluster_id")
+    writer = call_lines(provision, owner=None, name="TimewebCreateApi")
+    if len(credential) != 1 or not target_lookup or len(writer) != 1:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_CREDENTIAL_SEQUENCE_INVALID")
+    if not credential[0] < min(target_lookup) < writer[0]:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_CREDENTIAL_SEQUENCE_INVALID")
+    if "TIMEWEB_API_TOKEN_INVALID_OR_INSUFFICIENT" in source:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_AUTH_CLASSIFICATION_DRIFT")
 
 
 def _validate_public_ipv4_source() -> None:

@@ -17,6 +17,7 @@ from collections.abc import Callable
 import re
 from typing import Any, NoReturn, Protocol
 
+from scripts import provision_v10_render_neon_preview as _provider_base
 from scripts import timeweb_ipv4_allocation as allocation
 from scripts import timeweb_ipv4_custody as custody
 
@@ -345,11 +346,15 @@ def live_provider(token: str, *, allow_write: bool) -> TimewebAllocationProvider
         from scripts import provision_v10_timeweb_postgres_public_ipv4_tls as network
 
         reader = read_only.TimewebReadOnlyApi(token)
+        if allow_write:
+            read_only.verify_credential_health(reader)
         writer: MutationApi | None = (
             network.TimewebMutationApi(token) if allow_write else None
         )
         return TimewebAllocationProvider(reader, writer)
     except ProviderStopped:
         raise
+    except _provider_base.ProvisioningStopped as exc:
+        raise ProviderStopped(exc.code) from None
     except Exception:
         raise ProviderStopped("TIMEWEB_ALLOCATION_PROVIDER_INIT_FAILED") from None

@@ -305,6 +305,73 @@ def _verify_terminal_shape():
             )
         self.assertEqual(mutation_opener.open.call_count, 1)
 
+    def test_create_post_distinguishes_authentication_and_authorization(self) -> None:
+        cases = (
+            (401, read_only.AUTHENTICATION_REJECTED_CODE),
+            (403, read_only.AUTHORIZATION_REJECTED_CODE),
+        )
+        payload = provisioner._create_payload(
+            provider_type="postgres18",
+            preset_id=777,
+            project_id="42",
+        )
+        for status, expected_code in cases:
+            with self.subTest(status=status):
+                failure = HTTPError(
+                    "https://api.timeweb.cloud/api/v1/databases",
+                    status,
+                    "auth rejected",
+                    {},
+                    io.BytesIO(b"provider-private-body"),
+                )
+                opener = _sequence_opener(failure)
+                api = provisioner.TimewebCreateApi(
+                    "synthetic-token",
+                    opener=opener,
+                )
+                with self.assertRaises(
+                    provisioner._provider_base.ProvisioningStopped
+                ) as raised:
+                    api.post_once(payload)
+                self.assertEqual(raised.exception.code, expected_code)
+                self.assertEqual(raised.exception.status, status)
+                self.assertNotIn("provider-private-body", str(raised.exception))
+                self.assertEqual(opener.open.call_count, 1)
+
+    def test_provision_auth_failure_does_not_construct_create_writer(self) -> None:
+        read_api = mock.Mock()
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=read_api,
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "verify_credential_health",
+                side_effect=provisioner._provider_base.ProvisioningStopped(
+                    read_only.AUTHENTICATION_REJECTED_CODE,
+                    status=401,
+                ),
+            ),
+            mock.patch.object(provisioner, "TimewebCreateApi") as writer,
+        ):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner.provision()
+        self.assertEqual(
+            raised.exception.code,
+            read_only.AUTHENTICATION_REJECTED_CODE,
+        )
+        writer.assert_not_called()
+
     def test_transient_http_post_is_ambiguous_not_retried(self) -> None:
         failure = HTTPError(
             "https://api.timeweb.cloud/api/v1/databases",
@@ -531,29 +598,82 @@ def _verify_terminal_shape():
                 preset_id=777,
             )
 
-    def test_existing_exact_target_enters_get_only_recovery_without_post(self) -> None:
-        mutation_api = mock.Mock()
+    def test_existing_exact_target_enters_get_only_recovery_without_writer(self) -> None:
         read_api = mock.Mock()
-        read_api.get.return_value = {
-            "databases": [
-                {
+        project_path = "/api/v1/projects/42/resources/databases"
+        responses = {
+            "/api/v1/database-types": {
+                "types": [
+                    {
+                        "name": "PostgreSQL",
+                        "version": "18",
+                        "type": "postgres18",
+                        "is_deprecated": False,
+                    }
+                ]
+            },
+            "/api/v2/presets/dbs": {
+                "databases_presets": [
+                    {
+                        "id": 777,
+                        "type": "postgres",
+                        "location": "ru-3",
+                        "cpu": 1,
+                        "ram": 2048,
+                        "disk": 20480,
+                        "price": 790,
+                    }
+                ]
+            },
+            project_path: {
+                "databases": [
+                    {"id": 91, "name": read_only.TARGET_CLUSTER_NAME},
+                ]
+            },
+            "/api/v1/databases/91": {
+                "db": {
                     "id": 91,
                     "name": read_only.TARGET_CLUSTER_NAME,
+                    "type": "postgres18",
+                    "location": "ru-3",
+                    "availability_zone": "msk-1",
+                    "cpu": 1,
+                    "ram": 2048,
+                    "preset_id": 777,
+                    "disk": {"size": 20_971_520},
+                    "is_enabled_public_network": False,
+                    "is_enabled_public_ipv6": False,
+                    "is_autobackups_enabled": False,
+                    "is_backup_schedule_enabled": False,
+                    "replica_list": [{"id": 501, "db_id": 91}],
+                    "disk_autoscaling": {"is_enabled": False},
+                    "status": "started",
                 }
-            ]
+            },
         }
-        cluster_id, mode = provisioner._resolve_existing_or_create(
-            mutation_api,
-            read_api,
-            "/api/v1/projects/42/resources/databases",
-            provisioner._create_payload(
-                provider_type="postgres18",
-                preset_id=777,
-                project_id="42",
+        read_api.get.side_effect = responses.__getitem__
+        with (
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
             ),
-        )
-        self.assertEqual((cluster_id, mode), (91, "existing-recovery"))
-        mutation_api.post_once.assert_not_called()
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=read_api,
+            ),
+            mock.patch.object(
+                provisioner.read_only,
+                "verify_credential_health",
+                return_value="42",
+            ),
+            mock.patch.object(provisioner, "TimewebCreateApi") as writer,
+            mock.patch.object(provisioner._provider_base, "_emit"),
+        ):
+            provisioner.provision()
+        writer.assert_not_called()
 
     def test_duplicate_target_cluster_fails_closed(self) -> None:
         payload = {
