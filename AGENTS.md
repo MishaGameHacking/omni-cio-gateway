@@ -15,6 +15,7 @@ Dynamic progress/current execution authority always comes from `knowledge/17_V10
 Current synchronized snapshot:
 
 - WP0–WP22A / Blocks A–E remain accepted COMPLETE;
+- complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate remains accepted historical evidence;
 - accepted V10 progress is **54%**;
 - accepted Cloudflare/Render/Neon chains remain historical evidence, not future provider authority;
 - **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED — Timeweb-only runtime/database/DNS/Telegram consolidation** is the current next package after Amendment 18 acceptance;
