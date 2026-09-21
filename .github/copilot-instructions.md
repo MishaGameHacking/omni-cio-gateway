@@ -1,5 +1,8 @@
 # GitHub Copilot Instructions — Omni-CIO
 
+> **CURRENT AMENDMENT-18 OVERRIDE (2026-09-21):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+
+
 Работай только над существующим продуктом Omni-CIO в `MishaGameHacking/omni-cio-gateway`. Не создавай параллельный проект, второй Web/Core/Gateway/Telegram/AI/execution stack.
 
 Protected effective production/recovery V9 baseline остаётся `existing Omni-CIO Custom GPT v9.0.0 -> Omni-CIO Gateway (app:app) -> protected broker contours` in controlled maintenance. V10 — единственная active feature program.
@@ -122,7 +125,7 @@ Unexpected material RED after declared preflight readiness requires a reusable l
 
 One canonical public Web only.
 
-Human product authentication remains Telegram Login and VK ID. Product path:
+Human product authentication remains Telegram Login. Product path:
 
 `verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
 
