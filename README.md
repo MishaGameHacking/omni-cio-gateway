@@ -91,27 +91,31 @@ The prepared visual update remains **OWNER START REQUIRED**. Do not create its i
 Final V10 product path:
 
 ```text
-ordinary Internet browser
+ordinary Russian Internet browser
         |
         v
-Cloudflare public HTTPS / reviewed edge
+Timeweb public HTTPS / omnicio.ru
         |
         v
-approved Cloudflare-hosted Omni-CIO Web/API boundary
+Omni-CIO Web/API on Timeweb App Platform
         |
         v
-product authentication (Telegram Login / VK ID)
+Telegram Login
         |
         v
-OmniCIOUserAccount -> Tenant -> tenant-scoped private state
+OmniCIOUserAccount -> Tenant -> server-side Session
         |
-        +-- tenant BrokerConnection READ credential
-        `-- optional tenant BrokerConnection TRADE credential (later gated)
+        v
+Timeweb PostgreSQL 18 / tenant-scoped private state
 ```
 
-The PROJECT OWNER's home public IP, Wi-Fi, cable/fiber/mobile uplink, router/NAT/LAN and Lenovo laptop are **not** allowed to be required public-production dependencies. Lenovo remains engineering/self-hosted CI/controlled acceptance/recovery/rollback infrastructure.
+PROJECT OWNER home connectivity and VPN are not allowed to be required production dependencies.
 
-One account owns one isolated tenant in the baseline. Tenant scope is derived from authenticated server-side sessions, not from client-supplied user/tenant IDs. Public activation requires API + database-enforced cross-tenant isolation, secure sessions, abuse controls, backup/recovery, privacy/personal-data, broker-terms, regulatory, capacity and production-security acceptance.
+One account owns one isolated tenant in the baseline. Tenant scope is derived from authenticated server-side sessions, not client-supplied user/tenant IDs. PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory.
+
+Cloudflare/Neon/Render/Cloud.ru/VK files remain archive-in-place project history. They are not current implementation authority and new code must not depend on them.
+
+Public activation still requires Timeweb runtime/database/DNS acceptance plus Telegram, privacy/personal-data, capacity, monitoring and production-security gates.
 
 ## Initial access model
 
