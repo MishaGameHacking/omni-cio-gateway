@@ -114,3 +114,35 @@ main. They are not live provider evidence and do not authorize allocation.
 Exact-head canonical CI, secret scan, Sonar and review still decide whether the
 replacement M2 source can advance.
 
+## M2 first exact-head RED and systemic correction
+
+The first M2 exact-head verification actually started against
+`b2bdb1a24608385a41abd94ea841cc85ee04f9c2`. WP22A Phase 2 run
+`35562583271` / job `106218133174` and the overlapping typed audit lanes
+reported the same nine mypy errors in
+`scripts/timeweb_ipv4_allocation_provider.py`. The root cause was not nine
+independent provider defects: the shared fail-closed `_stop` helper was
+annotated as returning `None` even though it always raises, so mypy could not
+narrow validated mappings/lists/integers/booleans. The mutable optional mutation
+adapter also required a stable local reference across the fresh pre-write
+snapshot.
+
+The correction declares the stop helper `NoReturn` and captures the mutation
+adapter locally before validation. It also retains the strict CPU/RAM integer
+checks added during full-diff review. No cast, ignore, mypy exclusion or weaker
+provider validation is used.
+
+Engineering Governance run `35562583263` independently reported nine Sonar
+findings on the same old head: three workflow-dispatch shell-injection findings,
+two exception-test setup/invocation findings, three repeated guard literals and
+one redundant rethrow-only exception clause. The dispatch values now enter the
+Python runner only through process environment values, exception setup is outside
+the assertion body, repeated guard literals use named constants, and the
+rethrow-only clause is removed. No Sonar suppression or workflow permission
+expansion is used.
+
+All of those findings are evidence for the historical `b2bdb1a...` head only.
+A newer exact head must complete the canonical checks before this M2 source may
+advance. Old RED or old GREEN results are never final evidence for replacement
+bytes.
+
