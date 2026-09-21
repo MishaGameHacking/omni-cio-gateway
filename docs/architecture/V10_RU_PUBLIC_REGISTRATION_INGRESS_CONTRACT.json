@@ -43,7 +43,7 @@
     "production_autodeploy_may_bypass_github_acceptance": false,
     "runtime_secrets_in_git_allowed": false,
     "technical_candidate_before_canonical_dns": true,
-    "canonical_domain_target": null,
+    "canonical_domain_target": "omnicio.ru",
     "private_app_db_networking_preferred_if_proven": true,
     "private_networking_assumed_without_provider_evidence": false,
     "backups_required_before_production_cutover": true,
@@ -53,8 +53,11 @@
       "omnicio.ru",
       "omni-cio.ru"
     ],
-    "canonical_domain_owner_confirmation_required": true,
-    "dns_cutover_allowed_before_domain_confirmation": false
+    "canonical_domain_owner_confirmation_required": false,
+    "dns_cutover_allowed_before_domain_confirmation": false,
+    "canonical_domain_owner_confirmed": true,
+    "canonical_domain_owner_confirmed_at": "2026-09-21",
+    "dns_cutover_authorized_by_domain_confirmation_alone": false
   },
   "auth": {
     "human_identity_providers": [
@@ -139,7 +142,9 @@
     "capacity_monitoring_incident_gate_required": true,
     "real_login_logout_revoke_required": true,
     "cross_tenant_live_negative_required": true,
-    "telegram_canonical_origin_reconfirmation_required": true
+    "telegram_canonical_origin_reconfirmation_required": true,
+    "telegram_canonical_origin": "https://omnicio.ru",
+    "telegram_canonical_redirect_uri": "https://omnicio.ru/api/v10/web/auth/telegram/callback"
   },
   "protected_invariants": {
     "PUBLIC_MULTI_USER_ENABLED": false,
