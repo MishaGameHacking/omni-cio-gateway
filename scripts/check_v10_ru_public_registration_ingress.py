@@ -201,12 +201,18 @@ def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
         "TIMEWEB_CONSOLIDATION_CLEANUP_INVALID",
     )
     for key in (
-        "current_tree_active_cloudflare_allowed_after_tw_g",
-        "current_tree_active_neon_allowed_after_tw_g",
-        "current_tree_active_render_allowed_after_tw_g",
-        "current_tree_active_cloudru_allowed_after_tw_g",
-        "current_tree_active_vk_id_allowed_after_tw_g",
-        "current_tree_required_external_ci_saas_allowed_after_tw_g",
+        "retired_provider_files_may_remain_archive_in_place",
+        "future_historical_file_removal_requires_separate_owner_authority",
+    ):
+        _require(cleanup.get(key) is True, "TIMEWEB_CONSOLIDATION_CLEANUP_INVALID")
+    for key in (
+        "mass_repository_deletion_required",
+        "historical_artifacts_may_define_current_authority",
+        "new_feature_dependencies_on_retired_providers_allowed",
+        "retired_live_workflow_actions_allowed_after_cutover",
+        "retired_required_merge_checks_allowed_after_equivalent_github_proof",
+        "provider_credentials_remain_active_after_decommission",
+        "vk_id_deployed_product_composition_allowed_after_tw_g",
         "git_history_rewrite_for_cleanup_allowed",
         "provider_physical_media_erasure_claim_allowed",
     ):
