@@ -210,13 +210,19 @@ GitHub/Lenovo routing remains authoritative until CF-A proves an equivalent port
 
 ## 10. Dependencies / runtime compatibility
 
-Do not upgrade to `latest` by initiative. Use accepted versions/locks: `requirements.in`, `requirements-dev.in`, generated `requirements.txt`, `requirements-dev.txt`, and `docs/architecture/V10_TOOLCHAIN_BASELINE.*`.
+Do not upgrade to `latest` by initiative. Use accepted versions/locks: `requirements.in`, `requirements-dev.in`, generated locks and `docs/architecture/V10_TOOLCHAIN_BASELINE.*`.
 
-Cloudflare migration preference remains `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
+Current migration preference remains:
 
-Existing React/Vite Web remains canonical source. FastAPI availability in Python Workers does not prove all CPython/native dependencies compatible; test them. Cloudflare Containers may be used only when CF-B proves a concrete full-Linux/native runtime need and cost/recovery semantics are acceptable. Neon/PostgreSQL 18 tenant/RLS authority remains until an explicit equivalent migration is proved; D1 is not an automatic replacement; Hyperdrive + PostgreSQL 18 compatibility must be proved.
+`REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Prefer Cloudflare services over replaceable external infrastructure only when semantics are equivalent and recovery/security are not weakened. Do not adopt a Cloudflare feature merely because the paid plan includes it.
+Existing React/Vite Web remains canonical source. Python/FastAPI product code stays provider-neutral. Timeweb-specific behavior belongs in thin deployment/infrastructure adapters.
+
+Timeweb App Platform is the selected runtime target and Timeweb Managed PostgreSQL 18 is the final relational target after the owning cutover. Preserve PostgreSQL migrations, exact numeric financial semantics, least-privilege roles, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery.
+
+Cloudflare/Neon/Render/Cloud.ru/VK historical files remain archive-in-place by default. Do not add new dependencies on them and do not mass-delete them merely for cleanup. Disable/revoke their live provider actions only after replacement acceptance.
+
+GitHub/self-hosted Windows checks remain authoritative until an equivalent GitHub-executed replacement is accepted. Retiring external CI/review SaaS may not weaken lint/type/test/security/coverage/review requirements.
 
 ## 11. Product / tenant / activation
 
@@ -226,7 +232,7 @@ One canonical Omni-CIO Web is the ordinary user-facing product. Human product au
 
 VK ID is a retirement target and must not remain a deployed session-minting path after TW-G.
 
-Tenant scope is server-derived; PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory. Cloudflare WAF/Access/Turnstile is additive outer security, not tenant authorization.
+Tenant scope is server-derived; PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory. Timeweb ingress/network controls are additive infrastructure security, not tenant authorization.
 
 Progressive Capability Activation: capability states are exactly `IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`. “V10 unfinished” is not itself an external blocker, but every owning technical/security/external gate must be real and accepted.
 
