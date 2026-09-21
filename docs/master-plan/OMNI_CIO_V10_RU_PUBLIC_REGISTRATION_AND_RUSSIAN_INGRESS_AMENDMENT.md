@@ -1,301 +1,239 @@
-# Omni-CIO V10 — Russian Public Registration & Reachable Ingress Authority / Amendment 18
+# Omni-CIO V10 — Timeweb-Only Platform Consolidation & Telegram-Only Login Authority / Amendment 18
 
 **Status:** OWNER-APPROVED / EFFECTIVE ONLY WHEN ACCEPTED ON PROTECTED `main`  
 **OWNER decision:** 2026-09-21  
-**Scope:** Russia-only public-user launch, Russia-reachable ingress, Timeweb production PostgreSQL end-state, and Neon production-authority retirement sequencing  
+**Scope:** Russia-only V10 platform consolidation, Timeweb production authority, Telegram-only human login, and legacy-provider retirement  
 **Product progress effect:** NONE by itself  
 **Runtime mutation effect:** NONE by itself  
 **Owning dashboard:** issue #580  
 **Database migration dashboard:** issue #559  
 **Telegram activation dashboard:** issue #549
 
-## 1. Purpose
+## 1. Final service model
 
-The supported initial public-user population is users in the Russian Federation. The final
-public product remains one canonical Omni-CIO Web with one account/session/tenant model,
-but it must be usable from ordinary Russian Internet access without requiring a VPN.
+The OWNER selects the following target service model for current/future V10:
 
-The accepted Cloudflare public-product implementation remains valid engineering and release
-evidence. It is no longer sufficient, by itself, as the only Russian-user HTTP ingress
-because Cloudflare's current support documentation records systematic Russian-ISP
-throttling of Cloudflare-protected sites that Cloudflare cannot remediate from its side.
-
-The OWNER therefore approves a bounded launch direction:
+1. **ChatGPT** — engineering assistant only; never runtime/data authority.
+2. **GitHub** — source, review, CI/check provenance and exact-SHA release authority.
+3. **Timeweb Cloud** — the single selected production infrastructure provider for V10 Web/API runtime, PostgreSQL, domain/DNS, TLS, network controls, backups and monitoring.
+4. **Telegram Login** — the only selected human product login provider.
 
-- GitHub remains the engineering/source/review/release-provenance authority;
-- Timeweb Cloud Managed PostgreSQL 18 in Russia becomes the intended final production
-  relational provider after the existing RU-PG-B -> C -> D migration gates succeed;
-- Timeweb App Platform is the first Russia-facing application-ingress candidate;
-- Cloudflare remains an accepted build/release/staging/fallback platform and historical
-  public-product evidence, but public launch must not depend on a Cloudflare-only client
-  path when that path is not reliably reachable by the supported Russian population;
-- Neon remains continuity/rollback authority only until accepted RU-PG-D cutover and is
-  retired from active production authority only through RU-PG-E.
+No other general-purpose hosting, database, edge, identity or CI SaaS belongs in the final V10 operating stack.
 
-This amendment does not itself deploy App Platform, mutate DNS, change a database DSN,
-activate public users, delete Neon, or authorize broker write / Real money.
+## 2. Provider retirement direction
 
-## 2. Provider set and authority
+For current/future active V10 authority, this Amendment supersedes conflicting provider-selection language in Amendments 14/15 and the earlier draft of Amendment 18:
 
-The intended V10 public-launch provider set is deliberately bounded:
+- Cloudflare — RETIRE from active V10 runtime/edge/DNS/build/release authority after Timeweb cutover;
+- Neon — RETIRE from active V10 database/recovery authority after accepted Timeweb PostgreSQL cutover;
+- Render — RETIRE from active V10; protected legacy runtime retires only after its owning parity/decommission gate;
+- Cloud.ru — RETIRED / no return;
+- VK ID — RETIRED from product authentication; no public VK login path;
+- SonarCloud/Gitar/other external CI-review SaaS — RETIRE from required active verification once equivalent-or-stronger GitHub-executed checks are accepted.
 
-1. **GitHub** — source, review, exact-SHA CI evidence and release provenance;
-2. **Cloudflare** — accepted current build/release/staging/fallback application platform;
-3. **Timeweb Cloud** — Russian PostgreSQL provider and candidate Russian public ingress/runtime.
+Historical accepted commits, PRs and evidence remain facts of repository history. They do not remain current provider authority.
 
-Render and Cloud.ru do not return as active V10 deployment paths.
+A retired provider may return only through a fresh explicit OWNER-approved amendment.
 
-The provider set is a service topology, not three independent products. Omni-CIO must keep
-one canonical user identity/account/session/tenant truth and one production relational
-authority at any moment.
+## 3. What removal means
 
-## 3. Russia-reachability evidence
+After the owning cutover/decommission gates accept replacement, cleanup removes from the current tree, as applicable:
 
-Current external evidence from Cloudflare documents that Russian ISPs can throttle
-Cloudflare-protected sites to approximately the first 16 KB per connection and that
-Cloudflare cannot restore reliable access from its side. Therefore:
+- provider runtime adapters;
+- provider provisioning/recovery scripts;
+- provider-specific workflows;
+- provider-specific infrastructure directories/config files;
+- obsolete secret/environment bindings and examples;
+- inactive VK ID implementation/config/tests;
+- unused external-review SaaS glue;
+- stale current-authority runbooks.
 
-- successful Cloudflare production release is necessary evidence for the current accepted
-  platform, but is not sufficient evidence of Russian-user reachability;
-- a Russia-facing candidate must be tested from the supported population without VPN;
-- the canonical launch path must not proxy Russian users through Cloudflare as an
-  unavoidable upstream dependency;
-- availability claims require real Russian-network evidence, not only CI or foreign probes.
+Protected Git history is not force-rewritten. Rewriting immutable history would destroy exact-SHA provenance. Historical provider names may remain only as historical Git evidence or a bounded migration record.
 
-No claim is made that every Russian ISP behaves identically. The launch gate is empirical:
-the canonical product must be proven usable from representative supported Russian access.
+Provider-side physical media erasure cannot be asserted by repository code. The project can prove resource deletion, credential revocation and loss of active authority, not undocumented provider retention.
 
-## 4. One product / provider-neutral application core
+## 4. One canonical product
 
-A Russia-facing runtime must reuse the same Omni-CIO product rather than create a second
-frontend, account system, session authority, tenant model or API truth.
+Omni-CIO remains one Web/API product with one account/session/tenant model.
 
-Before a Timeweb public runtime can be accepted, current Cloudflare-specific ASGI startup
-must be decomposed so that:
+- React/Vite Web remains the canonical frontend.
+- FastAPI/Python product API remains the canonical backend unless a separately accepted architecture change proves otherwise.
+- Product identity, tenant authority, PostgreSQL persistence, financial logic and security controls remain provider-neutral.
+- Timeweb-specific behavior stays in thin deployment/infrastructure adapters.
+- Browser input can never select tenant or privileged infrastructure identity.
+- No second frontend, account system, session authority or temporary product is allowed.
 
-- the provider-neutral product application owns account/session/tenant/database behavior;
-- Cloudflare keeps a thin trusted-edge adapter for its internal proxy contract;
-- Timeweb gets a separate thin ingress adapter with no Cloudflare internal-header
-  assumptions;
-- both adapters are built from the same accepted repository source and exact source SHA;
-- no browser may select a tenant, database authority or provider-specific internal role;
-- no public Timeweb route may trust arbitrary client-supplied forwarded/internal headers.
-
-A second user-facing Omni-CIO product or authentication bypass is forbidden.
-
-## 5. Exact-SHA Timeweb App Platform candidate
+## 5. Timeweb App Platform
 
-Official Timeweb App Platform documentation supports GitHub repository integration,
-Dockerfile deployment, selecting an explicit branch/commit, environment variables,
-custom domains and managed Let's Encrypt TLS.
+Timeweb App Platform is the selected public V10 application platform.
 
-The first candidate must therefore use:
+Release flow:
 
-- the repository `MishaGameHacking/omni-cio-gateway`;
-- a reviewed Dockerfile/runtime adapter dedicated to the provider-neutral public product;
-- one exact accepted protected-`main` commit, never an unreviewed feature head;
-- App Platform auto-deploy disabled for production so a later commit cannot bypass the
-  Omni-CIO acceptance chain;
-- provider deployment metadata recorded with the exact source SHA;
-- a technical/candidate domain first; canonical `https://omnicio.ru` only after candidate
-  acceptance and the owning DNS cutover;
-- runtime secrets supplied only through approved provider secret/environment custody,
-  never committed to GitHub.
+`accepted GitHub main SHA -> GitHub verification -> exact Timeweb candidate -> health/release proof -> production promotion`.
 
-An App Platform deployment must not be called accepted merely because the provider reports
-a successful build.
+Requirements:
 
-## 6. Timeweb ingress security gate
+- repository `MishaGameHacking/omni-cio-gateway`;
+- explicit accepted `main` commit;
+- Dockerfile/Compose or supported backend mode only after repository tests prove the exact runtime;
+- production autodeploy must never bypass GitHub acceptance;
+- runtime secrets stay in Timeweb environment/secret custody, never Git;
+- `/healthz` exposes sanitized exact release identity;
+- rollback remains last-known-good until the owning legacy decommission gate.
 
-Before a Timeweb runtime may receive real public-user traffic, exact evidence must prove:
+Official Timeweb docs support Git repository integration, explicit branch/commit selection, Dockerfile/Compose deployment, environment variables and custom domains/TLS.
 
-1. HTTPS/TLS on the canonical hostname;
-2. Host/origin/callback validation for `https://omnicio.ru`;
-3. a documented and empirically verified reverse-proxy/client-IP contract;
-4. forged `Forwarded`, `X-Forwarded-For`, Cloudflare internal headers and Omni-CIO
-   internal edge headers cannot mint trusted client identity;
-5. request/body/header limits and bounded timeout behavior;
-6. secure cookie, CSRF and browser-bound pre-auth behavior remains equivalent;
-7. real login, logout, revoke and outage fail-closed behavior;
-8. cross-tenant negative tests remain database-enforced;
-9. exact-SHA `/healthz` and release identity evidence;
-10. rollback to the last-known-good candidate without changing database authority.
-
-If provider documentation does not define a trustworthy client-IP header contract, the
-application must not guess one. The ingress remains blocked until a verified provider
-contract or a safer architecture is established.
+## 6. Timeweb PostgreSQL 18
 
-## 7. PostgreSQL end-state and Neon retirement
+Timeweb Managed PostgreSQL 18 is the final V10 relational authority.
 
-Amendment 17 remains the owning database-migration law.
+Migration must preserve:
 
-The required database sequence remains:
+- PostgreSQL 18 semantics;
+- all migrations;
+- exact numeric financial storage;
+- account/tenant/session persistence;
+- RLS/FORCE RLS and cross-tenant negatives;
+- least-privilege runtime role;
+- backup/restore;
+- restart/redeploy recovery;
+- deterministic migrated-data verification.
 
-`RU-PG-B -> RU-PG-C -> RU-PG-D -> RU-PG-E`.
+No new Neon feature work is authorized. Neon remains last-known-good only until accepted Timeweb production DB cutover.
 
-The OWNER's end-state is now explicit:
+## 7. Network / DNS / Russia reachability
 
-- production PostgreSQL = Timeweb Cloud Managed PostgreSQL 18 in Russia;
-- Neon = no active V10 production authority after RU-PG-E;
-- Neon historical evidence remains historical and must not be rewritten/deleted;
-- no real Russian-user personal data is written to the Timeweb candidate before RU-PG-D
-  cutover acceptance;
-- Neon must not be deleted before the Timeweb production cutover, recovery proof and
-  rollback boundary are accepted.
+Final ordinary-user path:
 
-Immediately deleting Neon before cutover is forbidden because it would destroy the current
-last-known-good database recovery authority.
+`Russian user -> omnicio.ru -> Timeweb public ingress -> Omni-CIO -> Timeweb PostgreSQL`.
 
-## 8. Network evolution
+Cloudflare must not remain an unavoidable final hop.
 
-RU-PG-B/RU-PG-C may continue to use the already-authorized single Timeweb public IPv4 for
-Cloudflare-to-PostgreSQL TLS parity.
+Timeweb domain/DNS/TLS becomes the target canonical public boundary. A technical Timeweb candidate is proven before canonical DNS cutover.
 
-After the Russia-facing application runtime and production database are both accepted,
-network scope must be re-evaluated:
+Prefer private Timeweb app-to-database networking only when the exact provider configuration is proven. If unavailable, use explicit TLS/firewall/least-privilege evidence. Never guess a trusted proxy/client-IP contract.
 
-- prefer private Timeweb application-to-database connectivity when it can satisfy the
-  accepted PostgreSQL/TLS/runtime identity contract;
-- do not keep a public PostgreSQL exposure merely because it was required for an earlier
-  Cloudflare parity stage;
-- close obsolete public database paths only after the new private/runtime path is proven
-  and rollback is preserved.
+Representative Russian no-VPN acceptance is required before public activation.
 
-## 9. Cost discipline
+## 8. Telegram-only human authentication
 
-The OWNER authorizes necessary Timeweb services for this launch when they are actually
-required, using existing prepaid provider funds before any new top-up, subject to these
-rules:
+Final human auth path:
 
-- no spare capacity is purchased merely for future convenience;
-- the already-observed PostgreSQL target and already-approved single public IPv4 remain
-  within their owning gates;
-- production backup/recovery storage and basic monitoring may be enabled when their owning
-  acceptance gate makes them necessary;
-- replicas, larger compute, load balancers, DDoS add-ons and other recurring services are
-  not pre-provisioned without capacity/security evidence;
-- the exact current recurring price of a new App Platform runtime must be known before
-  purchase;
-- a necessary provider service may be purchased after its owning gate proves requirement,
-  exact configuration and current cost, provided it fits existing prepaid funds;
-- if the required recurring configuration would exceed available prepaid funds or require
-  a new payment/plan commitment, stop for fresh OWNER approval.
+`Unauthenticated browser -> Telegram Login -> verified OIDC identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
 
-This amendment does not encode a private account balance, payment-card data or billing
-identifier.
+VK ID is not a fallback and must not remain a hidden disabled session path after cleanup.
 
-## 10. Release provenance
+Telegram uses registered Allowed URLs/redirect URIs, Authorization Code Flow + PKCE, backend-generated state, nonce where applicable, server-side token verification and minimal scopes.
 
-Timeweb public runtime acceptance must preserve the existing evidence principle:
+No OWNER/admin/demo/preview/developer path may mint a product session.
 
-`accepted main SHA -> immutable/provider candidate -> live probe -> promotion -> production verification`.
+## 9. GitHub-only CI/review service
 
-Required recorded evidence must include at least:
+GitHub becomes the only active CI/review service.
 
-- exact Git commit SHA;
-- provider application/deployment identifier;
-- deployment status/time;
-- canonical hostname;
-- sanitized runtime/database role identity;
-- health/release response proving the same SHA;
-- rollback target.
+Quality may not weaken while external review SaaS is retired. GitHub-executed verification must cover where applicable:
 
-Provider auto-deploy or dashboard state never outranks GitHub accepted main.
+- Ruff format/lint;
+- mypy;
+- pytest + branch coverage;
+- frontend lint/type/test/build;
+- Playwright/browser checks;
+- dependency and secret scans;
+- repository-run SAST;
+- PostgreSQL 18 integration/recovery rehearsals;
+- governance/security contracts;
+- full Files changed review and zero unresolved blocking threads.
 
-## 11. Public-user legal/privacy gate
+External Sonar/Gitar/CircleCI/etc may be removed only after equivalent-or-stronger GitHub verification is accepted. Disabling a gate without replacement is forbidden.
 
-A Russian data-center and Russia-reachable web runtime do not, by themselves, authorize
-public registration.
+## 10. Integrated System Update
 
-Before the first real public registration, the existing Telegram legal/privacy gate still
-requires, as applicable:
+The OWNER authorizes one umbrella System Update:
 
-- accepted Russian production PostgreSQL cutover;
-- Roskomnadzor processing-notification evidence;
-- Telegram/Cloudflare/other actual foreign-recipient flow assessment and required
-  cross-border notification;
-- final public Privacy Policy on every personal-data collection surface;
-- accepted Russian-hosted or in-product/Russian-stored personal-data request channel;
-- public-user capacity/monitoring/incident readiness.
+`TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 
-No private address, tax identifier, passport data, provider secret or filing credential is
-placed in GitHub.
+Default implementation branch after this governance PR is accepted:
 
-## 12. Telegram-first activation
+`system/timeweb-platform-consolidation`.
 
-Public launch may activate Telegram independently of VK ID.
+Ordered internal milestones:
 
-Only after the owning database, ingress, privacy/legal, runtime and monitoring gates are
-accepted may a focused activation set:
+1. **TW-A / INVENTORY_AND_AUTHORITY** — complete provider/dependency inventory and KEEP/REPLACE/RETIRE/HISTORY classification.
+2. **TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION** — provider-neutral runtime, Timeweb deployment source, Telegram-only auth composition, GitHub-native verification replacement; no production cutover.
+3. **TW-C / TIMEWEB_APP_CANDIDATE** — exact-SHA Timeweb candidate and runtime/security acceptance.
+4. **TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER** — migrate and verify production PostgreSQL authority.
+5. **TW-E / TIMEWEB_PUBLIC_INGRESS_DNS** — canonical domain/DNS/TLS cutover and Russia no-VPN acceptance.
+6. **TW-F / TELEGRAM_PUBLIC_ACTIVATION** — real Telegram registration/public multi-user after legal/privacy/capacity gates.
+7. **TW-G / LEGACY_PROVIDER_DECOMMISSION** — revoke/delete retired provider resources/secrets/integrations and remove active repository surfaces.
 
-- `PUBLIC_MULTI_USER_ENABLED=true`;
-- `OMNI_V10_TELEGRAM_LOGIN_ENABLED=true`.
+One integrated source branch is the default. Amendment-12 split triggers remain stronger: DB cutover, DNS/public cutover, destructive provider deletion, security/authority transition, OWNER-only/legal/payment action and recovery boundaries require independent acceptance.
 
-`OMNI_V10_VK_ID_LOGIN_ENABLED` may remain `false`.
+## 11. Repository cleanup end-state
 
-Real canonical-Web evidence must then prove ordinary USER login -> verified identity ->
-`OmniCIOUserAccount -> Tenant -> server-side Session`, logout/revoke and cross-tenant
-negative behavior. Login activation never authorizes broker write or Real money.
+At TW-G acceptance the current tree must contain no active:
 
-## 13. Execution-unit and split law
+- `cloudflare/` runtime;
+- `infrastructure/cloudflare/`;
+- `wrangler.jsonc`;
+- Cloudflare candidate/release/provisioning workflow;
+- Neon management/bootstrap/recovery integration;
+- Render new-V10 deployment integration;
+- `infrastructure/cloudru/`;
+- VK ID runtime/config/client;
+- required external CI/review SaaS integration;
+- current docs that identify retired providers as current/future authority.
 
-Issue #580 is one integrated **RU public registration launch program**, but it is not one
-unbounded implementation PR.
+A bounded historical migration record may point to historical PR/SHA evidence.
 
-Amendment 12 mandatory split triggers remain binding. Separate acceptance boundaries are
-required for:
+## 12. Cost discipline
 
-- RU-PG-B provider mutation/parity;
-- RU-PG-C runtime/TLS/recovery parity;
-- RU-PG-D production database cutover;
-- RU-PG-E Neon active-authority retirement;
-- Russia-facing runtime/provider spend and DNS/public-ingress cutover;
-- legal/regulatory OWNER-only actions;
-- final public-user activation.
+Use Timeweb services only when required by the current accepted milestone.
 
-This split is a recovery/security boundary, not optional bureaucracy. Reusing one dashboard,
-contracts and artifacts prevents duplicated work while preserving rollback and exact
-evidence.
+- existing prepaid Timeweb funds first;
+- no speculative replicas/load balancers/extra compute;
+- backups/monitoring when the production/recovery gate requires them;
+- exact recurring price checked before creating a paid resource;
+- new top-up or materially higher commitment requires fresh OWNER approval.
 
-## 14. Direct provider integration
+## 13. Public-user legal/privacy gate
 
-Where Timeweb can consume the GitHub repository directly, prefer that supported provider
-integration over inventing a second source-copy/deployment repository.
+Russia-hosted infrastructure alone does not activate users.
 
-However, direct provider integration does not bypass code review or exact-SHA acceptance.
-No provider token is pasted into chat or committed to GitHub. If a provider connection
-requires an OWNER browser authorization that current engineering tools cannot perform, that
-single authorization remains OWNER-only.
+Before the first public user, the owning legal/privacy gate must have applicable personal-data processing/notification evidence, real cross-border-flow assessment, published Privacy Policy, request channel, incident/capacity readiness and Telegram callback/provider evidence.
+
+No passport/tax/private address/payment-card/filing credentials belong in GitHub or chat.
+
+## 14. External financial/data providers
+
+This Amendment governs platform/hosting/database/CI/human-login services. It does not silently activate or delete separately governed broker/market/data capabilities such as T-Invest.
+
+Those remain capability-specific external boundaries and stay fail-closed until their own authority.
 
 ## 15. Protected invariants
 
-Until their owning gates accept a transition:
+Until owning gates accept transitions:
 
 - `PUBLIC_MULTI_USER_ENABLED=false`;
 - `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`;
-- `OMNI_V10_VK_ID_LOGIN_ENABLED=false`;
+- VK login disabled and scheduled for removal;
 - broker write OFF;
 - `trading_methods=false`;
 - `REAL_TRADING_ENABLED=false`;
-- protected V9 `app:app` remains intact;
-- no Render or Cloud.ru active V10 deployment path;
-- no dual-primary database, account, tenant or session authority;
-- no secret/private payload disclosure.
+- tenant isolation/RLS/FORCE-RLS mandatory;
+- no secret/private payload disclosure;
+- no direct development in `main`;
+- accepted production remains last-known-good until replacement passes.
 
-## 16. Acceptance and immediate execution effect
+## 16. Immediate effect after acceptance
 
-This amendment is governance/authority only.
+After acceptance on protected `main`:
 
-After it is accepted on protected `main`:
+- Amendments 14/15 remain historical Cloudflare evidence but no longer select future/current platform work;
+- Amendment 17 remains the PostgreSQL migration/security foundation;
+- `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` becomes current authorized System Update;
+- WEB-VISUAL and WP23+ remain paused;
+- no new Cloudflare/Neon/Render/Cloud.ru/VK feature work is authorized except bounded decommission/recovery;
+- destructive provider deletion still requires its own gate;
+- governance merge alone performs no provider mutation, data move, DNS change, activation or Real-money action.
 
-- current RU-PG-B remains the immediate execution stage until `CERTIFIED_GREEN`;
-- issue #580 becomes the umbrella launch dashboard;
-- the next Russia-ingress implementation package remains blocked until its own source/runtime
-  authority gate is reached;
-- WEB-VISUAL and WP23+ remain independently locked;
-- no database cutover, DNS mutation, App Platform purchase, public registration or Neon
-  deletion occurs merely because this amendment is merged.
-
-Acceptance requires DRAFT exact-head applicable SUCCESS, review with zero unresolved
-blocking threads, fresh READY exact-head applicable SUCCESS, squash merge, then exact-new-main
-Regression Shield and V10 Engineering Governance SUCCESS.
+Acceptance requires exact-head SUCCESS, zero blocking threads, squash merge and exact-new-main post-merge SUCCESS.
