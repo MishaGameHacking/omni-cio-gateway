@@ -223,8 +223,8 @@ def _validate_external_decommission(payload: dict[str, Any]) -> None:
         "TIMEWEB_CONSOLIDATION_TIMEWEB_INVALID",
     )
     _require(
-        timeweb.get("canonical_domain_target") is None,
-        "TIMEWEB_CONSOLIDATION_DOMAIN_MUST_REMAIN_UNRESOLVED",
+        timeweb.get("canonical_domain_target") == "omnicio.ru",
+        "TIMEWEB_CONSOLIDATION_CANONICAL_DOMAIN_INVALID",
     )
     _require(
         timeweb.get("canonical_domain_candidates_observed")
@@ -232,12 +232,20 @@ def _validate_external_decommission(payload: dict[str, Any]) -> None:
         "TIMEWEB_CONSOLIDATION_DOMAIN_EVIDENCE_INVALID",
     )
     _require(
-        timeweb.get("canonical_domain_owner_confirmation_required") is True,
-        "TIMEWEB_CONSOLIDATION_DOMAIN_CONFIRMATION_REQUIRED",
+        timeweb.get("canonical_domain_owner_confirmation_required") is False,
+        "TIMEWEB_CONSOLIDATION_DOMAIN_CONFIRMATION_STATE_INVALID",
+    )
+    _require(
+        timeweb.get("canonical_domain_owner_confirmed") is True,
+        "TIMEWEB_CONSOLIDATION_DOMAIN_CONFIRMATION_MISSING",
     )
     _require(
         timeweb.get("dns_cutover_allowed_before_domain_confirmation") is False,
         "TIMEWEB_CONSOLIDATION_PREMATURE_DNS_CUTOVER",
+    )
+    _require(
+        timeweb.get("dns_cutover_authorized_by_domain_confirmation_alone") is False,
+        "TIMEWEB_CONSOLIDATION_DOMAIN_ONLY_CUTOVER_FORBIDDEN",
     )
 
 
