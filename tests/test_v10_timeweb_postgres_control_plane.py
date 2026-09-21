@@ -286,6 +286,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             public_ipv4_tls = (
                 workflows / "v10-timeweb-postgres-public-ipv4-tls.yml"
             )
+            allocation = workflows / "v10-timeweb-ipv4-allocation.yml"
             readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -296,6 +297,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 encoding="utf-8",
             )
             public_ipv4_tls.write_text(
+                "environment: timeweb-synthetic\n"
+                "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                encoding="utf-8",
+            )
+            allocation.write_text(
                 "environment: timeweb-synthetic\n"
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -312,6 +318,10 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 guard,
                 "PUBLIC_IPV4_TLS_WORKFLOW",
                 public_ipv4_tls,
+            ), mock.patch.object(
+                guard,
+                "TIMEWEB_ALLOCATION_WORKFLOW",
+                allocation,
             ):
                 guard._validate_timeweb_secret_scope()
                 (workflows / "other.yml").write_text(

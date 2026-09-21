@@ -1,0 +1,119 @@
+{
+  "schema": "omni-cio.v10.timeweb-ipv4-allocation-protocol.v1",
+  "status": "M2_SOURCE_INTEGRATION_PENDING_CERTIFICATION",
+  "owning_issue": 559,
+  "stage": "RU-PG-B",
+  "source_base_sha_parts": [
+    "3083e65f",
+    "9e6dbc7a",
+    "6f26de66",
+    "49ae7ff4",
+    "0627ba5c"
+  ],
+  "purpose": "EXPLICIT_ASSIGNMENT_OF_ONE_EXISTING_UNBOUND_IPV4",
+  "implementation": {
+    "pure_protocol": true,
+    "live_entrypoint_enabled": true,
+    "production_closed_journal_implemented": true,
+    "production_owner_approval_verifier_implemented": true,
+    "production_provider_adapter_implemented": true,
+    "ready_for_remote_certification": true
+  },
+  "plan": {
+    "ttl_seconds": 3600,
+    "complete_inventory_count": 1,
+    "requires_two_equal_observations": true,
+    "prior_comment_required": "EMPTY",
+    "private_snapshot_location": "AUTHENTICATED_DURABLE_CLOSED_JOURNAL_REQUIRED",
+    "public_handle": "RANDOM_128_BIT_NON_AUTHORIZING_REFERENCE",
+    "checksum_is_authentication": false,
+    "source_current_main_recheck_required": true,
+    "private_identifiers_in_output_allowed": false,
+    "foreign_comment_overwrite_allowed": false
+  },
+  "approval": {
+    "confirmation": "ALLOCATE_EXISTING_TIMEWEB_IPV4_NO_CREATE_NO_DELETE",
+    "authenticated_owner_evidence_required": true,
+    "bound_to_plan_digest_source_target_purpose_expiry": true,
+    "revocation_recheck_before_write": true,
+    "generic_development_approval_sufficient": false,
+    "cost_approval_sufficient": false,
+    "typed_python_object_alone_is_authentication": false
+  },
+  "transition": {
+    "claim_before_provider_write": true,
+    "claim_requires_atomic_durable_acknowledgement": true,
+    "metadata_writes_per_claim_max": 1,
+    "only_metadata_field": "comment",
+    "reuse_accepted_custody_marker_v1": true,
+    "repeat_apply_allowed": false,
+    "reconcile_provider_methods": [
+      "GET"
+    ],
+    "receipt_requires_two_equal_gets": true,
+    "unknown_outcome_keeps_claim": true,
+    "expiry_releases_attempted_claim": false,
+    "receipt_persisted_before_success": true,
+    "provider_compare_and_set_proven": false,
+    "external_writers_must_be_frozen": true,
+    "historical_creation_provenance_inferred": false
+  },
+  "operational_workflow": {
+    "path": ".github/workflows/v10-timeweb-ipv4-allocation.yml",
+    "dispatch_modes": [
+      "INITIALIZE",
+      "PLAN",
+      "APPLY",
+      "RECONCILE"
+    ],
+    "protected_main_only": true,
+    "environment": "timeweb-synthetic",
+    "provider_secret_step_scoped": true,
+    "apply_github_permission": "issues: read",
+    "non_apply_issue_permission": "none",
+    "shared_provider_mutation_concurrency_group": "v10-timeweb-postgres-public-ipv4-tls",
+    "initialize_provider_access_allowed": false,
+    "plan_provider_methods": [
+      "GET"
+    ],
+    "apply_provider_methods": [
+      "GET",
+      "PATCH_COMMENT_ONCE"
+    ],
+    "reconcile_provider_methods": [
+      "GET"
+    ],
+    "summary_private_identifiers_allowed": false,
+    "allocation_success_implies_transport_ready": false,
+    "dispatch_inputs_passed_via_environment_only": true,
+    "direct_shell_interpolation_of_dispatch_inputs_allowed": false
+  },
+  "protected_invariants": {
+    "new_ipv4_purchase_allowed": false,
+    "existing_ipv4_delete_allowed": false,
+    "network_enable_allowed": false,
+    "firewall_change_allowed": false,
+    "ordinary_unmarked_adoption_allowed": false,
+    "transport_ready_claim_allowed": false,
+    "sql_parity_claim_allowed": false,
+    "production_dsn_change_allowed": false,
+    "neon_production_authority_preserved": true,
+    "public_auth_enabled": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "protected_v9_entrypoint": "app:app"
+  },
+  "source_adapters": {
+    "windows_current_user_dpapi": true,
+    "sqlite_immediate_transaction": true,
+    "sqlite_synchronous": "EXTRA",
+    "native_acl_required": true,
+    "github_owner_comment_verifier": true,
+    "connector_authored_approval_allowed": false,
+    "timeweb_snapshot_comment_only_adapter": true,
+    "operational_workflow_source_present": true,
+    "real_provider_integration_certified": false,
+    "native_windows_evidence_required_before_live_apply": true
+  }
+}
