@@ -169,6 +169,15 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         self.assertFalse(ci["retired_provider_manual_mutation_allowed"])
         self.assertFalse(ci["timeweb_proof_may_depend_on_retired_provider_workflow"])
         self.assertFalse(ci["sonar_required_final"])
+        self.assertFalse(ci["active_external_review_saas_allowed"])
+        self.assertEqual(
+            ci["github_native_quality_authority"],
+            [
+                "Regression Shield",
+                "V10 authoritative merge gate",
+                "V10 Engineering Governance",
+            ],
+        )
 
     def test_public_and_real_money_flags_remain_fail_closed(self) -> None:
         protected = _contract()["protected_invariants"]
