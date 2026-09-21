@@ -176,8 +176,7 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
         "TIMEWEB_CONSOLIDATION_EXECUTION_INVALID",
     )
     _require(
-        execution.get("update_id")
-        == "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+        execution.get("update_id") == "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "TIMEWEB_CONSOLIDATION_UPDATE_ID_INVALID",
     )
     _require(
