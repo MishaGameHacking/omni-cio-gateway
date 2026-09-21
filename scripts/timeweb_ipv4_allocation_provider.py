@@ -135,8 +135,14 @@ def _cluster(payload: object, expected_id: int) -> tuple[str, bool, bool]:
         or row.get("name") != allocation.TARGET_NAME
         or row.get("location") != TARGET_LOCATION
         or row.get("availability_zone") != TARGET_ZONE
-        or row.get("cpu") != TARGET_CPU
-        or row.get("ram") != TARGET_RAM_MB
+        or _exact_positive_int(
+            row.get("cpu"), "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID"
+        )
+        != TARGET_CPU
+        or _exact_positive_int(
+            row.get("ram"), "TIMEWEB_ALLOCATION_CLUSTER_RAM_INVALID"
+        )
+        != TARGET_RAM_MB
         or row.get("status") != "started"
         or row.get("is_autobackups_enabled") is not False
         or row.get("is_backup_schedule_enabled") is not False

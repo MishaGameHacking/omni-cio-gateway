@@ -1,4 +1,4 @@
-"""Validate the source checkpoint without claiming live allocation readiness."""
+"""Validate M2 source integration without claiming live allocation acceptance."""
 
 from __future__ import annotations
 

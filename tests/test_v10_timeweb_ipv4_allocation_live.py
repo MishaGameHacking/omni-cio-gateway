@@ -151,7 +151,11 @@ class TimewebAllocationProviderTests(unittest.TestCase):
 
     def test_snapshot_rejects_existing_ptr_metadata(self) -> None:
         payloads = _provider_payloads()
-        row = copy.deepcopy(payloads["/api/v1/floating-ips"]["ips"][0])  # type: ignore[index]
+        inventory_payload = payloads["/api/v1/floating-ips"]
+        assert isinstance(inventory_payload, dict)
+        rows = inventory_payload["ips"]
+        assert isinstance(rows, list)
+        row = copy.deepcopy(rows[0])
         assert isinstance(row, dict)
         row["ptr"] = "ptr.example.invalid"
         payloads["/api/v1/floating-ips"] = {"ips": [row], "meta": {"total": 1}}
@@ -163,6 +167,22 @@ class TimewebAllocationProviderTests(unittest.TestCase):
             "TIMEWEB_ALLOCATION_IPV4_PTR_PRESENT",
         ):
             adapter.snapshot()
+
+    def test_snapshot_rejects_boolean_or_fractional_cpu(self) -> None:
+        for value in (True, 1.5):
+            payloads = _provider_payloads()
+            cluster = payloads["/api/v1/databases/123"]
+            assert isinstance(cluster, dict)
+            row = cluster["db"]
+            assert isinstance(row, dict)
+            row["cpu"] = value
+            adapter = provider.TimewebAllocationProvider(_ReadApi(payloads))
+
+            with self.subTest(value=value), self.assertRaisesRegex(
+                provider.ProviderStopped,
+                "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID",
+            ):
+                adapter.snapshot()
 
     def test_comment_writer_is_one_exact_patch(self) -> None:
         mutation = _MutationApi()
@@ -257,28 +277,33 @@ class AllocationRunnerTests(unittest.TestCase):
         github = mock.Mock()
         github.current_context.return_value = context
         timeweb = mock.Mock()
-        with mock.patch.object(runner, "_expected_head", return_value=source), mock.patch.object(
-            runner, "_required_env", return_value="synthetic-token"
-        ), mock.patch.object(
-            runner, "_verifier", return_value=github
-        ), mock.patch.object(
-            runner, "_context", return_value=context
-        ), mock.patch.object(
-            runner, "_open_journal", return_value=journal
-        ), mock.patch.object(
-            runner.provider, "live_provider", return_value=timeweb
-        ) as live_provider, mock.patch.object(
-            runner.allocation, "prepare", return_value=plan.identifier
-        ), mock.patch.object(
-            runner, "_approval_body", return_value="safe approval body"
-        ), mock.patch.object(
-            runner.allocation,
-            "safe_summary",
-            return_value="TIMEWEB_IPV4_ALLOCATION_PLAN=handle state=OWNER_APPROVAL_REQUIRED",
-        ), mock.patch.object(
-            runner, "_emit"
-        ), mock.patch.object(
-            runner, "_write_summary"
+        with (
+            mock.patch.object(runner, "_expected_head", return_value=source),
+            mock.patch.object(
+                runner, "_required_env", return_value="synthetic-token"
+            ),
+            mock.patch.object(runner, "_verifier", return_value=github),
+            mock.patch.object(runner, "_context", return_value=context),
+            mock.patch.object(runner, "_open_journal", return_value=journal),
+            mock.patch.object(
+                runner.provider, "live_provider", return_value=timeweb
+            ) as live_provider,
+            mock.patch.object(
+                runner.allocation, "prepare", return_value=plan.identifier
+            ),
+            mock.patch.object(
+                runner, "_approval_body", return_value="safe approval body"
+            ),
+            mock.patch.object(
+                runner.allocation,
+                "safe_summary",
+                return_value=(
+                    "TIMEWEB_IPV4_ALLOCATION_PLAN=handle "
+                    "state=OWNER_APPROVAL_REQUIRED"
+                ),
+            ),
+            mock.patch.object(runner, "_emit"),
+            mock.patch.object(runner, "_write_summary"),
         ):
             runner._plan()
 
@@ -289,24 +314,24 @@ class AllocationRunnerTests(unittest.TestCase):
         context = allocation.Context(source, source)
         github = mock.Mock()
         timeweb = mock.Mock()
-        with mock.patch.object(runner, "_expected_head", return_value=source), mock.patch.object(
-            runner, "_required_env", return_value="synthetic-token"
-        ), mock.patch.object(
-            runner, "_verifier", return_value=github
-        ), mock.patch.object(
-            runner, "_context", return_value=context
-        ), mock.patch.object(
-            runner, "_open_journal", return_value=mock.Mock()
-        ), mock.patch.object(
-            runner.provider, "live_provider", return_value=timeweb
-        ) as live_provider, mock.patch.object(
-            runner.allocation,
-            "apply",
-            return_value=allocation.Outcome.ALLOCATED_VERIFIED,
-        ) as apply_call, mock.patch.object(
-            runner, "_emit"
-        ), mock.patch.object(
-            runner, "_write_summary"
+        with (
+            mock.patch.object(runner, "_expected_head", return_value=source),
+            mock.patch.object(
+                runner, "_required_env", return_value="synthetic-token"
+            ),
+            mock.patch.object(runner, "_verifier", return_value=github),
+            mock.patch.object(runner, "_context", return_value=context),
+            mock.patch.object(runner, "_open_journal", return_value=mock.Mock()),
+            mock.patch.object(
+                runner.provider, "live_provider", return_value=timeweb
+            ) as live_provider,
+            mock.patch.object(
+                runner.allocation,
+                "apply",
+                return_value=allocation.Outcome.ALLOCATED_VERIFIED,
+            ) as apply_call,
+            mock.patch.object(runner, "_emit"),
+            mock.patch.object(runner, "_write_summary"),
         ):
             runner._apply(
                 "1" * 32,
@@ -322,24 +347,24 @@ class AllocationRunnerTests(unittest.TestCase):
         context = allocation.Context(source, source)
         github = mock.Mock()
         timeweb = mock.Mock()
-        with mock.patch.object(runner, "_expected_head", return_value=source), mock.patch.object(
-            runner, "_required_env", return_value="synthetic-token"
-        ), mock.patch.object(
-            runner, "_verifier", return_value=github
-        ), mock.patch.object(
-            runner, "_context", return_value=context
-        ), mock.patch.object(
-            runner, "_open_journal", return_value=mock.Mock()
-        ), mock.patch.object(
-            runner.provider, "live_provider", return_value=timeweb
-        ) as live_provider, mock.patch.object(
-            runner.allocation,
-            "reconcile",
-            return_value=allocation.Outcome.RECEIPT_RECONCILED,
-        ) as reconcile_call, mock.patch.object(
-            runner, "_emit"
-        ), mock.patch.object(
-            runner, "_write_summary"
+        with (
+            mock.patch.object(runner, "_expected_head", return_value=source),
+            mock.patch.object(
+                runner, "_required_env", return_value="synthetic-token"
+            ),
+            mock.patch.object(runner, "_verifier", return_value=github),
+            mock.patch.object(runner, "_context", return_value=context),
+            mock.patch.object(runner, "_open_journal", return_value=mock.Mock()),
+            mock.patch.object(
+                runner.provider, "live_provider", return_value=timeweb
+            ) as live_provider,
+            mock.patch.object(
+                runner.allocation,
+                "reconcile",
+                return_value=allocation.Outcome.RECEIPT_RECONCILED,
+            ) as reconcile_call,
+            mock.patch.object(runner, "_emit"),
+            mock.patch.object(runner, "_write_summary"),
         ):
             runner._reconcile("1" * 32)
 
