@@ -108,6 +108,12 @@
       ".github/workflows/v10-cloudflare-provider-readiness.yml",
       ".github/workflows/v10-cloudflare-candidate-deploy.yml",
       ".github/workflows/v10-cloudflare-production-release.yml"
+    ],
+    "active_external_review_saas_allowed": false,
+    "github_native_quality_authority": [
+      "Regression Shield",
+      "V10 authoritative merge gate",
+      "V10 Engineering Governance"
     ]
   },
   "execution": {
