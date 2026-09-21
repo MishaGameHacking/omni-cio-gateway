@@ -1,9 +1,8 @@
 name: V10 Cloudflare Provider Readiness
 
+# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority.
+# Manual dispatch is retained only as historical evidence; the provider job is hard-disabled.
 on:
-  push:
-    branches:
-      - system/cloudflare-public-product
   workflow_dispatch:
 
 permissions:
@@ -15,6 +14,7 @@ concurrency:
 
 jobs:
   provider-readiness:
+    if: ${{ false }}
     name: Cloudflare provider authority and build-path readiness
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
