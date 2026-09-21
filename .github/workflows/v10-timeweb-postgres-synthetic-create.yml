@@ -78,11 +78,11 @@ jobs:
 
       - name: Verify synthetic-create source contract before provider authority
         shell: cmd
-        run: python scripts/check_v10_timeweb_postgres_synthetic_create.py
+        run: python -m scripts.check_v10_timeweb_postgres_synthetic_create
 
       - name: Verify RU-PG-B parity transport authority before paid provider mutation
         shell: cmd
-        run: python scripts/check_v10_timeweb_postgres_synthetic_create.py --require-parity-transport-ready
+        run: python -m scripts.check_v10_timeweb_postgres_synthetic_create --require-parity-transport-ready
 
       - name: Verify GitHub environment main-only policy before provider authority
         shell: cmd
@@ -164,7 +164,7 @@ jobs:
 
       - name: Verify synthetic-create source contract before secret access
         shell: cmd
-        run: python scripts/check_v10_timeweb_postgres_synthetic_create.py
+        run: python -m scripts.check_v10_timeweb_postgres_synthetic_create
 
       - name: Re-verify GitHub environment policy immediately before provider access
         shell: cmd
