@@ -4,13 +4,13 @@ Updated: 2026-09-21
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 TIMEWEB-ONLY PLATFORM CONSOLIDATION OWNER-APPROVED PENDING GREEN MERGE / CURRENT NEXT PACKAGE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A MAIN_RED_STOP REPAIR IN PROGRESS / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
 Blocks A (5%), B (9%), C (12%), D (14%) and E (14%) have passed their owning Exit Gates. WP16–WP22 and the complete **WP22A — External Web Access / Product Authentication Security Gate** are accepted COMPLETE.
 
-Amendment 14 remains accepted authority: GitHub is engineering authority rank 1 and Cloudflare Workers Paid is platform rank 2 for new V10 application/edge/build work. The complete `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` execution chain is now accepted on protected `main`; its final focused CF-D hardening landed through PR #547.
+Amendment 14 remains accepted **historical evidence**, but Amendment 18 supersedes it for current/future provider selection. The complete `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` chain remains an accepted historical baseline; its final focused CF-D hardening landed through PR #547.
 
 Amendment 15 records the 2026-08-29 OWNER delivery correction: the four Amendment-14 Cloudflare implementation stages remain ordered and fail-closed but are executed as internal milestones of one `INTEGRATED_SYSTEM_UPDATE`, `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`, on default branch `system/cloudflare-public-product`, with one final PR by default. Separate protected-main acceptance between CF-A/CF-B/CF-C/CF-D is no longer required. A real Amendment-12 split trigger discovered during implementation still forces a stop/split.
 
@@ -18,7 +18,7 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 
 `PUBLIC_MULTI_USER_ENABLED=false` remains the **current runtime state, not a V10-wide release lock**. Under Amendment 13, completed capabilities may become live as soon as their own real authentication/runtime/privacy/security/capacity/monitoring gates pass; unrelated unfinished V10 blocks are not a reason to hold a ready capability forever.
 
-Amendment 18 records the OWNER decision to retire Cloudflare/Neon/Render/Cloud.ru/VK from active future V10 authority and consolidate production on Timeweb with Telegram-only human login. Once this governance change is accepted, `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
+Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudflare/Neon/Render/Cloud.ru/VK from current/future V10 provider authority. `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
 
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
@@ -159,7 +159,7 @@ Current user-facing activation transitions — **BLOCKED_EXTERNAL where listed a
 
 Public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**. READ/live portfolio/positions/operations are independent from unfinished Real execution, but cannot become public `LIVE_OPERABLE` until broker terms/permission and tenant secret-custody/security/privacy/live acceptance are real and accepted.
 
-## Amendment 14 — Cloudflare Platform & Continuous Release Authority
+## Historical Amendment 14 — Cloudflare Platform & Continuous Release Authority — superseded by Amendment 18
 
 Canonical accepted-on-main sources:
 
@@ -168,7 +168,7 @@ Canonical accepted-on-main sources:
 - `scripts/check_v10_cloudflare_platform_authority.py`;
 - `.github/workflows/v10-engineering-governance.yml`.
 
-Amendment 14 establishes:
+At Amendment 14 acceptance, the historical provider model established:
 
 - GitHub = engineering/source/review/provenance authority rank 1;
 - Cloudflare Workers Paid = managed application/edge/build platform rank 2 for new V10 work;
@@ -182,9 +182,9 @@ Amendment 14 establishes:
 - Workers Paid included build capacity may be used only through the owning integration milestone;
 - automatic paid overage or higher-plan expansion is not authorized without a fresh OWNER cost decision.
 
-Current official Workers Builds reference values recorded by the contract on 2026-08-29 are mutable external facts and must be revalidated before material configuration: 6000 included build minutes/month, 6 concurrent builds/account, 20-minute build timeout, 4 vCPU/build, 8 GB memory/build and 20 GB disk/build.
+Historical Workers Builds reference values recorded by the Amendment 14 contract on 2026-08-29 remain provenance only; they do not define current Timeweb capacity or cost authority.
 
-### Continuous exact-main release law
+### Historical Cloudflare continuous exact-main release law
 
 Each accepted protected `main` SHA becomes a new public product revision **candidate**, not an automatic production deployment.
 
@@ -198,7 +198,7 @@ Public release identity is event-derived CalVer `YYYY.MM.DD.N` plus exact `sourc
 
 Cloudflare Worker rollback does not roll back external KV/R2/D1/Durable Object state; schema/storage compatibility and rollback remain separate required evidence.
 
-## Amendment 15 — Cloudflare Public Product Integrated Delivery
+## Historical Amendment 15 — Cloudflare Public Product Integrated Delivery — superseded by Amendment 18
 
 Canonical proposed/accepted-on-main sources:
 
@@ -224,19 +224,19 @@ During execution, Amendment 15 established:
 - protected historical WP22A evidence and V9 Render `app:app` remain preserved;
 - WEB VISUAL remains separately OWNER-locked.
 
-## Current functional development authority
+## Historical post-CF-D functional authority — superseded by Amendment 18
 
 The accepted `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update` is **COMPLETE**. Its ordered CF-A -> CF-B -> CF-C -> CF-D implementation/recovery/cutover chain has passed accepted-main production release evidence.
 
-Current authorized functional implementation package: **NONE**.
+At CF-D completion, no additional functional implementation package was authorized inside the historical Cloudflare System Update.
 
 Focused maintenance, defect repair, security/recovery hardening and documentation/governance corrections remain allowed when they are actually required, but they do not authorize a new product System Update.
 
-The current next prepared product package is `WEB-VISUAL-INTEGRATED`. It remains **OWNER START REQUIRED** and is not authorized for source implementation until the exact start command below is issued.
+At that historical checkpoint, `WEB-VISUAL-INTEGRATED` was the next prepared product package and remained **OWNER START REQUIRED**. Amendment 18 later paused it behind `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`.
 
 ### Prepared product package — WEB-VISUAL-INTEGRATED / OWNER START REQUIRED
 
-`WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update` remains the already prepared product update from Amendments 12/13. It is not erased by the Cloudflare transition, but it is not executed inside the current Cloudflare integrated branch.
+`WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update` remains a prepared product update from Amendments 12/13, but Amendment 18 pauses it until the Timeweb consolidation/public-activation path reaches its owning gate.
 
 Prepared member scope remains:
 
@@ -254,13 +254,13 @@ Prepared member scope remains:
 
 Until that separate product execution is authorized and current sequencing is revalidated, do not create the visual-refresh implementation branch or modify `apps/web` merely for visual redesign.
 
-## Amendment 17 — Russian PostgreSQL migration current stage
+## Amendment 17 — Russian PostgreSQL migration historical pre-Amendment-18 stage
 
 Amendment 17 / RU-PG-A is accepted on protected `main` through PR #560, squash merge `4c0422a5...`, Regression Shield #1625, V10 Engineering Governance #1666 and Cloudflare Production Release #86.
 
 Accepted implementation progress remains **54%**. This migration is a legal/security/provider compatibility prerequisite and does not add product-progress percentage by itself.
 
-Current authorized focused stage: **RU-PG-B — provider bootstrap / synthetic PostgreSQL 18 parity**.
+At Amendment 17 / RU-PG-A acceptance, the authorized focused stage was **RU-PG-B — provider bootstrap / synthetic PostgreSQL 18 parity**. Amendment 18 later absorbed the active provider/database transition into the ordered TW-A→TW-G consolidation path.
 
 RU-PG-B rules:
 
@@ -502,10 +502,10 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
    successful GitHub-native Regression Shield directly;
 2. add regression protection so a retired provider workflow or secret cannot re-enter the
    active GitHub -> Timeweb execution graph;
-3. run focused source/contract/tests and full diff review, then open one focused PR only when
-   the correction batch is integration-ready;
-4. require exact-head DRAFT/READY GREEN, zero blocking threads and no secret/authority drift,
-   then squash merge;
+3. keep correction work inside existing DRAFT PR #582; publish only coherent replacement
+   heads after focused source/contract/test preflight and full diff review;
+4. require the final replacement exact head to reach DRAFT/READY GREEN, zero blocking threads
+   and no secret/authority drift, then squash merge;
 5. on the exact new `main`, require Regression Shield + Engineering Governance + Timeweb
    read-only provider proof to complete successfully with no Cloudflare/Neon live workflow;
 6. only after that post-merge correction is accepted, continue TW-B provider-neutral runtime

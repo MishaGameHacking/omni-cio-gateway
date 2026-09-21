@@ -10,6 +10,13 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
 GUARD = ROOT / "scripts/check_v10_ru_public_registration_ingress.py"
+STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+MASTER_CONTEXT = ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md"
+AGENTS = ROOT / "AGENTS.md"
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
+GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
+GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
+DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
 
 
 def _contract() -> dict[str, object]:
@@ -208,6 +215,57 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
                 "V10 Engineering Governance",
             ],
         )
+
+
+    def test_current_guidance_has_no_retired_provider_authority_drift(self) -> None:
+        status = STATUS.read_text(encoding="utf-8")
+        for marker in (
+            "OWNER-APPROVED PENDING GREEN MERGE",
+            "Amendment 14 remains accepted authority:",
+            "Current authorized functional implementation package: **NONE**.",
+            "The current next prepared product package is `WEB-VISUAL-INTEGRATED`.",
+            "Current authorized focused stage: **RU-PG-B",
+        ):
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, status)
+
+        release_marker = (
+            "exact-main post-merge GREEN -> exact Timeweb candidate -> "
+            "candidate acceptance -> production promotion"
+        )
+        for path in (MASTER_CONTEXT, AGENTS, CONTRIBUTING):
+            with self.subTest(path=path):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(release_marker, source)
+                self.assertNotIn(
+                    "immutable Cloudflare candidate -> candidate acceptance",
+                    source,
+                )
+
+    def test_recovery_guidance_prefers_timeweb_authority_contracts(self) -> None:
+        for path in (GPT_NEW_CHAT, GPT_PROJECT):
+            with self.subTest(path=path):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(
+                    "V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json",
+                    source,
+                )
+                self.assertIn(
+                    "V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_CONTRACT.json",
+                    source,
+                )
+                self.assertIn(
+                    "Historical Cloudflare/Neon/Render/VK",
+                    source,
+                )
+
+    def test_telegram_data_inventory_does_not_freeze_current_main_sha(self) -> None:
+        source = DATA_INVENTORY.read_text(encoding="utf-8")
+        self.assertIn(
+            "Exact accepted-main/current-next authority is always resolved from GitHub",
+            source,
+        )
+        self.assertNotIn("current accepted source behavior on exact base", source)
 
     def test_public_and_real_money_flags_remain_fail_closed(self) -> None:
         protected = _contract()["protected_invariants"]

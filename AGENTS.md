@@ -98,11 +98,11 @@ Every accepted protected `main` SHA is a product revision candidate, not automat
 
 Required flow:
 
-`PR exact-head GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
+`PR exact-head GREEN/review -> squash merge -> exact-main post-merge GREEN -> exact Timeweb candidate -> candidate acceptance -> production promotion`.
 
 Re-check current `main` immediately before promotion. Superseded candidates are not promotable. If latest `main` is blocked, production stays last-known-good and exposes `UPDATE_PENDING`, `DEPLOYMENT_BLOCKED` or `OUT_OF_SYNC`.
 
-Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA, Cloudflare Version ID, UTC release time and status; never create a source version-bump commit only to change the display version. Worker rollback does not rewrite GitHub authority and does not automatically roll back KV/R2/D1/Durable Object state.
+Current public release identity must bind the exact accepted source SHA to the accepted Timeweb candidate/deployment identity and release status defined by the owning Timeweb gate; never create a source version-bump commit only to change the display version. Application rollback does not replace PostgreSQL backup/restore or schema-compatibility evidence.
 
 ## 6. Execution-unit discipline
 
@@ -110,7 +110,19 @@ Governed by the **Integrated System Update Execution Law**. Every material chang
 
 Mandatory split triggers remain: DB/migration ordering, security/authority transition, dependency/toolchain boundary, genuinely non-delegable OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit. A real split trigger discovered during integrated implementation still forces a stop/split; one large branch is never a bypass.
 
-Amendment 15 authorizes one integrated Cloudflare update:
+Amendment 18 authorizes the current integrated update:
+
+`TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
+
+Default source branch:
+
+`system/timeweb-platform-consolidation`
+
+Ordered internal milestones are TW-A inventory/authority, TW-B source/runtime consolidation, TW-C Timeweb App candidate, TW-D Timeweb PostgreSQL cutover, TW-E public ingress/DNS, TW-F Telegram public activation, and TW-G legacy-provider decommission.
+
+The Amendment 15 block below is historical Cloudflare execution provenance only.
+
+Historical Amendment 15 authorized one integrated Cloudflare update:
 
 `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`
 

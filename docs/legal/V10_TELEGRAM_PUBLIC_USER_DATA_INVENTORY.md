@@ -2,11 +2,11 @@
 
 Status: **ENGINEERING DATA-MINIMIZATION EVIDENCE / NOT LEGAL SIGN-OFF**
 
-This document supports issue #549 and the Telegram Login activation runbook. It describes the current accepted source behavior on exact base `66ef57dedd07ad68d472cb205da6bb8e87528e94`. It deliberately does not invent the PROJECT OWNER's legal/operator identity, legal basis, jurisdictional conclusions or regulator notification status.
+This document supports issue #549 and the Telegram Login activation runbook. It describes accepted source-level data-minimization behavior and the Amendment-18 Timeweb target. Exact accepted-main/current-next authority is always resolved from GitHub and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`, not frozen in this file. It deliberately does not invent the PROJECT OWNER's legal/operator identity, legal basis, jurisdictional conclusions or regulator notification status.
 
 ## Authentication data path
 
-The deployed Telegram flow uses OIDC Authorization Code + PKCE and requests only the mandatory `openid` scope. It does not request Telegram `profile`, `phone` or bot-access scopes.
+The accepted Telegram code path uses OIDC Authorization Code + PKCE and requests only the mandatory `openid` scope. It does not request Telegram `profile`, `phone` or bot-access scopes.
 
 Telegram's current first-party Login documentation states that:
 

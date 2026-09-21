@@ -40,7 +40,7 @@ Chat memory, screenshots, old PR descriptions, Cloudflare dashboard state and hi
 
 Omni-CIO V10 remains at **54% accepted implementation** with WP0–WP22A COMPLETE.
 
-Amendment 18 selects **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** as the current next package after acceptance.
+Amendment 18 is accepted on protected `main` through PR #581 and selects **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** as the current next package.
 
 Target operating model:
 
@@ -88,9 +88,9 @@ Cloudflare dashboard/provider state never overrides accepted GitHub authority.
 
 Cloudflare infrastructure identity is not Omni-CIO product identity.
 
-## 5. Provider transition boundary
+## 5. Historical provider transition boundary — superseded by Amendment 18
 
-For new V10 deployment/release work after Amendment 14 acceptance:
+At Amendment 14 acceptance, the historical new-V10 deployment/release selection was:
 
 - selected managed target: `CLOUDFLARE_WORKERS_PAID`;
 - Cloud.ru Evolution is no longer the selected new-V10 provider target;
@@ -111,7 +111,7 @@ Neither governance amendment by itself:
 - provisions Telegram/VK provider secrets;
 - authorizes Real money.
 
-## 6. Cloudflare integrated implementation sequence
+## 6. Historical Cloudflare integrated implementation sequence — superseded by Amendment 18
 
 After Amendment 15 acceptance, execute one integrated update:
 
@@ -130,7 +130,7 @@ Ordered internal milestones:
 
 Do not start milestone N+1 before milestone N's branch-local Exit Gate passes. A separate `main` merge between these four milestones is no longer required by Amendment 15. A real DB/security/OWNER/live/cutover/Real-money/reviewability split trigger discovered during implementation still forces a stop/split; the integrated branch is never a bypass.
 
-## 7. Continuous public release model
+## 7. Current continuous public release model — GitHub to Timeweb
 
 V10 is not a monolithic “finish 100%, then show users” program.
 
@@ -138,15 +138,15 @@ Every accepted protected `main` SHA is a new whole-product revision **candidate*
 
 Required release path:
 
-`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
+`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> exact Timeweb candidate -> candidate acceptance -> production promotion`.
 
 Before promotion, current `main` is rechecked. A superseded candidate is not promotable.
 
 If a newer `main` is blocked, production remains last-known-good and reports `UPDATE_PENDING`, `DEPLOYMENT_BLOCKED` or `OUT_OF_SYNC` instead of silently drifting.
 
-Public release identity is event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA, Cloudflare Version ID, UTC release time and release status. No source-code version-bump commit is made only to change the displayed public version.
+Current release identity must bind the exact accepted source SHA to the accepted Timeweb candidate/deployment identity and release status defined by the owning Timeweb gate. No source-code version-bump commit is made only to change the displayed public version.
 
-Rollback of Worker code does not imply rollback of KV/R2/D1/Durable Object state; schema/storage compatibility and recovery are separate evidence.
+Timeweb rollback/recovery must preserve last-known-good application and PostgreSQL compatibility; deployment rollback never substitutes for database backup/restore evidence.
 
 ## 8. Public product / identity model
 

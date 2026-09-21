@@ -14,6 +14,12 @@ AMENDMENT = ROOT / (
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+MASTER_CONTEXT = ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md"
+AGENTS = ROOT / "AGENTS.md"
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
+GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
+GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
+DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
 LEDGER = ROOT / "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 TIMEWEB_PROOF_WORKFLOW = ROOT / (
@@ -33,6 +39,17 @@ RETIRED_PROVIDER_WORKFLOWS = RETIRED_CLOUDFLARE_WORKFLOWS + (
 EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
 EXPECTED_RETIRED = ["Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"]
 EXPECTED_MILESTONES = ["TW-A", "TW-B", "TW-C", "TW-D", "TW-E", "TW-F", "TW-G"]
+STALE_CURRENT_AUTHORITY_MARKERS = (
+    "OWNER-APPROVED PENDING GREEN MERGE",
+    "Amendment 14 remains accepted authority:",
+    "Current authorized functional implementation package: **NONE**.",
+    "The current next prepared product package is `WEB-VISUAL-INTEGRATED`.",
+    "Current authorized focused stage: **RU-PG-B",
+)
+CURRENT_RELEASE_MARKER = (
+    "exact-main post-merge GREEN -> exact Timeweb candidate -> "
+    "candidate acceptance -> production promotion"
+)
 
 
 def _read(path: Path) -> str:
@@ -432,6 +449,56 @@ def _validate_active_workflow_graph() -> None:
         )
 
 
+def _validate_current_guidance() -> None:
+    status = _read(STATUS)
+    for marker in STALE_CURRENT_AUTHORITY_MARKERS:
+        _require(
+            marker not in status,
+            "TIMEWEB_CONSOLIDATION_STALE_CURRENT_STATUS",
+        )
+    for marker in (
+        "Amendment 18 is accepted on protected `main` through PR #581",
+        "current authorized System Update — **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**",
+        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+    ):
+        _require(marker in status, "TIMEWEB_CONSOLIDATION_STATUS_DRIFT")
+
+    for path in (MASTER_CONTEXT, AGENTS, CONTRIBUTING):
+        source = _read(path)
+        _require(
+            CURRENT_RELEASE_MARKER in source,
+            "TIMEWEB_CONSOLIDATION_RELEASE_GUIDANCE_DRIFT",
+        )
+        _require(
+            "immutable Cloudflare candidate -> candidate acceptance"
+            not in source,
+            "TIMEWEB_CONSOLIDATION_RELEASE_GUIDANCE_DRIFT",
+        )
+
+    for path in (GPT_NEW_CHAT, GPT_PROJECT):
+        source = _read(path)
+        for marker in (
+            "V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json",
+            "V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_CONTRACT.json",
+            "Historical Cloudflare/Neon/Render/VK",
+        ):
+            _require(
+                marker in source,
+                "TIMEWEB_CONSOLIDATION_RECOVERY_GUIDANCE_DRIFT",
+            )
+
+    inventory = _read(DATA_INVENTORY)
+    _require(
+        "Exact accepted-main/current-next authority is always resolved from GitHub"
+        in inventory,
+        "TIMEWEB_CONSOLIDATION_DATA_INVENTORY_AUTHORITY_DRIFT",
+    )
+    _require(
+        "current accepted source behavior on exact base" not in inventory,
+        "TIMEWEB_CONSOLIDATION_DATA_INVENTORY_AUTHORITY_DRIFT",
+    )
+
+
 def _validate_documents() -> None:
     amendment = _read(AMENDMENT)
     ledger = _read(LEDGER)
@@ -493,6 +560,7 @@ def main() -> int:
         _validate_external_decommission(payload)
         _validate_cleanup_activation(payload)
         _validate_active_workflow_graph()
+        _validate_current_guidance()
         _validate_documents()
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)

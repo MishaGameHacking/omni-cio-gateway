@@ -21,16 +21,17 @@
 5. knowledge/16_CURRENT_PROGRAM_STATUS.md — protected V9 runtime baseline.
 6. docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md.
 7. docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md.
-8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law, Cloudflare Platform Authority, Cloudflare Public Product Integrated Delivery and Green Checkpoint & Targeted CI Repair Law.
+8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Amendment 18 Timeweb-Only Platform Consolidation & Telegram-Only Login Authority, Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law and Green Checkpoint & Targeted CI Repair Law.
 9. docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json.
 10. docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json and docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md when Amendment 16 is accepted.
 11. docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json.
-12. docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json.
-13. docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json when accepted.
+12. docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json.
+13. docs/architecture/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_CONTRACT.json.
 14. docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md.
 15. knowledge/17_V10_CURRENT_PROGRAM_STATUS.md — единственный current V10 progress/current-next execution ledger.
 16. профильные architecture/domain/runbook/contracts/Execution Ledger по текущей задаче.
-17. Если задача касается applied GPT/V9 recovery — gpt/SETUP_INDEX.md и связанные V9 recovery files.
+17. Historical Cloudflare/Neon/Render/VK contracts/amendments — только для recovery, compatibility или provenance review; не использовать их как current implementation templates.
+18. Если задача касается applied GPT/V9 recovery — gpt/SETUP_INDEX.md и связанные V9 recovery files.
 
 Затем проверь actual main SHA, open PR/issues, applicable exact-head CI/security, post-merge Regression Shield и authorized current execution unit.
 

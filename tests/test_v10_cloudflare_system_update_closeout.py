@@ -19,9 +19,9 @@ def test_cloudflare_system_update_is_accepted_complete() -> None:
         "V10 Cloudflare Production Release #78",
         "Regression Shield #1617",
         "V10 Engineering Governance #1607",
-        "Current authorized functional implementation package: **NONE**",
     ):
         assert marker in status
+    assert (\n        "Current authorized functional implementation package: **NONE**" not in status\n    )
 
 
 def test_timeweb_consolidation_supersedes_visual_as_current_package() -> None:
