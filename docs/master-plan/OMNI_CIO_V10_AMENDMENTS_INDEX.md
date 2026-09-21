@@ -333,7 +333,7 @@ Locks the 2026-09-19 OWNER data-residency/provider-migration direction that:
 Amendment 17 supersedes only the assumption that Neon is the permanent future production PostgreSQL provider. It does not self-certify Russian legal compliance, activate users, authorize provider purchase by itself, weaken security roles/RLS/recovery or erase historical Neon evidence.
 
 
-### 18. Russian Public Registration & Reachable Ingress Authority
+### 18. Timeweb-Only Platform Consolidation & Telegram-Only Login Authority
 
 `OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md`
 
@@ -345,23 +345,22 @@ Machine/governance companions:
 - issue #580;
 - database migration issue #559;
 - Telegram activation issue #549;
-- `.github/workflows/v10-engineering-governance.yml` through repository root.
+- `.github/workflows/v10-engineering-governance.yml`.
 
-Locks the 2026-09-21 OWNER Russia-only public-launch direction that:
+Locks the 2026-09-21 OWNER final simplification direction:
 
-- supported initial public users are in the Russian Federation and must not require VPN access;
-- GitHub + Cloudflare + Timeweb Cloud are the bounded active V10 public-launch provider set;
-- Timeweb Cloud Managed PostgreSQL 18 is the intended final production relational provider after Amendment-17 cutover evidence;
-- Cloudflare remains accepted build/release/staging/fallback authority but Cloudflare-only client ingress is not sufficient Russian-user reachability evidence;
-- Timeweb App Platform is the first Russian public-ingress candidate using the same repository/product/account/session/tenant truth, never a second product;
-- production Timeweb App Platform auto-deploy is forbidden; exact accepted-main SHA and provider deployment evidence are required;
-- Neon remains last-known-good production continuity until RU-PG-D and is retired from active V10 production authority only through RU-PG-E;
-- necessary Timeweb spend may proceed after the owning gate proves exact need/configuration/current price within prepaid funds, without speculative spare capacity;
-- DB cutover, ingress/DNS cutover, legal actions and public-user activation remain mandatory independent recovery/authority boundaries;
-- Telegram may activate independently of VK only after its database/ingress/privacy/legal/runtime gates pass;
-- broker write and Real-money authority remain unchanged.
+- active general service set = ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
+- GitHub remains source/review/CI/release-provenance authority;
+- Timeweb Cloud is the only selected future/current V10 production infrastructure platform;
+- Timeweb Managed PostgreSQL 18 is the final relational authority;
+- Telegram Login is the only selected human product login provider;
+- Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority;
+- external CI/review SaaS must be replaced by equivalent-or-stronger GitHub-executed checks before removal;
+- `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the next authorized System Update after this amendment is accepted;
+- one integrated source branch is preferred, while database cutover, DNS/public cutover, destructive provider decommission, OWNER/legal actions and recovery boundaries remain mandatory independent acceptance gates;
+- current-tree active integrations are removed after accepted cutover/decommission, but protected Git history is not rewritten.
 
-Amendment 18 supersedes only the assumption that Cloudflare must remain the sole public HTTP ingress for the Russia-only launch and makes the Timeweb/Neon end-state explicit. It does not bypass Amendment 17, activate users, mutate DNS, deploy App Platform, delete Neon, weaken tenant isolation or authorize Real money.
+Amendment 18 supersedes Amendments 14/15 only for current/future provider selection and release target. Their accepted Cloudflare evidence remains historical. It also narrows human product login from Telegram/VK to Telegram only. It does not activate users, mutate providers or authorize Real money.
 
 ## Draft/superseded planning material
 
