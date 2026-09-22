@@ -68,6 +68,11 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 
 
 The provisioner:
 
+- pins the accepted root certificate by DER SHA-256
+  `D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31`;
+- refuses a root file whose fingerprint differs, even if its common name matches;
+- verifies that the supplied intermediate builds a valid X.509 chain terminating
+  at that pinned root before importing the intermediate;
 - refuses non-Windows execution;
 - requires Administrator for `-Apply`;
 - validates the expected CA common names, validity and CA role;
@@ -77,6 +82,12 @@ The provisioner:
 - imports the intermediate only into `LocalMachine\CA`;
 - is idempotent by certificate thumbprint;
 - does not download anything and does not weaken TLS.
+
+A future root-certificate rotation is a security boundary: update the pinned
+fingerprint only after fresh official-certificate verification and code review.
+Intermediate rotation does not require a hard-coded fingerprint as long as the
+new current CA validates to the pinned root and the T-Bank package TLS probe
+passes.
 
 After apply, rerun the read-only checker above and require
 `reason=TBANK_PACKAGE_INDEX_TLS_READY` and `ready=true`.

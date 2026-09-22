@@ -9,13 +9,16 @@
       "common_name": "Russian Trusted Root CA",
       "windows_store": "Cert:\\LocalMachine\\Root",
       "self_issued_required": true,
-      "ca_required": true
+      "ca_required": true,
+      "sha256_der": "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31",
+      "fingerprint_pin_required": true
     },
     "intermediate": {
       "common_name": "Russian Trusted Sub CA",
       "issuer_common_name": "Russian Trusted Root CA",
       "windows_store": "Cert:\\LocalMachine\\CA",
-      "ca_required": true
+      "ca_required": true,
+      "chain_to_pinned_root_required": true
     }
   },
   "mutation": {
@@ -23,7 +26,8 @@
     "apply_requires_windows_administrator": true,
     "network_download_by_provisioner": false,
     "owner_download_from_official_source_required": true,
-    "idempotent_import_required": true
+    "idempotent_import_required": true,
+    "certificate_fingerprint_rotation_requires_code_review": true
   },
   "verification": {
     "installed_certificates_must_be_current": true,

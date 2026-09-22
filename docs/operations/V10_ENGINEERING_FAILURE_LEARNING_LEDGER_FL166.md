@@ -57,7 +57,9 @@ Without a permanent machine-trust boundary:
 
 1. Add a machine-readable T-Bank CA trust contract.
 2. Add an OWNER/Admin-only, local-file provisioner that never downloads
-   certificates and never disables TLS.
+   certificates and never disables TLS. Pin the long-lived root by DER SHA-256,
+   and require every supplied/current intermediate to cryptographically chain
+   to that pinned root.
 3. Add a read-only verifier that first proves the LocalMachine CA presence and
    then uses pip itself for a bounded package-index TLS probe.
 4. Run that verifier before the authoritative dependency installation so the
@@ -72,6 +74,8 @@ Without a permanent machine-trust boundary:
   written to source/evidence;
 - CI runner receives no certificate-store mutation authority;
 - OWNER/Admin mutation is explicit and idempotent;
+- matching certificate names alone are insufficient mutation authority: the
+  root fingerprint is pinned and the intermediate chain is verified;
 - dependency versions/hashes and T-Bank package-source authority are unchanged;
 - certificate and hostname verification remain enabled;
 - `PUBLIC_MULTI_USER_ENABLED=false`;

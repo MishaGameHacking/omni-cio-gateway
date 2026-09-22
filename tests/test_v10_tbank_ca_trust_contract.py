@@ -19,6 +19,13 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     )
     assert payload["official_certificate_source"] == "https://www.gosuslugi.ru/crt"
     assert payload["certificates"]["root"]["common_name"] == "Russian Trusted Root CA"
+    assert payload["certificates"]["root"]["sha256_der"] == (
+        "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31"
+    )
+    assert payload["certificates"]["root"]["fingerprint_pin_required"] is True
+    assert (
+        payload["certificates"]["intermediate"]["chain_to_pinned_root_required"] is True
+    )
     assert (
         payload["certificates"]["root"]["windows_store"] == r"Cert:\LocalMachine\Root"
     )
@@ -46,6 +53,10 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
     assert "Test-Administrator" in source
     assert "TBANK_CA_TRUST_ADMIN_REQUIRED" in source
     assert "TBANK_CA_TRUST_CERTIFICATE_PATHS_REQUIRED" in source
+    assert "TBANK_CA_TRUST_ROOT_FINGERPRINT_MISMATCH" in source
+    assert "TBANK_CA_TRUST_INTERMEDIATE_CHAIN_INVALID" in source
+    assert "Get-CertificateSha256" in source
+    assert "Test-SubordinateChain" in source
     assert "Import-Certificate" in source
     assert r"Cert:\LocalMachine\Root" in source
     assert r"Cert:\LocalMachine\CA" in source
