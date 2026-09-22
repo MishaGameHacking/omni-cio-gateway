@@ -267,6 +267,8 @@ def test_timeweb_dockerfile_uses_provider_neutral_runtime() -> None:
     assert "HEALTHCHECK" in dockerfile
     assert "http://localhost:8080/livez" in dockerfile
     assert "apps.api.hosted_runtime:create_app" in dockerfile
+    assert "ARG OMNI_V10_RELEASE_SHA" not in dockerfile
+    assert "ENV OMNI_V10_RELEASE_SHA" not in dockerfile
     assert "Dockerfile.cloudflare" not in dockerfile
     assert "wrangler" not in dockerfile.lower()
     assert "render" not in dockerfile.lower()

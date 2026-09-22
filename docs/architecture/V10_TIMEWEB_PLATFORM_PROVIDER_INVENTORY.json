@@ -209,7 +209,7 @@
     },
     "apps/web/vite.config.ts": {
       "classification": "KEEP",
-      "reason": "Current Web build identity uses provider-neutral OMNI_V10_RELEASE_SHA."
+      "reason": "Current Web build carries package identity only; exact deployed source SHA is server-validated runtime provenance and is not synthesized from retired or build-time provider metadata."
     },
     "scripts/rehearse_v10_wp22a_phase4_runtime_role.py": {
       "classification": "KEEP",

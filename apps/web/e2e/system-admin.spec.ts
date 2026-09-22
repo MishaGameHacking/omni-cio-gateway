@@ -130,6 +130,8 @@ test("WP22 system view explains ordinary operational state without mutation cont
   await expect(page.getByText("240 min")).toBeVisible();
   await expect(page.getByText("2026-08-14T09:20:00+00:00")).toBeVisible();
   await expect(page.getByText("2026-08-14T09:18:00+00:00")).toBeVisible();
+  await expect(page.getByText("a".repeat(40))).toBeVisible();
+  await expect(page.getByText("Exact source Git SHA")).toBeVisible();
 
   await expect(page.getByRole("button", { name: /enable|disable|kill|trading/i })).toHaveCount(0);
   await expect(page.getByText(/broker-account|authorization bearer|secret-token/i)).toHaveCount(0);

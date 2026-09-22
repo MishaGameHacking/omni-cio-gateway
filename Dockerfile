@@ -3,8 +3,6 @@ WORKDIR /build
 COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
 RUN npm ci --ignore-scripts --prefix apps/web
 COPY apps/web ./apps/web
-ARG OMNI_V10_RELEASE_SHA=local-dev
-ENV OMNI_V10_RELEASE_SHA=$OMNI_V10_RELEASE_SHA
 RUN npm run --prefix apps/web typecheck \
     && npm run --prefix apps/web lint \
     && npm run --prefix apps/web test \

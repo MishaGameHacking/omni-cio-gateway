@@ -23,7 +23,7 @@ The browser never obtains a broker credential, recovery key, private backup payl
 The page renders, when available and relevant to the authenticated USER/tenant:
 
 - overall operational state and freshness;
-- Web build version/Git SHA plus bounded runtime release/deploy identity;
+- Web package version plus exact server-validated deployed source Git SHA and bounded runtime release/deploy identity;
 - service health for Web, PostgreSQL, that tenant's T-Invest connection state, Watchtower, Telegram and AI/Cortex where applicable;
 - current/expected PostgreSQL migration state;
 - latest successful durable backup observation and accepted RPO/RTO appropriate to the hosted/private-data plane;
@@ -43,7 +43,7 @@ The page preserves first-class unavailable/degraded states:
 
 Missing telemetry is displayed as `UNAVAILABLE`/`NOT_AVAILABLE`; it is never replaced by an invented value. Telegram remains future-locked until WP23+, and AI/Cortex remains future-locked until its owning package.
 
-A diagnostics API failure must leave the authenticated shell usable while making the uncertainty visible. The browser may retain accepted build identity, but it must not present the missing system snapshot as READY.
+A diagnostics API failure must leave the authenticated shell usable while making the uncertainty visible. The browser may retain the non-authoritative Web package version, but exact deployed source Git SHA must become `UNAVAILABLE` when the server-validated runtime status is unavailable; a build-time fallback must never impersonate accepted release provenance.
 
 ## Security and privacy
 
