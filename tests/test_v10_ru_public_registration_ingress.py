@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
 GUARD = ROOT / "scripts/check_v10_ru_public_registration_ingress.py"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+README = ROOT / "README.md"
 MASTER_CONTEXT = ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md"
 AGENTS = ROOT / "AGENTS.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
@@ -290,6 +291,33 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
                     "immutable Cloudflare candidate -> candidate acceptance",
                     source,
                 )
+
+    def test_live_guidance_contains_no_actionable_retired_provider_plan(
+        self,
+    ) -> None:
+        stale_markers = (
+            "Cloudflare Workers Paid is the selected managed application/edge/build platform",
+            "current GitHub/Lenovo CI routing remains authoritative until `CF-A",
+            "Cloudflare services may be adopted when an owning milestone proves the need",
+            "Cloudflare Workers Paid is platform rank 2 and selected new-V10",
+            "Cloudflare Workers Paid is new-V10 application/edge/build platform rank 2",
+            "selected managed target: `CLOUDFLARE_WORKERS_PAID`",
+            "Do not create Cloudflare tokens/secrets, candidate mutation",
+            "Integrated Cloudflare sequence:",
+            "immutable Cloudflare candidate -> candidate acceptance",
+            "`PUBLIC_MULTI_USER_ENABLED=false` remains the public activation kill switch until CF-D",
+        )
+        for path in (README, MASTER_CONTEXT, AGENTS, CONTRIBUTING):
+            source = path.read_text(encoding="utf-8")
+            for marker in stale_markers:
+                with self.subTest(path=path, marker=marker):
+                    self.assertNotIn(marker, source)
+
+        status = STATUS.read_text(encoding="utf-8")
+        self.assertIn(
+            "The formula below is preserved as historical Amendment-14/15 provenance only",
+            status,
+        )
 
     def test_recovery_guidance_prefers_timeweb_authority_contracts(self) -> None:
         for path in (GPT_NEW_CHAT, GPT_PROJECT):

@@ -92,14 +92,14 @@ Cloudflare infrastructure identity is not Omni-CIO product identity.
 
 At Amendment 14 acceptance, the historical new-V10 deployment/release selection was:
 
-- selected managed target: `CLOUDFLARE_WORKERS_PAID`;
-- Cloud.ru Evolution is no longer the selected new-V10 provider target;
-- Render is no longer active new-V10 deployment, zero-charge-attestation, hosted-release-alignment or recovery target;
-- no new Render attestation refresh/provider mutation is required;
+- historical managed target at that time: `CLOUDFLARE_WORKERS_PAID`;
+- Cloud.ru Evolution was no longer the selected new-V10 provider target;
+- Render was no longer the active new-V10 deployment, zero-charge-attestation, hosted-release-alignment or recovery target;
+- no new Render attestation refresh/provider mutation was required;
 - accepted WP22A Render + Neon evidence remains historical evidence and must not be rewritten;
 - protected V9 Render production/recovery remains protected.
 
-Amendment 14 selected platform authority. Amendment 15 changes only implementation delivery granularity by grouping the four Cloudflare stages into one `INTEGRATED_SYSTEM_UPDATE`.
+Historically, Amendment 14 selected the Cloudflare platform and Amendment 15 grouped its four stages into one `INTEGRATED_SYSTEM_UPDATE`. Amendment 18 supersedes that provider model for all current/future V10 work.
 
 Neither governance amendment by itself:
 

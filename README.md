@@ -44,23 +44,18 @@ The historical Cloudflare section below is retained temporarily as migration pro
 
 ## Historical Cloudflare platform / continuous release authority — superseded for future work
 
-Amendment 14 establishes the new-V10 platform model without changing protected V9, while Amendment 15 groups its implementation stages into one integrated delivery unit:
+At Amendment 14 acceptance, the historical model selected GitHub as source/review/provenance authority and Cloudflare Workers Paid as the new-V10 managed application/edge/build target. Amendment 18 supersedes that provider selection; this section is provenance only.
 
-- GitHub is canonical source/review/provenance authority;
-- Cloudflare Workers Paid is the selected managed application/edge/build platform after the owning gates;
-- the already purchased Workers Paid baseline may be used by accepted internal milestones, but mutable limits/costs must be revalidated before material configuration and automatic paid overage or a higher plan is not implied;
-- current GitHub/Lenovo CI routing remains authoritative until `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` proves portable Cloudflare build lanes;
-- existing React/Vite Web remains the migration source; backend/Python Worker/native-dependency compatibility must be proved rather than assumed;
-- Cloudflare Containers may be adopted only for a proven full-Linux/native runtime need and accepted cost/recovery semantics;
-- accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact until an explicit equivalent migration is proved; Hyperdrive + PostgreSQL 18 requires explicit compatibility evidence and D1 is not an automatic replacement;
-- Cloudflare DNS/TLS/DDoS/WAF/rate/Turnstile/Access are additive security layers and never replace product account/tenant authorization;
-- Cloudflare deployment, public release or Access never grants broker/Real-money authority.
+Historical implementation assumptions were:
 
-Continuous public release law is:
+- the purchased Workers Paid baseline could be used only inside the then-authorized CF milestones;
+- GitHub/Lenovo CI remained authority until the historical CF-A verifier milestone proved its portable lane;
+- existing React/Vite Web remained the migration source and backend/native compatibility had to be proved;
+- Containers, Hyperdrive and Cloudflare security/edge services were conditional options inside that historical plan;
+- Neon/PostgreSQL 18 tenant/RLS authority remained in force until a separately accepted migration;
+- provider deployment/release never granted broker-write or Real-money authority.
 
-`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
-
-A new accepted `main` SHA is a product revision candidate, not an automatic production deployment. If a newer candidate is not promotable, the public product stays last-known-good and exposes an explicit pending/blocked/out-of-sync state. Public release IDs are event-derived CalVer (`YYYY.MM.DD.N`) plus exact source/Cloudflare version metadata; they do not require a source-code version-bump commit.
+The historical Cloudflare candidate/promotion formula remains preserved in Amendment 14 and archived release contracts; it is intentionally not repeated in this live front-door guidance to prevent accidental reuse. The current Timeweb release flow defined above is authoritative. Historical CalVer/Cloudflare version metadata remains provenance only.
 
 ## Integrated System Update Execution Law
 
@@ -69,7 +64,7 @@ Amendment 12 defines two execution units without changing the Master Plan block/
 - `FOCUSED_CHANGE` — a genuinely isolated defect, governance/documentation correction, maintenance item or mandatory split boundary;
 - `INTEGRATED_SYSTEM_UPDATE` — one coherent OWNER-authorized subsystem outcome with ordered internal WP/increment milestones, one integrated branch and one final PR by default.
 
-Amendment 15 explicitly authorizes `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` as an `INTEGRATED_SYSTEM_UPDATE`. Its ordered internal milestones are CF-A through CF-D. Separate main acceptance between those four internal milestones is no longer required, but the branch-local Exit Gate for each milestone is mandatory before dependent work starts. A real Amendment-12 split trigger discovered during implementation still forces a stop/split.
+Historically, Amendment 15 authorized `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` as an `INTEGRATED_SYSTEM_UPDATE` with CF-A through CF-D internal milestones. That sequence is accepted provenance only after Amendment 18 and is not a current implementation plan.
 
 For integrated work, internal milestones remain mandatory but are branch-local only. Accepted progress changes only after the complete integrated PR is squash-merged and required exact-main post-merge verification is GREEN.
 
@@ -84,7 +79,7 @@ Every `INTEGRATED_SYSTEM_UPDATE` uses:
 
 Both are working-state records only and must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
 
-The prepared visual update remains **OWNER START REQUIRED**. Do not create its implementation branch or modify `apps/web` merely for visual redesign as part of the Cloudflare public-product update.
+The prepared visual update remains **OWNER START REQUIRED**. Do not create its implementation branch or modify `apps/web` merely for visual redesign during the Timeweb consolidation update.
 
 ## Product target
 
@@ -205,8 +200,8 @@ WP22A technical closeout is accepted only through its own dedicated technical-cl
 
 ## Protected V9 boundaries
 
-V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14/15/16, an internal milestone, AI output, a GitHub merge or Cloudflare deployment is never broker-submit authorization.
+V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14/15/16, an internal milestone, AI output, a GitHub merge or provider deployment is never broker-submit authorization.
 
 ## Recovery / safety
 
-`REAL_TRADING_ENABLED=false` remains the master Real-money kill switch until its owning future activation gate. `trading_methods=false` remains protected. `PUBLIC_MULTI_USER_ENABLED=false` remains the public activation kill switch until CF-D and capability-specific acceptance. No transfer/withdrawal authority is introduced. Real broker/Telegram/VK/provider/recovery secrets, full account IDs and private portfolio payloads never belong in GitHub/CI/artifacts.
+`REAL_TRADING_ENABLED=false` remains the master Real-money kill switch until its owning future activation gate. `trading_methods=false` remains protected. `PUBLIC_MULTI_USER_ENABLED=false` remains the public activation kill switch until the Timeweb/Telegram/privacy/legal/capacity activation gates and capability-specific acceptance pass. No transfer/withdrawal authority is introduced. Real broker/Telegram/VK/provider/recovery secrets, full account IDs and private portfolio payloads never belong in GitHub/CI/artifacts.

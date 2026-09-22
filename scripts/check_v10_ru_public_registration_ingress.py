@@ -14,6 +14,7 @@ AMENDMENT = ROOT / (
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+README = ROOT / "README.md"
 MASTER_CONTEXT = ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md"
 AGENTS = ROOT / "AGENTS.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
@@ -86,6 +87,18 @@ STALE_CURRENT_AUTHORITY_MARKERS = (
     "Current authorized functional implementation package: **NONE**.",
     "The current next prepared product package is `WEB-VISUAL-INTEGRATED`.",
     "Current authorized focused stage: **RU-PG-B",
+)
+STALE_PROVIDER_GUIDANCE_MARKERS = (
+    "Cloudflare Workers Paid is the selected managed application/edge/build platform",
+    "current GitHub/Lenovo CI routing remains authoritative until `CF-A",
+    "Cloudflare services may be adopted when an owning milestone proves the need",
+    "Cloudflare Workers Paid is platform rank 2 and selected new-V10",
+    "Cloudflare Workers Paid is new-V10 application/edge/build platform rank 2",
+    "selected managed target: `CLOUDFLARE_WORKERS_PAID`",
+    "Do not create Cloudflare tokens/secrets, candidate mutation",
+    "Integrated Cloudflare sequence:",
+    "immutable Cloudflare candidate -> candidate acceptance",
+    "`PUBLIC_MULTI_USER_ENABLED=false` remains the public activation kill switch until CF-D",
 )
 CURRENT_RELEASE_MARKER = (
     "exact-main post-merge GREEN -> exact Timeweb candidate -> "
@@ -530,6 +543,11 @@ def _validate_current_guidance() -> None:
         "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
     ):
         _require(marker in status, "TIMEWEB_CONSOLIDATION_STATUS_DRIFT")
+    _require(
+        "The formula below is preserved as historical Amendment-14/15 provenance only"
+        in status,
+        "TIMEWEB_CONSOLIDATION_HISTORICAL_RELEASE_CONTEXT_MISSING",
+    )
 
     for path in (MASTER_CONTEXT, AGENTS, CONTRIBUTING):
         source = _read(path)
@@ -537,10 +555,14 @@ def _validate_current_guidance() -> None:
             CURRENT_RELEASE_MARKER in source,
             "TIMEWEB_CONSOLIDATION_RELEASE_GUIDANCE_DRIFT",
         )
-        _require(
-            "immutable Cloudflare candidate -> candidate acceptance" not in source,
-            "TIMEWEB_CONSOLIDATION_RELEASE_GUIDANCE_DRIFT",
-        )
+
+    for path in (README, MASTER_CONTEXT, AGENTS, CONTRIBUTING):
+        source = _read(path)
+        for marker in STALE_PROVIDER_GUIDANCE_MARKERS:
+            _require(
+                marker not in source,
+                "TIMEWEB_CONSOLIDATION_STALE_PROVIDER_GUIDANCE",
+            )
 
     for path in (GPT_NEW_CHAT, GPT_PROJECT):
         source = _read(path)

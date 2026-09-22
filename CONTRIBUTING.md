@@ -18,7 +18,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–18;
-9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` и остальные owning contracts;
+9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, current Timeweb/Telegram owning contracts и остальные applicable current contracts; historical Cloudflare contracts read only when recovery/provenance/compatibility review requires them;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. current execution-unit architecture/security/recovery/runbooks/ledgers;
@@ -52,24 +52,24 @@ The old Cloudflare section below is migration history and no longer selects futu
 After Amendment 14 acceptance:
 
 - GitHub is engineering/source/review/provenance authority rank 1;
-- Cloudflare Workers Paid is new-V10 application/edge/build platform rank 2 after each owning gate;
+- Cloudflare Workers Paid was the historical Amendment-14 rank-2 application/edge/build target and is superseded by Amendment 18;
 - Cloud.ru Evolution is no longer the selected new-V10 target;
 - Render is historical new-V10 evidence only and is retired from active new-V10 deployment, zero-charge attestation, hosted-release alignment and recovery authority;
 - protected V9 Render `app:app` remains protected;
 - Amendment 14 itself does not deploy Cloudflare, mutate DNS/domain/provider state, create secrets or activate public users.
 
-Amendment 15 changes only delivery granularity: the four Amendment-14 Cloudflare stages are ordered internal milestones inside one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` branch/final PR by default. Their runtime/security/provider/cutover boundaries remain fail-closed.
+Historically, Amendment 15 grouped the four Amendment-14 Cloudflare stages into one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` branch/final PR. That sequence remains accepted provenance only and grants no current provider authority.
 
-Do not create Cloudflare tokens/secrets, candidate mutation, DNS/domain changes or paid overage before the exact internal milestone authorizes them.
+Do not create new Cloudflare tokens/secrets, candidate mutations, DNS/domain changes or paid resources. Current provider work is Timeweb-only unless a fresh accepted amendment changes authority.
 
-Integrated Cloudflare sequence:
+Historical integrated Cloudflare sequence (provenance only):
 
 1. `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — portable repository verification, shard/impact/provenance/cost guards;
 2. `CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive/Containers evidence;
 3. `CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation;
 4. `CF-D / CLOUDFLARE-PUBLIC-CUTOVER` — domain/DNS/TLS/security/promotion/rollback and capability-specific live-user acceptance.
 
-Do not start a later internal milestone before the previous milestone's branch-local Exit Gate passes. A separate `main` merge between CF-A…CF-D is not required after Amendment 15 acceptance. A real Amendment-12 mandatory split trigger still forces a stop/split.
+Within that historical sequence, later CF milestones depended on earlier branch-local Exit Gates. Those CF milestones are not current work after Amendment 18. A real Amendment-12 mandatory split trigger still governs current work.
 
 ## Continuous public release
 
@@ -221,11 +221,11 @@ Current locks remain:
 
 Real submit requires `REAL_MONEY_AUTHORIZED` after its complete Sandbox/Shadow, immutable-plan, authenticated USER approval, drift/preflight, reconciliation, kill-switch and actual broker permission gate.
 
-A merge, Cloudflare deployment, public release, AI output or user registration is never Real-money authorization.
+A merge, provider deployment, public release, AI output or user registration is never Real-money authorization.
 
 ## WEB VISUAL lock
 
-`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` deploys the existing accepted presentation. It does not start the visual-refresh package.
+Historical `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` preserved the accepted presentation and did not start the visual-refresh package; it is not current deployment authority.
 
 Do not start `WEB-VISUAL-INTEGRATED` until the exact OWNER command exists:
 

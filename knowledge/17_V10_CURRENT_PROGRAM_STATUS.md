@@ -186,9 +186,9 @@ Historical Workers Builds reference values recorded by the Amendment 14 contract
 
 ### Historical Cloudflare continuous exact-main release law
 
-Each accepted protected `main` SHA becomes a new public product revision **candidate**, not an automatic production deployment.
+The formula below is preserved as historical Amendment-14/15 provenance only. It is **not** the current deployment path after Amendment 18; current release authority is GitHub -> exact Timeweb candidate -> accepted Timeweb production promotion.
 
-Required flow:
+Historical flow:
 
 `exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`
 

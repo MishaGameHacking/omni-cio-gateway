@@ -77,18 +77,16 @@ A Timeweb deployment, GitHub merge or Telegram login never grants broker-write/R
 After Amendment 14 acceptance:
 
 - GitHub is engineering/source/review/provenance authority rank 1;
-- Cloudflare Workers Paid is platform rank 2 and selected new-V10 managed application/edge/build target after each owning gate;
+- Cloudflare Workers Paid was the historical Amendment-14 rank-2 application/edge/build target; Amendment 18 supersedes that selection for all current/future V10 provider work;
 - Cloud.ru Evolution is no longer selected for new V10 deployment;
 - Render is retired from active **new V10** deployment, zero-charge attestation, hosted-release-alignment and recovery authority;
 - accepted WP22A Render/Neon evidence remains historical evidence;
 - protected V9 Render `app:app` production/recovery remains protected;
 - Amendment 14 acceptance itself performs no provider/DNS/domain mutation, secret creation, public-user activation or production cutover.
 
-Amendment 15 changes only Cloudflare implementation delivery granularity: the four Amendment-14 stages are ordered internal milestones of one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` update. It does not weaken their provider/security/runtime/cutover boundaries.
+Historically, Amendment 15 changed only Cloudflare implementation delivery granularity: the four Amendment-14 stages became internal milestones of one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` update. That sequence is provenance only after Amendment 18.
 
-Final public V10 requires a **managed-cloud production runtime** independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. Cloudflare services may be adopted when an owning milestone proves the need: Workers/Static Assets, Workers Builds, Containers for proven full-Linux/native needs, Custom Domains/DNS/TLS, WAF/DDoS/rate controls, Turnstile, Access for private/admin/engineering surfaces, Hyperdrive only after PG18 proof, KV/R2/Durable Objects/Queues/Workflows for explicit roles, and Workers AI/Vectorize only inside authorized AI/Cortex scope.
-
-Do not create provider tokens/secrets, mutate DNS/domain, deploy a candidate or create paid-overage resources before the exact internal milestone authorizes that action. Governance acceptance alone is not provider mutation.
+Current/future public V10 requires Timeweb as the managed-cloud runtime and PostgreSQL 18 authority, independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. Cloudflare services have no new-adoption authority under Amendment 18. Do not create retired-provider tokens/secrets, mutate retired-provider DNS/domain state, deploy retired-provider candidates or create retired-provider paid resources.
 
 ## 5. Continuous exact-main public release
 
@@ -264,7 +262,7 @@ Current protected locks: broker write OFF, `trading_methods=false`, `REAL_TRADIN
 
 READ/optional TRADE credentials are tenant-scoped and role-separated. `TRADE credential connected/verified != broker submit authorized`.
 
-Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow, immutable plan, authenticated USER approval, drift/preflight, ambiguous-submit reconciliation, kill switches and actual broker permission. GitHub merge, Cloudflare deploy/release, AI output, START command or user registration is never broker-submit authorization.
+Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow, immutable plan, authenticated USER approval, drift/preflight, ambiguous-submit reconciliation, kill switches and actual broker permission. GitHub merge, provider deploy/release, AI output, START command or user registration is never broker-submit authorization.
 
 ## 14. V9 / V10 boundary
 

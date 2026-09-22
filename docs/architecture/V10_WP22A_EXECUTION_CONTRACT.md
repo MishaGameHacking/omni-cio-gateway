@@ -3,7 +3,8 @@
 > **Amendment 18 CURRENT-AUTHORITY OVERRIDE (2026-09-21): HISTORICAL / SUPERSEDED FOR CURRENT PROVIDER AND LOGIN AUTHORITY.** This file preserves accepted WP22A provenance and security evidence. Any “CURRENT”, Cloud.ru, Cloudflare, Render, Neon, Telegram/VK or phase-selection wording below describes the authority state at the time of that historical WP22A work and must not be used as the current V10 provider template. Current authority is ChatGPT + GitHub + Timeweb Cloud + Telegram Login, with VK ID retired and public activation fail-closed until its Timeweb/Telegram gates pass.
 
 
-Status: **CURRENT / CORRECTED PUBLIC-HOSTED TARGET / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 AUTHORIZED**  
+Status: **HISTORICAL / SUPERSEDED BY AMENDMENT 18 FOR CURRENT PROVIDER/LOGIN AUTHORITY**  
+Historical accepted WP22A status: **CURRENT / CORRECTED PUBLIC-HOSTED TARGET / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 AUTHORIZED**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
 
 ## 1. Authority and sequencing
