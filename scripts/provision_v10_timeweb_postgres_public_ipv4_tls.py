@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 from urllib.request import OpenerDirector, Request
 
 from scripts import probe_v10_timeweb_postgres_control_plane as read_only
-from scripts import provision_v10_render_neon_preview as _provider_base
+from scripts import provider_runtime_primitives as _provider_base
 from scripts import timeweb_ipv4_allocation as allocation
 from scripts import timeweb_ipv4_allocation_provider as allocation_provider
 from scripts import timeweb_ipv4_custody as custody

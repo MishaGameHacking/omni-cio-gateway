@@ -7,7 +7,7 @@ import time
 from typing import Any
 from urllib.request import OpenerDirector, Request
 
-from scripts import provision_v10_render_neon_preview as _provider_base
+from scripts import provider_runtime_primitives as _provider_base
 
 
 TRACE_URL = "https://cloudflare.com/cdn-cgi/trace"
