@@ -178,6 +178,15 @@ def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
     case_sensitive = match.get("case_sensitive", True)
     if not isinstance(case_sensitive, bool):
         raise RuntimeError(_RULE_INVALID)
+    allowed_keys = {
+        "prefix",
+        "suffix",
+        "contains",
+        "contains_any",
+        "case_sensitive",
+    }
+    if set(match) - allowed_keys:
+        raise RuntimeError(_RULE_INVALID)
     candidate = path if case_sensitive else path.casefold()
     selector_count = 0
 
@@ -221,15 +230,6 @@ def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
             return False
 
     if selector_count == 0:
-        raise RuntimeError(_RULE_INVALID)
-    extra = set(match) - {
-        "prefix",
-        "suffix",
-        "contains",
-        "contains_any",
-        "case_sensitive",
-    }
-    if extra:
         raise RuntimeError(_RULE_INVALID)
     return True
 
