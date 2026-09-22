@@ -470,8 +470,7 @@ def _validate_current_guidance() -> None:
             "TIMEWEB_CONSOLIDATION_RELEASE_GUIDANCE_DRIFT",
         )
         _require(
-            "immutable Cloudflare candidate -> candidate acceptance"
-            not in source,
+            "immutable Cloudflare candidate -> candidate acceptance" not in source,
             "TIMEWEB_CONSOLIDATION_RELEASE_GUIDANCE_DRIFT",
         )
 

@@ -217,6 +217,11 @@ jobs:
           operations_analytics.py broker_report_reconciliation
           omni_cio apps tests scripts
 
+      - name: Run early repository Python lint and format gates
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+
       - name: Run CI and release guard unit tests
         run: >-
           python -m unittest

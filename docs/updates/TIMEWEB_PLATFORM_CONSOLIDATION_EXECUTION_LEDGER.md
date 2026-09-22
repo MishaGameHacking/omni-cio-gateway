@@ -133,6 +133,9 @@ Split decision: **PR #582 is the mandatory security/authority + live-evidence ac
 - Root cause: correction publishing did not perform a syntax-equivalent preflight on every changed Python test after text substitution. The existing remote compile gate caught the defect correctly; no guard was weakened.
 - Correction: replace the malformed assertion with ordinary Python syntax, normalize the adjacent Timeweb regression-test formatting in the same batch, and require focused syntax/format review before publishing the replacement head.
 - Guard-gap follow-up: `V10 Fast PR Checks` compiled only `scripts` and selected `omni_cio` policy packages, so malformed Python in `tests/` or `apps/` could reach the authoritative Windows gate. The fast compile step is expanded to the complete repository Python source/test surface and a regression test freezes that coverage.
+- Eighth exact-head RED on `02ecc42bae9d88a195816dc18db6f1bb3d35adc5`: Fast PR, Engineering Governance, Toolchain and all WP audits succeeded; authoritative Windows compile also succeeded, then Ruff format failed only on `scripts/check_v10_ru_public_registration_ingress.py` because one boolean expression was not in canonical Ruff layout.
+- Root cause: Fast PR had gained full syntax compilation but still did not run the already-canonical Ruff lint/format gates before the expensive authoritative job. The project already has the same protected-runner Ruff commands in `v10-targeted-repair.yml`, so no new toolchain is needed.
+- Systemic correction: canonical-format the guard and make Fast PR run `ruff check .` plus `ruff format --check .` immediately after full compile; regression coverage freezes both early gates.
 
 Only `CERTIFIED_GREEN` permits TW-B.
 

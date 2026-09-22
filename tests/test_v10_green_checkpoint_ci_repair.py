@@ -191,13 +191,16 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert sonar["post_merge_in_progress_check_run_fallback_forbidden"] is True
         assert sonar["post_merge_failure_or_findings_fallback_forbidden"] is True
 
-    def test_fast_pr_compile_gate_covers_source_apps_and_tests(self) -> None:
+    def test_fast_pr_compile_and_format_gates_cover_repository_python(self) -> None:
         workflow = FAST_PR_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Compile complete repository Python surface", workflow)
         for marker in (
+            "Compile complete repository Python surface",
             "python -m compileall -q",
             "broker_report_reconciliation",
             "omni_cio apps tests scripts",
+            "Run early repository Python lint and format gates",
+            "python -m ruff check .",
+            "python -m ruff format --check .",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, workflow)
