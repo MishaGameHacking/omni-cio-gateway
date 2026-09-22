@@ -52,7 +52,7 @@ Milestone state is branch-local only and does not change accepted V10 implementa
   - `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
 - Timeweb IPv4 recovery remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
 - Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
-- TW-B source scope starts from the 33 accepted `TIMEWEB_REPLACE` consumers/producers identified by TW-A.
+- TW-B source scope started from the 33 accepted `TIMEWEB_REPLACE` consumers/producers identified by TW-A; branch-local closure now classifies all completed current source consumers as `KEEP` and detached provider wrappers as `HISTORY`, with no explicit `TIMEWEB_REPLACE` source consumer remaining.
 - TW-B does not authorize provider mutation, Timeweb App Platform deployment, production DB cutover, DNS cutover, public-user activation or Real-money authority.
 - TW-B runtime root-cause review found that the first provider-neutral entrypoint still called `_probe_hosted_preview_database()`, which requires the historical synthetic preview USER/TENANT fixture. A clean Timeweb production database must not depend on that Phase-4 fixture.
 - Correction head `7306c2ae0dfa806c49774d2ccfa629da5e1f85e7` replaces the Timeweb runtime probe with the production runtime-only PostgreSQL 18 / least-privilege / schema / FORCE-RLS probe, gives the Timeweb entrypoint its own hosted session policy, and keeps historical synthetic verification inside the historical preview path.
@@ -195,13 +195,13 @@ Only `CERTIFIED_GREEN` permits TW-B.
 ## 9. Integration-ready preflight
 
 - [ ] Current replacement checkpoint is `CERTIFIED_GREEN`.
-- [ ] Complete changed surface reviewed.
+- [x] Complete changed surface reviewed.
 - [x] Directly coupled workflow/contract/guard/test/runbook surfaces reviewed.
 - [x] Analogous live Cloudflare workflows searched.
 - [x] Retired provider secret consumers searched.
 - [x] Deterministic graph regression guards added.
 - [x] Security/authority/secret/recovery consequences reviewed.
-- [ ] Full final diff reviewed on replacement exact head.
+- [x] Full final diff reviewed on replacement exact head.
 - [ ] DRAFT exact-head applicable checks all success.
 - [ ] READY exact-head applicable checks all success.
 - [ ] Zero unresolved blocking review threads.
@@ -215,8 +215,8 @@ Only `CERTIFIED_GREEN` permits TW-B.
 - Current member milestone: TW-B / source and runtime consolidation
 - Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
-- Current source head before this ledger correction: `7306c2ae0dfa806c49774d2ccfa629da5e1f85e7`
-- State: `IN_PROGRESS / NOT INTEGRATION_READY`; no TW-B PR has been opened
-- Proven current defect class: production Timeweb startup/readiness inherited a historical synthetic-preview database fixture dependency; the correction removes that dependency and aligns container-local liveness with Timeweb App Platform health-check behavior
-- Remaining TW-B work: close the residual `TIMEWEB_REPLACE` source/runtime couplings, extract remaining active provider-neutral PostgreSQL/recovery/readiness primitives from retired provider paths, complete full focused preflight + full diff/security review, then publish one DRAFT PR only at `INTEGRATION_READY`
+- Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
+- State: `INTEGRATION_READY / DRAFT_VERIFICATION_PENDING`; no TW-B PR had been opened at the time of this source handoff
+- Proven defect classes closed branch-locally: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
+- Remaining TW-B work: publish one DRAFT PR from this reviewed branch, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
 - TW-C remains forbidden until TW-B is certified and accepted

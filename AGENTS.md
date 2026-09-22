@@ -6,7 +6,7 @@
 
 Поддерживается **один Omni-CIO product line**. Protected owner-accepted V9 production/recovery baseline остаётся `existing Omni-CIO Custom GPT v9.0.0 -> Omni-CIO Gateway (app:app) -> protected broker contours`. V10 productize/migrate этот же продукт; не создавать второй Gateway/Web/product-auth/AI/scheduler/broker/execution stack.
 
-For public V10, broker credentials are tenant-scoped `BrokerConnection` credentials, never global application credentials. GitHub/Cloudflare engineering access never means broker/trading authority.
+For public V10, broker credentials are tenant-scoped `BrokerConnection` credentials, never global application credentials. GitHub/Timeweb engineering access never means broker/trading authority.
 
 ## 2. Current program state
 

@@ -1,6 +1,6 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-09-21
+Updated: 2026-09-22
 
 ## Executive state
 
@@ -517,12 +517,10 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 ## Current next action
 
-1. execute `TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION` only on `system/timeweb-platform-consolidation-tw-b`, based on exact accepted main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`;
-2. extract current Timeweb scripts from historical Render/Neon/Cloudflare helper dependencies into provider-neutral HTTP/PostgreSQL primitives;
-3. create the provider-neutral Timeweb App Platform runtime/deployment source, including a process-only `/livez` endpoint for the platform health check while preserving strict database-aware `/healthz`;
-4. remove VK ID from deployed product composition and make current human-login composition Telegram-only without activating public users;
-5. rebind current PostgreSQL runtime/recovery/readiness contracts away from the historical `infrastructure/cloudru/` path without rewriting accepted migrations/history;
-6. remove current Timeweb proof dependence on `wrangler.jsonc`, Cloudflare/Neon/Render helpers and Render release metadata;
-7. add/strengthen regression guards proving no active TW-B runtime imports retired provider adapters and no production/provider mutation occurs in TW-B;
-8. keep `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`;
-9. publish TW-B only after focused preflight, full diff/security review and exact-head certification; TW-C remains forbidden until TW-B is `CERTIFIED_GREEN`.
+1. finish TW-B exact-head verification only on `system/timeweb-platform-consolidation-tw-b`, based on accepted main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`;
+2. provider-neutral HTTP/PostgreSQL primitives, Timeweb hosted runtime, process-only `/livez`, database-aware `/healthz`, provider-neutral PostgreSQL/recovery/readiness contracts and Telegram-only current auth composition are implemented branch-locally;
+3. current Timeweb runtime/proof no longer imports historical Render/Neon/Cloudflare/Cloud.ru/VK provider wrappers, and the provider inventory has no explicit `TIMEWEB_REPLACE` source consumer remaining;
+4. deployed source identity is server-validated from `OMNI_V10_RELEASE_SHA`; browser build-time fallback metadata is not release authority;
+5. keep `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`;
+6. publish one DRAFT PR only from the reviewed TW-B branch, require all applicable exact-head checks to complete `success`, then perform READY verification on the unchanged exact head;
+7. TW-C provider mutation/App Platform candidate deployment remains forbidden until TW-B is `CERTIFIED_GREEN / ACCEPTED`.
