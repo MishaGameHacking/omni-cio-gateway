@@ -39,7 +39,9 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     assert payload["mutation"]["ci_runner_may_modify_machine_trust"] is False
     assert payload["mutation"]["apply_requires_windows_administrator"] is True
     assert payload["mutation"]["network_download_by_provisioner"] is False
-    assert payload["mutation"]["validate_all_inputs_before_first_store_mutation"] is True
+    assert (
+        payload["mutation"]["validate_all_inputs_before_first_store_mutation"] is True
+    )
     assert payload["verification"]["tls_verification_may_be_disabled"] is False
     assert payload["verification"]["hostname_verification_may_be_disabled"] is False
     assert payload["protected_invariants"]["PUBLIC_MULTI_USER_ENABLED"] is False
@@ -62,7 +64,9 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
     assert source.count("function Test-Administrator") == 1
     assert source.count("if ($Apply) {") == 1
     assert "AllowUnknownCertificateAuthority" in source
-    assert source.index("TBANK_CA_TRUST_INTERMEDIATE_CHAIN_INVALID") < source.index("$mutationsAttempted = $true")
+    assert source.index("TBANK_CA_TRUST_INTERMEDIATE_CHAIN_INVALID") < source.index(
+        "$mutationsAttempted = $true"
+    )
     assert "Import-Certificate" in source
     assert r"Cert:\LocalMachine\Root" in source
     assert r"Cert:\LocalMachine\CA" in source
