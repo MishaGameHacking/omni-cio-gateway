@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,27 +70,30 @@ def _wp22a_source_gate_active(failures: list[str]) -> bool:
     return False
 
 
-def main() -> int:
-    failures: list[str] = []
-    try:
-        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"WP17 contract unavailable: {type(exc).__name__}", file=sys.stderr)
-        return 1
-
-    wp22a_source_gate = _wp22a_source_gate_active(failures)
-
+def _validate_login_and_public_activation(
+    contract: dict[str, Any],
+    failures: list[str],
+) -> None:
     if contract.get("ordinary_login_providers") != ["telegram"]:
         failures.append("ordinary login providers drifted")
     if contract.get("local_password_allowed") is not False:
         failures.append("local password must remain disabled")
-    if (
-        contract.get("public_activation", {}).get("public_internet_ingress")
-        is not False
-    ):
+    public_activation = contract.get("public_activation", {})
+    if not isinstance(public_activation, dict):
+        failures.append("public activation contract must be an object")
+    elif public_activation.get("public_internet_ingress") is not False:
         failures.append("public ingress must remain disabled in WP17")
 
+
+def _validate_read_vault_acceptance(
+    contract: dict[str, Any],
+    failures: list[str],
+) -> None:
     read_vault_acceptance = contract.get("read_vault_acceptance", {})
+    if not isinstance(read_vault_acceptance, dict):
+        failures.append("READ-vault acceptance contract must be an object")
+        return
+
     for key in (
         "owner_admin_verify_required",
         "exact_head_binding_required",
@@ -105,15 +109,22 @@ def main() -> int:
     ):
         if read_vault_acceptance.get(key) is not False:
             failures.append(f"READ-vault runner authority must remain denied: {key}")
-    for path in (
+    for component in (
         OWNER_EVIDENCE_FINALIZER,
         RUNNER_READ_VAULT_AUDITOR,
         OWNER_READ_VAULT_WORKFLOW,
     ):
-        if not path.is_file():
-            failures.append(f"READ-vault acceptance component missing: {path.name}")
+        if not component.is_file():
+            failures.append(
+                f"READ-vault acceptance component missing: {component.name}"
+            )
 
+
+def _validate_invariants(contract: dict[str, Any], failures: list[str]) -> None:
     invariants = contract.get("invariants", {})
+    if not isinstance(invariants, dict):
+        failures.append("WP17 invariants contract must be an object")
+        return
     if invariants.get("gateway_entrypoint") != "app:app":
         failures.append("gateway entrypoint drifted")
     if invariants.get("trading_methods") is not False:
@@ -123,10 +134,10 @@ def main() -> int:
     if invariants.get("broker_write_authority_added") is not False:
         failures.append("WP17 may not add broker write authority")
 
+
+def _validate_browser_surface(failures: list[str]) -> None:
     web_text = _text_tree(WEB_SHELL)
-    backend_text = _text_tree(WEB_BACKEND) + "\n" + _text_tree(API_ROOT)
-    forbidden_web = ("localStorage", "sessionStorage", "dangerouslySetInnerHTML")
-    for marker in forbidden_web:
+    for marker in ("localStorage", "sessionStorage", "dangerouslySetInnerHTML"):
         if marker in web_text:
             failures.append(f"forbidden browser persistence/render primitive: {marker}")
     if "google" in web_text.lower():
@@ -134,24 +145,27 @@ def main() -> int:
     if 'type="password"' not in web_text:
         failures.append("masked broker credential input is missing")
 
-    forbidden_backend = (
+
+def _validate_backend_surface(
+    failures: list[str],
+    *,
+    wp22a_source_gate: bool,
+) -> None:
+    backend_text = _text_tree(WEB_BACKEND) + "\n" + _text_tree(API_ROOT)
+    lowered_backend = backend_text.lower()
+    for marker in (
         "broker_trading",
         "stop_orders",
         ".orders",
         "withdraw",
         "currency_transfer",
         "pay_in",
-    )
-    lowered_backend = backend_text.lower()
-    for marker in forbidden_backend:
+    ):
         if marker in lowered_backend:
             failures.append(
                 f"broker write/transfer marker present in WP17 backend: {marker}"
             )
 
-    # A bind-all listener and Tailscale Funnel remain forbidden. Historical
-    # Cloudflare source markers are allowed only when the reviewed corrected
-    # WP22A source contract is present; this never implies live activation.
     bind_all_marker = ".".join(("0", "0", "0", "0"))
     if bind_all_marker in lowered_backend:
         failures.append(
@@ -162,28 +176,36 @@ def main() -> int:
     for marker in ("cloudflared", "cloudflare tunnel"):
         if marker in lowered_backend and not wp22a_source_gate:
             failures.append(
-                f"external-access marker present without reviewed WP22A source gate: {marker}"
+                "external-access marker present without reviewed WP22A "
+                f"source gate: {marker}"
             )
 
+
+def _validate_api_surface(failures: list[str]) -> None:
     api_text = (WEB_BACKEND / "api_v1.py").read_text(encoding="utf-8")
     if "private_test_identity_enabled: bool = False" not in api_text:
         failures.append("private test identity must default disabled")
     if "_is_loopback_request" not in api_text:
         failures.append("private test identity must require loopback")
     safe_connection_block = api_text.split("def _safe_connection", 1)[-1].split(
-        "async def _json_object", 1
+        "async def _json_object",
+        1,
     )[0]
     if "secret_ref" in safe_connection_block or "tenant_id" in safe_connection_block:
         failures.append(
             "browser connection response exposes secret or tenant scope internals"
         )
 
+
+def _validate_vault_surface(failures: list[str]) -> None:
     vault_text = (WEB_BACKEND / "broker_vault_v1.py").read_text(encoding="utf-8")
     if r"secrets\read-broker\connections" not in vault_text:
         failures.append("connection vault is not under accepted read-broker root")
     if "_CRYPTPROTECT_LOCAL_MACHINE = 0x4" not in vault_text:
         failures.append("connection vault must use DPAPI LocalMachine protection")
 
+
+def _validate_persistence_surface(failures: list[str]) -> None:
     migration_text = MIGRATION.read_text(encoding="utf-8").lower()
     if (
         "web_sessions" not in migration_text
@@ -197,11 +219,14 @@ def main() -> int:
                 f"{marker.strip()}"
             )
 
+
+def _emit_result(failures: list[str], *, wp22a_source_gate: bool) -> int:
     if failures:
         print("V10 WP17 Web/security boundary check failed:", file=sys.stderr)
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
+
     print("V10 WP17 Web/security boundary check passed.")
     print("Ordinary auth: Telegram only; local password absent")
     print("Sessions: server-side / private test identity disabled by default")
@@ -209,11 +234,35 @@ def main() -> int:
     print("READ-vault acceptance: exact-head OWNER evidence + non-admin runner probe")
     if wp22a_source_gate:
         print(
-            "External access: corrected WP22A source contract present / live activation not implied"
+            "External access: corrected WP22A source contract present / "
+            "live activation not implied"
         )
     else:
         print("Public ingress: OFF / WP22A gated")
     return 0
+
+
+def main() -> int:
+    failures: list[str] = []
+    try:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"WP17 contract unavailable: {type(exc).__name__}", file=sys.stderr)
+        return 1
+    if not isinstance(contract, dict):
+        print("WP17 contract unavailable: invalid root object", file=sys.stderr)
+        return 1
+
+    wp22a_source_gate = _wp22a_source_gate_active(failures)
+    _validate_login_and_public_activation(contract, failures)
+    _validate_read_vault_acceptance(contract, failures)
+    _validate_invariants(contract, failures)
+    _validate_browser_surface(failures)
+    _validate_backend_surface(failures, wp22a_source_gate=wp22a_source_gate)
+    _validate_api_surface(failures)
+    _validate_vault_surface(failures)
+    _validate_persistence_surface(failures)
+    return _emit_result(failures, wp22a_source_gate=wp22a_source_gate)
 
 
 if __name__ == "__main__":
