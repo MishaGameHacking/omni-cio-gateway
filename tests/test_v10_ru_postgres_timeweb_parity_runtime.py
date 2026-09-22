@@ -84,5 +84,9 @@ def test_proof_uses_provider_neutral_postgres_runtime_primitives() -> None:
     assert "postgres_runtime.converge_runtime_role(" in source
     assert "postgres_runtime.verify_runtime(runtime, RUNTIME_ROLE)" in source
     assert "provider_base._connect_postgres_with_retry(" in source
+    assert "RUNTIME_SQL = postgres_runtime.RUNTIME_SQL" in source
+    assert proof.RUNTIME_SQL == proof.postgres_runtime.RUNTIME_SQL
+    assert "infrastructure/postgres" in proof.RUNTIME_SQL.as_posix()
+    assert "infrastructure/cloudru" not in source
     assert "provision_v10_cloudflare_neon_runtime" not in source
     assert "provision_v10_render_neon_preview" not in source

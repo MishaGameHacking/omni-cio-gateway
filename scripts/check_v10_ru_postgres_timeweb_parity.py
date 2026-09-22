@@ -241,6 +241,7 @@ def _validate_proof_source() -> None:
             "apply_migrations",
             "postgres_runtime_primitives as postgres_runtime",
             "provider_runtime_primitives as provider_base",
+            "RUNTIME_SQL = postgres_runtime.RUNTIME_SQL",
             'RUNTIME_ROLE = "omni_cio_timeweb_synthetic"',
             "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)",
             "postgres_runtime.converge_runtime_role(",
@@ -268,6 +269,8 @@ def _validate_proof_source() -> None:
         "NEON_API_KEY",
         "OMNI_V10_POSTGRES_DSN",
         "PUBLIC_MULTI_USER_ENABLED=true",
+        "infrastructure/cloudru",
+        "wrangler.jsonc",
     ):
         if forbidden in source:
             raise RuntimeError("RU_PG_B_PROOF_AUTHORITY_WIDENED")

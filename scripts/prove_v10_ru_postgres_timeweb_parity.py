@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import secrets
 import sys
 from typing import Any
@@ -28,8 +27,7 @@ from omni_cio.persistence.migration import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_SQL = ROOT / "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql"
+RUNTIME_SQL = postgres_runtime.RUNTIME_SQL
 DSN_ENV = "OMNI_V10_RU_PG_BOOTSTRAP_DSN"
 ACK_ENV = "OMNI_V10_RU_PG_SYNTHETIC_ACK"
 ACK_VALUE = "TIMEWEB_SYNTHETIC_ONLY"

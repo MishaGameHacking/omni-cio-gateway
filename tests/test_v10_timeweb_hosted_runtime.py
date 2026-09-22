@@ -233,7 +233,8 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "omni_cio_hosted_api" not in runtime
     assert "omni_cio_cloudflare_" not in runtime
     assert "HOSTED_SESSION_POLICY" in runtime
-    assert "HOSTED_SESSION_POLICY" not in runtime
+    hosted_app = current_sources[1].read_text(encoding="utf-8")
+    assert "HOSTED_SESSION_POLICY" not in hosted_app
     assert 'additional_hosts=("localhost",)' in runtime
 
 
