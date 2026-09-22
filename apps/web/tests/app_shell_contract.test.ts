@@ -119,7 +119,7 @@ test("deployed source identity comes only from server-validated runtime status",
   const systemAdmin = readFileSync(new URL("../src/app-shell/system-admin.tsx", import.meta.url), "utf8");
   const vite = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
   assert.match(systemAdmin, /status\?\.release\.git_sha/);
-  assert.match(systemAdmin, /Exact source Git SHA/);
+  assert.match(systemAdmin, />Git SHA</);
   for (const source of [pages, shell, systemAdmin, vite]) {
     assert.doesNotMatch(source, /__OMNI_WEB_BUILD_SHA__/);
   }

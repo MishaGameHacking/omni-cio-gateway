@@ -79,7 +79,7 @@ export function SystemAdminPage({
               <dd><Value value={status?.release.release} /></dd>
             </div>
             <div>
-              <dt>Exact source Git SHA</dt>
+              <dt>Git SHA</dt>
               <dd><code><Value value={status?.release.git_sha} /></code></dd>
             </div>
             <div>
