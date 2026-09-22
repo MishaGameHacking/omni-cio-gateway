@@ -185,6 +185,11 @@ def validate_fast_workflow(failures: list[str]) -> None:
             "Fast PR Checks must not consume repository/environment secrets"
         )
 
+    if "python -m ruff format --check ." in text:
+        failures.append(
+            "Fast PR formatting must be scoped to exact base-to-head changed Python files"
+        )
+
     blocked = _hosted_capacity_blocked(failures)
     if blocked:
         if JOB_LEVEL_ROUTE_IF.search(text):
@@ -203,6 +208,12 @@ def validate_fast_workflow(failures: list[str]) -> None:
                 "python scripts\\check_v10_repository_boundaries.py",
                 "python scripts\\check_v10_toolchain_baseline.py",
                 "python scripts\\check_v10_regression_shield.py",
+                "Compile complete repository Python surface",
+                "python -m compileall -q",
+                "Run early repository Python lint and changed-file format gates",
+                "python -m ruff check .",
+                "git diff --name-only --diff-filter=ACMRT -z",
+                'python -m ruff format --check "${changed_python[@]}"',
                 "Fast frontend substantive checks NOT_APPLICABLE",
                 "process.version !== 'v24.18.0'",
                 "11.16.0",
@@ -357,6 +368,18 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
         )
 
 
+def validate_authoritative_gate_order(text: str, failures: list[str]) -> None:
+    secret_scan = "name: Scan tracked content for potential secrets"
+    regression_shield = "name: Run protected Regression Shield with coverage"
+    if secret_scan not in text or regression_shield not in text:
+        return
+    if text.index(secret_scan) > text.index(regression_shield):
+        failures.append(
+            "Authoritative Merge Gate secret scan must run before protected "
+            "Regression Shield"
+        )
+
+
 def validate_authoritative_workflow(failures: list[str]) -> None:
     text = validate_common_workflow(AUTHORITATIVE_WORKFLOW, failures)
     if not text:
@@ -374,6 +397,7 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
             "Authoritative Lenovo gate must not install toolchains at job runtime; "
             "clean V10 toolchain compatibility remains a separate evidence lane"
         )
+    validate_authoritative_gate_order(text, failures)
     require_tokens(
         text,
         (

@@ -232,7 +232,7 @@ jobs:
           python -m ruff check .
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             mapfile -d '' changed_python < <(
-              git diff --name-only --diff-filter=ACMRT -z                 "$BASE_SHA" "$HEAD_SHA" -- '*.py'
+              git diff --name-only --diff-filter=ACMRT -z "$BASE_SHA" "$HEAD_SHA" -- '*.py'
             )
             if [ "${#changed_python[@]}" -gt 0 ]; then
               python -m ruff format --check "${changed_python[@]}"

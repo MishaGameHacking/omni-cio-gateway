@@ -56,7 +56,14 @@ def test_exact_phase3_acceptance_evidence_is_pinned() -> None:
 
     chunks = authority["accepted_main_sha_chunks"]
     assert isinstance(chunks, list)
-    assert "".join(chunks) == ("fbd50b2aa5029170d9aabf178103e2e761648422")
+    assert chunks == [
+        "fbd50b2a",
+        "a5029170",
+        "d9aabf17",
+        "8103e2e7",
+        "61648422",
+    ]
+    assert len("".join(chunks)) == 40
     assert authority["phase3_accepted"] is True
     assert authority["phase4_authorized"] is True
 

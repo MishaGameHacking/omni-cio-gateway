@@ -143,7 +143,6 @@ class NeonEgressBoundaryTests(unittest.TestCase):
         self.assertNotIn("${{ secrets.", source)
         self.assertNotIn("uses: actions/checkout@", source)
 
-
     def test_compare_marker_contains_no_network_or_provider_identifier_detail(
         self,
     ) -> None:
