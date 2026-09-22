@@ -14,7 +14,7 @@ export const appRoutes = [
 ] as const;
 
 export type AppRoutePath = (typeof appRoutes)[number]["path"];
-export type IdentityProvider = "telegram" | "vk_id";
+export type IdentityProvider = "telegram";
 
 export interface WebSessionView {
   authenticated: boolean;

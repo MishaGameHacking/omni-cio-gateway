@@ -33,10 +33,11 @@ test("WP17 exposes the exact Master Plan navigation routes", () => {
   assert.equal(isKnownRoute("/private-other-tenant"), false);
 });
 
-test("ordinary login surface is exactly Telegram and VK ID without local password", () => {
+test("ordinary login surface is exactly Telegram without local password", () => {
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.match(shell, /Продолжить через Telegram/);
-  assert.match(shell, /Продолжить через VK ID/);
+  assert.doesNotMatch(shell, /Продолжить через VK ID/);
+  assert.doesNotMatch(shell, /vk_id/);
   assert.doesNotMatch(shell, /type=["']password["']/i);
   assert.doesNotMatch(shell, /Google/i);
 });
@@ -44,9 +45,9 @@ test("ordinary login surface is exactly Telegram and VK ID without local passwor
 test("provider login starts with POST forms instead of state-changing GET navigation", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
-  assert.match(api, /\/api\/v10\/web\/auth\/\$\{provider\}\/start/);
-  assert.match(shell, /<form method="post" action=\{providerLoginPath\("telegram"\)\}>/);
-  assert.match(shell, /<form method="post" action=\{providerLoginPath\("vk_id"\)\}>/);
+  assert.match(api, /\/api\/v10\/web\/auth\/telegram\/start/);
+  assert.match(shell, /<form method="post" action=\{providerLoginPath\(\)\}>/);
+  assert.doesNotMatch(shell, /vk_id/);
   assert.doesNotMatch(shell, /href=\{providerLoginPath/);
 });
 

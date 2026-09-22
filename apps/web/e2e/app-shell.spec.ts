@@ -6,7 +6,7 @@ async function mockAuthenticatedApi(page: import("@playwright/test").Page, optio
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ authenticated: true, user_label: "USER", tenant_label: "Tenant" }) });
   });
   await page.route("**/api/v10/web/auth/providers", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" }, { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" }]) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" }]) });
   });
   await page.route("**/api/v10/web/preview-mode", async (route) => {
     await route.fulfill({
@@ -30,7 +30,7 @@ async function mockAuthenticatedApi(page: import("@playwright/test").Page, optio
   });
 }
 
-async function mockUnauthenticatedApi(page: import("@playwright/test").Page, providers: Array<{ provider: "telegram" | "vk_id"; enabled: boolean; reason?: string }>) {
+async function mockUnauthenticatedApi(page: import("@playwright/test").Page, providers: Array<{ provider: "telegram"; enabled: boolean; reason?: string }>) {
   await page.route("**/api/v10/web/session", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: '{"authenticated":false}' });
   });
@@ -42,15 +42,14 @@ async function mockUnauthenticatedApi(page: import("@playwright/test").Page, pro
   });
 }
 
-test("unauthenticated route is guarded and exposes only Telegram/VK login", async ({ page }) => {
+test("unauthenticated route is guarded and exposes only Telegram login", async ({ page }) => {
   await mockUnauthenticatedApi(page, [
     { provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" },
-    { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
   ]);
   await page.goto("/portfolio");
   await expect(page.getByRole("heading", { name: "Вход в личный аккаунт" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Продолжить через Telegram" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Продолжить через VK ID" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /VK ID/i })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Портфель" })).toHaveCount(0);
   await expect(page.getByText(/OWNER acceptance|публичная демонстрация/i)).toHaveCount(0);
 });
@@ -58,30 +57,23 @@ test("unauthenticated route is guarded and exposes only Telegram/VK login", asyn
 test("configured but activation-blocked provider stays disabled truthfully", async ({ page }) => {
   await mockUnauthenticatedApi(page, [
     { provider: "telegram", enabled: false, reason: "PUBLIC_MULTI_USER_DISABLED" },
-    { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
   ]);
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Продолжить через Telegram" })).toBeDisabled();
   await expect(page.getByText(/публичная регистрация ещё не активирована/i)).toBeVisible();
 });
 
-test("active provider does not inherit a disabled sibling's public-registration warning", async ({ page }) => {
-  await mockUnauthenticatedApi(page, [
-    { provider: "telegram", enabled: true },
-    { provider: "vk_id", enabled: false, reason: "PROVIDER_ACTIVATION_DISABLED" },
-  ]);
+test("active Telegram provider renders no disabled-provider warning", async ({ page }) => {
+  await mockUnauthenticatedApi(page, [{ provider: "telegram", enabled: true }]);
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Продолжить через Telegram" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Продолжить через VK ID" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /VK ID/i })).toHaveCount(0);
   await expect(page.getByText(/публичная регистрация ещё не активирована/i)).toHaveCount(0);
-  await expect(page.getByText(/настроенных провайдеров входа ещё не активирована/i)).toBeVisible();
+  await expect(page.getByText("Telegram Login доступен.")).toBeVisible();
 });
 
 test("configured provider login uses a top-level POST instead of state-changing GET", async ({ page }) => {
-  await mockUnauthenticatedApi(page, [
-    { provider: "telegram", enabled: true },
-    { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
-  ]);
+  await mockUnauthenticatedApi(page, [{ provider: "telegram", enabled: true }]);
   let observedMethod = "";
   await page.route("**/api/v10/web/auth/telegram/start", async (route) => {
     observedMethod = route.request().method();

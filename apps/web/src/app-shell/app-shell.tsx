@@ -40,36 +40,34 @@ type LoginScreenProps = Readonly<{
   apiUnavailable: boolean;
 }>;
 
-function providerStatusCaption(providers: readonly (ProviderView | undefined)[]): string {
-  if (providers.some((item) => item?.reason === "PUBLIC_MULTI_USER_DISABLED")) {
-    return "Провайдер настроен, но публичная регистрация ещё не активирована.";
+function providerStatusCaption(provider: ProviderView | undefined): string {
+  if (provider?.reason === "PUBLIC_MULTI_USER_DISABLED") {
+    return "Telegram настроен, но публичная регистрация ещё не активирована.";
   }
-  if (providers.some((item) => item?.reason === "PROVIDER_ACTIVATION_DISABLED")) {
-    return "Часть настроенных провайдеров входа ещё не активирована.";
+  if (provider?.reason === "PROVIDER_ACTIVATION_DISABLED") {
+    return "Telegram Login настроен, но активация входа ещё не разрешена.";
   }
-  return "Provider buttons остаются fail-closed до reviewed provider configuration.";
+  if (provider?.enabled) {
+    return "Telegram Login доступен.";
+  }
+  return "Telegram Login остаётся fail-closed до reviewed provider configuration.";
 }
 
 function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
-  const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
-  const telegram = provider("telegram");
-  const vk = provider("vk_id");
+  const telegram = providers.find((item) => item.provider === "telegram");
   return (
     <main className="login-shell" role="main">
       <section className="login-card" aria-labelledby="login-title">
         <p className="shell-eyebrow">OMNI-CIO V10</p>
         <h1 id="login-title">Вход в личный аккаунт</h1>
-        <p className="shell-muted">Обычный вход — только через Telegram или VK ID. Локального пароля Omni-CIO нет.</p>
+        <p className="shell-muted">Обычный вход — только через Telegram. Локального пароля Omni-CIO нет.</p>
         {apiUnavailable ? <div className="login-warning" role="alert">Authentication API недоступен. Доступ к приватным разделам закрыт.</div> : null}
         <div className="login-actions">
-          <form method="post" action={providerLoginPath("telegram")}>
+          <form method="post" action={providerLoginPath()}>
             <button className="ds-button ds-button--primary" disabled={!telegram?.enabled} type="submit">Продолжить через Telegram</button>
           </form>
-          <form method="post" action={providerLoginPath("vk_id")}>
-            <button className="ds-button ds-button--secondary" disabled={!vk?.enabled} type="submit">Продолжить через VK ID</button>
-          </form>
         </div>
-        <p className="shell-caption">{providerStatusCaption([telegram, vk])}</p>
+        <p className="shell-caption">{providerStatusCaption(telegram)}</p>
       </section>
     </main>
   );

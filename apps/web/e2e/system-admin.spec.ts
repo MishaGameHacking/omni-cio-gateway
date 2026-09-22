@@ -14,7 +14,6 @@ async function mockShell(page: import("@playwright/test").Page, systemStatus?: o
       contentType: "application/json",
       body: JSON.stringify([
         { provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" },
-        { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
       ]),
     });
   });
