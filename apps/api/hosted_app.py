@@ -127,7 +127,6 @@ def _origin_hostname(value: str) -> str | None:
     return parsed.hostname.lower().rstrip(".")
 
 
-
 def _now_iso(services: HostedRuntimeServicesV1) -> str:
     return _utc(services.now()).isoformat()
 
@@ -173,7 +172,6 @@ def _rate_error(*, retry_after_seconds: int, api_path: bool = True) -> Response:
         headers={"Retry-After": str(retry_after_seconds)},
     )
     return _harden_response(response, api_path=api_path)
-
 
 
 def _request_session_scope(request: Request) -> SessionScopeV1 | None:
@@ -317,7 +315,6 @@ def _require_session(request: Request) -> SessionScopeV1 | Response:
     if scope is None:
         return _safe_error("AUTHENTICATION_REQUIRED", 401)
     return scope
-
 
 
 def _empty_portfolio(
@@ -811,7 +808,6 @@ def _register_hosted_routes(
         methods=["GET"],
         include_in_schema=False,
     )
-
 
 
 
