@@ -21,9 +21,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         files = inventory._repository_files()
         keywords = inventory._validate_contract(self.payload)
         provider_named = tuple(
-            path
-            for path in files
-            if inventory._provider_named_path(path, keywords)
+            path for path in files if inventory._provider_named_path(path, keywords)
         )
         self.assertEqual(
             len(provider_named),
@@ -168,9 +166,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             RuntimeError,
             "TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID",
         ):
-            inventory._provider_keywords(
-                {"provider_path_keywords": too_many_keywords}
-            )
+            inventory._provider_keywords({"provider_path_keywords": too_many_keywords})
 
     def test_current_contract_stays_within_verifier_bounds(self) -> None:
         self.assertLessEqual(

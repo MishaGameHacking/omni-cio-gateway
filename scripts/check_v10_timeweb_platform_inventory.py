@@ -106,9 +106,7 @@ _RETIRED_EXECUTION_MARKERS = (
     "provision_v10_render_neon_preview",
     _WRANGLER_CONFIG_PATH,
 )
-_RETIRED_EXECUTION_MARKERS_CASEFOLD = (
-    "infrastructure/cloudru/wp22a",
-)
+_RETIRED_EXECUTION_MARKERS_CASEFOLD = ("infrastructure/cloudru/wp22a",)
 
 
 def _read(path: Path) -> str:
@@ -162,11 +160,7 @@ def _classification(entry: object) -> str:
 
 
 def _normalized_text(value: object, *, case_sensitive: bool, code: str) -> str:
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value) > _MAX_MATCH_TEXT_LENGTH
-    ):
+    if not isinstance(value, str) or not value or len(value) > _MAX_MATCH_TEXT_LENGTH:
         raise RuntimeError(code)
     return value if case_sensitive else value.casefold()
 
@@ -253,11 +247,7 @@ def _classify_path(path: str, payload: dict[str, Any]) -> str | None:
 
 def _provider_keywords(payload: dict[str, Any]) -> tuple[str, ...]:
     value = payload.get("provider_path_keywords")
-    if (
-        not isinstance(value, list)
-        or not value
-        or len(value) > _MAX_PROVIDER_KEYWORDS
-    ):
+    if not isinstance(value, list) or not value or len(value) > _MAX_PROVIDER_KEYWORDS:
         raise RuntimeError(_PROVIDER_KEYWORDS_INVALID)
     keywords: list[str] = []
     for item in value:
@@ -358,8 +348,7 @@ def _should_scan_content(path: str) -> bool:
         return False
     name = Path(path).name
     return (
-        name in _CONTENT_SCAN_FILENAMES
-        or path.endswith(tuple(_CONTENT_SCAN_SUFFIXES))
+        name in _CONTENT_SCAN_FILENAMES or path.endswith(tuple(_CONTENT_SCAN_SUFFIXES))
     ) and path.startswith(_CONTENT_SCAN_PREFIXES)
 
 
@@ -367,9 +356,7 @@ def _contains_retired_execution_marker(source: str) -> bool:
     if any(marker in source for marker in _RETIRED_EXECUTION_MARKERS):
         return True
     normalized = source.replace("\\", "/").casefold()
-    return any(
-        marker in normalized for marker in _RETIRED_EXECUTION_MARKERS_CASEFOLD
-    )
+    return any(marker in normalized for marker in _RETIRED_EXECUTION_MARKERS_CASEFOLD)
 
 
 def _validate_content_consumers(
