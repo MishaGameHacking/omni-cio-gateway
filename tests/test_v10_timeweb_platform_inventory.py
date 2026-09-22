@@ -147,6 +147,42 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "KEEP",
         )
 
+    def test_matcher_inputs_are_bounded(self) -> None:
+        too_many_values = [
+            f"marker-{index}" for index in range(inventory._MAX_MATCH_VALUES + 1)
+        ]
+        with self.assertRaisesRegex(RuntimeError, "TIMEWEB_INVENTORY_RULE_INVALID"):
+            inventory._rule_matches(
+                "scripts/example.py",
+                {"match": {"contains_any": too_many_values}},
+            )
+        with self.assertRaisesRegex(RuntimeError, "TIMEWEB_INVENTORY_RULE_INVALID"):
+            inventory._rule_matches(
+                "scripts/example.py",
+                {"match": {"contains": "x" * (inventory._MAX_MATCH_TEXT_LENGTH + 1)}},
+            )
+        too_many_keywords = [
+            f"provider{index}" for index in range(inventory._MAX_PROVIDER_KEYWORDS + 1)
+        ]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID",
+        ):
+            inventory._provider_keywords(
+                {"provider_path_keywords": too_many_keywords}
+            )
+
+    def test_current_contract_stays_within_verifier_bounds(self) -> None:
+        self.assertLessEqual(
+            len(self.payload["provider_path_keywords"]),
+            inventory._MAX_PROVIDER_KEYWORDS,
+        )
+        self.assertLessEqual(len(self.payload["path_rules"]), inventory._MAX_PATH_RULES)
+        self.assertLessEqual(
+            len(self.payload["explicit_paths"]),
+            inventory._MAX_EXPLICIT_PATHS,
+        )
+
     def test_safe_matcher_rejects_empty_or_unknown_rule_shapes(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "TIMEWEB_INVENTORY_RULE_INVALID"):
             inventory._rule_matches("anything.py", {"match": {}})

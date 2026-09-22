@@ -15,6 +15,18 @@ ALLOWED_CLASSES = {
     "RETIRE_NOW_AFTER_AUTHORITY",
     "HISTORY",
 }
+_RULE_INVALID = "TIMEWEB_INVENTORY_RULE_INVALID"
+_CONTRACT_INVALID = "TIMEWEB_INVENTORY_CONTRACT_INVALID"
+_PROVIDER_KEYWORDS_INVALID = "TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID"
+_EXTERNAL_SURFACES_INVALID = "TIMEWEB_INVENTORY_EXTERNAL_SURFACES_INVALID"
+_MAX_PROVIDER_KEYWORDS = 32
+_MAX_PROVIDER_KEYWORD_LENGTH = 64
+_MAX_PATH_RULES = 64
+_MAX_EXPLICIT_PATHS = 512
+_MAX_MATCH_VALUES = 32
+_MAX_MATCH_TEXT_LENGTH = 256
+_MAX_REPOSITORY_FILES = 5_000
+_MAX_TOTAL_SCANNED_SOURCE_BYTES = 100_000_000
 _IGNORED_DIRECTORIES = frozenset(
     {
         ".git",
@@ -106,9 +118,9 @@ def _load() -> dict[str, Any]:
     try:
         payload = json.loads(_read(CONTRACT))
     except json.JSONDecodeError as exc:
-        raise RuntimeError("TIMEWEB_INVENTORY_CONTRACT_INVALID") from exc
+        raise RuntimeError(_CONTRACT_INVALID) from exc
     if not isinstance(payload, dict):
-        raise RuntimeError("TIMEWEB_INVENTORY_CONTRACT_INVALID")
+        raise RuntimeError(_CONTRACT_INVALID)
     return payload
 
 
@@ -128,6 +140,8 @@ def _repository_files(root: Path = ROOT) -> tuple[str, ...]:
             except ValueError as exc:
                 raise RuntimeError("TIMEWEB_INVENTORY_PATH_ESCAPE") from exc
             result.append(relative.as_posix())
+            if len(result) > _MAX_REPOSITORY_FILES:
+                raise RuntimeError("TIMEWEB_INVENTORY_REPOSITORY_FILE_LIMIT")
     return tuple(sorted(result))
 
 
@@ -144,7 +158,11 @@ def _classification(entry: object) -> str:
 
 
 def _normalized_text(value: object, *, case_sensitive: bool, code: str) -> str:
-    if not isinstance(value, str) or not value:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > _MAX_MATCH_TEXT_LENGTH
+    ):
         raise RuntimeError(code)
     return value if case_sensitive else value.casefold()
 
@@ -152,10 +170,10 @@ def _normalized_text(value: object, *, case_sensitive: bool, code: str) -> str:
 def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
     match = rule.get("match")
     if not isinstance(match, dict):
-        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+        raise RuntimeError(_RULE_INVALID)
     case_sensitive = match.get("case_sensitive", True)
     if not isinstance(case_sensitive, bool):
-        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+        raise RuntimeError(_RULE_INVALID)
     candidate = path if case_sensitive else path.casefold()
     selector_count = 0
 
@@ -171,7 +189,7 @@ def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
         expected = _normalized_text(
             value,
             case_sensitive=case_sensitive,
-            code="TIMEWEB_INVENTORY_RULE_INVALID",
+            code=_RULE_INVALID,
         )
         if not predicate(candidate, expected):
             return False
@@ -179,23 +197,27 @@ def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
     contains_any = match.get("contains_any")
     if contains_any is not None:
         selector_count += 1
-        if not isinstance(contains_any, list) or not contains_any:
-            raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+        if (
+            not isinstance(contains_any, list)
+            or not contains_any
+            or len(contains_any) > _MAX_MATCH_VALUES
+        ):
+            raise RuntimeError(_RULE_INVALID)
         expected_any = tuple(
             _normalized_text(
                 value,
                 case_sensitive=case_sensitive,
-                code="TIMEWEB_INVENTORY_RULE_INVALID",
+                code=_RULE_INVALID,
             )
             for value in contains_any
         )
         if len(expected_any) != len(set(expected_any)):
-            raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+            raise RuntimeError(_RULE_INVALID)
         if not any(value in candidate for value in expected_any):
             return False
 
     if selector_count == 0:
-        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+        raise RuntimeError(_RULE_INVALID)
     extra = set(match) - {
         "prefix",
         "suffix",
@@ -204,7 +226,7 @@ def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
         "case_sensitive",
     }
     if extra:
-        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+        raise RuntimeError(_RULE_INVALID)
     return True
 
 
@@ -212,12 +234,14 @@ def _classify_path(path: str, payload: dict[str, Any]) -> str | None:
     explicit = payload.get("explicit_paths")
     rules = payload.get("path_rules")
     if not isinstance(explicit, dict) or not isinstance(rules, list):
-        raise RuntimeError("TIMEWEB_INVENTORY_CONTRACT_INVALID")
+        raise RuntimeError(_CONTRACT_INVALID)
+    if len(explicit) > _MAX_EXPLICIT_PATHS or len(rules) > _MAX_PATH_RULES:
+        raise RuntimeError(_CONTRACT_INVALID)
     if path in explicit:
         return _classification(explicit[path])
     for rule in rules:
         if not isinstance(rule, dict):
-            raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+            raise RuntimeError(_RULE_INVALID)
         if _rule_matches(path, rule):
             return _classification(rule)
     return None
@@ -225,15 +249,24 @@ def _classify_path(path: str, payload: dict[str, Any]) -> str | None:
 
 def _provider_keywords(payload: dict[str, Any]) -> tuple[str, ...]:
     value = payload.get("provider_path_keywords")
-    if not isinstance(value, list) or not value:
-        raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID")
+    if (
+        not isinstance(value, list)
+        or not value
+        or len(value) > _MAX_PROVIDER_KEYWORDS
+    ):
+        raise RuntimeError(_PROVIDER_KEYWORDS_INVALID)
     keywords: list[str] = []
     for item in value:
-        if not isinstance(item, str) or not item or item != item.casefold():
-            raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID")
+        if (
+            not isinstance(item, str)
+            or not item
+            or len(item) > _MAX_PROVIDER_KEYWORD_LENGTH
+            or item != item.casefold()
+        ):
+            raise RuntimeError(_PROVIDER_KEYWORDS_INVALID)
         keywords.append(item)
     if len(keywords) != len(set(keywords)):
-        raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID")
+        raise RuntimeError(_PROVIDER_KEYWORDS_INVALID)
     return tuple(keywords)
 
 
@@ -291,7 +324,7 @@ def _validate_coverage(
 ) -> None:
     explicit = payload.get("explicit_paths")
     if not isinstance(explicit, dict):
-        raise RuntimeError("TIMEWEB_INVENTORY_CONTRACT_INVALID")
+        raise RuntimeError(_CONTRACT_INVALID)
     file_set = set(files)
     missing_explicit = sorted(set(explicit) - file_set)
     if missing_explicit:
@@ -339,6 +372,7 @@ def _validate_content_consumers(
     payload: dict[str, Any],
     files: tuple[str, ...],
 ) -> None:
+    total_source_bytes = 0
     for relative in files:
         if not _should_scan_content(relative):
             continue
@@ -349,6 +383,9 @@ def _validate_content_consumers(
             raise RuntimeError("TIMEWEB_INVENTORY_SOURCE_STAT_FAILED") from exc
         if size > _MAX_SCANNED_SOURCE_BYTES:
             raise RuntimeError("TIMEWEB_INVENTORY_SOURCE_TOO_LARGE:" + relative)
+        total_source_bytes += size
+        if total_source_bytes > _MAX_TOTAL_SCANNED_SOURCE_BYTES:
+            raise RuntimeError("TIMEWEB_INVENTORY_TOTAL_SOURCE_LIMIT")
         source = _read(path)
         if not _contains_retired_execution_marker(source):
             continue
@@ -438,15 +475,15 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
 def _validate_external_surfaces(payload: dict[str, Any]) -> None:
     rows = payload.get("external_surfaces")
     if not isinstance(rows, list):
-        raise RuntimeError("TIMEWEB_INVENTORY_EXTERNAL_SURFACES_INVALID")
+        raise RuntimeError(_EXTERNAL_SURFACES_INVALID)
     by_surface: dict[str, str] = {}
     for row in rows:
         if not isinstance(row, dict):
-            raise RuntimeError("TIMEWEB_INVENTORY_EXTERNAL_SURFACES_INVALID")
+            raise RuntimeError(_EXTERNAL_SURFACES_INVALID)
         name = row.get("surface")
         classification = row.get("classification")
         if not isinstance(name, str) or classification not in ALLOWED_CLASSES:
-            raise RuntimeError("TIMEWEB_INVENTORY_EXTERNAL_SURFACES_INVALID")
+            raise RuntimeError(_EXTERNAL_SURFACES_INVALID)
         by_surface[name] = str(classification)
     expected = {
         "Timeweb Cloud App Platform": "KEEP",
