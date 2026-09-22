@@ -8,11 +8,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json"
+_CLASS_TIMEWEB_REPLACE = "TIMEWEB_REPLACE"
+_CLASS_RETIRE_NOW_AFTER_AUTHORITY = "RETIRE_NOW_AFTER_AUTHORITY"
+_RENDER_CONFIG_PATH = "render.yaml"
+_WRANGLER_CONFIG_PATH = "wrangler.jsonc"
 ALLOWED_CLASSES = {
     "KEEP",
-    "TIMEWEB_REPLACE",
+    _CLASS_TIMEWEB_REPLACE,
     "RETIRE_AFTER_CUTOVER",
-    "RETIRE_NOW_AFTER_AUTHORITY",
+    _CLASS_RETIRE_NOW_AFTER_AUTHORITY,
     "HISTORY",
 }
 _RULE_INVALID = "TIMEWEB_INVENTORY_RULE_INVALID"
@@ -75,8 +79,8 @@ _CONTENT_SCAN_FILENAMES = frozenset(
     {
         "Dockerfile",
         "Dockerfile.cloudflare",
-        "render.yaml",
-        "wrangler.jsonc",
+        _RENDER_CONFIG_PATH,
+        _WRANGLER_CONFIG_PATH,
     }
 )
 _STATIC_EVIDENCE_PATHS = frozenset(
@@ -100,7 +104,7 @@ _RETIRED_EXECUTION_MARKERS = (
     "CF_ACCESS_JWT_HEADER",
     "provision_v10_cloudflare_neon_runtime",
     "provision_v10_render_neon_preview",
-    "wrangler.jsonc",
+    _WRANGLER_CONFIG_PATH,
 )
 _RETIRED_EXECUTION_MARKERS_CASEFOLD = (
     "infrastructure/cloudru/wp22a",
@@ -288,9 +292,9 @@ def _validate_contract(payload: dict[str, Any]) -> tuple[str, ...]:
         raise RuntimeError("TIMEWEB_INVENTORY_UNSAFE_LEGACY_FIELD")
     if payload.get("classification_vocabulary") != [
         "KEEP",
-        "TIMEWEB_REPLACE",
+        _CLASS_TIMEWEB_REPLACE,
         "RETIRE_AFTER_CUTOVER",
-        "RETIRE_NOW_AFTER_AUTHORITY",
+        _CLASS_RETIRE_NOW_AFTER_AUTHORITY,
         "HISTORY",
     ]:
         raise RuntimeError("TIMEWEB_INVENTORY_VOCABULARY_INVALID")
@@ -432,10 +436,10 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
         "scripts/provision_v10_timeweb_postgres_synthetic.py",
         "scripts/timeweb_ipv4_allocation_provider.py",
-        "wrangler.jsonc",
+        _WRANGLER_CONFIG_PATH,
     }
     for path in replacement_required:
-        if _classify_path(path, payload) != "TIMEWEB_REPLACE":
+        if _classify_path(path, payload) != _CLASS_TIMEWEB_REPLACE:
             raise RuntimeError("TIMEWEB_INVENTORY_TRANSITIVE_CONSUMER_UNBOUND:" + path)
 
     historical_required = {
@@ -457,17 +461,17 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         ".github/workflows/regression-shield.yml",
         ".github/workflows/self-hosted-windows-smoke.yml",
         ".github/workflows/v10-wp22a-clientless-access-audit.yml",
-        "render.yaml",
+        _RENDER_CONFIG_PATH,
     ):
         if _classify_path(path, payload) != "KEEP":
             raise RuntimeError("TIMEWEB_INVENTORY_KEEP_CLASSIFICATION_DRIFT:" + path)
 
-    render = _read(ROOT / "render.yaml")
+    render = _read(ROOT / _RENDER_CONFIG_PATH)
     if "uvicorn app:app" not in render:
         raise RuntimeError("TIMEWEB_INVENTORY_V9_ENTRYPOINT_DRIFT")
     if (
         _classify_path("omni_cio/web/vk_id_oauth_v1.py", payload)
-        != "RETIRE_NOW_AFTER_AUTHORITY"
+        != _CLASS_RETIRE_NOW_AFTER_AUTHORITY
     ):
         raise RuntimeError("TIMEWEB_INVENTORY_VK_RETIREMENT_INVALID")
 
@@ -492,7 +496,7 @@ def _validate_external_surfaces(payload: dict[str, Any]) -> None:
         "Cloudflare V10 resources": "HISTORY",
         "Neon V10 resources": "HISTORY",
         "Protected V9 Render app:app": "KEEP",
-        "VK ID": "RETIRE_NOW_AFTER_AUTHORITY",
+        "VK ID": _CLASS_RETIRE_NOW_AFTER_AUTHORITY,
     }
     for name, classification in expected.items():
         if by_surface.get(name) != classification:
