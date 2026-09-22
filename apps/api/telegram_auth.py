@@ -16,7 +16,7 @@ from omni_cio.web.product_identity_v1 import (
     ProductIdentityServiceV1,
     SessionIssuerLike,
 )
-from omni_cio.web.provider_auth_routes_v1 import ProviderAuthRouteServicesV1
+from omni_cio.web.telegram_auth_services_v1 import TelegramAuthRouteServicesV1
 from omni_cio.web.provider_auth_v1 import (
     PostgresAuthorizationTransactionStoreV1,
     ProviderAuthenticationRuntimeLike,
@@ -90,7 +90,7 @@ def build_telegram_provider_auth(
     canonical_origin: str,
     env: Mapping[str, str] | None = None,
     now: Callable[[], datetime] = _now,
-) -> ProviderAuthRouteServicesV1:
+) -> TelegramAuthRouteServicesV1:
     """Compose only Telegram Login; public activation remains independently gated."""
 
     environment = os.environ if env is None else env
@@ -126,14 +126,13 @@ def build_telegram_provider_auth(
         disabled[IdentityProviderV1.TELEGRAM] = "PROVIDER_ACTIVATION_DISABLED"
 
     if not configured or not (public_enabled and login_enabled):
-        return ProviderAuthRouteServicesV1(
+        return TelegramAuthRouteServicesV1(
             runtimes=(),
             authentication=None,
             cookies=cookies,
             now=now,
             disabled_reasons=disabled,
             registration_enabled=False,
-            descriptor_providers=(IdentityProviderV1.TELEGRAM,),
         )
 
     transactions = PostgresAuthorizationTransactionStoreV1(connection)
@@ -158,12 +157,11 @@ def build_telegram_provider_auth(
         transactions=transactions,
         verifier=TelegramJwksSingleFlightVerifierV1(telegram_config),
     )
-    return ProviderAuthRouteServicesV1(
+    return TelegramAuthRouteServicesV1(
         runtimes=(runtime,),
         authentication=authentication,
         cookies=cookies,
         now=now,
         disabled_reasons=disabled,
         registration_enabled=True,
-        descriptor_providers=(IdentityProviderV1.TELEGRAM,),
     )

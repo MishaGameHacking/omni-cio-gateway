@@ -22,7 +22,7 @@ from omni_cio.web.browser_security_v1 import (
     BROWSER_SESSION_COOKIE,
     BrowserCookiePolicyV1,
 )
-from omni_cio.web.provider_auth_routes_v1 import ProviderAuthRouteServicesV1
+from omni_cio.web.telegram_auth_services_v1 import TelegramAuthRouteServicesV1
 from omni_cio.web.request_limits_v1 import (
     HostedRequestAbuseControlV1,
     is_session_token_candidate,
@@ -70,7 +70,7 @@ class HostedRuntimeServicesV1:
     database_probe: Callable[[], None]
     hostname: str
     release_sha: str
-    provider_auth: ProviderAuthRouteServicesV1
+    provider_auth: TelegramAuthRouteServicesV1
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     browser_origin_hostname: str | None = None
     synthetic_preview: bool = False
@@ -501,7 +501,7 @@ class _HostedRuntimeRoutesV1:
     def __init__(
         self,
         services: HostedRuntimeServicesV1,
-        provider_auth: ProviderAuthRouteServicesV1,
+        provider_auth: TelegramAuthRouteServicesV1,
         web_dist: Path,
     ) -> None:
         self._services = services

@@ -21,7 +21,7 @@ from omni_cio.web.identity_v1 import (
     ORDINARY_LOGIN_PROVIDERS,
     IdentityProviderV1,
 )
-from omni_cio.web.provider_auth_routes_v1 import ProviderAuthRouteServicesV1
+from omni_cio.web.telegram_auth_services_v1 import TelegramAuthRouteServicesV1
 from omni_cio.web.session_v1 import SessionRegistryV1
 
 
@@ -39,8 +39,8 @@ def _web_dist(tmp_path: Path) -> Path:
     return web_dist
 
 
-def _disabled_auth() -> ProviderAuthRouteServicesV1:
-    return ProviderAuthRouteServicesV1(
+def _disabled_auth() -> TelegramAuthRouteServicesV1:
+    return TelegramAuthRouteServicesV1(
         runtimes=(),
         authentication=None,
         cookies=BrowserCookiePolicyV1(csrf_binding_key=bytes([19]) * 32),
@@ -191,12 +191,12 @@ def test_current_identity_and_cookie_defaults_are_telegram_only() -> None:
     assert ORDINARY_LOGIN_PROVIDERS == (IdentityProviderV1.TELEGRAM,)
     cookies = BrowserCookiePolicyV1(csrf_binding_key=bytes([23]) * 32)
     assert cookies.allowed_providers == (IdentityProviderV1.TELEGRAM,)
-    services = ProviderAuthRouteServicesV1(
+    services = TelegramAuthRouteServicesV1(
         runtimes=(),
         authentication=None,
         cookies=cookies,
     )
-    assert services.descriptor_providers == (IdentityProviderV1.TELEGRAM,)
+    assert [item.provider for item in services.descriptors()] == [IdentityProviderV1.TELEGRAM]
 
 
 def test_telegram_builder_exposes_only_telegram_when_fail_closed() -> None:
