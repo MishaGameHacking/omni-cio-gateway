@@ -307,11 +307,23 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
         return _harden_response(response, api_path=api_path)
 
 
-def _require_session(request: Request) -> SessionScopeV1 | Response:
+class _HostedAuthenticationRequired(RuntimeError):
+    pass
+
+
+def _require_session(request: Request) -> SessionScopeV1:
     scope = _request_session_scope(request)
     if scope is None:
-        return _safe_error("AUTHENTICATION_REQUIRED", 401)
+        raise _HostedAuthenticationRequired
     return scope
+
+
+def _authentication_required(
+    request: Request,
+    exc: Exception,
+) -> Response:
+    del request, exc
+    return _safe_error("AUTHENTICATION_REQUIRED", 401)
 
 
 def _empty_portfolio(
@@ -589,9 +601,7 @@ class _HostedRuntimeRoutesV1:
         return result
 
     def logout(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         self._services.sessions.revoke(
             request.cookies.get(BROWSER_SESSION_COOKIE),
             now=_utc(self._services.now()),
@@ -603,8 +613,6 @@ class _HostedRuntimeRoutesV1:
 
     def revoke_all(self, request: Request) -> Response:
         scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
         self._services.sessions.revoke_all_for_user(
             scope.user_id,
             now=_utc(self._services.now()),
@@ -615,9 +623,7 @@ class _HostedRuntimeRoutesV1:
         return result
 
     def health(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         try:
             self._services.database_probe()
         except Exception:
@@ -638,15 +644,11 @@ class _HostedRuntimeRoutesV1:
         )
 
     def broker_connections(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         return JSONResponse([])
 
     def live_acceptance_status(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         return JSONResponse({"enabled": False})
 
     def broker_mutation_disabled(
@@ -655,9 +657,7 @@ class _HostedRuntimeRoutesV1:
         connection_id: str | None = None,
     ) -> Response:
         del connection_id
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         detail = (
             "BROKER_CREDENTIALS_DISABLED_IN_SYNTHETIC_PREVIEW"
             if self._services.synthetic_preview
@@ -666,9 +666,7 @@ class _HostedRuntimeRoutesV1:
         return _safe_error(detail, 403)
 
     def portfolio_dashboard(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         return JSONResponse(
             _empty_portfolio(
                 _now_iso(self._services),
@@ -677,21 +675,15 @@ class _HostedRuntimeRoutesV1:
         )
 
     def watchtower_incidents(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         return JSONResponse(_empty_watchtower(_now_iso(self._services)))
 
     def research_dossiers(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         return JSONResponse(_empty_research(_now_iso(self._services)))
 
     def decision_plan(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         return JSONResponse(
             _empty_decision(
                 _now_iso(self._services),
@@ -700,9 +692,7 @@ class _HostedRuntimeRoutesV1:
         )
 
     def system_status(self, request: Request) -> Response:
-        scope = _require_session(request)
-        if isinstance(scope, Response):
-            return scope
+        _require_session(request)
         try:
             payload = _system_status(
                 self._services,
@@ -725,6 +715,7 @@ def _register_hosted_routes(
     app: FastAPI,
     routes: _HostedRuntimeRoutesV1,
 ) -> None:
+    app.add_exception_handler(_HostedAuthenticationRequired, _authentication_required)
     app.add_exception_handler(Exception, routes.unhandled_exception)
     app.add_api_route(_LIVEZ_PATH, routes.livez, methods=["GET"])
     app.add_api_route(_HEALTHZ_PATH, routes.healthz, methods=["GET"])

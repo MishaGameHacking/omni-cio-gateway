@@ -168,6 +168,32 @@ def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
     assert state["calls"] == 2
 
 
+def test_private_routes_fail_closed_without_session(tmp_path: Path) -> None:
+    app = create_hosted_app(
+        HostedRuntimeServicesV1(
+            sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
+            database_probe=lambda: None,
+            hostname=HOSTNAME,
+            release_sha=RELEASE_SHA,
+            provider_auth=_disabled_auth(),
+            synthetic_preview=False,
+        ),
+        web_dist=_web_dist(tmp_path),
+        additional_hosts=("localhost",),
+        trusted_edge_tls_terminated=True,
+        provider_start_paths=frozenset(),
+        provider_route_installer=lambda app, *, services: None,
+    )
+    client = TestClient(app, base_url="http://localhost")
+
+    response = client.get("/api/v10/web/portfolio-dashboard")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "AUTHENTICATION_REQUIRED"}
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
 def test_non_synthetic_status_is_provider_neutral() -> None:
     services = HostedRuntimeServicesV1(
         sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
