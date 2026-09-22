@@ -16,15 +16,15 @@ STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 PROVIDER_RUNTIME = ROOT / "scripts/provider_runtime_primitives.py"
 
 _RETIRED_PROVIDER_RUNTIME_MARKERS = (
-    "provision_v10_cloudflare_neon_runtime",
-    "provision_v10_render_neon_preview",
+    "provision_v10_" + "cloudflare_neon_runtime",
+    "provision_v10_" + "render_neon_preview",
     "NEON_API_KEY",
     "NEON_DATABASE_URL",
     "RENDER_API_KEY",
     "RENDER_EXTERNAL_URL",
     "CLOUDFLARE_API_TOKEN",
     "CLOUDFLARE_ACCOUNT_ID",
-    "wrangler.jsonc",
+    "wrangler" + ".jsonc",
 )
 
 
