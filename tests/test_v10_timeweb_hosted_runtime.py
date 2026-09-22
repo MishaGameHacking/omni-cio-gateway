@@ -5,6 +5,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 import pytest
 
+from apps.api.hosted_database_runtime import (
+    probe_hosted_runtime_database,
+    validate_hosted_runtime_role,
+)
 from apps.api.hosted_preview import (
     PREVIEW_SESSION_POLICY,
     HostedPreviewServicesV1,
@@ -39,6 +43,88 @@ def _disabled_auth() -> ProviderAuthRouteServicesV1:
         cookies=BrowserCookiePolicyV1(csrf_binding_key=bytes([19]) * 32),
         descriptor_providers=(IdentityProviderV1.TELEGRAM,),
     )
+
+
+
+
+class _Result:
+    def __init__(
+        self,
+        *,
+        one: tuple[object, ...] | None = None,
+        rows: list[tuple[object, ...]] | None = None,
+    ) -> None:
+        self._one = one
+        self._rows = [] if rows is None else rows
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._one
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return list(self._rows)
+
+
+class _RuntimeProbeConnection:
+    def __init__(self, role: str) -> None:
+        self._role = role
+
+    def execute(self, statement: str, params: object = None) -> _Result:
+        del params
+        if statement == "SHOW server_version_num":
+            return _Result(one=("180000",))
+        if "FROM pg_catalog.pg_roles" in statement:
+            return _Result(
+                one=(
+                    self._role,
+                    True,
+                    False,
+                    False,
+                    False,
+                    False,
+                    False,
+                )
+            )
+        if "FROM pg_catalog.pg_auth_members" in statement:
+            return _Result(one=(0,))
+        if "SELECT to_regclass" in statement:
+            return _Result(
+                one=(
+                    "omni_cio_v10.tenants",
+                    "omni_cio_v10.users",
+                    "omni_cio_v10.web_sessions",
+                )
+            )
+        if "FROM pg_catalog.pg_class" in statement:
+            return _Result(
+                rows=[
+                    ("broker_accounts", True, True),
+                    ("broker_connection_accounts", True, True),
+                    ("broker_connections", True, True),
+                ]
+            )
+        raise AssertionError(statement)
+
+
+def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> None:
+    role = validate_hosted_runtime_role("omni_cio_timeweb_candidate")
+    probe_hosted_runtime_database(
+        _RuntimeProbeConnection(role),
+        expected_runtime_role=role,
+    )
+
+
+def test_provider_neutral_runtime_role_probe_rejects_identity_drift() -> None:
+    with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_ROLE_DRIFT"):
+        probe_hosted_runtime_database(
+            _RuntimeProbeConnection("omni_cio_other_runtime"),
+            expected_runtime_role="omni_cio_timeweb_candidate",
+        )
+
+
+def test_provider_neutral_runtime_role_validation_fails_closed() -> None:
+    for role in ("", "OMNI-CIO", "omni cio", "../runtime", "a" * 64):
+        with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_ROLE_INVALID"):
+            validate_hosted_runtime_role(role)
 
 
 def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
@@ -137,8 +223,12 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
         assert marker not in combined
 
     runtime = current_sources[0].read_text(encoding="utf-8")
-    assert "_probe_runtime_database" in runtime
+    assert "probe_hosted_runtime_database" in runtime
+    assert "_probe_runtime_database" not in runtime
     assert "_probe_hosted_preview_database" not in runtime
+    assert "OMNI_V10_POSTGRES_RUNTIME_ROLE" in runtime
+    assert "omni_cio_hosted_api" not in runtime
+    assert "omni_cio_cloudflare_" not in runtime
     assert "HOSTED_SESSION_POLICY" in runtime
     assert "PREVIEW_SESSION_POLICY" not in runtime
     assert 'additional_hosts=("localhost",)' in runtime

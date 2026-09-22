@@ -6,10 +6,13 @@ import os
 from fastapi import FastAPI
 
 from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
+from apps.api.hosted_database_runtime import (
+    probe_hosted_runtime_database,
+    validate_hosted_runtime_role,
+)
 from apps.api.hosted_preview import (
     HostedPreviewServicesV1,
     _hostname,
-    _probe_runtime_database,
     _release_sha,
     _required_env,
     create_hosted_preview_app,
@@ -28,6 +31,7 @@ _RUNTIME_ENABLED_ENV = "OMNI_V10_HOSTED_RUNTIME"
 _HOSTNAME_ENV = "OMNI_V10_PUBLIC_HOSTNAME"
 _RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 _DSN_ENV = "OMNI_V10_POSTGRES_DSN"
+_RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 HOSTED_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
@@ -41,10 +45,14 @@ def create_app() -> FastAPI:
         raise RuntimeError("HOSTED_RUNTIME_NOT_ENABLED")
     hostname = _hostname(_required_env(_HOSTNAME_ENV))
     release_sha = _release_sha(_required_env(_RELEASE_SHA_ENV))
+    runtime_role = validate_hosted_runtime_role(_required_env(_RUNTIME_ROLE_ENV))
     raw_connection = connect_postgres(_required_env(_DSN_ENV))
     _configure_long_lived_web_connection(raw_connection)
     connection = _SerializedWebConnection(raw_connection)
-    _probe_runtime_database(connection)
+    probe_hosted_runtime_database(
+        connection,
+        expected_runtime_role=runtime_role,
+    )
     sessions = PostgresWebSessionRegistryV1(
         connection,
         policy=HOSTED_SESSION_POLICY,
@@ -57,7 +65,10 @@ def create_app() -> FastAPI:
     return create_hosted_preview_app(
         HostedPreviewServicesV1(
             sessions=sessions,
-            database_probe=lambda: _probe_runtime_database(connection),
+            database_probe=lambda: probe_hosted_runtime_database(
+                connection,
+                expected_runtime_role=runtime_role,
+            ),
             hostname=hostname,
             release_sha=release_sha,
             provider_auth=provider_auth,
