@@ -52,6 +52,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
     def test_hidden_shared_runtime_consumers_require_timeweb_replacement(self) -> None:
         for path in (
             "apps/api/hosted_preview.py",
+            "apps/api/cf_d_database_bootstrap.py",
             "omni_cio/persistence/hosted_postgres_runtime_v1.py",
             "omni_cio/web/identity_v1.py",
             "omni_cio/web/provider_start_adapter_v1.py",
@@ -65,7 +66,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
     def test_dormant_provider_history_does_not_become_current_authority(self) -> None:
         for path in (
             ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
-            "apps/api/cf_d_database_bootstrap.py",
+            ".github/workflows/v10-wp22a-phase5-technical-closeout.yml",
             "apps/api/wp22a_remote.py",
             "omni_cio/web/external_access_v1.py",
         ):

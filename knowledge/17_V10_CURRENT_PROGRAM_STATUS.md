@@ -26,6 +26,8 @@ Current TW-A inventory PR #583 is in `RED_REPAIR_ONLY` on exact head `b7e87df26c
 
 Correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` removed the first stale probe and strengthened inventory discovery, then Engineering Governance #1895 correctly failed with `TIMEWEB_CONSOLIDATION_ACTIVE_WORKFLOW_RETIRED_PROVIDER_EXECUTION`: the historical WP22A Phase-5 technical-closeout workflow was a second neutral-name consumer that still compiled and live-ran the same Render Phase-4 probe. Repository search shows these Phase-4 and Phase-5 workflows are the complete Actions consumer set for that retired probe. Both must be archive-in-place/manual hard-disabled before the TW-A checkpoint can be certified.
 
+Exact head `b8c00434d6669dff4fc05d0a0f2576b358b24c0e` then passed the strengthened retired-workflow authority guard but the new inventory guard failed on an internal classification mismatch: `apps/api/cf_d_database_bootstrap.py` remains an active transitive dependency of `hosted_preview.py` and is therefore correctly `TIMEWEB_REPLACE`, not `HISTORY`. The correction keeps that producer in replacement scope until TW-B detaches it; the two retired hosted-acceptance workflows remain historical archive-only.
+
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
 Accepted historical Cloudflare/Render/Neon chains remain evidence of what earlier code proved, but they do not remain future platform authority after Amendment 18 acceptance.

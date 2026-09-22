@@ -245,6 +245,7 @@ def _validate_content_consumers(
 def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
     replacement_required = {
         "apps/api/hosted_preview.py",
+        "apps/api/cf_d_database_bootstrap.py",
         "apps/api/wp22a_phase5_auth.py",
         "apps/web/e2e/app-shell.spec.ts",
         "apps/web/e2e/system-admin.spec.ts",
@@ -272,7 +273,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
 
     historical_required = {
         ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
-        "apps/api/cf_d_database_bootstrap.py",
+        ".github/workflows/v10-wp22a-phase5-technical-closeout.yml",
         "apps/api/wp22a_remote.py",
         "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1",
         "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql",

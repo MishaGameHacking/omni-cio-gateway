@@ -49,6 +49,8 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Adjacent defect found during root-cause review: historical `.github/workflows/v10-wp22a-phase4-public-acceptance.yml` still had an automatic PR trigger and live read-only Render V10 probe despite Amendment 18 retirement
 - First correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` correctly archived Phase-4 but Engineering Governance #1895 exposed a second same-class consumer: `.github/workflows/v10-wp22a-phase5-technical-closeout.yml` still compiled and live-ran the retired Phase-4 Render probe
 - Consumer search for `public_preview_url` / `check_v10_wp22a_phase4_public_acceptance.py` in workflows proves the historical Phase-4 and Phase-5 workflows are the complete V10 live-probe consumer set
+- Next exact-head `b8c00434d6669dff4fc05d0a0f2576b358b24c0e` passed the strengthened Russia ingress/workflow authority guard, then the inventory guard exposed an internal classification-model mismatch: `apps/api/cf_d_database_bootstrap.py` is correctly `TIMEWEB_REPLACE` while the new guard accidentally asserted `HISTORY`
+- Classification correction: keep CF-D bootstrap as `TIMEWEB_REPLACE` until TW-B removes the active `hosted_preview.py` dependency; Phase-4/Phase-5 workflows and dormant Cloudflare Access surfaces remain `HISTORY`
 - Correction class: format exact changed Python; remove process-spawning inventory discovery; enforce exact inventory cardinality plus content-aware hidden-consumer coverage; archive both stale Render V10 acceptance workflows; add regressions
 - No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
