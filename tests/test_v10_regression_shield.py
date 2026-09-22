@@ -170,7 +170,8 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
     ) -> None:
         failures: list[str] = []
         shield.validate_authoritative_gate_order(
-            shield.PROTECTED_REGRESSION_STEP + "\n"
+            shield.PROTECTED_REGRESSION_STEP
+            + "\n"
             + shield.TRACKED_CONTENT_SCAN_STEP
             + "\n",
             failures,

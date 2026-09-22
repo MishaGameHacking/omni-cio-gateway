@@ -20,28 +20,20 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
-WP22A_EXECUTION_CONTRACT = (
-    ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
-)
+WP22A_EXECUTION_CONTRACT = ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
 WP22A_SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
 WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
 LEDGER = ROOT / "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md"
 WORKFLOW_DIRECTORY = ROOT / ".github/workflows"
-ENGINEERING_GOVERNANCE_WORKFLOW = (
-    ".github/workflows/v10-engineering-governance.yml"
-)
+ENGINEERING_GOVERNANCE_WORKFLOW = ".github/workflows/v10-engineering-governance.yml"
 TIMEWEB_PROOF_WORKFLOW_NAME = (
     ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
 )
-AUTHORITATIVE_MERGE_WORKFLOW_NAME = (
-    ".github/workflows/self-hosted-windows-smoke.yml"
-)
+AUTHORITATIVE_MERGE_WORKFLOW_NAME = ".github/workflows/self-hosted-windows-smoke.yml"
 CLOUDFLARE_PROVIDER_READINESS_WORKFLOW = (
     ".github/workflows/v10-cloudflare-provider-readiness.yml"
 )
-CLOUDFLARE_CANDIDATE_WORKFLOW = (
-    ".github/workflows/v10-cloudflare-candidate-deploy.yml"
-)
+CLOUDFLARE_CANDIDATE_WORKFLOW = ".github/workflows/v10-cloudflare-candidate-deploy.yml"
 CLOUDFLARE_PRODUCTION_WORKFLOW = (
     ".github/workflows/v10-cloudflare-production-release.yml"
 )
@@ -63,13 +55,26 @@ RETIRED_CLOUDFLARE_WORKFLOWS = tuple(
 RETIRED_PROVIDER_WORKFLOWS = tuple(
     ROOT / relative for relative in RETIRED_PROVIDER_WORKFLOW_NAMES
 )
-AUTO_WORKFLOW_TRIGGERS = ("\n  pull_request:", "\n  push:", "\n  workflow_run:")
+ACTIVE_WORKFLOW_TRIGGERS = (
+    "\n  pull_request:",
+    "\n  push:",
+    "\n  workflow_run:",
+    "\n  workflow_dispatch:",
+    "\n  schedule:",
+    "\n  workflow_call:",
+)
 FORBIDDEN_RETIRED_PROVIDER_EXECUTION_MARKERS = (
     "-File scripts\\validate_wp22a_terraform.ps1",
     "-File scripts\\bootstrap_wp22a_cloudflare_provider.ps1",
     "wrangler deploy",
+    "wrangler secret",
+    "npx wrangler",
     "secrets.CLOUDFLARE_",
     "secrets.NEON_",
+    "secrets.RENDER_",
+    "secrets.CLOUDRU_",
+    "secrets.CLOUD_RU_",
+    "secrets.VK_",
 )
 
 EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
@@ -413,13 +418,22 @@ def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
         )
 
 
+def _workflow_paths() -> tuple[Path, ...]:
+    paths = {
+        path
+        for pattern in ("*.yml", "*.yaml")
+        for path in WORKFLOW_DIRECTORY.glob(pattern)
+    }
+    return tuple(sorted(paths))
+
+
 def _validate_no_retired_provider_execution_from_active_workflows() -> None:
     retired = {path.resolve() for path in RETIRED_PROVIDER_WORKFLOWS}
-    for path in sorted(WORKFLOW_DIRECTORY.glob("*.yml")):
+    for path in _workflow_paths():
         if path.resolve() in retired:
             continue
         source = _read(path)
-        if not any(trigger in source for trigger in AUTO_WORKFLOW_TRIGGERS):
+        if not any(trigger in source for trigger in ACTIVE_WORKFLOW_TRIGGERS):
             continue
         for marker in FORBIDDEN_RETIRED_PROVIDER_EXECUTION_MARKERS:
             _require(

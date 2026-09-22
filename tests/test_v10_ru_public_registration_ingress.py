@@ -17,15 +17,9 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
-WP22A_EXECUTION_CONTRACT = (
-    ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
-)
-WP22A_SERVICE_SELECTION = (
-    ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
-)
-WP22A_IAC_DECISION = (
-    ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
-)
+WP22A_EXECUTION_CONTRACT = ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
+WP22A_SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
+WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
 WP22A_CLIENTLESS_WORKFLOW = (
     ROOT / ".github/workflows/v10-wp22a-clientless-access-audit.yml"
 )
@@ -241,6 +235,23 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             "-File scripts\\validate_wp22a_terraform.ps1",
             workflow,
         )
+
+    def test_retired_provider_execution_guard_covers_future_workflow_forms(
+        self,
+    ) -> None:
+        source = GUARD.read_text(encoding="utf-8")
+        for marker in (
+            '("*.yml", "*.yaml")',
+            '"\\n  workflow_dispatch:"',
+            '"\\n  schedule:"',
+            '"\\n  workflow_call:"',
+            '"secrets.RENDER_"',
+            '"secrets.CLOUDRU_"',
+            '"secrets.CLOUD_RU_"',
+            '"secrets.VK_"',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, source)
 
     def test_historical_wp22a_provider_docs_are_explicitly_superseded(self) -> None:
         for path in (

@@ -277,11 +277,14 @@ def test_ci_does_not_execute_retired_provider_validator() -> None:
     assert "scripts\\bootstrap_wp22a_cloudflare_provider.ps1" in workflow
     assert "Parse WP22A PowerShell without mutation" in workflow
     assert (
-        "Verify dormant clientless source contract without provider execution" in workflow
+        "Verify dormant clientless source contract without provider execution"
+        in workflow
     )
     assert (
-        "Validate Cloudflare IaC with pinned OpenTofu and provider mirror" not in workflow
+        "Validate Cloudflare IaC with pinned OpenTofu and provider mirror"
+        not in workflow
     )
+    assert workflow.count("scripts\\validate_wp22a_terraform.ps1") == 1
     assert "-File scripts\\validate_wp22a_terraform.ps1" not in workflow
     assert 'Join-Path $sourceRoot ".terraform.lock.hcl"' in validator
     assert "-Destination $validateRoot -Force" in validator
