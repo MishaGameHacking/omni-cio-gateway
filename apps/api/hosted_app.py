@@ -810,7 +810,6 @@ def _register_hosted_routes(
     )
 
 
-
 def _validate_hosted_runtime_inputs(
     services: HostedRuntimeServicesV1,
     *,
