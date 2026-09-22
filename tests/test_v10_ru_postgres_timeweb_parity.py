@@ -79,6 +79,17 @@ class RuPostgresTimewebParitySourceTests(unittest.TestCase):
             )
         )
 
+    def test_guard_detection_data_cannot_masquerade_as_retired_dependency(
+        self,
+    ) -> None:
+        source = Path(guard.__file__).read_text(encoding="utf-8")
+        for marker in (
+            "provision_v10_cloudflare_neon_runtime",
+            "provision_v10_render_neon_preview",
+            "wrangler.jsonc",
+        ):
+            self.assertNotIn(marker, source)
+
 
 if __name__ == "__main__":
     unittest.main()

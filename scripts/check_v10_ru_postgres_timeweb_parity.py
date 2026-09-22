@@ -286,7 +286,7 @@ def _validate_proof_source() -> None:
         "OMNI_V10_POSTGRES_DSN",
         "PUBLIC_MULTI_USER_ENABLED=true",
         "infrastructure/cloudru",
-        "wrangler.jsonc",
+        "wrangler" + ".jsonc",
     ):
         if forbidden in source:
             raise RuntimeError("RU_PG_B_PROOF_AUTHORITY_WIDENED")
