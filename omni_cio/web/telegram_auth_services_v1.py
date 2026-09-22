@@ -85,7 +85,12 @@ class TelegramAuthRouteServicesV1:
     def runtime(self) -> ProviderAuthenticationRuntimeLike | None:
         return self.runtimes[0] if self.runtimes else None
 
-    def disabled_reason(self) -> str | None:
+    def disabled_reason(
+        self,
+        provider: IdentityProviderV1,
+    ) -> str | None:
+        if provider != IdentityProviderV1.TELEGRAM:
+            raise ValueError("TELEGRAM_AUTH_PROVIDER_INVALID")
         if self.runtime() is not None:
             return None
         return self.disabled_reasons.get(

@@ -198,6 +198,9 @@ def test_current_identity_and_cookie_defaults_are_telegram_only() -> None:
     assert [item.provider for item in services.descriptors()] == [
         IdentityProviderV1.TELEGRAM
     ]
+    assert services.disabled_reason(IdentityProviderV1.TELEGRAM) == "NOT_CONFIGURED"
+    with pytest.raises(ValueError, match="TELEGRAM_AUTH_PROVIDER_INVALID"):
+        services.disabled_reason(IdentityProviderV1.VK_ID)
 
 
 def test_telegram_builder_exposes_only_telegram_when_fail_closed() -> None:
