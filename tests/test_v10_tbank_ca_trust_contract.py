@@ -96,6 +96,7 @@ def test_tbank_ca_checker_uses_captured_read_only_tls_probes() -> None:
     assert "2>$null" not in source
     assert "Import-Certificate" not in source
 
+
 def test_tbank_ca_boundary_contains_no_tls_bypass() -> None:
     sources = (
         PROVISIONER.read_text(encoding="utf-8"),
