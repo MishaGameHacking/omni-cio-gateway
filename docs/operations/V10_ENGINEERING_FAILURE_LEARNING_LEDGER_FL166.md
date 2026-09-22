@@ -84,6 +84,31 @@ Without a permanent machine-trust boundary:
 - `trading_methods=false`;
 - `REAL_TRADING_ENABLED=false`.
 
+## Replacement-head source defect and guard gap
+
+Security-hardening head `483d1933143f8fa0417d3b6f684dfc01696703e7`
+introduced a malformed `provision_v10_tbank_ca_trust.ps1`: the intended pinned
+root implementation was concatenated with the previous provisioner body and the
+root-fingerprint policy regex was truncated. Self-Hosted Windows CI #3135 failed
+at the new trust preflight before any dependency install or machine mutation.
+
+Root cause: the replacement content was assembled by unsafe text composition and
+the generic Fast PR lane did not parse this new PowerShell boundary. Python
+compile/Ruff/governance could therefore pass while the PowerShell source was
+syntactically invalid.
+
+Systemic correction:
+
+- replace the provisioner with one canonical implementation;
+- validate root fingerprint and intermediate chain fully before the first
+  certificate-store mutation;
+- add a Windows PowerShell parser step to Fast PR for both CA trust scripts;
+- add regression assertions that the provisioner has one implementation and the
+  parser guard remains source-controlled.
+
+This source defect must be repaired before any OWNER/Admin certificate action.
+The machine trust state is not a valid explanation for a parser failure.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head

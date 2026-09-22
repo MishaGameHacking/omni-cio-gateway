@@ -27,7 +27,8 @@
     "network_download_by_provisioner": false,
     "owner_download_from_official_source_required": true,
     "idempotent_import_required": true,
-    "certificate_fingerprint_rotation_requires_code_review": true
+    "certificate_fingerprint_rotation_requires_code_review": true,
+    "validate_all_inputs_before_first_store_mutation": true
   },
   "verification": {
     "installed_certificates_must_be_current": true,

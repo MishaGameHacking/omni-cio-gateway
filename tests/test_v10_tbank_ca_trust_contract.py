@@ -9,6 +9,7 @@ CONTRACT = ROOT / "docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json"
 PROVISIONER = ROOT / "infrastructure/windows/provision_v10_tbank_ca_trust.ps1"
 CHECKER = ROOT / "scripts/check_v10_tbank_ca_trust.ps1"
 AUTHORITATIVE = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
+FAST_PR = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
 
 
 def test_tbank_ca_trust_contract_is_fail_closed() -> None:
@@ -38,6 +39,7 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     assert payload["mutation"]["ci_runner_may_modify_machine_trust"] is False
     assert payload["mutation"]["apply_requires_windows_administrator"] is True
     assert payload["mutation"]["network_download_by_provisioner"] is False
+    assert payload["mutation"]["validate_all_inputs_before_first_store_mutation"] is True
     assert payload["verification"]["tls_verification_may_be_disabled"] is False
     assert payload["verification"]["hostname_verification_may_be_disabled"] is False
     assert payload["protected_invariants"]["PUBLIC_MULTI_USER_ENABLED"] is False
@@ -57,6 +59,10 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
     assert "TBANK_CA_TRUST_INTERMEDIATE_CHAIN_INVALID" in source
     assert "Get-CertificateSha256" in source
     assert "Test-SubordinateChain" in source
+    assert source.count("function Test-Administrator") == 1
+    assert source.count("if ($Apply) {") == 1
+    assert "AllowUnknownCertificateAuthority" in source
+    assert source.index("TBANK_CA_TRUST_INTERMEDIATE_CHAIN_INVALID") < source.index("$mutationsAttempted = $true")
     assert "Import-Certificate" in source
     assert r"Cert:\LocalMachine\Root" in source
     assert r"Cert:\LocalMachine\CA" in source
@@ -103,3 +109,12 @@ def test_authoritative_gate_checks_ca_before_dependency_install() -> None:
 
     assert workflow.count(check_marker) == 1
     assert workflow.index(check_marker) < workflow.index(install_marker)
+
+
+def test_fast_pr_parses_tbank_ca_trust_powershell_boundary() -> None:
+    workflow = FAST_PR.read_text(encoding="utf-8")
+
+    assert "Parse T-Bank CA trust PowerShell boundary" in workflow
+    assert "System.Management.Automation.Language.Parser" in workflow
+    assert "scripts\\check_v10_tbank_ca_trust.ps1" in workflow
+    assert "infrastructure\\windows\\provision_v10_tbank_ca_trust.ps1" in workflow

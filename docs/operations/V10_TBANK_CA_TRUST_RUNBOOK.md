@@ -73,6 +73,7 @@ The provisioner:
 - refuses a root file whose fingerprint differs, even if its common name matches;
 - verifies that the supplied intermediate builds a valid X.509 chain terminating
   at that pinned root before importing the intermediate;
+- validates both local certificate files completely before the first certificate-store mutation, so a rejected intermediate cannot leave a partial root-only mutation;
 - refuses non-Windows execution;
 - requires Administrator for `-Apply`;
 - validates the expected CA common names, validity and CA role;
