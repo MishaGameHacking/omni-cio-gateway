@@ -39,6 +39,12 @@ CLOUDFLARE_PRODUCTION_WORKFLOW = (
     ".github/workflows/v10-cloudflare-production-release.yml"
 )
 NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
+WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW = (
+    ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
+)
+WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW = (
+    ".github/workflows/v10-wp22a-phase5-technical-closeout.yml"
+)
 RETIRED_CLOUDFLARE_WORKFLOW_NAMES = (
     CLOUDFLARE_PROVIDER_READINESS_WORKFLOW,
     CLOUDFLARE_CANDIDATE_WORKFLOW,
@@ -46,6 +52,8 @@ RETIRED_CLOUDFLARE_WORKFLOW_NAMES = (
 )
 RETIRED_PROVIDER_WORKFLOW_NAMES = RETIRED_CLOUDFLARE_WORKFLOW_NAMES + (
     NEON_EGRESS_WORKFLOW,
+    WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW,
+    WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW,
 )
 WORKFLOW = ROOT / ENGINEERING_GOVERNANCE_WORKFLOW
 TIMEWEB_PROOF_WORKFLOW = ROOT / TIMEWEB_PROOF_WORKFLOW_NAME
@@ -76,6 +84,29 @@ FORBIDDEN_RETIRED_PROVIDER_EXECUTION_MARKERS = (
     "secrets.CLOUDRU_",
     "secrets.CLOUD_RU_",
     "secrets.VK_",
+    "check_v10_wp22a_phase4_public_acceptance.py",
+    "python scripts/provision_v10_cloudflare_neon_runtime.py",
+    "python scripts\\provision_v10_cloudflare_neon_runtime.py",
+    "python -m scripts.provision_v10_cloudflare_neon_runtime",
+    "python scripts/provision_v10_render_neon_preview.py",
+    "python scripts\\provision_v10_render_neon_preview.py",
+    "python -m scripts.provision_v10_render_neon_preview",
+    "python scripts/provision_v10_render_neon_preview_org_scope.py",
+    "python scripts\\provision_v10_render_neon_preview_org_scope.py",
+    "python scripts/manage_v10_cloudflare_production.py",
+    "python scripts\\manage_v10_cloudflare_production.py",
+    "python scripts/bootstrap_v10_cloudflare_builds.py",
+    "python scripts\\bootstrap_v10_cloudflare_builds.py",
+    "python scripts/bootstrap_v10_cloudflare_neon_hosted_egress.py",
+    "python scripts\\bootstrap_v10_cloudflare_neon_hosted_egress.py",
+    "python scripts/deploy_v10_cloudflare_neon_bootstrap_function.py",
+    "python scripts\\deploy_v10_cloudflare_neon_bootstrap_function.py",
+    "python scripts/run_v10_cloudflare_gated_candidate.py",
+    "python scripts\\run_v10_cloudflare_gated_candidate.py",
+    "python scripts/run_v10_cloudflare_gated_production.py",
+    "python scripts\\run_v10_cloudflare_gated_production.py",
+    "python scripts/run_v10_cloudflare_verifier.py",
+    "python scripts\\run_v10_cloudflare_verifier.py",
 )
 
 EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
@@ -457,7 +488,7 @@ def _validate_no_retired_provider_execution_from_active_workflows() -> None:
 
 def _validate_active_workflow_graph() -> None:
     manual_disable_marker = "if: $" + "{{ false }}"
-    expected_disabled_jobs = (1, 1, 6, 3)
+    expected_disabled_jobs = (1, 1, 6, 3, 1, 1)
     for path, expected_count in zip(
         RETIRED_PROVIDER_WORKFLOWS,
         expected_disabled_jobs,
@@ -468,10 +499,17 @@ def _validate_active_workflow_graph() -> None:
             "ARCHIVE-IN-PLACE" in retired,
             "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_NOT_ARCHIVED",
         )
-        _require(
-            "workflow_run:" not in retired and "\n  push:" not in retired,
-            "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_AUTO_TRIGGER",
-        )
+        for trigger in (
+            "\n  pull_request:",
+            "\n  push:",
+            "\n  workflow_run:",
+            "\n  schedule:",
+            "\n  workflow_call:",
+        ):
+            _require(
+                trigger not in retired,
+                "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_AUTO_TRIGGER",
+            )
         _require(
             retired.count(manual_disable_marker) == expected_count,
             "TIMEWEB_CONSOLIDATION_RETIRED_WORKFLOW_MUTATION_ENABLED",
@@ -597,6 +635,9 @@ def _validate_documents() -> None:
         "system/timeweb-platform-consolidation",
         "TW-A-CI-AUTHORITY-GRAPH-REPAIR",
         "PR #582",
+        "TW-A-PROVIDER-CONSUMER-INVENTORY",
+        "PR #583",
+        "RED_REPAIR_ONLY",
         "PUBLIC_MULTI_USER_ENABLED=false",
         "trading_methods=false",
         "REAL_TRADING_ENABLED=false",

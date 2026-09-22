@@ -120,7 +120,9 @@
       ".github/workflows/v10-cloudflare-provider-readiness.yml",
       ".github/workflows/v10-cloudflare-candidate-deploy.yml",
       ".github/workflows/v10-cloudflare-production-release.yml",
-      ".github/workflows/v10-neon-egress-boundary.yml"
+      ".github/workflows/v10-neon-egress-boundary.yml",
+      ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
+      ".github/workflows/v10-wp22a-phase5-technical-closeout.yml"
     ]
   },
   "execution": {

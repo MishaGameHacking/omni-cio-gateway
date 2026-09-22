@@ -132,6 +132,9 @@ jobs:
       - name: Verify RU-PG-B Timeweb read-only control-plane contract
         run: python scripts/check_v10_timeweb_postgres_control_plane.py
 
+      - name: Verify TW-A Timeweb provider/dependency inventory
+        run: python scripts/check_v10_timeweb_platform_inventory.py
+
       - name: Verify hosted release post-merge alignment governance
         run: python scripts/check_v10_hosted_release_alignment_governance.py
 
@@ -176,6 +179,7 @@ jobs:
           scripts/prove_v10_ru_postgres_timeweb_parity.py
           scripts/check_v10_timeweb_postgres_control_plane.py
           scripts/probe_v10_timeweb_postgres_control_plane.py
+          scripts/check_v10_timeweb_platform_inventory.py
           scripts/provision_v10_cloudflare_neon_runtime.py
           scripts/bootstrap_v10_cloudflare_builds.py
           scripts/write_v10_cloudflare_build_info.py
@@ -216,6 +220,7 @@ jobs:
           tests.test_v10_ru_public_registration_ingress
           tests.test_v10_ru_postgres_timeweb_parity
           tests.test_v10_timeweb_postgres_control_plane
+          tests.test_v10_timeweb_platform_inventory
           tests.test_v10_jsonc
 
       - name: Clean self-hosted workspace

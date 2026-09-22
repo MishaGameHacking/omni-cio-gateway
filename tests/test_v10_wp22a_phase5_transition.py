@@ -52,7 +52,23 @@ def _json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> None:
+def _assert_archived_provider_workflow(workflow: str, refusal_marker: str) -> None:
+    assert "ARCHIVE-IN-PLACE" in workflow
+    assert "\n  workflow_dispatch:" in workflow
+    for trigger in (
+        "\n  pull_request:",
+        "\n  push:",
+        "\n  workflow_run:",
+        "\n  schedule:",
+        "\n  workflow_call:",
+    ):
+        assert trigger not in workflow
+    assert "if: $" + "{{ false }}" in workflow
+    assert refusal_marker in workflow
+    assert "no retired V10 provider probe is authorized." in workflow
+
+
+def test_phase4_acceptance_evidence_is_historical_and_workflow_is_archived() -> None:
     payload = _json(PHASE4_EVIDENCE)
 
     assert payload["accepted_runtime_main_binding"] == (
@@ -73,9 +89,14 @@ def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> N
     assert gate["hsts_required"] is True
 
     workflow = PHASE4_WORKFLOW.read_text(encoding="utf-8")
-    assert "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}" in workflow
-    assert '--expected-sha "$PR_BASE_SHA"' in workflow
+    _assert_archived_provider_workflow(
+        workflow,
+        "LEGACY_WP22A_PHASE4_RENDER_ACCEPTANCE_RETIRED_AMENDMENT_18",
+    )
+    assert "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}" not in workflow
+    assert '--expected-sha "$PR_BASE_SHA"' not in workflow
     assert "accepted_runtime_main_sha" not in workflow
+    assert "check_v10_wp22a_phase4_public_acceptance.py" not in workflow
 
 
 def test_phase5_closeout_evidence_maps_accepted_exact_main_chain() -> None:
@@ -287,15 +308,24 @@ def test_visual_refresh_increment_a_was_explicitly_authorized_by_phase5() -> Non
     assert "- no product-semantic changes." in brief
 
 
-def test_closeout_workflow_reverifies_exact_base_shield_and_public_release() -> None:
+def test_closeout_workflow_is_archived_after_timeweb_supersession() -> None:
     workflow = PHASE5_CLOSEOUT_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "actions: read" in workflow
-    assert "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}" in workflow
-    assert "EXPECTED_MAIN_SHA: ${{ github.event.pull_request.base.sha }}" in workflow
-    assert "python scripts/check_v10_exact_main_regression.py" in workflow
-    assert "python scripts/check_v10_public_product_plan.py" in workflow
-    assert "python -m pytest -q tests/test_v10_wp22a_phase5_transition.py" in workflow
-    assert '--expected-sha "$PR_BASE_SHA"' in workflow
-    assert "RENDER_API_KEY" not in workflow
-    assert "NEON_API_KEY" not in workflow
+    _assert_archived_provider_workflow(
+        workflow,
+        "LEGACY_WP22A_PHASE5_RENDER_CLOSEOUT_RETIRED_AMENDMENT_18",
+    )
+    assert "permissions:\n  contents: read" in workflow
+    for marker in (
+        "actions: read",
+        "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+        "EXPECTED_MAIN_SHA: ${{ github.event.pull_request.base.sha }}",
+        "python scripts/check_v10_exact_main_regression.py",
+        "python scripts/check_v10_public_product_plan.py",
+        "python -m pytest -q tests/test_v10_wp22a_phase5_transition.py",
+        '--expected-sha "$PR_BASE_SHA"',
+        "check_v10_wp22a_phase4_public_acceptance.py",
+        "RENDER_API_KEY",
+        "NEON_API_KEY",
+    ):
+        assert marker not in workflow

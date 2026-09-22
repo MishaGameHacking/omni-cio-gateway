@@ -8,11 +8,12 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Title: Timeweb-only runtime/database/DNS/Telegram consolidation
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
 - Branch: `system/timeweb-platform-consolidation`
-- Accepted base SHA: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
-- Current accepted-main SHA rechecked at branch creation: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
+- Accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
+- Current accepted-main SHA rechecked before TW-A inventory checkpoint: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
 - OWNER authority: Amendment 18 accepted through PR #581
 - GitHub dashboard issue: #580
-- Current split-boundary PR: #582
+- Accepted split-boundary PR: #582
+- Current TW-A certification PR: #583
 - Governing authority:
   - `docs/master-plan/OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md`
   - `docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json`
@@ -23,8 +24,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 
 | Order | Member milestone | State | Branch-local evidence | Notes |
 |---:|---|---|---|---|
-| 1 | TW-A / INVENTORY_AND_AUTHORITY | IN_PROGRESS | PR #582 | MAIN_RED_STOP active-workflow graph correction is the first accepted-boundary requirement |
-| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | TODO |  | Must not begin until TW-A checkpoint is CERTIFIED_GREEN and accepted |
+| 1 | TW-A / INVENTORY_AND_AUTHORITY | IN_PROGRESS | PR #582 accepted CI-graph split + current inventory checkpoint | MAIN_RED_STOP repair is accepted; provider/dependency classification remains the final TW-A checkpoint |
+| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | TODO |  | Must not begin until the TW-A inventory checkpoint is CERTIFIED_GREEN |
 | 3 | TW-C / TIMEWEB_APP_CANDIDATE | TODO |  | Technical Timeweb candidate only after TW-B |
 | 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | TODO |  | Mandatory production DB split gate |
 | 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | TODO |  | Mandatory DNS/public cutover split gate |
@@ -35,19 +36,32 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 
 ## 3. Current execution state
 
-- Current exact work item: retire the stale Cloudflare/Neon/Sonar active execution graph and establish direct GitHub -> Timeweb post-merge proof
-- Current logical checkpoint ID: `TW-A-CI-AUTHORITY-GRAPH-REPAIR`
-- First published checkpoint SHA: `f888dc7b0dc0b3eb0816b27b41eeac7fbe7992e9`
-- First checkpoint state: `RED_REPAIR_ONLY`
-- First material RED: Engineering Governance on PR #582
-- Root cause of that RED: historical Cloudflare closeout guard still required a former current-state status marker after Amendment 18 reclassified the accepted Cloudflare update as historical archive evidence
-- Replacement checkpoint `9527e5974b3cf673a870386590fac228e80a87a3` completed all observed DRAFT checks except the authoritative Windows Regression Shield
-- Historical-test-consumer correction head: `cea3edda9d6c7df482cb08fbfaa41adfac943a6d`
-- Next exact action: complete one current-authority documentation/guard correction batch, then run a fresh exact-head DRAFT cycle
-- Scope/non-goals still intact: YES
-- Main drift since accepted base: NONE observed at branch creation
+- Current exact work item: repair and certify TW-A provider/dependency producer-consumer inventory
+- Current logical checkpoint ID: `TW-A-PROVIDER-CONSUMER-INVENTORY`
+- Accepted base: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
+- Current published RED head: `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6` / PR #583
+- PR #582 post-merge evidence: Regression Shield #1646 success; Engineering Governance #1893 success; Timeweb Read-Only Proof #13 success
+- Provider proof marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
+- External ingress/recovery blocker remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
+- Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
+- Classification vocabulary: `KEEP / TIMEWEB_REPLACE / RETIRE_AFTER_CUTOVER / RETIRE_NOW_AFTER_AUTHORITY / HISTORY`
+- Current branch mode: `RED_REPAIR_ONLY`; TW-B remains forbidden until this checkpoint is CERTIFIED_GREEN
+- Exact-head RED evidence: Fast PR Checks #3014 failed only on one Ruff layout drift in `tests/test_v10_ru_public_registration_ingress.py`; authoritative Windows CI #3106 passed compile/static quality and failed tracked-content secret scanning on two entropy-shaped verifier literals; Sonar reported two duplicate-character-class warnings and one contract-controlled regex ReDoS security finding in the new inventory guard.
+- Adjacent defect found during root-cause review: historical `.github/workflows/v10-wp22a-phase4-public-acceptance.yml` still had an automatic PR trigger and live read-only Render V10 probe despite Amendment 18 retirement
+- First correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` correctly archived Phase-4 but Engineering Governance #1895 exposed a second same-class consumer: `.github/workflows/v10-wp22a-phase5-technical-closeout.yml` still compiled and live-ran the retired Phase-4 Render probe
+- Consumer search for `public_preview_url` / `check_v10_wp22a_phase4_public_acceptance.py` in workflows proves the historical Phase-4 and Phase-5 workflows are the complete V10 live-probe consumer set
+- Next exact-head `b8c00434d6669dff4fc05d0a0f2576b358b24c0e` passed the strengthened Russia ingress/workflow authority guard, then the inventory guard exposed an internal classification-model mismatch: `apps/api/cf_d_database_bootstrap.py` is correctly `TIMEWEB_REPLACE` while the new guard accidentally asserted `HISTORY`
+- Classification correction: keep CF-D bootstrap as `TIMEWEB_REPLACE` until TW-B removes the active `hosted_preview.py` dependency; Phase-4/Phase-5 workflows and dormant Cloudflare Access surfaces remain `HISTORY`
+- Exact head `0a4727d3de7329fdeb21274badc364b2dba6b462` passed both strengthened authority/inventory guards and guard compilation; stdlib batch then exposed only stale historical-gate tests that still required the now-forbidden Phase-4/Phase-5 pull-request triggers
+- Regression correction: preserve the YAML parser unit, but change Phase-4/Phase-5 assertions to require archive-only manual hard-disabled routing with no automatic/reusable trigger
+- Correction class: remove contract-controlled regex execution entirely; use bounded plain-string matcher primitives; remove entropy-shaped provenance/marker literals without allowlisting or weakening secret scanning; expand executable-source hidden-consumer coverage; apply exact Ruff layout; add regressions for every defect class.
+- Replacement head `770b42c80f395d15ab483b20c05831e386bfb510` eliminated the Sonar security gate failure, but Engineering Governance #1900 exposed a scanner-model defect: generic source scanning treated static compile/history references in `.github/workflows/v10-engineering-governance.yml` as provider execution. Workflows are now separated into an execution-aware guard, while source/import consumer scanning remains code-only; direct retired provider provision/deploy commands are explicitly forbidden in active workflows.
+- Replacement head `3acb0490893dc4aed81667e5f8145ba2da645501` proved that split and then exposed the remaining same-class verifier self-reference: `scripts/check_v10_ru_public_registration_ingress.py` stores retired provider script names as fail-closed detection signatures. The source scanner now exempts exactly the two security-verifier files that intentionally store marker data; all other source consumers remain classification-enforced.
+- Exact head `f6ec32b10d6cf2ca39072cd89d14110ca474c140` passed the TW-A inventory guard and guard compilation; stdlib regression then caught an ordering bug in safe rule validation: an unknown matcher key could avoid rejection when an earlier valid selector returned `False`. Rule shape validation must run before matching so malformed repository-controlled contracts always fail closed.
+- Exact head `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6`: 12 GitHub-native PR workflow batches completed `success`, Engineering Governance #1906 completed `success`, Fast PR Checks #3022 completed `success`, and tracked-content secret scanning passed. Authoritative Windows CI #3114 failed only in the full Regression Shield after 3656 passed tests because two assertions in `tests/test_v10_wp22a_phase5_transition.py` still required the now-retired live Phase-4/Phase-5 Render workflow behavior. Sonar Quality Gate passed with 0 Security Hotspots but reported one S3776 maintainability finding: `_rule_matches` cognitive complexity 18 > 15. Systemic correction: keep historical evidence assertions, invert only workflow-currentness assertions to archive-only semantics, and split rule-shape/scalar/contains-any matching into bounded helpers rather than suppressing the finding.
+- No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
-## 4. MAIN_RED_STOP source defect being repaired
+## 4. Accepted MAIN_RED_STOP repair provenance
 
 Accepted `main` `e8e583f...` had a post-merge workflow graph inconsistent with Amendment 18:
 
@@ -195,7 +209,9 @@ Only `CERTIFIED_GREEN` permits TW-B.
 - Accepted main: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
 - Current update: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 - Current member milestone: TW-A / inventory and authority cleanup
-- Current checkpoint: `TW-A-CI-AUTHORITY-GRAPH-REPAIR`
-- State: `RED_REPAIR_ONLY` until the replacement exact head is fully certified
-- Current PR: #582 (DRAFT)
-- Next lawful action: finish replacement exact-head DRAFT verification; no TW-B runtime work before certification and acceptance
+- Current checkpoint: `TW-A-PROVIDER-CONSUMER-INVENTORY`
+- State: `RED_REPAIR_ONLY` on PR #583 until the replacement exact head is fully certified
+- Accepted split repair: PR #582 + exact-main post-merge success
+- Prior formatter RED head: `b7e87df26c435244360a0a67664765a645625541`
+- Subsequent authority-graph RED head: `7ec4a8bf9bb3b02cb8d4571389938def6f17be61`
+- Next lawful action: publish the complete two-workflow retirement correction head, require full exact-head recertification, and keep TW-B locked until `CERTIFIED_GREEN`

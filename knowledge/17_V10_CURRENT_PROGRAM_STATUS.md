@@ -4,7 +4,7 @@ Updated: 2026-09-21
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A MAIN_RED_STOP REPAIR IN PROGRESS / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A CI-AUTHORITY REPAIR ACCEPTED VIA PR #582 / TW-A PROVIDER-CONSUMER INVENTORY PR #583 RED_REPAIR_ONLY / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -19,6 +19,26 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 `PUBLIC_MULTI_USER_ENABLED=false` remains the **current runtime state, not a V10-wide release lock**. Under Amendment 13, completed capabilities may become live as soon as their own real authentication/runtime/privacy/security/capacity/monitoring gates pass; unrelated unfinished V10 blocks are not a reason to hold a ready capability forever.
 
 Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudflare/Neon/Render/Cloud.ru/VK from current/future V10 provider authority. `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
+
+The mandatory PR #582 CI/provider-authority split is accepted on exact main `82e3a45c7016f2956c9b3761d10d15e433375f3c`: Regression Shield #1646 and Engineering Governance #1893 completed `success`; automatic Timeweb Read-Only Proof #13 completed `success` with `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed unbound IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED` and grants no ingress mutation authority. TW-A remains open only for the complete provider/dependency producer-consumer inventory; TW-B is forbidden until that branch checkpoint is `CERTIFIED_GREEN`.
+
+Current TW-A inventory PR #583 remains in `RED_REPAIR_ONLY` on exact head `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6`. All observed GitHub-native PR workflow batches except authoritative Windows CI #3114 completed `success`; Engineering Governance #1906 and Fast PR Checks #3022 are GREEN, secret scanning passed, and Sonar Quality Gate passed with 0 Security Hotspots. Windows CI reached the full Regression Shield and failed only two stale assertions in `tests/test_v10_wp22a_phase5_transition.py`: they still required the historical Phase-4/Phase-5 Render acceptance workflows to perform live exact-base probes even though Amendment 18 correctly archives and hard-disables those workflows. Sonar also reports one non-security S3776 maintainability finding in `scripts/check_v10_timeweb_platform_inventory.py`: `_rule_matches` cognitive complexity is 18 while the configured threshold is 15. The corrective checkpoint must update every remaining stale workflow consumer to archive-only semantics and refactor matcher responsibilities into bounded helpers, then undergo fresh exact-head certification before TW-B.
+
+Correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` removed the first stale probe and strengthened inventory discovery, then Engineering Governance #1895 correctly failed with `TIMEWEB_CONSOLIDATION_ACTIVE_WORKFLOW_RETIRED_PROVIDER_EXECUTION`: the historical WP22A Phase-5 technical-closeout workflow was a second neutral-name consumer that still compiled and live-ran the same Render Phase-4 probe. Repository search shows these Phase-4 and Phase-5 workflows are the complete Actions consumer set for that retired probe. Both must be archive-in-place/manual hard-disabled before the TW-A checkpoint can be certified.
+
+Exact head `b8c00434d6669dff4fc05d0a0f2576b358b24c0e` then passed the strengthened retired-workflow authority guard but the new inventory guard failed on an internal classification mismatch: `apps/api/cf_d_database_bootstrap.py` remains an active transitive dependency of `hosted_preview.py` and is therefore correctly `TIMEWEB_REPLACE`, not `HISTORY`. The correction keeps that producer in replacement scope until TW-B detaches it; the two retired hosted-acceptance workflows remain historical archive-only.
+
+Exact head `0a4727d3de7329fdeb21274badc364b2dba6b462` passed both strengthened Timeweb authority and provider-inventory guards and compiled the guard set. Its remaining Engineering Governance RED was limited to `tests/test_v10_wp22a_historical_gate_routing.py`, whose old assertions still required the Phase-4/Phase-5 `pull_request.paths` triggers that Amendment 18 now forbids. That regression must be inverted to require archive-only/manual hard-disabled routing; this does not reopen any retired provider authority.
+
+Exact head `d438ce4cd3cf98d1a7cdaee2d6cf90f0b742a030` then reached a narrower systemic RED. Engineering Governance and all observed WP/toolchain/Web lanes completed `success`; Fast PR Checks #3014 failed only because two historical-workflow reads in `tests/test_v10_ru_public_registration_ingress.py` were not in pinned Ruff layout. Authoritative Windows CI #3106 passed compile and protected static quality, then failed the unchanged tracked-content secret detector on two new entropy-shaped verifier literals: the embedded accepted-base SHA in the inventory JSON and one long Cloudflare marker literal in the guard. Sonar additionally reported duplicate-character-class warnings and a ReDoS flow because the verifier executed regular expressions supplied by the repository-controlled JSON contract. The systemic correction is to remove contract-controlled regex execution, use bounded plain-string matcher primitives, keep exact cardinality, expand executable-source hidden-consumer coverage, and structurally remove the entropy-shaped literals without suppression or secret-scan weakening.
+
+Replacement preflight also found two previously unclassified transitive dependencies before remote certification: `apps/web/vite.config.ts` still consumes `RENDER_GIT_COMMIT`, and the active PostgreSQL runtime-role rehearsal still imports `_converge_runtime_role` from the historical Render/Neon provisioner. Both are now explicitly `TIMEWEB_REPLACE`; the current clientless workflow remains `KEEP` only because its retired-provider strings are static negative/source-evidence assertions and its separate execution guard forbids retired provider execution.
+
+Exact head `770b42c80f395d15ab483b20c05831e386bfb510` removed the prior Sonar Quality Gate failure (0 security hotspots), but Engineering Governance #1900 then correctly stopped at `TIMEWEB_INVENTORY_UNCLASSIFIED_RETIRED_CONSUMER:.github/workflows/v10-engineering-governance.yml`. Root cause was verifier-layer conflation, not a new provider execution: the generic content scanner interpreted a static `py_compile` reference to historical provider code as a runtime dependency. The correction separates code/import consumer scanning from GitHub Actions execution scanning and strengthens the latter with direct retired provision/deploy command markers, so static historical verification remains allowed while actual retired-provider execution fails closed.
+
+Exact head `3acb0490893dc4aed81667e5f8145ba2da645501` confirmed that workflow/source separation but exposed one final self-reference of the same class: the current Russia-ingress security guard itself contains retired provider script names as detection data. Whole-source marker enumeration found no other unclassified strong-marker consumer. The correction therefore exempts exactly the two security-verifier source files from consumer scanning while keeping the Russia-ingress execution-aware workflow guard authoritative for provider commands; this avoids broad suppression and keeps any new ordinary `KEEP` source fail-closed.
+
+Exact head `f6ec32b10d6cf2ca39072cd89d14110ca474c140` then passed the new TW-A inventory guard and compiled governance source, but its stdlib regression found a fail-closed ordering defect in `_rule_matches`: unknown matcher keys were checked only after selector evaluation, so a non-matching valid prefix could return `False` before an injected unknown key was rejected. The correction validates the complete matcher shape before any matching operation, preserving bounded non-regex evaluation while making malformed contract input deterministically fatal.
 
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
@@ -497,18 +517,11 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 ## Current next action
 
-1. finish the `MAIN_RED_STOP` correction on `system/timeweb-platform-consolidation`: retired
-   Cloudflare provider workflows must be archive-in-place/inert and Timeweb proof must follow
-   successful GitHub-native Regression Shield directly;
-2. add regression protection so a retired provider workflow or secret cannot re-enter the
-   active GitHub -> Timeweb execution graph;
-3. keep correction work inside existing DRAFT PR #582; publish only coherent replacement
-   heads after focused source/contract/test preflight and full diff review;
-4. require the final replacement exact head to reach DRAFT/READY GREEN, zero blocking threads
-   and no secret/authority drift, then squash merge;
-5. on the exact new `main`, require Regression Shield + Engineering Governance + Timeweb
-   read-only provider proof to complete successfully with no Cloudflare/Neon live workflow;
-6. only after that post-merge correction is accepted, continue TW-B provider-neutral runtime
-   and Timeweb deployment source toward a technical App Platform candidate;
-7. keep `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF,
-   `trading_methods=false` and `REAL_TRADING_ENABLED=false`.
+1. remain in `TW-A-PROVIDER-CONSUMER-INVENTORY / RED_REPAIR_ONLY` on PR #583; do not start TW-B;
+2. correct both Ruff-format defects and strengthen the inventory guard so it uses no spawned Git process, requires exact provider-surface cardinality, and catches neutral-name retired-provider consumers by content;
+3. archive-in-place and hard-disable the historical WP22A Phase-4 Render/Neon public-acceptance workflow so no current PR can live-probe retired V10 Render;
+4. update inventory/authority regression tests and full branch handoff, then publish one coherent replacement head;
+5. require every applicable exact-head GitHub check to finish `completed/success`; investigate any remaining security finding as a real signal even though external Sonar is no longer required merge authority;
+6. after DRAFT GREEN, mark READY and require a fresh exact-head READY certification with zero blocking review threads;
+7. only after TW-A is squash-merged and exact-new-main Regression Shield + Engineering Governance + Timeweb proof are GREEN may TW-B provider-neutral Timeweb runtime work begin;
+8. keep `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`.

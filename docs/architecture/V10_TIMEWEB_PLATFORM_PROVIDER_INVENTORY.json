@@ -1,0 +1,390 @@
+{
+  "schema": "omni-cio.v10.timeweb-platform-inventory.v2",
+  "milestone": "TW-A_INVENTORY_AND_AUTHORITY",
+  "status": "BRANCH_LOCAL_INVENTORY_CHECKPOINT",
+  "owning_issue": 580,
+  "classification_vocabulary": [
+    "KEEP",
+    "TIMEWEB_REPLACE",
+    "RETIRE_AFTER_CUTOVER",
+    "RETIRE_NOW_AFTER_AUTHORITY",
+    "HISTORY"
+  ],
+  "explicit_paths": {
+    "docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json": {
+      "classification": "KEEP",
+      "reason": "Current TW-A machine-readable provider/dependency inventory."
+    },
+    "render.yaml": {
+      "classification": "KEEP",
+      "reason": "Protected V9 recovery boundary; start command remains app:app until its own accepted retirement gate."
+    },
+    "apps/api/hosted_preview.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Reusable hosted Web/API composition still contains Render hostname/release inputs, VK start-path admission and CF-D bootstrap exception."
+    },
+    "apps/api/cf_d_database_bootstrap.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Cloudflare/Neon production-bootstrap implementation is still imported by the shared hosted runtime and must be detached from Timeweb composition."
+    },
+    "apps/api/wp22a_phase5_auth.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Accepted auth/session composition is reused, but deployed provider selection must become Telegram-only."
+    },
+    "omni_cio/web/provider_auth_routes_v1.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Accepted provider routes currently install Telegram and VK ID; Timeweb deployed composition must expose Telegram only."
+    },
+    "apps/web/src/app-shell/app-shell.tsx": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current login UI still renders both Telegram and VK ID."
+    },
+    "apps/web/src/app-shell/api.ts": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Browser provider-start helper still types the retired VK ID provider."
+    },
+    "apps/web/src/app-shell/contracts.ts": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Browser identity-provider union still contains VK ID."
+    },
+    "apps/web/tests/app_shell_contract.test.ts": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current browser regression contract still requires the retired VK ID login surface."
+    },
+    "wrangler.jsonc": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Retired Cloudflare configuration is still consumed by the current Timeweb synthetic-parity guard and must be removed from active proof authority."
+    },
+    "scripts/check_v10_ru_postgres_timeweb_parity.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb parity guard still imports/reads retired Cloudflare/Neon/Render/Wrangler surfaces."
+    },
+    "scripts/prove_v10_ru_postgres_timeweb_parity.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb parity proof reuses provider-named Cloudflare/Neon/Render helpers and must be extracted to provider-neutral PostgreSQL primitives."
+    },
+    "scripts/provision_v10_cloudflare_neon_runtime.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb parity proof imports its role convergence/runtime verification helpers; TW-B/TW-D must replace that active dependency before retirement."
+    },
+    "scripts/provision_v10_render_neon_preview.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb parity proof imports its bounded PostgreSQL retry/base helpers; provider-neutral extraction is required."
+    },
+    "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "The SQL semantics are reusable, but the current Timeweb parity proof reaches them through a retired Cloud.ru historical path."
+    },
+    "infrastructure/cloudru/wp22a/hosted-postgres-runtime-contract.json": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Runtime-role contract semantics remain useful but must move behind current provider-neutral authority."
+    },
+    ".github/workflows/v10-phase4-free-preview-deploy.yml": {
+      "classification": "HISTORY",
+      "reason": "Manual fail-closed Render/Neon historical workflow; no provider mutation authority."
+    },
+    ".github/workflows/v10-hosted-release-alignment.yml": {
+      "classification": "HISTORY",
+      "reason": "Manual fail-closed Render historical workflow; no current release authority."
+    },
+    ".github/workflows/v10-wp22a-phase4-public-acceptance.yml": {
+      "classification": "HISTORY",
+      "reason": "Historical Render/Neon Phase-4 acceptance workflow; archive-in-place and hard-disabled from automatic/live provider probing."
+    },
+    ".github/workflows/v10-wp22a-clientless-access-audit.yml": {
+      "classification": "KEEP",
+      "reason": "Current GitHub-native static audit of dormant WP22A history; provider execution remains forbidden."
+    },
+    ".github/workflows/live-gateway-authority.yml": {
+      "classification": "KEEP",
+      "reason": "Protected V9 read-only recovery/authority probe for the stable app:app baseline; not V10 provider authority."
+    },
+    ".github/workflows/regression-shield.yml": {
+      "classification": "KEEP",
+      "reason": "Current GitHub-native post-merge quality authority; historical Render URL input is V9-only evidence."
+    },
+    ".github/workflows/self-hosted-windows-smoke.yml": {
+      "classification": "KEEP",
+      "reason": "Current authoritative GitHub-native PR verification; historical Render URL input is V9-only evidence."
+    },
+    "scripts/check_v10_wp22a_phase4_public_acceptance.py": {
+      "classification": "HISTORY",
+      "reason": "Historical read-only Render/Neon Phase-4 probe retained as evidence but removed from active workflow execution."
+    },
+    "apps/api/wp22a_remote.py": {
+      "classification": "HISTORY",
+      "reason": "Dormant historical Cloudflare Access private-remote composition; no current V10 deployment authority."
+    },
+    "omni_cio/web/external_access_v1.py": {
+      "classification": "HISTORY",
+      "reason": "Dormant historical Cloudflare Access boundary retained for accepted WP22A evidence only."
+    },
+    "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1": {
+      "classification": "HISTORY",
+      "reason": "Dormant historical Cloudflare clientless launcher retained for source evidence only."
+    },
+    "omni_cio/web/identity_v1.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current ordinary-login provider registry still includes VK ID and must become Telegram-only in TW-B."
+    },
+    "omni_cio/web/browser_security_v1.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current browser proof-cookie registry still contains VK ID and must follow Telegram-only deployed composition."
+    },
+    "omni_cio/web/provider_start_adapter_v1.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current provider adapter module still imports and exposes the VK ID runtime."
+    },
+    "apps/web/e2e/app-shell.spec.ts": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current browser E2E fixtures/assertions still model VK ID as an ordinary deployed login provider."
+    },
+    "apps/web/e2e/system-admin.spec.ts": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current system-admin E2E provider fixture still includes VK ID."
+    },
+    "scripts/check_v10_wp17_web_security.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Web security guard still describes ordinary authentication as Telegram plus VK ID."
+    },
+    "omni_cio/persistence/hosted_postgres_runtime_v1.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Reusable PostgreSQL runtime contract still resolves canonical SQL/contract through a retired Cloud.ru path."
+    },
+    "omni_cio/persistence/_hosted_recovery_contract_v1.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Reusable recovery contract still carries historical hosted-provider path coupling that must become provider-neutral."
+    },
+    "omni_cio/observability/hosted_readiness_v1.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Reusable hosted readiness layer still carries historical provider-contract coupling that must become provider-neutral."
+    },
+    "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql": {
+      "classification": "HISTORY",
+      "reason": "Accepted immutable migration contains historical multi-provider identity schema; do not rewrite accepted migration history."
+    },
+    "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql": {
+      "classification": "HISTORY",
+      "reason": "Accepted immutable migration contains historical provider-auth schema; future schema change requires a new migration."
+    },
+    ".github/workflows/v10-wp22a-phase5-technical-closeout.yml": {
+      "classification": "HISTORY",
+      "reason": "Historical WP22A Phase-5 hosted closeout workflow; archive-in-place and hard-disabled from replaying retired Render/Neon live acceptance."
+    },
+    "scripts/probe_v10_timeweb_ipv4_custody.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb IPv4 custody probe still imports historical Render/Neon helper primitives and must be extracted to provider-neutral transport helpers."
+    },
+    "scripts/discover_v10_ru_pg_verifier_ipv4.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current RU PostgreSQL verifier-IP discovery still imports historical Render/Neon helper primitives and must become provider-neutral."
+    },
+    "scripts/timeweb_ipv4_allocation_provider.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb IPv4 allocation provider adapter still imports historical Render/Neon HTTP/provisioning primitives and must be decoupled."
+    },
+    "scripts/provision_v10_timeweb_postgres_synthetic.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb PostgreSQL synthetic provisioner still imports historical Render/Neon helper primitives and must be decoupled before final runtime consolidation."
+    },
+    "scripts/probe_v10_timeweb_postgres_control_plane.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb PostgreSQL control-plane probe still imports historical Render/Neon helper primitives and must be decoupled."
+    },
+    "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb PostgreSQL public-IPv4/TLS provisioner still imports historical Render/Neon helper primitives and must be decoupled."
+    },
+    "scripts/check_v10_ru_postgres_data_residency_migration.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current RU PostgreSQL residency guard still references historical Cloud.ru/Wrangler provider artifacts and must be rebound to provider-neutral Timeweb contracts."
+    },
+    "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md": {
+      "classification": "KEEP",
+      "reason": "Current integrated-update execution ledger."
+    },
+    "omni_cio/web/vk_id_oauth_v1.py": {
+      "classification": "RETIRE_NOW_AFTER_AUTHORITY",
+      "reason": "VK ID source is retained as historical evidence but must leave deployed composition under Amendment 18."
+    },
+    "apps/web/vite.config.ts": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Web build identity still falls back to retired Render release metadata; TW-B must use provider-neutral exact GitHub SHA input."
+    },
+    "scripts/rehearse_v10_wp22a_phase4_runtime_role.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Active PostgreSQL 18 rehearsal still imports runtime-role convergence from the historical Render/Neon provisioner; extract the primitive to provider-neutral PostgreSQL code in TW-B/TW-D."
+    },
+    "scripts/check_v10_ru_public_registration_ingress.py": {
+      "classification": "KEEP",
+      "reason": "Current Timeweb/retired-provider authority guard contains retired command names only as fail-closed detection signatures; it does not execute provider operations."
+    }
+  },
+  "path_rules": [
+    {
+      "match": {
+        "prefix": ".github/workflows/v10-timeweb-",
+        "suffix": ".yml"
+      },
+      "classification": "KEEP",
+      "reason": "Current Timeweb control-plane/recovery proof workflows."
+    },
+    {
+      "match": {
+        "prefix": "docs/architecture/",
+        "contains": "V10_RU_POSTGRES_TIMEWEB_"
+      },
+      "classification": "KEEP",
+      "reason": "Current Timeweb PostgreSQL architecture contracts pending later milestone supersession."
+    },
+    {
+      "match": {
+        "prefix": "docs/operations/",
+        "contains": "V10_RU_POSTGRES_TIMEWEB_"
+      },
+      "classification": "KEEP",
+      "reason": "Current Timeweb PostgreSQL runbooks pending later milestone supersession."
+    },
+    {
+      "match": {
+        "prefix": "scripts/",
+        "contains": "timeweb",
+        "suffix": ".py",
+        "case_sensitive": false
+      },
+      "classification": "KEEP",
+      "reason": "Current Timeweb adapter/control-plane implementation unless explicitly overridden."
+    },
+    {
+      "match": {
+        "prefix": "tests/",
+        "contains": "timeweb",
+        "suffix": ".py",
+        "case_sensitive": false
+      },
+      "classification": "KEEP",
+      "reason": "Current Timeweb regression evidence unless explicitly overridden."
+    },
+    {
+      "match": {
+        "contains_any": [
+          "vk_id"
+        ],
+        "case_sensitive": false
+      },
+      "classification": "HISTORY",
+      "reason": "VK ID plans/tests are historical after Amendment 18 unless explicitly marked as a current consumer."
+    },
+    {
+      "match": {
+        "contains_any": [
+          "cloudflare",
+          "neon",
+          "sonar",
+          "gitar",
+          "circleci"
+        ],
+        "case_sensitive": false
+      },
+      "classification": "HISTORY",
+      "reason": "Retired provider/external-review implementation or evidence, archive-in-place unless explicitly required by a current replacement consumer."
+    },
+    {
+      "match": {
+        "contains_any": [
+          "render",
+          "cloudru",
+          "cloud_ru"
+        ],
+        "case_sensitive": false
+      },
+      "classification": "HISTORY",
+      "reason": "Retired V10 provider implementation/evidence, archive-in-place; protected V9 render.yaml is explicitly KEEP."
+    }
+  ],
+  "external_surfaces": [
+    {
+      "surface": "Timeweb Cloud App Platform",
+      "classification": "KEEP",
+      "state": "SELECTED_TARGET",
+      "authority": "TW-C only after TW-B certification"
+    },
+    {
+      "surface": "Timeweb Cloud Managed PostgreSQL 18",
+      "classification": "KEEP",
+      "state": "CONTROL_PLANE_READ_ONLY_READY",
+      "authority": "TW-D cutover remains separately gated"
+    },
+    {
+      "surface": "omnicio.ru",
+      "classification": "TIMEWEB_REPLACE",
+      "state": "CANONICAL_DOMAIN_CONFIRMED_DNS_CUTOVER_PENDING",
+      "authority": "TW-E"
+    },
+    {
+      "surface": "Telegram Login",
+      "classification": "KEEP",
+      "state": "SOLE_SELECTED_HUMAN_LOGIN_PROVIDER_ACTIVATION_PENDING",
+      "authority": "TW-F"
+    },
+    {
+      "surface": "Cloudflare V10 resources",
+      "classification": "HISTORY",
+      "state": "OWNER_REPORTED_DECOMMISSIONED_PROVIDER_SIDE_NOT_GITHUB_VERIFIABLE"
+    },
+    {
+      "surface": "Neon V10 resources",
+      "classification": "HISTORY",
+      "state": "OWNER_REPORTED_DECOMMISSIONED_PROVIDER_SIDE_NOT_GITHUB_VERIFIABLE"
+    },
+    {
+      "surface": "Render V10 resources",
+      "classification": "RETIRE_AFTER_CUTOVER",
+      "state": "NO_CURRENT_V10_AUTHORITY"
+    },
+    {
+      "surface": "Protected V9 Render app:app",
+      "classification": "KEEP",
+      "state": "PROTECTED_RECOVERY_BOUNDARY"
+    },
+    {
+      "surface": "Cloud.ru",
+      "classification": "HISTORY",
+      "state": "NO_CURRENT_V10_AUTHORITY"
+    },
+    {
+      "surface": "VK ID",
+      "classification": "RETIRE_NOW_AFTER_AUTHORITY",
+      "state": "NO_CURRENT_OR_FUTURE_V10_LOGIN_AUTHORITY"
+    },
+    {
+      "surface": "Sonar/Gitar/CircleCI required verification",
+      "classification": "HISTORY",
+      "state": "RETIRED_FROM_REQUIRED_ACTIVE_PATH_AFTER_PR_582"
+    }
+  ],
+  "protected_invariants": {
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "protected_v9_entrypoint": "app:app",
+    "web_visual_started": false,
+    "wp23_unlocked": false
+  },
+  "expected_provider_named_file_count": 215,
+  "accepted_base_pr": 582,
+  "provider_path_keywords": [
+    "cloudflare",
+    "neon",
+    "render",
+    "cloudru",
+    "cloud_ru",
+    "vk_id",
+    "timeweb",
+    "sonar",
+    "gitar",
+    "circleci"
+  ]
+}
