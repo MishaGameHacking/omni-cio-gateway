@@ -4,7 +4,9 @@
   "identity": {
     "internal_user_id_authoritative": true,
     "one_user_one_tenant_baseline": true,
-    "ordinary_login_providers": ["telegram", "vk_id"],
+    "ordinary_login_providers": [
+      "telegram"
+    ],
     "local_password_required": false,
     "external_identity_unique_across_users": true,
     "automatic_profile_based_merge_allowed": false,
@@ -23,8 +25,10 @@
     "revoke_all_sessions_required": true
   },
   "recovery": {
-    "normal_login_providers": ["telegram", "vk_id"],
-    "second_provider_link_recommended": true,
+    "normal_login_providers": [
+      "telegram"
+    ],
+    "second_provider_link_recommended": false,
     "emergency_recovery_separate_from_normal_login": true,
     "recovery_secret_plaintext_storage_allowed": false
   },
@@ -41,7 +45,10 @@
   "broker_connections": {
     "tenant_owned": true,
     "normal_provisioning_surface": "authenticated_web_settings",
-    "credential_roles": ["read", "trade"],
+    "credential_roles": [
+      "read",
+      "trade"
+    ],
     "transfer_withdrawal_supported": false,
     "read_used_as_trade_fallback": false,
     "trade_used_as_read_fallback": false,

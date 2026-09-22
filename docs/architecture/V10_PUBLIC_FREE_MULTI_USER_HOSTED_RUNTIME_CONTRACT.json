@@ -21,12 +21,20 @@
     "owner_lan_dependency_allowed": false,
     "lenovo_as_public_production_origin_allowed": false,
     "owner_home_power_or_internet_may_be_public_sla_dependency": false,
-    "lenovo_roles": ["engineering", "self_hosted_ci", "controlled_acceptance", "recovery", "rollback"],
+    "lenovo_roles": [
+      "engineering",
+      "self_hosted_ci",
+      "controlled_acceptance",
+      "recovery",
+      "rollback"
+    ],
     "provider_selection": "WP_SERVICE_SELECTION_GATE"
   },
   "identity": {
     "canonical_path": "OmniCIOUserAccount -> Tenant -> Session",
-    "ordinary_login_providers": ["TELEGRAM", "VK_ID"],
+    "ordinary_login_providers": [
+      "TELEGRAM"
+    ],
     "github_is_product_identity": false,
     "cloudflare_is_product_identity": false,
     "windows_is_product_identity": false,
@@ -45,7 +53,10 @@
     "ownership": "TENANT_SCOPED_BROKER_CONNECTION",
     "global_shared_read_token_allowed": false,
     "global_shared_trade_token_allowed": false,
-    "roles": ["READ", "TRADE_OPTIONAL"],
+    "roles": [
+      "READ",
+      "TRADE_OPTIONAL"
+    ],
     "normal_provisioning": "AUTHENTICATED_WEB_SETTINGS",
     "return_raw_secret_to_browser": false,
     "browser_web_storage_allowed": false,

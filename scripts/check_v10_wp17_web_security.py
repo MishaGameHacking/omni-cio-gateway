@@ -79,7 +79,7 @@ def main() -> int:
 
     wp22a_source_gate = _wp22a_source_gate_active(failures)
 
-    if contract.get("ordinary_login_providers") != ["telegram", "vk_id"]:
+    if contract.get("ordinary_login_providers") != ["telegram"]:
         failures.append("ordinary login providers drifted")
     if contract.get("local_password_allowed") is not False:
         failures.append("local password must remain disabled")
@@ -203,7 +203,7 @@ def main() -> int:
             print(f"- {failure}", file=sys.stderr)
         return 1
     print("V10 WP17 Web/security boundary check passed.")
-    print("Ordinary auth: Telegram + VK ID only; local password absent")
+    print("Ordinary auth: Telegram only; local password absent")
     print("Sessions: server-side / private test identity disabled by default")
     print("Broker provisioning: WP8 read-broker connection child / no TRADE authority")
     print("READ-vault acceptance: exact-head OWNER evidence + non-admin runner probe")

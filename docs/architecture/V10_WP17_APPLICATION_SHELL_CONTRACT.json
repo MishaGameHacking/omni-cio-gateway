@@ -18,7 +18,9 @@
     "/system",
     "/settings"
   ],
-  "ordinary_login_providers": ["telegram", "vk_id"],
+  "ordinary_login_providers": [
+    "telegram"
+  ],
   "local_password_allowed": false,
   "google_login_allowed": false,
   "session": {
