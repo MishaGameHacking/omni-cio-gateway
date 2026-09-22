@@ -20,9 +20,7 @@ TIMEWEB_CREATE_WORKFLOW = Path(
 TIMEWEB_NETWORK_WORKFLOW = Path(
     ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
 )
-TIMEWEB_ALLOCATION_WORKFLOW = Path(
-    ".github/workflows/v10-timeweb-ipv4-allocation.yml"
-)
+TIMEWEB_ALLOCATION_WORKFLOW = Path(".github/workflows/v10-timeweb-ipv4-allocation.yml")
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 RETIRED_NEON_EGRESS_WORKFLOW = Path(".github/workflows/v10-neon-egress-boundary.yml")
@@ -49,23 +47,41 @@ def _fixture(parent: Path) -> Path:
             encoding="utf-8",
         )
 
-    retired_secret_bearing: dict[str, list[str]] = contract["retired_secret_bearing_workflows"]
+    retired_secret_bearing: dict[str, list[str]] = contract[
+        "retired_secret_bearing_workflows"
+    ]
     for relative, names in retired_secret_bearing.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        env_lines = "\n".join(f"          {name}: ${{{{ secrets.{name} }}}}" for name in names)
+        env_lines = "\n".join(
+            f"          {name}: ${{{{ secrets.{name} }}}}" for name in names
+        )
         count = guard._ARCHIVED_DISABLED_JOB_COUNTS[relative]
         jobs: list[str] = []
         for index in range(count):
-            body = [f"  archive_{index}:", "    if: ${{ false }}", "    runs-on: test", "    steps:"]
+            body = [
+                f"  archive_{index}:",
+                "    if: ${{ false }}",
+                "    runs-on: test",
+                "    steps:",
+            ]
             if index == 0:
-                body.extend(["      - name: bounded", "        env:", env_lines, "        run: echo archived"])
+                body.extend(
+                    [
+                        "      - name: bounded",
+                        "        env:",
+                        env_lines,
+                        "        run: echo archived",
+                    ]
+                )
             else:
                 body.append("      - run: echo archived")
             jobs.extend(body)
         path.write_text(
             "name: archived\n# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority.\non:\n  workflow_dispatch:\njobs:\n"
-            + "\n".join(jobs) + "\n", encoding="utf-8"
+            + "\n".join(jobs)
+            + "\n",
+            encoding="utf-8",
         )
 
     for relative in (
@@ -111,8 +127,12 @@ class ProviderSecretCustodyTests(unittest.TestCase):
     def test_secret_name_metadata_is_detector_unambiguous(self) -> None:
         contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
         roles = contract["role_separation"]
-        self.assertEqual(roles["current_provider_binding_authority"], "TIMEWEB_CLOUD_API_TOKEN")
-        self.assertEqual(roles["historical_neon_runtime_management_binding"], "NEON_API_KEY")
+        self.assertEqual(
+            roles["current_provider_binding_authority"], "TIMEWEB_CLOUD_API_TOKEN"
+        )
+        self.assertEqual(
+            roles["historical_neon_runtime_management_binding"], "NEON_API_KEY"
+        )
         self.assertFalse(roles["retired_provider_workflow_execution_allowed"])
         self.assertEqual(
             roles["legacy_neon_function_deploy_binding"],
@@ -145,9 +165,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         source = Path(guard.__file__).read_text(encoding="utf-8")
         ambiguous_assignments = (
             "NEON_API_" + 'KEY = "NEON_API_' + 'KEY"',
-            "NEON_FUNCTION_DEPLOY_API_"
-            + 'KEY = "NEON_FUNCTION_DEPLOY_API_'
-            + 'KEY"',
+            "NEON_FUNCTION_DEPLOY_API_" + 'KEY = "NEON_FUNCTION_DEPLOY_API_' + 'KEY"',
             "RETIRED_RENDER_API_" + 'KEY = "RENDER_API_' + 'KEY"',
         )
         for assignment in ambiguous_assignments:
@@ -340,20 +358,33 @@ class ProviderSecretCustodyTests(unittest.TestCase):
 
     def test_retired_provider_workflow_auto_trigger_is_rejected(self) -> None:
         root = self._root()
-        _replace(root, PROVIDER_WORKFLOW, "on:\n  workflow_dispatch:", "on:\n  push:\n    branches:\n      - main")
-        self._assert_rejected(root, "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_DISPATCH_MISSING")
+        _replace(
+            root,
+            PROVIDER_WORKFLOW,
+            "on:\n  workflow_dispatch:",
+            "on:\n  push:\n    branches:\n      - main",
+        )
+        self._assert_rejected(
+            root, "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_DISPATCH_MISSING"
+        )
 
     def test_retired_provider_workflow_must_remain_hard_disabled(self) -> None:
         root = self._root()
         _replace(root, PROVIDER_WORKFLOW, "    if: ${{ false }}\n", "")
-        self._assert_rejected(root, "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_NOT_HARD_DISABLED")
+        self._assert_rejected(
+            root, "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_NOT_HARD_DISABLED"
+        )
 
     def test_inventory_state_drift_is_rejected(self) -> None:
         root = self._root()
         contract_path = root / CONTRACT_PATH
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
-        contract["repository_secret_inventory"]["CLOUDFLARE_ZONE_ID"]["state"] = "ACTIVE"
-        contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+        contract["repository_secret_inventory"]["CLOUDFLARE_ZONE_ID"]["state"] = (
+            "ACTIVE"
+        )
+        contract_path.write_text(
+            json.dumps(contract, indent=2) + "\n", encoding="utf-8"
+        )
         self._assert_rejected(
             root,
             "PROVIDER_SECRET_CUSTODY_INVENTORY_METADATA_INVALID",
@@ -364,7 +395,9 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         contract_path = root / CONTRACT_PATH
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract["status"] = "STALE"
-        contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+        contract_path.write_text(
+            json.dumps(contract, indent=2) + "\n", encoding="utf-8"
+        )
         self._assert_rejected(root, "PROVIDER_SECRET_CUSTODY_STATUS_MISMATCH")
 
 

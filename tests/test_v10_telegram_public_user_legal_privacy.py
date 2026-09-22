@@ -126,9 +126,9 @@ class TelegramPublicUserLegalPrivacyTests(unittest.TestCase):
             _copy_fixture(root)
             path = root / guard.CONTRACT
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["current_data_residency"][
-                "required_before_activation"
-            ] = "HISTORICAL_RU_PG_B_SYNTHETIC_PARITY"
+            payload["current_data_residency"]["required_before_activation"] = (
+                "HISTORICAL_RU_PG_B_SYNTHETIC_PARITY"
+            )
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,

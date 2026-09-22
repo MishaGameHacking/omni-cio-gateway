@@ -136,6 +136,9 @@ Split decision: **PR #582 is the mandatory security/authority + live-evidence ac
 - Eighth exact-head RED on `02ecc42bae9d88a195816dc18db6f1bb3d35adc5`: Fast PR, Engineering Governance, Toolchain and all WP audits succeeded; authoritative Windows compile also succeeded, then Ruff format failed only on `scripts/check_v10_ru_public_registration_ingress.py` because one boolean expression was not in canonical Ruff layout.
 - Root cause: Fast PR had gained full syntax compilation but still did not run the already-canonical Ruff lint/format gates before the expensive authoritative job. The project already has the same protected-runner Ruff commands in `v10-targeted-repair.yml`, so no new toolchain is needed.
 - Systemic correction: canonical-format the guard and make Fast PR run `ruff check .` plus `ruff format --check .` immediately after full compile; regression coverage freezes both early gates.
+- Ninth exact-head RED on `d5204fed17c283217cc5b026e754a1c13b67b557`: the new early Fast PR formatter gate correctly ran but `ruff format --check .` exposed 455 legacy unformatted Python files, only 14 of which are changed by PR #582. Treating the entire historical tree as a new-code formatting gate would create an unrelated mass rewrite.
+- Root cause: the early formatter guard was made repository-wide even though the accepted baseline is not globally Ruff-formatted. New-code quality and historical-baseline cleanup were conflated.
+- Systemic correction: keep global `ruff check .`, but derive a NUL-safe exact base-to-head list of changed `*.py` files and run Ruff format only on that set. Canonically format the 14 PR-changed tests identified by Ruff; leave the unrelated 441 legacy files untouched. A regression test forbids reintroducing whole-tree `ruff format --check .` in Fast PR.
 
 Only `CERTIFIED_GREEN` permits TW-B.
 

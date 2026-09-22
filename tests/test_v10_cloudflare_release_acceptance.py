@@ -18,14 +18,16 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
     def test_archived_production_workflow_is_hard_disabled(self) -> None:
         source = guard.PRODUCTION_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(guard._ARCHIVE_MARKER, source)
-        self.assertEqual(source.count("    if: ${{ false }}"), guard._ARCHIVE_DISABLED_JOB_COUNT)
+        self.assertEqual(
+            source.count("    if: ${{ false }}"), guard._ARCHIVE_DISABLED_JOB_COUNT
+        )
         self.assertNotIn("on:\n  workflow_run:", source)
 
     def test_guard_rejects_implicit_public_multi_user_expectation(self) -> None:
         payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
-        payload["live_assertions"][
-            "public_multi_user_expectation_must_be_explicit"
-        ] = False
+        payload["live_assertions"]["public_multi_user_expectation_must_be_explicit"] = (
+            False
+        )
         with tempfile.TemporaryDirectory() as temporary:
             candidate = Path(temporary) / "release.json"
             candidate.write_text(json.dumps(payload), encoding="utf-8")
@@ -37,7 +39,9 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
                 ):
                     guard.validate()
 
-    def test_production_manager_avoids_hardcoded_secret_keyword_assignments(self) -> None:
+    def test_production_manager_avoids_hardcoded_secret_keyword_assignments(
+        self,
+    ) -> None:
         source = guard.PRODUCTION_MANAGER.read_text(encoding="utf-8")
         hardcoded_secret_assignment = re.compile(
             r"(?mi)^\s*[A-Z_][A-Z0-9_]*SECRET[A-Z0-9_]*\s*=\s*[\"']"

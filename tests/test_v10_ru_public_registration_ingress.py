@@ -89,9 +89,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         assert isinstance(cleanup, dict)
         self.assertTrue(cleanup["retired_provider_files_may_remain_archive_in_place"])
         self.assertFalse(cleanup["mass_repository_deletion_required"])
-        self.assertFalse(
-            cleanup["historical_artifacts_may_define_current_authority"]
-        )
+        self.assertFalse(cleanup["historical_artifacts_may_define_current_authority"])
         self.assertFalse(
             cleanup["new_feature_dependencies_on_retired_providers_allowed"]
         )

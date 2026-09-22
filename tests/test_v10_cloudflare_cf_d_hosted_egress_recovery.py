@@ -63,9 +63,7 @@ class CloudflareCfDHostedEgressRecoveryTests(unittest.TestCase):
     def test_every_historical_release_job_is_unconditionally_disabled(self) -> None:
         for index, job_id in enumerate(_RETIRED_JOBS):
             next_job_id = (
-                _RETIRED_JOBS[index + 1]
-                if index + 1 < len(_RETIRED_JOBS)
-                else None
+                _RETIRED_JOBS[index + 1] if index + 1 < len(_RETIRED_JOBS) else None
             )
             header = _job_header(self.workflow, job_id, next_job_id)
             with self.subTest(job_id=job_id):

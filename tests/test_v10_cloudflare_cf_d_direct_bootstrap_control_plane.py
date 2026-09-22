@@ -104,9 +104,7 @@ def test_archived_production_release_preserves_runtime_provisioner_evidence() ->
     assert "NEON_FUNCTION_DEPLOY_API_KEY" not in bootstrap
     assert "NEON_FUNCTION_INVOKE_API_TOKEN" not in bootstrap
 
-    custody_index = adapter.index(
-        "_resync_production_branch_custody(expected_sha)"
-    )
+    custody_index = adapter.index("_resync_production_branch_custody(expected_sha)")
     runtime_index = adapter.index('runtime.run(expected_sha, "production")')
     secret_index = adapter.index("production.put_runtime_secret()")
     assert custody_index < runtime_index < secret_index
@@ -167,9 +165,7 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         is True
     )
     assert (
-        cutover[
-            "production_database_bootstrap_organization_wide_authority_required"
-        ]
+        cutover["production_database_bootstrap_organization_wide_authority_required"]
         is False
     )
     assert (
@@ -185,9 +181,7 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         "omni_cio_cloudflare_prod"
     )
     assert (
-        cutover[
-            "production_database_bootstrap_runtime_role_least_privilege_required"
-        ]
+        cutover["production_database_bootstrap_runtime_role_least_privilege_required"]
         is True
     )
     assert cutover["production_database_bootstrap_force_rls_required"] is True
@@ -228,9 +222,7 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         is False
     )
 
-    assert (
-        cutover["production_database_bootstrap_function_active_transport"] is False
-    )
+    assert cutover["production_database_bootstrap_function_active_transport"] is False
     assert (
         cutover["production_database_bootstrap_function_retained_legacy_component"]
         is True
@@ -243,9 +235,7 @@ def test_direct_bootstrap_transport_is_machine_readable() -> None:
         ]
         is True
     )
-    assert (
-        cutover["production_database_bootstrap_public_staging_relay_active"] is False
-    )
+    assert cutover["production_database_bootstrap_public_staging_relay_active"] is False
     assert cutover["production_database_bootstrap_function_origin_custody"] == (
         "RESTRICTED_RUNNER_TEMP_TARGET_DESCRIPTOR"
     )

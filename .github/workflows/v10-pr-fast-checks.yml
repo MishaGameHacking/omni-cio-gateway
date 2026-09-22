@@ -79,6 +79,9 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             git cat-file -e "${BASE_SHA}^{commit}"
           fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git cat-file -e "${BASE_SHA}^{commit}"
+          fi
           git checkout --detach "$EXPECTED_HEAD"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
@@ -134,6 +137,8 @@ jobs:
       - name: Bootstrap exact reviewed repository without external Actions
         shell: bash
         env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -154,7 +159,7 @@ jobs:
             git config --local http.lowSpeedTime 60
             fetch_status=0
             if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-              git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
+              git fetch --no-tags --prune origin                 "+refs/heads/${BASE_REF}:refs/remotes/origin/base"                 "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
             else
               git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event" || fetch_status=$?
             fi
@@ -217,10 +222,26 @@ jobs:
           operations_analytics.py broker_report_reconciliation
           omni_cio apps tests scripts
 
-      - name: Run early repository Python lint and format gates
+      - name: Run early repository Python lint and changed-file format gates
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          set -euo pipefail
           python -m ruff check .
-          python -m ruff format --check .
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            mapfile -d '' changed_python < <(
+              git diff --name-only --diff-filter=ACMRT -z                 "$BASE_SHA" "$HEAD_SHA" -- '*.py'
+            )
+            if [ "${#changed_python[@]}" -gt 0 ]; then
+              python -m ruff format --check "${changed_python[@]}"
+            else
+              echo "No changed Python files require format verification."
+            fi
+          else
+            echo "Changed-file Ruff format gate is PR-base-dependent; workflow_dispatch runs lint only."
+          fi
 
       - name: Run CI and release guard unit tests
         run: >-

@@ -72,7 +72,9 @@ class NeonEgressBoundaryTests(unittest.TestCase):
         self.assertIs(kwargs["stderr"], egress.subprocess.DEVNULL)
         self.assertEqual(kwargs["timeout"], 25.0)
 
-    def test_probe_parser_rejects_redirects_malformed_and_oversized_output(self) -> None:
+    def test_probe_parser_rejects_redirects_malformed_and_oversized_output(
+        self,
+    ) -> None:
         unavailable = egress.EgressProbeEvidence("UNAVAILABLE", "MISSING")
         bad_results = (
             (1, "000\n\n"),
@@ -142,7 +144,9 @@ class NeonEgressBoundaryTests(unittest.TestCase):
         self.assertNotIn("uses: actions/checkout@", source)
 
 
-    def test_compare_marker_contains_no_network_or_provider_identifier_detail(self) -> None:
+    def test_compare_marker_contains_no_network_or_provider_identifier_detail(
+        self,
+    ) -> None:
         args = egress._parser().parse_args(
             [
                 "compare",

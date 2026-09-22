@@ -27,7 +27,9 @@ def _module():
         SCRIPT,
     )
     if spec is None or spec.loader is None:
-        raise AssertionError("hosted release alignment governance script cannot be loaded")
+        raise AssertionError(
+            "hosted release alignment governance script cannot be loaded"
+        )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -38,7 +40,9 @@ def _sources() -> dict[str, object]:
         "phase4_workflow": PHASE4_WORKFLOW.read_text(encoding="utf-8"),
         "alignment_workflow": ALIGNMENT_WORKFLOW.read_text(encoding="utf-8"),
         "cloudflare_amendment": CLOUDFLARE_AMENDMENT.read_text(encoding="utf-8"),
-        "cloudflare_contract": json.loads(CLOUDFLARE_CONTRACT.read_text(encoding="utf-8")),
+        "cloudflare_contract": json.loads(
+            CLOUDFLARE_CONTRACT.read_text(encoding="utf-8")
+        ),
     }
 
 
@@ -82,7 +86,9 @@ class HostedReleaseAlignmentGovernanceTests(unittest.TestCase):
 
         governance.validate_sources(**sources, failures=failures)
 
-        self.assertTrue(any("workflow_run:" in failure for failure in failures), failures)
+        self.assertTrue(
+            any("workflow_run:" in failure for failure in failures), failures
+        )
 
     def test_validator_rejects_reactivated_schedule(self) -> None:
         governance = _module()
@@ -124,7 +130,10 @@ class HostedReleaseAlignmentGovernanceTests(unittest.TestCase):
         governance.validate_sources(**sources, failures=failures)
 
         self.assertTrue(
-            any("LEGACY_RENDER_ALIGNMENT_RETIRED_AMENDMENT_14" in failure for failure in failures),
+            any(
+                "LEGACY_RENDER_ALIGNMENT_RETIRED_AMENDMENT_14" in failure
+                for failure in failures
+            ),
             failures,
         )
 
