@@ -35,7 +35,24 @@
     "package_index_tls_probe_client": "pip",
     "package_index_tls_probe_read_only": true,
     "tls_verification_may_be_disabled": false,
-    "hostname_verification_may_be_disabled": false
+    "hostname_verification_may_be_disabled": false,
+    "windows_dependency_consumers": [
+      ".github/workflows/regression-shield.yml",
+      ".github/workflows/self-hosted-windows-smoke.yml",
+      ".github/workflows/v10-wp13-postgresql-audit.yml",
+      ".github/workflows/v10-wp14-durable-jobs-audit.yml",
+      ".github/workflows/v10-wp15-live-web-support-audit.yml",
+      ".github/workflows/v10-wp15-tinvest-read-audit.yml",
+      ".github/workflows/v10-wp17-application-shell-audit.yml",
+      ".github/workflows/v10-wp18-portfolio-dashboard-audit.yml",
+      ".github/workflows/v10-wp19-watchtower-incidents-audit.yml",
+      ".github/workflows/v10-wp20-research-dossier-audit.yml",
+      ".github/workflows/v10-wp21-decision-risk-plan-audit.yml",
+      ".github/workflows/v10-wp22-system-admin-audit.yml",
+      ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+      ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
+    ],
+    "every_windows_dependency_consumer_requires_preflight": true
   },
   "protected_invariants": {
     "gateway_entrypoint": "app:app",

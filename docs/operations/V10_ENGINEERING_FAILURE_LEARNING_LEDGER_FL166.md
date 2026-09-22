@@ -179,6 +179,37 @@ session without persisting a machine/user policy change. The runner's
 Restricted/managed policy therefore remains intact outside this bounded parser
 process.
 
+## Project-wide dependency-consumer closure
+
+Exact head `dd5c845c3a8512aeb26ea41be921e9f4213e93b4` proved the
+authoritative checker now emits bounded machine state:
+`TBANK_CA_TRUST_STORE_NOT_READY`, verifier exit 71, checker exit 72. The same
+exact-head WP18, WP22, WP22A Phase 2 and WP22A clientless logs independently
+reproduced the same Windows `SSLCertVerificationError` while resolving through
+the official T-Bank package index.
+
+Repository inventory found 14 active self-hosted Windows workflows that both
+run on the `omni-cio-ci` runner and consume `windows-requirements-dev.txt`.
+Previously only the authoritative merge gate failed fast; the other consumers
+entered pip resolution and emitted long retry storms that obscured one machine
+trust defect as many package failures.
+
+Systemic correction:
+
+- declare the complete consumer set in the CA trust contract;
+- require every consumer to run the same read-only CA checker before its first
+  hash-locked pip install;
+- discover consumers independently in regression tests from workflow source and
+  require exact equality with the declared contract set, so a future hidden
+  consumer fails closed;
+- require exactly one checker invocation per consumer and prove it occurs before
+  `--require-hashes -r windows-requirements-dev.txt`;
+- keep certificate-store mutation OWNER/Admin-only and keep dependency
+  versions, hashes and T-Bank package-source authority unchanged.
+
+This turns a shared machine prerequisite into a shared explicit producer guard
+without granting CI any additional trust-store mutation authority.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head

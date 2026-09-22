@@ -143,3 +143,41 @@ def test_fast_pr_parses_tbank_ca_trust_powershell_boundary() -> None:
     assert "System.Management.Automation.Language.Parser" in block
     assert "scripts\\check_v10_tbank_ca_trust.ps1" in block
     assert "infrastructure\\windows\\provision_v10_tbank_ca_trust.ps1" in block
+
+
+def test_every_self_hosted_windows_dependency_consumer_fails_fast_on_ca_trust() -> None:
+    payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    configured = {
+        ROOT / path for path in payload["verification"]["windows_dependency_consumers"]
+    }
+    discovered = set()
+    for path in (ROOT / ".github/workflows").glob("*.yml"):
+        source = path.read_text(encoding="utf-8")
+        if "omni-cio-ci" in source and "windows-requirements-dev.txt" in source:
+            discovered.add(path)
+
+    assert configured == discovered
+    assert payload["verification"][
+        "every_windows_dependency_consumer_requires_preflight"
+    ] is True
+
+    check_marker = "scripts\\check_v10_tbank_ca_trust.ps1"
+    install_marker = "--require-hashes -r windows-requirements-dev.txt"
+    process_marker = (
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "
+        "scripts\\check_v10_tbank_ca_trust.ps1 -AsJson"
+    )
+    for path in sorted(discovered):
+        source = path.read_text(encoding="utf-8")
+        assert source.count(check_marker) == 1, path
+        check_index = source.index(check_marker)
+        assert check_index < source.index(install_marker), path
+
+        step_start = source.rfind("      - name:", 0, check_index)
+        step_end = source.find("      - name:", check_index)
+        if step_end == -1:
+            step_end = len(source)
+        step = source[step_start:step_end]
+        assert "        shell: cmd" in step, path
+        assert process_marker in step, path
+        assert "Set-ExecutionPolicy" not in step, path

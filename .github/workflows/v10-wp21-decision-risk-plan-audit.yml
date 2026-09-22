@@ -98,6 +98,10 @@ jobs:
           echo "VENV_WINDOWS_PATH=$VENV_WINDOWS_PATH" >> "$GITHUB_ENV"
           echo "$VENV_WINDOWS_PATH\\Scripts" >> "$GITHUB_PATH"
 
+      - name: Verify T-Bank package CA trust before dependency install
+        shell: cmd
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\check_v10_tbank_ca_trust.ps1 -AsJson
+
       - name: Install hash-locked WP21 Python dependencies
         shell: bash
         run: |
