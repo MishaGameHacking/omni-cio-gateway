@@ -17,7 +17,10 @@ from apps.api.hosted_database_runtime import (
 from apps.api.hosted_runtime import HOSTED_SESSION_POLICY
 from apps.api.telegram_auth import build_telegram_provider_auth
 from omni_cio.web.browser_security_v1 import BrowserCookiePolicyV1
-from omni_cio.web.identity_v1 import IdentityProviderV1
+from omni_cio.web.identity_v1 import (
+    ORDINARY_LOGIN_PROVIDERS,
+    IdentityProviderV1,
+)
 from omni_cio.web.provider_auth_routes_v1 import ProviderAuthRouteServicesV1
 from omni_cio.web.session_v1 import SessionRegistryV1
 
@@ -182,6 +185,18 @@ def test_non_synthetic_status_is_provider_neutral() -> None:
     )
     assert database["label"] == "PostgreSQL 18"
     assert "Neon" not in str(payload)
+
+
+def test_current_identity_and_cookie_defaults_are_telegram_only() -> None:
+    assert ORDINARY_LOGIN_PROVIDERS == (IdentityProviderV1.TELEGRAM,)
+    cookies = BrowserCookiePolicyV1(csrf_binding_key=bytes([23]) * 32)
+    assert cookies.allowed_providers == (IdentityProviderV1.TELEGRAM,)
+    services = ProviderAuthRouteServicesV1(
+        runtimes=(),
+        authentication=None,
+        cookies=cookies,
+    )
+    assert services.descriptor_providers == (IdentityProviderV1.TELEGRAM,)
 
 
 def test_telegram_builder_exposes_only_telegram_when_fail_closed() -> None:

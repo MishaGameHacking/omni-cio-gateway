@@ -72,7 +72,6 @@ class ProviderAuthRouteServicesV1:
     registration_enabled: bool = False
     descriptor_providers: tuple[IdentityProviderV1, ...] = (
         IdentityProviderV1.TELEGRAM,
-        IdentityProviderV1.VK_ID,
     )
     abuse: ProviderAuthAbuseControlV1 = field(
         default_factory=ProviderAuthAbuseControlV1

@@ -32,7 +32,6 @@ class BrowserCookiePolicyV1:
     session_max_age_seconds: int = 24 * 60 * 60
     allowed_providers: tuple[IdentityProviderV1, ...] = (
         IdentityProviderV1.TELEGRAM,
-        IdentityProviderV1.VK_ID,
     )
 
     def __post_init__(self) -> None:

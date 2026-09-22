@@ -147,8 +147,12 @@ def _app(
         services=ProviderAuthRouteServicesV1(
             runtimes=runtimes,
             authentication=authentication,
-            cookies=BrowserCookiePolicyV1(csrf_binding_key=CSRF_KEY),
+            cookies=BrowserCookiePolicyV1(
+                csrf_binding_key=CSRF_KEY,
+                allowed_providers=providers or (IdentityProviderV1.TELEGRAM,),
+            ),
             now=lambda: NOW,
+            descriptor_providers=providers or (IdentityProviderV1.TELEGRAM,),
         ),
     )
     return app, runtimes, authentication
