@@ -6,16 +6,16 @@ import os
 from fastapi import FastAPI
 
 from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
-from apps.api.hosted_database_runtime import (
-    probe_hosted_runtime_database,
-    validate_hosted_runtime_role,
-)
-from apps.api.hosted_preview import (
-    HostedPreviewServicesV1,
+from apps.api.hosted_app import (
+    HostedRuntimeServicesV1,
     _hostname,
     _release_sha,
     _required_env,
-    create_hosted_preview_app,
+    create_hosted_app,
+)
+from apps.api.hosted_database_runtime import (
+    probe_hosted_runtime_database,
+    validate_hosted_runtime_role,
 )
 from apps.api.telegram_auth import build_telegram_provider_auth
 from omni_cio.persistence.migration import connect_postgres
@@ -62,8 +62,8 @@ def create_app() -> FastAPI:
         sessions=sessions,
         canonical_origin=f"https://{hostname}",
     )
-    return create_hosted_preview_app(
-        HostedPreviewServicesV1(
+    return create_hosted_app(
+        HostedRuntimeServicesV1(
             sessions=sessions,
             database_probe=lambda: probe_hosted_runtime_database(
                 connection,
@@ -80,7 +80,6 @@ def create_app() -> FastAPI:
         ),
         additional_hosts=("localhost",),
         trusted_edge_tls_terminated=True,
-        trusted_edge_hostname_suffix=None,
         provider_start_paths=frozenset({TELEGRAM_START_PATH}),
         server_mutation_paths=frozenset(),
         provider_route_installer=install_telegram_auth_routes_v1,

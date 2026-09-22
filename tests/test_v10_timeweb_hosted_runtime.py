@@ -5,16 +5,16 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 import pytest
 
+from apps.api.hosted_app import (
+    HostedRuntimeServicesV1,
+    _system_status,
+    create_hosted_app,
+)
 from apps.api.hosted_database_runtime import (
     probe_hosted_runtime_database,
     validate_hosted_runtime_role,
 )
-from apps.api.hosted_preview import (
-    PREVIEW_SESSION_POLICY,
-    HostedPreviewServicesV1,
-    _system_status,
-    create_hosted_preview_app,
-)
+from apps.api.hosted_runtime import HOSTED_SESSION_POLICY
 from apps.api.telegram_auth import build_telegram_provider_auth
 from omni_cio.web.browser_security_v1 import BrowserCookiePolicyV1
 from omni_cio.web.identity_v1 import IdentityProviderV1
@@ -43,8 +43,6 @@ def _disabled_auth() -> ProviderAuthRouteServicesV1:
         cookies=BrowserCookiePolicyV1(csrf_binding_key=bytes([19]) * 32),
         descriptor_providers=(IdentityProviderV1.TELEGRAM,),
     )
-
-
 
 
 class _Result:
@@ -123,7 +121,10 @@ def test_provider_neutral_runtime_role_probe_rejects_identity_drift() -> None:
 
 def test_provider_neutral_runtime_role_validation_fails_closed() -> None:
     for role in ("", "OMNI-CIO", "omni cio", "../runtime", "a" * 64):
-        with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_ROLE_INVALID"):
+        with pytest.raises(
+            RuntimeError,
+            match="HOSTED_RUNTIME_DATABASE_ROLE_INVALID",
+        ):
             validate_hosted_runtime_role(role)
 
 
@@ -135,9 +136,9 @@ def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
         if state["fail"]:
             raise RuntimeError("database unavailable")
 
-    app = create_hosted_preview_app(
-        HostedPreviewServicesV1(
-            sessions=SessionRegistryV1(PREVIEW_SESSION_POLICY),
+    app = create_hosted_app(
+        HostedRuntimeServicesV1(
+            sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
             database_probe=database_probe,
             hostname=HOSTNAME,
             release_sha=RELEASE_SHA,
@@ -147,7 +148,6 @@ def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
         web_dist=_web_dist(tmp_path),
         additional_hosts=("localhost",),
         trusted_edge_tls_terminated=True,
-        trusted_edge_hostname_suffix=None,
         provider_start_paths=frozenset(),
         provider_route_installer=lambda app, *, services: None,
     )
@@ -167,8 +167,8 @@ def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
 
 
 def test_non_synthetic_status_is_provider_neutral() -> None:
-    services = HostedPreviewServicesV1(
-        sessions=SessionRegistryV1(PREVIEW_SESSION_POLICY),
+    services = HostedRuntimeServicesV1(
+        sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
         database_probe=lambda: None,
         hostname=HOSTNAME,
         release_sha=RELEASE_SHA,
@@ -187,7 +187,7 @@ def test_non_synthetic_status_is_provider_neutral() -> None:
 def test_telegram_builder_exposes_only_telegram_when_fail_closed() -> None:
     services = build_telegram_provider_auth(
         connection=object(),  # unused while the provider is unconfigured
-        sessions=SessionRegistryV1(PREVIEW_SESSION_POLICY),
+        sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
         canonical_origin="https://omnicio.ru",
         env={
             "OMNI_V10_VK_ID_CLIENT_ID": "historical-value-is-ignored",
@@ -207,6 +207,8 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     root = Path(__file__).resolve().parents[1]
     current_sources = (
         root / "apps" / "api" / "hosted_runtime.py",
+        root / "apps" / "api" / "hosted_app.py",
+        root / "apps" / "api" / "hosted_database_runtime.py",
         root / "apps" / "api" / "telegram_auth.py",
         root / "omni_cio" / "web" / "telegram_auth_routes_v1.py",
     )
@@ -217,6 +219,7 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
         "RENDER_",
         "CLOUDFLARE_",
         "NEON_",
+        "hosted_preview",
     )
     combined = "\n".join(path.read_text(encoding="utf-8") for path in current_sources)
     for marker in forbidden:
@@ -230,7 +233,7 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "omni_cio_hosted_api" not in runtime
     assert "omni_cio_cloudflare_" not in runtime
     assert "HOSTED_SESSION_POLICY" in runtime
-    assert "PREVIEW_SESSION_POLICY" not in runtime
+    assert "HOSTED_SESSION_POLICY" not in runtime
     assert 'additional_hosts=("localhost",)' in runtime
 
 
