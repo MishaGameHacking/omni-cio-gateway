@@ -68,6 +68,17 @@ class RuPostgresTimewebParitySourceTests(unittest.TestCase):
         self.assertNotIn("api.timeweb.cloud", source)
         self.assertNotIn("NEON_API_KEY", source)
 
+    def test_provider_guard_distinguishes_render_verb_from_provider_identifier(
+        self,
+    ) -> None:
+        neutral = 'raise ProvisioningStopped("POSTGRES_RUNTIME_ROLE_RENDER_FAILED")'
+        self.assertFalse(guard._contains_retired_provider_runtime_coupling(neutral))
+        self.assertTrue(
+            guard._contains_retired_provider_runtime_coupling(
+                'token = os.environ["RENDER_API_KEY"]'
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

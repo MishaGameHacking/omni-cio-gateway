@@ -15,6 +15,22 @@ RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_RUNBO
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 PROVIDER_RUNTIME = ROOT / "scripts/provider_runtime_primitives.py"
 
+_RETIRED_PROVIDER_RUNTIME_MARKERS = (
+    "provision_v10_cloudflare_neon_runtime",
+    "provision_v10_render_neon_preview",
+    "NEON_API_KEY",
+    "NEON_DATABASE_URL",
+    "RENDER_API_KEY",
+    "RENDER_EXTERNAL_URL",
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "wrangler.jsonc",
+)
+
+
+def _contains_retired_provider_runtime_coupling(source: str) -> bool:
+    return any(marker in source for marker in _RETIRED_PROVIDER_RUNTIME_MARKERS)
+
 
 def _read(path: Path) -> str:
     try:
@@ -302,16 +318,8 @@ def _validate_provider_neutral_runtime() -> None:
         ),
         "RU_PG_B_PROVIDER_RUNTIME_PRIMITIVES_DRIFT",
     )
-    retired_markers = (
-        "provision_v10_" + "cloudflare_neon_runtime",
-        "provision_v10_" + "render_neon_preview",
-        "NEON" + "_",
-        "RENDER" + "_",
-        "CLOUDFLARE" + "_",
-    )
     if any(
-        marker in source
-        for marker in retired_markers
+        _contains_retired_provider_runtime_coupling(source)
         for source in (postgres_runtime, provider_runtime)
     ):
         raise RuntimeError("RU_PG_B_PROVIDER_NEUTRAL_RUNTIME_DRIFT")
