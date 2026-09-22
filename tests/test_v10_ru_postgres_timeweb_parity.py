@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -13,10 +15,22 @@ class RuPostgresTimewebParitySourceTests(unittest.TestCase):
         guard.validate()
 
     def test_guard_supports_direct_script_entrypoint(self) -> None:
-        source = Path(guard.__file__).read_text(encoding="utf-8")
-        self.assertIn("if __package__:", source)
-        self.assertIn("from .v10_jsonc import loads_jsonc", source)
-        self.assertIn("from v10_jsonc import loads_jsonc", source)
+        result = subprocess.run(
+            [sys.executable, str(Path(guard.__file__))],
+            cwd=guard.ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=f"stdout={result.stdout}\nstderr={result.stderr}",
+        )
+        self.assertIn(
+            "V10 RU-PG-B Timeweb synthetic parity source contract passed",
+            result.stdout,
+        )
 
     def test_proof_source_requires_synthetic_scope_and_verified_tls(self) -> None:
         source = guard.PROOF.read_text(encoding="utf-8")
