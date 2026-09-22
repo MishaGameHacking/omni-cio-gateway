@@ -176,9 +176,10 @@ def test_every_self_hosted_windows_dependency_consumer_fails_fast_on_ca_trust() 
             discovered.add(path)
 
     assert configured == discovered
-    assert payload["verification"][
-        "every_windows_dependency_consumer_requires_preflight"
-    ] is True
+    assert (
+        payload["verification"]["every_windows_dependency_consumer_requires_preflight"]
+        is True
+    )
 
     check_marker = "scripts\\check_v10_tbank_ca_trust.ps1"
     install_marker = "--require-hashes -r windows-requirements-dev.txt"
