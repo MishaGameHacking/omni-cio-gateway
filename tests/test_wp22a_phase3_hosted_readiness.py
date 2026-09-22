@@ -86,7 +86,7 @@ def test_hosted_readiness_contract_path_is_fixed(tmp_path: Path) -> None:
         load_hosted_readiness_contract(alternate)
 
 
-def test_hosted_readiness_contract_preserves_phase3_authority() -> None:
+def test_hosted_readiness_contract_is_provider_neutral_and_fail_closed() -> None:
     payload = _contract()
     validate_hosted_readiness_contract(payload)
 
@@ -99,7 +99,7 @@ def test_hosted_readiness_contract_preserves_phase3_authority() -> None:
     assert isinstance(capacity, dict)
     assert isinstance(release, dict)
 
-    assert authority["provider"] == "Cloud.ru Evolution"
+    assert authority["provider"] == "PROVIDER_NEUTRAL_HOSTED_RUNTIME"
     assert authority["provider_apply_authorized"] is False
     assert authority["public_ingress_allowed"] is False
     assert authority["authorized_recurring_rub"] == 0
@@ -111,6 +111,7 @@ def test_hosted_readiness_contract_preserves_phase3_authority() -> None:
     assert authority["protected_v9_entrypoint"] == "app:app"
     assert authority["wp23_unlocked"] is False
 
+    assert edge["canonical_host_source"] == "RUNTIME_CONFIGURATION"
     assert edge["canonical_https_required"] is True
     assert edge["arbitrary_forwarded_headers_trusted"] is False
     assert edge["direct_origin_public_access_allowed"] is False
@@ -131,6 +132,14 @@ def test_hosted_readiness_contract_preserves_phase3_authority() -> None:
     assert release["exact_commit_required"] is True
     assert release["arbitrary_pr_provider_secrets_allowed"] is False
     assert release["provider_mutation_performed"] is False
+
+
+def test_hosted_readiness_contract_path_is_provider_neutral() -> None:
+    from omni_cio.observability.hosted_readiness_v1 import CONTRACT_PATH
+
+    normalized = CONTRACT_PATH.as_posix().lower()
+    assert "infrastructure/hosted" in normalized
+    assert "cloudru" not in normalized
 
 
 def test_hosted_readiness_contract_rejects_unknown_top_level_field() -> None:

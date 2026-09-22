@@ -12,8 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = (
     ROOT
     / "infrastructure"
-    / "cloudru"
-    / "wp22a"
+    / "postgres"
     / "hosted-recovery-contract.json"
 )
 
@@ -28,7 +27,7 @@ _EXPECTED_CONTRACT_FIELDS = (
     "off_runtime",
 )
 _EXPECTED_AUTHORITY = {
-    "provider": "Cloud.ru Evolution",
+    "provider": "PROVIDER_NEUTRAL_POSTGRESQL_18",
     "source_only": True,
     "provider_apply_authorized": False,
     "public_ingress_allowed": False,
@@ -167,7 +166,7 @@ def validate_hosted_recovery_contract(
         )
     if (
         payload.get("schema_version")
-        != "v10.wp22a.phase3.hosted-recovery.v1"
+        != "v10.hosted-recovery.v2"
     ):
         raise HostedRecoveryContractError(
             "HOSTED_RECOVERY_CONTRACT_VERSION_INVALID"

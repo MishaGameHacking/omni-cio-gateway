@@ -14,8 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = (
     ROOT
     / "infrastructure"
-    / "cloudru"
-    / "wp22a"
+    / "hosted"
     / "hosted-readiness-contract.json"
 )
 
@@ -29,7 +28,7 @@ _EXPECTED_CONTRACT_FIELDS = (
     "release",
 )
 _EXPECTED_AUTHORITY = {
-    "provider": "Cloud.ru Evolution",
+    "provider": "PROVIDER_NEUTRAL_HOSTED_RUNTIME",
     "source_only": True,
     "provider_apply_authorized": False,
     "public_ingress_allowed": False,
@@ -43,7 +42,7 @@ _EXPECTED_AUTHORITY = {
     "wp23_unlocked": False,
 }
 _EXPECTED_EDGE_TRUST = {
-    "canonical_host_source": "PHASE4_PROVIDER_INJECTED",
+    "canonical_host_source": "RUNTIME_CONFIGURATION",
     "canonical_https_required": True,
     "trusted_proxy_hops": 1,
     "arbitrary_forwarded_headers_trusted": False,
@@ -193,7 +192,7 @@ def load_hosted_readiness_contract(
 def validate_hosted_readiness_contract(payload: Mapping[str, Any]) -> None:
     if set(payload) != set(_EXPECTED_CONTRACT_FIELDS):
         raise HostedReadinessContractError("HOSTED_READINESS_CONTRACT_FIELDS_INVALID")
-    if payload.get("schema_version") != "v10.wp22a.phase3.hosted-readiness.v1":
+    if payload.get("schema_version") != "v10.hosted-readiness.v2":
         raise HostedReadinessContractError("HOSTED_READINESS_CONTRACT_VERSION_INVALID")
 
     _require_exact_mapping(

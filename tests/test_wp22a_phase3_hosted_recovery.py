@@ -143,7 +143,7 @@ def test_hosted_recovery_contract_rejects_unknown_top_level_fields() -> None:
         validate_hosted_recovery_contract(payload)
 
 
-def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
+def test_hosted_recovery_contract_is_provider_neutral_and_fail_closed() -> None:
     payload = _contract()
     validate_hosted_recovery_contract(payload)
 
@@ -155,6 +155,7 @@ def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
     assert isinstance(postgres, dict)
     assert isinstance(integrity, dict)
     assert isinstance(off_runtime, dict)
+    assert authority["provider"] == "PROVIDER_NEUTRAL_POSTGRESQL_18"
     assert authority["provider_apply_authorized"] is False
     assert authority["public_ingress_allowed"] is False
     assert authority["public_multi_user_enabled"] is False
@@ -179,6 +180,12 @@ def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
     assert off_runtime["github_allowed"] is False
     assert off_runtime["ci_artifact_allowed"] is False
     assert off_runtime["plaintext_object_storage_allowed"] is False
+
+
+def test_hosted_recovery_contract_path_is_provider_neutral() -> None:
+    normalized = CONTRACT_PATH.as_posix().lower()
+    assert "infrastructure/postgres" in normalized
+    assert "cloudru" not in normalized
 
 
 def test_legacy_dump_helper_is_not_exposed() -> None:
