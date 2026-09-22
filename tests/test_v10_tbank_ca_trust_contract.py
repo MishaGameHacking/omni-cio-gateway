@@ -97,8 +97,9 @@ def test_checked_in_tbank_root_certificate_matches_contract_pin() -> None:
 
     assert der
     assert b"-----BEGIN CERTIFICATE-----" not in der
-    assert hashlib.sha256(der).hexdigest().upper() == (
-        payload["certificates"]["root"]["sha256_der"]
+    assert (
+        hashlib.sha256(der).hexdigest().upper()
+        == payload["certificates"]["root"]["sha256_der"]
     )
 
 
