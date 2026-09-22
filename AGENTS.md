@@ -86,7 +86,7 @@ After Amendment 14 acceptance:
 
 Historically, Amendment 15 changed only Cloudflare implementation delivery granularity: the four Amendment-14 stages became internal milestones of one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` update. That sequence is provenance only after Amendment 18.
 
-Current/future public V10 requires Timeweb as the managed-cloud runtime and PostgreSQL 18 authority, independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. Cloudflare services have no new-adoption authority under Amendment 18. Do not create retired-provider tokens/secrets, mutate retired-provider DNS/domain state, deploy retired-provider candidates or create retired-provider paid resources.
+Current/future public V10 requires Timeweb as the managed-cloud production runtime and PostgreSQL 18 authority, independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. Cloudflare services have no new-adoption authority under Amendment 18. Do not create retired-provider tokens/secrets, mutate retired-provider DNS/domain state, deploy retired-provider candidates or create retired-provider paid resources.
 
 ## 5. Continuous exact-main public release
 
