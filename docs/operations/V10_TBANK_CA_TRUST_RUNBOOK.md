@@ -45,6 +45,7 @@ A healthy result requires:
   succeed with normal certificate and hostname verification.
 
 The check never imports certificates and never disables TLS verification.
+It captures child-process stdout/stderr privately and emits only bounded JSON state; raw PowerShell/pip stderr, machine paths and certificate-store contents are not evidence output. `TBANK_CA_TRUST_VERIFIER_FAILED` means the diagnostic itself is unhealthy and must be repaired before any OWNER/Admin certificate action.
 
 ## OWNER/Admin preview
 

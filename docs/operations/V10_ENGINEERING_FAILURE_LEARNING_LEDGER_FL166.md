@@ -109,6 +109,34 @@ Systemic correction:
 This source defect must be repaired before any OWNER/Admin certificate action.
 The machine trust state is not a valid explanation for a parser failure.
 
+## Child-process diagnostic isolation gap
+
+Replacement head `ade50693ccbe921033c82bf6a996e805f5a427db` repaired the
+PowerShell source itself, but Self-Hosted Windows CI #3137 exposed a second
+repository-side defect in the read-only checker. The checker invoked a child
+`powershell.exe` directly while `$ErrorActionPreference=Stop`; child stderr was
+promoted to a terminating `NativeCommandError` before the checker could inspect
+the bounded exit code or emit its sanitized JSON state.
+
+This is a diagnostic-boundary defect, not evidence that the OWNER machine trust
+store is the only remaining blocker.
+
+Systemic correction:
+
+- execute both the provisioner verification and pip TLS probe through
+  `Start-Process`;
+- redirect child stdout/stderr into separate temporary files;
+- parse only the expected provisioner JSON and never emit raw child stderr,
+  machine paths or certificate-store dumps;
+- require the child exit/state pair to be internally consistent;
+- classify launch/shape/unexpected-exit failures as
+  `TBANK_CA_TRUST_VERIFIER_FAILED`;
+- delete temporary files in `finally` and remain fail-closed.
+
+Only after this exact diagnostic boundary is verified may
+`TBANK_CA_TRUST_STORE_NOT_READY` be treated as an OWNER/Admin machine-state
+blocker.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head

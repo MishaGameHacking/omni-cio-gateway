@@ -75,15 +75,26 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
     assert "System.Net.WebClient" not in source
 
 
-def test_tbank_ca_checker_uses_read_only_pip_tls_probe() -> None:
+def test_tbank_ca_checker_uses_captured_read_only_tls_probes() -> None:
     source = CHECKER.read_text(encoding="utf-8")
 
-    assert "-Verify -AsJson" in source
-    assert "pip --disable-pip-version-check index versions t-tech-investments" in source
-    assert "--retries 0 --timeout 10" in source
+    assert '"-Verify"' in source
+    assert '"-AsJson"' in source
+    assert '"t-tech-investments"' in source
+    assert '"--retries"' in source
+    assert '"--timeout"' in source
+    assert "Start-Process" in source
+    assert "RedirectStandardOutput" in source
+    assert "RedirectStandardError" in source
+    assert "TBANK_CA_TRUST_VERIFIER_FAILED" in source
+    assert "[AllowNull()]$Value" in source
+    assert "$stdoutPath = $null" in source
+    assert "$stderrPath = $null" in source
+    assert "verifier_exit_code" in source
     assert "mutations_attempted = $false" in source
+    assert "& powershell.exe" not in source
+    assert "2>$null" not in source
     assert "Import-Certificate" not in source
-
 
 def test_tbank_ca_boundary_contains_no_tls_bypass() -> None:
     sources = (
