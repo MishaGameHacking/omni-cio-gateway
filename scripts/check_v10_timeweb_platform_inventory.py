@@ -485,6 +485,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         "omni_cio/web/provider_auth_routes_v1.py",
         "omni_cio/web/provider_start_adapter_v1.py",
         "scripts/check_v10_wp22a_phase4_public_acceptance.py",
+        "scripts/check_v10_cloudflare_runtime_compatibility.py",
         "scripts/provision_v10_cloudflare_neon_runtime.py",
         "scripts/provision_v10_render_neon_preview.py",
         _WRANGLER_CONFIG_PATH,
@@ -502,6 +503,18 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
     ):
         if _classify_path(path, payload) != "KEEP":
             raise RuntimeError("TIMEWEB_INVENTORY_KEEP_CLASSIFICATION_DRIFT:" + path)
+
+    historical_cloudflare_runtime_guard = _read(
+        ROOT / "scripts/check_v10_cloudflare_runtime_compatibility.py"
+    )
+    for marker in (
+        'WEB_CONFIG = ROOT / "apps/web/vite.config.ts"',
+        "_validate_web_config()",
+    ):
+        if marker in historical_cloudflare_runtime_guard:
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_HISTORICAL_GUARD_CURRENT_WEB_COUPLING"
+            )
 
     render = _read(ROOT / _RENDER_CONFIG_PATH)
     if "uvicorn app:app" not in render:

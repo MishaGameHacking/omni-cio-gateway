@@ -107,6 +107,18 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
                     "HISTORY",
                 )
 
+    def test_historical_cloudflare_guard_cannot_own_current_web_provenance(self) -> None:
+        path = "scripts/check_v10_cloudflare_runtime_compatibility.py"
+        source = (ROOT / path).read_text(encoding="utf-8")
+        self.assertEqual(
+            inventory._classify_path(path, self.payload),
+            "HISTORY",
+        )
+        self.assertNotIn('WEB_CONFIG = ROOT / "apps/web/vite.config.ts"', source)
+        self.assertNotIn("_validate_web_config()", source)
+        self.assertIn('"source_sha_precedence"', source)
+        self.assertIn('"RENDER_GIT_COMMIT"', source)
+
     def test_dormant_provider_history_does_not_become_current_authority(self) -> None:
         for path in (
             ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",

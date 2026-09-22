@@ -19,7 +19,6 @@ DOCKERFILE = ROOT / "Dockerfile.cloudflare"
 DOCKERIGNORE = ROOT / ".dockerignore"
 RUNTIME = ROOT / "apps/api/cloudflare_runtime.py"
 BUILD_INFO = ROOT / "scripts/write_v10_cloudflare_build_info.py"
-WEB_CONFIG = ROOT / "apps/web/vite.config.ts"
 _RUNTIME_ROLE_BINDING = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _PUBLIC_MULTI_USER_BINDING = "PUBLIC_MULTI_USER_ENABLED"
 _TELEGRAM_LOGIN_BINDING = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"
@@ -96,6 +95,12 @@ def _validate_contract_runtime(contract: dict[str, Any]) -> None:
     release = _object(contract.get("release"), "RELEASE")
     if frontend.get("placement") != "WORKERS_STATIC_ASSETS":
         raise RuntimeError("CLOUDFLARE_RUNTIME_FRONTEND_PLACEMENT_INVALID")
+    if frontend.get("source_sha_precedence") != [
+        "WORKERS_CI_COMMIT_SHA",
+        "GITHUB_SHA",
+        "RENDER_GIT_COMMIT",
+    ]:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_HISTORICAL_WEB_SHA_PRECEDENCE_INVALID")
     if backend.get("placement") != "CLOUDFLARE_CONTAINER":
         raise RuntimeError("CLOUDFLARE_RUNTIME_BACKEND_PLACEMENT_INVALID")
     if backend.get("python") != "3.14.6":
@@ -355,19 +360,6 @@ def _validate_runtime() -> None:
     )
 
 
-def _validate_web_config() -> None:
-    web = _read(WEB_CONFIG)
-    indexes = (
-        web.find("process.env.WORKERS_CI_COMMIT_SHA"),
-        web.find("process.env.GITHUB_SHA"),
-        web.find("process.env.RENDER_GIT_COMMIT"),
-    )
-    if min(indexes) < 0:
-        raise RuntimeError("CLOUDFLARE_RUNTIME_WEB_SHA_SOURCE_MISSING")
-    if not indexes[0] < indexes[1] < indexes[2]:
-        raise RuntimeError("CLOUDFLARE_RUNTIME_WEB_SHA_PRECEDENCE_INVALID")
-
-
 def validate() -> None:
     contract = _load_json(CONTRACT)
     _validate_contract_identity(contract)
@@ -378,7 +370,6 @@ def validate() -> None:
     _validate_build_info()
     _validate_dockerfile()
     _validate_runtime()
-    _validate_web_config()
 
 
 def main() -> int:
@@ -387,7 +378,7 @@ def main() -> int:
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print("V10 Cloudflare runtime compatibility contract passed.")
+    print("Historical V10 Cloudflare runtime compatibility contract passed.")
     print("Frontend: Workers Static Assets")
     print("Backend: Cloudflare Container / Python 3.14.6")
     print("Container source identity: BAKED + EXACT-SHA LIVE PROBE REQUIRED")
