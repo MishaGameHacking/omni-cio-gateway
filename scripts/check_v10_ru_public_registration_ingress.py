@@ -21,6 +21,12 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
+WP17_RUNBOOK = ROOT / "docs/operations/V10_WP17_APPLICATION_SHELL_RUNBOOK.md"
+IDENTITY_SECURITY_NOTES = (
+    ROOT / "docs/operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md"
+)
+WP15_LIVE_RUNBOOK = ROOT / "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+SECURITY_BOUNDARIES = ROOT / "docs/architecture/V10_SECURITY_BOUNDARIES.md"
 WP22A_EXECUTION_CONTRACT = ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
 WP22A_SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
 WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
@@ -624,6 +630,43 @@ def _validate_current_guidance() -> None:
         "current accepted source behavior on exact base" not in inventory,
         "TIMEWEB_CONSOLIDATION_DATA_INVENTORY_AUTHORITY_DRIFT",
     )
+
+    current_security_guidance = {
+        WP17_RUNBOOK: (
+            "Amendment 18 CURRENT-AUTHORITY OVERRIDE",
+            "Current ordinary product login is exactly **Telegram Login**",
+        ),
+        IDENTITY_SECURITY_NOTES: (
+            "Ordinary human product login provider: Telegram Login only",
+            "VK ID is retired from current/future deployed composition",
+        ),
+        WP15_LIVE_RUNBOOK: (
+            "current/future ordinary product login is Telegram Login only",
+            "VK ID is retired",
+        ),
+        SECURITY_BOUNDARIES: (
+            "AMENDMENT 18 TIMEWEB + TELEGRAM AUTHORITY",
+            "Telegram Login -> verified identity -> internal Omni-CIO account",
+            "Timeweb managed ingress is the selected current public-production boundary",
+        ),
+    }
+    for guidance_path, required_markers in current_security_guidance.items():
+        source = _read(guidance_path)
+        for marker in required_markers:
+            _require(
+                marker in source,
+                "TIMEWEB_CONSOLIDATION_CURRENT_SECURITY_GUIDANCE_DRIFT",
+            )
+        for stale in (
+            "Ordinary login providers: Telegram and VK ID only.",
+            "ordinary product login remains Telegram/VK ID",
+            "Telegram/VK -> internal Omni-CIO account",
+            "Cloudflare may be edge/origin-protection infrastructure.",
+        ):
+            _require(
+                stale not in source,
+                "TIMEWEB_CONSOLIDATION_CURRENT_SECURITY_GUIDANCE_DRIFT",
+            )
 
 
 def _validate_documents() -> None:

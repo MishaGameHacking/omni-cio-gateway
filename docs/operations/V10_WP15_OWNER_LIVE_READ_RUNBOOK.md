@@ -152,7 +152,7 @@ On the Lenovo itself, open:
 
 `http://127.0.0.1:8765/settings`
 
-The local acceptance login surface is visible only on loopback. Click **Локальный OWNER acceptance**. This is an acceptance-only local identity switch and is not a third production login provider; ordinary product login remains Telegram/VK ID.
+The local acceptance login surface is visible only on loopback. Click **Локальный OWNER acceptance**. This is an accepted historical acceptance-only identity switch, not a production login provider and not part of the Timeweb runtime. Under Amendment 18, current/future ordinary product login is Telegram Login only; VK ID is retired.
 
 In **Settings -> Broker Connections**:
 

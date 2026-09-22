@@ -18,6 +18,12 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
+WP17_RUNBOOK = ROOT / "docs/operations/V10_WP17_APPLICATION_SHELL_RUNBOOK.md"
+IDENTITY_SECURITY_NOTES = (
+    ROOT / "docs/operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md"
+)
+WP15_LIVE_RUNBOOK = ROOT / "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+SECURITY_BOUNDARIES = ROOT / "docs/architecture/V10_SECURITY_BOUNDARIES.md"
 WP22A_EXECUTION_CONTRACT = ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
 WP22A_SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
 WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
@@ -71,6 +77,40 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             payload["retired_active_services"],
             ["Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"],
         )
+
+    def test_current_security_guidance_is_telegram_only(self) -> None:
+        wp17 = WP17_RUNBOOK.read_text(encoding="utf-8")
+        identity = IDENTITY_SECURITY_NOTES.read_text(encoding="utf-8")
+        wp15 = WP15_LIVE_RUNBOOK.read_text(encoding="utf-8")
+        boundaries = SECURITY_BOUNDARIES.read_text(encoding="utf-8")
+
+        self.assertIn("Amendment 18 CURRENT-AUTHORITY OVERRIDE", wp17)
+        self.assertIn(
+            "Current ordinary product login is exactly **Telegram Login**",
+            wp17,
+        )
+        self.assertIn(
+            "Ordinary human product login provider: Telegram Login only",
+            identity,
+        )
+        self.assertIn(
+            "current/future ordinary product login is Telegram Login only",
+            wp15,
+        )
+        self.assertIn(
+            "Timeweb managed ingress is the selected current public-production boundary",
+            boundaries,
+        )
+        for source in (wp17, identity, wp15, boundaries):
+            self.assertNotIn(
+                "ordinary product login remains Telegram/VK ID",
+                source,
+            )
+            self.assertNotIn(
+                "Telegram/VK -> internal Omni-CIO account",
+                source,
+            )
+
 
     def test_timeweb_is_only_production_platform_and_pg18(self) -> None:
         payload = _contract()

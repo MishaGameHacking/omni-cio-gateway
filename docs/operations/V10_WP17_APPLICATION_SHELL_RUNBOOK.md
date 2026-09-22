@@ -1,6 +1,13 @@
 # Omni-CIO V10 WP17 — Application Shell / local broker provisioning runbook
 
-Status: **WP17 implementation candidate / no public ingress authority**
+Status: **accepted historical WP17 procedure / current Amendment 18 override applies**
+
+> **Amendment 18 CURRENT-AUTHORITY OVERRIDE:** this runbook retains the accepted
+> WP17 local/Windows security procedure because the READ-vault OWNER evidence is
+> still an exact-head acceptance boundary. It is not current Timeweb product-login
+> or deployment authority. Current deployed-product direction is Timeweb +
+> Telegram Login only; VK ID and the local private-test login are historical
+> acceptance surfaces and must not enter the Timeweb runtime composition.
 
 ## Scope
 
@@ -10,16 +17,20 @@ The protected production gateway remains `app:app`. The Web adapter is separate 
 
 ## Ordinary account UX
 
-Normal user-facing login providers are exactly:
+Current ordinary product login is exactly **Telegram Login**. VK ID is retired
+from current/future deployed composition by Amendment 18. No Omni-CIO local
+password, Google login, OWNER/admin/demo/preview product-session bypass, or
+browser-selected tenant authority is introduced.
 
-- Telegram;
-- VK ID.
+The remaining sections describing local/private WP17 acceptance are preserved
+only because they own historical Windows security evidence and the current
+READ-vault exact-head proof. They do not define the Timeweb product login path.
 
-No Omni-CIO local password and no Google login are introduced. Live provider credentials/redirect registration are intentionally not required for private WP17 code acceptance; the accepted identity amendment allows OWNER/test identities before public launch. Provider buttons remain fail-closed when provider runtime configuration is absent.
+## Historical local/private test identity
 
-## Local/private test identity
-
-`POST /api/v10/web/private-test-login` exists only for private acceptance. It is:
+The historical `POST /api/v10/web/private-test-login` acceptance endpoint is
+not installed by `apps.api.hosted_runtime:create_app`. In its accepted local
+WP17 contour it is:
 
 - disabled by default;
 - enabled only when `OMNI_V10_WEB_PRIVATE_ACCEPTANCE=1` is present in the local process environment;
