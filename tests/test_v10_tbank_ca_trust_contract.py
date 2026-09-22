@@ -19,7 +19,9 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     )
     assert payload["official_certificate_source"] == "https://www.gosuslugi.ru/crt"
     assert payload["certificates"]["root"]["common_name"] == "Russian Trusted Root CA"
-    assert payload["certificates"]["root"]["windows_store"] == r"Cert:\LocalMachine\Root"
+    assert (
+        payload["certificates"]["root"]["windows_store"] == r"Cert:\LocalMachine\Root"
+    )
     assert payload["certificates"]["intermediate"]["common_name"] == (
         "Russian Trusted Sub CA"
     )
@@ -45,8 +47,8 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
     assert "TBANK_CA_TRUST_ADMIN_REQUIRED" in source
     assert "TBANK_CA_TRUST_CERTIFICATE_PATHS_REQUIRED" in source
     assert "Import-Certificate" in source
-    assert r'Cert:\LocalMachine\Root' in source
-    assert r'Cert:\LocalMachine\CA' in source
+    assert r"Cert:\LocalMachine\Root" in source
+    assert r"Cert:\LocalMachine\CA" in source
     assert "Invoke-WebRequest" not in source
     assert "Start-BitsTransfer" not in source
     assert "System.Net.WebClient" not in source
