@@ -13,11 +13,9 @@ _SINGLE_FILES = (
     guard.CONTRACT,
     guard.AMENDMENT,
     guard.INDEX,
-    guard.PLATFORM_CONTRACT,
+    guard.CURRENT_PLATFORM_CONTRACT,
     guard.LEGAL_GATES,
-    guard.WRANGLER,
     guard.RUNTIME_SQL,
-    guard.NEON_RUNTIME,
 )
 
 
@@ -108,18 +106,34 @@ class RuPostgresDataResidencyMigrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
-            path = root / guard.WRANGLER.relative_to(guard.ROOT)
-            source = path.read_text(encoding="utf-8").replace(
-                '"PUBLIC_MULTI_USER_ENABLED": "false"',
-                '"PUBLIC_MULTI_USER_ENABLED": "true"',
-                1,
-            )
-            path.write_text(source, encoding="utf-8")
+            path = root / guard.CURRENT_PLATFORM_CONTRACT.relative_to(guard.ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["protected_invariants"]["PUBLIC_MULTI_USER_ENABLED"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
-                "RU_POSTGRES_PRODUCTION_FLAGS_INVALID",
+                "RU_POSTGRES_CURRENT_INVARIANTS_INVALID",
             ):
                 guard.validate(root)
+
+    def test_retired_neon_cannot_reenter_current_database_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CURRENT_PLATFORM_CONTRACT.relative_to(guard.ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["database"]["final_provider"] = "Neon PostgreSQL 18"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "RU_POSTGRES_CURRENT_DATABASE_PROVIDER_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_runtime_contract_path_is_provider_neutral(self) -> None:
+        normalized = guard.RUNTIME_SQL.as_posix().lower()
+        self.assertIn("infrastructure/postgres", normalized)
+        self.assertNotIn("cloudru", normalized)
 
 
 if __name__ == "__main__":
