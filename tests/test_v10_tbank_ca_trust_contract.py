@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json"
 PROVISIONER = ROOT / "infrastructure/windows/provision_v10_tbank_ca_trust.ps1"
 CHECKER = ROOT / "scripts/check_v10_tbank_ca_trust.ps1"
+SYNTAX_CHECKER = ROOT / "scripts/check_v10_tbank_ca_trust_syntax.ps1"
 AUTHORITATIVE = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 FAST_PR = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
 
@@ -103,6 +104,7 @@ def test_tbank_ca_boundary_contains_no_tls_bypass() -> None:
     sources = (
         PROVISIONER.read_text(encoding="utf-8"),
         CHECKER.read_text(encoding="utf-8"),
+        SYNTAX_CHECKER.read_text(encoding="utf-8"),
         AUTHORITATIVE.read_text(encoding="utf-8"),
     )
     forbidden = (
@@ -136,13 +138,30 @@ def test_fast_pr_parses_tbank_ca_trust_powershell_boundary() -> None:
 
     assert "        shell: cmd" in block
     assert "shell: powershell" not in block
-    assert (
-        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command"
-        in block
+    assert "-ExecutionPolicy Bypass -File" in block
+    assert "scripts\\check_v10_tbank_ca_trust_syntax.ps1 -AsJson" in block
+    assert "-Command" not in block
+
+
+def test_tbank_ca_syntax_checker_has_bounded_targets_and_no_mutation() -> None:
+    payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    source = SYNTAX_CHECKER.read_text(encoding="utf-8")
+
+    assert payload["verification"]["syntax_checker"] == (
+        "scripts/check_v10_tbank_ca_trust_syntax.ps1"
     )
-    assert "System.Management.Automation.Language.Parser" in block
-    assert "scripts\\check_v10_tbank_ca_trust.ps1" in block
-    assert "infrastructure\\windows\\provision_v10_tbank_ca_trust.ps1" in block
+    assert payload["verification"]["syntax_checker_targets"] == [
+        "scripts/check_v10_tbank_ca_trust.ps1",
+        "infrastructure/windows/provision_v10_tbank_ca_trust.ps1",
+    ]
+    assert "System.Management.Automation.Language.Parser" in source
+    assert "TBANK_CA_TRUST_POWERSHELL_SYNTAX_INVALID" in source
+    assert "scripts\\check_v10_tbank_ca_trust.ps1" in source
+    assert "infrastructure\\windows\\provision_v10_tbank_ca_trust.ps1" in source
+    assert "Set-ExecutionPolicy" not in source
+    assert "Import-Certificate" not in source
+    assert "Invoke-Expression" not in source
+    assert "Invoke-WebRequest" not in source
 
 
 def test_every_self_hosted_windows_dependency_consumer_fails_fast_on_ca_trust() -> None:

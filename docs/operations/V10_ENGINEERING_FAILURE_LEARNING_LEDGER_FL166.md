@@ -210,6 +210,37 @@ Systemic correction:
 This turns a shared machine prerequisite into a shared explicit producer guard
 without granting CI any additional trust-store mutation authority.
 
+## Fast parser cmd-quoting defect
+
+Exact head `e4d1fa70b869780738c882ba5abf61743b3e2742` proved the
+project-wide dependency-consumer fail-fast wiring, but Fast PR #3050 failed in
+the parser transport itself. The multi-line PowerShell program embedded in
+`cmd -> powershell.exe -Command` was split by the workflow transport: PowerShell
+received an unterminated `foreach` block and subsequent lines such as
+`$errors=$null` were interpreted by `cmd.exe`.
+
+Root cause: a non-trivial PowerShell program was encoded inline across YAML,
+GitHub Actions and cmd.exe quoting boundaries. Process-local
+`-ExecutionPolicy Bypass` was correct; the multi-layer quoting strategy was
+not deterministic.
+
+Systemic correction:
+
+- move the AST parser into checked-in
+  `scripts/check_v10_tbank_ca_trust_syntax.ps1`;
+- keep its target set bounded to the read-only checker and OWNER/Admin
+  provisioner;
+- invoke it from Fast PR with one
+  `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File`
+  command;
+- regression-test the dedicated script, its exact targets, no mutation/network
+  behavior, and the Fast workflow's use of `-File` rather than inline
+  `-Command`;
+- keep machine/user execution policy unchanged.
+
+The dedicated script is itself parsed by PowerShell when executed, so a syntax
+defect in the parser guard also fails the same Fast step.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head

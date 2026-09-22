@@ -190,20 +190,7 @@ jobs:
 
       - name: Parse T-Bank CA trust PowerShell boundary
         shell: cmd
-        run: >-
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command
-          "$ErrorActionPreference='Stop';
-          $paths=@('scripts\check_v10_tbank_ca_trust.ps1','infrastructure\windows\provision_v10_tbank_ca_trust.ps1');
-          foreach ($path in $paths) {
-            $tokens=$null;
-            $errors=$null;
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors);
-            if ($errors.Count -ne 0) {
-              $errors | ForEach-Object { Write-Error $_.Message };
-              exit 31
-            }
-          };
-          Write-Host 'T-Bank CA trust PowerShell parse contract passed.'"
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\check_v10_tbank_ca_trust_syntax.ps1 -AsJson
 
       - name: Verify CI and security baseline
         run: python scripts\check_ci_security_baseline.py

@@ -52,7 +52,13 @@
       ".github/workflows/v10-wp22a-clientless-access-audit.yml",
       ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
     ],
-    "every_windows_dependency_consumer_requires_preflight": true
+    "every_windows_dependency_consumer_requires_preflight": true,
+    "syntax_checker": "scripts/check_v10_tbank_ca_trust_syntax.ps1",
+    "syntax_checker_targets": [
+      "scripts/check_v10_tbank_ca_trust.ps1",
+      "infrastructure/windows/provision_v10_tbank_ca_trust.ps1"
+    ],
+    "syntax_checker_transport": "cmd_to_powershell_exe_process_local_bypass_file"
   },
   "protected_invariants": {
     "gateway_entrypoint": "app:app",
