@@ -90,18 +90,25 @@ secrets or machine-local paths into GitHub, chat, screenshots or evidence.
 
 ## T-Bank package CA trust boundary
 
-Dependency installation has an independent machine-trust prerequisite. Verify it
-read-only with:
+Dependency installation has an independent pip trust boundary. Verify it with:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\check_v10_tbank_ca_trust.ps1" -AsJson
 ```
 
-If this reports `TBANK_CA_TRUST_STORE_NOT_READY`, do not rerun dependency jobs
-blindly and do not disable TLS validation. Follow
-`docs/operations/V10_TBANK_CA_TRUST_RUNBOOK.md`. Certificate-store mutation is a
-separate OWNER/Administrator action and is never granted to the ordinary
-GitHub Actions runner.
+The checker builds a job-temporary `PIP_CERT` bundle from pip's vendored
+certifi roots plus the source-controlled Russian Trusted Root CA after exact
+DER SHA-256 pin verification. It then probes the official T-Bank package index
+with normal certificate and hostname verification.
+
+The ordinary GitHub Actions runner does not need Administrator authority and
+does not mutate `LocalMachine` certificate stores for this pip boundary.
+A system-store provisioner remains separately OWNER/Administrator-only for an
+explicit non-pip system-trust need. Follow
+`docs/operations/V10_TBANK_CA_TRUST_RUNBOOK.md`.
+
+If the checker is RED, do not rerun dependency jobs blindly and do not disable
+TLS validation or substitute another package source.
 
 ## Fail-safe recovery
 

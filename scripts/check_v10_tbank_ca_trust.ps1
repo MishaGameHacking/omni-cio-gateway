@@ -12,7 +12,9 @@ if ($env:OS -ne "Windows_NT") {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $contractPath = Join-Path $repoRoot "docs\architecture\V10_TBANK_CA_TRUST_CONTRACT.json"
-$contract = Get-Content -LiteralPath $contractPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+$contract = Get-Content -LiteralPath $contractPath -Raw -ErrorAction Stop |
+    ConvertFrom-Json -ErrorAction Stop
+$expectedRootSha256 = ([string]$contract.certificates.root.sha256_der).ToUpperInvariant()
 
 function Invoke-CapturedProcess {
     param(
@@ -91,120 +93,112 @@ function Test-ObjectShape {
     return $true
 }
 
-$powershell = Get-Command powershell.exe -ErrorAction SilentlyContinue
-$provisionerResult = $null
-if ($null -ne $powershell) {
-    $provisionerArguments = @(
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "infrastructure\windows\provision_v10_tbank_ca_trust.ps1",
-        "-Verify",
-        "-AsJson"
+$python = Get-Command python.exe -ErrorAction SilentlyContinue
+$bundleResult = $null
+$bundlePath = $null
+$envPublishRequired = -not [string]::IsNullOrWhiteSpace($env:GITHUB_ENV)
+
+if ($null -ne $python) {
+    $tempRoot = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+        [System.IO.Path]::GetTempPath()
+    }
+    else {
+        [string]$env:RUNNER_TEMP
+    }
+    $bundlePath = Join-Path $tempRoot (
+        "omni-cio-tbank-pip-ca-{0}.pem" -f [guid]::NewGuid().ToString("N")
     )
-    $captureParameters = @{
-        FilePath = $powershell.Source
-        ArgumentList = $provisionerArguments
+    $bundleArguments = @(
+        "scripts\prepare_v10_tbank_pip_ca_bundle.py",
+        "--output",
+        $bundlePath
+    )
+    if ($envPublishRequired) {
+        $bundleArguments += @("--github-env", [string]$env:GITHUB_ENV)
+    }
+
+    $bundleCapture = @{
+        FilePath = $python.Source
+        ArgumentList = $bundleArguments
         WorkingDirectory = $repoRoot
     }
-    $provisionerResult = Invoke-CapturedProcess @captureParameters
+    $bundleResult = Invoke-CapturedProcess @bundleCapture
 }
 
-$verify = $null
+$bundleState = $null
 if (
-    $null -ne $provisionerResult -and
-    $provisionerResult.launched -and
-    -not [string]::IsNullOrWhiteSpace($provisionerResult.stdout)
+    $null -ne $bundleResult -and
+    $bundleResult.launched -and
+    -not [string]::IsNullOrWhiteSpace($bundleResult.stdout)
 ) {
     try {
-        $verify = $provisionerResult.stdout | ConvertFrom-Json -ErrorAction Stop
+        $bundleState = $bundleResult.stdout | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
-        $verify = $null
+        $bundleState = $null
     }
 }
 
-$verifyShapeValid = Test-ObjectShape -Value $verify -RequiredProperties @(
+$bundleShapeValid = Test-ObjectShape -Value $bundleState -RequiredProperties @(
     "reason",
-    "root_ca_present",
-    "intermediate_ca_present",
-    "mutations_attempted",
+    "root_sha256",
+    "base_certificate_count",
+    "bundle_certificate_count",
+    "env_published",
     "ready"
 )
-
-$verifierExitValid = (
-    $null -ne $provisionerResult -and
-    $provisionerResult.launched -and
-    $provisionerResult.exit_code -in @(0, 71)
-)
-$verifierStateConsistent = (
-    $verifyShapeValid -and
-    -not [bool]$verify.mutations_attempted -and
+$bundleReady = (
+    $bundleShapeValid -and
+    $bundleResult.exit_code -eq 0 -and
+    [bool]$bundleState.ready -and
+    [string]$bundleState.reason -eq "TBANK_PIP_CA_BUNDLE_READY" -and
+    [string]$bundleState.root_sha256 -eq $expectedRootSha256 -and
+    [int]$bundleState.base_certificate_count -gt 0 -and
+    [int]$bundleState.bundle_certificate_count -ge
+        [int]$bundleState.base_certificate_count -and
     (
-        (
-            $provisionerResult.exit_code -eq 0 -and
-            [bool]$verify.ready -and
-            [bool]$verify.root_ca_present -and
-            [bool]$verify.intermediate_ca_present
-        ) -or
-        (
-            $provisionerResult.exit_code -eq 71 -and
-            -not [bool]$verify.ready
-        )
-    )
-)
-
-$verifierHealthy = $verifierExitValid -and $verifierStateConsistent
-$storeReady = (
-    $verifierHealthy -and
-    $provisionerResult.exit_code -eq 0 -and
-    [bool]$verify.ready
+        -not $envPublishRequired -or
+        [bool]$bundleState.env_published
+    ) -and
+    -not [string]::IsNullOrWhiteSpace($bundlePath) -and
+    (Test-Path -LiteralPath $bundlePath -PathType Leaf)
 )
 
 $indexReady = $false
 $indexProbeFailed = $false
-if ($storeReady) {
-    $python = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($null -eq $python) {
+if ($bundleReady) {
+    $pipArguments = @(
+        "-m",
+        "pip",
+        "--disable-pip-version-check",
+        "--cert",
+        $bundlePath,
+        "index",
+        "versions",
+        "t-tech-investments",
+        "--index-url",
+        [string]$contract.package_index,
+        "--retries",
+        "0",
+        "--timeout",
+        "10"
+    )
+    $pipCapture = @{
+        FilePath = $python.Source
+        ArgumentList = $pipArguments
+        WorkingDirectory = $repoRoot
+    }
+    $indexProbe = Invoke-CapturedProcess @pipCapture
+    if (-not $indexProbe.launched) {
         $indexProbeFailed = $true
     }
     else {
-        $pipArguments = @(
-            "-m",
-            "pip",
-            "--disable-pip-version-check",
-            "index",
-            "versions",
-            "t-tech-investments",
-            "--index-url",
-            [string]$contract.package_index,
-            "--retries",
-            "0",
-            "--timeout",
-            "10"
-        )
-        $pipCaptureParameters = @{
-            FilePath = $python.Source
-            ArgumentList = $pipArguments
-            WorkingDirectory = $repoRoot
-        }
-        $indexProbe = Invoke-CapturedProcess @pipCaptureParameters
-        if (-not $indexProbe.launched) {
-            $indexProbeFailed = $true
-        }
-        else {
-            $indexReady = $indexProbe.exit_code -eq 0
-        }
+        $indexReady = $indexProbe.exit_code -eq 0
     }
 }
 
-$reason = if (-not $verifierHealthy) {
-    "TBANK_CA_TRUST_VERIFIER_FAILED"
-}
-elseif (-not $storeReady) {
-    "TBANK_CA_TRUST_STORE_NOT_READY"
+$reason = if (-not $bundleReady) {
+    "TBANK_PIP_CA_BUNDLE_FAILED"
 }
 elseif ($indexProbeFailed) {
     "TBANK_PACKAGE_INDEX_PROBE_FAILED"
@@ -217,24 +211,30 @@ else {
 }
 
 $ready = $reason -eq "TBANK_PACKAGE_INDEX_TLS_READY"
-$verifierExitCode = if (
-    $null -ne $provisionerResult -and
-    $provisionerResult.launched
+$bundleExitCode = if (
+    $null -ne $bundleResult -and
+    $bundleResult.launched
 ) {
-    [int]$provisionerResult.exit_code
+    [int]$bundleResult.exit_code
 }
 else {
     -1
 }
 
 $result = [ordered]@{
-    schema_version = "1"
+    schema_version = "2"
     reason = $reason
-    verifier_exit_code = $verifierExitCode
-    trust_store_ready = [bool]$storeReady
+    bundle_preparer_exit_code = $bundleExitCode
+    root_pin_verified = [bool]$bundleReady
+    pip_ca_bundle_ready = [bool]$bundleReady
     package_index_tls_ready = [bool]$indexReady
+    machine_trust_store_required = $false
     mutations_attempted = $false
     ready = [bool]$ready
+}
+
+if (-not $envPublishRequired -and -not [string]::IsNullOrWhiteSpace($bundlePath)) {
+    Remove-Item -LiteralPath $bundlePath -Force -ErrorAction SilentlyContinue
 }
 
 if ($AsJson) {
@@ -247,7 +247,7 @@ else {
 if ($ready) {
     exit 0
 }
-if ($reason -eq "TBANK_CA_TRUST_VERIFIER_FAILED") {
+if ($reason -eq "TBANK_PIP_CA_BUNDLE_FAILED") {
     exit 73
 }
 exit 72

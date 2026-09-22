@@ -241,10 +241,49 @@ Systemic correction:
 The dedicated script is itself parsed by PowerShell when executed, so a syntax
 defect in the parser guard also fails the same Fast step.
 
+## Exact-head project failure convergence and pip trust correction
+
+Exact head `15be56561f4a439e39db16626fc8c633ddb8676c` completed Fast PR
+#3052, Engineering Governance #1937 and Toolchain Compatibility #3086
+successfully. Every remaining failing Windows audit (WP13, WP14, both WP15
+lanes, WP17, WP18, WP19, WP20, WP21, WP22, WP22A clientless, WP22A Phase 2 and
+the authoritative merge gate) failed only at the shared T-Bank CA preflight;
+their hash-locked pip install and all later steps were skipped.
+
+This proves the 13 visible RED checks are one shared dependency trust producer,
+not 13 independent application defects.
+
+Further root-cause review found that the original repair over-bound pip CI to
+persistent Windows `LocalMachine` trust. T-Bank documents that Python clients
+can require their own CA bundle, and pip officially supports a PEM trust bundle
+through `--cert` / `PIP_CERT`. Persistent machine-store mutation is therefore
+not required to preserve TLS verification for package CI.
+
+Systemic correction:
+
+- check in the public Russian Trusted Root CA as auditable source data;
+- verify its DER SHA-256 against the existing reviewed root pin before every
+  bundle assembly;
+- copy pip's own vendored certifi bundle and add the pinned Russian root only if
+  absent, preserving ordinary public CA trust;
+- publish the merged job-temporary bundle only as `PIP_CERT`;
+- make the checker probe the exact official T-Bank index with explicit
+  `--cert`, certificate verification and hostname verification still enabled;
+- keep all 14 Windows dependency consumers behind the same preflight;
+- keep `LocalMachine` mutation outside CI and OWNER/Administrator-only for an
+  explicit non-pip system-trust requirement;
+- add Fast PR source execution and regression coverage for bundle assembly,
+  pin integrity, no-network assembly and no TLS bypass.
+
+The public root trust anchor is scoped to pip processes that receive
+`PIP_CERT`, which is narrower than installing it for the entire Windows
+machine. Dependency versions, hashes and the official T-Bank package source are
+unchanged.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head
-must pass source/governance checks, OWNER must establish the required machine
-trust through the reviewed boundary, the same exact head must then pass every
-applicable GitHub-native check, and the squash-merged exact new main must pass
-post-merge Regression Shield.
+must pass source/governance checks, build and verify the pinned ephemeral pip CA
+bundle, reach the official T-Bank package index with TLS verification enabled,
+then pass every applicable GitHub-native check. The squash-merged exact new main
+must pass post-merge Regression Shield.

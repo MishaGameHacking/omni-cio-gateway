@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json"
 PROVISIONER = ROOT / "infrastructure/windows/provision_v10_tbank_ca_trust.ps1"
 CHECKER = ROOT / "scripts/check_v10_tbank_ca_trust.ps1"
+PREPARER = ROOT / "scripts/prepare_v10_tbank_pip_ca_bundle.py"
+ROOT_CA = ROOT / "infrastructure/certificates/russian_trusted_root_ca_2022.der"
 SYNTAX_CHECKER = ROOT / "scripts/check_v10_tbank_ca_trust_syntax.ps1"
 AUTHORITATIVE = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 FAST_PR = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
@@ -45,6 +48,16 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     )
     assert payload["verification"]["tls_verification_may_be_disabled"] is False
     assert payload["verification"]["hostname_verification_may_be_disabled"] is False
+    assert payload["verification"]["ci_pip_trust"] == {
+        "mode": "ephemeral_pip_cert_bundle",
+        "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
+        "base_bundle": "pip_vendored_certifi",
+        "environment_variable": "PIP_CERT",
+        "machine_trust_store_required": False,
+        "persistent_machine_mutation": False,
+        "certificate_verification_enabled": True,
+        "hostname_verification_enabled": True,
+    }
     assert payload["protected_invariants"]["PUBLIC_MULTI_USER_ENABLED"] is False
     assert payload["protected_invariants"]["OMNI_V10_TELEGRAM_LOGIN_ENABLED"] is False
     assert payload["protected_invariants"]["broker_write"] is False
@@ -78,31 +91,55 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
     assert "System.Net.WebClient" not in source
 
 
-def test_tbank_ca_checker_uses_captured_read_only_tls_probes() -> None:
+def test_checked_in_tbank_root_certificate_matches_contract_pin() -> None:
+    payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    der = ROOT_CA.read_bytes()
+
+    assert der
+    assert b"-----BEGIN CERTIFICATE-----" not in der
+    assert hashlib.sha256(der).hexdigest().upper() == (
+        payload["certificates"]["root"]["sha256_der"]
+    )
+
+
+def test_tbank_pip_ca_preparer_extends_pip_certifi_without_network() -> None:
+    source = PREPARER.read_text(encoding="utf-8")
+
+    assert '"_vendor"' in source
+    assert '"certifi"' in source
+    assert '"cacert.pem"' in source
+    assert "PIP_CERT=" in source
+    assert "DER_cert_to_PEM_cert" in source
+    assert "TBANK_PIP_CA_ROOT_FINGERPRINT_MISMATCH" in source
+    assert "Invoke-WebRequest" not in source
+    assert "urllib" not in source
+    assert "requests" not in source
+    assert "subprocess" not in source
+
+
+def test_tbank_ca_checker_uses_ephemeral_pinned_pip_bundle() -> None:
     source = CHECKER.read_text(encoding="utf-8")
 
-    assert '"-Verify"' in source
-    assert '"-AsJson"' in source
+    assert "prepare_v10_tbank_pip_ca_bundle.py" in source
+    assert '"--github-env"' in source
+    assert '"--cert"' in source
     assert '"t-tech-investments"' in source
     assert '"--retries"' in source
     assert '"--timeout"' in source
     assert "Start-Process" in source
     assert "RedirectStandardOutput" in source
     assert "RedirectStandardError" in source
-    assert "TBANK_CA_TRUST_VERIFIER_FAILED" in source
-    assert "[AllowNull()]$Value" in source
-    assert "$stdoutPath = $null" in source
-    assert "$stderrPath = $null" in source
-    assert "verifier_exit_code" in source
+    assert "TBANK_PIP_CA_BUNDLE_FAILED" in source
+    assert "bundle_preparer_exit_code" in source
+    assert "machine_trust_store_required = $false" in source
     assert "mutations_attempted = $false" in source
-    assert "& powershell.exe" not in source
-    assert "2>$null" not in source
     assert "Import-Certificate" not in source
 
 
 def test_tbank_ca_boundary_contains_no_tls_bypass() -> None:
     sources = (
         PROVISIONER.read_text(encoding="utf-8"),
+        PREPARER.read_text(encoding="utf-8"),
         CHECKER.read_text(encoding="utf-8"),
         SYNTAX_CHECKER.read_text(encoding="utf-8"),
         AUTHORITATIVE.read_text(encoding="utf-8"),
@@ -141,6 +178,17 @@ def test_fast_pr_parses_tbank_ca_trust_powershell_boundary() -> None:
     assert "-ExecutionPolicy Bypass -File" in block
     assert "scripts\\check_v10_tbank_ca_trust_syntax.ps1 -AsJson" in block
     assert "-Command" not in block
+
+
+def test_fast_pr_verifies_pinned_pip_ca_bundle_assembly() -> None:
+    workflow = FAST_PR.read_text(encoding="utf-8")
+    marker = "      - name: Verify pinned T-Bank pip CA bundle assembly"
+    block = workflow.split(marker, 1)[1].split("      - name:", 1)[0]
+
+    assert "prepare_v10_tbank_pip_ca_bundle.py" in block
+    assert "v10-fast-tbank-pip-ca.pem" in block
+    assert "--trusted-host" not in block
+    assert "Set-ExecutionPolicy" not in block
 
 
 def test_tbank_ca_syntax_checker_has_bounded_targets_and_no_mutation() -> None:

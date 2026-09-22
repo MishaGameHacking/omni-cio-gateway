@@ -192,6 +192,13 @@ jobs:
         shell: cmd
         run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\check_v10_tbank_ca_trust_syntax.ps1 -AsJson
 
+      - name: Verify pinned T-Bank pip CA bundle assembly
+        shell: cmd
+        run: |
+          python scripts\prepare_v10_tbank_pip_ca_bundle.py --output "%RUNNER_TEMP%\v10-fast-tbank-pip-ca.pem"
+          if errorlevel 1 exit /b %errorlevel%
+          del /f /q "%RUNNER_TEMP%\v10-fast-tbank-pip-ca.pem"
+
       - name: Verify CI and security baseline
         run: python scripts\check_ci_security_baseline.py
 
@@ -253,6 +260,7 @@ jobs:
           tests.test_v10_regression_shield
           tests.test_v10_release_provenance
           tests.test_v10_web_baseline
+          tests.test_v10_tbank_ca_trust_contract
 
       - name: Clean policy workspace
         if: always()

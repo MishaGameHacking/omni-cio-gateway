@@ -1,5 +1,5 @@
 {
-  "schema": "omni-cio.v10.tbank-ca-trust.v1",
+  "schema": "omni-cio.v10.tbank-ca-trust.v2",
   "status": "FOCUSED_REPAIR_CONTRACT",
   "official_certificate_source": "https://www.gosuslugi.ru/crt",
   "official_tbank_reference": "https://developer.tbank.ru/docs/tls-settings",
@@ -11,7 +11,9 @@
       "self_issued_required": true,
       "ca_required": true,
       "sha256_der": "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31",
-      "fingerprint_pin_required": true
+      "fingerprint_pin_required": true,
+      "distribution_url": "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt",
+      "repository_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der"
     },
     "intermediate": {
       "common_name": "Russian Trusted Sub CA",
@@ -58,7 +60,18 @@
       "scripts/check_v10_tbank_ca_trust.ps1",
       "infrastructure/windows/provision_v10_tbank_ca_trust.ps1"
     ],
-    "syntax_checker_transport": "cmd_to_powershell_exe_process_local_bypass_file"
+    "syntax_checker_transport": "cmd_to_powershell_exe_process_local_bypass_file",
+    "ci_pip_trust": {
+      "mode": "ephemeral_pip_cert_bundle",
+      "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
+      "base_bundle": "pip_vendored_certifi",
+      "environment_variable": "PIP_CERT",
+      "machine_trust_store_required": false,
+      "persistent_machine_mutation": false,
+      "certificate_verification_enabled": true,
+      "hostname_verification_enabled": true
+    },
+    "package_index_tls_probe_cert_source": "ephemeral_pip_cert_bundle"
   },
   "protected_invariants": {
     "gateway_entrypoint": "app:app",

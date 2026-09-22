@@ -4,114 +4,159 @@ Status: **focused Windows dependency trust repair / no product authority change*
 
 ## Purpose
 
-The protected Windows CI installs the pinned `t-tech-investments` SDK from the
-official T-Bank Python package index. The package index can present a certificate
-chain rooted in the Russian Trusted CA. If the Windows machine does not trust the
-Russian Trusted Root CA and Russian Trusted Sub CA, pip fails closed with
-`SSLCertVerificationError`.
+Protected Windows CI installs the pinned `t-tech-investments` SDK from the
+official T-Bank Python package index. The index can present a TLS chain rooted
+in the Russian Trusted Root CA, which is not part of ordinary public CA bundles.
+
+For **pip CI**, repository policy does not require persistent
+`LocalMachine` certificate-store mutation. The source-controlled checker
+builds an ephemeral PEM bundle from:
+
+1. pip's own vendored certifi bundle, preserving its ordinary public CA roots;
+2. the checked-in Russian Trusted Root CA whose DER SHA-256 must equal the
+   reviewed contract pin.
+
+The checker then publishes that merged bundle only as `PIP_CERT` for later pip
+steps in the same GitHub Actions job and probes the exact official T-Bank index
+with certificate and hostname verification enabled.
+
+The Windows `LocalMachine` provisioner remains available only for an
+environment that explicitly needs system trust outside this pip boundary. It is
+not a prerequisite for dependency CI.
 
 This runbook does not change dependency versions, hashes, broker permissions,
 product authentication or Real-money authority.
 
-## Source authority
+## Source authority and pin
 
-Use only the certificate download page linked by T-Bank:
+Canonical certificate authority remains the T-Bank instruction pointing to
+Gosuslugi:
 
 `https://www.gosuslugi.ru/crt`
 
-Download these two files locally on the OWNER machine:
+The reviewed root is also distributed as PEM at:
 
-- `russian_trusted_root_ca.cer`
-- `russian_trusted_sub_ca.cer`
+`https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt`
 
-Do not download certificates through a command that disables TLS validation.
-Do not paste certificate-store dumps, machine identity or any credential into
-GitHub/chat.
+Repository copy:
 
-## Read-only verification
+`infrastructure/certificates/russian_trusted_root_ca_2022.der`
 
-From a clean checkout, ordinary CI and OWNER can run:
+Accepted DER SHA-256:
+
+`D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31`
+
+The repository stores the public certificate as binary DER so the tracked-content
+secret scanner does not need an entropy allowlist for a PEM Base64 body. The
+bundle preparer verifies those exact DER bytes, then converts them to PEM only
+inside the job-temporary bundle. No secret-scan rule is weakened.
+
+The bundle preparer refuses any root whose DER fingerprint differs from that
+pin. A future root rotation is a security boundary and requires fresh official
+verification plus code review.
+
+## CI verification
+
+From a clean checkout, run:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\check_v10_tbank_ca_trust.ps1" -AsJson
 ```
 
-A healthy result requires:
+The checker:
 
-- a current `Russian Trusted Root CA` in `Cert:\LocalMachine\Root`;
-- a current `Russian Trusted Sub CA`, issued by the root, in
-  `Cert:\LocalMachine\CA`;
-- a read-only pip TLS probe to the exact configured T-Bank package index to
-  succeed with normal certificate and hostname verification.
+- invokes `scripts/prepare_v10_tbank_pip_ca_bundle.py`;
+- verifies the checked-in root against the exact DER SHA-256 pin;
+- locates pip's own vendored certifi `cacert.pem`;
+- copies that ordinary public CA bundle into a job-temporary file and appends
+  the pinned Russian root only if it is not already present;
+- publishes only `PIP_CERT=<temporary bundle>` through `GITHUB_ENV`;
+- probes the exact T-Bank package index with pip and explicit `--cert`;
+- never uses `--trusted-host`, disables hostname checks, disables certificate
+  verification or changes the package source;
+- never modifies the Windows certificate store;
+- never emits the temporary machine path or raw child-process stderr.
 
-The check never imports certificates and never disables TLS verification.
-It captures child-process stdout/stderr privately and emits only bounded JSON state; raw PowerShell/pip stderr, machine paths and certificate-store contents are not evidence output. `TBANK_CA_TRUST_VERIFIER_FAILED` means the diagnostic itself is unhealthy and must be repaired before any OWNER/Admin certificate action.
+Healthy CI output requires:
 
-## OWNER/Admin preview
+- `reason=TBANK_PACKAGE_INDEX_TLS_READY`;
+- `root_pin_verified=true`;
+- `pip_ca_bundle_ready=true`;
+- `package_index_tls_ready=true`;
+- `machine_trust_store_required=false`;
+- `mutations_attempted=false`;
+- `ready=true`.
 
-The provisioner is verify-by-default. Before mutation, run:
+`TBANK_PIP_CA_BUNDLE_FAILED` means the repository bundle source, pin, pip
+vendored certifi source or environment publication is unhealthy and must be
+repaired as source/toolchain state.
+
+`TBANK_PACKAGE_INDEX_TLS_NOT_READY` means the verified bundle was built but
+the exact package-index TLS probe still failed. Do not bypass TLS.
+
+## Why this is not a TLS bypass
+
+pip officially supports `--cert <path>` and the corresponding `PIP_CERT`
+environment variable for a PEM CA bundle. The repository bundle retains pip's
+vendored certifi roots and adds one reviewed root trust anchor. Normal TLS chain
+validation and hostname verification remain enabled.
+
+This is narrower than installing the Russian root into the whole Windows
+machine: the added trust applies only to pip processes receiving `PIP_CERT`.
+
+## Optional OWNER/Admin system trust
+
+Some non-pip Windows applications can require `LocalMachine` trust. Only for
+that separate need, OWNER may use the existing provisioner.
+
+Preview, read-only:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_v10_tbank_ca_trust.ps1" -Verify -AsJson
 ```
 
-If `ready=true`, no mutation is required.
+If system trust is explicitly required and preview is not ready, download these
+two files from the official Gosuslugi certificate page:
 
-## OWNER/Admin apply
+- `russian_trusted_root_ca.cer`;
+- `russian_trusted_sub_ca.cer`.
 
-Only if verification reports `TBANK_CA_TRUST_STORE_NOT_READY`, open PowerShell
-**as Administrator** and use the two files downloaded from the official
-Gosuslugi page:
+Then open PowerShell **as Administrator** and run:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_v10_tbank_ca_trust.ps1" -Apply -RootCertificatePath "<local-path>\russian_trusted_root_ca.cer" -SubCertificatePath "<local-path>\russian_trusted_sub_ca.cer" -AsJson
 ```
 
-The provisioner:
+The provisioner remains fail-closed: it validates the pinned root and
+intermediate chain before the first mutation, imports only into the expected
+`LocalMachine\Root` / `LocalMachine\CA` stores, is idempotent and never
+downloads certificates or weakens TLS.
 
-- pins the accepted root certificate by DER SHA-256
-  `D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31`;
-- refuses a root file whose fingerprint differs, even if its common name matches;
-- verifies that the supplied intermediate builds a valid X.509 chain terminating
-  at that pinned root before importing the intermediate;
-- validates both local certificate files completely before the first certificate-store mutation, so a rejected intermediate cannot leave a partial root-only mutation;
-- refuses non-Windows execution;
-- requires Administrator for `-Apply`;
-- validates the expected CA common names, validity and CA role;
-- requires the root to be self-issued and the intermediate issuer to be the
-  Russian Trusted Root CA;
-- imports the root only into `LocalMachine\Root`;
-- imports the intermediate only into `LocalMachine\CA`;
-- is idempotent by certificate thumbprint;
-- does not download anything and does not weaken TLS.
+CI does not receive this mutation authority.
 
-A future root-certificate rotation is a security boundary: update the pinned
-fingerprint only after fresh official-certificate verification and code review.
-Intermediate rotation does not require a hard-coded fingerprint as long as the
-new current CA validates to the pinned root and the T-Bank package TLS probe
-passes.
+## CI recovery and rerun
 
-After apply, rerun the read-only checker above and require
-`reason=TBANK_PACKAGE_INDEX_TLS_READY` and `ready=true`.
+The ephemeral bundle is source/toolchain state, not persistent machine state.
+GitHub Runner's job-temporary directory owns the generated file. No no-op commit
+or administrator action is required when the source boundary is healthy.
 
-## CI recovery
+After a source correction, verify the new exact head. If the checker returns
+`TBANK_PACKAGE_INDEX_TLS_READY`, allow the same workflow batch to continue
+through the normal hash-locked installs and all later quality/security gates.
 
-The CA trust state is machine state, not source state. Once the exact same
-repository SHA has `ready=true`, the Green Checkpoint law permits rerunning only
-the failed infrastructure jobs on the same SHA. Do not create a no-op commit.
-
-If the checker remains RED, do not use `--trusted-host`, `--insecure`, disabled
-hostname verification, a different public package, or another package index.
+If the checker remains RED, do not use `--trusted-host`, `--insecure`,
+disabled hostname verification, a different public package, another package
+index or a weakened dependency lock.
 
 ## Rollback
 
-If OWNER needs to remove a certificate, use Windows certificate management under
-Administrator authority and remove only the exact certificate that OWNER
-installed. Do not wildcard-delete certificates from `LocalMachine\Root` or
-`LocalMachine\CA`.
+The CI bundle has no persistent machine mutation. Rollback is removal of the
+source change; GitHub Runner job-temp cleanup removes generated bundle files.
 
-After any rollback, the read-only checker must return RED until the required
-trust chain is restored.
+If OWNER separately installed system certificates using the optional provisioner,
+rollback that system change only under Administrator authority and only for the
+exact certificates OWNER installed. Never wildcard-delete
+`LocalMachine\Root` or `LocalMachine\CA`.
 
 ## Protected invariants
 
@@ -124,7 +169,11 @@ trust chain is restored.
 
 ## Official references
 
-- T-Bank Dev Portal — installation of Russian Trusted Root/Sub CA:
+- T-Bank Dev Portal — Russian Trusted CA configuration:
   `https://developer.tbank.ru/docs/tls-settings`
-- Gosuslugi — official certificate download page:
+- T-Invest network guidance:
+  `https://developer.tbank.ru/invest/intro/developer/network`
+- Gosuslugi certificate page:
   `https://www.gosuslugi.ru/crt`
+- pip HTTPS certificate verification:
+  `https://pip.pypa.io/en/stable/topics/https-certificates/`
