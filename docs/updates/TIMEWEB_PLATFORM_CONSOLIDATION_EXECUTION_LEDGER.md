@@ -8,8 +8,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Title: Timeweb-only runtime/database/DNS/Telegram consolidation
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
 - Branch: `system/timeweb-platform-consolidation`
-- Accepted base SHA: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
-- Current accepted-main SHA rechecked at branch creation: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
+- Accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
+- Current accepted-main SHA rechecked before TW-A inventory checkpoint: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
 - OWNER authority: Amendment 18 accepted through PR #581
 - GitHub dashboard issue: #580
 - Current split-boundary PR: #582
@@ -23,8 +23,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 
 | Order | Member milestone | State | Branch-local evidence | Notes |
 |---:|---|---|---|---|
-| 1 | TW-A / INVENTORY_AND_AUTHORITY | IN_PROGRESS | PR #582 | MAIN_RED_STOP active-workflow graph correction is the first accepted-boundary requirement |
-| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | TODO |  | Must not begin until TW-A checkpoint is CERTIFIED_GREEN and accepted |
+| 1 | TW-A / INVENTORY_AND_AUTHORITY | IN_PROGRESS | PR #582 accepted CI-graph split + current inventory checkpoint | MAIN_RED_STOP repair is accepted; provider/dependency classification remains the final TW-A checkpoint |
+| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | TODO |  | Must not begin until the TW-A inventory checkpoint is CERTIFIED_GREEN |
 | 3 | TW-C / TIMEWEB_APP_CANDIDATE | TODO |  | Technical Timeweb candidate only after TW-B |
 | 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | TODO |  | Mandatory production DB split gate |
 | 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | TODO |  | Mandatory DNS/public cutover split gate |
@@ -35,19 +35,18 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 
 ## 3. Current execution state
 
-- Current exact work item: retire the stale Cloudflare/Neon/Sonar active execution graph and establish direct GitHub -> Timeweb post-merge proof
-- Current logical checkpoint ID: `TW-A-CI-AUTHORITY-GRAPH-REPAIR`
-- First published checkpoint SHA: `f888dc7b0dc0b3eb0816b27b41eeac7fbe7992e9`
-- First checkpoint state: `RED_REPAIR_ONLY`
-- First material RED: Engineering Governance on PR #582
-- Root cause of that RED: historical Cloudflare closeout guard still required a former current-state status marker after Amendment 18 reclassified the accepted Cloudflare update as historical archive evidence
-- Replacement checkpoint `9527e5974b3cf673a870386590fac228e80a87a3` completed all observed DRAFT checks except the authoritative Windows Regression Shield
-- Historical-test-consumer correction head: `cea3edda9d6c7df482cb08fbfaa41adfac943a6d`
-- Next exact action: complete one current-authority documentation/guard correction batch, then run a fresh exact-head DRAFT cycle
-- Scope/non-goals still intact: YES
-- Main drift since accepted base: NONE observed at branch creation
+- Current exact work item: complete TW-A provider/dependency producer-consumer inventory
+- Current logical checkpoint ID: `TW-A-PROVIDER-CONSUMER-INVENTORY`
+- Accepted base: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
+- PR #582 post-merge evidence: Regression Shield #1646 success; Engineering Governance #1893 success; Timeweb Read-Only Proof #13 success
+- Provider proof marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
+- External ingress/recovery blocker remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
+- Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
+- Classification vocabulary: `KEEP / TIMEWEB_REPLACE / RETIRE_AFTER_CUTOVER / RETIRE_NOW_AFTER_AUTHORITY / HISTORY`
+- Current branch mode: normal checkpoint work; TW-B remains forbidden until this checkpoint is CERTIFIED_GREEN
+- No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
-## 4. MAIN_RED_STOP source defect being repaired
+## 4. Accepted MAIN_RED_STOP repair provenance
 
 Accepted `main` `e8e583f...` had a post-merge workflow graph inconsistent with Amendment 18:
 
@@ -195,7 +194,7 @@ Only `CERTIFIED_GREEN` permits TW-B.
 - Accepted main: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
 - Current update: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 - Current member milestone: TW-A / inventory and authority cleanup
-- Current checkpoint: `TW-A-CI-AUTHORITY-GRAPH-REPAIR`
-- State: `RED_REPAIR_ONLY` until the replacement exact head is fully certified
-- Current PR: #582 (DRAFT)
-- Next lawful action: finish replacement exact-head DRAFT verification; no TW-B runtime work before certification and acceptance
+- Current checkpoint: `TW-A-PROVIDER-CONSUMER-INVENTORY`
+- State: `IN_PROGRESS` on the integrated Timeweb branch
+- Accepted split repair: PR #582 + exact-main post-merge success
+- Next lawful action: certify the complete inventory checkpoint; no TW-B runtime work before `CERTIFIED_GREEN`

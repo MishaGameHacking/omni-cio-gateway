@@ -4,7 +4,7 @@ Updated: 2026-09-21
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A MAIN_RED_STOP REPAIR IN PROGRESS / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A CI-AUTHORITY REPAIR ACCEPTED VIA PR #582 / TW-A PROVIDER-CONSUMER INVENTORY IN PROGRESS / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -19,6 +19,8 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 `PUBLIC_MULTI_USER_ENABLED=false` remains the **current runtime state, not a V10-wide release lock**. Under Amendment 13, completed capabilities may become live as soon as their own real authentication/runtime/privacy/security/capacity/monitoring gates pass; unrelated unfinished V10 blocks are not a reason to hold a ready capability forever.
 
 Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudflare/Neon/Render/Cloud.ru/VK from current/future V10 provider authority. `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
+
+The mandatory PR #582 CI/provider-authority split is accepted on exact main `82e3a45c7016f2956c9b3761d10d15e433375f3c`: Regression Shield #1646 and Engineering Governance #1893 completed `success`; automatic Timeweb Read-Only Proof #13 completed `success` with `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed unbound IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED` and grants no ingress mutation authority. TW-A remains open only for the complete provider/dependency producer-consumer inventory; TW-B is forbidden until that branch checkpoint is `CERTIFIED_GREEN`.
 
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
