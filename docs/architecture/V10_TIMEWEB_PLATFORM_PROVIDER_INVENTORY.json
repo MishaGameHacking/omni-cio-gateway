@@ -14,6 +14,10 @@
   "provider_path_detector_regex": "(?i)(cloudflare|neon|render|cloudru|cloud_ru|vk_id|timeweb|sonar|gitar|circleci)",
   "minimum_provider_named_file_count": 212,
   "explicit_paths": {
+    "docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json": {
+      "classification": "KEEP",
+      "reason": "Current TW-A machine-readable provider/dependency inventory."
+    },
     "render.yaml": {
       "classification": "KEEP",
       "reason": "Protected V9 recovery boundary; start command remains app:app until its own accepted retirement gate."
@@ -119,7 +123,7 @@
       "reason": "VK ID source is retained as historical evidence but must leave deployed composition under Amendment 18."
     },
     {
-      "regex": "vk_id",
+      "regex": "(?i)vk_id",
       "classification": "HISTORY",
       "reason": "VK ID plans/tests are historical after Amendment 18 unless explicitly marked as a current consumer."
     },
