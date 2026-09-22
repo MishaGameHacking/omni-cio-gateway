@@ -185,9 +185,12 @@ def test_hosted_health_evidence_accepts_broker_not_activated() -> None:
     )
 
     assert states["broker_external"] == "NOT_APPLICABLE"
-    assert aggregate_hosted_runtime_state(
-        evidence, expected_release_sha=_RELEASE_SHA, now_utc=NOW
-    ) == "READY"
+    assert (
+        aggregate_hosted_runtime_state(
+            evidence, expected_release_sha=_RELEASE_SHA, now_utc=NOW
+        )
+        == "READY"
+    )
 
 
 @pytest.mark.parametrize(
@@ -212,9 +215,12 @@ def test_hosted_runtime_state_distinguishes_failure_domains(
     dependency["state"] = state
     dependency["reason_code"] = f"{domain.upper()}_{state}"
 
-    assert aggregate_hosted_runtime_state(
-        evidence, expected_release_sha=_RELEASE_SHA, now_utc=NOW
-    ) == expected
+    assert (
+        aggregate_hosted_runtime_state(
+            evidence, expected_release_sha=_RELEASE_SHA, now_utc=NOW
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -224,9 +230,12 @@ def test_hosted_runtime_state_distinguishes_failure_domains(
 def test_hosted_runtime_state_fails_offline_on_structural_mismatch(field: str) -> None:
     evidence = _evidence()
     evidence[field] = False
-    assert aggregate_hosted_runtime_state(
-        evidence, expected_release_sha=_RELEASE_SHA, now_utc=NOW
-    ) == "OFFLINE"
+    assert (
+        aggregate_hosted_runtime_state(
+            evidence, expected_release_sha=_RELEASE_SHA, now_utc=NOW
+        )
+        == "OFFLINE"
+    )
 
 
 def test_hosted_health_evidence_rejects_stale_or_future_timestamp() -> None:

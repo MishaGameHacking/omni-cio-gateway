@@ -124,7 +124,5 @@ def verify_runtime(connection: Any, runtime_role: str) -> None:
             ],
         ),
     ).fetchall()
-    if len(rows) != 3 or any(
-        not bool(row[1]) or not bool(row[2]) for row in rows
-    ):
+    if len(rows) != 3 or any(not bool(row[1]) or not bool(row[2]) for row in rows):
         raise ProvisioningStopped("POSTGRES_RUNTIME_FORCE_RLS_DRIFT")

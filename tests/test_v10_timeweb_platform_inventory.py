@@ -107,7 +107,9 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
                     "HISTORY",
                 )
 
-    def test_historical_cloudflare_guard_cannot_own_current_web_provenance(self) -> None:
+    def test_historical_cloudflare_guard_cannot_own_current_web_provenance(
+        self,
+    ) -> None:
         path = "scripts/check_v10_cloudflare_runtime_compatibility.py"
         source = (ROOT / path).read_text(encoding="utf-8")
         self.assertEqual(

@@ -30,9 +30,7 @@ class BrowserCookiePolicyV1:
     csrf_cookie: str = BROWSER_CSRF_COOKIE
     secure: bool = True
     session_max_age_seconds: int = 24 * 60 * 60
-    allowed_providers: tuple[IdentityProviderV1, ...] = (
-        IdentityProviderV1.TELEGRAM,
-    )
+    allowed_providers: tuple[IdentityProviderV1, ...] = (IdentityProviderV1.TELEGRAM,)
 
     def __post_init__(self) -> None:
         if (
@@ -42,9 +40,7 @@ class BrowserCookiePolicyV1:
             raise ValueError("BROWSER_CSRF_BINDING_KEY_INVALID")
         if len(self.allowed_providers) != len(set(self.allowed_providers)):
             raise ValueError("BROWSER_PROVIDER_DUPLICATE")
-        if any(
-            provider not in _PROOF_COOKIES for provider in self.allowed_providers
-        ):
+        if any(provider not in _PROOF_COOKIES for provider in self.allowed_providers):
             raise ValueError("BROWSER_PROVIDER_INVALID")
         proof_cookie_names = tuple(
             _PROOF_COOKIES[provider] for provider in self.allowed_providers

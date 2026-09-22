@@ -73,7 +73,5 @@ def probe_hosted_runtime_database(
             ],
         ),
     ).fetchall()
-    if len(rows) != 3 or any(
-        not bool(row[1]) or not bool(row[2]) for row in rows
-    ):
+    if len(rows) != 3 or any(not bool(row[1]) or not bool(row[2]) for row in rows):
         raise RuntimeError("HOSTED_RUNTIME_DATABASE_FORCE_RLS_REQUIRED")

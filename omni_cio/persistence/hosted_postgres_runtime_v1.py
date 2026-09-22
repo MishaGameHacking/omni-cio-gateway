@@ -9,17 +9,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = (
-    ROOT
-    / "infrastructure"
-    / "postgres"
-    / "hosted-postgres-runtime-contract.json"
+    ROOT / "infrastructure" / "postgres" / "hosted-postgres-runtime-contract.json"
 )
-BOOTSTRAP_PATH = (
-    ROOT
-    / "infrastructure"
-    / "postgres"
-    / "hosted-postgres-runtime.sql"
-)
+BOOTSTRAP_PATH = ROOT / "infrastructure" / "postgres" / "hosted-postgres-runtime.sql"
 
 _USER_NAME = "omni_cio_hosted_api"
 _SCHEMA_NAME = "omni_cio_v10"
@@ -110,19 +102,14 @@ def load_hosted_postgres_runtime_contract(
 ) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise HostedPostgresRuntimeContractError(
-            "HOSTED_POSTGRES_CONTRACT_NOT_OBJECT"
-        )
+        raise HostedPostgresRuntimeContractError("HOSTED_POSTGRES_CONTRACT_NOT_OBJECT")
     return payload
 
 
 def validate_hosted_postgres_runtime_contract(
     payload: Mapping[str, Any],
 ) -> None:
-    if (
-        payload.get("schema_version")
-        != "v10.hosted-postgres-runtime.v5"
-    ):
+    if payload.get("schema_version") != "v10.hosted-postgres-runtime.v5":
         raise HostedPostgresRuntimeContractError(
             "HOSTED_POSTGRES_CONTRACT_VERSION_INVALID"
         )
@@ -293,9 +280,7 @@ def _grant_statements(normalized_sql: str) -> set[str]:
 
 
 def _expected_grant_statements() -> set[str]:
-    expected = {
-        f"GRANT USAGE ON SCHEMA {_SCHEMA_NAME.upper()} TO {_USER_NAME.upper()}"
-    }
+    expected = {f"GRANT USAGE ON SCHEMA {_SCHEMA_NAME.upper()} TO {_USER_NAME.upper()}"}
     for function, privileges in _EXPECTED_FUNCTION_PRIVILEGES.items():
         joined = ", ".join(privileges)
         expected.add(
@@ -318,9 +303,7 @@ def validate_hosted_postgres_runtime_sql(
     payload: Mapping[str, Any] | None = None,
 ) -> None:
     contract = (
-        payload
-        if payload is not None
-        else load_hosted_postgres_runtime_contract()
+        payload if payload is not None else load_hosted_postgres_runtime_contract()
     )
     validate_hosted_postgres_runtime_contract(contract)
     normalized = _normalize_sql(sql)
@@ -393,9 +376,7 @@ def validate_hosted_postgres_runtime_sql(
             )
 
     if _grant_statements(normalized) != _expected_grant_statements():
-        raise HostedPostgresRuntimeContractError(
-            "HOSTED_POSTGRES_SQL_GRANT_UNEXPECTED"
-        )
+        raise HostedPostgresRuntimeContractError("HOSTED_POSTGRES_SQL_GRANT_UNEXPECTED")
 
     for relation in _EXPECTED_FORCED_RLS:
         qualified = f"{_SCHEMA_NAME.upper()}.{relation.upper()}"

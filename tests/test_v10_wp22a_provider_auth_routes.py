@@ -282,11 +282,14 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
     )
     assert "HttpOnly" in csrf_header
     assert "Secure" in csrf_header
-    assert client.cookies.get(
-        "__Host-omni_v10_oauth_telegram",
-        domain=TEST_COOKIE_DOMAIN,
-        path="/",
-    ) is None
+    assert (
+        client.cookies.get(
+            "__Host-omni_v10_oauth_telegram",
+            domain=TEST_COOKIE_DOMAIN,
+            path="/",
+        )
+        is None
+    )
 
 
 def test_provider_proof_cannot_be_reused_across_fixed_callback_routes() -> None:
@@ -327,6 +330,9 @@ def test_unconfigured_fixed_provider_routes_fail_closed() -> None:
     client = TestClient(app, base_url="https://omni.example")
     assert client.post(TELEGRAM_START_PATH).status_code == 503
     assert client.post(VK_ID_START_PATH).status_code == 503
-    assert client.get(
-        TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted"
-    ).status_code == 503
+    assert (
+        client.get(
+            TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted"
+        ).status_code
+        == 503
+    )

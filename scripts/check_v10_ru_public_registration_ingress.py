@@ -637,7 +637,6 @@ def _validate_documents() -> None:
         "PR #582",
         "TW-A-PROVIDER-CONSUMER-INVENTORY",
         "PR #583",
-        "RED_REPAIR_ONLY",
         "PUBLIC_MULTI_USER_ENABLED=false",
         "trading_methods=false",
         "REAL_TRADING_ENABLED=false",

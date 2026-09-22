@@ -52,6 +52,15 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             completed.stdout,
         )
 
+    def test_document_guard_does_not_require_transient_checkpoint_state(self) -> None:
+        source = GUARD.read_text(encoding="utf-8")
+        document_guard = source.split("def _validate_documents()", 1)[1].split(
+            "def main()", 1
+        )[0]
+        self.assertNotIn('"RED_REPAIR_ONLY"', document_guard)
+        self.assertIn('"TW-A-PROVIDER-CONSUMER-INVENTORY"', document_guard)
+        self.assertIn('"PR #583"', document_guard)
+
     def test_active_service_set_is_exact(self) -> None:
         payload = _contract()
         self.assertEqual(

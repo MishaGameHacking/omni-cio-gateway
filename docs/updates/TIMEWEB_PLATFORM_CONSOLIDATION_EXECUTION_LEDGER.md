@@ -216,7 +216,8 @@ Only `CERTIFIED_GREEN` permits TW-B.
 - Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
-- State: `INTEGRATION_READY / DRAFT_VERIFICATION_PENDING`; no TW-B PR had been opened at the time of this source handoff
-- Proven defect classes closed branch-locally: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
-- Remaining TW-B work: publish one DRAFT PR from this reviewed branch, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
+- State: `RED_REPAIR_ONLY / REPLACEMENT_HEAD_VERIFICATION_PENDING`; DRAFT PR #584 is open and TW-C remains blocked
+- Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
+- Current RED repair classes: mutable-ledger/current-state coupling in the Timeweb authority guard; pinned Ruff formatting drift across the changed Python contour; external T-Bank package-index TLS trust failure on the self-hosted Windows runner; WP17 READ-vault runner ACL isolation failure; duplicated hosted/provider primitives identified by external static analysis
+- Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
 - TW-C remains forbidden until TW-B is certified and accepted

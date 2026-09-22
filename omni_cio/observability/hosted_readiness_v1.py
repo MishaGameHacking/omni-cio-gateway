@@ -11,12 +11,7 @@ from uuid import UUID
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONTRACT_PATH = (
-    ROOT
-    / "infrastructure"
-    / "hosted"
-    / "hosted-readiness-contract.json"
-)
+CONTRACT_PATH = ROOT / "infrastructure" / "hosted" / "hosted-readiness-contract.json"
 
 _EXPECTED_CONTRACT_FIELDS = (
     "schema_version",
@@ -165,9 +160,7 @@ def _parse_utc(value: object, code: str) -> datetime:
     if not isinstance(value, str):
         raise HostedReadinessContractError(code)
     try:
-        parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=UTC
-        )
+        parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     except ValueError as exc:
         raise HostedReadinessContractError(code) from exc
     return parsed
@@ -263,29 +256,25 @@ def validate_hosted_health_evidence(
         parsed_correlation_id.version != 4
         or str(parsed_correlation_id) != correlation_id
     ):
-        raise HostedReadinessContractError(
-            "HOSTED_HEALTH_CORRELATION_ID_INVALID"
-        )
+        raise HostedReadinessContractError("HOSTED_HEALTH_CORRELATION_ID_INVALID")
 
-    if not isinstance(expected_release_sha, str) or _RELEASE_SHA_RE.fullmatch(
-        expected_release_sha
-    ) is None:
-        raise HostedReadinessContractError(
-            "HOSTED_HEALTH_EXPECTED_RELEASE_SHA_INVALID"
-        )
+    if (
+        not isinstance(expected_release_sha, str)
+        or _RELEASE_SHA_RE.fullmatch(expected_release_sha) is None
+    ):
+        raise HostedReadinessContractError("HOSTED_HEALTH_EXPECTED_RELEASE_SHA_INVALID")
     release_sha = evidence.get("release_sha")
-    if not isinstance(release_sha, str) or _RELEASE_SHA_RE.fullmatch(
-        release_sha
-    ) is None:
+    if (
+        not isinstance(release_sha, str)
+        or _RELEASE_SHA_RE.fullmatch(release_sha) is None
+    ):
         raise HostedReadinessContractError("HOSTED_HEALTH_RELEASE_SHA_INVALID")
     if not hmac.compare_digest(release_sha, expected_release_sha):
         raise HostedReadinessContractError("HOSTED_HEALTH_RELEASE_SHA_MISMATCH")
 
     public_ingress_enabled = evidence.get("public_ingress_enabled")
     if type(public_ingress_enabled) is not bool:
-        raise HostedReadinessContractError(
-            "HOSTED_HEALTH_PUBLIC_INGRESS_STATE_INVALID"
-        )
+        raise HostedReadinessContractError("HOSTED_HEALTH_PUBLIC_INGRESS_STATE_INVALID")
     if public_ingress_enabled:
         raise HostedReadinessContractError("HOSTED_HEALTH_PUBLIC_INGRESS_FORBIDDEN")
 
@@ -313,9 +302,7 @@ def validate_hosted_health_evidence(
         "tenant_boundary_match",
     ):
         if type(evidence[field]) is not bool:
-            raise HostedReadinessContractError(
-                f"HOSTED_HEALTH_{field.upper()}_INVALID"
-            )
+            raise HostedReadinessContractError(f"HOSTED_HEALTH_{field.upper()}_INVALID")
 
     reason_pattern = re.compile(str(observability["reason_code_pattern"]))
     dependencies = _as_sequence(
@@ -342,9 +329,10 @@ def validate_hosted_health_evidence(
             raise HostedReadinessContractError(
                 "HOSTED_HEALTH_CORE_DOMAIN_NOT_APPLICABLE"
             )
-        if not isinstance(reason_code, str) or reason_pattern.fullmatch(
-            reason_code
-        ) is None:
+        if (
+            not isinstance(reason_code, str)
+            or reason_pattern.fullmatch(reason_code) is None
+        ):
             raise HostedReadinessContractError("HOSTED_HEALTH_REASON_CODE_INVALID")
         normalized[domain] = state
 

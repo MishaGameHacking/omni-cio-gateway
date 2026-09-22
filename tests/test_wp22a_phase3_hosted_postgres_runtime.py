@@ -83,9 +83,7 @@ def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
     }
     assert set(privileges).isdisjoint(forbidden)
     assert payload["database_privileges"] == ["CONNECT"]
-    assert payload["function_privileges"] == {
-        "current_tenant_scope()": ["EXECUTE"]
-    }
+    assert payload["function_privileges"] == {"current_tenant_scope()": ["EXECUTE"]}
 
 
 def test_hosted_postgres_bootstrap_forces_tenant_broker_rls() -> None:
@@ -182,8 +180,7 @@ def test_hosted_postgres_validator_rejects_provider_or_broad_role_mutation() -> 
             "HOSTED_POSTGRES_SQL_PROVIDER_USER_MANAGEMENT_FORBIDDEN",
         ),
         (
-            _bootstrap()
-            + "\nGRANT pg_read_all_data TO omni_cio_hosted_api;\n",
+            _bootstrap() + "\nGRANT pg_read_all_data TO omni_cio_hosted_api;\n",
             "HOSTED_POSTGRES_SQL_BROAD_ROLE_GRANT",
         ),
         (

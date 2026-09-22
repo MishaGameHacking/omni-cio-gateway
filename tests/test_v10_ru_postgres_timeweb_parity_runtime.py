@@ -44,8 +44,7 @@ def test_proof_rejects_neon_target() -> None:
 def test_proof_rejects_tls_without_hostname_verification() -> None:
     env = {
         proof.DSN_ENV: (
-            "host=db.test dbname=default_db user=bootstrap "
-            "sslmode=require"
+            "host=db.test dbname=default_db user=bootstrap sslmode=require"
         ),
         proof.ACK_ENV: proof.ACK_VALUE,
         proof.LOCATION_ENV: proof.LOCATION_VALUE,

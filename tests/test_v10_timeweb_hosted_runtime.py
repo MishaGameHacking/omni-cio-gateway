@@ -179,9 +179,7 @@ def test_non_synthetic_status_is_provider_neutral() -> None:
     )
 
     payload = _system_status(services, now="2026-09-22T12:00:00+00:00")
-    database = next(
-        item for item in payload["services"] if item["id"] == "database"
-    )
+    database = next(item for item in payload["services"] if item["id"] == "database")
     assert database["label"] == "PostgreSQL 18"
     assert "Neon" not in str(payload)
 

@@ -271,10 +271,7 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
     def _mutation_error(self, request: Request, *, api_path: bool) -> Response | None:
         if request.method in _SAFE_METHODS:
             return None
-        if (
-            request.method == "POST"
-            and request.url.path in self._server_mutation_paths
-        ):
+        if request.method == "POST" and request.url.path in self._server_mutation_paths:
             # Explicit server-to-server mutation paths own their separate authority
             # contract and bypass browser Origin/Fetch-Metadata/CSRF only after global
             # admission controls.
