@@ -44,7 +44,6 @@ def _disabled_auth() -> TelegramAuthRouteServicesV1:
         runtimes=(),
         authentication=None,
         cookies=BrowserCookiePolicyV1(csrf_binding_key=bytes([19]) * 32),
-        descriptor_providers=(IdentityProviderV1.TELEGRAM,),
     )
 
 
@@ -196,7 +195,9 @@ def test_current_identity_and_cookie_defaults_are_telegram_only() -> None:
         authentication=None,
         cookies=cookies,
     )
-    assert [item.provider for item in services.descriptors()] == [IdentityProviderV1.TELEGRAM]
+    assert [item.provider for item in services.descriptors()] == [
+        IdentityProviderV1.TELEGRAM
+    ]
 
 
 def test_telegram_builder_exposes_only_telegram_when_fail_closed() -> None:
@@ -226,6 +227,7 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
         root / "apps" / "api" / "hosted_database_runtime.py",
         root / "apps" / "api" / "telegram_auth.py",
         root / "omni_cio" / "web" / "telegram_auth_routes_v1.py",
+        root / "omni_cio" / "web" / "telegram_auth_services_v1.py",
     )
     forbidden = (
         "cf_d_database_bootstrap",
@@ -235,6 +237,7 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
         "CLOUDFLARE_",
         "NEON_",
         "hosted_preview",
+        "provider_auth_routes_v1",
     )
     combined = "\n".join(path.read_text(encoding="utf-8") for path in current_sources)
     for marker in forbidden:
