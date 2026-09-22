@@ -1,13 +1,8 @@
 name: V10 Cloudflare Production Release
 
+# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority.
+# Manual dispatch is retained only as historical evidence; every job is hard-disabled below.
 on:
-  workflow_run:
-    workflows:
-      - Regression Shield
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       expected_sha:
@@ -25,11 +20,7 @@ concurrency:
 jobs:
   inspect_database_state:
     name: CF-D exact-main database state and staging anchor
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main')
+    if: ${{ false }}
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 40
     permissions:
@@ -209,10 +200,7 @@ jobs:
   bootstrap_staging_database:
     name: CF-D hosted staging database recovery
     needs: inspect_database_state
-    if: >-
-      !cancelled() &&
-      needs.inspect_database_state.result == 'success' &&
-      needs.inspect_database_state.outputs.staging_bootstrap_required == 'true'
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -293,11 +281,7 @@ jobs:
     needs:
       - inspect_database_state
       - bootstrap_staging_database
-    if: >-
-      !cancelled() &&
-      needs.inspect_database_state.result == 'success' &&
-      (needs.inspect_database_state.outputs.staging_bootstrap_required == 'false' ||
-       needs.bootstrap_staging_database.result == 'success')
+    if: ${{ false }}
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 60
     permissions:
@@ -491,10 +475,7 @@ jobs:
   bootstrap_production_database:
     name: CF-D hosted production database recovery
     needs: rehearse
-    if: >-
-      !cancelled() &&
-      needs.rehearse.result == 'success' &&
-      needs.rehearse.outputs.production_bootstrap_required == 'true'
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -575,11 +556,7 @@ jobs:
     needs:
       - rehearse
       - bootstrap_production_database
-    if: >-
-      !cancelled() &&
-      needs.rehearse.result == 'success' &&
-      (needs.rehearse.outputs.production_bootstrap_required == 'false' ||
-       needs.bootstrap_production_database.result == 'success')
+    if: ${{ false }}
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 60
     permissions:
@@ -814,12 +791,7 @@ jobs:
       - rehearse
       - bootstrap_production_database
       - promote
-    if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main'))
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

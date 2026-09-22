@@ -9,13 +9,16 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECK = ROOT / "scripts/check_v10_green_checkpoint_ci_repair.py"
-CONTRACT = ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
+CONTRACT = (
+    ROOT / "docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json"
+)
 AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_GREEN_CHECKPOINT_AND_TARGETED_CI_REPAIR_AMENDMENT.md"
 )
 RUNBOOK = ROOT / "docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md"
 TARGETED_WORKFLOW = ROOT / ".github/workflows/v10-targeted-repair.yml"
+FAST_PR_WORKFLOW = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
 
 LIVE_GUIDANCE = (
     ROOT / "AGENTS.md",
@@ -53,14 +56,17 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             in completed.stdout
         )
         assert (
-            "Post-merge release gate: exact-main Sonar success enforcement enabled"
+            "GitHub-native exact-head regression/security enforcement enabled"
             in completed.stdout
         )
+        assert "External Sonar is historical evidence only" in completed.stdout
         assert (
             "valid merge-SHA convergence uses the outer bounded release wait"
             in completed.stdout
         )
-        assert "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
+        assert (
+            "Next functional checkpoint requires CERTIFIED_GREEN." in completed.stdout
+        )
 
     def test_red_checkpoint_blocks_next_functional_checkpoint(self) -> None:
         payload = self._contract()
@@ -69,7 +75,9 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert core["next_functional_checkpoint_requires_certified_green"] is True
         assert core["known_red_may_be_carried_forward"] is False
         assert core["repair_starts_immediately_on_material_red"] is True
-        assert core["must_wait_for_all_independent_jobs_before_starting_repair"] is False
+        assert (
+            core["must_wait_for_all_independent_jobs_before_starting_repair"] is False
+        )
 
     def test_same_sha_rerun_is_only_for_unchanged_source(self) -> None:
         policy = self._contract()["same_sha_rerun"]
@@ -131,13 +139,17 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             ]
             is True
         )
-        assert sonar["post_merge_cancelled_fallback_malformed_merge_sha_terminal"] is True
+        assert (
+            sonar["post_merge_cancelled_fallback_malformed_merge_sha_terminal"] is True
+        )
         assert sonar["post_merge_cancelled_fallback_tree_identity_required"] is True
         assert (
-            sonar["post_merge_cancelled_fallback_pr_head_sonar_success_required"] is True
+            sonar["post_merge_cancelled_fallback_pr_head_sonar_success_required"]
+            is True
         )
         assert (
-            sonar["post_merge_cancelled_fallback_pr_head_zero_findings_required"] is True
+            sonar["post_merge_cancelled_fallback_pr_head_zero_findings_required"]
+            is True
         )
         assert (
             sonar["post_merge_cancelled_fallback_current_main_recheck_required"] is True
@@ -149,7 +161,9 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert (
             sonar["post_merge_missing_fallback_requires_no_matching_main_check"] is True
         )
-        assert sonar["post_merge_missing_fallback_requires_no_matching_main_suite"] is True
+        assert (
+            sonar["post_merge_missing_fallback_requires_no_matching_main_suite"] is True
+        )
         assert sonar["post_merge_missing_fallback_unique_merged_pr_required"] is True
         assert sonar["post_merge_missing_fallback_base_must_be_main"] is True
         assert (
@@ -162,8 +176,12 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert (
             sonar["post_merge_missing_fallback_pr_head_zero_findings_required"] is True
         )
-        assert sonar["post_merge_missing_fallback_current_main_recheck_required"] is True
-        assert sonar["post_merge_stalled_suite_equivalent_tree_fallback_allowed"] is True
+        assert (
+            sonar["post_merge_missing_fallback_current_main_recheck_required"] is True
+        )
+        assert (
+            sonar["post_merge_stalled_suite_equivalent_tree_fallback_allowed"] is True
+        )
         assert (
             sonar["post_merge_stalled_suite_fallback_requires_bounded_wait_exhausted"]
             is True
@@ -185,6 +203,23 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         assert sonar["post_merge_in_progress_fallback_forbidden"] is True
         assert sonar["post_merge_in_progress_check_run_fallback_forbidden"] is True
         assert sonar["post_merge_failure_or_findings_fallback_forbidden"] is True
+
+    def test_fast_pr_compile_and_format_gates_cover_repository_python(self) -> None:
+        workflow = FAST_PR_WORKFLOW.read_text(encoding="utf-8")
+        for marker in (
+            "Compile complete repository Python surface",
+            "python -m compileall -q",
+            "broker_report_reconciliation",
+            "omni_cio apps tests scripts",
+            "Run early repository Python lint and changed-file format gates",
+            "python -m ruff check .",
+            "git diff --name-only --diff-filter=ACMRT -z",
+            "-- '*.py'",
+            'python -m ruff format --check "${changed_python[@]}"',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, workflow)
+        self.assertNotIn("python -m ruff format --check .", workflow)
 
     def test_targeted_workflow_pins_exact_requested_sha_and_toolchain(self) -> None:
         workflow = TARGETED_WORKFLOW.read_text(encoding="utf-8")
@@ -213,10 +248,12 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
             ),
             ROOT / "gpt/PROJECT_INSTRUCTIONS.md": "\nHEAD FREEZE:\n",
             ROOT / "gpt/NEW_CHAT_PROMPT.md": "\nHEAD FREEZE:\n",
-            ROOT / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": (
+            ROOT
+            / "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md": (
                 "## 7. Verification batches / HEAD FREEZE"
             ),
-            ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
+            ROOT
+            / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md": (
                 "## 7. Verification batches / HEAD FREEZE"
             ),
         }

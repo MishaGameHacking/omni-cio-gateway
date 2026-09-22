@@ -61,10 +61,10 @@ After Amendment 18 acceptance:
 - ChatGPT is an engineering assistant only and never runtime/data authority;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets;
 - no new feature work may add dependencies on retired providers;
-- external CI/review SaaS may be removed only after equivalent-or-stronger GitHub-executed verification is proven;
+- GitHub-native quality/security/review checks are the active authority; external CI/review SaaS is historical and must not be required by current/future V10 workflows;
 - provider-specific code belongs in thin infrastructure adapters, not business/account/tenant/security logic;
 - production DB authority moves to Timeweb PostgreSQL 18 only through the owning cutover/recovery gate;
-- during migration, last-known-good legacy production remains only until replacement acceptance.
+- Cloudflare/Neon external rollback is unavailable by OWNER-reported decommission; Timeweb recovery evidence must stand on its own.
 
 Target release flow:
 
@@ -77,18 +77,16 @@ A Timeweb deployment, GitHub merge or Telegram login never grants broker-write/R
 After Amendment 14 acceptance:
 
 - GitHub is engineering/source/review/provenance authority rank 1;
-- Cloudflare Workers Paid is platform rank 2 and selected new-V10 managed application/edge/build target after each owning gate;
+- Cloudflare Workers Paid was the historical Amendment-14 rank-2 application/edge/build target; Amendment 18 supersedes that selection for all current/future V10 provider work;
 - Cloud.ru Evolution is no longer selected for new V10 deployment;
 - Render is retired from active **new V10** deployment, zero-charge attestation, hosted-release-alignment and recovery authority;
 - accepted WP22A Render/Neon evidence remains historical evidence;
 - protected V9 Render `app:app` production/recovery remains protected;
 - Amendment 14 acceptance itself performs no provider/DNS/domain mutation, secret creation, public-user activation or production cutover.
 
-Amendment 15 changes only Cloudflare implementation delivery granularity: the four Amendment-14 stages are ordered internal milestones of one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` update. It does not weaken their provider/security/runtime/cutover boundaries.
+Historically, Amendment 15 changed only Cloudflare implementation delivery granularity: the four Amendment-14 stages became internal milestones of one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` update. That sequence is provenance only after Amendment 18.
 
-Final public V10 requires a **managed-cloud production runtime** independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. Cloudflare services may be adopted when an owning milestone proves the need: Workers/Static Assets, Workers Builds, Containers for proven full-Linux/native needs, Custom Domains/DNS/TLS, WAF/DDoS/rate controls, Turnstile, Access for private/admin/engineering surfaces, Hyperdrive only after PG18 proof, KV/R2/Durable Objects/Queues/Workflows for explicit roles, and Workers AI/Vectorize only inside authorized AI/Cortex scope.
-
-Do not create provider tokens/secrets, mutate DNS/domain, deploy a candidate or create paid-overage resources before the exact internal milestone authorizes that action. Governance acceptance alone is not provider mutation.
+Current/future public V10 requires Timeweb as the managed-cloud production runtime and PostgreSQL 18 authority, independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. Cloudflare services have no new-adoption authority under Amendment 18. Do not create retired-provider tokens/secrets, mutate retired-provider DNS/domain state, deploy retired-provider candidates or create retired-provider paid resources.
 
 ## 5. Continuous exact-main public release
 
@@ -98,11 +96,11 @@ Every accepted protected `main` SHA is a product revision candidate, not automat
 
 Required flow:
 
-`PR exact-head GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
+`PR exact-head GREEN/review -> squash merge -> exact-main post-merge GREEN -> exact Timeweb candidate -> candidate acceptance -> production promotion`.
 
 Re-check current `main` immediately before promotion. Superseded candidates are not promotable. If latest `main` is blocked, production stays last-known-good and exposes `UPDATE_PENDING`, `DEPLOYMENT_BLOCKED` or `OUT_OF_SYNC`.
 
-Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA, Cloudflare Version ID, UTC release time and status; never create a source version-bump commit only to change the display version. Worker rollback does not rewrite GitHub authority and does not automatically roll back KV/R2/D1/Durable Object state.
+Current public release identity must bind the exact accepted source SHA to the accepted Timeweb candidate/deployment identity and release status defined by the owning Timeweb gate; never create a source version-bump commit only to change the display version. Application rollback does not replace PostgreSQL backup/restore or schema-compatibility evidence.
 
 ## 6. Execution-unit discipline
 
@@ -110,7 +108,19 @@ Governed by the **Integrated System Update Execution Law**. Every material chang
 
 Mandatory split triggers remain: DB/migration ordering, security/authority transition, dependency/toolchain boundary, genuinely non-delegable OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit. A real split trigger discovered during integrated implementation still forces a stop/split; one large branch is never a bypass.
 
-Amendment 15 authorizes one integrated Cloudflare update:
+Amendment 18 authorizes the current integrated update:
+
+`TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
+
+Default source branch:
+
+`system/timeweb-platform-consolidation`
+
+Ordered internal milestones are TW-A inventory/authority, TW-B source/runtime consolidation, TW-C Timeweb App candidate, TW-D Timeweb PostgreSQL cutover, TW-E public ingress/DNS, TW-F Telegram public activation, and TW-G legacy-provider decommission.
+
+The Amendment 15 block below is historical Cloudflare execution provenance only.
+
+Historical Amendment 15 authorized one integrated Cloudflare update:
 
 `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`
 
@@ -137,7 +147,7 @@ When Amendment 16 is accepted on protected `main`, it supersedes the old wait-al
 
 Canonical flow:
 
-`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> GitHub-native CI/security/review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
 If any applicable check or material review finding is RED:
 
@@ -153,8 +163,8 @@ Rules:
 - `git commit --amend` creates a replacement commit/SHA; it does not mutate an immutable existing commit;
 - never force-rewrite protected `main` or shared history merely to preserve a one-commit appearance;
 - repeated identical “transient” RED is an infrastructure/workflow defect, not a reason for blind reruns;
-- Sonar Quality Gate must pass when applicable; default new-code requirement is 0 new issues, 0 unresolved new Security Hotspots and 0 unresolved material Reliability/Security/Maintainability findings;
-- Gitar/SAST/check annotations/review threads are active engineering evidence, not decoration;
+- GitHub-native lint/type/test/coverage/dependency/SAST/secret checks must pass when applicable; unresolved material correctness/security/maintainability findings are not GREEN;
+- check annotations/review threads and repository-native security findings are active engineering evidence, not decoration;
 - unexpected reusable material RED still requires the Failure Learning Ledger;
 - `MAIN_RED_STOP`: an applicable post-merge RED on current `main` blocks ordinary feature progress until an accepted focused repair restores GREEN.
 
@@ -170,7 +180,7 @@ Never develop directly in `main`.
 
 Normal checkpoint lifecycle:
 
-`fresh accepted main -> branch -> authorized logical checkpoint -> focused preflight -> publish exact checkpoint -> CI/Sonar/review -> RED_REPAIR_ONLY if needed -> targeted repair proof -> exact replacement full certification -> CERTIFIED_GREEN -> next checkpoint`.
+`fresh accepted main -> branch -> authorized logical checkpoint -> focused preflight -> publish exact checkpoint -> GitHub-native CI/security/review -> RED_REPAIR_ONLY if needed -> targeted repair proof -> exact replacement full certification -> CERTIFIED_GREEN -> next checkpoint`.
 
 Final landing lifecycle:
 
@@ -184,7 +194,7 @@ Project law: every **applicable** exact-head V10 check must actually execute and
 
 ### Changed-files + independent code-review merge gate
 
-Before merge inspect **all** Files changed, inline review threads, annotations and applicable Sonar/Gitar/SAST/security/code-review outputs; classify material findings; unresolved blocking review threads = 0; perform final manual engineering diff review. Bot approval is supporting evidence only. After a correction/replacement head repeat Files changed + review on the new exact head.
+Before merge inspect **all** Files changed, inline review threads, annotations and applicable GitHub-native lint/type/test/coverage/dependency/SAST/secret/security/code-review outputs; classify material findings; unresolved blocking review threads = 0; perform final manual engineering diff review. Bot approval is supporting evidence only. After a correction/replacement head repeat Files changed + review on the new exact head.
 
 ## 9. Testing baseline
 
@@ -208,7 +218,7 @@ python -m pytest -q --cov --cov-branch --cov-fail-under=60
 
 Also run owning focused checks, dependency/security scans, frontend typecheck/lint/test/build/audit and browser/recovery checks when applicable.
 
-GitHub/Lenovo routing remains authoritative until CF-A proves an equivalent portable Cloudflare verifier lane. Windows/PowerShell/ACL/PostgreSQL-18-native semantics stay on trusted Lenovo until equivalent semantics are actually accepted. Quota/provider outage is never `success`.
+GitHub/self-hosted Windows routing remains authoritative for checks that require its semantics. Any future Timeweb-hosted verifier replacement must prove equivalent semantics before routing changes. Quota/provider outage is never `success`.
 
 ## 10. Dependencies / runtime compatibility
 
@@ -252,7 +262,7 @@ Current protected locks: broker write OFF, `trading_methods=false`, `REAL_TRADIN
 
 READ/optional TRADE credentials are tenant-scoped and role-separated. `TRADE credential connected/verified != broker submit authorized`.
 
-Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow, immutable plan, authenticated USER approval, drift/preflight, ambiguous-submit reconciliation, kill switches and actual broker permission. GitHub merge, Cloudflare deploy/release, AI output, START command or user registration is never broker-submit authorization.
+Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow, immutable plan, authenticated USER approval, drift/preflight, ambiguous-submit reconciliation, kill switches and actual broker permission. GitHub merge, provider deploy/release, AI output, START command or user registration is never broker-submit authorization.
 
 ## 14. V9 / V10 boundary
 

@@ -8,16 +8,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "knowledge" / "17_V10_CURRENT_PROGRAM_STATUS.md"
 CONTRACT = (
-    ROOT
-    / "docs"
-    / "architecture"
-    / "V10_WP22A_PHASE4_FREE_PREVIEW_CONTRACT.json"
+    ROOT / "docs" / "architecture" / "V10_WP22A_PHASE4_FREE_PREVIEW_CONTRACT.json"
 )
 AUTHORIZATION = (
-    ROOT
-    / "docs"
-    / "architecture"
-    / "V10_WP22A_PHASE4_FREE_PREVIEW_AUTHORIZATION.md"
+    ROOT / "docs" / "architecture" / "V10_WP22A_PHASE4_FREE_PREVIEW_AUTHORIZATION.md"
 )
 
 
@@ -40,11 +34,11 @@ def test_wp22a_and_cloudflare_history_remain_accepted_before_timeweb_update() ->
     assert "Amendment 13 — progressive capability activation" in text
     assert "current runtime state, not a V10-wide release lock" in text
     assert "current user-facing activation transitions — **BLOCKED_EXTERNAL" in text
+    assert "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in text
     assert (
-        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
-        in text
+        "Cloudflare Public Product System Update — "
+        "**HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**" in text
     )
-    assert "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE" in text
     assert "CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION" in text
     assert "CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY" in text
     assert "CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT" in text
@@ -62,13 +56,14 @@ def test_exact_phase3_acceptance_evidence_is_pinned() -> None:
 
     chunks = authority["accepted_main_sha_chunks"]
     assert isinstance(chunks, list)
-    assert "".join(chunks) == (
-        "fbd50b2a"
-        "a5029170"
-        "d9aabf17"
-        "8103e2e7"
-        "61648422"
-    )
+    assert chunks == [
+        "fbd50b2a",
+        "a5029170",
+        "d9aabf17",
+        "8103e2e7",
+        "61648422",
+    ]
+    assert len("".join(chunks)) == 40
     assert authority["phase3_accepted"] is True
     assert authority["phase4_authorized"] is True
 

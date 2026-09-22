@@ -77,6 +77,13 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
     def test_repository_candidate_contract_is_valid(self) -> None:
         guard.validate()
 
+    def test_archived_cloudflare_workflows_are_hard_disabled(self) -> None:
+        for path in (guard.CANDIDATE_WORKFLOW, guard.READINESS_WORKFLOW):
+            source = path.read_text(encoding="utf-8")
+            self.assertIn(guard._ARCHIVE_MARKER, source)
+            self.assertIn("if: ${{ false }}", source)
+            self.assertNotIn("on:\n  push:", source)
+
     def test_candidate_guard_rejects_job_wide_provider_secrets(self) -> None:
         good = (
             "jobs:\n  candidate:\n    env:\n      EXPECTED_HEAD: value\n    steps:\n"
@@ -112,7 +119,9 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
                 protected_custody + "\nvars.NEON_PROJECT_ID"
             )
 
-    def test_candidate_guard_requires_workers_builds_probe_before_mutation(self) -> None:
+    def test_candidate_guard_requires_workers_builds_probe_before_mutation(
+        self,
+    ) -> None:
         good = "\n".join(
             (
                 guard._WORKERS_BUILDS_AUTHORITY_PROBE,
@@ -189,7 +198,9 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
 
     def test_project_probe_rejects_missing_authority_fields(self) -> None:
         missing_org_payload = {
-            "project": {key: value for key, value in _PROJECT.items() if key != "org_id"}
+            "project": {
+                key: value for key, value in _PROJECT.items() if key != "org_id"
+            }
         }
         with self.assertRaisesRegex(
             RuntimeError,

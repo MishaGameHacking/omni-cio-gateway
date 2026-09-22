@@ -4,13 +4,13 @@ Updated: 2026-09-21
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 TIMEWEB-ONLY PLATFORM CONSOLIDATION OWNER-APPROVED PENDING GREEN MERGE / CURRENT NEXT PACKAGE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A MAIN_RED_STOP REPAIR IN PROGRESS / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
 Blocks A (5%), B (9%), C (12%), D (14%) and E (14%) have passed their owning Exit Gates. WP16–WP22 and the complete **WP22A — External Web Access / Product Authentication Security Gate** are accepted COMPLETE.
 
-Amendment 14 remains accepted authority: GitHub is engineering authority rank 1 and Cloudflare Workers Paid is platform rank 2 for new V10 application/edge/build work. The complete `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` execution chain is now accepted on protected `main`; its final focused CF-D hardening landed through PR #547.
+Amendment 14 remains accepted **historical evidence**, but Amendment 18 supersedes it for current/future provider selection. The complete `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` chain remains an accepted historical baseline; its final focused CF-D hardening landed through PR #547.
 
 Amendment 15 records the 2026-08-29 OWNER delivery correction: the four Amendment-14 Cloudflare implementation stages remain ordered and fail-closed but are executed as internal milestones of one `INTEGRATED_SYSTEM_UPDATE`, `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`, on default branch `system/cloudflare-public-product`, with one final PR by default. Separate protected-main acceptance between CF-A/CF-B/CF-C/CF-D is no longer required. A real Amendment-12 split trigger discovered during implementation still forces a stop/split.
 
@@ -18,7 +18,7 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 
 `PUBLIC_MULTI_USER_ENABLED=false` remains the **current runtime state, not a V10-wide release lock**. Under Amendment 13, completed capabilities may become live as soon as their own real authentication/runtime/privacy/security/capacity/monitoring gates pass; unrelated unfinished V10 blocks are not a reason to hold a ready capability forever.
 
-Amendment 18 records the OWNER decision to retire Cloudflare/Neon/Render/Cloud.ru/VK from active future V10 authority and consolidate production on Timeweb with Telegram-only human login. Once this governance change is accepted, `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
+Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudflare/Neon/Render/Cloud.ru/VK from current/future V10 provider authority. `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
 
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
@@ -159,7 +159,7 @@ Current user-facing activation transitions — **BLOCKED_EXTERNAL where listed a
 
 Public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**. READ/live portfolio/positions/operations are independent from unfinished Real execution, but cannot become public `LIVE_OPERABLE` until broker terms/permission and tenant secret-custody/security/privacy/live acceptance are real and accepted.
 
-## Amendment 14 — Cloudflare Platform & Continuous Release Authority
+## Historical Amendment 14 — Cloudflare Platform & Continuous Release Authority — superseded by Amendment 18
 
 Canonical accepted-on-main sources:
 
@@ -168,7 +168,7 @@ Canonical accepted-on-main sources:
 - `scripts/check_v10_cloudflare_platform_authority.py`;
 - `.github/workflows/v10-engineering-governance.yml`.
 
-Amendment 14 establishes:
+At Amendment 14 acceptance, the historical provider model established:
 
 - GitHub = engineering/source/review/provenance authority rank 1;
 - Cloudflare Workers Paid = managed application/edge/build platform rank 2 for new V10 work;
@@ -182,13 +182,13 @@ Amendment 14 establishes:
 - Workers Paid included build capacity may be used only through the owning integration milestone;
 - automatic paid overage or higher-plan expansion is not authorized without a fresh OWNER cost decision.
 
-Current official Workers Builds reference values recorded by the contract on 2026-08-29 are mutable external facts and must be revalidated before material configuration: 6000 included build minutes/month, 6 concurrent builds/account, 20-minute build timeout, 4 vCPU/build, 8 GB memory/build and 20 GB disk/build.
+Historical Workers Builds reference values recorded by the Amendment 14 contract on 2026-08-29 remain provenance only; they do not define current Timeweb capacity or cost authority.
 
-### Continuous exact-main release law
+### Historical Cloudflare continuous exact-main release law
 
-Each accepted protected `main` SHA becomes a new public product revision **candidate**, not an automatic production deployment.
+The formula below is preserved as historical Amendment-14/15 provenance only. It is **not** the current deployment path after Amendment 18; current release authority is GitHub -> exact Timeweb candidate -> accepted Timeweb production promotion.
 
-Required flow:
+Historical flow:
 
 `exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`
 
@@ -198,7 +198,7 @@ Public release identity is event-derived CalVer `YYYY.MM.DD.N` plus exact `sourc
 
 Cloudflare Worker rollback does not roll back external KV/R2/D1/Durable Object state; schema/storage compatibility and rollback remain separate required evidence.
 
-## Amendment 15 — Cloudflare Public Product Integrated Delivery
+## Historical Amendment 15 — Cloudflare Public Product Integrated Delivery — superseded by Amendment 18
 
 Canonical proposed/accepted-on-main sources:
 
@@ -224,19 +224,19 @@ During execution, Amendment 15 established:
 - protected historical WP22A evidence and V9 Render `app:app` remain preserved;
 - WEB VISUAL remains separately OWNER-locked.
 
-## Current functional development authority
+## Historical post-CF-D functional authority — superseded by Amendment 18
 
 The accepted `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update` is **COMPLETE**. Its ordered CF-A -> CF-B -> CF-C -> CF-D implementation/recovery/cutover chain has passed accepted-main production release evidence.
 
-Current authorized functional implementation package: **NONE**.
+At CF-D completion, no additional functional implementation package was authorized inside the historical Cloudflare System Update.
 
 Focused maintenance, defect repair, security/recovery hardening and documentation/governance corrections remain allowed when they are actually required, but they do not authorize a new product System Update.
 
-The current next prepared product package is `WEB-VISUAL-INTEGRATED`. It remains **OWNER START REQUIRED** and is not authorized for source implementation until the exact start command below is issued.
+At that historical checkpoint, `WEB-VISUAL-INTEGRATED` was the next prepared product package and remained **OWNER START REQUIRED**. Amendment 18 later paused it behind `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`.
 
 ### Prepared product package — WEB-VISUAL-INTEGRATED / OWNER START REQUIRED
 
-`WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update` remains the already prepared product update from Amendments 12/13. It is not erased by the Cloudflare transition, but it is not executed inside the current Cloudflare integrated branch.
+`WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update` remains a prepared product update from Amendments 12/13, but Amendment 18 pauses it until the Timeweb consolidation/public-activation path reaches its owning gate.
 
 Prepared member scope remains:
 
@@ -254,19 +254,19 @@ Prepared member scope remains:
 
 Until that separate product execution is authorized and current sequencing is revalidated, do not create the visual-refresh implementation branch or modify `apps/web` merely for visual redesign.
 
-## Amendment 17 — Russian PostgreSQL migration current stage
+## Amendment 17 — Russian PostgreSQL migration historical pre-Amendment-18 stage
 
 Amendment 17 / RU-PG-A is accepted on protected `main` through PR #560, squash merge `4c0422a5...`, Regression Shield #1625, V10 Engineering Governance #1666 and Cloudflare Production Release #86.
 
 Accepted implementation progress remains **54%**. This migration is a legal/security/provider compatibility prerequisite and does not add product-progress percentage by itself.
 
-Current authorized focused stage: **RU-PG-B — provider bootstrap / synthetic PostgreSQL 18 parity**.
+At Amendment 17 / RU-PG-A acceptance, the authorized focused stage was **RU-PG-B — provider bootstrap / synthetic PostgreSQL 18 parity**. Amendment 18 later absorbed the active provider/database transition into the ordered TW-A→TW-G consolidation path.
 
 RU-PG-B rules:
 
 - first candidate: Timeweb Cloud Managed PostgreSQL 18 in Moscow / MSK-1 / Terraform location `ru-3`;
 - synthetic data only;
-- current Neon production authority remains accepted until an explicit later cutover;
+- at Amendment 17 acceptance, Neon was still production authority; Amendment 18 later superseded that current-state assumption after OWNER-reported external Neon decommission;
 - no production `OMNI_V10_POSTGRES_DSN` mutation;
 - no real Telegram/user/session/portfolio/broker data;
 - separate bootstrap and least-privilege runtime identities are mandatory;
@@ -278,62 +278,73 @@ RU-PG-B rules:
 - RU-PG-C remains locked until RU-PG-B is `CERTIFIED_GREEN`.
 
 
-## Amendment 18 — Russia-only public registration / reachable ingress
+## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
-The OWNER-approved Russia-only public-launch direction becomes authority only when the
-synchronized Amendment 18 checkpoint is accepted on protected `main`. It does not add
-product-progress percentage and does not activate users by itself.
+Amendment 18 is accepted on protected `main` through PR #581, squash merge
+`e8e583f366bb314ef6d37e8057b90cde9a42d4f4`. Accepted implementation progress remains
+**54%**; platform consolidation does not add product-progress percentage by itself.
 
-Current exact infrastructure evidence immediately preceding this checkpoint:
+Current exact post-merge evidence on that SHA:
 
-- protected main `33a47a728b024e80590761e45d643e2ef1c5b538` is the squash merge of PR #579;
-- Regression Shield #1644 and V10 Engineering Governance #1793 completed `success`;
-- Cloudflare Production Release #105 / run `35604840698` completed `success`;
-- automatic Timeweb Read-Only Proof #11 / run `35606185512` completed `success`;
-- provider marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY` for PostgreSQL 18,
-  location `ru-3`, 1 CPU / 2 GB RAM / 20 GB disk, existing target present;
-- IPv4 inventory remains one unbound unproven address and recovery remains fail-closed with
-  `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`.
+- Regression Shield #1645 / run `35637878697`: `completed / success`;
+- V10 Engineering Governance #1862 / run `35637878774`: `completed / success`;
+- WP16–WP22A owning audits observed on the exact SHA: `completed / success`;
+- legacy V10 Cloudflare Production Release #106 / run `35639134386`: `completed / failure`;
+- its first failing provider step reported missing retired Cloudflare credentials and
+  `CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED`, then exited 78 before provider mutation;
+- V10 RU-PG-B Timeweb Read-Only Proof #12 / run `35639207490`: `completed / skipped`
+  because its legacy upstream dependency was the failed Cloudflare release workflow.
 
-The credential-health blocker is therefore closed. The current RU-PG-B live prerequisite
-remains the already-designed existing-IPv4 custody transition, followed by firewall/TLS and
-synthetic PostgreSQL parity.
+This is a **MAIN_RED_STOP active-workflow-graph defect**, not a request to restore
+Cloudflare or Neon. The accepted service model is:
 
-Russia public-launch direction:
+`ChatGPT + GitHub + Timeweb Cloud + Telegram Login`
 
-- issue #580 is the umbrella launch dashboard;
-- final V10 production PostgreSQL target is Timeweb Cloud Managed PostgreSQL 18 in Russia;
-- Neon remains current production/rollback authority until RU-PG-D cutover acceptance and
-  is retired from active V10 production authority only through RU-PG-E;
-- GitHub remains source/review/provenance authority;
-- Cloudflare remains accepted build/release/staging/fallback authority;
-- Cloudflare-only public ingress is not sufficient evidence for the supported Russia-only
-  launch because current Cloudflare evidence records ISP-side reachability disruption;
-- Timeweb App Platform is the first Russia-facing ingress/runtime candidate, but no live
-  deployment, DNS cutover or purchase occurs merely from governance acceptance;
-- one canonical Web/account/session/tenant/database truth is mandatory; no second product;
-- production App Platform auto-deploy is forbidden; an exact accepted-main commit and
-  release provenance are required;
-- public registration remains fail-closed until database cutover, Russia-reachable ingress,
-  privacy/legal/regulatory, monitoring and real-user isolation gates pass.
+Current correction branch:
 
-WEB-VISUAL and WP23+ remain independently locked. This infrastructure/public-activation
-program does not start Telegram Bot, AI/Cortex, Guardian or broker-write work.
+`system/timeweb-platform-consolidation`
 
-## Current external activation baseline — BLOCKED_EXTERNAL where gates remain
+The branch must archive-in-place all retired Cloudflare live workflows so they cannot
+auto-trigger or mutate provider state, and must rewire Timeweb provider proof directly to
+successful GitHub-native Regression Shield evidence.
 
-Current facts after accepted CF-D infrastructure/release cutover:
+Current production/platform direction:
+
+- GitHub remains source/review/CI/exact-SHA provenance authority;
+- Timeweb Cloud is the only selected V10 application/database/domain infrastructure provider;
+- Timeweb Managed PostgreSQL 18 is the final relational target;
+- Telegram Login is the only human login provider;
+- Cloudflare and Neon external rollback are unavailable by OWNER-reported decommission;
+- historical provider files remain archive-in-place and do not define active authority;
+- no retired provider secret or live workflow may be required for the Timeweb path;
+- `omnicio.ru` is the OWNER-confirmed canonical V10 domain;
+- Timeweb App Platform candidate deployment remains blocked until TW-A/TW-B source/runtime
+  and GitHub-native CI correction are exact-head GREEN;
+- canonical DNS/TLS cutover remains a later split gate;
+- public registration remains fail-closed until runtime/database/DNS, Telegram,
+  privacy/legal/capacity/monitoring and tenant-isolation acceptance pass.
+
+WEB-VISUAL and WP23+ remain independently paused/locked. This consolidation does not
+authorize Telegram Bot product features, AI/Cortex, Guardian, broker-write or Real execution.
+
+## Current external activation baseline — BLOCKED_EXTERNAL
+
+Current facts:
 
 - `PUBLIC_MULTI_USER_ENABLED=false`;
-- the canonical Cloudflare Worker/Container/Custom Domain production release path is accepted on exact main `b8b2721...` through Production Release #78;
-- that infrastructure/release acceptance does not by itself activate Telegram/VK login, public multi-user tenant access, T-Invest public READ or any broker-write capability;
-- Render is historical new-V10 evidence only and must not receive new V10 mutation/attestation/alignment actions;
-- Telegram canonical origin/callback registration and production runtime-secret readiness are accepted; VK ID remains independently unactivated;
-- public-user privacy/personal-data/legal/capacity/monitoring/incident sign-off is pending;
-- included Workers Paid capacity is authorized baseline, but uncontrolled paid overage/higher-plan expansion is not;
+- historical Cloudflare CF-D release evidence remains immutable project provenance only;
+- Cloudflare/Neon no longer provide active V10 runtime, release, database or rollback authority;
+- Timeweb App Platform candidate has not yet been accepted or deployed from the current
+  consolidation source branch;
+- Timeweb PostgreSQL production cutover has not yet been accepted;
+- Telegram Login remains the only selected human identity provider, but public activation
+  remains blocked until the Timeweb runtime/domain/provider gates and privacy/legal/capacity/
+  monitoring/incident requirements pass;
+- VK ID remains retired from deployed product composition;
 - public T-Invest remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
 
-A capability may transition from `BLOCKED_EXTERNAL` to `LIVE_OPERABLE` only when its own exact provider/runtime/privacy/legal/security/capacity/monitoring/broker gates are actually satisfied. CF-D infrastructure acceptance is now complete; missing capability-specific evidence remains a truthful blocker and does not block unrelated safe capabilities.
+A capability may transition from `BLOCKED_EXTERNAL` to `LIVE_OPERABLE` only when its own
+exact provider/runtime/privacy/legal/security/capacity/monitoring/broker gates are accepted.
 
 ## Broker / Real execution boundary — unchanged
 
@@ -387,12 +398,12 @@ Future monetization remains `DEFERRED_OPTIONAL`.
 - Block E / WP22A overall — **COMPLETE**;
 - Block E — **COMPLETE (14%)**;
 - accepted V10 implementation — **54%**;
-- Cloudflare platform authority — **Amendment 14 ACCEPTED on `main`**;
-- Cloudflare integrated-delivery authority — **Amendment 15 ACCEPTED on `main`**;
-- Cloudflare Public Product System Update — **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE**;
-- current functional implementation package — **NONE**;
-- product implementation — **PAUSED pending a new authorized System Update**;
-- current next prepared product System Update — **WEB-VISUAL-INTEGRATED / OWNER START REQUIRED**;
+- Amendments 14/15 Cloudflare authority — **HISTORICAL ACCEPTED EVIDENCE / SUPERSEDED FOR CURRENT-FUTURE PLATFORM SELECTION BY AMENDMENT 18**;
+- Cloudflare Public Product System Update — **HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**;
+- Amendment 18 — **ACCEPTED ON `main` VIA PR #581**;
+- current authorized System Update — **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
+- current source branch — **`system/timeweb-platform-consolidation`**;
+- WEB-VISUAL — **PAUSED**;
 - Block F / WP23+ — **LOCKED**;
 - current user-facing activation transitions — **BLOCKED_EXTERNAL where listed above**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
@@ -433,7 +444,7 @@ Ordered internal milestones:
 4. `TW-D` — Timeweb PostgreSQL 18 production cutover;
 5. `TW-E` — Timeweb canonical DNS/TLS and Russia no-VPN acceptance;
 6. `TW-F` — Telegram public registration/multi-user activation after legal/privacy/capacity gates;
-7. `TW-G` — destructive legacy-provider decommission and current-tree cleanup.
+7. `TW-G` — external-provider decommission proof and active-authority cleanup while historical repository artifacts remain archive-in-place.
 
 WEB-VISUAL remains paused. WP23+ remains locked. No broker-write or Real-money authority changes.
 
@@ -478,18 +489,26 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 - no broker-write expansion without `REAL_MONEY_AUTHORIZED` owning evidence;
 - no transfer/withdrawal/margin/leverage/uncovered-short authority;
 - no cross-tenant authority expansion;
-- no real broker/Telegram/VK/provider secret values, encryption/recovery keys, private portfolio payloads or full account IDs in GitHub/CI/artifacts/chat;
-- no paid overage or plan expansion without exact current cost revalidation and explicit OWNER approval above the already purchased Workers Paid baseline;
+- no real broker/Telegram/Timeweb/provider secret values, encryption/recovery keys, private portfolio payloads or full account IDs in GitHub/CI/artifacts/chat;
+- no paid Timeweb capacity/add-on expansion beyond currently accepted resources without exact current cost revalidation and explicit OWNER approval;
 - RED is RED; skipped/queued/pending/neutral is not applicable-gate PASS;
 - exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
 - OWNER physical/secret/legal/provider evidence is never synthesized.
 
 ## Current next action
 
-1. keep the authorized RU-PG-B infrastructure stage moving on issue #559 until it is `CERTIFIED_GREEN`; the immediate live blocker is the existing-IPv4 custody transition proven by Timeweb Read-Only Proof #11;
-2. coordinate the complete Russia-only public-registration launch through issue #580 while preserving Amendment-12/17 split boundaries for provider mutation, recovery, DB cutover, ingress/DNS cutover, legal actions and user activation;
-3. do not delete or disable current Neon production authority before accepted RU-PG-D cutover and rollback evidence; retire active Neon authority only through RU-PG-E;
-4. do not deploy or purchase the Timeweb App Platform public candidate before its owning source/runtime/cost gate proves the exact accepted-main configuration;
-5. no new functional product package is authorized while `WEB-VISUAL-INTEGRATED` remains OWNER-locked; keep it prepared but unstarted until the exact OWNER START command;
-6. do not begin WP23+, Telegram Bot, AI/Cortex, Guardian, broker-write or Real execution;
-7. never treat Cloudflare/Timeweb deployment, a GitHub merge, AI output or an OWNER visual START command as broker-submit authorization.
+1. finish the `MAIN_RED_STOP` correction on `system/timeweb-platform-consolidation`: retired
+   Cloudflare provider workflows must be archive-in-place/inert and Timeweb proof must follow
+   successful GitHub-native Regression Shield directly;
+2. add regression protection so a retired provider workflow or secret cannot re-enter the
+   active GitHub -> Timeweb execution graph;
+3. keep correction work inside existing DRAFT PR #582; publish only coherent replacement
+   heads after focused source/contract/test preflight and full diff review;
+4. require the final replacement exact head to reach DRAFT/READY GREEN, zero blocking threads
+   and no secret/authority drift, then squash merge;
+5. on the exact new `main`, require Regression Shield + Engineering Governance + Timeweb
+   read-only provider proof to complete successfully with no Cloudflare/Neon live workflow;
+6. only after that post-merge correction is accepted, continue TW-B provider-neutral runtime
+   and Timeweb deployment source toward a technical App Platform candidate;
+7. keep `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF,
+   `trading_methods=false` and `REAL_TRADING_ENABLED=false`.

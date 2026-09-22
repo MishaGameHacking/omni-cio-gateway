@@ -14,7 +14,7 @@ update or delete any Timeweb resource.
 
 The existing PostgreSQL 18 migrations, tenant model, RLS/FORCE RLS, runtime-role
 convergence and recovery semantics remain the application/database authority.
-Timeweb replaces only the provider-specific control-plane boundary. Neon production authority is preserved until a later accepted cutover.
+Timeweb is the only selected provider-specific control-plane boundary. Neon external authority is unavailable after the OWNER-reported decommission; no Neon rollback or new provider mutation path is allowed.
 
 ## Machine-verified environment gate
 
@@ -89,9 +89,9 @@ Canonical workflow:
 Properties:
 
 - automatic read-only execution is triggered only after a successful
-  `V10 Cloudflare Production Release` `workflow_run` for branch `main`;
-- the upstream release itself must be the normal automatic `workflow_run` path,
-  not a manually dispatched release recovery;
+  `Regression Shield` `workflow_run` for branch `main`;
+- the upstream Regression Shield run itself must be the normal `push` path on
+  protected `main`, not a manually dispatched verification;
 - manual `workflow_dispatch` on `main` remains an explicit fallback;
 - the exact target SHA is taken from `github.event.workflow_run.head_sha` for the
   automatic path and is re-checked against the current `refs/heads/main` before
@@ -117,14 +117,15 @@ manually dispatched before the new Read-Only Proof had collected the required
 topology evidence. That run correctly failed closed on the still-existing raw
 replica guard, but it could not exercise the diagnostic introduced by #570.
 
-The read-only proof therefore follows the already accepted post-merge production
-release automatically. It inherits **no** provider mutation or paid-transition
-authority. GitHub documents that `workflow_run` can access secrets, so this
-workflow treats that event as privileged: it accepts only a successful trusted
-main release, bootstraps only the upstream exact SHA, verifies that SHA is still
-current `main`, retains read-only `GITHUB_TOKEN` permissions, re-verifies the
-protected environment immediately before access, and executes only the GET-only
-Timeweb adapter. It never consumes artifacts or code from an untrusted PR.
+The read-only proof therefore follows the GitHub-native post-merge Regression
+Shield directly. It inherits **no** provider mutation or paid-transition authority.
+GitHub documents that `workflow_run` can access secrets, so this workflow treats
+that event as privileged: it accepts only a successful trusted `push` run for
+protected `main`, bootstraps only the upstream exact SHA, verifies that SHA is
+still current `main`, retains read-only `GITHUB_TOKEN` permissions, re-verifies
+the protected environment immediately before access, and executes only the GET-only
+Timeweb adapter. It never depends on a retired Cloudflare/Neon release workflow and
+never consumes artifacts or code from an untrusted PR.
 
 Official GitHub references:
 
@@ -252,9 +253,9 @@ This checkpoint does not create or modify:
 - public IPv4;
 - VPC/network objects;
 - backup add-ons;
-- production or staging Cloudflare database secrets;
+- retired provider runtime secrets;
 - production `OMNI_V10_POSTGRES_DSN`;
-- Neon resources.
+- retired Cloudflare/Neon resources.
 
 Only after the machine environment gate returns
 `TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY` and the same protected-main run returns

@@ -154,13 +154,7 @@ jobs:
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('scripts\bootstrap_wp22a_terraform.ps1','scripts\bootstrap_wp22a_cloudflare_provider.ps1','scripts\validate_wp22a_terraform.ps1','infrastructure\windows\run_wp22a_clientless_remote_runtime.ps1','infrastructure\windows\provision_wp22a_clientless_remote_access.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 34 } }; Write-Host 'WP22A PowerShell parse contract passed.'"
           if errorlevel 1 exit /b 34
 
-      - name: Validate Cloudflare IaC with pinned OpenTofu and provider mirror
-        shell: cmd
-        run: |
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\validate_wp22a_terraform.ps1
-          if errorlevel 1 exit /b 35
-
-      - name: Verify clientless source contract
+      - name: Verify dormant clientless source contract without provider execution
         shell: bash
         run: |
           python - <<'PY'
@@ -168,6 +162,14 @@ jobs:
 
           contract = Path('docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md').read_text(encoding='utf-8')
           selection = Path('docs/architecture/V10_WP22A_SERVICE_SELECTION.md').read_text(encoding='utf-8')
+          iac_decision = Path('docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md').read_text(encoding='utf-8')
+          for label, historical_source in (
+              ('execution contract', contract),
+              ('service selection', selection),
+              ('IaC toolchain decision', iac_decision),
+          ):
+              if 'Amendment 18' not in historical_source or 'HISTORICAL' not in historical_source[:1200]:
+                  raise SystemExit(f'WP22A {label} lacks Amendment-18 historical override')
           middleware = Path('omni_cio/web/external_access_v1.py').read_text(encoding='utf-8')
           factory = Path('apps/api/wp22a_remote.py').read_text(encoding='utf-8')
           launcher = Path('infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1').read_text(encoding='utf-8')

@@ -14,21 +14,23 @@ def test_cloudflare_system_update_is_accepted_complete() -> None:
     status = STATUS.read_text(encoding="utf-8")
 
     for marker in (
-        "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE",
+        "Cloudflare Public Product System Update — "
+        "**HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**",
         "V10 Cloudflare Production Release #78",
         "Regression Shield #1617",
         "V10 Engineering Governance #1607",
-        "Current authorized functional implementation package: **NONE**",
     ):
         assert marker in status
+    assert (
+        "Current authorized functional implementation package: **NONE**" not in status
+    )
 
 
 def test_timeweb_consolidation_supersedes_visual_as_current_package() -> None:
     status = STATUS.read_text(encoding="utf-8")
 
     assert (
-        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
-        in status
+        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in status
     )
     assert "Amendment 18 — Timeweb-only platform consolidation" in status
     assert "WEB-VISUAL remains paused" in status

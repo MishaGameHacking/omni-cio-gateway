@@ -72,7 +72,9 @@ class NeonEgressBoundaryTests(unittest.TestCase):
         self.assertIs(kwargs["stderr"], egress.subprocess.DEVNULL)
         self.assertEqual(kwargs["timeout"], 25.0)
 
-    def test_probe_parser_rejects_redirects_malformed_and_oversized_output(self) -> None:
+    def test_probe_parser_rejects_redirects_malformed_and_oversized_output(
+        self,
+    ) -> None:
         unavailable = egress.EgressProbeEvidence("UNAVAILABLE", "MISSING")
         bad_results = (
             (1, "000\n\n"),
@@ -128,26 +130,22 @@ class NeonEgressBoundaryTests(unittest.TestCase):
             "CLOUDFLARE_NEON_EGRESS_CONTROL status=403 media=HTML",
         )
 
-    def test_workflow_varies_egress_without_provider_secret_custody(self) -> None:
+    def test_workflow_is_archived_and_hard_disabled(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("runs-on: [self-hosted, Windows, X64, omni-cio-ci]", source)
-        self.assertGreaterEqual(source.count("runs-on: ubuntu-24.04"), 2)
-        self.assertIn("Neon egress boundary classification", source)
-        self.assertIn("probe_v10_neon_egress_boundary probe", source)
-        self.assertIn("probe_v10_neon_egress_boundary compare", source)
+        self.assertIn(
+            "ARCHIVE-IN-PLACE: Amendment 18 retired Neon from active V10 authority.",
+            source,
+        )
+        self.assertIn("on:\n  workflow_dispatch:", source)
+        self.assertNotIn("pull_request:", source)
+        self.assertNotIn("\n  push:", source)
+        self.assertEqual(source.count("if: ${{ false }}"), 3)
         self.assertNotIn("${{ secrets.", source)
         self.assertNotIn("uses: actions/checkout@", source)
-        protected_bindings = (
-            "NEON_" + "API_" + "KEY",
-            "NEON_" + "ORG_" + "ID",
-            "NEON_" + "PROJECT_" + "ID",
-            "OMNI_V10_" + "POSTGRES_" + "DSN",
-        )
-        for binding in protected_bindings:
-            with self.subTest(binding=binding):
-                self.assertNotIn(binding, source)
 
-    def test_compare_marker_contains_no_network_or_provider_identifier_detail(self) -> None:
+    def test_compare_marker_contains_no_network_or_provider_identifier_detail(
+        self,
+    ) -> None:
         args = egress._parser().parse_args(
             [
                 "compare",

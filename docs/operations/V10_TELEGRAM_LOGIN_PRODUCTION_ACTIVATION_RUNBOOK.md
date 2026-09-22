@@ -22,21 +22,21 @@ pre-registered before redirect/login processing.
 
 Accepted repository evidence now records the OWNER attestation already preserved in merged PR #551: both exact values above were registered before the readiness gate. This is a non-secret external-action attestation only; it does not expose Client ID/Secret values and does not by itself activate public users.
 
-## Cloudflare secret binding names
+## Timeweb runtime secret custody
 
-Provider/runtime values must exist only in approved Cloudflare secret custody:
+Provider/runtime values must exist only in approved Timeweb App Platform environment/secret custody after the Timeweb candidate gate:
 
 - `OMNI_V10_TELEGRAM_OIDC_CLIENT_ID`
 - `OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET`
 - `OMNI_V10_IDENTITY_BINDING_KEY_HEX`
 - `OMNI_V10_CSRF_BINDING_KEY_HEX`
 
-The Worker passes only this reviewed allowlist to the production Container. Staging does
-not receive these provider-auth bindings from the production path.
+The production Timeweb app may receive only this reviewed allowlist. Synthetic/staging
+proof must not inherit production provider-auth values.
 
-Do not store the values in `wrangler.jsonc`, repository files or GitHub Actions secrets
-merely to relay them into Cloudflare. Worker Secrets / approved Cloudflare secret custody
-is the runtime authority.
+Do not store the values in repository files, GitHub Actions logs/artifacts or retired
+Cloudflare configuration. Approved Timeweb runtime environment custody is the future
+authority; that custody is not yet accepted in the current pre-activation state.
 
 ## Public activation flags
 
@@ -56,42 +56,40 @@ When public multi-user is false, configured providers report
 `PUBLIC_MULTI_USER_DISABLED`. When public multi-user is true but a provider's own switch
 is false, that provider reports `PROVIDER_ACTIVATION_DISABLED`.
 
-## Sanitized Cloudflare readiness proof
+## Current provider readiness state
 
-The canonical read-only proof reuses the existing `V10 Cloudflare Provider Readiness`
-workflow and its already-reviewed Cloudflare control-plane credential boundary. After this
-checker is accepted on protected `main`, dispatch that workflow on `main` and require:
+The former Cloudflare readiness proof (run `35367055812`) is preserved as
+historical evidence only. Amendment 18 retired Cloudflare and the OWNER reports its
+external resources/account were decommissioned, so that proof cannot satisfy current
+activation readiness.
 
-`CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY production_bindings=4 staging_bindings=0`
-
-The probe reads only Worker secret-binding metadata. It requires exactly the four reviewed
-production bindings above as `secret_text`, rejects duplicate/type drift, fails closed if a
-provider response exposes a secret value, and proves that none of the four bindings exists
-on `omni-cio-v10-web-staging`. It never copies Telegram/provider secret values into
-GitHub secrets, repository files, logs, outputs or artifacts.
-
-A feature-branch/manual run is not final activation evidence. The authoritative readiness
-run is the accepted checker on protected `main`, before the separate activation change.
+Before activation, a Timeweb-specific sanitized proof must establish that the four
+reviewed runtime values are present in the accepted production app environment without
+printing their values, and that no staging/synthetic path receives production auth
+secrets. The proof must bind to the exact accepted GitHub main SHA and accepted Timeweb
+release.
 
 ## Acceptance sequence
 
 1. source-preparation PR exact-head DRAFT/READY GREEN and squash merge;
 2. exact-new-main Regression Shield + Engineering Governance SUCCESS;
 3. non-delegable Telegram Allowed URL/callback registration;
-4. Cloudflare secret provisioning without exposing values;
-5. read-only/sanitized readiness check proving named bindings exist;
-6. repository pre-activation readiness contract passes: data minimization, bounded capacity/abuse controls, monitoring/rollback baseline and explicit unresolved legal/operator gate;
-7. operator/controller legal model and processing-purpose/legal-basis inventory are accepted without placing private regulatory identifiers in GitHub;
-8. Russian production PostgreSQL cutover is accepted; Frankfurt Neon is no longer the primary collection/storage authority for real Russian users;
-9. Roskomnadzor processing notification is accepted with sanitized evidence;
-10. Telegram/Cloudflare cross-border processor-flow assessment plus any required notification is accepted;
-11. Russian-hosted or in-product/Russian-stored data-subject request channel is accepted;
-12. final Privacy Policy is deployed on every personal-data collection surface;
-13. focused activation PR changes only the owning public-user activation state;
-14. production release SUCCESS;
-15. real canonical-Web USER login -> callback -> ordinary product account -> Tenant ->
+4. Timeweb App Platform candidate/release is accepted for the exact GitHub main SHA;
+5. Timeweb runtime secret provisioning occurs without exposing values;
+6. sanitized Timeweb readiness proves the reviewed bindings exist only in the accepted production runtime;
+7. repository pre-activation readiness contract passes: data minimization, bounded capacity/abuse controls, monitoring/rollback baseline and explicit unresolved legal/operator gate;
+8. operator/controller legal model and processing-purpose/legal-basis inventory are accepted without placing private regulatory identifiers in GitHub;
+9. Timeweb PostgreSQL 18 production cutover is accepted with Russian location and recovery evidence;
+10. Roskomnadzor processing notification is accepted with sanitized evidence;
+11. Telegram cross-border processor-flow assessment plus any required notification is accepted;
+12. Russian-hosted or in-product/Russian-stored data-subject request channel is accepted;
+13. canonical omnicio.ru DNS/TLS and representative Russian no-VPN acceptance are complete;
+14. final Privacy Policy is deployed on every personal-data collection surface;
+15. focused activation PR changes only the owning public-user activation state;
+16. production release SUCCESS;
+17. real canonical-Web USER login -> callback -> ordinary product account -> Tenant ->
     server-side Session;
-16. logout/revoke, provider-availability and multi-user isolation negatives;
-17. capability state updates only from accepted real evidence.
+18. logout/revoke, provider-availability and multi-user isolation negatives;
+19. capability state updates only from accepted real evidence.
 
 At no point does login activation authorize broker write or Real-money execution.

@@ -132,7 +132,7 @@ Canonical contract: `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_C
 
 Flow:
 
-`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`
+`WRITE -> focused preflight -> CHECKPOINT SHA -> GitHub-native CI/security + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`
 
 On RED:
 
@@ -172,7 +172,7 @@ full recertification:
 
 - [ ] Полный GitHub **Files changed** просмотрен на текущем exact head против accepted base.
 - [ ] Проверены все inline review threads и check annotations.
-- [ ] Проверены Sonar, Gitar, SAST/security и другие реально применимые code/security review outputs.
+- [ ] Проверены GitHub-native lint/type/test/coverage/dependency/SAST/secret/security и другие реально применимые code/security review outputs.
 - [ ] Каждый material finding сопоставлен с actual code и классифицирован по root cause, blast radius, analogous locations, coupled surfaces и adjacent failure modes по применимости.
 - [ ] Реальные correctness/maintainability/diagnostic/security/review-quality defects исправлены; bot approval не использован как замена engineering judgment.
 - [ ] Unresolved blocking review threads = 0.
@@ -247,7 +247,7 @@ Project policy is stricter than generic GitHub semantics: applicable `skipped`, 
 - [ ] Current checkpoint state = `CERTIFIED_GREEN`.
 - [ ] Все применимые V10 workflows реально запустились.
 - [ ] Все применимые checks завершились `success`.
-- [ ] Sonar Quality Gate PASS when applicable; default new issues = 0; unresolved new Security Hotspots = 0; unresolved material new Reliability/Security/Maintainability findings = 0.
+- [ ] GitHub-native quality/security checks PASS when applicable; unresolved material correctness/security/maintainability findings = 0.
 - [ ] Неприменимые workflows имеют truthful applicability routing и не используются как fake GREEN.
 - [ ] Старые GREEN runs предыдущего SHA не используются как final evidence.
 - [ ] Full diff reviewed after final code change.
@@ -262,7 +262,7 @@ HEAD SHA:
 checkpoint state: CERTIFIED_GREEN
 workflow/run IDs:
 all applicable conclusions: success
-Sonar QG/new issues/hotspots:
+GitHub-native quality/security evidence:
 review threads: 0
 ```
 

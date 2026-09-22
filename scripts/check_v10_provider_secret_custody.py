@@ -20,6 +20,7 @@ TIMEWEB_NETWORK_WORKFLOW = ".github/workflows/v10-timeweb-postgres-public-ipv4-t
 TIMEWEB_ALLOCATION_WORKFLOW = ".github/workflows/v10-timeweb-ipv4-allocation.yml"
 RETIRED_HOSTED_WORKFLOW = ".github/workflows/v10-hosted-release-alignment.yml"
 RETIRED_PREVIEW_WORKFLOW = ".github/workflows/v10-phase4-free-preview-deploy.yml"
+RETIRED_NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
 
 CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID"
 CLOUDFLARE_API_TOKEN = "CLOUDFLARE_API_TOKEN"
@@ -45,7 +46,7 @@ _VAR_REF = re.compile(
 _SECRET_CONTEXT_START = re.compile(r"\$\{\{\s*secrets\b", re.IGNORECASE)
 _VAR_CONTEXT_START = re.compile(r"\$\{\{\s*vars\b", re.IGNORECASE)
 _EXPECTED_SCHEMA = "omni-cio.v10.provider-secret-custody.v1"
-_EXPECTED_STATUS = "ACTIVE_CF_D_PROVIDER_SECRET_CUSTODY"
+_EXPECTED_STATUS = "ACTIVE_TIMEWEB_PROVIDER_SECRET_CUSTODY"
 _EXPECTED_SCOPE = "GITHUB_ACTIONS_PROVIDER_SECRET_REFERENCES"
 _EXPECTED_INVENTORY = frozenset(
     {
@@ -72,8 +73,23 @@ _TIMEWEB_WORKFLOWS = frozenset(
         TIMEWEB_ALLOCATION_WORKFLOW,
     }
 )
-_ACTIVE_WORKFLOWS = _CLOUDFLARE_WORKFLOWS | _TIMEWEB_WORKFLOWS
-_EXPECTED_RETIRED = frozenset({RETIRED_HOSTED_WORKFLOW, RETIRED_PREVIEW_WORKFLOW})
+_ACTIVE_WORKFLOWS = _TIMEWEB_WORKFLOWS
+_RETIRED_SECRET_BEARING_WORKFLOWS = _CLOUDFLARE_WORKFLOWS
+_EXPECTED_RETIRED = frozenset(
+    {
+        RETIRED_HOSTED_WORKFLOW,
+        RETIRED_PREVIEW_WORKFLOW,
+        RETIRED_NEON_EGRESS_WORKFLOW,
+    }
+)
+_ARCHIVE_MARKER = (
+    "ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
+)
+_ARCHIVED_DISABLED_JOB_COUNTS = {
+    PROVIDER_WORKFLOW: 1,
+    CANDIDATE_WORKFLOW: 1,
+    PRODUCTION_WORKFLOW: 6,
+}
 _EXPECTED_FORBIDDEN = frozenset({REMOVED_FUNCTION_INVOKE_TOKEN, RETIRED_RENDER_BINDING})
 _ACTIVE_NEON_TUPLE = frozenset({NEON_RUNTIME_BINDING, NEON_ORG_ID, NEON_PROJECT_ID})
 _DOMAIN_TUPLE = frozenset({CLOUDFLARE_ZONE_ID, CLOUDFLARE_ZONE_NAME, CUSTOM_HOST})
@@ -84,9 +100,11 @@ _RETAINED_FUNCTION_COMPONENTS = frozenset(
     }
 )
 _EXPECTED_ROLES: dict[str, object] = {
-    "active_neon_runtime_management_binding": NEON_RUNTIME_BINDING,
+    "current_provider_binding_authority": TIMEWEB_CONTROL_PLANE_BINDING,
+    "historical_neon_runtime_management_binding": NEON_RUNTIME_BINDING,
     "legacy_neon_function_deploy_binding": NEON_FUNCTION_DEPLOY_BINDING,
     "legacy_function_transport_active": False,
+    "retired_provider_workflow_execution_allowed": False,
     "active_runtime_may_alias_legacy_function_deploy_binding": False,
     "protected_provider_identifiers_may_use_actions_variables": False,
     "active_cloudflare_job_level_provider_binding_injection_allowed": False,
@@ -177,23 +195,51 @@ def _validate_inventory(contract: dict[str, Any]) -> None:
 
 
 _EXPECTED_INVENTORY_METADATA: dict[str, tuple[str, str, str]] = {
-    CLOUDFLARE_ACCOUNT_ID: ("CLOUDFLARE", "PROTECTED_IDENTIFIER", "ACTIVE"),
-    CLOUDFLARE_API_TOKEN: ("CLOUDFLARE", "CREDENTIAL", "ACTIVE"),
-    CLOUDFLARE_ZONE_ID: ("CLOUDFLARE", "PROTECTED_IDENTIFIER", "PRODUCTION_ONLY"),
+    CLOUDFLARE_ACCOUNT_ID: (
+        "CLOUDFLARE",
+        "PROTECTED_IDENTIFIER",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
+    ),
+    CLOUDFLARE_API_TOKEN: (
+        "CLOUDFLARE",
+        "CREDENTIAL",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
+    ),
+    CLOUDFLARE_ZONE_ID: (
+        "CLOUDFLARE",
+        "PROTECTED_IDENTIFIER",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
+    ),
     CLOUDFLARE_ZONE_NAME: (
         "CLOUDFLARE",
         "PROTECTED_IDENTIFIER",
-        "PRODUCTION_ONLY",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
     ),
-    NEON_RUNTIME_BINDING: ("NEON", "CREDENTIAL", "ACTIVE_RUNTIME_MANAGEMENT"),
+    NEON_RUNTIME_BINDING: (
+        "NEON",
+        "CREDENTIAL",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
+    ),
     NEON_FUNCTION_DEPLOY_BINDING: (
         "NEON",
         "CREDENTIAL",
         "DORMANT_LEGACY_FUNCTION_DEPLOY",
     ),
-    NEON_ORG_ID: ("NEON", "PROTECTED_IDENTIFIER", "ACTIVE_RUNTIME_MANAGEMENT"),
-    NEON_PROJECT_ID: ("NEON", "PROTECTED_IDENTIFIER", "ACTIVE_RUNTIME_MANAGEMENT"),
-    CUSTOM_HOST: ("CLOUDFLARE", "PROTECTED_IDENTIFIER", "PRODUCTION_ONLY"),
+    NEON_ORG_ID: (
+        "NEON",
+        "PROTECTED_IDENTIFIER",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
+    ),
+    NEON_PROJECT_ID: (
+        "NEON",
+        "PROTECTED_IDENTIFIER",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
+    ),
+    CUSTOM_HOST: (
+        "CLOUDFLARE",
+        "PROTECTED_IDENTIFIER",
+        "RETIRED_PROVIDER_ARCHIVE_REFERENCE_ONLY",
+    ),
     TIMEWEB_CONTROL_PLANE_BINDING: (
         "TIMEWEB",
         "CREDENTIAL",
@@ -236,19 +282,39 @@ def _validate_inventory_entry(name: str, metadata: object) -> None:
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_INVENTORY_METADATA_INVALID")
 
 
-def _validate_active_workflows(contract: dict[str, Any]) -> dict[str, set[str]]:
-    active = contract.get("active_workflows")
-    if not isinstance(active, dict) or set(active) != _ACTIVE_WORKFLOWS:
-        raise RuntimeError("PROVIDER_SECRET_CUSTODY_ACTIVE_WORKFLOWS_MISMATCH")
-    expected_by_workflow: dict[str, set[str]] = {}
-    for path, names in active.items():
-        expected = _string_set(
-            names, "PROVIDER_SECRET_CUSTODY_ACTIVE_WORKFLOW_BINDINGS_INVALID"
-        )
+def _validate_workflow_map(
+    contract: dict[str, Any], key: str, expected_paths: frozenset[str], code: str
+) -> dict[str, set[str]]:
+    raw = contract.get(key)
+    if not isinstance(raw, dict) or set(raw) != expected_paths:
+        raise RuntimeError(code)
+    result: dict[str, set[str]] = {}
+    for path, names in raw.items():
+        expected = _string_set(names, code)
         if not expected <= _EXPECTED_INVENTORY:
             raise RuntimeError("PROVIDER_SECRET_CUSTODY_UNKNOWN_CONTRACT_SECRET")
-        expected_by_workflow[path] = expected
-    return expected_by_workflow
+        result[path] = expected
+    return result
+
+
+def _validate_active_workflows(contract: dict[str, Any]) -> dict[str, set[str]]:
+    return _validate_workflow_map(
+        contract,
+        "active_workflows",
+        _ACTIVE_WORKFLOWS,
+        "PROVIDER_SECRET_CUSTODY_ACTIVE_WORKFLOWS_MISMATCH",
+    )
+
+
+def _validate_retired_secret_bearing_workflows(
+    contract: dict[str, Any],
+) -> dict[str, set[str]]:
+    return _validate_workflow_map(
+        contract,
+        "retired_secret_bearing_workflows",
+        _RETIRED_SECRET_BEARING_WORKFLOWS,
+        "PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOWS_MISMATCH",
+    )
 
 
 def _validate_named_set(
@@ -265,7 +331,7 @@ def _validate_named_set(
 
 def _validate_contract_shape(
     contract: dict[str, Any],
-) -> tuple[dict[str, set[str]], set[str], set[str]]:
+) -> tuple[dict[str, set[str]], dict[str, set[str]], set[str], set[str]]:
     if contract.get("schema") != _EXPECTED_SCHEMA:
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_SCHEMA_MISMATCH")
     if contract.get("status") != _EXPECTED_STATUS:
@@ -277,6 +343,7 @@ def _validate_contract_shape(
 
     _validate_inventory(contract)
     expected_by_workflow = _validate_active_workflows(contract)
+    retired_secret_bearing = _validate_retired_secret_bearing_workflows(contract)
     forbidden = _validate_named_set(
         contract,
         "forbidden_workflow_secret_names",
@@ -293,7 +360,7 @@ def _validate_contract_shape(
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_ROLE_SEPARATION_INVALID")
     if contract.get("protected_invariants") != _EXPECTED_INVARIANTS:
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_PROTECTED_INVARIANTS_INVALID")
-    return expected_by_workflow, forbidden, retired
+    return expected_by_workflow, retired_secret_bearing, forbidden, retired
 
 
 def _scan_workflow_refs(
@@ -345,19 +412,45 @@ def _validate_retired_workflows(
             )
 
 
+def _validate_archived_provider_workflow(path: str, source: str) -> None:
+    if _ARCHIVE_MARKER not in source:
+        raise RuntimeError("PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_ARCHIVE_MISSING")
+    if "on:\n  workflow_dispatch:" not in source:
+        raise RuntimeError("PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_DISPATCH_MISSING")
+    if "on:\n  push:" in source or "on:\n  workflow_run:" in source:
+        raise RuntimeError("PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_TRIGGER_PRESENT")
+    if source.count("if: ${{ false }}") != _ARCHIVED_DISABLED_JOB_COUNTS[path]:
+        raise RuntimeError("PROVIDER_SECRET_CUSTODY_RETIRED_WORKFLOW_NOT_HARD_DISABLED")
+
+
+def _validate_retired_secret_bearing_bindings(
+    workflows: dict[str, str],
+    all_refs: dict[str, set[str]],
+    expected_by_workflow: dict[str, set[str]],
+) -> None:
+    for path, expected in expected_by_workflow.items():
+        if all_refs[path] != expected:
+            raise RuntimeError("PROVIDER_SECRET_CUSTODY_RETIRED_BINDINGS_MISMATCH")
+        _validate_active_step_scope(workflows[path])
+        _validate_archived_provider_workflow(path, workflows[path])
+
+
 def _validate_role_consumers(all_refs: dict[str, set[str]]) -> None:
     if any(NEON_FUNCTION_DEPLOY_BINDING in refs for refs in all_refs.values()):
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_DORMANT_FUNCTION_KEY_EXPOSED")
-    for path in _CLOUDFLARE_WORKFLOWS:
-        if _ACTIVE_NEON_TUPLE - all_refs[path]:
-            raise RuntimeError("PROVIDER_SECRET_CUSTODY_NEON_RUNTIME_TUPLE_INCOMPLETE")
-
-    production = all_refs[PRODUCTION_WORKFLOW]
-    if _DOMAIN_TUPLE - production:
-        raise RuntimeError("PROVIDER_SECRET_CUSTODY_DOMAIN_TUPLE_INCOMPLETE")
-    non_production_cloudflare = _CLOUDFLARE_WORKFLOWS - {PRODUCTION_WORKFLOW}
-    if any(_DOMAIN_TUPLE & all_refs[path] for path in non_production_cloudflare):
-        raise RuntimeError("PROVIDER_SECRET_CUSTODY_DOMAIN_SCOPE_TOO_BROAD")
+    retired_provider_bindings = (
+        _ACTIVE_NEON_TUPLE
+        | _DOMAIN_TUPLE
+        | {CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN}
+    )
+    for path, refs in all_refs.items():
+        if (
+            path not in _RETIRED_SECRET_BEARING_WORKFLOWS
+            and refs & retired_provider_bindings
+        ):
+            raise RuntimeError(
+                "PROVIDER_SECRET_CUSTODY_RETIRED_PROVIDER_BINDING_OUTSIDE_ARCHIVE"
+            )
     for path in _TIMEWEB_WORKFLOWS:
         if all_refs[path] != {TIMEWEB_CONTROL_PLANE_BINDING}:
             raise RuntimeError("PROVIDER_SECRET_CUSTODY_TIMEWEB_SCOPE_INVALID")
@@ -365,13 +458,19 @@ def _validate_role_consumers(all_refs: dict[str, set[str]]) -> None:
 
 def validate(root: Path = ROOT) -> None:
     contract = _load_json(root / CONTRACT_RELATIVE)
-    expected_by_workflow, forbidden, retired = _validate_contract_shape(contract)
+    expected_by_workflow, retired_secret_bearing, forbidden, retired = (
+        _validate_contract_shape(contract)
+    )
     workflows = _workflow_sources(root)
-    if (set(expected_by_workflow) | retired) - set(workflows):
+    required = set(expected_by_workflow) | set(retired_secret_bearing) | retired
+    if required - set(workflows):
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_REQUIRED_WORKFLOW_MISSING")
 
     all_refs = _scan_workflow_refs(workflows, forbidden)
     _validate_active_bindings(workflows, all_refs, expected_by_workflow)
+    _validate_retired_secret_bearing_bindings(
+        workflows, all_refs, retired_secret_bearing
+    )
     _validate_retired_workflows(all_refs, retired)
     _validate_role_consumers(all_refs)
 

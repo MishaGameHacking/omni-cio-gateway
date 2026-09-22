@@ -18,7 +18,7 @@ _REQUIRED = (
     guard.IDENTITY,
     guard.TRANSACTION_MIGRATION,
     guard.LIMITS,
-    guard.WRANGLER,
+    guard.AUTH_RUNTIME,
 )
 
 
@@ -67,9 +67,9 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             _copy_fixture(root)
             path = root / guard.CONTRACT
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["operations"]["exact_main_release_evidence"][
-                "source_sha_equals_accepted_base_main"
-            ] = False
+            payload["operations"]["historical_cloudflare_release_evidence"][
+                "current_release_authority"
+            ] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
@@ -118,8 +118,8 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             _copy_fixture(root)
             path = root / guard.LEDGER
             source = path.read_text(encoding="utf-8").replace(
-                "Russian primary PostgreSQL production cutover is accepted",
-                "Accepted Russian production database cutover is recorded",
+                "Timeweb PostgreSQL 18 production cutover is accepted",
+                "Accepted Russian Timeweb production database cutover is recorded",
                 1,
             )
             path.write_text(source, encoding="utf-8")
@@ -131,7 +131,9 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             _copy_fixture(root)
             path = root / guard.CONTRACT
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["provider_secret_readiness"]["marker"] = "READY_BUT_UNREVIEWED"
+            payload["provider_secret_readiness"][
+                "timeweb_runtime_secret_custody_accepted"
+            ] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
@@ -145,7 +147,9 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             _copy_fixture(root)
             path = root / guard.CONTRACT
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["operations"]["exact_main_release_evidence"]["conclusion"] = "failure"
+            payload["operations"]["historical_cloudflare_release_evidence"][
+                "conclusion"
+            ] = "failure"
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
@@ -170,52 +174,34 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
-    def test_guard_rejects_missing_production_vars(self) -> None:
+    def test_guard_rejects_provider_neutral_activation_default_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
-            path = root / guard.WRANGLER
-            source = path.read_text(encoding="utf-8")
-            start = source.index('  "vars": {')
-            end = source.index('  "secrets": {', start)
-            path.write_text(source[:start] + source[end:], encoding="utf-8")
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "TELEGRAM_PUBLIC_USER_READINESS_PRODUCTION_FLAG_DRIFT",
-            ):
-                guard.validate(root)
-
-    def test_guard_rejects_activation_flag_flip_in_readiness_change(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            _copy_fixture(root)
-            path = root / guard.WRANGLER
+            path = root / guard.AUTH_RUNTIME
             source = path.read_text(encoding="utf-8").replace(
-                '"PUBLIC_MULTI_USER_ENABLED": "false"',
-                '"PUBLIC_MULTI_USER_ENABLED": "true"',
+                "if not value:\n        return False",
+                "if not value:\n        return True",
                 1,
             )
             path.write_text(source, encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
-                "TELEGRAM_PUBLIC_USER_READINESS_PRODUCTION_FLAG_DRIFT",
+                "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_DEFAULT_DRIFT",
             ):
                 guard.validate(root)
 
-    def test_guard_rejects_capacity_widening(self) -> None:
+    def test_guard_rejects_premature_timeweb_runtime_readiness(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
-            path = root / guard.WRANGLER
-            source = path.read_text(encoding="utf-8").replace(
-                '"max_instances": 1',
-                '"max_instances": 2',
-                1,
-            )
-            path.write_text(source, encoding="utf-8")
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["capacity_and_abuse"]["timeweb_runtime_capacity_accepted"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
-                "TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT",
+                "TELEGRAM_PUBLIC_USER_READINESS_CAPACITY_INVALID",
             ):
                 guard.validate(root)
 

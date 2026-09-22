@@ -5,12 +5,6 @@ from pathlib import Path
 import sys
 from typing import Any
 
-if __package__:
-    from .v10_jsonc import loads_jsonc
-else:
-    from v10_jsonc import loads_jsonc
-
-
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = Path(
     "docs/architecture/V10_TELEGRAM_PUBLIC_USER_LEGAL_PRIVACY_CONTRACT.json"
@@ -22,16 +16,16 @@ POLICY = Path("docs/legal/V10_OMNI_CIO_PRIVACY_POLICY_RU.md")
 CONSENT = Path("docs/legal/V10_OMNI_CIO_PERSONAL_DATA_CONSENT_RU.md")
 RUNBOOK = Path("docs/operations/V10_TELEGRAM_PUBLIC_USER_LEGAL_PRIVACY_RUNBOOK.md")
 STATUS = Path("knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
-WRANGLER = Path("wrangler.jsonc")
-
-_EXPECTED_FLAGS = {
-    "PUBLIC_MULTI_USER_ENABLED": "false",
-    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
-    "OMNI_V10_VK_ID_LOGIN_ENABLED": "false",
-}
+PLATFORM_AUTHORITY = Path(
+    "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
+)
+AUTH_RUNTIME = Path("apps/api/wp22a_phase5_auth.py")
 
 _REQUIRED_BLOCKERS = {
     "RUSSIAN_PRIMARY_DATABASE_CUTOVER_NOT_ACCEPTED",
+    "TIMEWEB_APP_PRODUCTION_RELEASE_NOT_ACCEPTED",
+    "TIMEWEB_TELEGRAM_RUNTIME_SECRET_CUSTODY_NOT_ACCEPTED",
+    "CANONICAL_TIMEWEB_DNS_TLS_NOT_ACCEPTED",
     "ROSKOMNADZOR_PROCESSING_NOTIFICATION_NOT_ACCEPTED",
     "CROSS_BORDER_PROCESSOR_FLOW_ASSESSMENT_NOT_ACCEPTED",
     "RU_HOSTED_DATA_SUBJECT_REQUEST_CHANNEL_NOT_ACCEPTED",
@@ -134,18 +128,19 @@ def _validate_contract(contract: dict[str, Any]) -> None:
     )
     _require(
         residency.get("primary_database_provider"),
-        "NEON_POSTGRESQL_18",
+        "NO_ACCEPTED_LIVE_PRODUCTION_DATABASE",
         "TELEGRAM_LEGAL_PRIVACY_LOCALIZATION_INVALID",
     )
     _require(
         residency.get("primary_database_region"),
-        "FRANKFURT",
+        "NONE",
         "TELEGRAM_LEGAL_PRIVACY_LOCALIZATION_INVALID",
     )
     for key in (
         "russian_localization_accepted",
         "live_russian_user_collection_allowed",
         "candidate_is_production_authority",
+        "neon_rollback_available",
     ):
         _require(
             residency.get(key),
@@ -154,7 +149,17 @@ def _validate_contract(contract: dict[str, Any]) -> None:
         )
     _require(
         residency.get("required_before_activation"),
-        "RU_PG_D_PRODUCTION_DATABASE_CUTOVER_TO_RUSSIAN_FEDERATION",
+        "TW_D_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_ACCEPTED",
+        "TELEGRAM_LEGAL_PRIVACY_LOCALIZATION_INVALID",
+    )
+    _require(
+        residency.get("russian_candidate"),
+        "TIMEWEB_CLOUD_MANAGED_POSTGRESQL_18",
+        "TELEGRAM_LEGAL_PRIVACY_LOCALIZATION_INVALID",
+    )
+    _require(
+        residency.get("historical_neon_authority_retired"),
+        True,
         "TELEGRAM_LEGAL_PRIVACY_LOCALIZATION_INVALID",
     )
 
@@ -219,28 +224,80 @@ def _validate_public_docs(root: Path) -> None:
 def _validate_current_state(root: Path) -> None:
     status = _read(root, STATUS)
     for marker in (
-        "current Neon production authority remains accepted until an explicit later cutover",
-        "RU-PG-C remains locked until RU-PG-B",
+        "Amendment 18 is accepted on protected `main` through PR #581",
+        "current authorized System Update — **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**",
+        "`ChatGPT + GitHub + Timeweb Cloud + Telegram Login`",
     ):
         if marker not in status:
             raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_CURRENT_STATE_DRIFT")
+    authority = _load_json(
+        root, PLATFORM_AUTHORITY, "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"
+    )
+    _require(
+        authority.get("schema"),
+        "omni-cio.v10.timeweb-only-platform-consolidation.v1",
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    _require(
+        authority.get("active_general_service_set"),
+        ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"],
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    retired = authority.get("retired_active_services")
+    if not isinstance(retired, list) or set(retired) != {
+        "Cloudflare",
+        "Neon",
+        "Render",
+        "Cloud.ru",
+        "VK ID",
+    }:
+        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID")
+    database = _mapping(
+        authority.get("database"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"
+    )
+    _require(
+        database.get("final_provider"),
+        "Timeweb Cloud Managed PostgreSQL 18",
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    _require(
+        database.get("neon_current_rollback_available"),
+        False,
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    cleanup = _mapping(
+        authority.get("cleanup"), "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID"
+    )
+    _require(
+        cleanup.get("historical_artifacts_may_define_current_authority"),
+        False,
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    protected = _mapping(
+        authority.get("protected_invariants"),
+        "TELEGRAM_LEGAL_PRIVACY_PLATFORM_AUTHORITY_INVALID",
+    )
+    for key in (
+        "PUBLIC_MULTI_USER_ENABLED",
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+        "broker_write",
+        "trading_methods",
+        "REAL_TRADING_ENABLED",
+    ):
+        _require(
+            protected.get(key),
+            False,
+            "TELEGRAM_LEGAL_PRIVACY_PREMATURE_ACTIVATION",
+        )
 
-    try:
-        wrangler = loads_jsonc(_read(root, WRANGLER))
-    except (ValueError, TypeError) as exc:
-        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_WRANGLER_INVALID") from exc
-    if not isinstance(wrangler, dict):
-        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_WRANGLER_INVALID")
-    production = wrangler.get("vars")
-    env = wrangler.get("env")
-    if not isinstance(production, dict) or not isinstance(env, dict):
-        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_FLAG_DRIFT")
-    staging = env.get("staging")
-    if not isinstance(staging, dict) or not isinstance(staging.get("vars"), dict):
-        raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_FLAG_DRIFT")
-    for key, expected in _EXPECTED_FLAGS.items():
-        if production.get(key) != expected or staging["vars"].get(key) != expected:
-            raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_PREMATURE_ACTIVATION")
+    auth_runtime = _read(root, AUTH_RUNTIME)
+    for marker in (
+        '_PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"',
+        '_TELEGRAM_LOGIN_ENABLED = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"',
+        "if not value:\n        return False",
+    ):
+        if marker not in auth_runtime:
+            raise RuntimeError("TELEGRAM_LEGAL_PRIVACY_ACTIVATION_DEFAULT_DRIFT")
 
 
 def _validate_readiness_link(
@@ -263,7 +320,7 @@ def _validate_readiness_link(
     )
     _require(
         legal.get("status"),
-        "OPERATOR_IDENTITY_ACCEPTED_DATA_RESIDENCY_AND_REGULATORY_GATES_OPEN",
+        "TIMEWEB_DATA_RESIDENCY_AND_REGULATORY_GATES_OPEN",
         "TELEGRAM_LEGAL_PRIVACY_READINESS_INVALID",
     )
     _require(

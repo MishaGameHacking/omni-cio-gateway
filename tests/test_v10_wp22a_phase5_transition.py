@@ -17,12 +17,8 @@ AMENDMENT11 = (
         "PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md"
     )
 )
-PHASE4_EVIDENCE = (
-    ROOT / "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json"
-)
-PHASE4_WORKFLOW = (
-    ROOT / ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
-)
+PHASE4_EVIDENCE = ROOT / "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json"
+PHASE4_WORKFLOW = ROOT / ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
 PHASE5_CONTRACT = (
     ROOT
     / "docs"
@@ -65,9 +61,7 @@ def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> N
     assert payload["runtime_parent_record"] == "documented_in_markdown_evidence"
     assert "accepted_runtime_main_sha" not in payload
     assert "runtime_parent_sha" not in payload
-    assert payload["public_preview_url"] == (
-        "https://omni-cio-v10-web.onrender.com"
-    )
+    assert payload["public_preview_url"] == ("https://omni-cio-v10-web.onrender.com")
     gate = payload["required_transition_gate"]
     assert gate["exact_pr_base_sha_required"] is True
     assert gate["external_https_probe_required"] is True
@@ -150,11 +144,11 @@ def test_status_closes_wp22a_and_preserves_history_before_timeweb_update() -> No
     assert "Block E / WP22A overall — **COMPLETE**" in text
     assert "Block E — **COMPLETE (14%)**" in text
     assert "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in text
+    assert "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED" in text
     assert (
-        "## Current next package — TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED"
-        in text
+        "Cloudflare Public Product System Update — "
+        "**HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**" in text
     )
-    assert "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED / ACCEPTED COMPLETE" in text
     assert "CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION" in text
     assert "CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY" in text
     assert "CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT" in text
@@ -246,8 +240,7 @@ def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
 
     assert "no deployed `preview-login`" in authorization
     assert (
-        "provider doubles may be injected only below deployed routing"
-        in authorization
+        "provider doubles may be injected only below deployed routing" in authorization
     )
     assert "Amendment 13 — progressive capability activation" in status
     assert "current runtime state, not a V10-wide release lock" in status
@@ -256,7 +249,9 @@ def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
     assert payload["provider"]["production_provider"] == "Cloud.ru Evolution"
 
 
-def test_phase5_product_identity_is_user_tenant_session_not_provider_authority() -> None:
+def test_phase5_product_identity_is_user_tenant_session_not_provider_authority() -> (
+    None
+):
     payload = _json(PHASE5_CONTRACT)
     product = payload["product_path"]
     session = payload["session"]

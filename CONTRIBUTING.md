@@ -18,7 +18,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–18;
-9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`, `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` и остальные owning contracts;
+9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, current Timeweb/Telegram owning contracts и остальные applicable current contracts; historical Cloudflare contracts read only when recovery/provenance/compatibility review requires them;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. current execution-unit architecture/security/recovery/runbooks/ledgers;
@@ -52,24 +52,24 @@ The old Cloudflare section below is migration history and no longer selects futu
 After Amendment 14 acceptance:
 
 - GitHub is engineering/source/review/provenance authority rank 1;
-- Cloudflare Workers Paid is new-V10 application/edge/build platform rank 2 after each owning gate;
+- Cloudflare Workers Paid was the historical Amendment-14 rank-2 application/edge/build target and is superseded by Amendment 18;
 - Cloud.ru Evolution is no longer the selected new-V10 target;
 - Render is historical new-V10 evidence only and is retired from active new-V10 deployment, zero-charge attestation, hosted-release alignment and recovery authority;
 - protected V9 Render `app:app` remains protected;
 - Amendment 14 itself does not deploy Cloudflare, mutate DNS/domain/provider state, create secrets or activate public users.
 
-Amendment 15 changes only delivery granularity: the four Amendment-14 Cloudflare stages are ordered internal milestones inside one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` branch/final PR by default. Their runtime/security/provider/cutover boundaries remain fail-closed.
+Historically, Amendment 15 grouped the four Amendment-14 Cloudflare stages into one `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` branch/final PR. That sequence remains accepted provenance only and grants no current provider authority.
 
-Do not create Cloudflare tokens/secrets, candidate mutation, DNS/domain changes or paid overage before the exact internal milestone authorizes them.
+Do not create new Cloudflare tokens/secrets, candidate mutations, DNS/domain changes or paid resources. Current provider work is Timeweb-only unless a fresh accepted amendment changes authority.
 
-Integrated Cloudflare sequence:
+Historical integrated Cloudflare sequence (provenance only):
 
 1. `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — portable repository verification, shard/impact/provenance/cost guards;
 2. `CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive/Containers evidence;
 3. `CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation;
 4. `CF-D / CLOUDFLARE-PUBLIC-CUTOVER` — domain/DNS/TLS/security/promotion/rollback and capability-specific live-user acceptance.
 
-Do not start a later internal milestone before the previous milestone's branch-local Exit Gate passes. A separate `main` merge between CF-A…CF-D is not required after Amendment 15 acceptance. A real Amendment-12 mandatory split trigger still forces a stop/split.
+Within that historical sequence, later CF milestones depended on earlier branch-local Exit Gates. Those CF milestones are not current work after Amendment 18. A real Amendment-12 mandatory split trigger still governs current work.
 
 ## Continuous public release
 
@@ -77,11 +77,11 @@ A new accepted protected `main` SHA is a whole-product revision candidate, not a
 
 Required flow:
 
-`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
+`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> exact Timeweb candidate -> candidate acceptance -> production promotion`.
 
 Before promotion re-check current `main`. Never promote a superseded candidate. If the latest `main` is blocked, keep last-known-good production and expose a truthful pending/blocked/out-of-sync state.
 
-Public release identity is event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA, Cloudflare Version ID, UTC release time and status. Do not create a source version-bump commit only to change the displayed release number.
+Current release identity must bind the exact accepted source SHA to the accepted Timeweb candidate/deployment identity and release status defined by the owning Timeweb gate. Do not create a source version-bump commit only to change the displayed release number.
 
 ## Execution-unit model
 
@@ -102,7 +102,7 @@ CI is an independent verifier and active checkpoint certifier. Fast CI is used w
 
 Canonical flow:
 
-`WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
+`WRITE -> focused preflight -> CHECKPOINT SHA -> GitHub-native CI/security/review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`.
 
 Any material RED immediately changes branch mode to `RED_REPAIR_ONLY`. The next functional checkpoint is forbidden until the current checkpoint is repaired and fully certified.
 
@@ -120,7 +120,7 @@ When RED appears:
 
 Repeated identical “transient” failure becomes an infrastructure/workflow defect and must not be blindly retried until GREEN.
 
-For changed code, applicable Sonar Quality Gate must pass; default new-code requirement is 0 new issues, 0 unresolved new Security Hotspots and 0 unresolved material Reliability/Security/Maintainability findings. Gitar/SAST/check annotations and review threads must also be inspected.
+For changed code, applicable GitHub-native lint/type/test/coverage/dependency/SAST/secret/security checks must pass and unresolved material correctness/security/maintainability findings are not GREEN. Check annotations and review threads must also be inspected.
 
 Only `CERTIFIED_GREEN` permits the next functional checkpoint. An applicable post-merge RED on current `main` means `MAIN_RED_STOP` and blocks ordinary feature development until an accepted focused repair restores GREEN.
 
@@ -133,7 +133,7 @@ Canonical targeted verifier: `.github/workflows/v10-targeted-repair.yml`.
 Для каждого опубликованного PR head до merge:
 
 1. просмотрите полный GitHub **Files changed** против accepted base;
-2. проверьте inline review threads, check annotations, Sonar, Gitar, SAST/security и другие applicable review outputs;
+2. проверьте inline review threads, check annotations, GitHub-native SAST/security/dependency/secret checks и другие applicable review outputs;
 3. классифицируйте material findings по root cause, blast radius, analogous locations, directly coupled surfaces и adjacent failure modes;
 4. исправьте реальные correctness/security/maintainability defects и добавьте regression guard для reusable defect class;
 5. требуйте `unresolved blocking review threads = 0`;
@@ -154,7 +154,7 @@ Checkpoint lifecycle:
 3. one authorized logical checkpoint;
 4. deterministic tests/guards + focused preflight;
 5. publish exact checkpoint SHA;
-6. CI + Sonar + applicable independent review;
+6. GitHub-native CI/security + applicable independent review;
 7. any RED -> `RED_REPAIR_ONLY` and immediate targeted repair;
 8. source change -> replacement SHA + targeted proof + full exact-SHA certification;
 9. only `CERTIFIED_GREEN` -> next functional checkpoint allowed.
@@ -221,11 +221,11 @@ Current locks remain:
 
 Real submit requires `REAL_MONEY_AUTHORIZED` after its complete Sandbox/Shadow, immutable-plan, authenticated USER approval, drift/preflight, reconciliation, kill-switch and actual broker permission gate.
 
-A merge, Cloudflare deployment, public release, AI output or user registration is never Real-money authorization.
+A merge, provider deployment, public release, AI output or user registration is never Real-money authorization.
 
 ## WEB VISUAL lock
 
-`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` deploys the existing accepted presentation. It does not start the visual-refresh package.
+Historical `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` preserved the accepted presentation and did not start the visual-refresh package; it is not current deployment authority.
 
 Do not start `WEB-VISUAL-INTEGRATED` until the exact OWNER command exists:
 

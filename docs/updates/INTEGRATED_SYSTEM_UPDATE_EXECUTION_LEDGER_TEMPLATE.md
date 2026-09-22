@@ -98,7 +98,7 @@ Split decision: `NO_SPLIT_REQUIRED` / describe approved split and evidence.
 
 Each meaningful published checkpoint follows:
 
-`CHECKPOINT -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT FUNCTIONAL CHECKPOINT`
+`CHECKPOINT -> GitHub-native CI/security + independent review -> CERTIFIED_GREEN -> NEXT FUNCTIONAL CHECKPOINT`
 
 Any material RED immediately changes the checkpoint state to `RED_REPAIR_ONLY`; unrelated feature work stops. Begin root-cause/blast-radius diagnosis as soon as useful evidence exists. Relevant findings from other independent checks must still be inspected before the corrected checkpoint is finalized.
 
@@ -110,8 +110,8 @@ Any material RED immediately changes the checkpoint state to `RED_REPAIR_ONLY`; 
 - DRAFT/READY state:
 - Checkpoint state:
 - Applicable workflows/checks:
-- Sonar Quality Gate / new issues / hotspots:
-- Gitar/SAST/security/browser/review evidence:
+- GitHub-native lint/type/test/coverage/dependency/SAST/secret/security evidence:
+- Browser/review/additional security evidence:
 - Terminal conclusions:
 - Safety-abort required: NO / describe
 - Material findings:
@@ -160,7 +160,7 @@ Before final `INTEGRATION_READY` / landing review, re-check accepted `main`.
 - [ ] `INTEGRATION_READY`
 - [ ] DRAFT PR opened
 - [ ] All applicable exact-head project checks `success`
-- [ ] Sonar/new-code requirements satisfied when applicable
+- [ ] GitHub-native quality/security requirements satisfied when applicable
 - [ ] Independent review complete
 - [ ] Zero unresolved blocking review threads
 - [ ] Full final Files changed/manual diff review complete

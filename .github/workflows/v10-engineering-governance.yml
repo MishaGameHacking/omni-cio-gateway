@@ -87,13 +87,6 @@ jobs:
           if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 10
           echo Governance exact head: %ACTUAL_HEAD%
 
-      - name: Fail fast on exact-head Sonar findings
-        if: github.event_name == 'pull_request'
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/check_v10_pr_external_review_gate.py
-
       - name: Verify engineering governance contract
         run: python scripts/check_v10_engineering_governance.py
 

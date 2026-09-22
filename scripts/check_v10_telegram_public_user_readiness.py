@@ -7,12 +7,6 @@ import re
 import sys
 from typing import Any
 
-if __package__:
-    from .v10_jsonc import loads_jsonc
-else:
-    from v10_jsonc import loads_jsonc
-
-
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = Path(
     "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
@@ -25,14 +19,14 @@ TRANSACTION_MIGRATION = Path(
     "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql"
 )
 LIMITS = Path("omni_cio/web/request_limits_v1.py")
-WRANGLER = Path("wrangler.jsonc")
+AUTH_RUNTIME = Path("apps/api/wp22a_phase5_auth.py")
 
 _EXPECTED_BASE_MAIN_SHA_SEGMENTS = (
-    "66ef57de",
-    "dd07ad68",
-    "d472cb20",
-    "5da6bb8e",
-    "87528e94",
+    "e8e583f3",
+    "66bb314e",
+    "f6d37e80",
+    "57b90cde",
+    "9a42d4f4",
 )
 
 EXPECTED_LIMITS = {
@@ -50,8 +44,10 @@ EXPECTED_LIMITS = {
 
 _EXPECTED_REGISTRATION = {
     "owner_attested_in_accepted_pr_551": True,
-    "allowed_origin_attested": True,
-    "redirect_uri_attested": True,
+    "historical_allowed_origin_attested": True,
+    "historical_redirect_uri_attested": True,
+    "timeweb_canonical_origin_reconfirmation_required": True,
+    "timeweb_canonical_origin_reconfirmation_accepted": False,
     "provider_secret_values_recorded": False,
 }
 
@@ -69,34 +65,44 @@ _EXPECTED_MINIMIZATION = {
 
 _EXPECTED_CAPACITY = {
     **EXPECTED_LIMITS,
-    "production_container_max_instances": 1,
-    "production_container_instance_type": "lite",
+    "timeweb_runtime_capacity_accepted": False,
     "automatic_capacity_expansion_authorized": False,
     "real_user_capacity_claim": False,
 }
 
-_EXPECTED_RELEASE_EVIDENCE = {
+_EXPECTED_HISTORICAL_CLOUDFLARE_RELEASE = {
     "release_number": 84,
     "workflow_run": "35379210101",
     "source_main_evidence": "PR_557_RELEASE_84",
-    "source_sha_equals_accepted_base_main": True,
     "conclusion": "success",
-    "production_promotion": "success",
-    "terminal_release_dag": "success",
-    "rollback_required": False,
+    "retired_by_amendment_18": True,
+    "current_release_authority": False,
+}
+
+_EXPECTED_PROVIDER_SECRET_READINESS = {
+    "accepted": False,
+    "current_platform": "TIMEWEB_CLOUD",
+    "timeweb_runtime_secret_custody_accepted": False,
+    "secret_values_recorded": False,
+    "historical_cloudflare_evidence_preserved": True,
+    "historical_cloudflare_workflow_run": "35367055812",
+    "historical_cloudflare_marker": (
+        "CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY "
+        "production_bindings=4 staging_bindings=0"
+    ),
+    "historical_evidence_is_current_authority": False,
 }
 
 _REQUIRED_TRUE_OPERATIONS = (
-    "workers_metrics_baseline_required",
-    "healthz_release_acceptance_required",
-    "rollback_path_required",
+    "timeweb_healthz_release_acceptance_required",
+    "timeweb_rollback_path_required",
+    "monitoring_baseline_required",
     "post_activation_provider_availability_evidence_required",
     "post_activation_real_user_isolation_evidence_required",
 )
 
 _REQUIRED_FALSE_OPERATIONS = (
-    "stored_workers_logs_required_for_activation",
-    "workers_tracing_required_for_activation",
+    "current_timeweb_release_accepted",
     "paid_observability_expansion_authorized",
 )
 
@@ -110,12 +116,6 @@ _EXPECTED_INVARIANTS = {
     "gateway_entrypoint": "app:app",
 }
 
-_EXPECTED_SOURCE_FLAGS = {
-    "PUBLIC_MULTI_USER_ENABLED": "false",
-    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
-    "OMNI_V10_VK_ID_LOGIN_ENABLED": "false",
-}
-
 _REQUIRED_LEGAL_RESOLVED_INPUTS = {
     "operator_controller_identity_and_contact",
     "applicable_jurisdictions_and_operator_role",
@@ -126,6 +126,9 @@ _REQUIRED_LEGAL_RESOLVED_INPUTS = {
 
 _REQUIRED_LEGAL_BLOCKERS = {
     "RUSSIAN_PRIMARY_DATABASE_CUTOVER_NOT_ACCEPTED",
+    "TIMEWEB_APP_PRODUCTION_RELEASE_NOT_ACCEPTED",
+    "TIMEWEB_TELEGRAM_RUNTIME_SECRET_CUSTODY_NOT_ACCEPTED",
+    "CANONICAL_TIMEWEB_DNS_TLS_NOT_ACCEPTED",
     "ROSKOMNADZOR_PROCESSING_NOTIFICATION_NOT_ACCEPTED",
     "CROSS_BORDER_PROCESSOR_FLOW_ASSESSMENT_NOT_ACCEPTED",
     "RU_HOSTED_DATA_SUBJECT_REQUEST_CHANNEL_NOT_ACCEPTED",
@@ -195,7 +198,7 @@ def _validate_contract_identity(contract: dict[str, Any]) -> None:
     )
     _require_equal(
         contract.get("status"),
-        "ENGINEERING_PRE_ACTIVATION_READY_EXTERNAL_SIGNOFF_REQUIRED",
+        "TIMEWEB_REVALIDATION_REQUIRED_LIVE_ACTIVATION_BLOCKED",
         "TELEGRAM_PUBLIC_USER_READINESS_STATUS_INVALID",
     )
     _require_equal(
@@ -205,7 +208,7 @@ def _validate_contract_identity(contract: dict[str, Any]) -> None:
     )
     _require_equal(
         contract.get("accepted_base_main_evidence"),
-        "PR_557_RELEASE_84",
+        "AMENDMENT_18_ACCEPTED_PR_581",
         "TELEGRAM_PUBLIC_USER_READINESS_BASE_SHA_INVALID",
     )
     _validate_base_main_sha(contract)
@@ -244,21 +247,8 @@ def _validate_provider_secret_readiness(contract: dict[str, Any]) -> None:
         "TELEGRAM_PUBLIC_USER_READINESS_BINDINGS_INVALID",
     )
     _require_equal(
-        readiness.get("accepted"),
-        True,
-        "TELEGRAM_PUBLIC_USER_READINESS_BINDINGS_INVALID",
-    )
-    _require_equal(
-        readiness.get("workflow_run"),
-        "35367055812",
-        "TELEGRAM_PUBLIC_USER_READINESS_BINDINGS_INVALID",
-    )
-    _require_equal(
-        readiness.get("marker"),
-        (
-            "CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY "
-            "production_bindings=4 staging_bindings=0"
-        ),
+        readiness,
+        _EXPECTED_PROVIDER_SECRET_READINESS,
         "TELEGRAM_PUBLIC_USER_READINESS_BINDINGS_INVALID",
     )
 
@@ -292,13 +282,13 @@ def _validate_operations(contract: dict[str, Any]) -> None:
         contract.get("operations"),
         "TELEGRAM_PUBLIC_USER_READINESS_OPERATIONS_INVALID",
     )
-    evidence = _mapping(
-        operations.get("exact_main_release_evidence"),
+    historical = _mapping(
+        operations.get("historical_cloudflare_release_evidence"),
         "TELEGRAM_PUBLIC_USER_READINESS_RELEASE_EVIDENCE_INVALID",
     )
     _require_equal(
-        evidence,
-        _EXPECTED_RELEASE_EVIDENCE,
+        historical,
+        _EXPECTED_HISTORICAL_CLOUDFLARE_RELEASE,
         "TELEGRAM_PUBLIC_USER_READINESS_RELEASE_EVIDENCE_INVALID",
     )
     for key in _REQUIRED_TRUE_OPERATIONS:
@@ -327,7 +317,7 @@ def _validate_legal_gate(contract: dict[str, Any]) -> None:
     )
     _require_equal(
         legal.get("status"),
-        "OPERATOR_IDENTITY_ACCEPTED_DATA_RESIDENCY_AND_REGULATORY_GATES_OPEN",
+        "TIMEWEB_DATA_RESIDENCY_AND_REGULATORY_GATES_OPEN",
         "TELEGRAM_PUBLIC_USER_READINESS_LEGAL_GATE_INVALID",
     )
     _require_equal(
@@ -470,73 +460,21 @@ def _validate_rate_policy_source(root: Path) -> None:
         )
 
 
-def _load_wrangler(root: Path) -> dict[str, Any]:
-    try:
-        value = loads_jsonc(_read(root, WRANGLER))
-    except (ValueError, TypeError) as exc:
-        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_WRANGLER_INVALID") from exc
-    return _mapping(
-        value,
-        "TELEGRAM_PUBLIC_USER_READINESS_WRANGLER_INVALID",
+def _validate_provider_neutral_activation_defaults(root: Path) -> None:
+    source = _read(root, AUTH_RUNTIME)
+    _require_text_markers(
+        source,
+        (
+            '_PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"',
+            '_TELEGRAM_LOGIN_ENABLED = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"',
+            '_VK_ID_LOGIN_ENABLED = "OMNI_V10_VK_ID_LOGIN_ENABLED"',
+            "def _flag(env: Mapping[str, str], name: str) -> bool:",
+            "if not value:\n        return False",
+            'if value == "true":\n        return True',
+            'if value == "false":\n        return False',
+        ),
+        "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_DEFAULT_DRIFT",
     )
-
-
-def _validate_activation_flags(wrangler: dict[str, Any]) -> None:
-    production_vars = _mapping(
-        wrangler.get("vars"),
-        "TELEGRAM_PUBLIC_USER_READINESS_PRODUCTION_FLAG_DRIFT",
-    )
-    for name, value in _EXPECTED_SOURCE_FLAGS.items():
-        _require_equal(
-            production_vars.get(name),
-            value,
-            "TELEGRAM_PUBLIC_USER_READINESS_PRODUCTION_FLAG_DRIFT",
-        )
-
-    environments = _mapping(
-        wrangler.get("env"),
-        "TELEGRAM_PUBLIC_USER_READINESS_STAGING_FLAG_DRIFT",
-    )
-    staging = _mapping(
-        environments.get("staging"),
-        "TELEGRAM_PUBLIC_USER_READINESS_STAGING_FLAG_DRIFT",
-    )
-    staging_vars = _mapping(
-        staging.get("vars"),
-        "TELEGRAM_PUBLIC_USER_READINESS_STAGING_FLAG_DRIFT",
-    )
-    for name, value in _EXPECTED_SOURCE_FLAGS.items():
-        _require_equal(
-            staging_vars.get(name),
-            value,
-            "TELEGRAM_PUBLIC_USER_READINESS_STAGING_FLAG_DRIFT",
-        )
-
-
-def _validate_container_envelope(wrangler: dict[str, Any]) -> None:
-    containers = wrangler.get("containers")
-    if not isinstance(containers, list) or len(containers) != 1:
-        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT")
-    container = _mapping(
-        containers[0],
-        "TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT",
-    )
-    _require_equal(
-        container.get("max_instances"),
-        1,
-        "TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT",
-    )
-    _require_equal(
-        container.get("instance_type"),
-        "lite",
-        "TELEGRAM_PUBLIC_USER_READINESS_CONTAINER_ENVELOPE_DRIFT",
-    )
-
-
-def _validate_wrangler_source(root: Path) -> None:
-    wrangler = _load_wrangler(root)
-    _validate_activation_flags(wrangler)
-    _validate_container_envelope(wrangler)
 
 
 def _validate_ledger_source(root: Path) -> None:
@@ -573,7 +511,7 @@ def _validate_sources(root: Path) -> None:
     _validate_identity_source(root)
     _validate_transaction_source(root)
     _validate_rate_policy_source(root)
-    _validate_wrangler_source(root)
+    _validate_provider_neutral_activation_defaults(root)
     _validate_ledger_source(root)
     _validate_runbook_source(root)
 

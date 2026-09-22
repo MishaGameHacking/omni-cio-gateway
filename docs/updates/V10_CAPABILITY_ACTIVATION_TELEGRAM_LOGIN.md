@@ -10,10 +10,10 @@ This ledger tracks the material `telegram_login` activation transition under Ame
 - Capability ID: `telegram_login`
 - User-facing name: Telegram Login
 - Owning WP/System Update: WP22A authentication architecture / Amendment 13 activation
-- Accepted base `main` SHA: `66ef57dedd07ad68d472cb205da6bb8e87528e94`
-- Branch: `activation/telegram-public-user-readiness`
+- Accepted base `main` SHA: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
+- Current owning System Update: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` / TW-F after TW-A..TW-E
 - Dashboard: issue #549
-- Canonical Web/runtime target: `https://omnicio.ru` / Cloudflare Worker + Container
+- Canonical Web/runtime target: `https://omnicio.ru` / Timeweb Cloud App Platform
 - Current accepted capability state: `BLOCKED_EXTERNAL`
 - Proposed capability state: `LIVE_OPERABLE`
 
@@ -23,14 +23,16 @@ This ledger tracks the material `telegram_login` activation transition under Ame
 - [x] Browser-bound state/proof, callback validation and session lifecycle are accepted.
 - [x] Verified identity -> ordinary product account -> Tenant -> server-side Session is accepted.
 - [x] Database-enforced tenant isolation and reserved historical OWNER-scope rejection are accepted.
-- [x] Canonical Cloudflare production ingress/release is accepted through Release #84 / run `35379210101`.
-- [x] Production runtime-only Telegram provider bindings are present and proven.
+- [x] Historical Cloudflare production release/readiness evidence is preserved as accepted history only.
+- [ ] Exact-main Timeweb App Platform production release is accepted.
+- [ ] Timeweb runtime-only Telegram provider bindings are present and proven without exposing values.
 - [ ] Real browser login/logout/revocation is proven on canonical Web.
 
-Readiness evidence:
+Historical readiness evidence:
 
-- `V10 Cloudflare Provider Readiness` #81 / run `35367055812` completed `success` on exact protected main `ad01e78bdf38c2014f3c79f41d43da8db695c219`.
-- Sanitized binding proof: `CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY production_bindings=4 staging_bindings=0`.
+- `V10 Cloudflare Provider Readiness` #81 / run `35367055812` previously completed `success`.
+- Historical marker: `CLOUDFLARE_TELEGRAM_LOGIN_READINESS=READY production_bindings=4 staging_bindings=0`.
+- Amendment 18 retired Cloudflare/Neon from current authority; this evidence cannot activate Telegram on Timeweb.
 - No provider secret value is copied into GitHub, CI output, repository files or this ledger.
 
 Repository preparation in this branch:
@@ -48,17 +50,18 @@ Repository preparation in this branch:
 
 - [x] Telegram Allowed URL/origin `https://omnicio.ru` is OWNER-attested in accepted PR #551; this readiness change records that non-secret evidence explicitly.
 - [x] Telegram OIDC callback `https://omnicio.ru/api/v10/web/auth/telegram/callback` is OWNER-attested in accepted PR #551; no provider secret value is recorded.
-- [x] Runtime-only Telegram Client ID / Client Secret in Cloudflare secret custody.
-- [x] Runtime-only identity-binding and CSRF keys in Cloudflare secret custody.
+- [ ] Runtime-only Telegram Client ID / Client Secret accepted in Timeweb runtime custody.
+- [ ] Runtime-only identity-binding and CSRF keys accepted in Timeweb runtime custody.
 - [x] Public-user technical data-minimization inventory is frozen by `V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json`.
 - [x] Engineering capacity/rate-limit/DoS controls are frozen and regression-guarded for the current one-Container launch envelope.
-- [x] Monitoring/rollback baseline is frozen: Cloudflare Workers metrics + exact-main `/healthz` release acceptance + bounded rollback; no paid logs/tracing expansion is assumed.
+- [ ] Timeweb monitoring/rollback baseline is accepted with exact-main `/healthz` release identity and last-known-good recovery.
 - [x] Operator/controller legal form and responsible-person model are OWNER-attested; private regulatory identifiers remain outside GitHub.
 - [x] Russian launch jurisdiction, core processing-purpose/legal-basis model and statutory incident/retention timing are frozen by the legal/privacy checkpoint.
-- [ ] Russian primary PostgreSQL production cutover is accepted; current Frankfurt Neon authority remains a hard localization blocker for real Russian-user collection.
+- [ ] Timeweb PostgreSQL 18 production cutover is accepted; there is currently no accepted live production DB for real-user collection.
 - [ ] Roskomnadzor processing notification is accepted with sanitized evidence.
-- [ ] Telegram/Cloudflare cross-border processor-flow assessment and any required notification are accepted.
+- [ ] Telegram cross-border processor-flow assessment and any required notification are accepted.
 - [ ] A Russian-hosted or in-product/Russian-stored data-subject request channel is accepted.
+- [ ] Canonical omnicio.ru Timeweb DNS/TLS and representative Russian no-VPN acceptance are complete.
 - [ ] Final public Privacy Policy is deployed on every personal-data collection surface.
 - [ ] `PUBLIC_MULTI_USER_ENABLED=true` accepted only after all owning gates close.
 - [ ] `OMNI_V10_TELEGRAM_LOGIN_ENABLED=true` accepted only for the Telegram capability.
@@ -92,14 +95,14 @@ sanitized live negatives before `LIVE_OPERABLE`:
 - Accepted capability state: `BLOCKED_EXTERNAL`
 - Current runtime availability: provider login unavailable
 - Kill switch / temporary suspension active: YES
-- Reason: `PUBLIC_MULTI_USER_ENABLED=false` plus remaining public-user/provider registration evidence gates
+- Reason: `PUBLIC_MULTI_USER_ENABLED=false` plus Timeweb app/database/DNS/secret-custody and remaining legal/public-user gates
 - Recovery criteria: all blocker inventory items accepted with real sanitized evidence
 
 ## Monitoring / recovery
 
 - [x] Provider misconfiguration fails closed.
 - [x] Session revoke/logout paths exist.
-- [x] Cloudflare release rollback/recovery exists.
+- [ ] Timeweb release rollback/recovery is accepted.
 - [ ] Provider-specific production availability/incident evidence accepted.
 
 ## State transition decision
@@ -108,8 +111,8 @@ sanitized live negatives before `LIVE_OPERABLE`:
 FROM: BLOCKED_EXTERNAL
 TO: LIVE_OPERABLE
 DECISION: BLOCKED
-EXTERNAL GATES CLOSED: canonical Cloudflare ingress/release + production runtime secret custody
-REMAINING BLOCKERS: Russian production DB cutover + Roskomnadzor processing notification + cross-border processor-flow acceptance + Russian data-subject request channel + deployed Privacy Policy, then post-activation real-user/provider-availability and tenant-isolation evidence
+EXTERNAL GATES CLOSED: historical Telegram URL/callback attestation only; retired Cloudflare evidence remains historical
+REMAINING BLOCKERS: Timeweb app release + Timeweb runtime secret custody + Timeweb PostgreSQL production cutover + canonical DNS/TLS/no-VPN acceptance + Roskomnadzor processing notification + Telegram cross-border processor-flow acceptance + Russian data-subject request channel + deployed Privacy Policy, then post-activation real-user/provider-availability and tenant-isolation evidence
 EXACT EVIDENCE: issue #549 + current activation branch/PR
 ```
 

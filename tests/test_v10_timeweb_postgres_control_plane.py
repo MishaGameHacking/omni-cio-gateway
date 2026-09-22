@@ -85,15 +85,16 @@ class TimewebControlPlaneTests(unittest.TestCase):
             {
                 "enabled": True,
                 "trigger_event": "workflow_run",
-                "upstream_workflow": "V10 Cloudflare Production Release",
+                "upstream_workflow": "Regression Shield",
                 "upstream_conclusion_required": "success",
-                "upstream_event_required": "workflow_run",
+                "upstream_event_required": "push",
                 "upstream_head_branch_required": "main",
                 "expected_head_source": "github.event.workflow_run.head_sha",
                 "current_main_equality_required": True,
                 "manual_workflow_dispatch_fallback_preserved": True,
                 "provider_mutation_authority_inherited": False,
                 "paid_transition_authority_inherited": False,
+                "retired_provider_dependency_allowed": False,
             },
         )
 
@@ -101,9 +102,10 @@ class TimewebControlPlaneTests(unittest.TestCase):
         source = guard.LIVE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", source)
         self.assertIn("workflow_run:", source)
-        self.assertIn("- V10 Cloudflare Production Release", source)
+        self.assertIn("- Regression Shield", source)
+        self.assertNotIn("- V10 Cloudflare Production Release", source)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", source)
-        self.assertIn("github.event.workflow_run.event == 'workflow_run'", source)
+        self.assertIn("github.event.workflow_run.event == 'push'", source)
         self.assertIn("github.event.workflow_run.head_branch == 'main'", source)
         self.assertIn("github.event.workflow_run.head_sha", source)
         self.assertIn('test "$EXPECTED_BRANCH" = "main"', source)
@@ -164,9 +166,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
         )
         self.assertEqual(len(opener.requests), 2)
         self.assertTrue(
-            opener.requests[0].full_url.endswith(
-                "/environments/timeweb-synthetic"
-            )
+            opener.requests[0].full_url.endswith("/environments/timeweb-synthetic")
         )
         self.assertTrue(
             opener.requests[1].full_url.endswith(
@@ -221,9 +221,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
 
     def test_environment_machine_gate_rejects_wrong_pattern(self) -> None:
         policies = self._main_policy_payload()
-        policies["branch_policies"] = [
-            {"id": 7, "name": "release/*", "type": "branch"}
-        ]
+        policies["branch_policies"] = [{"id": 7, "name": "release/*", "type": "branch"}]
         opener = _Opener([_Response(self._environment_payload()), _Response(policies)])
         with self.assertRaisesRegex(
             environment_gate.EnvironmentGateError,
@@ -283,9 +281,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             workflows.mkdir(parents=True)
             readonly = workflows / "v10-timeweb-postgres-readonly-proof.yml"
             create = workflows / "v10-timeweb-postgres-synthetic-create.yml"
-            public_ipv4_tls = (
-                workflows / "v10-timeweb-postgres-public-ipv4-tls.yml"
-            )
+            public_ipv4_tls = workflows / "v10-timeweb-postgres-public-ipv4-tls.yml"
             allocation = workflows / "v10-timeweb-ipv4-allocation.yml"
             readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
@@ -306,22 +302,28 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
             )
-            with mock.patch.object(guard, "WORKFLOWS", workflows), mock.patch.object(
-                guard,
-                "LIVE_WORKFLOW",
-                readonly,
-            ), mock.patch.object(
-                guard,
-                "SYNTHETIC_CREATE_WORKFLOW",
-                create,
-            ), mock.patch.object(
-                guard,
-                "PUBLIC_IPV4_TLS_WORKFLOW",
-                public_ipv4_tls,
-            ), mock.patch.object(
-                guard,
-                "TIMEWEB_ALLOCATION_WORKFLOW",
-                allocation,
+            with (
+                mock.patch.object(guard, "WORKFLOWS", workflows),
+                mock.patch.object(
+                    guard,
+                    "LIVE_WORKFLOW",
+                    readonly,
+                ),
+                mock.patch.object(
+                    guard,
+                    "SYNTHETIC_CREATE_WORKFLOW",
+                    create,
+                ),
+                mock.patch.object(
+                    guard,
+                    "PUBLIC_IPV4_TLS_WORKFLOW",
+                    public_ipv4_tls,
+                ),
+                mock.patch.object(
+                    guard,
+                    "TIMEWEB_ALLOCATION_WORKFLOW",
+                    allocation,
+                ),
             ):
                 guard._validate_timeweb_secret_scope()
                 (workflows / "other.yml").write_text(
@@ -403,9 +405,12 @@ class TimewebControlPlaneTests(unittest.TestCase):
 
     def test_cluster_disk_unit_contract_rejects_true_drift(self) -> None:
         for size in (20_971_519, 20_971_521):
-            with self.subTest(size=size), self.assertRaisesRegex(
-                probe._provider_base.ProvisioningStopped,
-                "TEST_DISK_DRIFT",
+            with (
+                self.subTest(size=size),
+                self.assertRaisesRegex(
+                    probe._provider_base.ProvisioningStopped,
+                    "TEST_DISK_DRIFT",
+                ),
             ):
                 probe._require_target_cluster_disk(
                     {"disk": {"size": size}},
@@ -607,18 +612,22 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 }
             },
         ]
-        with mock.patch.object(
-            probe._provider_base,
-            "_required_env",
-            return_value="synthetic-token",
-        ), mock.patch.object(
-            probe,
-            "TimewebReadOnlyApi",
-            return_value=api,
-        ), mock.patch.object(
-            probe._provider_base,
-            "_emit",
-        ) as emit:
+        with (
+            mock.patch.object(
+                probe._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                probe,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                probe._provider_base,
+                "_emit",
+            ) as emit,
+        ):
             probe.probe()
 
         api.get.assert_any_call("/api/v1/databases/99")

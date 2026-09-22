@@ -102,7 +102,7 @@ body:
         Exact SHA:
         State: PENDING / RED_REPAIR_ONLY / TARGET_REPAIRED / CERTIFIED_GREEN
         Applicable checks and terminal conclusions:
-        Sonar QG / new issues / hotspots:
+        GitHub-native quality/security evidence:
         Independent findings / root-cause groups:
         Same-SHA rerun evidence: N/A / reason
         Targeted proof: N/A / command or run

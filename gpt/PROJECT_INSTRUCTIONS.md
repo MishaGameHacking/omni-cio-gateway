@@ -21,16 +21,17 @@
 5. knowledge/16_CURRENT_PROGRAM_STATUS.md — protected V9 runtime baseline.
 6. docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md.
 7. docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md.
-8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law, Cloudflare Platform Authority, Cloudflare Public Product Integrated Delivery and Green Checkpoint & Targeted CI Repair Law.
+8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Amendment 18 Timeweb-Only Platform Consolidation & Telegram-Only Login Authority, Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law and Green Checkpoint & Targeted CI Repair Law.
 9. docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json.
 10. docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json and docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md when Amendment 16 is accepted.
 11. docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json.
-12. docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json.
-13. docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json when accepted.
+12. docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json.
+13. docs/architecture/V10_RU_POSTGRES_TIMEWEB_CONTROL_PLANE_CONTRACT.json.
 14. docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md.
 15. knowledge/17_V10_CURRENT_PROGRAM_STATUS.md — единственный current V10 progress/current-next execution ledger.
 16. профильные architecture/domain/runbook/contracts/Execution Ledger по текущей задаче.
-17. Если задача касается applied GPT/V9 recovery — gpt/SETUP_INDEX.md и связанные V9 recovery files.
+17. Historical Cloudflare/Neon/Render/VK contracts/amendments — только для recovery, compatibility или provenance review; не использовать их как current implementation templates.
+18. Если задача касается applied GPT/V9 recovery — gpt/SETUP_INDEX.md и связанные V9 recovery files.
 
 Затем проверь actual main SHA, open PR/issues, applicable exact-head CI/security, post-merge Regression Shield и authorized current execution unit.
 
@@ -64,7 +65,7 @@ Current product/platform direction:
 - Cloudflare/Neon/Render/Cloud.ru code and docs may remain as historical project memory but must not be used for new implementation;
 - no mass repository deletion is required; archive-in-place is the default;
 - retired provider workflows/secrets/resources are disabled/revoked only after the replacement cutover/recovery gate;
-- GitHub-native checks must replace any required external CI/review SaaS before that SaaS is removed;
+- GitHub-native checks are the active quality/security authority; external CI/review SaaS is historical and must not be required by current/future workflows;
 - production Timeweb autodeploy must not bypass accepted GitHub exact-SHA release gates;
 - PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory;
 - PROJECT OWNER is not a product superuser; OWNER uses the same account/tenant/session path as every USER;
@@ -92,7 +93,7 @@ Integrated System Update Execution Law:
 - mandatory split triggers remain active.
 
 Green Checkpoint & Targeted CI Repair Law / Amendment 16:
-- canonical flow is `WRITE -> focused preflight -> CHECKPOINT SHA -> CI + Sonar + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`;
+- canonical flow is `WRITE -> focused preflight -> CHECKPOINT SHA -> GitHub-native CI/security + independent review -> CERTIFIED_GREEN -> NEXT CHECKPOINT`;
 - the next functional checkpoint or dependent milestone is forbidden until the current published checkpoint is `CERTIFIED_GREEN`;
 - any applicable CI failure or material review finding moves the branch immediately to `RED_REPAIR_ONLY`; unrelated feature scope stops;
 - start root-cause/blast-radius diagnosis as soon as useful RED evidence exists; do not wait for every independent job merely to begin ordinary repair;
@@ -101,8 +102,8 @@ Green Checkpoint & Targeted CI Repair Law / Amendment 16:
 - repeated identical transient classification is forbidden; treat it as infrastructure/workflow defect;
 - if source/config/test/governance content changes, old final evidence is stale and the repair needs a replacement SHA;
 - run the smallest canonical targeted proof first, then obtain full applicable certification on the final replacement exact SHA before new functional work;
-- Sonar Quality Gate must pass when applicable; default new-code issues = 0, unresolved new Security Hotspots = 0, unresolved material Reliability/Security/Maintainability findings = 0;
-- inspect Gitar/SAST/check annotations/review threads; bot approval is supporting evidence only;
+- GitHub-native lint/type/test/coverage/dependency/SAST/secret/security checks must pass when applicable; unresolved material correctness/security/maintainability findings are not GREEN;
+- inspect GitHub-native SAST/security/dependency/secret checks, check annotations and review threads; bot approval is supporting evidence only;
 - safety abort takes priority if continued execution risks secret/private-data exposure, broker/Real reachability, destructive migration/provider mutation, uncontrolled spend or cross-tenant exposure;
 - only `success` counts as GREEN for an applicable project gate; failure/cancelled/queued/pending/in_progress/timed_out/action_required/stale/neutral/skipped are not GREEN under project policy;
 - post-merge applicable RED on current main means `MAIN_RED_STOP`; ordinary feature progress pauses until an accepted focused repair restores GREEN;

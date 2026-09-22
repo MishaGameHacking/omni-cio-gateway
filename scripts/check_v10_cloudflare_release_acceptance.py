@@ -28,6 +28,10 @@ _SECURE_WEB_BUILD = (
     "npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
 )
 _CONTAINER_SOURCE_PATH = "/api/internal/v10/cloudflare/container-source"
+_ARCHIVE_MARKER = (
+    "# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority."
+)
+_ARCHIVE_DISABLED_JOB_COUNT = 6
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -406,8 +410,36 @@ def _validate_production_build_source() -> None:
     )
 
 
+def _validate_archived_production_workflow(workflow: str) -> None:
+    _require_markers(
+        workflow,
+        (
+            _ARCHIVE_MARKER,
+            "on:\n  workflow_dispatch:",
+            "inspect_database_state:",
+            "bootstrap_staging_database:",
+            "rehearse:",
+            "bootstrap_production_database:",
+            "promote:",
+            "release_outcome:",
+        ),
+        "CLOUDFLARE_RELEASE_ARCHIVE_GUARD_MISSING",
+    )
+    if workflow.count("    if: ${{ false }}") != _ARCHIVE_DISABLED_JOB_COUNT:
+        raise RuntimeError("CLOUDFLARE_RELEASE_ARCHIVE_JOB_NOT_HARD_DISABLED")
+    _forbid_markers(
+        workflow,
+        ("on:\n  workflow_run:", "on:\n  push:"),
+        "CLOUDFLARE_RELEASE_ARCHIVE_TRIGGER_PRESENT",
+    )
+
+
 def _validate_production_workflow(live: dict[str, Any]) -> None:
     workflow = _read(PRODUCTION_WORKFLOW, "PRODUCTION_WORKFLOW")
+    if _ARCHIVE_MARKER in workflow:
+        _validate_archived_production_workflow(workflow)
+        return
+
     staging_expected = str(live["staging_public_multi_user_enabled"]).lower()
     production_expected = str(live["production_public_multi_user_enabled"]).lower()
     staging_probe = (
@@ -447,16 +479,11 @@ def _validate_production_workflow(live: dict[str, Any]) -> None:
         "OMNI_V10_PRODUCTION_DEPLOY_ATTEMPTED=1",
     )
     _require_markers(
-        workflow,
-        markers,
-        "CLOUDFLARE_RELEASE_PRODUCTION_WORKFLOW_GUARD_MISSING",
+        workflow, markers, "CLOUDFLARE_RELEASE_PRODUCTION_WORKFLOW_GUARD_MISSING"
     )
     _forbid_markers(
         workflow,
-        (
-            "on:\n  push:\n    branches:\n      - main",
-            "continue-on-error: true",
-        ),
+        ("on:\n  push:\n    branches:\n      - main", "continue-on-error: true"),
         "CLOUDFLARE_RELEASE_DIRECT_PRODUCTION_AUTODEPLOY_FORBIDDEN",
     )
 

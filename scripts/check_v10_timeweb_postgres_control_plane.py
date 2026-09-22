@@ -23,7 +23,7 @@ _ENVIRONMENT_NAME = "timeweb-synthetic"
 _ENVIRONMENT_GATE_MARKER = "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY"
 _CLUSTER_DETAIL_ENDPOINT = "/api/v1/databases/{cluster_id}"
 _REPLICA_TOPOLOGY_MARKER = "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED"
-_CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW = "V10 Cloudflare Production Release"
+_REGRESSION_SHIELD_WORKFLOW = "Regression Shield"
 
 
 def _read(path: Path) -> str:
@@ -223,15 +223,16 @@ def _validate_environment_contract(payload: dict[str, Any]) -> None:
         {
             "enabled": True,
             "trigger_event": "workflow_run",
-            "upstream_workflow": _CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW,
+            "upstream_workflow": _REGRESSION_SHIELD_WORKFLOW,
             "upstream_conclusion_required": "success",
-            "upstream_event_required": "workflow_run",
+            "upstream_event_required": "push",
             "upstream_head_branch_required": "main",
             "expected_head_source": "github.event.workflow_run.head_sha",
             "current_main_equality_required": True,
             "manual_workflow_dispatch_fallback_preserved": True,
             "provider_mutation_authority_inherited": False,
             "paid_transition_authority_inherited": False,
+            "retired_provider_dependency_allowed": False,
         },
         "TIMEWEB_CONTROL_PLANE_AUTO_PROOF_INVALID",
     )
@@ -396,7 +397,17 @@ def _validate_mutation_contract(payload: dict[str, Any]) -> None:
         _require(mutation.get(key), False, "TIMEWEB_CONTROL_PLANE_MUTATION_INVALID")
     _require(
         mutation.get("neon_production_authority_preserved"),
-        True,
+        False,
+        "TIMEWEB_CONTROL_PLANE_NEON_AUTHORITY_INVALID",
+    )
+    _require(
+        mutation.get("neon_rollback_available"),
+        False,
+        "TIMEWEB_CONTROL_PLANE_NEON_AUTHORITY_INVALID",
+    )
+    _require(
+        mutation.get("neon_state_source"),
+        "OWNER_REPORTED_EXTERNAL_DECOMMISSION",
         "TIMEWEB_CONTROL_PLANE_NEON_AUTHORITY_INVALID",
     )
 
@@ -528,9 +539,9 @@ def _validate_live_workflow() -> None:
         (
             "workflow_dispatch:",
             "workflow_run:",
-            _CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW,
+            _REGRESSION_SHIELD_WORKFLOW,
             "github.event.workflow_run.conclusion == 'success'",
-            "github.event.workflow_run.event == 'workflow_run'",
+            "github.event.workflow_run.event == 'push'",
             "github.event.workflow_run.head_branch == 'main'",
             "github.event.workflow_run.head_sha",
             'test "$EXPECTED_BRANCH" = "main"',
@@ -615,10 +626,10 @@ def _validate_runbook() -> None:
             "`main`",
             "workflow_dispatch",
             "workflow_run",
-            _CLOUDFLARE_PRODUCTION_RELEASE_WORKFLOW,
+            _REGRESSION_SHIELD_WORKFLOW,
             "Terraform",
             "Public API",
-            "Neon production authority",
+            "Neon external authority is unavailable",
             _ENVIRONMENT_GATE_MARKER,
             "TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY",
             _REPLICA_TOPOLOGY_MARKER,

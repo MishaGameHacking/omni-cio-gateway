@@ -165,6 +165,35 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             failures,
         )
 
+    def test_authoritative_tracked_content_scan_precedes_regression_shield(
+        self,
+    ) -> None:
+        failures: list[str] = []
+        shield.validate_authoritative_gate_order(
+            shield.PROTECTED_REGRESSION_STEP
+            + "\n"
+            + shield.TRACKED_CONTENT_SCAN_STEP
+            + "\n",
+            failures,
+        )
+        self.assertEqual(
+            failures,
+            [
+                "Authoritative Merge Gate tracked-content scan must run before protected "
+                "Regression Shield"
+            ],
+        )
+
+        failures = []
+        shield.validate_authoritative_gate_order(
+            shield.TRACKED_CONTENT_SCAN_STEP
+            + "\n"
+            + shield.PROTECTED_REGRESSION_STEP
+            + "\n",
+            failures,
+        )
+        self.assertEqual(failures, [])
+
     def test_soft_fail_policy_rejects_mandatory_step(self) -> None:
         failures: list[str] = []
         shield.validate_soft_fail_policy(

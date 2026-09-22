@@ -1,9 +1,8 @@
 name: V10 Cloudflare Candidate Deployment
 
+# ARCHIVE-IN-PLACE: Amendment 18 retired Cloudflare from active V10 authority.
+# Manual dispatch is retained only as historical evidence; the provider job is hard-disabled.
 on:
-  push:
-    branches:
-      - system/cloudflare-public-product
   workflow_dispatch:
 
 permissions:
@@ -15,6 +14,7 @@ concurrency:
 
 jobs:
   candidate:
+    if: ${{ false }}
     name: CF-C staging Worker and Container acceptance
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 45

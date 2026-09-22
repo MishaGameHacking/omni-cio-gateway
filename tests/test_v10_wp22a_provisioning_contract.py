@@ -270,14 +270,22 @@ def test_cloudflare_provider_version_and_windows_package_hash_are_locked() -> No
     )
 
 
-def test_ci_uses_committed_provider_lock_without_rewriting_it() -> None:
+def test_ci_does_not_execute_retired_provider_validator() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     validator = TERRAFORM_VALIDATE.read_text(encoding="utf-8")
     assert "scripts\\validate_wp22a_terraform.ps1" in workflow
     assert "scripts\\bootstrap_wp22a_cloudflare_provider.ps1" in workflow
+    assert "Parse WP22A PowerShell without mutation" in workflow
     assert (
-        "Validate Cloudflare IaC with pinned OpenTofu and provider mirror" in workflow
+        "Verify dormant clientless source contract without provider execution"
+        in workflow
     )
+    assert (
+        "Validate Cloudflare IaC with pinned OpenTofu and provider mirror"
+        not in workflow
+    )
+    assert workflow.count("scripts\\validate_wp22a_terraform.ps1") == 1
+    assert "-File scripts\\validate_wp22a_terraform.ps1" not in workflow
     assert 'Join-Path $sourceRoot ".terraform.lock.hcl"' in validator
     assert "-Destination $validateRoot -Force" in validator
     assert "-lockfile=readonly" in validator

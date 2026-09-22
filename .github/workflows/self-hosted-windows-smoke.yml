@@ -276,6 +276,13 @@ jobs:
             tests/test_v10_regression_shield.py
           python -m mypy
 
+      - name: Scan tracked content for potential secrets
+        run: >-
+          python -m detect_secrets scan --all-files
+          --exclude-files
+          '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.pytest_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
+          | python scripts/check_ci_security_baseline.py --detect-secrets-report
+
       - name: Verify stable gateway entrypoint
         run: |
           python - <<'PY'
@@ -326,20 +333,6 @@ jobs:
 
       - name: Run protected SAST
         run: python -m bandit -c pyproject.toml -r . -ll -ii -q
-
-      - name: Scan tracked content for potential secrets
-        run: >-
-          python -m detect_secrets scan --all-files
-          --exclude-files
-          '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.pytest_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
-          | python scripts/check_ci_security_baseline.py --detect-secrets-report
-
-      - name: Verify exact-head Sonar review gate
-        if: github.event_name == 'pull_request'
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/check_v10_pr_external_review_gate.py
 
       - name: Summarize failure diagnostics without external Actions
         if: failure()
