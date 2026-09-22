@@ -69,6 +69,11 @@ _CONTENT_SCAN_FILENAMES = frozenset(
     }
 )
 _INVENTORY_GUARD_PATH = "scripts/check_v10_timeweb_platform_inventory.py"
+_CONTENT_SCAN_KEEP_EXEMPTIONS = frozenset(
+    {
+        ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+    }
+)
 _MAX_SCANNED_SOURCE_BYTES = 1_000_000
 _RETIRED_EXECUTION_MARKERS = (
     "from apps.api.cf_d_database_bootstrap import",
@@ -353,7 +358,10 @@ def _validate_content_consumers(
             raise RuntimeError(
                 "TIMEWEB_INVENTORY_UNCLASSIFIED_RETIRED_CONSUMER:" + relative
             )
-        if classification == "KEEP":
+        if (
+            classification == "KEEP"
+            and relative not in _CONTENT_SCAN_KEEP_EXEMPTIONS
+        ):
             raise RuntimeError(
                 "TIMEWEB_INVENTORY_RETIRED_DEPENDENCY_MARKED_KEEP:" + relative
             )
@@ -370,6 +378,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         "apps/web/src/app-shell/app-shell.tsx",
         "apps/web/src/app-shell/contracts.ts",
         "apps/web/tests/app_shell_contract.test.ts",
+        "apps/web/vite.config.ts",
         "omni_cio/observability/hosted_readiness_v1.py",
         "omni_cio/persistence/_hosted_recovery_contract_v1.py",
         "omni_cio/persistence/hosted_postgres_runtime_v1.py",
@@ -384,6 +393,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         "scripts/probe_v10_timeweb_ipv4_custody.py",
         "scripts/probe_v10_timeweb_postgres_control_plane.py",
         "scripts/prove_v10_ru_postgres_timeweb_parity.py",
+        "scripts/rehearse_v10_wp22a_phase4_runtime_role.py",
         "scripts/provision_v10_cloudflare_neon_runtime.py",
         "scripts/provision_v10_render_neon_preview.py",
         "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",

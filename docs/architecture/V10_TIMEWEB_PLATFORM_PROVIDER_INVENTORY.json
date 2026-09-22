@@ -206,6 +206,14 @@
     "omni_cio/web/vk_id_oauth_v1.py": {
       "classification": "RETIRE_NOW_AFTER_AUTHORITY",
       "reason": "VK ID source is retained as historical evidence but must leave deployed composition under Amendment 18."
+    },
+    "apps/web/vite.config.ts": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Web build identity still falls back to retired Render release metadata; TW-B must use provider-neutral exact GitHub SHA input."
+    },
+    "scripts/rehearse_v10_wp22a_phase4_runtime_role.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Active PostgreSQL 18 rehearsal still imports runtime-role convergence from the historical Render/Neon provisioner; extract the primitive to provider-neutral PostgreSQL code in TW-B/TW-D."
     }
   },
   "path_rules": [

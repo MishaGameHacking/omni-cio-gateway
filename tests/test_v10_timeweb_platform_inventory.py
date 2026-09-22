@@ -70,6 +70,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         for path in (
             "apps/api/hosted_preview.py",
             "apps/api/cf_d_database_bootstrap.py",
+            "apps/web/vite.config.ts",
             "omni_cio/persistence/hosted_postgres_runtime_v1.py",
             "omni_cio/web/identity_v1.py",
             "omni_cio/web/provider_start_adapter_v1.py",
@@ -79,6 +80,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "scripts/probe_v10_timeweb_postgres_control_plane.py",
             "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
             "scripts/provision_v10_timeweb_postgres_synthetic.py",
+            "scripts/rehearse_v10_wp22a_phase4_runtime_role.py",
             "scripts/timeweb_ipv4_allocation_provider.py",
         ):
             with self.subTest(path=path):
@@ -103,6 +105,23 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
     def test_content_only_retired_consumers_are_inventory_bound(self) -> None:
         files = inventory._repository_files()
         inventory._validate_content_consumers(self.payload, files)
+
+    def test_static_historical_audit_is_the_only_keep_exemption(self) -> None:
+        self.assertEqual(
+            inventory._CONTENT_SCAN_KEEP_EXEMPTIONS,
+            frozenset(
+                {
+                    ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+                }
+            ),
+        )
+        self.assertEqual(
+            inventory._classify_path(
+                ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+                self.payload,
+            ),
+            "KEEP",
+        )
 
     def test_safe_matcher_rejects_empty_or_unknown_rule_shapes(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "TIMEWEB_INVENTORY_RULE_INVALID"):
