@@ -42,6 +42,9 @@ NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
 WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW = (
     ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
 )
+WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW = (
+    ".github/workflows/v10-wp22a-phase5-technical-closeout.yml"
+)
 RETIRED_CLOUDFLARE_WORKFLOW_NAMES = (
     CLOUDFLARE_PROVIDER_READINESS_WORKFLOW,
     CLOUDFLARE_CANDIDATE_WORKFLOW,
@@ -50,6 +53,7 @@ RETIRED_CLOUDFLARE_WORKFLOW_NAMES = (
 RETIRED_PROVIDER_WORKFLOW_NAMES = RETIRED_CLOUDFLARE_WORKFLOW_NAMES + (
     NEON_EGRESS_WORKFLOW,
     WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW,
+    WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW,
 )
 WORKFLOW = ROOT / ENGINEERING_GOVERNANCE_WORKFLOW
 TIMEWEB_PROOF_WORKFLOW = ROOT / TIMEWEB_PROOF_WORKFLOW_NAME
@@ -462,7 +466,7 @@ def _validate_no_retired_provider_execution_from_active_workflows() -> None:
 
 def _validate_active_workflow_graph() -> None:
     manual_disable_marker = "if: $" + "{{ false }}"
-    expected_disabled_jobs = (1, 1, 6, 3, 1)
+    expected_disabled_jobs = (1, 1, 6, 3, 1, 1)
     for path, expected_count in zip(
         RETIRED_PROVIDER_WORKFLOWS,
         expected_disabled_jobs,

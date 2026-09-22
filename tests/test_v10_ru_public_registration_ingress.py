@@ -27,6 +27,9 @@ WP22A_CLIENTLESS_WORKFLOW = (
 WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW = (
     ROOT / ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
 )
+WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW = (
+    ROOT / ".github/workflows/v10-wp22a-phase5-technical-closeout.yml"
+)
 
 
 def _contract() -> dict[str, object]:
@@ -175,6 +178,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ".github/workflows/v10-cloudflare-production-release.yml": 6,
             ".github/workflows/v10-neon-egress-boundary.yml": 3,
             ".github/workflows/v10-wp22a-phase4-public-acceptance.yml": 1,
+            ".github/workflows/v10-wp22a-phase5-technical-closeout.yml": 1,
         }
         for relative, count in expected.items():
             source = (ROOT / relative).read_text(encoding="utf-8")
@@ -213,6 +217,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
                 ".github/workflows/v10-cloudflare-production-release.yml",
                 ".github/workflows/v10-neon-egress-boundary.yml",
                 ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
+                ".github/workflows/v10-wp22a-phase5-technical-closeout.yml",
             ],
         )
         self.assertFalse(ci["retired_provider_live_workflow_auto_trigger_allowed"])
@@ -252,6 +257,16 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         self.assertIn("ARCHIVE-IN-PLACE", workflow)
         self.assertIn("if: $" + "{{ false }}", workflow)
         self.assertNotIn("Probe exact public Render preview", workflow)
+        self.assertNotIn("check_v10_wp22a_phase4_public_acceptance.py", workflow)
+        self.assertNotIn("\n  pull_request:", workflow)
+
+    def test_historical_phase5_render_probe_is_not_active_ci(self) -> None:
+        workflow = WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW.read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ARCHIVE-IN-PLACE", workflow)
+        self.assertIn("if: $" + "{{ false }}", workflow)
+        self.assertNotIn("Probe exact public hosted technical release", workflow)
         self.assertNotIn("check_v10_wp22a_phase4_public_acceptance.py", workflow)
         self.assertNotIn("\n  pull_request:", workflow)
 

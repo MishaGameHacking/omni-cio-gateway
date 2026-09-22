@@ -47,7 +47,9 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Current branch mode: `RED_REPAIR_ONLY`; TW-B remains forbidden until this checkpoint is CERTIFIED_GREEN
 - Exact-head RED evidence: Fast PR Checks #3010 and authoritative Windows CI #3102 failed the pinned Ruff formatting baseline on the two newly added TW-A Python files; all earlier compile/lint and applicable product/Web lanes passed
 - Adjacent defect found during root-cause review: historical `.github/workflows/v10-wp22a-phase4-public-acceptance.yml` still had an automatic PR trigger and live read-only Render V10 probe despite Amendment 18 retirement
-- Correction class: format exact changed Python; remove process-spawning inventory discovery; enforce exact inventory cardinality plus content-aware hidden-consumer coverage; archive the stale Render V10 acceptance workflow; add regressions
+- First correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` correctly archived Phase-4 but Engineering Governance #1895 exposed a second same-class consumer: `.github/workflows/v10-wp22a-phase5-technical-closeout.yml` still compiled and live-ran the retired Phase-4 Render probe
+- Consumer search for `public_preview_url` / `check_v10_wp22a_phase4_public_acceptance.py` in workflows proves the historical Phase-4 and Phase-5 workflows are the complete V10 live-probe consumer set
+- Correction class: format exact changed Python; remove process-spawning inventory discovery; enforce exact inventory cardinality plus content-aware hidden-consumer coverage; archive both stale Render V10 acceptance workflows; add regressions
 - No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
 ## 4. Accepted MAIN_RED_STOP repair provenance
@@ -201,5 +203,6 @@ Only `CERTIFIED_GREEN` permits TW-B.
 - Current checkpoint: `TW-A-PROVIDER-CONSUMER-INVENTORY`
 - State: `RED_REPAIR_ONLY` on PR #583 until the replacement exact head is fully certified
 - Accepted split repair: PR #582 + exact-main post-merge success
-- Current RED head: `b7e87df26c435244360a0a67664765a645625541`
-- Next lawful action: publish one coherent TW-A correction head, require full exact-head recertification, and keep TW-B locked until `CERTIFIED_GREEN`
+- Prior formatter RED head: `b7e87df26c435244360a0a67664765a645625541`
+- Subsequent authority-graph RED head: `7ec4a8bf9bb3b02cb8d4571389938def6f17be61`
+- Next lawful action: publish the complete two-workflow retirement correction head, require full exact-head recertification, and keep TW-B locked until `CERTIFIED_GREEN`

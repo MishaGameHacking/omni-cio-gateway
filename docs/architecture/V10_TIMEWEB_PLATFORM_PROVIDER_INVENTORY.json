@@ -168,6 +168,10 @@
     "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql": {
       "classification": "HISTORY",
       "reason": "Accepted immutable migration contains historical provider-auth schema; future schema change requires a new migration."
+    },
+    ".github/workflows/v10-wp22a-phase5-technical-closeout.yml": {
+      "classification": "HISTORY",
+      "reason": "Historical WP22A Phase-5 hosted closeout workflow; archive-in-place and hard-disabled from replaying retired Render/Neon live acceptance."
     }
   },
   "path_rules": [
