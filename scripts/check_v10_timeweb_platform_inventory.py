@@ -20,6 +20,15 @@ ALLOWED_CLASSES = {
     "HISTORY",
 }
 _RULE_INVALID = "TIMEWEB_INVENTORY_RULE_INVALID"
+_RULE_MATCH_KEYS = frozenset(
+    {
+        "prefix",
+        "suffix",
+        "contains",
+        "contains_any",
+        "case_sensitive",
+    }
+)
 _CONTRACT_INVALID = "TIMEWEB_INVENTORY_CONTRACT_INVALID"
 _PROVIDER_KEYWORDS_INVALID = "TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID"
 _EXTERNAL_SURFACES_INVALID = "TIMEWEB_INVENTORY_EXTERNAL_SURFACES_INVALID"
@@ -165,25 +174,23 @@ def _normalized_text(value: object, *, case_sensitive: bool, code: str) -> str:
     return value if case_sensitive else value.casefold()
 
 
-def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
+def _rule_match_mapping(rule: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     match = rule.get("match")
-    if not isinstance(match, dict):
+    if not isinstance(match, dict) or set(match) - _RULE_MATCH_KEYS:
         raise RuntimeError(_RULE_INVALID)
     case_sensitive = match.get("case_sensitive", True)
     if not isinstance(case_sensitive, bool):
         raise RuntimeError(_RULE_INVALID)
-    allowed_keys = {
-        "prefix",
-        "suffix",
-        "contains",
-        "contains_any",
-        "case_sensitive",
-    }
-    if set(match) - allowed_keys:
-        raise RuntimeError(_RULE_INVALID)
-    candidate = path if case_sensitive else path.casefold()
-    selector_count = 0
+    return match, case_sensitive
 
+
+def _scalar_selectors_match(
+    candidate: str,
+    match: dict[str, Any],
+    *,
+    case_sensitive: bool,
+) -> tuple[bool, int]:
+    selector_count = 0
     for key, predicate in (
         ("prefix", str.startswith),
         ("suffix", str.endswith),
@@ -199,31 +206,59 @@ def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
             code=_RULE_INVALID,
         )
         if not predicate(candidate, expected):
-            return False
+            return False, selector_count
+    return True, selector_count
 
+
+def _contains_any_selector_matches(
+    candidate: str,
+    match: dict[str, Any],
+    *,
+    case_sensitive: bool,
+) -> tuple[bool, int]:
     contains_any = match.get("contains_any")
-    if contains_any is not None:
-        selector_count += 1
-        if (
-            not isinstance(contains_any, list)
-            or not contains_any
-            or len(contains_any) > _MAX_MATCH_VALUES
-        ):
-            raise RuntimeError(_RULE_INVALID)
-        expected_any = tuple(
-            _normalized_text(
-                value,
-                case_sensitive=case_sensitive,
-                code=_RULE_INVALID,
-            )
-            for value in contains_any
+    if contains_any is None:
+        return True, 0
+    if (
+        not isinstance(contains_any, list)
+        or not contains_any
+        or len(contains_any) > _MAX_MATCH_VALUES
+    ):
+        raise RuntimeError(_RULE_INVALID)
+    expected_any = tuple(
+        _normalized_text(
+            value,
+            case_sensitive=case_sensitive,
+            code=_RULE_INVALID,
         )
-        if len(expected_any) != len(set(expected_any)):
-            raise RuntimeError(_RULE_INVALID)
-        if not any(value in candidate for value in expected_any):
-            return False
+        for value in contains_any
+    )
+    if len(expected_any) != len(set(expected_any)):
+        raise RuntimeError(_RULE_INVALID)
+    return any(value in candidate for value in expected_any), 1
 
-    if selector_count == 0:
+
+def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
+    match, case_sensitive = _rule_match_mapping(rule)
+    candidate = path if case_sensitive else path.casefold()
+
+    scalar_matches, scalar_count = _scalar_selectors_match(
+        candidate,
+        match,
+        case_sensitive=case_sensitive,
+    )
+    if not scalar_matches:
+        return False
+
+    contains_any_matches, contains_any_count = _contains_any_selector_matches(
+        candidate,
+        match,
+        case_sensitive=case_sensitive,
+    )
+    if not contains_any_matches:
+        return False
+
+    if scalar_count + contains_any_count == 0:
         raise RuntimeError(_RULE_INVALID)
     return True
 

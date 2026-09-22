@@ -39,7 +39,7 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Current exact work item: repair and certify TW-A provider/dependency producer-consumer inventory
 - Current logical checkpoint ID: `TW-A-PROVIDER-CONSUMER-INVENTORY`
 - Accepted base: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current published RED head: `d438ce4cd3cf98d1a7cdaee2d6cf90f0b742a030` / PR #583
+- Current published RED head: `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6` / PR #583
 - PR #582 post-merge evidence: Regression Shield #1646 success; Engineering Governance #1893 success; Timeweb Read-Only Proof #13 success
 - Provider proof marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
 - External ingress/recovery blocker remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
@@ -58,6 +58,7 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Replacement head `770b42c80f395d15ab483b20c05831e386bfb510` eliminated the Sonar security gate failure, but Engineering Governance #1900 exposed a scanner-model defect: generic source scanning treated static compile/history references in `.github/workflows/v10-engineering-governance.yml` as provider execution. Workflows are now separated into an execution-aware guard, while source/import consumer scanning remains code-only; direct retired provider provision/deploy commands are explicitly forbidden in active workflows.
 - Replacement head `3acb0490893dc4aed81667e5f8145ba2da645501` proved that split and then exposed the remaining same-class verifier self-reference: `scripts/check_v10_ru_public_registration_ingress.py` stores retired provider script names as fail-closed detection signatures. The source scanner now exempts exactly the two security-verifier files that intentionally store marker data; all other source consumers remain classification-enforced.
 - Exact head `f6ec32b10d6cf2ca39072cd89d14110ca474c140` passed the TW-A inventory guard and guard compilation; stdlib regression then caught an ordering bug in safe rule validation: an unknown matcher key could avoid rejection when an earlier valid selector returned `False`. Rule shape validation must run before matching so malformed repository-controlled contracts always fail closed.
+- Exact head `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6`: 12 GitHub-native PR workflow batches completed `success`, Engineering Governance #1906 completed `success`, Fast PR Checks #3022 completed `success`, and tracked-content secret scanning passed. Authoritative Windows CI #3114 failed only in the full Regression Shield after 3656 passed tests because two assertions in `tests/test_v10_wp22a_phase5_transition.py` still required the now-retired live Phase-4/Phase-5 Render workflow behavior. Sonar Quality Gate passed with 0 Security Hotspots but reported one S3776 maintainability finding: `_rule_matches` cognitive complexity 18 > 15. Systemic correction: keep historical evidence assertions, invert only workflow-currentness assertions to archive-only semantics, and split rule-shape/scalar/contains-any matching into bounded helpers rather than suppressing the finding.
 - No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
 ## 4. Accepted MAIN_RED_STOP repair provenance
