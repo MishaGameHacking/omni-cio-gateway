@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from fastapi import FastAPI
+
 from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
 from apps.api.hosted_preview import (
     PREVIEW_SESSION_POLICY,
@@ -27,7 +29,7 @@ _RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 _DSN_ENV = "OMNI_V10_POSTGRES_DSN"
 
 
-def create_app():
+def create_app() -> FastAPI:
     """Create the provider-neutral Timeweb-targeted V10 Web/API runtime."""
 
     if os.environ.get(_RUNTIME_ENABLED_ENV, "").strip() != "1":

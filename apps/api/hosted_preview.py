@@ -297,7 +297,9 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         return None
 
     def _admission_error(self, request: Request, *, api_path: bool) -> Response | None:
-        if request.url.path in {_HEALTHZ_PATH, _LIVEZ_PATH}:
+        if request.url.path == _LIVEZ_PATH:
+            return None
+        if request.url.path == _HEALTHZ_PATH:
             if self._abuse.admit_health():
                 return None
             return _rate_error(
@@ -667,7 +669,7 @@ class _HostedPreviewRoutesV1:
                 "status": "ok",
                 "release_sha": self._services.release_sha,
                 "database": "READY",
-                "synthetic_preview": True,
+                "synthetic_preview": self._services.synthetic_preview,
             }
         )
 

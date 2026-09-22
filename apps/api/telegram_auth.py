@@ -125,18 +125,15 @@ def build_telegram_provider_auth(
     elif configured and not login_enabled:
         disabled[IdentityProviderV1.TELEGRAM] = "PROVIDER_ACTIVATION_DISABLED"
 
-    base_kwargs = {
-        "cookies": cookies,
-        "now": now,
-        "disabled_reasons": disabled,
-        "descriptor_providers": (IdentityProviderV1.TELEGRAM,),
-    }
     if not configured or not (public_enabled and login_enabled):
         return ProviderAuthRouteServicesV1(
             runtimes=(),
             authentication=None,
+            cookies=cookies,
+            now=now,
+            disabled_reasons=disabled,
             registration_enabled=False,
-            **base_kwargs,
+            descriptor_providers=(IdentityProviderV1.TELEGRAM,),
         )
 
     transactions = PostgresAuthorizationTransactionStoreV1(connection)
@@ -164,6 +161,9 @@ def build_telegram_provider_auth(
     return ProviderAuthRouteServicesV1(
         runtimes=(runtime,),
         authentication=authentication,
+        cookies=cookies,
+        now=now,
+        disabled_reasons=disabled,
         registration_enabled=True,
-        **base_kwargs,
+        descriptor_providers=(IdentityProviderV1.TELEGRAM,),
     )

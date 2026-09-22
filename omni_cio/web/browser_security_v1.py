@@ -43,7 +43,9 @@ class BrowserCookiePolicyV1:
             raise ValueError("BROWSER_CSRF_BINDING_KEY_INVALID")
         if len(self.allowed_providers) != len(set(self.allowed_providers)):
             raise ValueError("BROWSER_PROVIDER_DUPLICATE")
-        if any(provider not in _PROOF_COOKIES for provider in self.allowed_providers):
+        if any(
+            provider not in _PROOF_COOKIES for provider in self.allowed_providers
+        ):
             raise ValueError("BROWSER_PROVIDER_INVALID")
         proof_cookie_names = tuple(
             _PROOF_COOKIES[provider] for provider in self.allowed_providers

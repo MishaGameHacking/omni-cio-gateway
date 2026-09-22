@@ -89,7 +89,10 @@ class ProviderAuthRouteServicesV1:
             raise ValueError("PROVIDER_AUTH_RUNTIME_INVALID")
         if len(self.descriptor_providers) != len(set(self.descriptor_providers)):
             raise ValueError("PROVIDER_AUTH_DESCRIPTOR_DUPLICATE")
-        if any(provider not in set(IdentityProviderV1) for provider in self.descriptor_providers):
+        if any(
+            provider not in set(IdentityProviderV1)
+            for provider in self.descriptor_providers
+        ):
             raise ValueError("PROVIDER_AUTH_DESCRIPTOR_INVALID")
         if self.runtimes and self.authentication is None:
             raise ValueError("PROVIDER_AUTH_AUTHENTICATION_REQUIRED")
