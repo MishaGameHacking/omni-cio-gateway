@@ -29,4 +29,7 @@ RUN test -s apps/web/dist/index.html && chown -R omni:omni /app
 USER omni
 EXPOSE 8080
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/livez', timeout=3).read()" || exit 1
+
 CMD ["python", "-m", "uvicorn", "apps.api.hosted_runtime:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]

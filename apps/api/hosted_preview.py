@@ -464,7 +464,21 @@ def _probe_hosted_preview_database(connection: Any) -> None:
     _verify_synthetic_scope(connection)
 
 
-def _empty_portfolio(now: str) -> dict[str, object]:
+def _empty_portfolio(
+    now: str,
+    *,
+    synthetic_preview: bool = True,
+) -> dict[str, object]:
+    warning_code = (
+        "SYNTHETIC_PREVIEW_NO_BROKER_DATA"
+        if synthetic_preview
+        else "HOSTED_RUNTIME_NO_BROKER_DATA"
+    )
+    warning_message = (
+        "Real broker and portfolio data are disabled in technical acceptance."
+        if synthetic_preview
+        else "Real broker and portfolio data are disabled in this hosted runtime."
+    )
     return {
         "schema_version": "1.0.0",
         "generated_at": now,
@@ -473,12 +487,9 @@ def _empty_portfolio(now: str) -> dict[str, object]:
         "accounts": [],
         "warnings": [
             {
-                "code": "SYNTHETIC_PREVIEW_NO_BROKER_DATA",
+                "code": warning_code,
                 "severity": "info",
-                "message": (
-                    "Real broker and portfolio data are disabled in technical "
-                    "acceptance."
-                ),
+                "message": warning_message,
             }
         ],
         "calculation_policy": {
@@ -521,12 +532,20 @@ def _empty_research(now: str) -> dict[str, object]:
     }
 
 
-def _empty_decision(now: str) -> dict[str, object]:
+def _empty_decision(
+    now: str,
+    *,
+    synthetic_preview: bool = True,
+) -> dict[str, object]:
     return {
         "schema_version": "1.0.0",
         "generated_at": now,
         "state": "EMPTY",
-        "reason": "SYNTHETIC_PREVIEW_NO_PRIVATE_STATE",
+        "reason": (
+            "SYNTHETIC_PREVIEW_NO_PRIVATE_STATE"
+            if synthetic_preview
+            else "HOSTED_RUNTIME_NO_PRIVATE_STATE"
+        ),
         "main_decision": None,
         "decision": None,
         "plan": None,
@@ -604,7 +623,11 @@ def _system_status(
             },
             {
                 "id": "database",
-                "label": "Neon PostgreSQL 18",
+                "label": (
+                    "Neon PostgreSQL 18"
+                    if services.synthetic_preview
+                    else "PostgreSQL 18"
+                ),
                 "state": "READY",
                 "availability": "AVAILABLE",
                 "detail": "Least-privilege runtime and session storage verified.",
@@ -789,13 +812,23 @@ class _HostedPreviewRoutesV1:
         scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        return _safe_error("BROKER_CREDENTIALS_DISABLED_IN_SYNTHETIC_PREVIEW", 403)
+        detail = (
+            "BROKER_CREDENTIALS_DISABLED_IN_SYNTHETIC_PREVIEW"
+            if self._services.synthetic_preview
+            else "BROKER_CREDENTIALS_DISABLED_IN_HOSTED_RUNTIME"
+        )
+        return _safe_error(detail, 403)
 
     def portfolio_dashboard(self, request: Request) -> Response:
         scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        return JSONResponse(_empty_portfolio(_now_iso(self._services)))
+        return JSONResponse(
+            _empty_portfolio(
+                _now_iso(self._services),
+                synthetic_preview=self._services.synthetic_preview,
+            )
+        )
 
     def watchtower_incidents(self, request: Request) -> Response:
         scope = _require_session(request)
@@ -813,7 +846,12 @@ class _HostedPreviewRoutesV1:
         scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        return JSONResponse(_empty_decision(_now_iso(self._services)))
+        return JSONResponse(
+            _empty_decision(
+                _now_iso(self._services),
+                synthetic_preview=self._services.synthetic_preview,
+            )
+        )
 
     def system_status(self, request: Request) -> Response:
         scope = _require_session(request)
