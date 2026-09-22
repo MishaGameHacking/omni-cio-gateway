@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
-import subprocess
 from typing import Any
 
 
@@ -16,6 +16,66 @@ ALLOWED_CLASSES = {
     "RETIRE_NOW_AFTER_AUTHORITY",
     "HISTORY",
 }
+_IGNORED_DIRECTORIES = frozenset(
+    {
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        ".wrangler",
+        "__pycache__",
+        "artifacts",
+        "build",
+        "dist",
+        "htmlcov",
+        "node_modules",
+        "playwright-report",
+        "test-results",
+        "venv",
+    }
+)
+_CONTENT_SCAN_PREFIXES = (
+    ".github/workflows/",
+    "apps/api/",
+    "apps/web/src/",
+    "infrastructure/windows/",
+    "omni_cio/observability/",
+    "omni_cio/persistence/",
+    "omni_cio/web/",
+)
+_CONTENT_SCAN_SUFFIXES = frozenset(
+    {
+        ".js",
+        ".json",
+        ".jsonc",
+        ".mjs",
+        ".ps1",
+        ".py",
+        ".sql",
+        ".ts",
+        ".tsx",
+        ".yml",
+        ".yaml",
+    }
+)
+_RETIRED_RUNTIME_MARKERS = (
+    re.compile(r"from\s+apps\.api\.cf_d_database_bootstrap\s+import"),
+    re.compile(r"\bRENDER_EXTERNAL_HOSTNAME\b"),
+    re.compile(r"\bRENDER_GIT_COMMIT\b"),
+    re.compile(r"from\s+omni_cio\.web\.vk_id_oauth_v1\s+import"),
+    re.compile(r"\bBrowserBoundVkIdOauthRuntimeV1\b"),
+    re.compile(r"\bVkIdOauthConfigV1\b"),
+    re.compile(r"\bVK_ID_START_PATH\b"),
+    re.compile(r"\bVK_ID_CALLBACK_PATH\b"),
+    re.compile(r"\bvk_id\b", re.IGNORECASE),
+    re.compile(r"\bOMNI_V10_WEB_EXTERNAL_PROVIDER\b"),
+    re.compile(r"\bOMNI_V10_CLOUDFLARE_OWNER_IDENTITY_SHA256\b"),
+    re.compile(r"\bCF_ACCESS_JWT_HEADER\b"),
+    re.compile(r"infrastructure[/\\\\]cloudru[/\\\\]wp22a", re.IGNORECASE),
+    re.compile(r"check_v10_wp22a_phase4_public_acceptance\.py"),
+    re.compile(r"Probe exact public Render preview", re.IGNORECASE),
+)
 
 
 def _read(path: Path) -> str:
@@ -35,19 +95,21 @@ def _load() -> dict[str, Any]:
     return payload
 
 
-def _tracked_files() -> tuple[str, ...]:
-    try:
-        output = subprocess.check_output(
-            ["git", "ls-files", "-z"],
-            cwd=ROOT,
+def _repository_files(root: Path = ROOT) -> tuple[str, ...]:
+    result: list[str] = []
+    for current, directories, filenames in os.walk(root, followlinks=False):
+        directories[:] = sorted(
+            name for name in directories if name not in _IGNORED_DIRECTORIES
         )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise RuntimeError("TIMEWEB_INVENTORY_GIT_FILES_UNAVAILABLE") from exc
-    return tuple(
-        part.decode("utf-8")
-        for part in output.split(b"\0")
-        if part
-    )
+        current_path = Path(current)
+        for filename in sorted(filenames):
+            path = current_path / filename
+            try:
+                relative = path.relative_to(root)
+            except ValueError as exc:
+                raise RuntimeError("TIMEWEB_INVENTORY_PATH_ESCAPE") from exc
+            result.append(relative.as_posix())
+    return tuple(sorted(result))
 
 
 def _classification(entry: object) -> str:
@@ -106,6 +168,9 @@ def _validate_contract(payload: dict[str, Any]) -> re.Pattern[str]:
         compiled = re.compile(detector)
     except re.error as exc:
         raise RuntimeError("TIMEWEB_INVENTORY_DETECTOR_INVALID") from exc
+    expected_count = payload.get("expected_provider_named_file_count")
+    if not isinstance(expected_count, int) or expected_count <= 0:
+        raise RuntimeError("TIMEWEB_INVENTORY_EXPECTED_COUNT_INVALID")
     protected = payload.get("protected_invariants")
     if not isinstance(protected, dict):
         raise RuntimeError("TIMEWEB_INVENTORY_INVARIANTS_INVALID")
@@ -125,20 +190,24 @@ def _validate_contract(payload: dict[str, Any]) -> re.Pattern[str]:
     return compiled
 
 
-def _validate_coverage(payload: dict[str, Any], detector: re.Pattern[str]) -> None:
-    files = _tracked_files()
+def _validate_coverage(
+    payload: dict[str, Any],
+    detector: re.Pattern[str],
+    files: tuple[str, ...],
+) -> None:
     explicit = payload.get("explicit_paths")
     if not isinstance(explicit, dict):
         raise RuntimeError("TIMEWEB_INVENTORY_CONTRACT_INVALID")
-    missing_explicit = sorted(set(explicit) - set(files))
+    file_set = set(files)
+    missing_explicit = sorted(set(explicit) - file_set)
     if missing_explicit:
         raise RuntimeError(
             "TIMEWEB_INVENTORY_EXPLICIT_PATH_MISSING:" + ",".join(missing_explicit)
         )
     provider_named = tuple(path for path in files if detector.search(path))
-    minimum = payload.get("minimum_provider_named_file_count")
-    if not isinstance(minimum, int) or len(provider_named) < minimum:
-        raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_SURFACE_SHRANK_UNREVIEWED")
+    expected_count = payload.get("expected_provider_named_file_count")
+    if len(provider_named) != expected_count:
+        raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_SURFACE_COUNT_DRIFT")
     unclassified = sorted(
         path for path in provider_named if _classify_path(path, payload) is None
     )
@@ -151,30 +220,87 @@ def _validate_coverage(payload: dict[str, Any], detector: re.Pattern[str]) -> No
             raise RuntimeError("TIMEWEB_INVENTORY_EXPLICIT_PATH_UNCLASSIFIED")
 
 
+def _should_scan_content(path: str) -> bool:
+    return path.endswith(tuple(_CONTENT_SCAN_SUFFIXES)) and path.startswith(
+        _CONTENT_SCAN_PREFIXES
+    )
+
+
+def _validate_content_consumers(
+    payload: dict[str, Any],
+    files: tuple[str, ...],
+) -> None:
+    for relative in files:
+        if not _should_scan_content(relative):
+            continue
+        source = _read(ROOT / relative)
+        if not any(pattern.search(source) for pattern in _RETIRED_RUNTIME_MARKERS):
+            continue
+        if _classify_path(relative, payload) is None:
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_UNCLASSIFIED_RETIRED_CONSUMER:" + relative
+            )
+
+
 def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
-    required = {
+    replacement_required = {
         "apps/api/hosted_preview.py",
-        "apps/api/cf_d_database_bootstrap.py",
         "apps/api/wp22a_phase5_auth.py",
-        "omni_cio/web/provider_auth_routes_v1.py",
-        "apps/web/src/app-shell/app-shell.tsx",
+        "apps/web/e2e/app-shell.spec.ts",
+        "apps/web/e2e/system-admin.spec.ts",
         "apps/web/src/app-shell/api.ts",
+        "apps/web/src/app-shell/app-shell.tsx",
         "apps/web/src/app-shell/contracts.ts",
-        "wrangler.jsonc",
+        "apps/web/tests/app_shell_contract.test.ts",
+        "omni_cio/observability/hosted_readiness_v1.py",
+        "omni_cio/persistence/_hosted_recovery_contract_v1.py",
+        "omni_cio/persistence/hosted_postgres_runtime_v1.py",
+        "omni_cio/web/browser_security_v1.py",
+        "omni_cio/web/identity_v1.py",
+        "omni_cio/web/provider_auth_routes_v1.py",
+        "omni_cio/web/provider_start_adapter_v1.py",
         "scripts/check_v10_ru_postgres_timeweb_parity.py",
+        "scripts/check_v10_wp17_web_security.py",
         "scripts/prove_v10_ru_postgres_timeweb_parity.py",
         "scripts/provision_v10_cloudflare_neon_runtime.py",
         "scripts/provision_v10_render_neon_preview.py",
+        "wrangler.jsonc",
     }
-    for path in required:
+    for path in replacement_required:
         if _classify_path(path, payload) != "TIMEWEB_REPLACE":
             raise RuntimeError("TIMEWEB_INVENTORY_TRANSITIVE_CONSUMER_UNBOUND:" + path)
-    if _classify_path("render.yaml", payload) != "KEEP":
-        raise RuntimeError("TIMEWEB_INVENTORY_V9_RENDER_BOUNDARY_INVALID")
+
+    historical_required = {
+        ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
+        "apps/api/cf_d_database_bootstrap.py",
+        "apps/api/wp22a_remote.py",
+        "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1",
+        "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql",
+        "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql",
+        "omni_cio/web/external_access_v1.py",
+        "scripts/check_v10_wp22a_phase4_public_acceptance.py",
+    }
+    for path in historical_required:
+        if _classify_path(path, payload) != "HISTORY":
+            raise RuntimeError("TIMEWEB_INVENTORY_HISTORY_CLASSIFICATION_DRIFT:" + path)
+
+    for path in (
+        ".github/workflows/live-gateway-authority.yml",
+        ".github/workflows/regression-shield.yml",
+        ".github/workflows/self-hosted-windows-smoke.yml",
+        ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+        "render.yaml",
+    ):
+        if _classify_path(path, payload) != "KEEP":
+            raise RuntimeError("TIMEWEB_INVENTORY_KEEP_CLASSIFICATION_DRIFT:" + path)
+
     render = _read(ROOT / "render.yaml")
     if "uvicorn app:app" not in render:
         raise RuntimeError("TIMEWEB_INVENTORY_V9_ENTRYPOINT_DRIFT")
-    if _classify_path("omni_cio/web/vk_id_oauth_v1.py", payload) != "RETIRE_NOW_AFTER_AUTHORITY":
+    if (
+        _classify_path("omni_cio/web/vk_id_oauth_v1.py", payload)
+        != "RETIRE_NOW_AFTER_AUTHORITY"
+    ):
         raise RuntimeError("TIMEWEB_INVENTORY_VK_RETIREMENT_INVALID")
 
 
@@ -208,7 +334,9 @@ def _validate_external_surfaces(payload: dict[str, Any]) -> None:
 def main() -> int:
     payload = _load()
     detector = _validate_contract(payload)
-    _validate_coverage(payload, detector)
+    files = _repository_files()
+    _validate_coverage(payload, detector, files)
+    _validate_content_consumers(payload, files)
     _validate_known_transitive_consumers(payload)
     _validate_external_surfaces(payload)
     print("V10_TIMEWEB_PLATFORM_INVENTORY=PASS")

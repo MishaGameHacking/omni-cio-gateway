@@ -35,15 +35,19 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 
 ## 3. Current execution state
 
-- Current exact work item: complete TW-A provider/dependency producer-consumer inventory
+- Current exact work item: repair and certify TW-A provider/dependency producer-consumer inventory
 - Current logical checkpoint ID: `TW-A-PROVIDER-CONSUMER-INVENTORY`
 - Accepted base: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
+- Current published RED head: `b7e87df26c435244360a0a67664765a645625541` / PR #583
 - PR #582 post-merge evidence: Regression Shield #1646 success; Engineering Governance #1893 success; Timeweb Read-Only Proof #13 success
 - Provider proof marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
 - External ingress/recovery blocker remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
 - Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
 - Classification vocabulary: `KEEP / TIMEWEB_REPLACE / RETIRE_AFTER_CUTOVER / RETIRE_NOW_AFTER_AUTHORITY / HISTORY`
-- Current branch mode: normal checkpoint work; TW-B remains forbidden until this checkpoint is CERTIFIED_GREEN
+- Current branch mode: `RED_REPAIR_ONLY`; TW-B remains forbidden until this checkpoint is CERTIFIED_GREEN
+- Exact-head RED evidence: Fast PR Checks #3010 and authoritative Windows CI #3102 failed the pinned Ruff formatting baseline on the two newly added TW-A Python files; all earlier compile/lint and applicable product/Web lanes passed
+- Adjacent defect found during root-cause review: historical `.github/workflows/v10-wp22a-phase4-public-acceptance.yml` still had an automatic PR trigger and live read-only Render V10 probe despite Amendment 18 retirement
+- Correction class: format exact changed Python; remove process-spawning inventory discovery; enforce exact inventory cardinality plus content-aware hidden-consumer coverage; archive the stale Render V10 acceptance workflow; add regressions
 - No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
 ## 4. Accepted MAIN_RED_STOP repair provenance
@@ -195,6 +199,7 @@ Only `CERTIFIED_GREEN` permits TW-B.
 - Current update: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 - Current member milestone: TW-A / inventory and authority cleanup
 - Current checkpoint: `TW-A-PROVIDER-CONSUMER-INVENTORY`
-- State: `IN_PROGRESS` on the integrated Timeweb branch
+- State: `RED_REPAIR_ONLY` on PR #583 until the replacement exact head is fully certified
 - Accepted split repair: PR #582 + exact-main post-merge success
-- Next lawful action: certify the complete inventory checkpoint; no TW-B runtime work before `CERTIFIED_GREEN`
+- Current RED head: `b7e87df26c435244360a0a67664765a645625541`
+- Next lawful action: publish one coherent TW-A correction head, require full exact-head recertification, and keep TW-B locked until `CERTIFIED_GREEN`

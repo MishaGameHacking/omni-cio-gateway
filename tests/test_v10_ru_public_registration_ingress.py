@@ -24,6 +24,9 @@ WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.
 WP22A_CLIENTLESS_WORKFLOW = (
     ROOT / ".github/workflows/v10-wp22a-clientless-access-audit.yml"
 )
+WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW = (
+    ROOT / ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
+)
 
 
 def _contract() -> dict[str, object]:
@@ -171,12 +174,16 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ".github/workflows/v10-cloudflare-candidate-deploy.yml": 1,
             ".github/workflows/v10-cloudflare-production-release.yml": 6,
             ".github/workflows/v10-neon-egress-boundary.yml": 3,
+            ".github/workflows/v10-wp22a-phase4-public-acceptance.yml": 1,
         }
         for relative, count in expected.items():
             source = (ROOT / relative).read_text(encoding="utf-8")
             self.assertIn("ARCHIVE-IN-PLACE", source)
-            self.assertNotIn("workflow_run:", source)
+            self.assertNotIn("\n  pull_request:", source)
             self.assertNotIn("\n  push:", source)
+            self.assertNotIn("\n  workflow_run:", source)
+            self.assertNotIn("\n  schedule:", source)
+            self.assertNotIn("\n  workflow_call:", source)
             self.assertNotIn("false &&", source)
             self.assertEqual(source.count(marker), count)
 
@@ -205,6 +212,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
                 ".github/workflows/v10-cloudflare-candidate-deploy.yml",
                 ".github/workflows/v10-cloudflare-production-release.yml",
                 ".github/workflows/v10-neon-egress-boundary.yml",
+                ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
             ],
         )
         self.assertFalse(ci["retired_provider_live_workflow_auto_trigger_allowed"])
@@ -237,6 +245,16 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             workflow,
         )
 
+    def test_historical_phase4_render_probe_is_not_active_ci(self) -> None:
+        workflow = WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW.read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ARCHIVE-IN-PLACE", workflow)
+        self.assertIn("if: $" + "{{ false }}", workflow)
+        self.assertNotIn("Probe exact public Render preview", workflow)
+        self.assertNotIn("check_v10_wp22a_phase4_public_acceptance.py", workflow)
+        self.assertNotIn("\n  pull_request:", workflow)
+
     def test_retired_provider_execution_guard_covers_future_workflow_forms(
         self,
     ) -> None:
@@ -250,6 +268,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             '"secrets.CLOUDRU_"',
             '"secrets.CLOUD_RU_"',
             '"secrets.VK_"',
+            '"check_v10_wp22a_phase4_public_acceptance.py"',
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)

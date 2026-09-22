@@ -4,7 +4,7 @@ Updated: 2026-09-21
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A CI-AUTHORITY REPAIR ACCEPTED VIA PR #582 / TW-A PROVIDER-CONSUMER INVENTORY IN PROGRESS / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A CI-AUTHORITY REPAIR ACCEPTED VIA PR #582 / TW-A PROVIDER-CONSUMER INVENTORY PR #583 RED_REPAIR_ONLY / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -21,6 +21,8 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudflare/Neon/Render/Cloud.ru/VK from current/future V10 provider authority. `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
 
 The mandatory PR #582 CI/provider-authority split is accepted on exact main `82e3a45c7016f2956c9b3761d10d15e433375f3c`: Regression Shield #1646 and Engineering Governance #1893 completed `success`; automatic Timeweb Read-Only Proof #13 completed `success` with `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed unbound IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED` and grants no ingress mutation authority. TW-A remains open only for the complete provider/dependency producer-consumer inventory; TW-B is forbidden until that branch checkpoint is `CERTIFIED_GREEN`.
+
+Current TW-A inventory PR #583 is in `RED_REPAIR_ONLY` on exact head `b7e87df26c435244360a0a67664765a645625541`. Fast PR Checks #3010 and authoritative Windows CI #3102 independently failed only at the pinned Ruff formatting baseline for the two newly added TW-A Python files after repository compile/lint and the applicable product/Web lanes passed. Root-cause review also found that the initial path-name inventory was not sufficient to detect neutral-name retired-provider consumers and that the historical WP22A Phase-4 public-acceptance workflow still had an automatic PR trigger plus live read-only Render V10 probe. The corrective checkpoint must fix the formatter drift, remove process-spawning inventory discovery, enforce exact plus content-aware consumer coverage, archive that retired V10 probe, and then undergo fresh exact-head certification before TW-B.
 
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
@@ -499,18 +501,11 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 ## Current next action
 
-1. finish the `MAIN_RED_STOP` correction on `system/timeweb-platform-consolidation`: retired
-   Cloudflare provider workflows must be archive-in-place/inert and Timeweb proof must follow
-   successful GitHub-native Regression Shield directly;
-2. add regression protection so a retired provider workflow or secret cannot re-enter the
-   active GitHub -> Timeweb execution graph;
-3. keep correction work inside existing DRAFT PR #582; publish only coherent replacement
-   heads after focused source/contract/test preflight and full diff review;
-4. require the final replacement exact head to reach DRAFT/READY GREEN, zero blocking threads
-   and no secret/authority drift, then squash merge;
-5. on the exact new `main`, require Regression Shield + Engineering Governance + Timeweb
-   read-only provider proof to complete successfully with no Cloudflare/Neon live workflow;
-6. only after that post-merge correction is accepted, continue TW-B provider-neutral runtime
-   and Timeweb deployment source toward a technical App Platform candidate;
-7. keep `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF,
-   `trading_methods=false` and `REAL_TRADING_ENABLED=false`.
+1. remain in `TW-A-PROVIDER-CONSUMER-INVENTORY / RED_REPAIR_ONLY` on PR #583; do not start TW-B;
+2. correct both Ruff-format defects and strengthen the inventory guard so it uses no spawned Git process, requires exact provider-surface cardinality, and catches neutral-name retired-provider consumers by content;
+3. archive-in-place and hard-disable the historical WP22A Phase-4 Render/Neon public-acceptance workflow so no current PR can live-probe retired V10 Render;
+4. update inventory/authority regression tests and full branch handoff, then publish one coherent replacement head;
+5. require every applicable exact-head GitHub check to finish `completed/success`; investigate any remaining security finding as a real signal even though external Sonar is no longer required merge authority;
+6. after DRAFT GREEN, mark READY and require a fresh exact-head READY certification with zero blocking review threads;
+7. only after TW-A is squash-merged and exact-new-main Regression Shield + Engineering Governance + Timeweb proof are GREEN may TW-B provider-neutral Timeweb runtime work begin;
+8. keep `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`.
