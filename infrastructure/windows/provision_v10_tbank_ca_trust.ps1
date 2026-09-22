@@ -262,7 +262,9 @@ if ($Apply) {
     $subImported = Import-IfMissing -Certificate $subCertificate -SourcePath $SubCertificatePath -StorePath $subStore
 }
 
-$roots = Get-TrustedCandidates -StorePath $rootStore -CommonName $rootCommonName -ExpectedSha256 $expectedRootSha256
+$roots = @(
+    Get-TrustedCandidates -StorePath $rootStore -CommonName $rootCommonName -ExpectedSha256 $expectedRootSha256
+)
 $subs = @(
     Get-TrustedCandidates -StorePath $subStore -CommonName $subCommonName -IssuerCommonName $rootCommonName |
         Where-Object {

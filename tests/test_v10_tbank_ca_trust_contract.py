@@ -63,6 +63,8 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
     assert "Test-SubordinateChain" in source
     assert source.count("function Test-Administrator") == 1
     assert source.count("if ($Apply) {") == 1
+    assert source.count("$roots = @(") == 1
+    assert source.count("$subs = @(") == 1
     assert "AllowUnknownCertificateAuthority" in source
     assert source.index("TBANK_CA_TRUST_INTERMEDIATE_CHAIN_INVALID") < source.index(
         "$mutationsAttempted = $true"

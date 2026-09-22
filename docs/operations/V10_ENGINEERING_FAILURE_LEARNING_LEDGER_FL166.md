@@ -137,6 +137,19 @@ Only after this exact diagnostic boundary is verified may
 `TBANK_CA_TRUST_STORE_NOT_READY` be treated as an OWNER/Admin machine-state
 blocker.
 
+## StrictMode collection normalization
+
+Post-#3137 source review identified an additional deterministic Windows
+PowerShell hazard in the provisioner: `Get-TrustedCandidates` emits pipeline
+output, so a 0/1/N result must not be consumed as an assumed array under
+`Set-StrictMode -Version 3.0`. The root-candidate caller now wraps the
+producer in `@(...)`, matching the already-safe intermediate-candidate path.
+This guarantees a real zero-length collection before `.Count` is evaluated
+when the Russian Trusted Root CA is absent.
+
+The correction is fail-closed and does not change certificate acceptance,
+mutation authority or TLS behavior.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head
