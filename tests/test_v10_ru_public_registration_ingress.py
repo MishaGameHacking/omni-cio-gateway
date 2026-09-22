@@ -251,9 +251,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         )
 
     def test_historical_phase4_render_probe_is_not_active_ci(self) -> None:
-        workflow = WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW.read_text(
-            encoding="utf-8"
-        )
+        workflow = WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("ARCHIVE-IN-PLACE", workflow)
         self.assertIn("if: $" + "{{ false }}", workflow)
         self.assertNotIn("Probe exact public Render preview", workflow)
@@ -261,9 +259,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         self.assertNotIn("\n  pull_request:", workflow)
 
     def test_historical_phase5_render_probe_is_not_active_ci(self) -> None:
-        workflow = WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW.read_text(
-            encoding="utf-8"
-        )
+        workflow = WP22A_PHASE5_TECHNICAL_CLOSEOUT_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("ARCHIVE-IN-PLACE", workflow)
         self.assertIn("if: $" + "{{ false }}", workflow)
         self.assertNotIn("Probe exact public hosted technical release", workflow)

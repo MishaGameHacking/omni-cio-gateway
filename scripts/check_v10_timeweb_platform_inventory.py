@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import re
 from typing import Any
 
 
@@ -37,12 +36,12 @@ _IGNORED_DIRECTORIES = frozenset(
 )
 _CONTENT_SCAN_PREFIXES = (
     ".github/workflows/",
-    "apps/api/",
-    "apps/web/src/",
-    "infrastructure/windows/",
-    "omni_cio/observability/",
-    "omni_cio/persistence/",
-    "omni_cio/web/",
+    "apps/",
+    "broker_report_reconciliation/",
+    "cloudflare/",
+    "infrastructure/",
+    "omni_cio/",
+    "scripts/",
 )
 _CONTENT_SCAN_SUFFIXES = frozenset(
     {
@@ -52,29 +51,43 @@ _CONTENT_SCAN_SUFFIXES = frozenset(
         ".mjs",
         ".ps1",
         ".py",
+        ".sh",
         ".sql",
+        ".tf",
         ".ts",
         ".tsx",
         ".yml",
         ".yaml",
     }
 )
-_RETIRED_RUNTIME_MARKERS = (
-    re.compile(r"from\s+apps\.api\.cf_d_database_bootstrap\s+import"),
-    re.compile(r"\bRENDER_EXTERNAL_HOSTNAME\b"),
-    re.compile(r"\bRENDER_GIT_COMMIT\b"),
-    re.compile(r"from\s+omni_cio\.web\.vk_id_oauth_v1\s+import"),
-    re.compile(r"\bBrowserBoundVkIdOauthRuntimeV1\b"),
-    re.compile(r"\bVkIdOauthConfigV1\b"),
-    re.compile(r"\bVK_ID_START_PATH\b"),
-    re.compile(r"\bVK_ID_CALLBACK_PATH\b"),
-    re.compile(r"\bvk_id\b", re.IGNORECASE),
-    re.compile(r"\bOMNI_V10_WEB_EXTERNAL_PROVIDER\b"),
-    re.compile(r"\bOMNI_V10_CLOUDFLARE_OWNER_IDENTITY_SHA256\b"),
-    re.compile(r"\bCF_ACCESS_JWT_HEADER\b"),
-    re.compile(r"infrastructure[/\\\\]cloudru[/\\\\]wp22a", re.IGNORECASE),
-    re.compile(r"check_v10_wp22a_phase4_public_acceptance\.py"),
-    re.compile(r"Probe exact public Render preview", re.IGNORECASE),
+_CONTENT_SCAN_FILENAMES = frozenset(
+    {
+        "Dockerfile",
+        "Dockerfile.cloudflare",
+        "render.yaml",
+        "wrangler.jsonc",
+    }
+)
+_INVENTORY_GUARD_PATH = "scripts/check_v10_timeweb_platform_inventory.py"
+_MAX_SCANNED_SOURCE_BYTES = 1_000_000
+_RETIRED_EXECUTION_MARKERS = (
+    "from apps.api.cf_d_database_bootstrap import",
+    "RENDER_EXTERNAL_HOSTNAME",
+    "RENDER_GIT_COMMIT",
+    "from omni_cio.web.vk_id_oauth_v1 import",
+    "BrowserBoundVkIdOauthRuntimeV1",
+    "VkIdOauthConfigV1",
+    "VK_ID_START_PATH",
+    "VK_ID_CALLBACK_PATH",
+    "OMNI_V10_WEB_EXTERNAL_PROVIDER",
+    "CLOUDFLARE_OWNER_IDENTITY",
+    "CF_ACCESS_JWT_HEADER",
+    "provision_v10_cloudflare_neon_runtime",
+    "provision_v10_render_neon_preview",
+    "wrangler.jsonc",
+)
+_RETIRED_EXECUTION_MARKERS_CASEFOLD = (
+    "infrastructure/cloudru/wp22a",
 )
 
 
@@ -104,6 +117,8 @@ def _repository_files(root: Path = ROOT) -> tuple[str, ...]:
         current_path = Path(current)
         for filename in sorted(filenames):
             path = current_path / filename
+            if path.is_symlink():
+                raise RuntimeError("TIMEWEB_INVENTORY_SYMLINK_FORBIDDEN")
             try:
                 relative = path.relative_to(root)
             except ValueError as exc:
@@ -124,6 +139,71 @@ def _classification(entry: object) -> str:
     return str(value)
 
 
+def _normalized_text(value: object, *, case_sensitive: bool, code: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(code)
+    return value if case_sensitive else value.casefold()
+
+
+def _rule_matches(path: str, rule: dict[str, Any]) -> bool:
+    match = rule.get("match")
+    if not isinstance(match, dict):
+        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+    case_sensitive = match.get("case_sensitive", True)
+    if not isinstance(case_sensitive, bool):
+        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+    candidate = path if case_sensitive else path.casefold()
+    selector_count = 0
+
+    for key, predicate in (
+        ("prefix", str.startswith),
+        ("suffix", str.endswith),
+        ("contains", lambda value, expected: expected in value),
+    ):
+        value = match.get(key)
+        if value is None:
+            continue
+        selector_count += 1
+        expected = _normalized_text(
+            value,
+            case_sensitive=case_sensitive,
+            code="TIMEWEB_INVENTORY_RULE_INVALID",
+        )
+        if not predicate(candidate, expected):
+            return False
+
+    contains_any = match.get("contains_any")
+    if contains_any is not None:
+        selector_count += 1
+        if not isinstance(contains_any, list) or not contains_any:
+            raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+        expected_any = tuple(
+            _normalized_text(
+                value,
+                case_sensitive=case_sensitive,
+                code="TIMEWEB_INVENTORY_RULE_INVALID",
+            )
+            for value in contains_any
+        )
+        if len(expected_any) != len(set(expected_any)):
+            raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+        if not any(value in candidate for value in expected_any):
+            return False
+
+    if selector_count == 0:
+        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+    extra = set(match) - {
+        "prefix",
+        "suffix",
+        "contains",
+        "contains_any",
+        "case_sensitive",
+    }
+    if extra:
+        raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
+    return True
+
+
 def _classify_path(path: str, payload: dict[str, Any]) -> str | None:
     explicit = payload.get("explicit_paths")
     rules = payload.get("path_rules")
@@ -134,25 +214,41 @@ def _classify_path(path: str, payload: dict[str, Any]) -> str | None:
     for rule in rules:
         if not isinstance(rule, dict):
             raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
-        pattern = rule.get("regex")
-        if not isinstance(pattern, str):
-            raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID")
-        try:
-            matched = re.search(pattern, path) is not None
-        except re.error as exc:
-            raise RuntimeError("TIMEWEB_INVENTORY_RULE_INVALID") from exc
-        if matched:
+        if _rule_matches(path, rule):
             return _classification(rule)
     return None
 
 
-def _validate_contract(payload: dict[str, Any]) -> re.Pattern[str]:
-    if payload.get("schema") != "omni-cio.v10.timeweb-platform-inventory.v1":
+def _provider_keywords(payload: dict[str, Any]) -> tuple[str, ...]:
+    value = payload.get("provider_path_keywords")
+    if not isinstance(value, list) or not value:
+        raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID")
+    keywords: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item or item != item.casefold():
+            raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID")
+        keywords.append(item)
+    if len(keywords) != len(set(keywords)):
+        raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_KEYWORDS_INVALID")
+    return tuple(keywords)
+
+
+def _provider_named_path(path: str, keywords: tuple[str, ...]) -> bool:
+    candidate = path.casefold()
+    return any(keyword in candidate for keyword in keywords)
+
+
+def _validate_contract(payload: dict[str, Any]) -> tuple[str, ...]:
+    if payload.get("schema") != "omni-cio.v10.timeweb-platform-inventory.v2":
         raise RuntimeError("TIMEWEB_INVENTORY_SCHEMA_INVALID")
     if payload.get("milestone") != "TW-A_INVENTORY_AND_AUTHORITY":
         raise RuntimeError("TIMEWEB_INVENTORY_MILESTONE_INVALID")
     if payload.get("owning_issue") != 580:
         raise RuntimeError("TIMEWEB_INVENTORY_ISSUE_INVALID")
+    if payload.get("accepted_base_pr") != 582:
+        raise RuntimeError("TIMEWEB_INVENTORY_BASE_PROVENANCE_INVALID")
+    if "accepted_base_sha" in payload or "provider_path_detector_regex" in payload:
+        raise RuntimeError("TIMEWEB_INVENTORY_UNSAFE_LEGACY_FIELD")
     if payload.get("classification_vocabulary") != [
         "KEEP",
         "TIMEWEB_REPLACE",
@@ -161,13 +257,7 @@ def _validate_contract(payload: dict[str, Any]) -> re.Pattern[str]:
         "HISTORY",
     ]:
         raise RuntimeError("TIMEWEB_INVENTORY_VOCABULARY_INVALID")
-    detector = payload.get("provider_path_detector_regex")
-    if not isinstance(detector, str):
-        raise RuntimeError("TIMEWEB_INVENTORY_DETECTOR_INVALID")
-    try:
-        compiled = re.compile(detector)
-    except re.error as exc:
-        raise RuntimeError("TIMEWEB_INVENTORY_DETECTOR_INVALID") from exc
+    keywords = _provider_keywords(payload)
     expected_count = payload.get("expected_provider_named_file_count")
     if not isinstance(expected_count, int) or expected_count <= 0:
         raise RuntimeError("TIMEWEB_INVENTORY_EXPECTED_COUNT_INVALID")
@@ -187,12 +277,12 @@ def _validate_contract(payload: dict[str, Any]) -> re.Pattern[str]:
             raise RuntimeError("TIMEWEB_INVENTORY_AUTHORITY_WIDENED")
     if protected.get("protected_v9_entrypoint") != "app:app":
         raise RuntimeError("TIMEWEB_INVENTORY_V9_DRIFT")
-    return compiled
+    return keywords
 
 
 def _validate_coverage(
     payload: dict[str, Any],
-    detector: re.Pattern[str],
+    keywords: tuple[str, ...],
     files: tuple[str, ...],
 ) -> None:
     explicit = payload.get("explicit_paths")
@@ -204,7 +294,9 @@ def _validate_coverage(
         raise RuntimeError(
             "TIMEWEB_INVENTORY_EXPLICIT_PATH_MISSING:" + ",".join(missing_explicit)
         )
-    provider_named = tuple(path for path in files if detector.search(path))
+    provider_named = tuple(
+        path for path in files if _provider_named_path(path, keywords)
+    )
     expected_count = payload.get("expected_provider_named_file_count")
     if len(provider_named) != expected_count:
         raise RuntimeError("TIMEWEB_INVENTORY_PROVIDER_SURFACE_COUNT_DRIFT")
@@ -221,8 +313,21 @@ def _validate_coverage(
 
 
 def _should_scan_content(path: str) -> bool:
-    return path.endswith(tuple(_CONTENT_SCAN_SUFFIXES)) and path.startswith(
-        _CONTENT_SCAN_PREFIXES
+    if path == _INVENTORY_GUARD_PATH:
+        return False
+    name = Path(path).name
+    return (
+        name in _CONTENT_SCAN_FILENAMES
+        or path.endswith(tuple(_CONTENT_SCAN_SUFFIXES))
+    ) and path.startswith(_CONTENT_SCAN_PREFIXES)
+
+
+def _contains_retired_execution_marker(source: str) -> bool:
+    if any(marker in source for marker in _RETIRED_EXECUTION_MARKERS):
+        return True
+    normalized = source.replace("\\", "/").casefold()
+    return any(
+        marker in normalized for marker in _RETIRED_EXECUTION_MARKERS_CASEFOLD
     )
 
 
@@ -233,12 +338,24 @@ def _validate_content_consumers(
     for relative in files:
         if not _should_scan_content(relative):
             continue
-        source = _read(ROOT / relative)
-        if not any(pattern.search(source) for pattern in _RETIRED_RUNTIME_MARKERS):
+        path = ROOT / relative
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            raise RuntimeError("TIMEWEB_INVENTORY_SOURCE_STAT_FAILED") from exc
+        if size > _MAX_SCANNED_SOURCE_BYTES:
+            raise RuntimeError("TIMEWEB_INVENTORY_SOURCE_TOO_LARGE:" + relative)
+        source = _read(path)
+        if not _contains_retired_execution_marker(source):
             continue
-        if _classify_path(relative, payload) is None:
+        classification = _classify_path(relative, payload)
+        if classification is None:
             raise RuntimeError(
                 "TIMEWEB_INVENTORY_UNCLASSIFIED_RETIRED_CONSUMER:" + relative
+            )
+        if classification == "KEEP":
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_RETIRED_DEPENDENCY_MARKED_KEEP:" + relative
             )
 
 
@@ -260,11 +377,18 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         "omni_cio/web/identity_v1.py",
         "omni_cio/web/provider_auth_routes_v1.py",
         "omni_cio/web/provider_start_adapter_v1.py",
+        "scripts/check_v10_ru_postgres_data_residency_migration.py",
         "scripts/check_v10_ru_postgres_timeweb_parity.py",
         "scripts/check_v10_wp17_web_security.py",
+        "scripts/discover_v10_ru_pg_verifier_ipv4.py",
+        "scripts/probe_v10_timeweb_ipv4_custody.py",
+        "scripts/probe_v10_timeweb_postgres_control_plane.py",
         "scripts/prove_v10_ru_postgres_timeweb_parity.py",
         "scripts/provision_v10_cloudflare_neon_runtime.py",
         "scripts/provision_v10_render_neon_preview.py",
+        "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
+        "scripts/provision_v10_timeweb_postgres_synthetic.py",
+        "scripts/timeweb_ipv4_allocation_provider.py",
         "wrangler.jsonc",
     }
     for path in replacement_required:
@@ -334,9 +458,9 @@ def _validate_external_surfaces(payload: dict[str, Any]) -> None:
 
 def main() -> int:
     payload = _load()
-    detector = _validate_contract(payload)
+    keywords = _validate_contract(payload)
     files = _repository_files()
-    _validate_coverage(payload, detector, files)
+    _validate_coverage(payload, keywords, files)
     _validate_content_consumers(payload, files)
     _validate_known_transitive_consumers(payload)
     _validate_external_surfaces(payload)

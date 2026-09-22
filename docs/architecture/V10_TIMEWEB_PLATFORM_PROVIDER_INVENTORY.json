@@ -1,8 +1,7 @@
 {
-  "schema": "omni-cio.v10.timeweb-platform-inventory.v1",
+  "schema": "omni-cio.v10.timeweb-platform-inventory.v2",
   "milestone": "TW-A_INVENTORY_AND_AUTHORITY",
   "status": "BRANCH_LOCAL_INVENTORY_CHECKPOINT",
-  "accepted_base_sha": "82e3a45c7016f2956c9b3761d10d15e433375f3c",
   "owning_issue": 580,
   "classification_vocabulary": [
     "KEEP",
@@ -11,7 +10,6 @@
     "RETIRE_NOW_AFTER_AUTHORITY",
     "HISTORY"
   ],
-  "provider_path_detector_regex": "(?i)(cloudflare|neon|render|cloudru|cloud_ru|vk_id|timeweb|sonar|gitar|circleci)",
   "explicit_paths": {
     "docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json": {
       "classification": "KEEP",
@@ -172,51 +170,122 @@
     ".github/workflows/v10-wp22a-phase5-technical-closeout.yml": {
       "classification": "HISTORY",
       "reason": "Historical WP22A Phase-5 hosted closeout workflow; archive-in-place and hard-disabled from replaying retired Render/Neon live acceptance."
+    },
+    "scripts/probe_v10_timeweb_ipv4_custody.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb IPv4 custody probe still imports historical Render/Neon helper primitives and must be extracted to provider-neutral transport helpers."
+    },
+    "scripts/discover_v10_ru_pg_verifier_ipv4.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current RU PostgreSQL verifier-IP discovery still imports historical Render/Neon helper primitives and must become provider-neutral."
+    },
+    "scripts/timeweb_ipv4_allocation_provider.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb IPv4 allocation provider adapter still imports historical Render/Neon HTTP/provisioning primitives and must be decoupled."
+    },
+    "scripts/provision_v10_timeweb_postgres_synthetic.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb PostgreSQL synthetic provisioner still imports historical Render/Neon helper primitives and must be decoupled before final runtime consolidation."
+    },
+    "scripts/probe_v10_timeweb_postgres_control_plane.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb PostgreSQL control-plane probe still imports historical Render/Neon helper primitives and must be decoupled."
+    },
+    "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current Timeweb PostgreSQL public-IPv4/TLS provisioner still imports historical Render/Neon helper primitives and must be decoupled."
+    },
+    "scripts/check_v10_ru_postgres_data_residency_migration.py": {
+      "classification": "TIMEWEB_REPLACE",
+      "reason": "Current RU PostgreSQL residency guard still references historical Cloud.ru/Wrangler provider artifacts and must be rebound to provider-neutral Timeweb contracts."
+    },
+    "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md": {
+      "classification": "KEEP",
+      "reason": "Current integrated-update execution ledger."
+    },
+    "omni_cio/web/vk_id_oauth_v1.py": {
+      "classification": "RETIRE_NOW_AFTER_AUTHORITY",
+      "reason": "VK ID source is retained as historical evidence but must leave deployed composition under Amendment 18."
     }
   },
   "path_rules": [
     {
-      "regex": "^\\.github/workflows/v10-timeweb-.*\\.yml$",
+      "match": {
+        "prefix": ".github/workflows/v10-timeweb-",
+        "suffix": ".yml"
+      },
       "classification": "KEEP",
       "reason": "Current Timeweb control-plane/recovery proof workflows."
     },
     {
-      "regex": "^docs/(architecture|operations)/V10_RU_POSTGRES_TIMEWEB_.*$",
+      "match": {
+        "prefix": "docs/architecture/",
+        "contains": "V10_RU_POSTGRES_TIMEWEB_"
+      },
       "classification": "KEEP",
-      "reason": "Current Timeweb PostgreSQL contracts/runbooks pending later milestone supersession."
+      "reason": "Current Timeweb PostgreSQL architecture contracts pending later milestone supersession."
     },
     {
-      "regex": "^docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER\\.md$",
+      "match": {
+        "prefix": "docs/operations/",
+        "contains": "V10_RU_POSTGRES_TIMEWEB_"
+      },
       "classification": "KEEP",
-      "reason": "Current integrated-update execution ledger."
+      "reason": "Current Timeweb PostgreSQL runbooks pending later milestone supersession."
     },
     {
-      "regex": "^scripts/.*timeweb.*\\.py$",
+      "match": {
+        "prefix": "scripts/",
+        "contains": "timeweb",
+        "suffix": ".py",
+        "case_sensitive": false
+      },
       "classification": "KEEP",
       "reason": "Current Timeweb adapter/control-plane implementation unless explicitly overridden."
     },
     {
-      "regex": "^tests/.*timeweb.*\\.py$",
+      "match": {
+        "prefix": "tests/",
+        "contains": "timeweb",
+        "suffix": ".py",
+        "case_sensitive": false
+      },
       "classification": "KEEP",
       "reason": "Current Timeweb regression evidence unless explicitly overridden."
     },
     {
-      "regex": "^omni_cio/web/vk_id_oauth_v1\\.py$",
-      "classification": "RETIRE_NOW_AFTER_AUTHORITY",
-      "reason": "VK ID source is retained as historical evidence but must leave deployed composition under Amendment 18."
-    },
-    {
-      "regex": "(?i)vk_id",
+      "match": {
+        "contains_any": [
+          "vk_id"
+        ],
+        "case_sensitive": false
+      },
       "classification": "HISTORY",
       "reason": "VK ID plans/tests are historical after Amendment 18 unless explicitly marked as a current consumer."
     },
     {
-      "regex": "(?i)(cloudflare|neon|sonar|gitar|circleci)",
+      "match": {
+        "contains_any": [
+          "cloudflare",
+          "neon",
+          "sonar",
+          "gitar",
+          "circleci"
+        ],
+        "case_sensitive": false
+      },
       "classification": "HISTORY",
       "reason": "Retired provider/external-review implementation or evidence, archive-in-place unless explicitly required by a current replacement consumer."
     },
     {
-      "regex": "(?i)(render|cloudru|cloud_ru)",
+      "match": {
+        "contains_any": [
+          "render",
+          "cloudru",
+          "cloud_ru"
+        ],
+        "case_sensitive": false
+      },
       "classification": "HISTORY",
       "reason": "Retired V10 provider implementation/evidence, archive-in-place; protected V9 render.yaml is explicitly KEEP."
     }
@@ -292,5 +361,18 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 215
+  "expected_provider_named_file_count": 215,
+  "accepted_base_pr": 582,
+  "provider_path_keywords": [
+    "cloudflare",
+    "neon",
+    "render",
+    "cloudru",
+    "cloud_ru",
+    "vk_id",
+    "timeweb",
+    "sonar",
+    "gitar",
+    "circleci"
+  ]
 }

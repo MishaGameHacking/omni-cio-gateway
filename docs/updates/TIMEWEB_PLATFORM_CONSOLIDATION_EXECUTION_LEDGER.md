@@ -12,7 +12,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Current accepted-main SHA rechecked before TW-A inventory checkpoint: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
 - OWNER authority: Amendment 18 accepted through PR #581
 - GitHub dashboard issue: #580
-- Current split-boundary PR: #582
+- Accepted split-boundary PR: #582
+- Current TW-A certification PR: #583
 - Governing authority:
   - `docs/master-plan/OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md`
   - `docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json`
@@ -38,14 +39,14 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Current exact work item: repair and certify TW-A provider/dependency producer-consumer inventory
 - Current logical checkpoint ID: `TW-A-PROVIDER-CONSUMER-INVENTORY`
 - Accepted base: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current published RED head: `b7e87df26c435244360a0a67664765a645625541` / PR #583
+- Current published RED head: `d438ce4cd3cf98d1a7cdaee2d6cf90f0b742a030` / PR #583
 - PR #582 post-merge evidence: Regression Shield #1646 success; Engineering Governance #1893 success; Timeweb Read-Only Proof #13 success
 - Provider proof marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
 - External ingress/recovery blocker remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
 - Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
 - Classification vocabulary: `KEEP / TIMEWEB_REPLACE / RETIRE_AFTER_CUTOVER / RETIRE_NOW_AFTER_AUTHORITY / HISTORY`
 - Current branch mode: `RED_REPAIR_ONLY`; TW-B remains forbidden until this checkpoint is CERTIFIED_GREEN
-- Exact-head RED evidence: Fast PR Checks #3010 and authoritative Windows CI #3102 failed the pinned Ruff formatting baseline on the two newly added TW-A Python files; all earlier compile/lint and applicable product/Web lanes passed
+- Exact-head RED evidence: Fast PR Checks #3014 failed only on one Ruff layout drift in `tests/test_v10_ru_public_registration_ingress.py`; authoritative Windows CI #3106 passed compile/static quality and failed tracked-content secret scanning on two entropy-shaped verifier literals; Sonar reported two duplicate-character-class warnings and one contract-controlled regex ReDoS security finding in the new inventory guard.
 - Adjacent defect found during root-cause review: historical `.github/workflows/v10-wp22a-phase4-public-acceptance.yml` still had an automatic PR trigger and live read-only Render V10 probe despite Amendment 18 retirement
 - First correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` correctly archived Phase-4 but Engineering Governance #1895 exposed a second same-class consumer: `.github/workflows/v10-wp22a-phase5-technical-closeout.yml` still compiled and live-ran the retired Phase-4 Render probe
 - Consumer search for `public_preview_url` / `check_v10_wp22a_phase4_public_acceptance.py` in workflows proves the historical Phase-4 and Phase-5 workflows are the complete V10 live-probe consumer set
@@ -53,7 +54,7 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Classification correction: keep CF-D bootstrap as `TIMEWEB_REPLACE` until TW-B removes the active `hosted_preview.py` dependency; Phase-4/Phase-5 workflows and dormant Cloudflare Access surfaces remain `HISTORY`
 - Exact head `0a4727d3de7329fdeb21274badc364b2dba6b462` passed both strengthened authority/inventory guards and guard compilation; stdlib batch then exposed only stale historical-gate tests that still required the now-forbidden Phase-4/Phase-5 pull-request triggers
 - Regression correction: preserve the YAML parser unit, but change Phase-4/Phase-5 assertions to require archive-only manual hard-disabled routing with no automatic/reusable trigger
-- Correction class: format exact changed Python; remove process-spawning inventory discovery; enforce exact inventory cardinality plus content-aware hidden-consumer coverage; archive both stale Render V10 acceptance workflows; add regressions
+- Correction class: remove contract-controlled regex execution entirely; use bounded plain-string matcher primitives; remove entropy-shaped provenance/marker literals without allowlisting or weakening secret scanning; expand executable-source hidden-consumer coverage; apply exact Ruff layout; add regressions for every defect class.
 - No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
 ## 4. Accepted MAIN_RED_STOP repair provenance

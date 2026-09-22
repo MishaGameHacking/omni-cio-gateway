@@ -19,13 +19,30 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
 
     def test_provider_named_inventory_uses_exact_cardinality(self) -> None:
         files = inventory._repository_files()
-        detector = inventory._validate_contract(self.payload)
-        provider_named = tuple(path for path in files if detector.search(path))
+        keywords = inventory._validate_contract(self.payload)
+        provider_named = tuple(
+            path
+            for path in files
+            if inventory._provider_named_path(path, keywords)
+        )
         self.assertEqual(
             len(provider_named),
             self.payload["expected_provider_named_file_count"],
         )
         self.assertNotIn("minimum_provider_named_file_count", self.payload)
+
+    def test_contract_uses_only_non_regex_match_primitives(self) -> None:
+        source = (ROOT / "scripts/check_v10_timeweb_platform_inventory.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("import re", source)
+        self.assertNotIn("re.compile", source)
+        self.assertNotIn("re.search", source)
+        self.assertNotIn("provider_path_detector_regex", self.payload)
+        self.assertNotIn("accepted_base_sha", self.payload)
+        for rule in self.payload["path_rules"]:
+            self.assertNotIn("regex", rule)
+            self.assertIn("match", rule)
 
     def test_repository_discovery_does_not_spawn_processes(self) -> None:
         source = (ROOT / "scripts/check_v10_timeweb_platform_inventory.py").read_text(
@@ -56,6 +73,13 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "omni_cio/persistence/hosted_postgres_runtime_v1.py",
             "omni_cio/web/identity_v1.py",
             "omni_cio/web/provider_start_adapter_v1.py",
+            "scripts/check_v10_ru_postgres_data_residency_migration.py",
+            "scripts/discover_v10_ru_pg_verifier_ipv4.py",
+            "scripts/probe_v10_timeweb_ipv4_custody.py",
+            "scripts/probe_v10_timeweb_postgres_control_plane.py",
+            "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
+            "scripts/provision_v10_timeweb_postgres_synthetic.py",
+            "scripts/timeweb_ipv4_allocation_provider.py",
         ):
             with self.subTest(path=path):
                 self.assertEqual(
@@ -79,6 +103,15 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
     def test_content_only_retired_consumers_are_inventory_bound(self) -> None:
         files = inventory._repository_files()
         inventory._validate_content_consumers(self.payload, files)
+
+    def test_safe_matcher_rejects_empty_or_unknown_rule_shapes(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "TIMEWEB_INVENTORY_RULE_INVALID"):
+            inventory._rule_matches("anything.py", {"match": {}})
+        with self.assertRaisesRegex(RuntimeError, "TIMEWEB_INVENTORY_RULE_INVALID"):
+            inventory._rule_matches(
+                "anything.py",
+                {"match": {"prefix": "scripts/", "regex": ".*"}},
+            )
 
     def test_vk_runtime_is_retired_but_protected_v9_render_is_kept(self) -> None:
         self.assertEqual(
