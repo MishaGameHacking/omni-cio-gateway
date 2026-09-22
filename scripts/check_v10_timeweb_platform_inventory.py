@@ -35,7 +35,6 @@ _IGNORED_DIRECTORIES = frozenset(
     }
 )
 _CONTENT_SCAN_PREFIXES = (
-    ".github/workflows/",
     "apps/",
     "broker_report_reconciliation/",
     "cloudflare/",
@@ -69,11 +68,6 @@ _CONTENT_SCAN_FILENAMES = frozenset(
     }
 )
 _INVENTORY_GUARD_PATH = "scripts/check_v10_timeweb_platform_inventory.py"
-_CONTENT_SCAN_KEEP_EXEMPTIONS = frozenset(
-    {
-        ".github/workflows/v10-wp22a-clientless-access-audit.yml",
-    }
-)
 _MAX_SCANNED_SOURCE_BYTES = 1_000_000
 _RETIRED_EXECUTION_MARKERS = (
     "from apps.api.cf_d_database_bootstrap import",
@@ -358,10 +352,7 @@ def _validate_content_consumers(
             raise RuntimeError(
                 "TIMEWEB_INVENTORY_UNCLASSIFIED_RETIRED_CONSUMER:" + relative
             )
-        if (
-            classification == "KEEP"
-            and relative not in _CONTENT_SCAN_KEEP_EXEMPTIONS
-        ):
+        if classification == "KEEP":
             raise RuntimeError(
                 "TIMEWEB_INVENTORY_RETIRED_DEPENDENCY_MARKED_KEEP:" + relative
             )

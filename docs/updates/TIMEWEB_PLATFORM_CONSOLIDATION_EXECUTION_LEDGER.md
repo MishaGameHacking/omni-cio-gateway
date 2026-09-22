@@ -55,6 +55,7 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Exact head `0a4727d3de7329fdeb21274badc364b2dba6b462` passed both strengthened authority/inventory guards and guard compilation; stdlib batch then exposed only stale historical-gate tests that still required the now-forbidden Phase-4/Phase-5 pull-request triggers
 - Regression correction: preserve the YAML parser unit, but change Phase-4/Phase-5 assertions to require archive-only manual hard-disabled routing with no automatic/reusable trigger
 - Correction class: remove contract-controlled regex execution entirely; use bounded plain-string matcher primitives; remove entropy-shaped provenance/marker literals without allowlisting or weakening secret scanning; expand executable-source hidden-consumer coverage; apply exact Ruff layout; add regressions for every defect class.
+- Replacement head `770b42c80f395d15ab483b20c05831e386bfb510` eliminated the Sonar security gate failure, but Engineering Governance #1900 exposed a scanner-model defect: generic source scanning treated static compile/history references in `.github/workflows/v10-engineering-governance.yml` as provider execution. Workflows are now separated into an execution-aware guard, while source/import consumer scanning remains code-only; direct retired provider provision/deploy commands are explicitly forbidden in active workflows.
 - No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
 
 ## 4. Accepted MAIN_RED_STOP repair provenance

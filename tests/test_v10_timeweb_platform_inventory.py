@@ -106,15 +106,18 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         files = inventory._repository_files()
         inventory._validate_content_consumers(self.payload, files)
 
-    def test_static_historical_audit_is_the_only_keep_exemption(self) -> None:
-        self.assertEqual(
-            inventory._CONTENT_SCAN_KEEP_EXEMPTIONS,
-            frozenset(
-                {
-                    ".github/workflows/v10-wp22a-clientless-access-audit.yml",
-                }
-            ),
+    def test_workflows_use_execution_guard_not_source_consumer_scan(self) -> None:
+        self.assertFalse(
+            inventory._should_scan_content(
+                ".github/workflows/v10-engineering-governance.yml"
+            )
         )
+        self.assertFalse(
+            inventory._should_scan_content(
+                ".github/workflows/v10-wp22a-clientless-access-audit.yml"
+            )
+        )
+        self.assertTrue(inventory._should_scan_content("apps/api/hosted_preview.py"))
         self.assertEqual(
             inventory._classify_path(
                 ".github/workflows/v10-wp22a-clientless-access-audit.yml",

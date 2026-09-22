@@ -34,6 +34,8 @@ Exact head `d438ce4cd3cf98d1a7cdaee2d6cf90f0b742a030` then reached a narrower sy
 
 Replacement preflight also found two previously unclassified transitive dependencies before remote certification: `apps/web/vite.config.ts` still consumes `RENDER_GIT_COMMIT`, and the active PostgreSQL runtime-role rehearsal still imports `_converge_runtime_role` from the historical Render/Neon provisioner. Both are now explicitly `TIMEWEB_REPLACE`; the current clientless workflow remains `KEEP` only because its retired-provider strings are static negative/source-evidence assertions and its separate execution guard forbids retired provider execution.
 
+Exact head `770b42c80f395d15ab483b20c05831e386bfb510` removed the prior Sonar Quality Gate failure (0 security hotspots), but Engineering Governance #1900 then correctly stopped at `TIMEWEB_INVENTORY_UNCLASSIFIED_RETIRED_CONSUMER:.github/workflows/v10-engineering-governance.yml`. Root cause was verifier-layer conflation, not a new provider execution: the generic content scanner interpreted a static `py_compile` reference to historical provider code as a runtime dependency. The correction separates code/import consumer scanning from GitHub Actions execution scanning and strengthens the latter with direct retired provision/deploy command markers, so static historical verification remains allowed while actual retired-provider execution fails closed.
+
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
 Accepted historical Cloudflare/Render/Neon chains remain evidence of what earlier code proved, but they do not remain future platform authority after Amendment 18 acceptance.

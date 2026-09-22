@@ -280,6 +280,10 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             '"secrets.CLOUD_RU_"',
             '"secrets.VK_"',
             '"check_v10_wp22a_phase4_public_acceptance.py"',
+            '"python scripts/provision_v10_cloudflare_neon_runtime.py"',
+            '"python scripts\\\\provision_v10_render_neon_preview.py"',
+            '"python scripts/manage_v10_cloudflare_production.py"',
+            '"python scripts/run_v10_cloudflare_gated_production.py"',
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)
