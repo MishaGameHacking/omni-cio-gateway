@@ -111,7 +111,6 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
                 source,
             )
 
-
     def test_timeweb_is_only_production_platform_and_pg18(self) -> None:
         payload = _contract()
         service = payload["service_model"]
