@@ -54,6 +54,12 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 - Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
 - TW-B source scope starts from the 33 accepted `TIMEWEB_REPLACE` consumers/producers identified by TW-A.
 - TW-B does not authorize provider mutation, Timeweb App Platform deployment, production DB cutover, DNS cutover, public-user activation or Real-money authority.
+- TW-B runtime root-cause review found that the first provider-neutral entrypoint still called `_probe_hosted_preview_database()`, which requires the historical synthetic preview USER/TENANT fixture. A clean Timeweb production database must not depend on that Phase-4 fixture.
+- Correction head `7306c2ae0dfa806c49774d2ccfa629da5e1f85e7` replaces the Timeweb runtime probe with the production runtime-only PostgreSQL 18 / least-privilege / schema / FORCE-RLS probe, gives the Timeweb entrypoint its own hosted session policy, and keeps historical synthetic verification inside the historical preview path.
+- The same correction adds a process-only `/livez` Docker health check and explicitly permits `localhost` for the container-local Timeweb health probe; `/healthz` remains database readiness and is intentionally not used as the process liveness gate.
+- Non-synthetic hosted status no longer identifies the database as Neon or emits synthetic-preview broker/decision reason codes. Historical synthetic behavior remains unchanged when `synthetic_preview=true`.
+- Second-pass review also found stale handoff text later in this ledger that still described TW-A as RED and TW-B as locked after PR #583 acceptance. That stale handoff is corrected as part of the same TW-B documentation convergence.
+- No TW-C provider mutation or App Platform candidate deployment is authorized by these source changes.
 - Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
 
 
@@ -202,12 +208,15 @@ Only `CERTIFIED_GREEN` permits TW-B.
 
 ## 10. Handoff
 
-- Accepted main: `e8e583f366bb314ef6d37e8057b90cde9a42d4f4`
+- Accepted main: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
+- Accepted TW-A: PR #583 / exact reviewed head `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
+- Post-merge TW-A evidence: Regression Shield #1647, Engineering Governance #1909, owning WP audits and Timeweb Read-Only Proof #14 = `success`
 - Current update: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
-- Current member milestone: TW-A / inventory and authority cleanup
-- Current checkpoint: `TW-A-PROVIDER-CONSUMER-INVENTORY`
-- State: `RED_REPAIR_ONLY` on PR #583 until the replacement exact head is fully certified
-- Accepted split repair: PR #582 + exact-main post-merge success
-- Prior formatter RED head: `b7e87df26c435244360a0a67664765a645625541`
-- Subsequent authority-graph RED head: `7ec4a8bf9bb3b02cb8d4571389938def6f17be61`
-- Next lawful action: publish the complete two-workflow retirement correction head, require full exact-head recertification, and keep TW-B locked until `CERTIFIED_GREEN`
+- Current member milestone: TW-B / source and runtime consolidation
+- Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
+- Current branch: `system/timeweb-platform-consolidation-tw-b`
+- Current source head before this ledger correction: `7306c2ae0dfa806c49774d2ccfa629da5e1f85e7`
+- State: `IN_PROGRESS / NOT INTEGRATION_READY`; no TW-B PR has been opened
+- Proven current defect class: production Timeweb startup/readiness inherited a historical synthetic-preview database fixture dependency; the correction removes that dependency and aligns container-local liveness with Timeweb App Platform health-check behavior
+- Remaining TW-B work: close the residual `TIMEWEB_REPLACE` source/runtime couplings, extract remaining active provider-neutral PostgreSQL/recovery/readiness primitives from retired provider paths, complete full focused preflight + full diff/security review, then publish one DRAFT PR only at `INTEGRATION_READY`
+- TW-C remains forbidden until TW-B is certified and accepted
