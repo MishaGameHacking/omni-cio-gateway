@@ -28,6 +28,8 @@ Correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` removed the first sta
 
 Exact head `b8c00434d6669dff4fc05d0a0f2576b358b24c0e` then passed the strengthened retired-workflow authority guard but the new inventory guard failed on an internal classification mismatch: `apps/api/cf_d_database_bootstrap.py` remains an active transitive dependency of `hosted_preview.py` and is therefore correctly `TIMEWEB_REPLACE`, not `HISTORY`. The correction keeps that producer in replacement scope until TW-B detaches it; the two retired hosted-acceptance workflows remain historical archive-only.
 
+Exact head `0a4727d3de7329fdeb21274badc364b2dba6b462` passed both strengthened Timeweb authority and provider-inventory guards and compiled the guard set. Its remaining Engineering Governance RED was limited to `tests/test_v10_wp22a_historical_gate_routing.py`, whose old assertions still required the Phase-4/Phase-5 `pull_request.paths` triggers that Amendment 18 now forbids. That regression must be inverted to require archive-only/manual hard-disabled routing; this does not reopen any retired provider authority.
+
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
 Accepted historical Cloudflare/Render/Neon chains remain evidence of what earlier code proved, but they do not remain future platform authority after Amendment 18 acceptance.

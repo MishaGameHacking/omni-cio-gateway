@@ -91,18 +91,22 @@ permissions:
             "docs/gamma.yml",
         }
 
-    def test_phase4_one_shot_gate_ignores_live_status_changes(self) -> None:
-        assert _pull_request_paths(PHASE4) == {
-            "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json",
-            "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md",
-        }
+    def _assert_retired_archive(self, path: Path) -> None:
+        source = path.read_text(encoding="utf-8")
+        assert "ARCHIVE-IN-PLACE" in source
+        assert "\n  workflow_dispatch:" in source
+        assert "\n  pull_request:" not in source
+        assert "\n  push:" not in source
+        assert "\n  workflow_run:" not in source
+        assert "\n  schedule:" not in source
+        assert "\n  workflow_call:" not in source
+        assert "if: $" + "{{ false }}" in source
 
-    def test_phase5_one_shot_gate_ignores_live_status_changes(self) -> None:
-        assert _pull_request_paths(PHASE5) == {
-            "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json",
-            "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json",
-            "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md",
-        }
+    def test_phase4_one_shot_gate_is_archive_only(self) -> None:
+        self._assert_retired_archive(PHASE4)
+
+    def test_phase5_one_shot_gate_is_archive_only(self) -> None:
+        self._assert_retired_archive(PHASE5)
 
 
 if __name__ == "__main__":
