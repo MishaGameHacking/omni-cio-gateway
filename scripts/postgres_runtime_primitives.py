@@ -7,6 +7,7 @@ from typing import Any
 from psycopg import sql
 
 from omni_cio.persistence.hosted_postgres_runtime_v1 import (
+    BOOTSTRAP_PATH,
     load_hosted_postgres_runtime_contract,
     validate_hosted_postgres_runtime_sql,
 )
@@ -14,9 +15,7 @@ from scripts.provider_runtime_primitives import ProvisioningStopped
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_SQL = (
-    ROOT / "infrastructure" / "cloudru" / "wp22a" / "hosted-postgres-runtime.sql"
-)
+RUNTIME_SQL = BOOTSTRAP_PATH
 _TEMPLATE_RUNTIME_ROLE = "omni_cio_hosted_api"
 _ROLE_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 

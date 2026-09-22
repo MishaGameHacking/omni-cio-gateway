@@ -11,15 +11,13 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = (
     ROOT
     / "infrastructure"
-    / "cloudru"
-    / "wp22a"
+    / "postgres"
     / "hosted-postgres-runtime-contract.json"
 )
 BOOTSTRAP_PATH = (
     ROOT
     / "infrastructure"
-    / "cloudru"
-    / "wp22a"
+    / "postgres"
     / "hosted-postgres-runtime.sql"
 )
 
@@ -123,7 +121,7 @@ def validate_hosted_postgres_runtime_contract(
 ) -> None:
     if (
         payload.get("schema_version")
-        != "v10.wp22a.phase3.hosted-postgres-runtime.v4"
+        != "v10.hosted-postgres-runtime.v5"
     ):
         raise HostedPostgresRuntimeContractError(
             "HOSTED_POSTGRES_CONTRACT_VERSION_INVALID"
@@ -136,7 +134,7 @@ def validate_hosted_postgres_runtime_contract(
     _require_exact_mapping(
         authority,
         {
-            "provider": "Cloud.ru Evolution",
+            "provider": "PROVIDER_NEUTRAL_POSTGRESQL_18",
             "source_only": True,
             "provider_apply_authorized": False,
             "public_database_ingress_allowed": False,
@@ -158,8 +156,8 @@ def validate_hosted_postgres_runtime_contract(
         provider_user,
         {
             "name": _USER_NAME,
-            "resource_type": "cloudru_evolution_postgresql_user",
-            "provisioning_phase": "WP22A_PHASE4",
+            "resource_type": "postgresql_runtime_login",
+            "provisioning_phase": "PROVIDER_ADAPTER",
             "source_bootstrap_creates_user": False,
             "login_required": True,
             "credential_delivery": "external_non_source",
