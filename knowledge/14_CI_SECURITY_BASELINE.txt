@@ -23,6 +23,9 @@ Dependency supply chain
 - Generated locks are never edited manually.
 - Dependency upgrades use a dedicated compatibility PR, regenerated locks and full Regression Shield.
 - The private `t-tech-investments` package must resolve from the configured T-Bank package index; an unrelated public package is not a substitute.
+- The self-hosted Windows machine must trust the current Russian Trusted Root CA and Russian Trusted Sub CA before pip accesses the T-Bank index.
+- CI verifies this trust boundary read-only; only OWNER/Administrator may mutate `LocalMachine` certificate stores through the reviewed provisioner.
+- Certificate/hostname verification and package-source substitution are forbidden recovery shortcuts.
 
 GitHub Actions supply chain
 ---------------------------

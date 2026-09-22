@@ -88,6 +88,21 @@ Do not paste raw `.runner`, `.service`, `.credentials`,
 `.credentials_rsaparams`, registration tokens, GitHub App credentials, workflow
 secrets or machine-local paths into GitHub, chat, screenshots or evidence.
 
+## T-Bank package CA trust boundary
+
+Dependency installation has an independent machine-trust prerequisite. Verify it
+read-only with:
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\check_v10_tbank_ca_trust.ps1" -AsJson
+```
+
+If this reports `TBANK_CA_TRUST_STORE_NOT_READY`, do not rerun dependency jobs
+blindly and do not disable TLS validation. Follow
+`docs/operations/V10_TBANK_CA_TRUST_RUNBOOK.md`. Certificate-store mutation is a
+separate OWNER/Administrator action and is never granted to the ordinary
+GitHub Actions runner.
+
 ## Fail-safe recovery
 
 The only repository-supported in-place recovery is:
