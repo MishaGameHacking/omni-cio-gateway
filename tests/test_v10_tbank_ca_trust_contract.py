@@ -131,8 +131,15 @@ def test_authoritative_gate_checks_ca_before_dependency_install() -> None:
 
 def test_fast_pr_parses_tbank_ca_trust_powershell_boundary() -> None:
     workflow = FAST_PR.read_text(encoding="utf-8")
+    marker = "      - name: Parse T-Bank CA trust PowerShell boundary"
+    block = workflow.split(marker, 1)[1].split("      - name:", 1)[0]
 
-    assert "Parse T-Bank CA trust PowerShell boundary" in workflow
-    assert "System.Management.Automation.Language.Parser" in workflow
-    assert "scripts\\check_v10_tbank_ca_trust.ps1" in workflow
-    assert "infrastructure\\windows\\provision_v10_tbank_ca_trust.ps1" in workflow
+    assert "        shell: cmd" in block
+    assert "shell: powershell" not in block
+    assert (
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command"
+        in block
+    )
+    assert "System.Management.Automation.Language.Parser" in block
+    assert "scripts\\check_v10_tbank_ca_trust.ps1" in block
+    assert "infrastructure\\windows\\provision_v10_tbank_ca_trust.ps1" in block

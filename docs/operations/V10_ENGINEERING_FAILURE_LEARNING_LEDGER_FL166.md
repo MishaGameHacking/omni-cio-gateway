@@ -150,6 +150,35 @@ when the Russian Trusted Root CA is absent.
 The correction is fail-closed and does not change certificate acceptance,
 mutation authority or TLS behavior.
 
+## Fast parser transport / ExecutionPolicy defect
+
+Exact head `8b064b2e351a7bfc9fc97cd58617ce036c689b8d` proved the CA
+checker itself now classifies the real machine state as
+`TBANK_CA_TRUST_STORE_NOT_READY`, but Fast PR #3048 failed before parsing either
+trust script. GitHub Actions `shell: powershell` materialized the workflow body
+as a temporary `.ps1`; the runner's effective execution policy rejected that
+temporary script with `PSSecurityException / UnauthorizedAccess`.
+
+This is a verifier-transport defect, not a syntax defect in the two trust
+scripts and not a reason to weaken the runner's machine execution policy.
+
+Systemic correction:
+
+- keep the read-only PowerShell AST parser and the same two source targets;
+- execute the parser from the existing `cmd` workflow shell via an explicit
+  `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`
+  process-local invocation, matching accepted Windows verifier patterns;
+- do not call `Set-ExecutionPolicy`, do not mutate LocalMachine/CurrentUser
+  policy and do not grant new runner authority;
+- add regression coverage that the Fast PR parser block remains `shell: cmd`,
+  uses explicit process-local `-ExecutionPolicy Bypass`, and cannot regress
+  back to `shell: powershell`.
+
+Microsoft documents that execution policy can be supplied for one PowerShell
+session without persisting a machine/user policy change. The runner's
+Restricted/managed policy therefore remains intact outside this bounded parser
+process.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head
