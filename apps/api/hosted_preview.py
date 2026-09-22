@@ -22,8 +22,6 @@ from apps.api.app import (
     _SerializedWebConnection,
     _configure_long_lived_web_connection,
 )
-from apps.api.cf_d_database_bootstrap import CF_D_DATABASE_BOOTSTRAP_PATH
-from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth
 from omni_cio.persistence.migration import connect_postgres
 from omni_cio.web.browser_security_v1 import (
     BROWSER_CSRF_COOKIE,
@@ -65,6 +63,7 @@ _HOST_PATTERN = re.compile(
 )
 _RENDER_HOST_SUFFIX = ".onrender.com"
 _HEALTHZ_PATH = "/healthz"
+_LIVEZ_PATH = "/livez"
 _SESSION_SCOPE_STATE_ATTR = "_omni_v10_session_scope"
 _CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
@@ -105,6 +104,11 @@ class HostedPreviewServicesV1:
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     provider_auth: ProviderAuthRouteServicesV1 | None = None
     browser_origin_hostname: str | None = None
+    synthetic_preview: bool = True
+    release_label: str = "v10-phase5-synthetic-technical-auth"
+    git_sha_source: str = "RENDER_GIT_COMMIT"
+    last_deploy_source: str = "RENDER_MANAGED"
+    web_artifact_source: str = "RENDER_BUILD"
 
 
 def _utc(value: datetime) -> datetime:
@@ -169,7 +173,7 @@ def _now_iso(services: HostedPreviewServicesV1) -> str:
 
 
 def _is_api_path(path: str) -> bool:
-    return path.startswith("/api/") or path == _HEALTHZ_PATH
+    return path.startswith("/api/") or path in {_HEALTHZ_PATH, _LIVEZ_PATH}
 
 
 def _merge_vary(response: Response, *required: str) -> None:
@@ -211,6 +215,14 @@ def _rate_error(*, retry_after_seconds: int, api_path: bool = True) -> Response:
     return _harden_response(response, api_path=api_path)
 
 
+def build_wp22a_phase5_provider_auth(*args: Any, **kwargs: Any) -> ProviderAuthRouteServicesV1:
+    """Historical lazy adapter; current Timeweb runtime does not import VK auth."""
+
+    from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth as legacy
+
+    return legacy(*args, **kwargs)
+
+
 def _disabled_provider_auth(
     services: HostedPreviewServicesV1,
 ) -> ProviderAuthRouteServicesV1:
@@ -238,6 +250,8 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         sessions: SessionRegistryLike,
         now: Callable[[], datetime],
         trusted_edge_tls_terminated: bool = False,
+        provider_start_paths: frozenset[str] = _PROVIDER_START_PATHS,
+        server_mutation_paths: frozenset[str] = frozenset(),
         abuse: HostedRequestAbuseControlV1 | None = None,
     ) -> None:
         super().__init__(app)
@@ -247,13 +261,14 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         self._sessions = sessions
         self._now = now
         self._trusted_edge_tls_terminated = trusted_edge_tls_terminated
+        self._provider_start_paths = provider_start_paths
+        self._server_mutation_paths = server_mutation_paths
         self._abuse = abuse or HostedRequestAbuseControlV1()
 
     def _transport_error(self, request: Request, *, api_path: bool) -> Response | None:
-        # Never treat a client-controlled forwarded header as TLS authority. On the
-        # accepted Render Web Service the managed edge terminates public TLS and
-        # forwards to a port that Render documents as not directly Internet-reachable;
-        # that provider boundary is asserted by source composition instead.
+        # Never treat a client-controlled forwarded header as TLS authority. A managed
+        # reverse-proxy boundary may terminate TLS only when source composition explicitly
+        # marks that provider boundary as trusted.
         if (
             request.url.scheme.lower() != "https"
             and not self._trusted_edge_tls_terminated
@@ -282,7 +297,7 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         return None
 
     def _admission_error(self, request: Request, *, api_path: bool) -> Response | None:
-        if request.url.path == _HEALTHZ_PATH:
+        if request.url.path in {_HEALTHZ_PATH, _LIVEZ_PATH}:
             if self._abuse.admit_health():
                 return None
             return _rate_error(
@@ -316,11 +331,11 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
             return None
         if (
             request.method == "POST"
-            and request.url.path == CF_D_DATABASE_BOOTSTRAP_PATH
+            and request.url.path in self._server_mutation_paths
         ):
-            # This is an engineering/release server-to-server mutation. Browser
-            # Origin/Fetch-Metadata/CSRF is not its authority; the route enforces
-            # exact-source binding and GitHub OIDC after global admission controls.
+            # Explicit server-to-server mutation paths own their separate authority
+            # contract and bypass browser Origin/Fetch-Metadata/CSRF only after global
+            # admission controls.
             return None
         if (
             _origin_hostname(request.headers.get("origin", ""))
@@ -330,7 +345,7 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
         if fetch_site in _UNTRUSTED_FETCH_SITES:
             return _safe_error("FETCH_METADATA_REJECTED", 403, api_path=api_path)
-        if request.url.path in _PROVIDER_START_PATHS:
+        if request.url.path in self._provider_start_paths:
             return None
         if not self._csrf_valid(request):
             return _safe_error("CSRF_REJECTED", 403, api_path=api_path)
@@ -529,13 +544,13 @@ def _system_status(
         "generated_at": now,
         "state": "READY",
         "release": {
-            "release": "v10-phase5-synthetic-technical-auth",
+            "release": services.release_label,
             "git_sha": services.release_sha,
-            "git_sha_source": "RENDER_GIT_COMMIT",
+            "git_sha_source": services.git_sha_source,
             "last_deploy_at": None,
-            "last_deploy_source": "RENDER_MANAGED",
+            "last_deploy_source": services.last_deploy_source,
             "web_artifact_at": None,
-            "web_artifact_source": "RENDER_BUILD",
+            "web_artifact_source": services.web_artifact_source,
         },
         "database": {
             "state": "READY",
@@ -627,6 +642,14 @@ class _HostedPreviewRoutesV1:
             api_path=_is_api_path(request.url.path),
         )
 
+    def livez(self) -> Response:
+        return JSONResponse(
+            {
+                "status": "ok",
+                "release_sha": self._services.release_sha,
+            }
+        )
+
     def healthz(self) -> Response:
         try:
             self._services.database_probe()
@@ -635,7 +658,7 @@ class _HostedPreviewRoutesV1:
                 {
                     "status": "unavailable",
                     "release_sha": self._services.release_sha,
-                    "synthetic_preview": True,
+                    "synthetic_preview": self._services.synthetic_preview,
                 },
                 status_code=503,
             )
@@ -651,10 +674,14 @@ class _HostedPreviewRoutesV1:
     def preview_mode(self) -> dict[str, object]:
         return {
             "enabled": False,
-            "synthetic": True,
+            "synthetic": self._services.synthetic_preview,
             "broker_credentials_enabled": False,
             "registration_enabled": self._provider_auth.registration_enabled,
-            "label": "Synthetic technical boundary",
+            "label": (
+                "Synthetic technical boundary"
+                if self._services.synthetic_preview
+                else "Hosted production boundary"
+            ),
         }
 
     def session_view(self, request: Request) -> Response:
@@ -813,6 +840,7 @@ def _register_hosted_routes(
     routes: _HostedPreviewRoutesV1,
 ) -> None:
     app.add_exception_handler(Exception, routes.unhandled_exception)
+    app.add_api_route(_LIVEZ_PATH, routes.livez, methods=["GET"])
     app.add_api_route(_HEALTHZ_PATH, routes.healthz, methods=["GET"])
     app.add_api_route(PREVIEW_STATUS_PATH, routes.preview_mode, methods=["GET"])
     app.add_api_route("/api/v10/web/session", routes.session_view, methods=["GET"])
@@ -898,11 +926,16 @@ def _validate_hosted_runtime_inputs(
     *,
     web_dist: Path,
     trusted_edge_tls_terminated: bool,
+    trusted_edge_hostname_suffix: str | None,
 ) -> str:
     hostname = _hostname(services.hostname)
     services.release_sha = _release_sha(services.release_sha)
     services.database_probe()
-    if trusted_edge_tls_terminated and not hostname.endswith(_RENDER_HOST_SUFFIX):
+    if (
+        trusted_edge_tls_terminated
+        and trusted_edge_hostname_suffix is not None
+        and not hostname.endswith(trusted_edge_hostname_suffix)
+    ):
         raise RuntimeError("HOSTED_PREVIEW_TRUSTED_EDGE_INVALID")
     if not web_dist.is_dir() or not (web_dist / "index.html").is_file():
         raise RuntimeError("HOSTED_PREVIEW_WEB_BUILD_MISSING")
@@ -915,11 +948,16 @@ def create_hosted_preview_app(
     web_dist: Path = WEB_DIST,
     additional_hosts: tuple[str, ...] = (),
     trusted_edge_tls_terminated: bool = False,
+    trusted_edge_hostname_suffix: str | None = _RENDER_HOST_SUFFIX,
+    provider_start_paths: frozenset[str] = _PROVIDER_START_PATHS,
+    server_mutation_paths: frozenset[str] = frozenset(),
+    provider_route_installer: Callable[..., None] = install_provider_auth_routes_v1,
 ) -> FastAPI:
     hostname = _validate_hosted_runtime_inputs(
         services,
         web_dist=web_dist,
         trusted_edge_tls_terminated=trusted_edge_tls_terminated,
+        trusted_edge_hostname_suffix=trusted_edge_hostname_suffix,
     )
     provider_auth = services.provider_auth or _disabled_provider_auth(services)
     app = FastAPI(
@@ -929,7 +967,7 @@ def create_hosted_preview_app(
         openapi_url=None,
     )
     routes = _HostedPreviewRoutesV1(services, provider_auth, web_dist)
-    install_provider_auth_routes_v1(app, services=provider_auth)
+    provider_route_installer(app, services=provider_auth)
 
     assets = web_dist / "assets"
     if assets.is_dir():
@@ -944,6 +982,8 @@ def create_hosted_preview_app(
         sessions=services.sessions,
         now=services.now,
         trusted_edge_tls_terminated=trusted_edge_tls_terminated,
+        provider_start_paths=provider_start_paths,
+        server_mutation_paths=server_mutation_paths,
         abuse=HostedRequestAbuseControlV1(),
     )
     app.add_middleware(

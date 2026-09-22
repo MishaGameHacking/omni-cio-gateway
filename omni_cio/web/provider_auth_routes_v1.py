@@ -28,8 +28,6 @@ from omni_cio.web.provider_auth_v1 import (
 )
 from omni_cio.web.request_limits_v1 import ProviderAuthAbuseControlV1
 from omni_cio.web.session_v1 import SessionScopeV1, new_session_token_v1
-from omni_cio.web.telegram_oidc_v1 import TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
-from omni_cio.web.vk_id_oauth_v1 import VK_ID_AUTHORIZATION_ENDPOINT
 
 
 TELEGRAM_START_PATH = "/api/v10/web/auth/telegram/start"
@@ -72,6 +70,10 @@ class ProviderAuthRouteServicesV1:
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     disabled_reasons: Mapping[IdentityProviderV1, str] = field(default_factory=dict)
     registration_enabled: bool = False
+    descriptor_providers: tuple[IdentityProviderV1, ...] = (
+        IdentityProviderV1.TELEGRAM,
+        IdentityProviderV1.VK_ID,
+    )
     abuse: ProviderAuthAbuseControlV1 = field(
         default_factory=ProviderAuthAbuseControlV1
     )
@@ -85,6 +87,10 @@ class ProviderAuthRouteServicesV1:
             for provider in providers
         ):
             raise ValueError("PROVIDER_AUTH_RUNTIME_INVALID")
+        if len(self.descriptor_providers) != len(set(self.descriptor_providers)):
+            raise ValueError("PROVIDER_AUTH_DESCRIPTOR_DUPLICATE")
+        if any(provider not in set(IdentityProviderV1) for provider in self.descriptor_providers):
+            raise ValueError("PROVIDER_AUTH_DESCRIPTOR_INVALID")
         if self.runtimes and self.authentication is None:
             raise ValueError("PROVIDER_AUTH_AUTHENTICATION_REQUIRED")
         if self.registration_enabled and self.authentication is None:
@@ -125,7 +131,7 @@ class ProviderAuthRouteServicesV1:
                     else ProviderAvailabilityV1.NOT_CONFIGURED
                 ),
             )
-            for provider in (IdentityProviderV1.TELEGRAM, IdentityProviderV1.VK_ID)
+            for provider in self.descriptor_providers
         )
 
 
@@ -161,8 +167,12 @@ def _fixed_authorization_url(
     authorization: ProviderAuthorizationStartV1,
 ) -> str:
     if provider == IdentityProviderV1.TELEGRAM:
+        from omni_cio.web.telegram_oidc_v1 import TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
+
         endpoint = TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
     elif provider == IdentityProviderV1.VK_ID:
+        from omni_cio.web.vk_id_oauth_v1 import VK_ID_AUTHORIZATION_ENDPOINT
+
         endpoint = VK_ID_AUTHORIZATION_ENDPOINT
     else:
         raise ProviderAuthorizationError("PROVIDER_AUTHORIZATION_ENDPOINT_INVALID")

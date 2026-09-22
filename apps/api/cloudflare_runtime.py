@@ -389,6 +389,7 @@ def create_app():
             ),
         ),
         trusted_edge_tls_terminated=False,
+        server_mutation_paths=frozenset({CF_D_DATABASE_BOOTSTRAP_PATH}),
     )
     install_cf_d_database_bootstrap_route(
         hosted_app,
