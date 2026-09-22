@@ -43,7 +43,7 @@ Current target after Amendment 18 acceptance:
 - Timeweb Cloud = selected application/runtime/PostgreSQL/domain/DNS/TLS/network/backup/monitoring platform;
 - Telegram Login = only human product login provider;
 - current System Update = `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`;
-- default integrated source branch = `system/timeweb-platform-consolidation`;
+- initial TW-A branch `system/timeweb-platform-consolidation` is merged via PR #583; current TW-B continuation branch = `system/timeweb-platform-consolidation-tw-b`;
 - milestones = TW-A inventory/authority -> TW-B source/runtime -> TW-C Timeweb candidate -> TW-D PostgreSQL cutover -> TW-E DNS/no-VPN ingress -> TW-F Telegram public activation -> TW-G external-provider decommission;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are historical/retirement targets, not new feature authority;
 - legacy files remain archive-in-place by default and must not be mass-deleted;

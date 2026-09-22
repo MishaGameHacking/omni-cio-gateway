@@ -75,7 +75,7 @@ Current product/platform direction:
 - protected V9 `app:app` compatibility remains until its own decommission gate; Amendment 18 does not grant broker/Real authority.
 
 Timeweb consolidation execution:
-- default source branch after authority acceptance: `system/timeweb-platform-consolidation`;
+- initial TW-A source branch `system/timeweb-platform-consolidation` is merged via PR #583; current TW-B continuation branch is `system/timeweb-platform-consolidation-tw-b`;
 - ordered milestones TW-A -> TW-B -> TW-C -> TW-D -> TW-E -> TW-F -> TW-G;
 - use one integrated source branch by default;
 - production DB cutover, canonical DNS/public cutover, destructive external-provider decommission, security/authority changes, OWNER/legal/payment actions and recovery boundaries still force independent acceptance gates;

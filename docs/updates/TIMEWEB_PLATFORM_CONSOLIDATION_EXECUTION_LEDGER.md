@@ -7,13 +7,14 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Update ID: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 - Title: Timeweb-only runtime/database/DNS/Telegram consolidation
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
-- Branch: `system/timeweb-platform-consolidation`
-- Accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current accepted-main SHA rechecked before TW-A inventory checkpoint: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
+- Initial TW-A branch: `system/timeweb-platform-consolidation` (squash-merged via PR #583)
+- Current TW-B continuation branch: `system/timeweb-platform-consolidation-tw-b`
+- TW-A accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
+- Current accepted-main SHA after PR #583: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
 - OWNER authority: Amendment 18 accepted through PR #581
 - GitHub dashboard issue: #580
 - Accepted split-boundary PR: #582
-- Current TW-A certification PR: #583
+- Accepted TW-A certification PR: #583
 - Governing authority:
   - `docs/master-plan/OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md`
   - `docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json`
@@ -24,8 +25,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 
 | Order | Member milestone | State | Branch-local evidence | Notes |
 |---:|---|---|---|---|
-| 1 | TW-A / INVENTORY_AND_AUTHORITY | IN_PROGRESS | PR #582 accepted CI-graph split + current inventory checkpoint | MAIN_RED_STOP repair is accepted; provider/dependency classification remains the final TW-A checkpoint |
-| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | TODO |  | Must not begin until the TW-A inventory checkpoint is CERTIFIED_GREEN |
+| 1 | TW-A / INVENTORY_AND_AUTHORITY | CERTIFIED_GREEN / ACCEPTED | PR #583; post-merge Regression Shield #1647 + Governance #1909 + Timeweb Proof #14 | Inventory/authority cleanup accepted on exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4` |
+| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | IN_PROGRESS | continuation branch `system/timeweb-platform-consolidation-tw-b` | Provider-neutral source/runtime only; no production cutover |
 | 3 | TW-C / TIMEWEB_APP_CANDIDATE | TODO |  | Technical Timeweb candidate only after TW-B |
 | 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | TODO |  | Mandatory production DB split gate |
 | 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | TODO |  | Mandatory DNS/public cutover split gate |
@@ -36,30 +37,25 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 
 ## 3. Current execution state
 
-- Current exact work item: repair and certify TW-A provider/dependency producer-consumer inventory
-- Current logical checkpoint ID: `TW-A-PROVIDER-CONSUMER-INVENTORY`
-- Accepted base: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current published RED head: `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6` / PR #583
-- PR #582 post-merge evidence: Regression Shield #1646 success; Engineering Governance #1893 success; Timeweb Read-Only Proof #13 success
-- Provider proof marker: `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
-- External ingress/recovery blocker remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
+- Current exact work item: TW-B provider-neutral source/runtime consolidation
+- Current logical checkpoint ID: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
+- Accepted base: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
+- Current branch: `system/timeweb-platform-consolidation-tw-b`
+- TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
+- TW-A accepted PR: #583
+- Post-merge evidence on current accepted main:
+  - Regression Shield #1647: success
+  - Engineering Governance #1909: success
+  - WP16/WP17/WP18/WP19/WP20/WP21/WP22/WP22A owning audits: success
+  - Timeweb Read-Only Proof #14: success
+  - `TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY`
+  - `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
+- Timeweb IPv4 recovery remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
 - Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
-- Classification vocabulary: `KEEP / TIMEWEB_REPLACE / RETIRE_AFTER_CUTOVER / RETIRE_NOW_AFTER_AUTHORITY / HISTORY`
-- Current branch mode: `RED_REPAIR_ONLY`; TW-B remains forbidden until this checkpoint is CERTIFIED_GREEN
-- Exact-head RED evidence: Fast PR Checks #3014 failed only on one Ruff layout drift in `tests/test_v10_ru_public_registration_ingress.py`; authoritative Windows CI #3106 passed compile/static quality and failed tracked-content secret scanning on two entropy-shaped verifier literals; Sonar reported two duplicate-character-class warnings and one contract-controlled regex ReDoS security finding in the new inventory guard.
-- Adjacent defect found during root-cause review: historical `.github/workflows/v10-wp22a-phase4-public-acceptance.yml` still had an automatic PR trigger and live read-only Render V10 probe despite Amendment 18 retirement
-- First correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` correctly archived Phase-4 but Engineering Governance #1895 exposed a second same-class consumer: `.github/workflows/v10-wp22a-phase5-technical-closeout.yml` still compiled and live-ran the retired Phase-4 Render probe
-- Consumer search for `public_preview_url` / `check_v10_wp22a_phase4_public_acceptance.py` in workflows proves the historical Phase-4 and Phase-5 workflows are the complete V10 live-probe consumer set
-- Next exact-head `b8c00434d6669dff4fc05d0a0f2576b358b24c0e` passed the strengthened Russia ingress/workflow authority guard, then the inventory guard exposed an internal classification-model mismatch: `apps/api/cf_d_database_bootstrap.py` is correctly `TIMEWEB_REPLACE` while the new guard accidentally asserted `HISTORY`
-- Classification correction: keep CF-D bootstrap as `TIMEWEB_REPLACE` until TW-B removes the active `hosted_preview.py` dependency; Phase-4/Phase-5 workflows and dormant Cloudflare Access surfaces remain `HISTORY`
-- Exact head `0a4727d3de7329fdeb21274badc364b2dba6b462` passed both strengthened authority/inventory guards and guard compilation; stdlib batch then exposed only stale historical-gate tests that still required the now-forbidden Phase-4/Phase-5 pull-request triggers
-- Regression correction: preserve the YAML parser unit, but change Phase-4/Phase-5 assertions to require archive-only manual hard-disabled routing with no automatic/reusable trigger
-- Correction class: remove contract-controlled regex execution entirely; use bounded plain-string matcher primitives; remove entropy-shaped provenance/marker literals without allowlisting or weakening secret scanning; expand executable-source hidden-consumer coverage; apply exact Ruff layout; add regressions for every defect class.
-- Replacement head `770b42c80f395d15ab483b20c05831e386bfb510` eliminated the Sonar security gate failure, but Engineering Governance #1900 exposed a scanner-model defect: generic source scanning treated static compile/history references in `.github/workflows/v10-engineering-governance.yml` as provider execution. Workflows are now separated into an execution-aware guard, while source/import consumer scanning remains code-only; direct retired provider provision/deploy commands are explicitly forbidden in active workflows.
-- Replacement head `3acb0490893dc4aed81667e5f8145ba2da645501` proved that split and then exposed the remaining same-class verifier self-reference: `scripts/check_v10_ru_public_registration_ingress.py` stores retired provider script names as fail-closed detection signatures. The source scanner now exempts exactly the two security-verifier files that intentionally store marker data; all other source consumers remain classification-enforced.
-- Exact head `f6ec32b10d6cf2ca39072cd89d14110ca474c140` passed the TW-A inventory guard and guard compilation; stdlib regression then caught an ordering bug in safe rule validation: an unknown matcher key could avoid rejection when an earlier valid selector returned `False`. Rule shape validation must run before matching so malformed repository-controlled contracts always fail closed.
-- Exact head `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6`: 12 GitHub-native PR workflow batches completed `success`, Engineering Governance #1906 completed `success`, Fast PR Checks #3022 completed `success`, and tracked-content secret scanning passed. Authoritative Windows CI #3114 failed only in the full Regression Shield after 3656 passed tests because two assertions in `tests/test_v10_wp22a_phase5_transition.py` still required the now-retired live Phase-4/Phase-5 Render workflow behavior. Sonar Quality Gate passed with 0 Security Hotspots but reported one S3776 maintainability finding: `_rule_matches` cognitive complexity 18 > 15. Systemic correction: keep historical evidence assertions, invert only workflow-currentness assertions to archive-only semantics, and split rule-shape/scalar/contains-any matching into bounded helpers rather than suppressing the finding.
-- No provider resource mutation, DB cutover, DNS mutation, public activation or Real-money authority is part of this checkpoint
+- TW-B source scope starts from the 33 accepted `TIMEWEB_REPLACE` consumers/producers identified by TW-A.
+- TW-B does not authorize provider mutation, Timeweb App Platform deployment, production DB cutover, DNS cutover, public-user activation or Real-money authority.
+- Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
+
 
 ## 4. Accepted MAIN_RED_STOP repair provenance
 

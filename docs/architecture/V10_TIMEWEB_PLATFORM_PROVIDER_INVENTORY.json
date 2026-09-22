@@ -1,7 +1,7 @@
 {
   "schema": "omni-cio.v10.timeweb-platform-inventory.v2",
   "milestone": "TW-A_INVENTORY_AND_AUTHORITY",
-  "status": "BRANCH_LOCAL_INVENTORY_CHECKPOINT",
+  "status": "ACCEPTED_TW_A_BASELINE",
   "owning_issue": 580,
   "classification_vocabulary": [
     "KEEP",
@@ -386,5 +386,8 @@
     "sonar",
     "gitar",
     "circleci"
-  ]
+  ],
+  "accepted_pr": 583,
+  "current_milestone": "TW-B_SOURCE_AND_RUNTIME_CONSOLIDATION",
+  "current_branch": "system/timeweb-platform-consolidation-tw-b"
 }

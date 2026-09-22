@@ -112,9 +112,13 @@ Amendment 18 authorizes the current integrated update:
 
 `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 
-Default source branch:
+Initial TW-A source branch (squash-merged through PR #583):
 
 `system/timeweb-platform-consolidation`
+
+Current continuation branch for TW-B:
+
+`system/timeweb-platform-consolidation-tw-b`
 
 Ordered internal milestones are TW-A inventory/authority, TW-B source/runtime consolidation, TW-C Timeweb App candidate, TW-D Timeweb PostgreSQL cutover, TW-E public ingress/DNS, TW-F Telegram public activation, and TW-G legacy-provider decommission.
 

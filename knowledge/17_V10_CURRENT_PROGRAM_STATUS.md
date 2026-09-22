@@ -4,7 +4,7 @@ Updated: 2026-09-21
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A CI-AUTHORITY REPAIR ACCEPTED VIA PR #582 / TW-A PROVIDER-CONSUMER INVENTORY PR #583 RED_REPAIR_ONLY / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A ACCEPTED VIA PR #583 WITH EXACT-MAIN POST-MERGE GREEN / TW-B SOURCE-AND-RUNTIME CONSOLIDATION IN PROGRESS / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -20,9 +20,9 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 
 Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudflare/Neon/Render/Cloud.ru/VK from current/future V10 provider authority. `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
 
-The mandatory PR #582 CI/provider-authority split is accepted on exact main `82e3a45c7016f2956c9b3761d10d15e433375f3c`: Regression Shield #1646 and Engineering Governance #1893 completed `success`; automatic Timeweb Read-Only Proof #13 completed `success` with `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed unbound IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED` and grants no ingress mutation authority. TW-A remains open only for the complete provider/dependency producer-consumer inventory; TW-B is forbidden until that branch checkpoint is `CERTIFIED_GREEN`.
+PR #582 remains the accepted CI/provider-authority split. TW-A then completed through PR #583. Its exact reviewed head `2c4cf7915c02d05e42b269544bc0336c31fa9a87` passed DRAFT and READY certification, and PR #583 was squash-merged to exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`. Post-merge Regression Shield #1647, Engineering Governance #1909, all owning WP audits and Timeweb Read-Only Proof #14 completed `success`. The sanitized provider proof remains `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed Timeweb IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`; it grants no ingress mutation authority.
 
-Current TW-A inventory PR #583 remains in `RED_REPAIR_ONLY` on exact head `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6`. All observed GitHub-native PR workflow batches except authoritative Windows CI #3114 completed `success`; Engineering Governance #1906 and Fast PR Checks #3022 are GREEN, secret scanning passed, and Sonar Quality Gate passed with 0 Security Hotspots. Windows CI reached the full Regression Shield and failed only two stale assertions in `tests/test_v10_wp22a_phase5_transition.py`: they still required the historical Phase-4/Phase-5 Render acceptance workflows to perform live exact-base probes even though Amendment 18 correctly archives and hard-disables those workflows. Sonar also reports one non-security S3776 maintainability finding in `scripts/check_v10_timeweb_platform_inventory.py`: `_rule_matches` cognitive complexity is 18 while the configured threshold is 15. The corrective checkpoint must update every remaining stale workflow consumer to archive-only semantics and refactor matcher responsibilities into bounded helpers, then undergo fresh exact-head certification before TW-B.
+TW-A / INVENTORY_AND_AUTHORITY is therefore `CERTIFIED_GREEN / ACCEPTED`. TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION is now the current branch-local milestone on `system/timeweb-platform-consolidation-tw-b`, created from the accepted exact main above. TW-B may change source/runtime composition only; it does not authorize Timeweb production deployment, PostgreSQL production cutover, DNS/TLS cutover, public Telegram activation, broker write or Real-money execution.
 
 Correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` removed the first stale probe and strengthened inventory discovery, then Engineering Governance #1895 correctly failed with `TIMEWEB_CONSOLIDATION_ACTIVE_WORKFLOW_RETIRED_PROVIDER_EXECUTION`: the historical WP22A Phase-5 technical-closeout workflow was a second neutral-name consumer that still compiled and live-ran the same Render Phase-4 probe. Repository search shows these Phase-4 and Phase-5 workflows are the complete Actions consumer set for that retired probe. Both must be archive-in-place/manual hard-disabled before the TW-A checkpoint can be certified.
 
@@ -422,7 +422,7 @@ Future monetization remains `DEFERRED_OPTIONAL`.
 - Cloudflare Public Product System Update — **HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**;
 - Amendment 18 — **ACCEPTED ON `main` VIA PR #581**;
 - current authorized System Update — **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
-- current source branch — **`system/timeweb-platform-consolidation`**;
+- current source branch — **`system/timeweb-platform-consolidation-tw-b`**; the original TW-A branch was squash-merged through PR #583;
 - WEB-VISUAL — **PAUSED**;
 - Block F / WP23+ — **LOCKED**;
 - current user-facing activation transitions — **BLOCKED_EXTERNAL where listed above**;
@@ -517,11 +517,12 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 ## Current next action
 
-1. remain in `TW-A-PROVIDER-CONSUMER-INVENTORY / RED_REPAIR_ONLY` on PR #583; do not start TW-B;
-2. correct both Ruff-format defects and strengthen the inventory guard so it uses no spawned Git process, requires exact provider-surface cardinality, and catches neutral-name retired-provider consumers by content;
-3. archive-in-place and hard-disable the historical WP22A Phase-4 Render/Neon public-acceptance workflow so no current PR can live-probe retired V10 Render;
-4. update inventory/authority regression tests and full branch handoff, then publish one coherent replacement head;
-5. require every applicable exact-head GitHub check to finish `completed/success`; investigate any remaining security finding as a real signal even though external Sonar is no longer required merge authority;
-6. after DRAFT GREEN, mark READY and require a fresh exact-head READY certification with zero blocking review threads;
-7. only after TW-A is squash-merged and exact-new-main Regression Shield + Engineering Governance + Timeweb proof are GREEN may TW-B provider-neutral Timeweb runtime work begin;
-8. keep `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`.
+1. execute `TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION` only on `system/timeweb-platform-consolidation-tw-b`, based on exact accepted main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`;
+2. extract current Timeweb scripts from historical Render/Neon/Cloudflare helper dependencies into provider-neutral HTTP/PostgreSQL primitives;
+3. create the provider-neutral Timeweb App Platform runtime/deployment source, including a process-only `/livez` endpoint for the platform health check while preserving strict database-aware `/healthz`;
+4. remove VK ID from deployed product composition and make current human-login composition Telegram-only without activating public users;
+5. rebind current PostgreSQL runtime/recovery/readiness contracts away from the historical `infrastructure/cloudru/` path without rewriting accepted migrations/history;
+6. remove current Timeweb proof dependence on `wrangler.jsonc`, Cloudflare/Neon/Render helpers and Render release metadata;
+7. add/strengthen regression guards proving no active TW-B runtime imports retired provider adapters and no production/provider mutation occurs in TW-B;
+8. keep `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`;
+9. publish TW-B only after focused preflight, full diff/security review and exact-head certification; TW-C remains forbidden until TW-B is `CERTIFIED_GREEN`.
