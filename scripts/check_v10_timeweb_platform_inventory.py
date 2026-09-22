@@ -67,7 +67,12 @@ _CONTENT_SCAN_FILENAMES = frozenset(
         "wrangler.jsonc",
     }
 )
-_INVENTORY_GUARD_PATH = "scripts/check_v10_timeweb_platform_inventory.py"
+_STATIC_EVIDENCE_PATHS = frozenset(
+    {
+        "scripts/check_v10_ru_public_registration_ingress.py",
+        "scripts/check_v10_timeweb_platform_inventory.py",
+    }
+)
 _MAX_SCANNED_SOURCE_BYTES = 1_000_000
 _RETIRED_EXECUTION_MARKERS = (
     "from apps.api.cf_d_database_bootstrap import",
@@ -312,7 +317,7 @@ def _validate_coverage(
 
 
 def _should_scan_content(path: str) -> bool:
-    if path == _INVENTORY_GUARD_PATH:
+    if path in _STATIC_EVIDENCE_PATHS:
         return False
     name = Path(path).name
     return (

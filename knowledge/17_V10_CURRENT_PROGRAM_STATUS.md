@@ -36,6 +36,8 @@ Replacement preflight also found two previously unclassified transitive dependen
 
 Exact head `770b42c80f395d15ab483b20c05831e386bfb510` removed the prior Sonar Quality Gate failure (0 security hotspots), but Engineering Governance #1900 then correctly stopped at `TIMEWEB_INVENTORY_UNCLASSIFIED_RETIRED_CONSUMER:.github/workflows/v10-engineering-governance.yml`. Root cause was verifier-layer conflation, not a new provider execution: the generic content scanner interpreted a static `py_compile` reference to historical provider code as a runtime dependency. The correction separates code/import consumer scanning from GitHub Actions execution scanning and strengthens the latter with direct retired provision/deploy command markers, so static historical verification remains allowed while actual retired-provider execution fails closed.
 
+Exact head `3acb0490893dc4aed81667e5f8145ba2da645501` confirmed that workflow/source separation but exposed one final self-reference of the same class: the current Russia-ingress security guard itself contains retired provider script names as detection data. Whole-source marker enumeration found no other unclassified strong-marker consumer. The correction therefore exempts exactly the two security-verifier source files from consumer scanning while keeping the Russia-ingress execution-aware workflow guard authoritative for provider commands; this avoids broad suppression and keeps any new ordinary `KEEP` source fail-closed.
+
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
 Accepted historical Cloudflare/Render/Neon chains remain evidence of what earlier code proved, but they do not remain future platform authority after Amendment 18 acceptance.

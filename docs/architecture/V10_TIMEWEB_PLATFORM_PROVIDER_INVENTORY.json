@@ -214,6 +214,10 @@
     "scripts/rehearse_v10_wp22a_phase4_runtime_role.py": {
       "classification": "TIMEWEB_REPLACE",
       "reason": "Active PostgreSQL 18 rehearsal still imports runtime-role convergence from the historical Render/Neon provisioner; extract the primitive to provider-neutral PostgreSQL code in TW-B/TW-D."
+    },
+    "scripts/check_v10_ru_public_registration_ingress.py": {
+      "classification": "KEEP",
+      "reason": "Current Timeweb/retired-provider authority guard contains retired command names only as fail-closed detection signatures; it does not execute provider operations."
     }
   },
   "path_rules": [

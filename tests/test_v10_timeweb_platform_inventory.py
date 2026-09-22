@@ -106,6 +106,27 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         files = inventory._repository_files()
         inventory._validate_content_consumers(self.payload, files)
 
+    def test_security_verifier_marker_data_is_exactly_exempt(self) -> None:
+        self.assertEqual(
+            inventory._STATIC_EVIDENCE_PATHS,
+            frozenset(
+                {
+                    "scripts/check_v10_ru_public_registration_ingress.py",
+                    "scripts/check_v10_timeweb_platform_inventory.py",
+                }
+            ),
+        )
+        for path in inventory._STATIC_EVIDENCE_PATHS:
+            with self.subTest(path=path):
+                self.assertFalse(inventory._should_scan_content(path))
+        self.assertEqual(
+            inventory._classify_path(
+                "scripts/check_v10_ru_public_registration_ingress.py",
+                self.payload,
+            ),
+            "KEEP",
+        )
+
     def test_workflows_use_execution_guard_not_source_consumer_scan(self) -> None:
         self.assertFalse(
             inventory._should_scan_content(
