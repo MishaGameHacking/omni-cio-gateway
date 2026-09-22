@@ -5,21 +5,15 @@ from pathlib import Path
 import sys
 from typing import Any
 
-if __package__:
-    from .v10_jsonc import loads_jsonc
-else:
-    from v10_jsonc import loads_jsonc
-
-
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
     ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_CONTRACT.json"
 )
 PROOF = ROOT / "scripts/prove_v10_ru_postgres_timeweb_parity.py"
-NEON_RUNTIME = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
+POSTGRES_RUNTIME = ROOT / "scripts/postgres_runtime_primitives.py"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_RUNBOOK.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
-WRANGLER = ROOT / "wrangler.jsonc"
+PROVIDER_RUNTIME = ROOT / "scripts/provider_runtime_primitives.py"
 
 
 def _read(path: Path) -> str:
@@ -184,14 +178,14 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _require(
         parity.get("runtime_role"),
-        "omni_cio_cloudflare_staging",
+        "omni_cio_timeweb_synthetic",
         "RU_PG_B_RUNTIME_ROLE_INVALID",
     )
     for key in (
-        "reuse_neon_runtime_sql_renderer",
-        "reuse_neon_runtime_role_convergence",
-        "reuse_neon_runtime_verification",
-        "reuse_existing_postgres_retry",
+        "reuse_provider_neutral_runtime_sql_renderer",
+        "reuse_provider_neutral_runtime_role_convergence",
+        "reuse_provider_neutral_runtime_verification",
+        "reuse_provider_neutral_postgres_retry",
         "migration_retry_idempotence_required",
         "alter_default_privileges_probe_required",
     ):
@@ -245,13 +239,13 @@ def _validate_proof_source() -> None:
             "require_postgres_18",
             "validate_hosted_postgres_runtime_sql",
             "apply_migrations",
-            "provision_v10_cloudflare_neon_runtime as neon_runtime",
-            "provision_v10_render_neon_preview as postgres_base",
-            'RUNTIME_ROLE = neon_runtime._runtime_role("staging")',
-            "neon_runtime._runtime_sql(RUNTIME_ROLE)",
-            "neon_runtime._converge_runtime_role(",
-            "neon_runtime._verify_runtime(runtime, RUNTIME_ROLE)",
-            "postgres_base._connect_postgres_with_retry(",
+            "postgres_runtime_primitives as postgres_runtime",
+            "provider_runtime_primitives as provider_base",
+            'RUNTIME_ROLE = "omni_cio_timeweb_synthetic"',
+            "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)",
+            "postgres_runtime.converge_runtime_role(",
+            "postgres_runtime.verify_runtime(runtime, RUNTIME_ROLE)",
+            "provider_base._connect_postgres_with_retry(",
             "RU_PG_MIGRATION_RETRY_DRIFT",
             "def _verify_default_privileges(",
             "ALTER DEFAULT PRIVILEGES IN SCHEMA {}",
@@ -279,22 +273,45 @@ def _validate_proof_source() -> None:
             raise RuntimeError("RU_PG_B_PROOF_AUTHORITY_WIDENED")
 
 
-def _validate_reused_neon_runtime() -> None:
-    source = _read(NEON_RUNTIME)
+def _validate_provider_neutral_runtime() -> None:
+    postgres_runtime = _read(POSTGRES_RUNTIME)
+    provider_runtime = _read(PROVIDER_RUNTIME)
     _require_markers(
-        source,
+        postgres_runtime,
         (
-            "def _runtime_sql(runtime_role: str) -> str:",
-            "def _converge_runtime_role(",
+            "def render_runtime_sql(runtime_role: str) -> str:",
+            "def converge_runtime_role(",
             "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB ",
             "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}",
-            "def _verify_runtime(connection: Any, runtime_role: str) -> None:",
-            "CLOUDFLARE_RUNTIME_ROLE_DRIFT",
-            "CLOUDFLARE_RUNTIME_ROLE_MEMBERSHIP_PRESENT",
-            "CLOUDFLARE_RUNTIME_FORCE_RLS_DRIFT",
+            "def verify_runtime(connection: Any, runtime_role: str) -> None:",
+            "POSTGRES_RUNTIME_ROLE_DRIFT",
+            "POSTGRES_RUNTIME_ROLE_MEMBERSHIP_PRESENT",
+            "POSTGRES_RUNTIME_FORCE_RLS_DRIFT",
         ),
-        "RU_PG_B_REUSED_NEON_RUNTIME_DRIFT",
+        "RU_PG_B_POSTGRES_RUNTIME_PRIMITIVES_DRIFT",
     )
+    _require_markers(
+        provider_runtime,
+        (
+            "def _connect_postgres_with_retry(",
+            "connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS",
+            "_TRANSIENT_RETRY_DELAYS_SECONDS",
+        ),
+        "RU_PG_B_PROVIDER_RUNTIME_PRIMITIVES_DRIFT",
+    )
+    retired_markers = (
+        "provision_v10_" + "cloudflare_neon_runtime",
+        "provision_v10_" + "render_neon_preview",
+        "NEON" + "_",
+        "RENDER" + "_",
+        "CLOUDFLARE" + "_",
+    )
+    if any(
+        marker in source
+        for marker in retired_markers
+        for source in (postgres_runtime, provider_runtime)
+    ):
+        raise RuntimeError("RU_PG_B_PROVIDER_NEUTRAL_RUNTIME_DRIFT")
 
 
 def _validate_docs() -> None:
@@ -309,7 +326,7 @@ def _validate_docs() -> None:
             "TIMEWEB_SYNTHETIC_ONLY",
             "real personal data",
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
-            "RU-PG-C",
+            "TW-D",
         ),
         "RU_PG_B_RUNBOOK_DRIFT",
     )
@@ -325,53 +342,11 @@ def _validate_docs() -> None:
     )
 
 
-def _validate_fail_closed_flags() -> None:
-    try:
-        wrangler = loads_jsonc(_read(WRANGLER))
-    except (ValueError, TypeError) as exc:
-        raise RuntimeError("RU_PG_B_WRANGLER_INVALID") from exc
-    if not isinstance(wrangler, dict):
-        raise RuntimeError("RU_PG_B_WRANGLER_INVALID")
-    expected = {
-        "PUBLIC_MULTI_USER_ENABLED": "false",
-        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
-        "OMNI_V10_VK_ID_LOGIN_ENABLED": "false",
-    }
-    production = _mapping(
-        wrangler.get("vars"),
-        "RU_PG_B_PRODUCTION_FLAGS_INVALID",
-    )
-    environments = _mapping(
-        wrangler.get("env"),
-        "RU_PG_B_STAGING_FLAGS_INVALID",
-    )
-    staging = _mapping(
-        environments.get("staging"),
-        "RU_PG_B_STAGING_FLAGS_INVALID",
-    )
-    staging_vars = _mapping(
-        staging.get("vars"),
-        "RU_PG_B_STAGING_FLAGS_INVALID",
-    )
-    for key, value in expected.items():
-        _require(
-            production.get(key),
-            value,
-            "RU_PG_B_PRODUCTION_FLAGS_INVALID",
-        )
-        _require(
-            staging_vars.get(key),
-            value,
-            "RU_PG_B_STAGING_FLAGS_INVALID",
-        )
-
-
 def validate() -> None:
     _validate_contract(_load_contract())
     _validate_proof_source()
-    _validate_reused_neon_runtime()
+    _validate_provider_neutral_runtime()
     _validate_docs()
-    _validate_fail_closed_flags()
 
 
 def main() -> int:

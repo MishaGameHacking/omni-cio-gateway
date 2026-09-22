@@ -22,7 +22,7 @@ from omni_cio.persistence.hosted_postgres_runtime_v1 import (
     validate_hosted_postgres_runtime_sql,
 )
 from omni_cio.persistence.migration import apply_migrations
-from scripts.provision_v10_render_neon_preview import _converge_runtime_role
+from scripts.postgres_runtime_primitives import converge_runtime_role
 
 
 DSN_ENV = "OMNI_CIO_WP13_DSN"
@@ -180,7 +180,7 @@ def rehearse_creator_edge() -> int:
     admin_dsn = _required_dsn()
     bootstrap_dsn = _create_bootstrap_role(admin_dsn, own_database=False)
     with psycopg.connect(bootstrap_dsn, autocommit=True) as bootstrap:
-        _converge_runtime_role(bootstrap, _ephemeral_password())
+        converge_runtime_role(bootstrap, RUNTIME_ROLE, _ephemeral_password())
         _assert_creator_edge(bootstrap)
     print("V10_WP22A_PHASE4_PG18_CREATOR_EDGE_REHEARSAL=PASS")
     return 0
@@ -197,7 +197,7 @@ def rehearse_bootstrap() -> int:
     with psycopg.connect(bootstrap_dsn, autocommit=True) as bootstrap:
         first_password = _ephemeral_password()
         apply_migrations(bootstrap)
-        _converge_runtime_role(bootstrap, first_password)
+        converge_runtime_role(bootstrap, RUNTIME_ROLE, first_password)
         _assert_creator_edge(bootstrap)
         bootstrap.execute(runtime_sql, prepare=False)
         _seed_synthetic_preview(bootstrap)
@@ -205,7 +205,7 @@ def rehearse_bootstrap() -> int:
         print("PG18_HOSTED_RUNTIME_BOOTSTRAP=PASS")
 
         second_password = _ephemeral_password()
-        _converge_runtime_role(bootstrap, second_password)
+        converge_runtime_role(bootstrap, RUNTIME_ROLE, second_password)
         _assert_creator_edge(bootstrap)
         bootstrap.execute(runtime_sql, prepare=False)
         _assert_runtime_login(admin_dsn, second_password)
