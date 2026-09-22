@@ -427,10 +427,12 @@ def _validate_content_consumers(
 
 
 def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
-    replacement_required = {
-        "apps/api/hosted_preview.py",
-        "apps/api/cf_d_database_bootstrap.py",
-        "apps/api/wp22a_phase5_auth.py",
+    current_required = {
+        "Dockerfile",
+        "apps/api/hosted_app.py",
+        "apps/api/hosted_database_runtime.py",
+        "apps/api/hosted_runtime.py",
+        "apps/api/telegram_auth.py",
         "apps/web/e2e/app-shell.spec.ts",
         "apps/web/e2e/system-admin.spec.ts",
         "apps/web/src/app-shell/api.ts",
@@ -438,41 +440,54 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         "apps/web/src/app-shell/contracts.ts",
         "apps/web/tests/app_shell_contract.test.ts",
         "apps/web/vite.config.ts",
+        "infrastructure/hosted/hosted-readiness-contract.json",
+        "infrastructure/postgres/hosted-postgres-runtime-contract.json",
+        "infrastructure/postgres/hosted-postgres-runtime.sql",
+        "infrastructure/postgres/hosted-recovery-contract.json",
         "omni_cio/observability/hosted_readiness_v1.py",
         "omni_cio/persistence/_hosted_recovery_contract_v1.py",
         "omni_cio/persistence/hosted_postgres_runtime_v1.py",
         "omni_cio/web/browser_security_v1.py",
         "omni_cio/web/identity_v1.py",
-        "omni_cio/web/provider_auth_routes_v1.py",
-        "omni_cio/web/provider_start_adapter_v1.py",
+        "omni_cio/web/telegram_auth_routes_v1.py",
+        "omni_cio/web/telegram_auth_services_v1.py",
         "scripts/check_v10_ru_postgres_data_residency_migration.py",
         "scripts/check_v10_ru_postgres_timeweb_parity.py",
         "scripts/check_v10_wp17_web_security.py",
         "scripts/discover_v10_ru_pg_verifier_ipv4.py",
+        "scripts/postgres_runtime_primitives.py",
         "scripts/probe_v10_timeweb_ipv4_custody.py",
         "scripts/probe_v10_timeweb_postgres_control_plane.py",
         "scripts/prove_v10_ru_postgres_timeweb_parity.py",
-        "scripts/rehearse_v10_wp22a_phase4_runtime_role.py",
-        "scripts/provision_v10_cloudflare_neon_runtime.py",
-        "scripts/provision_v10_render_neon_preview.py",
+        "scripts/provider_runtime_primitives.py",
         "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
         "scripts/provision_v10_timeweb_postgres_synthetic.py",
+        "scripts/rehearse_v10_wp22a_phase4_runtime_role.py",
         "scripts/timeweb_ipv4_allocation_provider.py",
-        _WRANGLER_CONFIG_PATH,
     }
-    for path in replacement_required:
-        if _classify_path(path, payload) != _CLASS_TIMEWEB_REPLACE:
-            raise RuntimeError("TIMEWEB_INVENTORY_TRANSITIVE_CONSUMER_UNBOUND:" + path)
+    for path in current_required:
+        if _classify_path(path, payload) != "KEEP":
+            raise RuntimeError("TIMEWEB_INVENTORY_CURRENT_SURFACE_NOT_KEEP:" + path)
 
     historical_required = {
         ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
         ".github/workflows/v10-wp22a-phase5-technical-closeout.yml",
+        "apps/api/cf_d_database_bootstrap.py",
+        "apps/api/hosted_preview.py",
+        "apps/api/wp22a_phase5_auth.py",
         "apps/api/wp22a_remote.py",
+        "infrastructure/cloudru/wp22a/hosted-postgres-runtime-contract.json",
+        "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql",
         "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1",
         "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql",
         "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql",
         "omni_cio/web/external_access_v1.py",
+        "omni_cio/web/provider_auth_routes_v1.py",
+        "omni_cio/web/provider_start_adapter_v1.py",
         "scripts/check_v10_wp22a_phase4_public_acceptance.py",
+        "scripts/provision_v10_cloudflare_neon_runtime.py",
+        "scripts/provision_v10_render_neon_preview.py",
+        _WRANGLER_CONFIG_PATH,
     }
     for path in historical_required:
         if _classify_path(path, payload) != "HISTORY":

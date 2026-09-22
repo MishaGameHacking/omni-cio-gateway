@@ -64,27 +64,47 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "HISTORY",
         )
 
-    def test_hidden_shared_runtime_consumers_require_timeweb_replacement(self) -> None:
+    def test_tw_b_current_source_runtime_surfaces_are_keep(self) -> None:
         for path in (
-            "apps/api/hosted_preview.py",
-            "apps/api/cf_d_database_bootstrap.py",
+            "Dockerfile",
+            "apps/api/hosted_app.py",
+            "apps/api/hosted_database_runtime.py",
+            "apps/api/hosted_runtime.py",
+            "apps/api/telegram_auth.py",
             "apps/web/vite.config.ts",
+            "infrastructure/postgres/hosted-postgres-runtime.sql",
             "omni_cio/persistence/hosted_postgres_runtime_v1.py",
+            "omni_cio/web/browser_security_v1.py",
             "omni_cio/web/identity_v1.py",
-            "omni_cio/web/provider_start_adapter_v1.py",
+            "omni_cio/web/telegram_auth_routes_v1.py",
+            "omni_cio/web/telegram_auth_services_v1.py",
             "scripts/check_v10_ru_postgres_data_residency_migration.py",
-            "scripts/discover_v10_ru_pg_verifier_ipv4.py",
-            "scripts/probe_v10_timeweb_ipv4_custody.py",
-            "scripts/probe_v10_timeweb_postgres_control_plane.py",
-            "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
+            "scripts/postgres_runtime_primitives.py",
+            "scripts/provider_runtime_primitives.py",
             "scripts/provision_v10_timeweb_postgres_synthetic.py",
-            "scripts/rehearse_v10_wp22a_phase4_runtime_role.py",
-            "scripts/timeweb_ipv4_allocation_provider.py",
         ):
             with self.subTest(path=path):
                 self.assertEqual(
                     inventory._classify_path(path, self.payload),
-                    "TIMEWEB_REPLACE",
+                    "KEEP",
+                )
+
+    def test_detached_provider_wrappers_are_history(self) -> None:
+        for path in (
+            "apps/api/hosted_preview.py",
+            "apps/api/cf_d_database_bootstrap.py",
+            "apps/api/wp22a_phase5_auth.py",
+            "omni_cio/web/provider_auth_routes_v1.py",
+            "omni_cio/web/provider_start_adapter_v1.py",
+            "scripts/provision_v10_cloudflare_neon_runtime.py",
+            "scripts/provision_v10_render_neon_preview.py",
+            "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql",
+            "wrangler.jsonc",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    inventory._classify_path(path, self.payload),
+                    "HISTORY",
                 )
 
     def test_dormant_provider_history_does_not_become_current_authority(self) -> None:

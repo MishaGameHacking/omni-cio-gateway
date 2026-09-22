@@ -20,64 +20,64 @@
       "reason": "Protected V9 recovery boundary; start command remains app:app until its own accepted retirement gate."
     },
     "apps/api/hosted_preview.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Reusable hosted Web/API composition still contains Render hostname/release inputs, VK start-path admission and CF-D bootstrap exception."
+      "classification": "HISTORY",
+      "reason": "Historical Render/Neon synthetic hosted wrapper; current Timeweb runtime imports hosted_app.py instead."
     },
     "apps/api/cf_d_database_bootstrap.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Cloudflare/Neon production-bootstrap implementation is still imported by the shared hosted runtime and must be detached from Timeweb composition."
+      "classification": "HISTORY",
+      "reason": "Historical Cloudflare/Neon bootstrap route detached from the current Timeweb runtime."
     },
     "apps/api/wp22a_phase5_auth.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Accepted auth/session composition is reused, but deployed provider selection must become Telegram-only."
+      "classification": "HISTORY",
+      "reason": "Historical Telegram+VK Phase-5 composition retained for accepted evidence; current Timeweb auth uses apps/api/telegram_auth.py."
     },
     "omni_cio/web/provider_auth_routes_v1.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Accepted provider routes currently install Telegram and VK ID; Timeweb deployed composition must expose Telegram only."
+      "classification": "HISTORY",
+      "reason": "Historical generic Telegram+VK route surface; current Timeweb runtime imports telegram_auth_routes_v1.py instead."
     },
     "apps/web/src/app-shell/app-shell.tsx": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current login UI still renders both Telegram and VK ID."
+      "classification": "KEEP",
+      "reason": "Current login UI exposes only Telegram Login."
     },
     "apps/web/src/app-shell/api.ts": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Browser provider-start helper still types the retired VK ID provider."
+      "classification": "KEEP",
+      "reason": "Current browser provider-start helper resolves only Telegram."
     },
     "apps/web/src/app-shell/contracts.ts": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Browser identity-provider union still contains VK ID."
+      "classification": "KEEP",
+      "reason": "Current browser identity-provider union is Telegram-only."
     },
     "apps/web/tests/app_shell_contract.test.ts": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current browser regression contract still requires the retired VK ID login surface."
+      "classification": "KEEP",
+      "reason": "Current browser regression contract freezes Telegram-only login."
     },
     "wrangler.jsonc": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Retired Cloudflare configuration is still consumed by the current Timeweb synthetic-parity guard and must be removed from active proof authority."
+      "classification": "HISTORY",
+      "reason": "Historical Cloudflare V10 configuration; no current Timeweb proof or runtime consumer."
     },
     "scripts/check_v10_ru_postgres_timeweb_parity.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb parity guard still imports/reads retired Cloudflare/Neon/Render/Wrangler surfaces."
+      "classification": "KEEP",
+      "reason": "Current Timeweb parity guard verifies provider-neutral PostgreSQL and transport primitives."
     },
     "scripts/prove_v10_ru_postgres_timeweb_parity.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb parity proof reuses provider-named Cloudflare/Neon/Render helpers and must be extracted to provider-neutral PostgreSQL primitives."
+      "classification": "KEEP",
+      "reason": "Current Timeweb parity proof uses provider-neutral PostgreSQL and transport primitives."
     },
     "scripts/provision_v10_cloudflare_neon_runtime.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb parity proof imports its role convergence/runtime verification helpers; TW-B/TW-D must replace that active dependency before retirement."
+      "classification": "HISTORY",
+      "reason": "Historical Cloudflare/Neon runtime provisioner; current Timeweb proof uses provider-neutral primitives."
     },
     "scripts/provision_v10_render_neon_preview.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb parity proof imports its bounded PostgreSQL retry/base helpers; provider-neutral extraction is required."
+      "classification": "HISTORY",
+      "reason": "Historical Render/Neon preview provisioner; current Timeweb proof uses provider-neutral primitives."
     },
     "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "The SQL semantics are reusable, but the current Timeweb parity proof reaches them through a retired Cloud.ru historical path."
+      "classification": "HISTORY",
+      "reason": "Historical Cloud.ru-hosted SQL copy retained as accepted evidence; current canonical SQL is infrastructure/postgres/hosted-postgres-runtime.sql."
     },
     "infrastructure/cloudru/wp22a/hosted-postgres-runtime-contract.json": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Runtime-role contract semantics remain useful but must move behind current provider-neutral authority."
+      "classification": "HISTORY",
+      "reason": "Historical Cloud.ru-hosted contract copy retained as accepted evidence; current canonical contract is infrastructure/postgres/hosted-postgres-runtime-contract.json."
     },
     ".github/workflows/v10-phase4-free-preview-deploy.yml": {
       "classification": "HISTORY",
@@ -124,40 +124,40 @@
       "reason": "Dormant historical Cloudflare clientless launcher retained for source evidence only."
     },
     "omni_cio/web/identity_v1.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current ordinary-login provider registry still includes VK ID and must become Telegram-only in TW-B."
+      "classification": "KEEP",
+      "reason": "Current ordinary-login default is Telegram-only; VK enum remains historical data compatibility only."
     },
     "omni_cio/web/browser_security_v1.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current browser proof-cookie registry still contains VK ID and must follow Telegram-only deployed composition."
+      "classification": "KEEP",
+      "reason": "Current cookie-policy default and Timeweb composition allow Telegram only; legacy VK cookie name remains historical compatibility."
     },
     "omni_cio/web/provider_start_adapter_v1.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current provider adapter module still imports and exposes the VK ID runtime."
+      "classification": "HISTORY",
+      "reason": "Historical Telegram+VK provider adapter retained for accepted WP22A evidence only."
     },
     "apps/web/e2e/app-shell.spec.ts": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current browser E2E fixtures/assertions still model VK ID as an ordinary deployed login provider."
+      "classification": "KEEP",
+      "reason": "Current browser E2E login fixtures are Telegram-only."
     },
     "apps/web/e2e/system-admin.spec.ts": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current system-admin E2E provider fixture still includes VK ID."
+      "classification": "KEEP",
+      "reason": "Current system-admin E2E provider fixture is Telegram-only."
     },
     "scripts/check_v10_wp17_web_security.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Web security guard still describes ordinary authentication as Telegram plus VK ID."
+      "classification": "KEEP",
+      "reason": "Current Web security guard requires Telegram-only ordinary login."
     },
     "omni_cio/persistence/hosted_postgres_runtime_v1.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Reusable PostgreSQL runtime contract still resolves canonical SQL/contract through a retired Cloud.ru path."
+      "classification": "KEEP",
+      "reason": "Current PostgreSQL runtime contract resolves only provider-neutral infrastructure/postgres artifacts."
     },
     "omni_cio/persistence/_hosted_recovery_contract_v1.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Reusable recovery contract still carries historical hosted-provider path coupling that must become provider-neutral."
+      "classification": "KEEP",
+      "reason": "Current recovery contract resolves only provider-neutral infrastructure/postgres artifacts."
     },
     "omni_cio/observability/hosted_readiness_v1.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Reusable hosted readiness layer still carries historical provider-contract coupling that must become provider-neutral."
+      "classification": "KEEP",
+      "reason": "Current readiness contract resolves only provider-neutral infrastructure/hosted artifacts."
     },
     "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql": {
       "classification": "HISTORY",
@@ -172,32 +172,32 @@
       "reason": "Historical WP22A Phase-5 hosted closeout workflow; archive-in-place and hard-disabled from replaying retired Render/Neon live acceptance."
     },
     "scripts/probe_v10_timeweb_ipv4_custody.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb IPv4 custody probe still imports historical Render/Neon helper primitives and must be extracted to provider-neutral transport helpers."
+      "classification": "KEEP",
+      "reason": "Current Timeweb IPv4 custody probe uses provider-neutral transport primitives."
     },
     "scripts/discover_v10_ru_pg_verifier_ipv4.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current RU PostgreSQL verifier-IP discovery still imports historical Render/Neon helper primitives and must become provider-neutral."
+      "classification": "KEEP",
+      "reason": "Current verifier-IP discovery uses provider-neutral transport primitives."
     },
     "scripts/timeweb_ipv4_allocation_provider.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb IPv4 allocation provider adapter still imports historical Render/Neon HTTP/provisioning primitives and must be decoupled."
+      "classification": "KEEP",
+      "reason": "Current Timeweb IPv4 allocation adapter uses provider-neutral transport primitives."
     },
     "scripts/provision_v10_timeweb_postgres_synthetic.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb PostgreSQL synthetic provisioner still imports historical Render/Neon helper primitives and must be decoupled before final runtime consolidation."
+      "classification": "KEEP",
+      "reason": "Current Timeweb synthetic PostgreSQL provisioner uses provider-neutral transport primitives."
     },
     "scripts/probe_v10_timeweb_postgres_control_plane.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb PostgreSQL control-plane probe still imports historical Render/Neon helper primitives and must be decoupled."
+      "classification": "KEEP",
+      "reason": "Current Timeweb control-plane probe uses provider-neutral transport primitives."
     },
     "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Timeweb PostgreSQL public-IPv4/TLS provisioner still imports historical Render/Neon helper primitives and must be decoupled."
+      "classification": "KEEP",
+      "reason": "Current Timeweb public-IPv4/TLS provisioner uses provider-neutral transport primitives."
     },
     "scripts/check_v10_ru_postgres_data_residency_migration.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current RU PostgreSQL residency guard still references historical Cloud.ru/Wrangler provider artifacts and must be rebound to provider-neutral Timeweb contracts."
+      "classification": "KEEP",
+      "reason": "Current RU PostgreSQL guard is rebound to Amendment 18 Timeweb authority and provider-neutral runtime SQL."
     },
     "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md": {
       "classification": "KEEP",
@@ -208,16 +208,68 @@
       "reason": "VK ID source is retained as historical evidence but must leave deployed composition under Amendment 18."
     },
     "apps/web/vite.config.ts": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Current Web build identity still falls back to retired Render release metadata; TW-B must use provider-neutral exact GitHub SHA input."
+      "classification": "KEEP",
+      "reason": "Current Web build identity uses provider-neutral OMNI_V10_RELEASE_SHA."
     },
     "scripts/rehearse_v10_wp22a_phase4_runtime_role.py": {
-      "classification": "TIMEWEB_REPLACE",
-      "reason": "Active PostgreSQL 18 rehearsal still imports runtime-role convergence from the historical Render/Neon provisioner; extract the primitive to provider-neutral PostgreSQL code in TW-B/TW-D."
+      "classification": "KEEP",
+      "reason": "Current runtime-role rehearsal uses provider-neutral PostgreSQL role convergence."
     },
     "scripts/check_v10_ru_public_registration_ingress.py": {
       "classification": "KEEP",
       "reason": "Current Timeweb/retired-provider authority guard contains retired command names only as fail-closed detection signatures; it does not execute provider operations."
+    },
+    "Dockerfile": {
+      "classification": "KEEP",
+      "reason": "Current Timeweb App Platform source build and process-liveness contract."
+    },
+    "apps/api/hosted_app.py": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral hosted Web/API composition."
+    },
+    "apps/api/hosted_database_runtime.py": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral PostgreSQL 18 runtime-readiness probe."
+    },
+    "apps/api/hosted_runtime.py": {
+      "classification": "KEEP",
+      "reason": "Current Timeweb-targeted provider-neutral Web/API runtime entrypoint."
+    },
+    "apps/api/telegram_auth.py": {
+      "classification": "KEEP",
+      "reason": "Current Telegram-only authentication composition."
+    },
+    "omni_cio/web/telegram_auth_routes_v1.py": {
+      "classification": "KEEP",
+      "reason": "Current Telegram-only browser authorization routes."
+    },
+    "omni_cio/web/telegram_auth_services_v1.py": {
+      "classification": "KEEP",
+      "reason": "Current Telegram-only route-service authority model."
+    },
+    "scripts/provider_runtime_primitives.py": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral HTTP/PostgreSQL transport primitives."
+    },
+    "scripts/postgres_runtime_primitives.py": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral PostgreSQL role/ACL primitives."
+    },
+    "infrastructure/postgres/hosted-postgres-runtime.sql": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral hosted PostgreSQL least-privilege SQL."
+    },
+    "infrastructure/postgres/hosted-postgres-runtime-contract.json": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral hosted PostgreSQL runtime contract."
+    },
+    "infrastructure/postgres/hosted-recovery-contract.json": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral PostgreSQL recovery contract."
+    },
+    "infrastructure/hosted/hosted-readiness-contract.json": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral hosted readiness contract."
     }
   },
   "path_rules": [
