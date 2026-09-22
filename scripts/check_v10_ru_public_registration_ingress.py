@@ -635,7 +635,7 @@ def _validate_documents() -> None:
         "system/timeweb-platform-consolidation",
         "TW-A-CI-AUTHORITY-GRAPH-REPAIR",
         "PR #582",
-        "TW-A-PROVIDER-CONSUMER-INVENTORY",
+        "TW-A / INVENTORY_AND_AUTHORITY",
         "PR #583",
         "PUBLIC_MULTI_USER_ENABLED=false",
         "trading_methods=false",

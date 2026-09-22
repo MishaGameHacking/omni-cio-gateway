@@ -58,7 +58,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             "def main()", 1
         )[0]
         self.assertNotIn('"RED_REPAIR_ONLY"', document_guard)
-        self.assertIn('"TW-A-PROVIDER-CONSUMER-INVENTORY"', document_guard)
+        self.assertIn('"TW-A / INVENTORY_AND_AUTHORITY"', document_guard)
         self.assertIn('"PR #583"', document_guard)
 
     def test_active_service_set_is_exact(self) -> None:
