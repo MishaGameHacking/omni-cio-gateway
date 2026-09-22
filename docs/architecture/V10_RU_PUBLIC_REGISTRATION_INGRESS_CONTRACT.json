@@ -103,6 +103,7 @@
     "retired_provider_live_workflow_auto_trigger_allowed": false,
     "retired_provider_manual_mutation_allowed": false,
     "timeweb_proof_may_depend_on_retired_provider_workflow": false,
+    "retired_provider_transitive_execution_allowed": false,
     "sonar_required_final": false,
     "retired_cloudflare_workflows": [
       ".github/workflows/v10-cloudflare-provider-readiness.yml",

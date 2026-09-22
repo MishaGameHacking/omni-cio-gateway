@@ -1,5 +1,8 @@
 # Omni-CIO V10 — WP22A Service Selection Gate
 
+> **Amendment 18 CURRENT-AUTHORITY OVERRIDE (2026-09-21): HISTORICAL / SUPERSEDED FOR CURRENT PROVIDER SELECTION.** The Cloud.ru/Cloudflare/Render provider-selection discussion below is retained only as accepted historical decision evidence. It does not authorize current or future V10 deployment. Current production-platform authority is Timeweb Cloud and current human-login authority is Telegram Login only.
+
+
 Status: **CLOUD.RU EVOLUTION SELECTED / STAGED FREE-FIRST / OWNER COST APPROVAL REQUIRED / NO PROVIDER APPLY AUTHORIZED**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
 

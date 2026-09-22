@@ -1,5 +1,8 @@
 # Omni-CIO V10 — WP22A IaC Toolchain Decision
 
+> **Amendment 18 CURRENT-AUTHORITY OVERRIDE (2026-09-21): HISTORICAL / SUPERSEDED FOR ACTIVE CI EXECUTION.** This file preserves the earlier OpenTofu/Cloudflare supply-chain proof. Active current/future CI must not download or execute retired Cloudflare provider tooling; only non-mutating static/provenance validation of these archived sources may remain. Current production-platform authority is Timeweb Cloud.
+
+
 Status: **ACTIVE FOR WP22A PHASE A**  
 Owning package: **WP22A — External Web Access / OWNER Authentication Security Gate**
 

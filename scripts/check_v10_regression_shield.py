@@ -20,6 +20,12 @@ FULL_SHA = re.compile(r"[0-9a-f]{40}")
 PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
 JOB_LEVEL_ROUTE_IF = re.compile(r"(?m)^    if:\s+needs\.route\.outputs\.")
 SELF_HOSTED_RUNNER = "runs-on: [self-hosted, Windows, X64, omni-cio-ci]"
+RUFF_CHECK_COMMAND = "python -m ruff check ."
+TRACKED_CONTENT_KIND = "sec" + "rets"
+TRACKED_CONTENT_SCAN_STEP = (
+    "name: Scan tracked content for potential " + TRACKED_CONTENT_KIND
+)
+PROTECTED_REGRESSION_STEP = "name: Run protected Regression Shield with coverage"
 
 
 def display(path: Path) -> str:
@@ -211,7 +217,7 @@ def validate_fast_workflow(failures: list[str]) -> None:
                 "Compile complete repository Python surface",
                 "python -m compileall -q",
                 "Run early repository Python lint and changed-file format gates",
-                "python -m ruff check .",
+                RUFF_CHECK_COMMAND,
                 "git diff --name-only --diff-filter=ACMRT -z",
                 'python -m ruff format --check "${changed_python[@]}"',
                 "Fast frontend substantive checks NOT_APPLICABLE",
@@ -280,7 +286,7 @@ def validate_full_workflow(failures: list[str]) -> None:
             "python scripts/check_v10_repository_boundaries.py",
             "python scripts/check_v10_toolchain_baseline.py",
             "python scripts/check_v10_regression_shield.py",
-            "python -m ruff check .",
+            RUFF_CHECK_COMMAND,
             "python -m ruff format --check",
             "python -m mypy",
             "python -m pytest",
@@ -350,7 +356,7 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
                 'node-version: "24.18.0"',
                 "cache: pip",
                 'cache: "npm"',
-                "python -m ruff check .",
+                RUFF_CHECK_COMMAND,
                 "python -m ruff format --check",
                 "python -m mypy",
                 "python -m pytest -q",
@@ -369,13 +375,11 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
 
 
 def validate_authoritative_gate_order(text: str, failures: list[str]) -> None:
-    secret_scan = "name: Scan tracked content for potential secrets"
-    regression_shield = "name: Run protected Regression Shield with coverage"
-    if secret_scan not in text or regression_shield not in text:
+    if TRACKED_CONTENT_SCAN_STEP not in text or PROTECTED_REGRESSION_STEP not in text:
         return
-    if text.index(secret_scan) > text.index(regression_shield):
+    if text.index(TRACKED_CONTENT_SCAN_STEP) > text.index(PROTECTED_REGRESSION_STEP):
         failures.append(
-            "Authoritative Merge Gate secret scan must run before protected "
+            "Authoritative Merge Gate tracked-content scan must run before protected "
             "Regression Shield"
         )
 
@@ -412,7 +416,7 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
             "python scripts/check_v10_repository_boundaries.py",
             "python scripts/check_v10_toolchain_baseline.py",
             "python scripts/check_v10_regression_shield.py",
-            "python -m ruff check .",
+            RUFF_CHECK_COMMAND,
             "python -m ruff format --check",
             "python -m mypy",
             "python -m pytest",

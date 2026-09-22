@@ -20,20 +20,56 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
+WP22A_EXECUTION_CONTRACT = (
+    ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
+)
+WP22A_SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
+WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
 LEDGER = ROOT / "docs/updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md"
-WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
-TIMEWEB_PROOF_WORKFLOW = ROOT / (
+WORKFLOW_DIRECTORY = ROOT / ".github/workflows"
+ENGINEERING_GOVERNANCE_WORKFLOW = (
+    ".github/workflows/v10-engineering-governance.yml"
+)
+TIMEWEB_PROOF_WORKFLOW_NAME = (
     ".github/workflows/v10-timeweb-postgres-readonly-proof.yml"
 )
-AUTHORITATIVE_MERGE_WORKFLOW = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
-RETIRED_CLOUDFLARE_WORKFLOWS = (
-    ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml",
-    ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml",
-    ROOT / ".github/workflows/v10-cloudflare-production-release.yml",
+AUTHORITATIVE_MERGE_WORKFLOW_NAME = (
+    ".github/workflows/self-hosted-windows-smoke.yml"
 )
-RETIRED_NEON_EGRESS_WORKFLOW = ROOT / ".github/workflows/v10-neon-egress-boundary.yml"
-RETIRED_PROVIDER_WORKFLOWS = RETIRED_CLOUDFLARE_WORKFLOWS + (
-    RETIRED_NEON_EGRESS_WORKFLOW,
+CLOUDFLARE_PROVIDER_READINESS_WORKFLOW = (
+    ".github/workflows/v10-cloudflare-provider-readiness.yml"
+)
+CLOUDFLARE_CANDIDATE_WORKFLOW = (
+    ".github/workflows/v10-cloudflare-candidate-deploy.yml"
+)
+CLOUDFLARE_PRODUCTION_WORKFLOW = (
+    ".github/workflows/v10-cloudflare-production-release.yml"
+)
+NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
+RETIRED_CLOUDFLARE_WORKFLOW_NAMES = (
+    CLOUDFLARE_PROVIDER_READINESS_WORKFLOW,
+    CLOUDFLARE_CANDIDATE_WORKFLOW,
+    CLOUDFLARE_PRODUCTION_WORKFLOW,
+)
+RETIRED_PROVIDER_WORKFLOW_NAMES = RETIRED_CLOUDFLARE_WORKFLOW_NAMES + (
+    NEON_EGRESS_WORKFLOW,
+)
+WORKFLOW = ROOT / ENGINEERING_GOVERNANCE_WORKFLOW
+TIMEWEB_PROOF_WORKFLOW = ROOT / TIMEWEB_PROOF_WORKFLOW_NAME
+AUTHORITATIVE_MERGE_WORKFLOW = ROOT / AUTHORITATIVE_MERGE_WORKFLOW_NAME
+RETIRED_CLOUDFLARE_WORKFLOWS = tuple(
+    ROOT / relative for relative in RETIRED_CLOUDFLARE_WORKFLOW_NAMES
+)
+RETIRED_PROVIDER_WORKFLOWS = tuple(
+    ROOT / relative for relative in RETIRED_PROVIDER_WORKFLOW_NAMES
+)
+AUTO_WORKFLOW_TRIGGERS = ("\n  pull_request:", "\n  push:", "\n  workflow_run:")
+FORBIDDEN_RETIRED_PROVIDER_EXECUTION_MARKERS = (
+    "-File scripts\\validate_wp22a_terraform.ps1",
+    "-File scripts\\bootstrap_wp22a_cloudflare_provider.ps1",
+    "wrangler deploy",
+    "secrets.CLOUDFLARE_",
+    "secrets.NEON_",
 )
 
 EXPECTED_SERVICES = ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"]
@@ -206,33 +242,23 @@ def _validate_database_ci_execution(payload: dict[str, Any]) -> None:
         "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
     )
     _require(
-        ci.get("timeweb_read_only_proof_workflow")
-        == ".github/workflows/v10-timeweb-postgres-readonly-proof.yml",
+        ci.get("timeweb_read_only_proof_workflow") == TIMEWEB_PROOF_WORKFLOW_NAME,
         "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
     )
     _require(
         ci.get("retired_cloudflare_workflows")
-        == [
-            ".github/workflows/v10-cloudflare-provider-readiness.yml",
-            ".github/workflows/v10-cloudflare-candidate-deploy.yml",
-            ".github/workflows/v10-cloudflare-production-release.yml",
-        ],
+        == list(RETIRED_CLOUDFLARE_WORKFLOW_NAMES),
         "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
     )
     _require(
-        ci.get("retired_provider_workflows")
-        == [
-            ".github/workflows/v10-cloudflare-provider-readiness.yml",
-            ".github/workflows/v10-cloudflare-candidate-deploy.yml",
-            ".github/workflows/v10-cloudflare-production-release.yml",
-            ".github/workflows/v10-neon-egress-boundary.yml",
-        ],
+        ci.get("retired_provider_workflows") == list(RETIRED_PROVIDER_WORKFLOW_NAMES),
         "TIMEWEB_CONSOLIDATION_CI_GRAPH_INVALID",
     )
     for key in (
         "retired_provider_live_workflow_auto_trigger_allowed",
         "retired_provider_manual_mutation_allowed",
         "timeweb_proof_may_depend_on_retired_provider_workflow",
+        "retired_provider_transitive_execution_allowed",
         "sonar_required_final",
         "active_external_review_saas_allowed",
     ):
@@ -387,6 +413,21 @@ def _validate_cleanup_activation(payload: dict[str, Any]) -> None:
         )
 
 
+def _validate_no_retired_provider_execution_from_active_workflows() -> None:
+    retired = {path.resolve() for path in RETIRED_PROVIDER_WORKFLOWS}
+    for path in sorted(WORKFLOW_DIRECTORY.glob("*.yml")):
+        if path.resolve() in retired:
+            continue
+        source = _read(path)
+        if not any(trigger in source for trigger in AUTO_WORKFLOW_TRIGGERS):
+            continue
+        for marker in FORBIDDEN_RETIRED_PROVIDER_EXECUTION_MARKERS:
+            _require(
+                marker not in source,
+                "TIMEWEB_CONSOLIDATION_ACTIVE_WORKFLOW_RETIRED_PROVIDER_EXECUTION",
+            )
+
+
 def _validate_active_workflow_graph() -> None:
     manual_disable_marker = "if: $" + "{{ false }}"
     expected_disabled_jobs = (1, 1, 6, 3)
@@ -426,6 +467,8 @@ def _validate_active_workflow_graph() -> None:
             "TIMEWEB_CONSOLIDATION_EXTERNAL_REVIEW_SAAS_ACTIVE",
         )
 
+    _validate_no_retired_provider_execution_from_active_workflows()
+
     timeweb = _read(TIMEWEB_PROOF_WORKFLOW)
     for required in (
         "workflow_run:",
@@ -450,6 +493,17 @@ def _validate_active_workflow_graph() -> None:
 
 
 def _validate_current_guidance() -> None:
+    for historical_path in (
+        WP22A_EXECUTION_CONTRACT,
+        WP22A_SERVICE_SELECTION,
+        WP22A_IAC_DECISION,
+    ):
+        historical = _read(historical_path)
+        _require(
+            "Amendment 18" in historical and "HISTORICAL" in historical[:1200],
+            "TIMEWEB_CONSOLIDATION_STALE_WP22A_PROVIDER_GUIDANCE",
+        )
+
     status = _read(STATUS)
     for marker in STALE_CURRENT_AUTHORITY_MARKERS:
         _require(

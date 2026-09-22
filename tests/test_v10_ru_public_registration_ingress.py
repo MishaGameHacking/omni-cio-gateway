@@ -17,6 +17,18 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
+WP22A_EXECUTION_CONTRACT = (
+    ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
+)
+WP22A_SERVICE_SELECTION = (
+    ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
+)
+WP22A_IAC_DECISION = (
+    ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
+)
+WP22A_CLIENTLESS_WORKFLOW = (
+    ROOT / ".github/workflows/v10-wp22a-clientless-access-audit.yml"
+)
 
 
 def _contract() -> dict[str, object]:
@@ -203,6 +215,7 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         self.assertFalse(ci["retired_provider_live_workflow_auto_trigger_allowed"])
         self.assertFalse(ci["retired_provider_manual_mutation_allowed"])
         self.assertFalse(ci["timeweb_proof_may_depend_on_retired_provider_workflow"])
+        self.assertFalse(ci["retired_provider_transitive_execution_allowed"])
         self.assertFalse(ci["sonar_required_final"])
         self.assertFalse(ci["active_external_review_saas_allowed"])
         self.assertEqual(
@@ -213,6 +226,32 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
                 "V10 Engineering Governance",
             ],
         )
+
+    def test_active_ci_does_not_execute_retired_provider_tooling(self) -> None:
+        workflow = WP22A_CLIENTLESS_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "Verify dormant clientless source contract without provider execution",
+            workflow,
+        )
+        self.assertNotIn(
+            "Validate Cloudflare IaC with pinned OpenTofu and provider mirror",
+            workflow,
+        )
+        self.assertNotIn(
+            "-File scripts\\validate_wp22a_terraform.ps1",
+            workflow,
+        )
+
+    def test_historical_wp22a_provider_docs_are_explicitly_superseded(self) -> None:
+        for path in (
+            WP22A_EXECUTION_CONTRACT,
+            WP22A_SERVICE_SELECTION,
+            WP22A_IAC_DECISION,
+        ):
+            with self.subTest(path=path):
+                source = path.read_text(encoding="utf-8")
+                self.assertIn("Amendment 18", source[:1200])
+                self.assertIn("HISTORICAL", source[:1200])
 
     def test_current_guidance_has_no_retired_provider_authority_drift(
         self,
