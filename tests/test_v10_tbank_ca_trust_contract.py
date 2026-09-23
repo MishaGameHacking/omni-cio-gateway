@@ -16,6 +16,43 @@ AUTHORITATIVE = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 FAST_PR = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
 
 
+def _workflow_job_blocks(workflow_text: str) -> dict[str, str]:
+    lines = workflow_text.splitlines(keepends=True)
+    jobs_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == "jobs:" and not line.startswith(" ")
+        ),
+        None,
+    )
+    if jobs_index is None:
+        return {}
+
+    blocks: dict[str, str] = {}
+    current_name: str | None = None
+    current_lines: list[str] = []
+    for line in lines[jobs_index + 1 :]:
+        if line.strip() and not line.startswith((" ", "#")):
+            break
+        if (
+            line.startswith("  ")
+            and not line.startswith("    ")
+            and line.rstrip().endswith(":")
+        ):
+            if current_name is not None:
+                blocks[current_name] = "".join(current_lines)
+            current_name = line.strip()[:-1]
+            current_lines = [line]
+            continue
+        if current_name is not None:
+            current_lines.append(line)
+
+    if current_name is not None:
+        blocks[current_name] = "".join(current_lines)
+    return blocks
+
+
 def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
 
@@ -232,40 +269,44 @@ def test_tbank_ca_syntax_checker_has_bounded_targets_and_no_mutation() -> None:
     assert "Invoke-WebRequest" not in source
 
 
-def test_every_self_hosted_windows_dependency_consumer_fails_fast_on_ca_trust() -> None:
+def test_every_self_hosted_windows_dependency_install_job_fails_fast_on_ca_trust() -> None:
     payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
-    configured = {
-        ROOT / path for path in payload["verification"]["windows_dependency_consumers"]
+    verification = payload["verification"]
+    configured_workflows = {
+        ROOT / path for path in verification["windows_dependency_consumers"]
     }
-    discovered = set()
-    for path in (ROOT / ".github/workflows").glob("*.yml"):
-        source = path.read_text(encoding="utf-8")
-        if "omni-cio-ci" in source and "windows-requirements-dev.txt" in source:
-            discovered.add(path)
+    configured_jobs = {
+        (ROOT / record["workflow"], record["job"])
+        for record in verification["windows_dependency_install_jobs"]
+    }
 
-    assert configured == discovered
-    assert (
-        payload["verification"]["every_windows_dependency_consumer_requires_preflight"]
-        is True
-    )
-
-    check_marker = "scripts\\check_v10_tbank_ca_trust.ps1"
     install_marker = "--require-hashes -r windows-requirements-dev.txt"
+    check_marker = "scripts\\check_v10_tbank_ca_trust.ps1"
     process_marker = (
         "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "
         "scripts\\check_v10_tbank_ca_trust.ps1 -AsJson"
     )
-    for path in sorted(discovered):
-        source = path.read_text(encoding="utf-8")
-        assert source.count(check_marker) == 1, path
-        check_index = source.index(check_marker)
-        assert check_index < source.index(install_marker), path
+    discovered_jobs: set[tuple[Path, str]] = set()
+    blocks_by_job: dict[tuple[Path, str], str] = {}
 
-        step_start = source.rfind("      - name:", 0, check_index)
-        step_end = source.find("      - name:", check_index)
-        if step_end == -1:
-            step_end = len(source)
-        step = source[step_start:step_end]
-        assert "        shell: cmd" in step, path
-        assert process_marker in step, path
-        assert "Set-ExecutionPolicy" not in step, path
+    for pattern in ("*.yml", "*.yaml"):
+        for path in (ROOT / ".github/workflows").glob(pattern):
+            source = path.read_text(encoding="utf-8")
+            for job_name, block in _workflow_job_blocks(source).items():
+                if "omni-cio-ci" in block and install_marker in block:
+                    key = (path, job_name)
+                    discovered_jobs.add(key)
+                    blocks_by_job[key] = block
+
+    assert verification["dependency_install_boundary"] == "JOB_LOCAL"
+    assert verification["every_windows_dependency_consumer_requires_preflight"] is True
+    assert verification["every_windows_dependency_install_job_requires_preflight"] is True
+    assert configured_jobs == discovered_jobs
+    assert {path for path, _ in configured_jobs} == configured_workflows
+
+    for key in sorted(discovered_jobs, key=lambda item: (str(item[0]), item[1])):
+        block = blocks_by_job[key]
+        assert block.count(check_marker) == 1, key
+        assert process_marker in block, key
+        assert block.index(process_marker) < block.index(install_marker), key
+        assert "Set-ExecutionPolicy" not in block, key

@@ -65,6 +65,11 @@ BRAND_MANIFEST_PATH = f"{BRAND_PACKAGE_PATH}/asset-manifest.json"
 BRAND_GUARD_PATH = "scripts/check_v10_brand_assets.py"
 TBANK_CA_CONTRACT_PATH = "docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json"
 TBANK_CA_ROOT_DIGEST_FIELD = "sha256_der"
+TBANK_CA_PREFLIGHT_PROCESS = (
+    "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "
+    "scripts\\check_v10_tbank_ca_trust.ps1 -AsJson"
+)
+WINDOWS_DEV_INSTALL_MARKER = "--require-hashes -r windows-requirements-dev.txt"
 HEX_HIGH_ENTROPY_FINDING = "Hex High Entropy String"
 FINDING_TYPE_KEY = "type"
 FINDING_LINE_NUMBER_KEY = "line_number"
@@ -388,6 +393,146 @@ def validate_headless_repository_bootstrap(
                 f"for every self-hosted job; missing {label}: {marker}"
             )
 
+
+
+def workflow_job_blocks(workflow_text: str) -> dict[str, str]:
+    lines = workflow_text.splitlines(keepends=True)
+    jobs_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == "jobs:" and not line.startswith(" ")
+        ),
+        None,
+    )
+    if jobs_index is None:
+        return {}
+
+    blocks: dict[str, str] = {}
+    current_name: str | None = None
+    current_lines: list[str] = []
+    job_pattern = re.compile(r"^  ([A-Za-z0-9_-]+):\\s*(?:#.*)?$")
+
+    for line in lines[jobs_index + 1 :]:
+        if line.strip() and not line.startswith((" ", "#")):
+            break
+        match = job_pattern.fullmatch(line.rstrip("\\r\\n"))
+        if match is not None:
+            if current_name is not None:
+                blocks[current_name] = "".join(current_lines)
+            current_name = match.group(1)
+            current_lines = [line]
+            continue
+        if current_name is not None:
+            current_lines.append(line)
+
+    if current_name is not None:
+        blocks[current_name] = "".join(current_lines)
+    return blocks
+
+
+def _declared_tbank_dependency_install_jobs(
+    failures: list[str],
+) -> set[tuple[str, str]] | None:
+    contract_path = ROOT / TBANK_CA_CONTRACT_PATH
+    try:
+        payload = json.loads(contract_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        failures.append("T-Bank CA trust contract is unreadable")
+        return None
+
+    verification = payload.get("verification")
+    if not isinstance(verification, dict):
+        failures.append("T-Bank CA trust contract verification section is invalid")
+        return None
+    if verification.get("dependency_install_boundary") != "JOB_LOCAL":
+        failures.append("T-Bank CA dependency install boundary must be JOB_LOCAL")
+    if (
+        verification.get("every_windows_dependency_install_job_requires_preflight")
+        is not True
+    ):
+        failures.append(
+            "every Windows dependency install job must require T-Bank CA preflight"
+        )
+
+    records = verification.get("windows_dependency_install_jobs")
+    if not isinstance(records, list):
+        failures.append("T-Bank CA dependency install job inventory is invalid")
+        return None
+
+    declared: set[tuple[str, str]] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            failures.append("T-Bank CA dependency install job record is invalid")
+            continue
+        workflow = record.get("workflow")
+        job = record.get("job")
+        if (
+            not isinstance(workflow, str)
+            or not isinstance(job, str)
+            or not workflow
+            or not job
+        ):
+            failures.append("T-Bank CA dependency install job record is invalid")
+            continue
+        item = (workflow, job)
+        if item in declared:
+            failures.append(
+                f"duplicate T-Bank CA dependency install job: {workflow}::{job}"
+            )
+            continue
+        declared.add(item)
+    return declared
+
+
+def discover_windows_dependency_install_jobs() -> dict[tuple[str, str], str]:
+    discovered: dict[tuple[str, str], str] = {}
+    for pattern in ("*.yml", "*.yaml"):
+        for path in sorted(WORKFLOW_DIRECTORY.glob(pattern)):
+            source = path.read_text(encoding="utf-8")
+            relative = path.relative_to(ROOT).as_posix()
+            for job_name, block in workflow_job_blocks(source).items():
+                if (
+                    "omni-cio-ci" not in block
+                    or WINDOWS_DEV_INSTALL_MARKER not in block
+                ):
+                    continue
+                discovered[(relative, job_name)] = block
+    return discovered
+
+
+def validate_windows_dependency_preflights(failures: list[str]) -> None:
+    declared = _declared_tbank_dependency_install_jobs(failures)
+    discovered = discover_windows_dependency_install_jobs()
+    discovered_set = set(discovered)
+    if declared is not None and declared != discovered_set:
+        missing = sorted(declared - discovered_set)
+        undeclared = sorted(discovered_set - declared)
+        if missing:
+            failures.append(
+                "declared T-Bank CA dependency install jobs not discovered: "
+                + ", ".join(f"{workflow}::{job}" for workflow, job in missing)
+            )
+        if undeclared:
+            failures.append(
+                "undeclared Windows dependency install jobs discovered: "
+                + ", ".join(f"{workflow}::{job}" for workflow, job in undeclared)
+            )
+
+    for (workflow, job), block in sorted(discovered.items()):
+        preflight_count = block.count(TBANK_CA_PREFLIGHT_PROCESS)
+        if preflight_count != 1:
+            failures.append(
+                f"{workflow}::{job} must invoke the T-Bank CA preflight exactly once"
+            )
+            continue
+        if block.index(TBANK_CA_PREFLIGHT_PROCESS) > block.index(
+            WINDOWS_DEV_INSTALL_MARKER
+        ):
+            failures.append(
+                f"{workflow}::{job} must run the T-Bank CA preflight before "
+                "dependency install"
+            )
 
 def validate_workflow(failures: list[str]) -> None:
     if not WORKFLOW_PATH.is_file():
@@ -902,6 +1047,7 @@ def validate_repository_baseline() -> list[str]:
     for path in LOCK_PATHS:
         validate_lock_file(path, failures)
     validate_workflow(failures)
+    validate_windows_dependency_preflights(failures)
     validate_bounded_windows_lock_verification(failures)
     validate_render_contract(failures)
     bootstrap = WORKFLOW_DIRECTORY / "pr03-bootstrap.yml"
@@ -945,6 +1091,7 @@ def main() -> int:
         print("Windows projection: exact except allowlisted uvloop exclusion")
         print("Windows lock re-resolution: bounded and transient-only retry")
         print("CI virtual environments: isolated in RUNNER_TEMP")
+        print("Windows dependency installs: job-local T-Bank CA preflight required")
         print("GitHub Actions: pinned to full commit SHAs")
         print(
             "Regression Shield: post-merge only on dedicated self-hosted Windows runner"

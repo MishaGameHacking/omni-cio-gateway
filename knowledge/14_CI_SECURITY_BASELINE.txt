@@ -26,7 +26,7 @@ Dependency supply chain
 - Windows dependency CI uses an ephemeral pip CA bundle: pip's vendored certifi roots plus the source-controlled Russian Trusted Root CA after exact DER SHA-256 pin verification.
 - The bundle is published only through `PIP_CERT`; certificate and hostname verification remain enabled and ordinary public certifi roots remain present.
 - CI does not require or mutate `LocalMachine` certificate stores. The reviewed OWNER/Administrator provisioner remains an optional system-trust recovery boundary for non-pip consumers.
-- Every self-hosted Windows workflow that installs `windows-requirements-dev.txt` must run the read-only T-Bank CA trust preflight before pip dependency installation.
+- Every self-hosted Windows job that installs `windows-requirements-dev.txt` must run the read-only T-Bank CA trust preflight in that same job before pip dependency installation; `GITHUB_ENV` state from another job is not reusable authority.
 - Certificate/hostname verification and package-source substitution are forbidden recovery shortcuts.
 
 GitHub Actions supply chain

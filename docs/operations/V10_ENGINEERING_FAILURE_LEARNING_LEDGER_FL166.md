@@ -287,3 +287,39 @@ must pass source/governance checks, build and verify the pinned ephemeral pip CA
 bundle, reach the official T-Bank package index with TLS verification enabled,
 then pass every applicable GitHub-native check. The squash-merged exact new main
 must pass post-merge Regression Shield.
+
+
+## Post-merge Regression Shield job-local consumer defect
+
+Squash-merged main `ce59d8e009b4ae9287cb657604e322223d554ab8`
+proved the #585 CA mechanism itself: Regression Shield run `35845076893`
+completed `Quality, contracts and coverage` successfully, including the
+T-Bank CA preflight and hash-locked dependency install. The independent
+`Dependency, code and secret security` job failed while installing the same
+`windows-requirements-dev.txt` projection and reproduced
+`SSLCertVerificationError` against the official T-Bank package index.
+
+Root cause: the project-wide consumer guard modeled one preflight per workflow
+file. `regression-shield.yml` contains two independent self-hosted Windows
+jobs that each create a fresh virtual environment and install the protected
+dependency projection. The first job published `PIP_CERT` through its own
+`GITHUB_ENV`, but that environment-file state is available only to subsequent
+steps in the same job. The second job therefore had no CA bundle.
+
+Systemic correction:
+
+- define the dependency trust boundary as `JOB_LOCAL`;
+- inventory every exact workflow/job pair that installs the Windows development
+  projection;
+- require one read-only CA preflight inside each such job before its first
+  hash-locked install;
+- make `scripts/check_ci_security_baseline.py` independently discover install
+  jobs across all workflow files and fail on undeclared, missing, duplicate or
+  late preflights;
+- strengthen the independent CA regression test to compare the machine-readable
+  job inventory with repository discovery;
+- keep TLS and hostname verification enabled, keep the official T-Bank package
+  source and hashes unchanged, and do not mutate `LocalMachine` trust.
+
+This closes the guard-design defect that allowed one workflow-level preflight to
+mask an unprotected sibling job.
