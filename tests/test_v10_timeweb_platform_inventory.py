@@ -63,7 +63,9 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         self.assertGreater(stats["bytes"], 1_000_000)
 
     def test_repository_integrity_rejects_conflict_and_syntax_drift(self) -> None:
-        self.assertTrue(inventory._has_conflict_marker("<<<<<<< HEAD\nvalue\n======="))
+        for marker in ("<<<<<<< HEAD", "=======", ">>>>>>> branch"):
+            with self.subTest(marker=marker):
+                self.assertTrue(inventory._has_conflict_marker(marker))
         with self.assertRaisesRegex(
             RuntimeError,
             "TIMEWEB_INVENTORY_REPOSITORY_SYNTAX_INVALID",

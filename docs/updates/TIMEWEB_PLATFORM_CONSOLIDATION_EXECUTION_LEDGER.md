@@ -205,6 +205,40 @@ Only `CERTIFIED_GREEN` permits TW-B.
 | Final TW-B source correction had two Ruff format drifts | last source edits were semantically correct but were not normalized to the pinned formatter output | two changed regression tests | Fast PR source gate | deterministic RED before focused unit tests | final edit batch was published before formatter-equivalent review | apply the exact Ruff-emitted layout and keep changed-file formatting fail-closed |
 | Synthetic-create runbook guard used an exact whitespace-sensitive marker | the required no-production-cutover sentence was wrapped across Markdown lines | Timeweb RU-PG-B create runbook + source guard | authoritative pytest | one deterministic contract RED despite correct policy meaning | guard marker and prose layout were coupled | keep the explicit no-cutover sentence contiguous while preserving TW-D ownership of production DB cutover |
 | Timeweb inventory transitive-consumer validator exceeded Sonar complexity threshold | classification, historical-detachment, V9, VK and database-authority checks accumulated in one function | Timeweb provider inventory guard | Sonar maintainability | quality finding on the source/runtime checkpoint | responsibilities were not split after successive TW-A/TW-B hardening | extract bounded classification and authority helpers without weakening any check |
+### TW-B Timeweb App Platform source constraints — verified 2026-09-23
+
+Applicable official Timeweb documentation was rechecked before this source correction.
+The repository source is aligned as follows, without granting TW-C provider-mutation authority:
+
+- Dockerfile deployment is the selected App Platform source mode. Timeweb requires an
+  `EXPOSE` declaration so the platform can identify the application port; the current
+  source explicitly exposes `8080`.
+- Timeweb allows an App Platform health-check path and documents that the panel setting
+  takes precedence over Dockerfile `HEALTHCHECK`. The current runtime therefore keeps
+  `/livez` process-only and `/healthz` database-aware; TW-C must configure the platform
+  health path to `/livez` rather than making platform liveness depend on PostgreSQL.
+- App Platform starts a fresh container environment on each deploy, so durable product
+  state must stay outside the application container. PostgreSQL remains the relational
+  state boundary; no local-container persistence is accepted as product storage.
+- Timeweb App Platform variables are the intended runtime configuration/secret injection
+  surface. The current Docker image does not bake `OMNI_V10_RELEASE_SHA`, PostgreSQL
+  credentials or Telegram credentials into build arguments or image metadata.
+- Timeweb private-network selection for App Platform is a creation-time choice and cannot
+  be changed in place later. TW-C must resolve that network choice explicitly before
+  candidate creation; TW-B does not guess it and performs no provider mutation.
+- Timeweb Managed PostgreSQL supports PostgreSQL 18 and private/public/domain connection
+  modes. The production DB/network choice remains the later TW-D split gate and must keep
+  TLS/least-privilege/RLS/recovery evidence intact.
+
+Official references rechecked:
+- https://timeweb.cloud/docs/apps/deploying-with-dockerfile
+- https://timeweb.cloud/docs/apps/healthcheck-path
+- https://timeweb.cloud/docs/apps/how-it-works
+- https://timeweb.cloud/docs/apps/variables
+- https://timeweb.cloud/docs/apps/upravlenie-apps-v-paneli
+- https://timeweb.cloud/docs/dbaas/postgresql
+- https://timeweb.cloud/docs/dbaas/postgresql/connect-to-database
+
 ## 9. Integration-ready preflight
 
 - [ ] Current replacement checkpoint is `CERTIFIED_GREEN`.
@@ -231,6 +265,6 @@ Only `CERTIFIED_GREEN` permits TW-B.
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
 - State: `RED_REPAIR_ONLY / FINAL_SOURCE_CORRECTION_AND_OWNER_GATE_PENDING`; DRAFT PR #584 is open and TW-C remains blocked
 - Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
-- Current RED repair classes: exact-head Fast PR formatter drift in two changed tests, one authoritative Timeweb synthetic-create runbook marker drift, one Sonar maintainability finding in the Timeweb inventory transitive-consumer validator, and the WP17 OWNER read-vault exact-head evidence binding gate. The correction extends the Timeweb inventory gate into a bounded whole-repository integrity scan so every discovered repository file is read on governance runs and structured Python/JSON/TOML/XML is parsed. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
+- Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
 - Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
 - TW-C remains forbidden until TW-B is certified and accepted

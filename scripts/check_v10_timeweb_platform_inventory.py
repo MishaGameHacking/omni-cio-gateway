@@ -204,9 +204,7 @@ def _repository_files(root: Path = ROOT) -> tuple[str, ...]:
 
 def _has_conflict_marker(source: str) -> bool:
     return any(
-        line.startswith("<<<<<<< ")
-        or line == "======="
-        or line.startswith(">>>>>>> ")
+        line == "=======" or line.startswith(("<<<<<<< ", ">>>>>>> "))
         for line in source.splitlines()
     )
 
@@ -268,9 +266,7 @@ def _validate_repository_text(relative: str, source: str) -> str | None:
         path.suffix.lower() in _CONFLICT_GUARD_SUFFIXES
         or path.name in _CONFLICT_GUARD_FILENAMES
     ) and _has_conflict_marker(source):
-        raise RuntimeError(
-            "TIMEWEB_INVENTORY_REPOSITORY_CONFLICT_MARKER:" + relative
-        )
+        raise RuntimeError("TIMEWEB_INVENTORY_REPOSITORY_CONFLICT_MARKER:" + relative)
     return _validate_structured_repository_text(relative, source)
 
 
@@ -306,6 +302,7 @@ def _validate_repository_integrity(files: tuple[str, ...]) -> dict[str, int]:
             stats[structured_kind] += 1
 
     return stats
+
 
 def _classification(entry: object) -> str:
     if not isinstance(entry, dict):
