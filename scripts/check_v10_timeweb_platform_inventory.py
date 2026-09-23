@@ -283,8 +283,7 @@ def _validate_repository_integrity(files: tuple[str, ...]) -> dict[str, int]:
                 "TIMEWEB_INVENTORY_REPOSITORY_TEXT_NUL_FORBIDDEN:" + relative
             )
         if (
-            suffix in _CONFLICT_GUARD_SUFFIXES
-            or path.name in _CONFLICT_GUARD_FILENAMES
+            suffix in _CONFLICT_GUARD_SUFFIXES or path.name in _CONFLICT_GUARD_FILENAMES
         ) and _has_conflict_marker(source):
             raise RuntimeError(
                 "TIMEWEB_INVENTORY_REPOSITORY_CONFLICT_MARKER:" + relative
@@ -594,9 +593,7 @@ def _validate_historical_cloudflare_guard_detached() -> None:
         "_validate_web_config()",
     )
     if any(marker in source for marker in forbidden_markers):
-        raise RuntimeError(
-            "TIMEWEB_INVENTORY_HISTORICAL_GUARD_CURRENT_WEB_COUPLING"
-        )
+        raise RuntimeError("TIMEWEB_INVENTORY_HISTORICAL_GUARD_CURRENT_WEB_COUPLING")
 
 
 def _validate_protected_v9_render_entrypoint() -> None:
@@ -717,6 +714,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
     _validate_protected_v9_render_entrypoint()
     _validate_vk_retirement(payload)
     _validate_current_database_authority_sources()
+
 
 def _validate_external_surfaces(payload: dict[str, Any]) -> None:
     rows = payload.get("external_surfaces")
