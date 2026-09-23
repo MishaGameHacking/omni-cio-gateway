@@ -99,7 +99,7 @@ def test_timeweb_docker_build_reuses_scoped_pinned_pip_ca_bundle() -> None:
     assert "prepare_v10_tbank_pip_ca_bundle.py" in dockerfile
     assert "V10_TBANK_CA_TRUST_CONTRACT.json" in dockerfile
     assert "russian_trusted_root_ca_2022.der" in dockerfile
-    assert "PIP_CERT=\"$PIP_CERT_PATH\" python -m pip install" in dockerfile
+    assert 'PIP_CERT="$PIP_CERT_PATH" python -m pip install' in dockerfile
     assert 'rm -f "$PIP_CERT_PATH" /tmp/tbank-pip-ca.json' in dockerfile
     assert "SSL_TBANK_VERIFY=True" in dockerfile
     assert "!docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json" in dockerignore

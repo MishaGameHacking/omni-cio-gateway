@@ -296,7 +296,7 @@ def test_timeweb_dockerfile_uses_provider_neutral_runtime() -> None:
     assert "ENV OMNI_V10_RELEASE_SHA" not in dockerfile
     assert "SSL_TBANK_VERIFY=True" in dockerfile
     assert "prepare_v10_tbank_pip_ca_bundle.py" in dockerfile
-    assert "PIP_CERT=\"$PIP_CERT_PATH\" python -m pip install" in dockerfile
+    assert 'PIP_CERT="$PIP_CERT_PATH" python -m pip install' in dockerfile
     for secret_name in (
         "OMNI_V10_POSTGRES_DSN",
         "TELEGRAM_BOT_TOKEN",

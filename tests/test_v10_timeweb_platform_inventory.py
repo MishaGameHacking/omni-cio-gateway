@@ -74,6 +74,15 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
                 "scripts/broken.py",
                 "def broken(:\n",
             )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_INVENTORY_REPOSITORY_SYNTAX_INVALID",
+        ):
+            inventory._validate_structured_repository_text(
+                "docs/hostile.xml",
+                '<!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
+                "<root>&xxe;</root>",
+            )
 
     def test_current_timeweb_workflow_is_keep(self) -> None:
         self.assertEqual(

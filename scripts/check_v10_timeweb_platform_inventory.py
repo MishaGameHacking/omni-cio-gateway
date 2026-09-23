@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 import tomllib
 from typing import Any
-from xml.etree import ElementTree
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import ElementTree as DefusedElementTree
+from defusedxml.common import DefusedXmlException
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -222,13 +225,14 @@ def _validate_structured_repository_text(relative: str, source: str) -> str | No
             tomllib.loads(source)
             return "toml_files"
         if suffix == ".xml":
-            ElementTree.fromstring(source)
+            DefusedElementTree.fromstring(source)
             return "xml_files"
     except (
         SyntaxError,
         json.JSONDecodeError,
         tomllib.TOMLDecodeError,
-        ElementTree.ParseError,
+        ParseError,
+        DefusedXmlException,
     ) as exc:
         raise RuntimeError(
             "TIMEWEB_INVENTORY_REPOSITORY_SYNTAX_INVALID:" + relative

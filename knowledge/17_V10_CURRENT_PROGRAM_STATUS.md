@@ -523,6 +523,8 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 - exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
 - OWNER physical/secret/legal/provider evidence is never synthesized.
 
+Current TW-B exact-head RED evidence on `c74e0ad8394076b866119c642e63bbe81b1bc680`: all observed functional/governance lanes passed except Fast PR, authoritative Windows and WP17 OWNER evidence. Fast PR reported only Ruff quoting format in the two new Docker CA regression tests. Authoritative Windows passed the functional suite and failed later at Bandit B314/CWE-20 because the whole-repository audit parsed arbitrary XML with stdlib ElementTree. The replacement source correction uses the already locked defusedxml parser and malicious-DTD/entity regression; scanner suppression is forbidden. WP17 remains separately fail-closed on exact-head OWNER evidence binding.
+
 ## Current next action
 
 1. finish TW-B exact-head verification only on `system/timeweb-platform-consolidation-tw-b`, based on accepted main `26bdc17c4e5d68c262f47b999e975b1eb8651858`;
