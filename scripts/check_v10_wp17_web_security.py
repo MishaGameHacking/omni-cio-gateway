@@ -24,8 +24,9 @@ MIGRATION = (
 OWNER_EVIDENCE_FINALIZER = (
     ROOT / "infrastructure" / "windows" / "finalize_wp17_web_read_vault_evidence.ps1"
 )
+_READ_VAULT_AUDITOR_SCRIPT = "audit_wp17_read_vault_runner.ps1"
 RUNNER_READ_VAULT_AUDITOR = (
-    ROOT / "infrastructure" / "windows" / "audit_wp17_read_vault_runner.ps1"
+    ROOT / "infrastructure" / "windows" / _READ_VAULT_AUDITOR_SCRIPT
 )
 OWNER_READ_VAULT_WORKFLOW = (
     ROOT / ".github" / "workflows" / "v10-wp17-owner-read-vault-audit.yml"
@@ -106,14 +107,10 @@ def _validate_timeweb_broker_custody(
             failures.append(f"Timeweb broker custody drifted: {key}")
 
 
-def _validate_historical_read_vault(
-    contract: dict[str, Any],
+def _validate_historical_acceptance_values(
+    acceptance: dict[str, Any],
     failures: list[str],
 ) -> None:
-    acceptance = contract.get("read_vault_acceptance", {})
-    if not isinstance(acceptance, dict):
-        failures.append("historical READ-vault acceptance contract must be an object")
-        return
     if acceptance.get("authority") != "HISTORICAL_LOCAL_ONLY":
         failures.append("historical READ-vault authority classification drifted")
     if acceptance.get("blocks_timeweb_pr") is not False:
@@ -135,6 +132,8 @@ def _validate_historical_read_vault(
         if acceptance.get(key) is not False:
             failures.append(f"historical READ-vault runner authority widened: {key}")
 
+
+def _validate_read_vault_components(failures: list[str]) -> None:
     for component in (
         OWNER_EVIDENCE_FINALIZER,
         RUNNER_READ_VAULT_AUDITOR,
@@ -144,6 +143,8 @@ def _validate_historical_read_vault(
         if not component.is_file():
             failures.append(f"READ-vault evidence component missing: {component.name}")
 
+
+def _validate_active_wp17_workflow(failures: list[str]) -> None:
     active_workflow = OWNER_READ_VAULT_WORKFLOW.read_text(encoding="utf-8")
     for marker in (
         "runs-on: ubuntu-latest",
@@ -153,7 +154,7 @@ def _validate_historical_read_vault(
         if marker not in active_workflow:
             failures.append(f"Timeweb WP17 source-security gate missing: {marker}")
     for forbidden in (
-        "audit_wp17_read_vault_runner.ps1",
+        _READ_VAULT_AUDITOR_SCRIPT,
         "owner-read-vault-evidence.sanitized.local.json",
         "runs-on: [self-hosted",
     ):
@@ -162,12 +163,14 @@ def _validate_historical_read_vault(
                 f"Timeweb WP17 gate regained local-vault dependency: {forbidden}"
             )
 
+
+def _validate_historical_wp17_workflow(failures: list[str]) -> None:
     historical_workflow = HISTORICAL_OWNER_READ_VAULT_WORKFLOW.read_text(
         encoding="utf-8"
     )
     for marker in (
         "workflow_dispatch:",
-        "audit_wp17_read_vault_runner.ps1",
+        _READ_VAULT_AUDITOR_SCRIPT,
         "-ExpectedImplementationSha",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     ):
@@ -175,6 +178,20 @@ def _validate_historical_read_vault(
             failures.append(f"historical READ-vault evidence drifted: {marker}")
     if "pull_request:" in historical_workflow or "push:" in historical_workflow:
         failures.append("historical READ-vault workflow must remain manual-only")
+
+
+def _validate_historical_read_vault(
+    contract: dict[str, Any],
+    failures: list[str],
+) -> None:
+    acceptance = contract.get("read_vault_acceptance", {})
+    if not isinstance(acceptance, dict):
+        failures.append("historical READ-vault acceptance contract must be an object")
+        return
+    _validate_historical_acceptance_values(acceptance, failures)
+    _validate_read_vault_components(failures)
+    _validate_active_wp17_workflow(failures)
+    _validate_historical_wp17_workflow(failures)
 
 
 def _validate_invariants(contract: dict[str, Any], failures: list[str]) -> None:

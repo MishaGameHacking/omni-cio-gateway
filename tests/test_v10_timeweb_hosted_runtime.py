@@ -255,26 +255,30 @@ def test_telegram_public_and_login_flags_must_transition_together() -> None:
         {"PUBLIC_MULTI_USER_ENABLED": "true"},
         {"OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true"},
     ):
+        connection = object()
+        sessions = SessionRegistryV1(HOSTED_SESSION_POLICY)
         with pytest.raises(
             TelegramAuthConfigurationError,
             match="TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
         ):
             build_telegram_provider_auth(
-                connection=object(),
-                sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
+                connection=connection,
+                sessions=sessions,
                 canonical_origin="https://omnicio.ru",
                 env=env,
             )
 
 
 def test_telegram_activation_pair_requires_provider_configuration() -> None:
+    connection = object()
+    sessions = SessionRegistryV1(HOSTED_SESSION_POLICY)
     with pytest.raises(
         TelegramAuthConfigurationError,
         match="TELEGRAM_AUTH_ACTIVATION_CONFIGURATION_REQUIRED",
     ):
         build_telegram_provider_auth(
-            connection=object(),
-            sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
+            connection=connection,
+            sessions=sessions,
             canonical_origin="https://omnicio.ru",
             env={
                 "PUBLIC_MULTI_USER_ENABLED": "true",

@@ -15,6 +15,7 @@ _CLASS_TIMEWEB_REPLACE = "TIMEWEB_REPLACE"
 _CLASS_RETIRE_NOW_AFTER_AUTHORITY = "RETIRE_NOW_AFTER_AUTHORITY"
 _RENDER_CONFIG_PATH = "render.yaml"
 _WRANGLER_CONFIG_PATH = "wrangler.jsonc"
+_JSON_SUFFIX = ".json"
 ALLOWED_CLASSES = {
     "KEEP",
     _CLASS_TIMEWEB_REPLACE,
@@ -51,7 +52,7 @@ _CONFLICT_GUARD_SUFFIXES = frozenset(
         ".hcl",
         ".html",
         ".js",
-        ".json",
+        _JSON_SUFFIX,
         ".jsonc",
         ".mjs",
         ".ps1",
@@ -99,7 +100,7 @@ _CONTENT_SCAN_PREFIXES = (
 _CONTENT_SCAN_SUFFIXES = frozenset(
     {
         ".js",
-        ".json",
+        _JSON_SUFFIX,
         ".jsonc",
         ".mjs",
         ".ps1",
@@ -235,7 +236,7 @@ def _validate_structured_repository_text(relative: str, source: str) -> str | No
         if suffix == ".py":
             ast.parse(source, filename=relative)
             return "python_files"
-        if suffix == ".json":
+        if suffix == _JSON_SUFFIX:
             json.loads(source)
             return "json_files"
         if suffix == ".toml":
@@ -244,13 +245,7 @@ def _validate_structured_repository_text(relative: str, source: str) -> str | No
         if suffix == ".xml":
             _validate_repository_xml(source)
             return "xml_files"
-    except (
-        SyntaxError,
-        ValueError,
-        json.JSONDecodeError,
-        tomllib.TOMLDecodeError,
-        expat.ExpatError,
-    ) as exc:
+    except (SyntaxError, ValueError, expat.ExpatError) as exc:
         raise RuntimeError(
             "TIMEWEB_INVENTORY_REPOSITORY_SYNTAX_INVALID:" + relative
         ) from exc

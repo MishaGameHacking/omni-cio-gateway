@@ -26,7 +26,8 @@ RUN set -eu; \
     python scripts/prepare_v10_tbank_pip_ca_bundle.py > /tmp/tbank-pip-ca.json; \
     PIP_CERT_PATH="$(python -c 'import json, pathlib; print(json.loads(pathlib.Path("/tmp/tbank-pip-ca.json").read_text(encoding="utf-8"))["bundle_path"])')"; \
     test -f "$PIP_CERT_PATH"; \
-    PIP_CERT="$PIP_CERT_PATH" python -m pip install --only-binary=:all: --require-hashes -r requirements.txt; \
+    PIP_CERT="$PIP_CERT_PATH" python -m pip install \
+        --only-binary=:all: --require-hashes -r requirements.txt; \
     rm -f "$PIP_CERT_PATH" /tmp/tbank-pip-ca.json
 
 COPY apps ./apps

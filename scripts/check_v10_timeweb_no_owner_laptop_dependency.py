@@ -7,13 +7,18 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+_HOSTED_CUSTODY_RELATIVE = Path("omni_cio/web/hosted_secret_custody_v1.py")
+_HOSTED_APP_RELATIVE = Path("apps/api/hosted_app.py")
+_HOSTED_RUNTIME_RELATIVE = Path("apps/api/hosted_runtime.py")
+_TELEGRAM_AUTH_RELATIVE = Path("apps/api/telegram_auth.py")
+
 CONTRACT = (
     ROOT / "docs/architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json"
 )
-HOSTED_CUSTODY = ROOT / "omni_cio/web/hosted_secret_custody_v1.py"
-HOSTED_APP = ROOT / "apps/api/hosted_app.py"
-HOSTED_RUNTIME = ROOT / "apps/api/hosted_runtime.py"
-TELEGRAM_AUTH = ROOT / "apps/api/telegram_auth.py"
+HOSTED_CUSTODY = ROOT / _HOSTED_CUSTODY_RELATIVE
+HOSTED_APP = ROOT / _HOSTED_APP_RELATIVE
+HOSTED_RUNTIME = ROOT / _HOSTED_RUNTIME_RELATIVE
+TELEGRAM_AUTH = ROOT / _TELEGRAM_AUTH_RELATIVE
 WP17_CONTRACT = ROOT / "docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json"
 WP17_SECURITY_GUARD = ROOT / "scripts/check_v10_wp17_web_security.py"
 CURRENT_WORKFLOW = ROOT / ".github/workflows/v10-wp17-owner-read-vault-audit.yml"
@@ -101,14 +106,22 @@ def _validate_wp17_transition(
             raise RuntimeError(f"TIMEWEB_NO_LAPTOP_WP17_GUARD_DRIFT:{marker}")
 
 
-def validate(root: Path = ROOT) -> None:
-    contract = _json(root / CONTRACT.relative_to(ROOT))
+def _mapping(value: object, error: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise RuntimeError(error)
+    return value
+
+
+def _validate_contract_identity(contract: dict[str, Any]) -> None:
     if contract.get("schema") != "omni-cio.v10.timeweb-no-owner-laptop-dependency.v1":
         raise RuntimeError("TIMEWEB_NO_LAPTOP_CONTRACT_SCHEMA_INVALID")
 
-    owner = contract.get("owner_manual_boundary")
-    if not isinstance(owner, dict):
-        raise RuntimeError("TIMEWEB_NO_LAPTOP_OWNER_BOUNDARY_INVALID")
+
+def _validate_owner_boundary(contract: dict[str, Any]) -> None:
+    owner = _mapping(
+        contract.get("owner_manual_boundary"),
+        "TIMEWEB_NO_LAPTOP_OWNER_BOUNDARY_INVALID",
+    )
     for key in (
         "owner_laptop_manual_shell_required_for_timeweb_pr",
         "owner_admin_acl_evidence_required_for_timeweb_pr",
@@ -117,29 +130,32 @@ def validate(root: Path = ROOT) -> None:
         if owner.get(key) is not False:
             raise RuntimeError(f"TIMEWEB_NO_LAPTOP_OWNER_BOUNDARY_DRIFT:{key}")
 
-    runtime = contract.get("current_timeweb_runtime")
-    if not isinstance(runtime, dict):
-        raise RuntimeError("TIMEWEB_NO_LAPTOP_RUNTIME_BOUNDARY_INVALID")
+
+def _validate_runtime_boundary(contract: dict[str, Any]) -> None:
+    runtime = _mapping(
+        contract.get("current_timeweb_runtime"),
+        "TIMEWEB_NO_LAPTOP_RUNTIME_BOUNDARY_INVALID",
+    )
     expected_runtime = {
         "provider": "TIMEWEB_APP_PLATFORM",
         "local_windows_vault_dependency_allowed": False,
         "windows_dpapi_dependency_allowed": False,
         "broker_mutation_enabled": False,
         "global_shared_broker_token_allowed": False,
-        "hosted_custody_contract": "omni_cio/web/hosted_secret_custody_v1.py",
+        "hosted_custody_contract": _HOSTED_CUSTODY_RELATIVE.as_posix(),
     }
     for key, expected in expected_runtime.items():
         if runtime.get(key) != expected:
             raise RuntimeError(f"TIMEWEB_NO_LAPTOP_RUNTIME_BOUNDARY_DRIFT:{key}")
 
-    _validate_wp17_transition(root, contract)
 
+def _validate_current_runtime_sources(root: Path) -> None:
     current_sources = "\n".join(
         _text(root / path)
         for path in (
-            Path("apps/api/hosted_app.py"),
-            Path("apps/api/hosted_runtime.py"),
-            Path("apps/api/telegram_auth.py"),
+            _HOSTED_APP_RELATIVE,
+            _HOSTED_RUNTIME_RELATIVE,
+            _TELEGRAM_AUTH_RELATIVE,
         )
     )
     for marker in FORBIDDEN_CURRENT_MARKERS:
@@ -147,14 +163,18 @@ def validate(root: Path = ROOT) -> None:
             raise RuntimeError(
                 f"TIMEWEB_NO_LAPTOP_CURRENT_LOCAL_VAULT_DEPENDENCY:{marker}"
             )
+
+    hosted_app = _text(root / _HOSTED_APP_RELATIVE)
     for marker in (
         "BROKER_CREDENTIALS_DISABLED_IN_HOSTED_RUNTIME",
         "broker_mutation_disabled",
     ):
-        if marker not in _text(root / "apps/api/hosted_app.py"):
+        if marker not in hosted_app:
             raise RuntimeError(f"TIMEWEB_NO_LAPTOP_BROKER_FAIL_CLOSED_DRIFT:{marker}")
 
-    custody = _text(root / "omni_cio/web/hosted_secret_custody_v1.py")
+
+def _validate_hosted_custody(root: Path) -> None:
+    custody = _text(root / _HOSTED_CUSTODY_RELATIVE)
     for marker in (
         "class HostedReadSecretBackendV1(Protocol)",
         "cross-tenant access",
@@ -166,6 +186,8 @@ def validate(root: Path = ROOT) -> None:
         if marker not in custody:
             raise RuntimeError(f"TIMEWEB_NO_LAPTOP_HOSTED_CUSTODY_DRIFT:{marker}")
 
+
+def _validate_required_workflow(root: Path) -> None:
     workflow = _text(root / CURRENT_WORKFLOW.relative_to(ROOT))
     for marker in (
         "name: V10 WP17 OWNER Read Vault Audit",
@@ -187,6 +209,8 @@ def validate(root: Path = ROOT) -> None:
                 f"TIMEWEB_NO_LAPTOP_REQUIRED_WORKFLOW_LOCAL_DEPENDENCY:{forbidden}"
             )
 
+
+def _validate_historical_workflow(root: Path) -> None:
     historical = _text(root / HISTORICAL_WORKFLOW.relative_to(ROOT))
     if "workflow_dispatch:" not in historical:
         raise RuntimeError("TIMEWEB_NO_LAPTOP_HISTORICAL_WORKFLOW_NOT_MANUAL")
@@ -195,10 +219,13 @@ def validate(root: Path = ROOT) -> None:
     if "audit_wp17_read_vault_runner.ps1" not in historical:
         raise RuntimeError("TIMEWEB_NO_LAPTOP_HISTORICAL_EVIDENCE_REMOVED")
 
+
+def _validate_public_runtime(root: Path) -> None:
     public = _json(root / PUBLIC_RUNTIME.relative_to(ROOT))
-    hosting = public.get("production_hosting")
-    if not isinstance(hosting, dict):
-        raise RuntimeError("TIMEWEB_NO_LAPTOP_PUBLIC_HOSTING_CONTRACT_INVALID")
+    hosting = _mapping(
+        public.get("production_hosting"),
+        "TIMEWEB_NO_LAPTOP_PUBLIC_HOSTING_CONTRACT_INVALID",
+    )
     for key in (
         "home_public_ip_dependency_allowed",
         "home_wifi_dependency_allowed",
@@ -209,6 +236,19 @@ def validate(root: Path = ROOT) -> None:
     ):
         if hosting.get(key) is not False:
             raise RuntimeError(f"TIMEWEB_NO_LAPTOP_PUBLIC_HOSTING_DRIFT:{key}")
+
+
+def validate(root: Path = ROOT) -> None:
+    contract = _json(root / CONTRACT.relative_to(ROOT))
+    _validate_contract_identity(contract)
+    _validate_owner_boundary(contract)
+    _validate_runtime_boundary(contract)
+    _validate_wp17_transition(root, contract)
+    _validate_current_runtime_sources(root)
+    _validate_hosted_custody(root)
+    _validate_required_workflow(root)
+    _validate_historical_workflow(root)
+    _validate_public_runtime(root)
 
 
 def main() -> int:
