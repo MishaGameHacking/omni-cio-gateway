@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from scripts import check_ci_security_baseline as ci_security_baseline
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json"
@@ -14,43 +16,6 @@ ROOT_CA = ROOT / "infrastructure/certificates/russian_trusted_root_ca_2022.der"
 SYNTAX_CHECKER = ROOT / "scripts/check_v10_tbank_ca_trust_syntax.ps1"
 AUTHORITATIVE = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 FAST_PR = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
-
-
-def _workflow_job_blocks(workflow_text: str) -> dict[str, str]:
-    lines = workflow_text.splitlines(keepends=True)
-    jobs_index = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if line.strip() == "jobs:" and not line.startswith(" ")
-        ),
-        None,
-    )
-    if jobs_index is None:
-        return {}
-
-    blocks: dict[str, str] = {}
-    current_name: str | None = None
-    current_lines: list[str] = []
-    for line in lines[jobs_index + 1 :]:
-        if line.strip() and not line.startswith((" ", "#")):
-            break
-        if (
-            line.startswith("  ")
-            and not line.startswith("    ")
-            and line.rstrip().endswith(":")
-        ):
-            if current_name is not None:
-                blocks[current_name] = "".join(current_lines)
-            current_name = line.strip()[:-1]
-            current_lines = [line]
-            continue
-        if current_name is not None:
-            current_lines.append(line)
-
-    if current_name is not None:
-        blocks[current_name] = "".join(current_lines)
-    return blocks
 
 
 def test_tbank_ca_trust_contract_is_fail_closed() -> None:
@@ -294,7 +259,9 @@ def test_every_self_hosted_windows_dependency_install_job_fails_fast_on_ca_trust
     for pattern in ("*.yml", "*.yaml"):
         for path in (ROOT / ".github/workflows").glob(pattern):
             source = path.read_text(encoding="utf-8")
-            for job_name, block in _workflow_job_blocks(source).items():
+            for job_name, block in ci_security_baseline.workflow_job_blocks(
+                source
+            ).items():
                 if "omni-cio-ci" in block and install_marker in block:
                     key = (path, job_name)
                     discovered_jobs.add(key)

@@ -354,3 +354,33 @@ both source-quality repairs together:
 No dependency, package source, TLS policy, authentication, tenant, provider,
 broker or Real-money authority changes are included. Fresh exact-head
 verification is required because this correction creates a replacement SHA.
+
+
+## PR #586 second DRAFT verification batch
+
+Replacement head `bf5dee0a4e4fad5b1eac6e74085dcd7d16f5e06a`
+completed every GitHub-native check successfully except SonarQube Cloud.
+Fast policy/source contracts, the authoritative merge gate, Windows smoke,
+Engineering Governance, toolchain compatibility and all triggered WP audits
+were GREEN.
+
+SonarQube Cloud failed only the new-code duplication gate: **11.6%**, above the
+required **3%**. No security hotspot or runtime/test failure was reported.
+
+Root cause: the new job-local guard introduced a workflow job-block parser in
+`scripts/check_ci_security_baseline.py`, while the T-Bank contract regression
+test carried a second near-identical parser implementation. That duplicate
+verifier logic increased new-code duplication and also created an unnecessary
+risk that the two parsers could drift semantically.
+
+Systemic correction:
+
+- keep one canonical bounded parser in the CI/security baseline guard;
+- have the T-Bank contract regression reuse that parser only for job-block
+  segmentation, while retaining independent workflow enumeration, consumer
+  filtering, contract equality and preflight-order assertions;
+- retain the dedicated unit test that proves the canonical guard detects a
+  sibling job missing its preflight.
+
+No quality threshold is changed or suppressed. Fresh exact-head verification
+must prove Sonar duplication returns within the existing gate.
