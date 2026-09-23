@@ -6,10 +6,7 @@ import os
 from pathlib import Path
 import tomllib
 from typing import Any
-from xml.etree.ElementTree import ParseError
-
-from defusedxml import ElementTree as DefusedElementTree
-from defusedxml.common import DefusedXmlException
+from xml.parsers import expat
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -212,6 +209,26 @@ def _has_conflict_marker(source: str) -> bool:
     )
 
 
+def _validate_repository_xml(source: str) -> None:
+    normalized = source.casefold()
+    if "<!doctype" in normalized or "<!entity" in normalized:
+        raise ValueError("TIMEWEB_INVENTORY_REPOSITORY_XML_DECLARATION_FORBIDDEN")
+
+    parser = expat.ParserCreate()
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+
+    def reject_declaration(*args: object) -> None:
+        raise ValueError("TIMEWEB_INVENTORY_REPOSITORY_XML_DECLARATION_FORBIDDEN")
+
+    def reject_external_entity(*args: object) -> int:
+        return 0
+
+    parser.StartDoctypeDeclHandler = reject_declaration
+    parser.EntityDeclHandler = reject_declaration
+    parser.ExternalEntityRefHandler = reject_external_entity
+    parser.Parse(source, True)
+
+
 def _validate_structured_repository_text(relative: str, source: str) -> str | None:
     suffix = Path(relative).suffix.lower()
     try:
@@ -225,14 +242,14 @@ def _validate_structured_repository_text(relative: str, source: str) -> str | No
             tomllib.loads(source)
             return "toml_files"
         if suffix == ".xml":
-            DefusedElementTree.fromstring(source)
+            _validate_repository_xml(source)
             return "xml_files"
     except (
         SyntaxError,
+        ValueError,
         json.JSONDecodeError,
         tomllib.TOMLDecodeError,
-        ParseError,
-        DefusedXmlException,
+        expat.ExpatError,
     ) as exc:
         raise RuntimeError(
             "TIMEWEB_INVENTORY_REPOSITORY_SYNTAX_INVALID:" + relative
