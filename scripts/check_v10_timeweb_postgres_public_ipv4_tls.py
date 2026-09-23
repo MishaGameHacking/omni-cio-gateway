@@ -515,6 +515,7 @@ def _validate_sources() -> None:
             "def _required_verifier_cidr() -> str:",
             "ipaddress.ip_network(raw, strict=True)",
             "network.prefixlen != 32",
+            "raw != str(network)",
             "network.network_address.is_global",
             "::add-mask::",
             "RU_PG_VERIFIER_EGRESS=READY source=/32",

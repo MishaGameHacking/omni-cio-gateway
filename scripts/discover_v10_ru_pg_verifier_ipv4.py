@@ -23,6 +23,7 @@ def _required_verifier_cidr() -> str:
     if (
         not isinstance(network, ipaddress.IPv4Network)
         or network.prefixlen != 32
+        or raw != str(network)
         or not network.network_address.is_global
     ):
         raise EgressStopped("RU_PG_VERIFIER_CIDR_INVALID")

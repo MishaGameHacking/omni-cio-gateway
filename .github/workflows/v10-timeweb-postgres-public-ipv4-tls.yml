@@ -162,7 +162,7 @@ jobs:
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
 
-      - name: Re-verify network source contract before live egress discovery
+      - name: Re-verify network source contract before verifier CIDR validation
         shell: cmd
         run: python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls
 
