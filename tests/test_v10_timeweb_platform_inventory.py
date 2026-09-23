@@ -153,6 +153,39 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         files = inventory._repository_files()
         inventory._validate_content_consumers(self.payload, files)
 
+    def test_current_keep_sources_reject_retired_live_endpoint_dependency(self) -> None:
+        self.assertIn(
+            "https://cloudflare.com/cdn-cgi/trace",
+            inventory._RETIRED_EXECUTION_MARKERS_CASEFOLD,
+        )
+        self.assertTrue(
+            inventory._contains_retired_execution_marker(
+                'TRACE_URL = "https://cloudflare.com/cdn-cgi/trace"'
+            )
+        )
+        discoverer = (
+            ROOT / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
+        ).read_text(encoding="utf-8")
+        self.assertFalse(inventory._contains_retired_execution_marker(discoverer))
+
+    def test_current_database_authority_cannot_reassert_retired_neon(self) -> None:
+        self.assertTrue(
+            inventory._contains_stale_current_database_authority_marker(
+                '"current_neon_production_authority_preserved": true'
+            )
+        )
+        self.assertTrue(
+            inventory._contains_stale_current_database_authority_marker(
+                "Neon production authority remains unchanged"
+            )
+        )
+        for relative in inventory._CURRENT_DATABASE_AUTHORITY_SOURCES:
+            with self.subTest(path=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertFalse(
+                    inventory._contains_stale_current_database_authority_marker(source)
+                )
+
     def test_security_verifier_marker_data_is_exactly_exempt(self) -> None:
         self.assertEqual(
             inventory._STATIC_EVIDENCE_PATHS,

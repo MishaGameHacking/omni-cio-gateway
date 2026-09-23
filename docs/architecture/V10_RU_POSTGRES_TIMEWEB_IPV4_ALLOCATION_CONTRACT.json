@@ -97,7 +97,7 @@
     "transport_ready_claim_allowed": false,
     "sql_parity_claim_allowed": false,
     "production_dsn_change_allowed": false,
-    "neon_production_authority_preserved": true,
+    "neon_production_authority_preserved": false,
     "public_auth_enabled": false,
     "broker_write": false,
     "trading_methods": false,

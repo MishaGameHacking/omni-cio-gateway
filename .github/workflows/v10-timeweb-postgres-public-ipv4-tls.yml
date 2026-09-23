@@ -9,6 +9,10 @@ on:
         type: choice
         options:
           - ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH
+      verifier_cidr:
+        description: Exact current self-hosted verifier global IPv4 /32
+        required: true
+        type: string
       allocation_plan_id:
         description: Verified existing-IPv4 allocation plan handle
         required: true
@@ -162,8 +166,10 @@ jobs:
         shell: cmd
         run: python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls
 
-      - name: Discover and mask exact verifier egress IPv4
+      - name: Validate and mask exact verifier egress IPv4 /32
         shell: cmd
+        env:
+          OMNI_V10_RU_PG_VERIFIER_CIDR: ${{ inputs.verifier_cidr }}
         run: python -m scripts.discover_v10_ru_pg_verifier_ipv4
 
       - name: Re-verify GitHub environment policy before provider access

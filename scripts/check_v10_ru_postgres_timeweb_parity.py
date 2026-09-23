@@ -237,7 +237,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         _require(invariants.get(key), False, "RU_PG_B_INVARIANTS_INVALID")
     _require(
         invariants.get("current_neon_production_authority_preserved"),
-        True,
+        False,
         "RU_PG_B_INVARIANTS_INVALID",
     )
 

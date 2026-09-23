@@ -87,7 +87,7 @@
     "PUBLIC_MULTI_USER_ENABLED": false,
     "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
     "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
-    "current_neon_production_authority_preserved": true,
+    "current_neon_production_authority_preserved": false,
     "production_database_cutover_allowed": false,
     "broker_write": false,
     "trading_methods": false,

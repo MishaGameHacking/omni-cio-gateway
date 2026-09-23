@@ -177,7 +177,7 @@
     },
     "scripts/discover_v10_ru_pg_verifier_ipv4.py": {
       "classification": "KEEP",
-      "reason": "Current verifier-IP discovery uses provider-neutral transport primitives."
+      "reason": "Current verifier /32 is accepted only as an explicit validated GitHub workflow input; no retired-provider echo/discovery service participates."
     },
     "scripts/timeweb_ipv4_allocation_provider.py": {
       "classification": "KEEP",

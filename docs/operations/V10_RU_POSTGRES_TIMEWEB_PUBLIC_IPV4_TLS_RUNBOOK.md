@@ -26,14 +26,16 @@ public-user activation or broker-write authority.
 
 ## Verifier source boundary
 
-The workflow discovers the self-hosted verifier's current public IPv4 from
-Cloudflare's managed `/cdn-cgi/trace` endpoint. Two samples must agree and the
-result must be a global-unicast IPv4. The value is converted to one `/32`, masked
-for GitHub Actions, and passed only through the current job environment.
+The manual workflow requires the exact current self-hosted verifier global IPv4
+as the explicit `verifier_cidr` dispatch input. The input must already be one
+global-unicast IPv4 `/32`; repository code performs no external IP-echo/discovery
+request. The validator canonicalizes the value, masks both the address and CIDR,
+and passes it only through the current job environment.
 
 The exact address is not repository content and is not emitted in the sanitized
-success marker. This /32 is RU-PG-B synthetic-proof authority only. It is not a
-Cloudflare production-egress contract and is not inherited by RU-PG-C.
+success marker. This /32 is RU-PG-B synthetic-proof authority only and is not
+inherited by RU-PG-C. A missing, malformed, non-global or non-/32 value fails
+closed before Timeweb provider authority is constructed.
 
 ## Provider disk unit contract
 
@@ -147,7 +149,9 @@ Exact confirmation:
 
 `ENABLE_TIMEWEB_RU_PG_PUBLIC_IPV4_200_RUB_MONTH`
 
-Required safe allocation input:
+Required verifier and safe allocation inputs:
+
+`verifier_cidr=<exact current global IPv4/32>`
 
 `allocation_plan_id=<safe plan handle from verified allocation>`
 
@@ -156,7 +160,7 @@ Before provider mutation authority is constructed it:
 1. bootstraps the exact protected-main SHA;
 2. validates this source contract;
 3. verifies the `timeweb-synthetic` main-only environment policy;
-4. discovers and masks the current verifier /32;
+4. validates and masks the explicit verifier /32 without any external discovery service;
 5. validates the exact cost confirmation;
 6. proves the durable ALLOCATED receipt against two current provider GET snapshots.
 
@@ -323,7 +327,7 @@ Required parity marker:
 
 `RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS`
 
-Until that proof is accepted, Neon production authority remains unchanged and
+Until that proof is accepted, no production database cutover is authorized and
 RU-PG-C remains locked.
 
 ## Official references
@@ -334,7 +338,6 @@ RU-PG-C remains locked.
 - https://timeweb.cloud/docs/firewall/upravlenie-fajrvolom
 - https://timeweb.cloud/docs/public-ip
 - https://timeweb.cloud/docs/public-ip/create-public-ip
-- https://developers.cloudflare.com/fundamentals/reference/cdn-cgi-endpoint/
 - https://github.com/timeweb-cloud/twc
 - https://github.com/timeweb-cloud/sdk-javascript
 - https://github.com/timeweb-cloud/sdk-go/blob/main/docs/PresetsDbs.md

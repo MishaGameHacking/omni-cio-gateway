@@ -116,7 +116,23 @@ _RETIRED_EXECUTION_MARKERS = (
     "provision_v10_render_neon_preview",
     _WRANGLER_CONFIG_PATH,
 )
-_RETIRED_EXECUTION_MARKERS_CASEFOLD = ("infrastructure/cloudru/wp22a",)
+_RETIRED_EXECUTION_MARKERS_CASEFOLD = (
+    "infrastructure/cloudru/wp22a",
+    "https://cloudflare.com/cdn-cgi/trace",
+)
+_STALE_CURRENT_DATABASE_AUTHORITY_MARKERS_CASEFOLD = (
+    '"current_neon_production_authority_preserved": true',
+    '"neon_production_authority_preserved": true',
+    "neon production authority remains",
+)
+_CURRENT_DATABASE_AUTHORITY_SOURCES = (
+    "docs/architecture/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_PARITY_CONTRACT.json",
+    "docs/architecture/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_CREATE_CONTRACT.json",
+    "docs/architecture/V10_RU_POSTGRES_TIMEWEB_IPV4_ALLOCATION_CONTRACT.json",
+    "docs/architecture/V10_RU_POSTGRES_TIMEWEB_PUBLIC_IPV4_TLS_CONTRACT.json",
+    "docs/operations/V10_RU_POSTGRES_TIMEWEB_SYNTHETIC_CREATE_RUNBOOK.md",
+    "docs/operations/V10_RU_POSTGRES_TIMEWEB_PUBLIC_IPV4_TLS_RUNBOOK.md",
+)
 
 
 def _read(path: Path) -> str:
@@ -395,6 +411,14 @@ def _contains_retired_execution_marker(source: str) -> bool:
     return any(marker in normalized for marker in _RETIRED_EXECUTION_MARKERS_CASEFOLD)
 
 
+def _contains_stale_current_database_authority_marker(source: str) -> bool:
+    normalized = source.casefold()
+    return any(
+        marker in normalized
+        for marker in _STALE_CURRENT_DATABASE_AUTHORITY_MARKERS_CASEFOLD
+    )
+
+
 def _validate_content_consumers(
     payload: dict[str, Any],
     files: tuple[str, ...],
@@ -526,6 +550,13 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         != _CLASS_RETIRE_NOW_AFTER_AUTHORITY
     ):
         raise RuntimeError("TIMEWEB_INVENTORY_VK_RETIREMENT_INVALID")
+
+    for relative in _CURRENT_DATABASE_AUTHORITY_SOURCES:
+        source = _read(ROOT / relative)
+        if _contains_stale_current_database_authority_marker(source):
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_RETIRED_DATABASE_AUTHORITY_DRIFT:" + relative
+            )
 
 
 def _validate_external_surfaces(payload: dict[str, Any]) -> None:

@@ -485,7 +485,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _require(
         invariants.get("current_neon_production_authority_preserved"),
-        True,
+        False,
         "TIMEWEB_SYNTHETIC_CREATE_INVARIANTS_INVALID",
     )
     _require(
@@ -710,7 +710,7 @@ def _validate_runbook() -> None:
             "provider replica-list baseline count is exactly `1`",
             "additional paid replication remains unauthorized",
             "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
-            "Neon production authority",
+            "no production database cutover is authorized",
             "RU-PG-C remains",
         ),
         "TIMEWEB_SYNTHETIC_CREATE_RUNBOOK_DRIFT",
