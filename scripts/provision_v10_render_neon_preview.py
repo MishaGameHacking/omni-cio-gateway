@@ -63,6 +63,7 @@ START_COMMAND = (
 
 ProvisioningStopped = _provider_runtime.ProvisioningStopped
 
+
 @dataclass(frozen=True, slots=True)
 class NeonTarget:
     project_id: str
@@ -88,6 +89,7 @@ _emit = _provider_runtime._emit
 _required_env = _provider_runtime._required_env
 _json_object = _provider_runtime._json_object
 _json_list = _provider_runtime._json_list
+
 
 def _unwrap_rows(payload: Any, key: str) -> list[dict[str, Any]]:
     rows = _json_list(payload, f"{key.upper()}_LIST_INVALID")
@@ -130,6 +132,7 @@ def _safe_provider_text(value: object, code: str) -> str:
 
 
 _safe_api_path = _provider_runtime._safe_api_path
+
 
 def _neon_connection_uri(value: object, database_name: str, code: str) -> str:
     if not isinstance(value, str):
@@ -607,6 +610,7 @@ def _converge_runtime_role(connection: Any, runtime_password: str) -> None:
 
 
 _connect_postgres_with_retry = _provider_runtime._connect_postgres_with_retry
+
 
 def _seed_preview_records(
     connection: Any,
