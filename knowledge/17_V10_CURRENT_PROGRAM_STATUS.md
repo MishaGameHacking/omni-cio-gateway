@@ -1,6 +1,6 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 
 ## Executive state
 
@@ -22,7 +22,9 @@ Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudfl
 
 PR #582 remains the accepted CI/provider-authority split. TW-A then completed through PR #583. Its exact reviewed head `2c4cf7915c02d05e42b269544bc0336c31fa9a87` passed DRAFT and READY certification, and PR #583 was squash-merged to exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`. Post-merge Regression Shield #1647, Engineering Governance #1909, all owning WP audits and Timeweb Read-Only Proof #14 completed `success`. The sanitized provider proof remains `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed Timeweb IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`; it grants no ingress mutation authority.
 
-TW-A / INVENTORY_AND_AUTHORITY is therefore `CERTIFIED_GREEN / ACCEPTED`. TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION is now the current branch-local milestone on `system/timeweb-platform-consolidation-tw-b`, created from the accepted exact main above. TW-B may change source/runtime composition only; it does not authorize Timeweb production deployment, PostgreSQL production cutover, DNS/TLS cutover, public Telegram activation, broker write or Real-money execution.
+TW-A / INVENTORY_AND_AUTHORITY is therefore `CERTIFIED_GREEN / ACCEPTED`. TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION is now the current branch-local milestone on `system/timeweb-platform-consolidation-tw-b`. Focused CA-trust repairs PR #585 and PR #586 were subsequently accepted on protected `main`; the current accepted base for TW-B is exact main `26bdc17c4e5d68c262f47b999e975b1eb8651858`. The branch includes that base with no behind commits at the latest verified checkpoint; its exact head is resolved from PR #584 rather than frozen in this status file. TW-B may change source/runtime composition only; it does not authorize Timeweb production deployment, PostgreSQL production cutover, DNS/TLS cutover, public Telegram activation, broker write or Real-money execution.
+
+Latest fully observed TW-B source checkpoint `21ec79b769d8a04cc119526bd6dc0ddc93ff72bf` completed the authoritative Windows merge gate with 3693 tests passed, 901 subtests passed and 62.20% covered; Fast PR, Engineering Governance, Toolchain compatibility, WP13/WP15/WP16/WP17 application-shell/WP18/WP19/WP20/WP21/WP22/WP22A deterministic gates and Sonar Quality Gate all completed `success`. Sonar still reported one maintainability issue in a historical exception test. The sole failing check was `V10 WP17 OWNER Read Vault Audit`: its sanitized OWNER evidence was readable and script-hash bound but not bound to the exact implementation SHA, so exact-head acceptance remains fail-closed. Direct runner permission probes are intentionally not authoritative when that binding prerequisite is false.
 
 Correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` removed the first stale probe and strengthened inventory discovery, then Engineering Governance #1895 correctly failed with `TIMEWEB_CONSOLIDATION_ACTIVE_WORKFLOW_RETIRED_PROVIDER_EXECUTION`: the historical WP22A Phase-5 technical-closeout workflow was a second neutral-name consumer that still compiled and live-ran the same Render Phase-4 probe. Repository search shows these Phase-4 and Phase-5 workflows are the complete Actions consumer set for that retired probe. Both must be archive-in-place/manual hard-disabled before the TW-A checkpoint can be certified.
 
@@ -517,7 +519,7 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 ## Current next action
 
-1. finish TW-B exact-head verification only on `system/timeweb-platform-consolidation-tw-b`, based on accepted main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`;
+1. finish TW-B exact-head verification only on `system/timeweb-platform-consolidation-tw-b`, based on accepted main `26bdc17c4e5d68c262f47b999e975b1eb8651858`;
 2. provider-neutral HTTP/PostgreSQL primitives, Timeweb hosted runtime, process-only `/livez`, database-aware `/healthz`, provider-neutral PostgreSQL/recovery/readiness contracts and Telegram-only current auth composition are implemented branch-locally;
 3. current Timeweb runtime/proof no longer imports historical Render/Neon/Cloudflare/Cloud.ru/VK provider wrappers, and the provider inventory has no explicit `TIMEWEB_REPLACE` source consumer remaining;
 4. deployed source identity is server-validated from `OMNI_V10_RELEASE_SHA`; browser build-time fallback metadata is not release authority;

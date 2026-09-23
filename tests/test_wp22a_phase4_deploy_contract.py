@@ -127,14 +127,16 @@ def test_neon_organization_requires_one_free_plan() -> None:
         == "org-free-preview"
     )
 
+    empty_organization_api = Api([])
     with pytest.raises(
         module.ProvisioningStopped,
         match="NEON_ORGANIZATION_NOT_UNIQUE",
     ):
-        module._neon_organization(Api([]))
+        module._neon_organization(empty_organization_api)
 
+    paid_organization_api = Api([{"id": "org-paid-preview", "plan": "launch"}])
     with pytest.raises(module.ProvisioningStopped, match="NEON_FREE_PLAN_REQUIRED"):
-        module._neon_organization(Api([{"id": "org-paid-preview", "plan": "launch"}]))
+        module._neon_organization(paid_organization_api)
 
 
 def test_existing_neon_project_lookup_is_explicitly_org_scoped() -> None:

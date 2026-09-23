@@ -152,8 +152,18 @@ def test_owner_acl_evidence_is_exact_head_bound_and_runner_verified() -> None:
         "Test-ReadDataDenied",
         "Test-CreateDenied",
         "runner_is_administrator",
+        "permission_probes_executed",
     ):
         assert marker in auditor
+
+    for reason in (
+        "WP17_OWNER_EVIDENCE_HEAD_DRIFT",
+        "WP17_OWNER_EVIDENCE_SCRIPT_DRIFT",
+        "WP17_RUNNER_SECRET_READ_NOT_DENIED",
+        "WP17_RUNNER_SECRET_WRITE_NOT_DENIED",
+        "WP17_RUNNER_EVIDENCE_WRITE_NOT_DENIED",
+    ):
+        assert reason in auditor
 
     assert "audit_wp17_read_vault_runner.ps1" in workflow
     assert "-ExpectedImplementationSha" in workflow

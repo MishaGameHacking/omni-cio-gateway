@@ -108,6 +108,14 @@ The dedicated `V10 WP17 OWNER Read Vault Audit` then runs under the ordinary non
 - cannot create/write a file in the READ-connections child;
 - cannot modify the OWNER evidence directory.
 
+The auditor runs those direct permission probes only after the sanitized OWNER
+evidence is readable, bound to the exact reviewed head, bound to the current
+provisioner/finalizer hashes and the runner is confirmed non-admin. It reports
+`permission_probes_executed=false` when those prerequisites are not met. In
+that state, the `runner_*_allowed` compatibility booleans are not fresh ACL
+observations; diagnose the binding-specific `reason` first and do not infer
+effective runner permissions from skipped probes.
+
 Only a GREEN OWNER read-vault audit may satisfy the runner-isolation portion of this boundary. A missing evidence file is `OWNER_ACTION_REQUIRED`, not a synthetic PASS. Do not weaken ACLs, make the runner Administrator or grant it secret `ReadData` merely to make the audit pass.
 
 ## Web provisioning protocol

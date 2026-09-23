@@ -127,6 +127,7 @@ $ownerEvidenceReady = $false
 $secretReadDenied = $false
 $secretWriteDenied = $false
 $evidenceWriteDenied = $false
+$permissionProbesExecuted = $false
 
 if ($expectedShaValid -and $evidenceReadable -and $null -ne $evidence) {
     $evidenceImplementation = [string](Get-EvidenceValue -Object $evidence -Name "implementation_sha" -Default "")
@@ -157,6 +158,7 @@ if ($expectedShaValid -and $evidenceReadable -and $null -ne $evidence) {
 }
 
 if ($ownerEvidenceReady -and $implementationBound -and $scriptHashesBound -and (-not $runnerIsAdmin)) {
+    $permissionProbesExecuted = $true
     try {
         $wp8Contract = Get-Content -LiteralPath $wp8ContractPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         $readSpec = @($wp8Contract.secret_classes | Where-Object { [string]$_.id -eq "broker_read" })
@@ -190,8 +192,32 @@ $ready = (
 $reason = if (-not $evidencePresent) {
     "WP17_OWNER_ACTION_REQUIRED"
 }
+elseif (-not $evidenceReadable) {
+    "WP17_OWNER_EVIDENCE_UNREADABLE"
+}
 elseif ($runnerIsAdmin) {
     "WP17_RUNNER_IDENTITY_INVALID"
+}
+elseif (-not $implementationBound) {
+    "WP17_OWNER_EVIDENCE_HEAD_DRIFT"
+}
+elseif (-not $scriptHashesBound) {
+    "WP17_OWNER_EVIDENCE_SCRIPT_DRIFT"
+}
+elseif (-not $ownerEvidenceReady) {
+    "WP17_OWNER_EVIDENCE_NOT_READY"
+}
+elseif (-not $permissionProbesExecuted) {
+    "WP17_RUNNER_PROBES_NOT_EXECUTED"
+}
+elseif (-not $secretReadDenied) {
+    "WP17_RUNNER_SECRET_READ_NOT_DENIED"
+}
+elseif (-not $secretWriteDenied) {
+    "WP17_RUNNER_SECRET_WRITE_NOT_DENIED"
+}
+elseif (-not $evidenceWriteDenied) {
+    "WP17_RUNNER_EVIDENCE_WRITE_NOT_DENIED"
 }
 elseif (-not $ready) {
     "WP17_RUNNER_ISOLATION_NOT_PROVEN"
@@ -212,6 +238,7 @@ $result = [ordered]@{
     script_hashes_bound = [bool]$scriptHashesBound
     owner_evidence_ready = [bool]$ownerEvidenceReady
     runner_is_administrator = [bool]$runnerIsAdmin
+    permission_probes_executed = [bool]$permissionProbesExecuted
     runner_secret_read_allowed = [bool](-not $secretReadDenied)
     runner_secret_write_allowed = [bool](-not $secretWriteDenied)
     runner_evidence_write_allowed = [bool](-not $evidenceWriteDenied)
