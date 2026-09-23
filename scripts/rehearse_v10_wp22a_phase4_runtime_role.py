@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import os
 from pathlib import Path
 import secrets
@@ -11,16 +10,17 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from apps.api.hosted_preview import (
-    PREVIEW_TENANT_ID,
-    PREVIEW_USER_ID,
-    _record_sha256,
-    _verify_synthetic_scope,
-)
 from omni_cio.persistence.hosted_postgres_runtime_v1 import (
     BOOTSTRAP_PATH,
     load_hosted_postgres_runtime_contract,
     validate_hosted_postgres_runtime_sql,
+)
+from omni_cio.persistence.hosted_synthetic_scope_v1 import (
+    SYNTHETIC_CREATED_AT as PREVIEW_CREATED_AT,
+    SYNTHETIC_TENANT_ID as PREVIEW_TENANT_ID,
+    SYNTHETIC_USER_ID as PREVIEW_USER_ID,
+    record_sha256 as _record_sha256,
+    verify_synthetic_scope as _verify_synthetic_scope,
 )
 from omni_cio.persistence.migration import apply_migrations
 from scripts.postgres_runtime_primitives import converge_runtime_role
@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_SQL = BOOTSTRAP_PATH
 BOOTSTRAP_ROLE = "omni_phase4_bootstrap"
 RUNTIME_ROLE = "omni_cio_hosted_api"
-PREVIEW_CREATED_AT = datetime(2026, 8, 21, tzinfo=timezone.utc)
+
 
 
 def _required_dsn() -> str:

@@ -74,6 +74,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "apps/web/vite.config.ts",
             "infrastructure/postgres/hosted-postgres-runtime.sql",
             "omni_cio/persistence/hosted_postgres_runtime_v1.py",
+            "omni_cio/persistence/hosted_synthetic_scope_v1.py",
             "omni_cio/web/browser_security_v1.py",
             "omni_cio/web/identity_v1.py",
             "omni_cio/web/telegram_auth_routes_v1.py",
@@ -88,6 +89,20 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
                     inventory._classify_path(path, self.payload),
                     "KEEP",
                 )
+
+    def test_keep_runtime_cannot_import_historical_hosted_preview(self) -> None:
+        rehearsal = (
+            ROOT / "scripts/rehearse_v10_wp22a_phase4_runtime_role.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "from apps.api.hosted_preview import",
+            inventory._RETIRED_EXECUTION_MARKERS,
+        )
+        self.assertNotIn("from apps.api.hosted_preview import", rehearsal)
+        self.assertIn(
+            "from omni_cio.persistence.hosted_synthetic_scope_v1 import",
+            rehearsal,
+        )
 
     def test_detached_provider_wrappers_are_history(self) -> None:
         for path in (

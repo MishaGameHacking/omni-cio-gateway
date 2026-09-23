@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-import hashlib
-import json
 import os
 from pathlib import Path
 import secrets
@@ -28,6 +26,12 @@ from apps.api.hosted_app import (
 )
 from apps.api.hosted_database_runtime import probe_hosted_runtime_database
 from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth
+from omni_cio.persistence.hosted_synthetic_scope_v1 import (
+    SYNTHETIC_TENANT_ID as PREVIEW_TENANT_ID,
+    SYNTHETIC_USER_ID as PREVIEW_USER_ID,
+    record_sha256 as _record_sha256,
+    verify_synthetic_scope as _verify_synthetic_scope,
+)
 from omni_cio.persistence.migration import connect_postgres
 from omni_cio.web.browser_security_v1 import (
     BROWSER_CSRF_COOKIE,
@@ -50,8 +54,6 @@ WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
 PREVIEW_STATUS_PATH = "/api/v10/web/preview-mode"
 CSRF_COOKIE = BROWSER_CSRF_COOKIE
 CSRF_HEADER = BROWSER_CSRF_HEADER
-PREVIEW_TENANT_ID = "tenant:v1:synthetic_preview"
-PREVIEW_USER_ID = "user:v1:synthetic_preview"
 PREVIEW_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
@@ -85,16 +87,6 @@ def _release_sha(value: str) -> str:
         return _runtime_release_sha(value)
     except RuntimeError as exc:
         raise RuntimeError("HOSTED_PREVIEW_RELEASE_SHA_INVALID") from exc
-
-
-def _record_sha256(payload: dict[str, object]) -> str:
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
 
 
 def _disabled_provider_auth(
@@ -143,34 +135,6 @@ class HostedPreviewSecurityMiddlewareV1(HostedSecurityMiddlewareV1):
             server_mutation_paths=_SERVER_MUTATION_PATHS,
             abuse=abuse,
         )
-
-
-def _verify_synthetic_scope(connection: Any) -> None:
-    """Verify provider-seeded Phase-4 fixture without using it as auth authority."""
-
-    created = datetime(2026, 8, 21, tzinfo=timezone.utc)
-    user_payload: dict[str, object] = {
-        "schema_version": "1.0",
-        "identity_version": 1,
-        "user_id": PREVIEW_USER_ID,
-        "tenant_id": PREVIEW_TENANT_ID,
-        "role": "user",
-        "created_at": created.isoformat(),
-    }
-    row = connection.execute(
-        "SELECT tenant_id, schema_version, identity_version, role, record_sha256 "
-        "FROM omni_cio_v10.users WHERE user_id = %s",
-        (PREVIEW_USER_ID,),
-    ).fetchone()
-    expected = (
-        PREVIEW_TENANT_ID,
-        "1.0",
-        1,
-        "user",
-        _record_sha256(user_payload),
-    )
-    if row != expected:
-        raise RuntimeError("HOSTED_PREVIEW_SYNTHETIC_SCOPE_DRIFT")
 
 
 _PREVIEW_DATABASE_ERRORS = {

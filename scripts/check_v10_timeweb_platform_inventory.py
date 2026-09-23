@@ -101,6 +101,7 @@ _STATIC_EVIDENCE_PATHS = frozenset(
 _MAX_SCANNED_SOURCE_BYTES = 1_000_000
 _RETIRED_EXECUTION_MARKERS = (
     "from apps.api.cf_d_database_bootstrap import",
+    "from apps.api.hosted_preview import",
     "RENDER_EXTERNAL_HOSTNAME",
     "RENDER_GIT_COMMIT",
     "from omni_cio.web.vk_id_oauth_v1 import",
@@ -447,6 +448,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
         "omni_cio/observability/hosted_readiness_v1.py",
         "omni_cio/persistence/_hosted_recovery_contract_v1.py",
         "omni_cio/persistence/hosted_postgres_runtime_v1.py",
+        "omni_cio/persistence/hosted_synthetic_scope_v1.py",
         "omni_cio/web/browser_security_v1.py",
         "omni_cio/web/identity_v1.py",
         "omni_cio/web/telegram_auth_routes_v1.py",

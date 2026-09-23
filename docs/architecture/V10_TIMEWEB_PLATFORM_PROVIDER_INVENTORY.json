@@ -213,7 +213,11 @@
     },
     "scripts/rehearse_v10_wp22a_phase4_runtime_role.py": {
       "classification": "KEEP",
-      "reason": "Current runtime-role rehearsal uses provider-neutral PostgreSQL role convergence."
+      "reason": "Current runtime-role rehearsal uses provider-neutral PostgreSQL role convergence and synthetic-scope helpers only."
+    },
+    "omni_cio/persistence/hosted_synthetic_scope_v1.py": {
+      "classification": "KEEP",
+      "reason": "Current provider-neutral synthetic identity fixture shared by PostgreSQL rehearsal and historical compatibility wrapper."
     },
     "scripts/check_v10_ru_public_registration_ingress.py": {
       "classification": "KEEP",
