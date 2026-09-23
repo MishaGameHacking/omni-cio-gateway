@@ -93,6 +93,10 @@ jobs:
           python scripts/windows_ci_lock.py project
           requirements-dev.txt windows-requirements-dev.txt
 
+      - name: Verify T-Bank package CA trust before dependency install
+        shell: cmd
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\check_v10_tbank_ca_trust.ps1 -AsJson
+
       - name: Install hash-locked dependencies
         run: >-
           python -m pip install --disable-pip-version-check

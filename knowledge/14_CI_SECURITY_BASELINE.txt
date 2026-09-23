@@ -23,6 +23,11 @@ Dependency supply chain
 - Generated locks are never edited manually.
 - Dependency upgrades use a dedicated compatibility PR, regenerated locks and full Regression Shield.
 - The private `t-tech-investments` package must resolve from the configured T-Bank package index; an unrelated public package is not a substitute.
+- Windows dependency CI uses an ephemeral pip CA bundle: pip's vendored certifi roots plus the source-controlled Russian Trusted Root CA after exact DER SHA-256 pin verification.
+- The bundle is published only through `PIP_CERT`; certificate and hostname verification remain enabled and ordinary public certifi roots remain present.
+- CI does not require or mutate `LocalMachine` certificate stores. The reviewed OWNER/Administrator provisioner remains an optional system-trust recovery boundary for non-pip consumers.
+- Every self-hosted Windows workflow that installs `windows-requirements-dev.txt` must run the read-only T-Bank CA trust preflight before pip dependency installation.
+- Certificate/hostname verification and package-source substitution are forbidden recovery shortcuts.
 
 GitHub Actions supply chain
 ---------------------------
