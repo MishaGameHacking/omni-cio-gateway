@@ -6,6 +6,8 @@
 
 DO $hosted_user$
 DECLARE
+    runtime_role_name CONSTANT text := 'omni_cio_hosted_api';
+    app_schema_name CONSTANT text := 'omni_cio_v10';
     runtime_user pg_catalog.pg_roles%ROWTYPE;
     bootstrap_user_oid oid;
     runtime_member_count bigint;
@@ -14,7 +16,7 @@ BEGIN
     SELECT *
     INTO runtime_user
     FROM pg_catalog.pg_roles
-    WHERE rolname = 'omni_cio_hosted_api';
+    WHERE rolname = runtime_role_name;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'HOSTED_API_USER_NOT_PROVISIONED'
@@ -75,7 +77,7 @@ BEGIN
         WHERE EXISTS (
             SELECT 1
             FROM pg_catalog.pg_namespace schema_record
-            WHERE schema_record.nspname = 'omni_cio_v10'
+            WHERE schema_record.nspname = app_schema_name
             AND schema_record.nspowner = runtime_user.oid
         )
         UNION ALL
@@ -86,7 +88,7 @@ BEGIN
                 FROM pg_catalog.pg_class relation_record
                 JOIN pg_catalog.pg_namespace schema_record
                     ON schema_record.oid = relation_record.relnamespace
-                WHERE schema_record.nspname = 'omni_cio_v10'
+                WHERE schema_record.nspname = app_schema_name
                 AND relation_record.relowner = runtime_user.oid
             )
             OR EXISTS (
@@ -94,7 +96,7 @@ BEGIN
                 FROM pg_catalog.pg_proc function_record
                 JOIN pg_catalog.pg_namespace schema_record
                     ON schema_record.oid = function_record.pronamespace
-                WHERE schema_record.nspname = 'omni_cio_v10'
+                WHERE schema_record.nspname = app_schema_name
                 AND function_record.proowner = runtime_user.oid
             )
     ) AS violation
@@ -108,11 +110,13 @@ END;
 $hosted_user$;
 
 DO $database_privileges$
+DECLARE
+    runtime_role_name CONSTANT text := 'omni_cio_hosted_api';
 BEGIN
     EXECUTE pg_catalog.format(
         'REVOKE ALL PRIVILEGES ON DATABASE %I FROM %I',
         pg_catalog.current_database(),
-        'omni_cio_hosted_api'
+        runtime_role_name
     );
     EXECUTE pg_catalog.format(
         'REVOKE CREATE, TEMPORARY ON DATABASE %I FROM PUBLIC',
@@ -121,7 +125,7 @@ BEGIN
     EXECUTE pg_catalog.format(
         'GRANT CONNECT ON DATABASE %I TO %I',
         pg_catalog.current_database(),
-        'omni_cio_hosted_api'
+        runtime_role_name
     );
 END;
 $database_privileges$;

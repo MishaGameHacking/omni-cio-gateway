@@ -680,6 +680,8 @@ def _validate_current_guidance() -> None:
         "TIMEWEB_CONSOLIDATION_DATA_INVENTORY_AUTHORITY_DRIFT",
     )
     _validate_current_security_guidance()
+
+
 def _validate_documents() -> None:
     amendment = _read(AMENDMENT)
     ledger = _read(LEDGER)

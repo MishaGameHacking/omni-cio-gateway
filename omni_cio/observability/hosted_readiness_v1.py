@@ -309,7 +309,10 @@ def _validated_dependency_state(
         raise HostedReadinessContractError("HOSTED_HEALTH_STATE_INVALID")
     if state == "NOT_APPLICABLE" and domain != "broker_external":
         raise HostedReadinessContractError("HOSTED_HEALTH_CORE_DOMAIN_NOT_APPLICABLE")
-    if not isinstance(reason_code, str) or reason_pattern.fullmatch(reason_code) is None:
+    if (
+        not isinstance(reason_code, str)
+        or reason_pattern.fullmatch(reason_code) is None
+    ):
         raise HostedReadinessContractError("HOSTED_HEALTH_REASON_CODE_INVALID")
     return domain, state
 
@@ -374,6 +377,8 @@ def validate_hosted_health_evidence(
         dependencies,
         reason_pattern=reason_pattern,
     )
+
+
 def aggregate_hosted_runtime_state(
     evidence: Mapping[str, Any],
     *,

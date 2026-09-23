@@ -22,7 +22,7 @@ from omni_cio.web.browser_security_v1 import (
     BROWSER_SESSION_COOKIE,
     BrowserCookiePolicyV1,
 )
-from omni_cio.web.telegram_auth_services_v1 import TelegramAuthRouteServicesV1
+from omni_cio.web.identity_v1 import IdentityProviderV1, ProviderDescriptorV1
 from omni_cio.web.request_limits_v1 import (
     HostedRequestAbuseControlV1,
     is_session_token_candidate,
@@ -64,13 +64,22 @@ class SessionRegistryLike(Protocol):
     def revoke_all_for_user(self, user_id: str, *, now: datetime) -> int: ...
 
 
+class HostedProviderAuthServicesLike(Protocol):
+    cookies: BrowserCookiePolicyV1
+    registration_enabled: bool
+
+    def descriptors(self) -> tuple[ProviderDescriptorV1, ...]: ...
+
+    def disabled_reason(self, provider: IdentityProviderV1) -> str | None: ...
+
+
 @dataclass(slots=True)
 class HostedRuntimeServicesV1:
     sessions: SessionRegistryLike
     database_probe: Callable[[], None]
     hostname: str
     release_sha: str
-    provider_auth: TelegramAuthRouteServicesV1
+    provider_auth: HostedProviderAuthServicesLike
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     browser_origin_hostname: str | None = None
     synthetic_preview: bool = False
@@ -78,6 +87,7 @@ class HostedRuntimeServicesV1:
     git_sha_source: str = "OMNI_V10_RELEASE_SHA"
     last_deploy_source: str = "HOSTED_RUNTIME"
     web_artifact_source: str = "GITHUB_SOURCE_BUILD"
+    database_label: str = "PostgreSQL 18"
 
 
 def _utc(value: datetime) -> datetime:
@@ -485,7 +495,7 @@ def _system_status(
             },
             {
                 "id": "database",
-                "label": "PostgreSQL 18",
+                "label": services.database_label,
                 "state": "READY",
                 "availability": "AVAILABLE",
                 "detail": "Least-privilege runtime and session storage verified.",
@@ -510,7 +520,7 @@ class _HostedRuntimeRoutesV1:
     def __init__(
         self,
         services: HostedRuntimeServicesV1,
-        provider_auth: TelegramAuthRouteServicesV1,
+        provider_auth: HostedProviderAuthServicesLike,
         web_dist: Path,
     ) -> None:
         self._services = services
@@ -714,10 +724,13 @@ class _HostedRuntimeRoutesV1:
 def _register_hosted_routes(
     app: FastAPI,
     routes: _HostedRuntimeRoutesV1,
+    *,
+    include_livez: bool,
 ) -> None:
     app.add_exception_handler(_HostedAuthenticationRequired, _authentication_required)
     app.add_exception_handler(Exception, routes.unhandled_exception)
-    app.add_api_route(_LIVEZ_PATH, routes.livez, methods=["GET"])
+    if include_livez:
+        app.add_api_route(_LIVEZ_PATH, routes.livez, methods=["GET"])
     app.add_api_route(_HEALTHZ_PATH, routes.healthz, methods=["GET"])
     app.add_api_route(HOSTED_STATUS_PATH, routes.preview_mode, methods=["GET"])
     app.add_api_route("/api/v10/web/session", routes.session_view, methods=["GET"])
@@ -819,6 +832,7 @@ def create_hosted_app(
     trusted_edge_tls_terminated: bool = False,
     provider_start_paths: frozenset[str] = frozenset(),
     server_mutation_paths: frozenset[str] = frozenset(),
+    include_livez: bool = True,
     provider_route_installer: Callable[..., None],
 ) -> FastAPI:
     hostname = _validate_hosted_runtime_inputs(
@@ -841,7 +855,7 @@ def create_hosted_app(
     assets = web_dist / "assets"
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=assets), name="web-assets")
-    _register_hosted_routes(app, routes)
+    _register_hosted_routes(app, routes, include_livez=include_livez)
 
     app.add_middleware(
         HostedSecurityMiddlewareV1,
