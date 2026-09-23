@@ -52,6 +52,17 @@ def _flag(environment: Mapping[str, str], name: str) -> bool:
     raise TelegramAuthConfigurationError(f"{name}_INVALID")
 
 
+def _require_activation_pair(
+    *,
+    public_enabled: bool,
+    login_enabled: bool,
+) -> None:
+    if public_enabled != login_enabled:
+        raise TelegramAuthConfigurationError(
+            "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH"
+        )
+
+
 def _key(environment: Mapping[str, str], name: str) -> bytes:
     value = _value(environment, name)
     if _HEX_32_PATTERN.fullmatch(value) is None:
@@ -103,6 +114,10 @@ def build_telegram_provider_auth(
     configured = bool(client_id)
     public_enabled = _flag(environment, _PUBLIC_MULTI_USER_ENABLED)
     login_enabled = _flag(environment, _TELEGRAM_LOGIN_ENABLED)
+    _require_activation_pair(
+        public_enabled=public_enabled,
+        login_enabled=login_enabled,
+    )
     if login_enabled and not configured:
         raise TelegramAuthConfigurationError(
             "TELEGRAM_AUTH_ACTIVATION_CONFIGURATION_REQUIRED"

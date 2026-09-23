@@ -109,7 +109,15 @@
     "submitted_is_not_filled_without_broker_evidence": true,
     "transfer_withdrawal_authority": false,
     "margin_leverage_authority": false,
-    "uncovered_short_authority": false
+    "uncovered_short_authority": false,
+    "trading_methods_is_global_master_switch": false,
+    "read_only_contours_require_trading_methods_false": true,
+    "real_execution_surface_uses_real_trading_methods": true,
+    "timeweb_hosted_runtime_may_import_v9_real_trading_gateway": false,
+    "timeweb_hosted_runtime_may_consume_global_tinvest_trading_token": false,
+    "v10_real_execution_requires_tenant_scoped_trade_credential": true,
+    "v10_real_execution_requires_authenticated_server_session": true,
+    "v10_real_execution_is_mandatory_split_boundary": true
   },
   "secrets_and_tenants": {
     "raw_provider_secrets_in_github_ci_chat_allowed": false,
@@ -132,7 +140,8 @@
     "trading_methods": false,
     "broker_write": false,
     "REAL_TRADING_ENABLED": false,
-    "public_tinvest_state": "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
+    "public_tinvest_state": "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION",
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false
   },
   "working_ledgers": {
     "capability_ledger_required_for_material_activation_transition": true,

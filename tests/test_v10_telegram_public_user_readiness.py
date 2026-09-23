@@ -205,14 +205,31 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_guard_is_bound_to_current_timeweb_telegram_runtime(self) -> None:
+        self.assertEqual(guard.AUTH_RUNTIME, Path("apps/api/telegram_auth.py"))
+
+    def test_guard_rejects_partial_activation_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["activation_switch"]["partial_activation_allowed"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_SWITCH_INVALID",
+            ):
+                guard.validate(root)
+
     def test_guard_rejects_provider_neutral_activation_default_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
             path = root / guard.AUTH_RUNTIME
             source = path.read_text(encoding="utf-8").replace(
-                "if not value:\n        return False",
-                "if not value:\n        return True",
+                'if raw in {"", "0", "false"}:\n        return False',
+                'if raw in {"", "0", "false"}:\n        return True',
                 1,
             )
             path.write_text(source, encoding="utf-8")

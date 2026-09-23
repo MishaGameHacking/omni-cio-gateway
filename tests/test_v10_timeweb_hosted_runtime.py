@@ -15,7 +15,10 @@ from apps.api.hosted_database_runtime import (
     validate_hosted_runtime_role,
 )
 from apps.api.hosted_runtime import HOSTED_SESSION_POLICY
-from apps.api.telegram_auth import build_telegram_provider_auth
+from apps.api.telegram_auth import (
+    TelegramAuthConfigurationError,
+    build_telegram_provider_auth,
+)
 from omni_cio.web.browser_security_v1 import BrowserCookiePolicyV1
 from omni_cio.web.identity_v1 import (
     ORDINARY_LOGIN_PROVIDERS,
@@ -247,6 +250,39 @@ def test_telegram_builder_exposes_only_telegram_when_fail_closed() -> None:
         services.cookies.proof_cookie(IdentityProviderV1.VK_ID)
 
 
+def test_telegram_public_and_login_flags_must_transition_together() -> None:
+    for env in (
+        {"PUBLIC_MULTI_USER_ENABLED": "true"},
+        {"OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true"},
+    ):
+        with pytest.raises(
+            TelegramAuthConfigurationError,
+            match="TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
+        ):
+            build_telegram_provider_auth(
+                connection=object(),
+                sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
+                canonical_origin="https://omnicio.ru",
+                env=env,
+            )
+
+
+def test_telegram_activation_pair_requires_provider_configuration() -> None:
+    with pytest.raises(
+        TelegramAuthConfigurationError,
+        match="TELEGRAM_AUTH_ACTIVATION_CONFIGURATION_REQUIRED",
+    ):
+        build_telegram_provider_auth(
+            connection=object(),
+            sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
+            canonical_origin="https://omnicio.ru",
+            env={
+                "PUBLIC_MULTI_USER_ENABLED": "true",
+                "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true",
+            },
+        )
+
+
 def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     root = Path(__file__).resolve().parents[1]
     current_sources = (
@@ -269,6 +305,14 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     )
     combined = "\n".join(path.read_text(encoding="utf-8") for path in current_sources)
     for marker in forbidden:
+        assert marker not in combined
+
+    for marker in (
+        "omni_cio.real_trading",
+        "TINVEST_TRADING_TOKEN",
+        "REAL_TRADING_ENABLED",
+        "PostOrder",
+    ):
         assert marker not in combined
 
     runtime = current_sources[0].read_text(encoding="utf-8")

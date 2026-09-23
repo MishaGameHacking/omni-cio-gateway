@@ -127,5 +127,18 @@
     "bot_start_required_for_login": false,
     "telegram_bot_access_scope_requested_during_login": false,
     "bot_linking_implementation_owner": "WP23_PLUS_SEPARATE_CAPABILITY"
+  },
+  "activation_switch": {
+    "current_public_multi_user_enabled": false,
+    "current_telegram_login_enabled": false,
+    "target_after_tw_f_acceptance": {
+      "PUBLIC_MULTI_USER_ENABLED": true,
+      "OMNI_V10_TELEGRAM_LOGIN_ENABLED": true
+    },
+    "must_transition_together": true,
+    "partial_activation_allowed": false,
+    "runtime_source": "apps/api/telegram_auth.py",
+    "runtime_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+    "source_hardcoded_true_allowed": false
   }
 }

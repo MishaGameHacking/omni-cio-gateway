@@ -19,7 +19,7 @@ TRANSACTION_MIGRATION = Path(
     "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql"
 )
 LIMITS = Path("omni_cio/web/request_limits_v1.py")
-AUTH_RUNTIME = Path("apps/api/wp22a_phase5_auth.py")
+AUTH_RUNTIME = Path("apps/api/telegram_auth.py")
 
 _EXPECTED_BASE_MAIN_SHA_SEGMENTS = (
     "e8e583f3",
@@ -80,6 +80,20 @@ _EXPECTED_IDENTITY_BOT_SEPARATION = {
     "bot_start_required_for_login": False,
     "telegram_bot_access_scope_requested_during_login": False,
     "bot_linking_implementation_owner": "WP23_PLUS_SEPARATE_CAPABILITY",
+}
+
+_EXPECTED_ACTIVATION_SWITCH = {
+    "current_public_multi_user_enabled": False,
+    "current_telegram_login_enabled": False,
+    "target_after_tw_f_acceptance": {
+        "PUBLIC_MULTI_USER_ENABLED": True,
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": True,
+    },
+    "must_transition_together": True,
+    "partial_activation_allowed": False,
+    "runtime_source": "apps/api/telegram_auth.py",
+    "runtime_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+    "source_hardcoded_true_allowed": False,
 }
 
 _EXPECTED_CAPACITY = {
@@ -296,6 +310,18 @@ def _validate_identity_bot_separation(contract: dict[str, Any]) -> None:
     )
 
 
+def _validate_activation_switch(contract: dict[str, Any]) -> None:
+    activation = _mapping(
+        contract.get("activation_switch"),
+        "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_SWITCH_INVALID",
+    )
+    _require_equal(
+        activation,
+        _EXPECTED_ACTIVATION_SWITCH,
+        "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_SWITCH_INVALID",
+    )
+
+
 def _validate_capacity(contract: dict[str, Any]) -> None:
     capacity = _mapping(
         contract.get("capacity_and_abuse"),
@@ -395,6 +421,7 @@ def _validate_contract(contract: dict[str, Any]) -> None:
     _validate_provider_secret_readiness(contract)
     _validate_data_minimization(contract)
     _validate_identity_bot_separation(contract)
+    _validate_activation_switch(contract)
     _validate_capacity(contract)
     _validate_operations(contract)
     _validate_legal_gate(contract)
@@ -503,11 +530,12 @@ def _validate_provider_neutral_activation_defaults(root: Path) -> None:
         (
             '_PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"',
             '_TELEGRAM_LOGIN_ENABLED = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"',
-            '_VK_ID_LOGIN_ENABLED = "OMNI_V10_VK_ID_LOGIN_ENABLED"',
-            "def _flag(env: Mapping[str, str], name: str) -> bool:",
-            "if not value:\n        return False",
-            'if value == "true":\n        return True',
-            'if value == "false":\n        return False',
+            "def _flag(environment: Mapping[str, str], name: str) -> bool:",
+            'if raw in {"", "0", "false"}:\n        return False',
+            'if raw in {"1", "true"}:\n        return True',
+            "def _require_activation_pair(",
+            "if public_enabled != login_enabled:",
+            "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
         ),
         "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_DEFAULT_DRIFT",
     )
