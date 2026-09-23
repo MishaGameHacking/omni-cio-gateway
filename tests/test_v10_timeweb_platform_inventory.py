@@ -118,6 +118,10 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "scripts/postgres_runtime_primitives.py",
             "scripts/provider_runtime_primitives.py",
             "scripts/provision_v10_timeweb_postgres_synthetic.py",
+            "scripts/check_v10_timeweb_no_owner_laptop_dependency.py",
+            "tests/test_v10_timeweb_no_owner_laptop_dependency.py",
+            "docs/architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json",
+            "docs/master-plan/OMNI_CIO_V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_AMENDMENT.md",
         ):
             with self.subTest(path=path):
                 self.assertEqual(

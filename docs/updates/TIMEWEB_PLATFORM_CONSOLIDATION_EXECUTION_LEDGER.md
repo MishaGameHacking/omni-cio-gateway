@@ -252,6 +252,10 @@ Fast PR and authoritative Windows independently exposed one formatting-only defe
 
 The repeated WP17 RED was not a runtime defect: the old required check demanded exact-head Windows ACL evidence stored on the OWNER laptop. OWNER explicitly removed that manual-machine dependency from the Timeweb PR path on 2026-09-23. The systemic replacement does not suppress the control: current Timeweb composition is forbidden from importing the Windows vault, hosted broker mutation remains fail-closed, a GitHub-hosted source-security guard becomes the required WP17 check, and the original local ACL audit is retained as manual historical evidence. This change intentionally creates a new exact head and invalidates the earlier 23/24 evidence set; full certification must rerun.
 
+### Amendment 19 inventory-cardinality repair
+
+The Amendment 19 correction intentionally added four new Timeweb-named current surfaces (amendment, machine contract, guard and regression test). The TW-A provider inventory's exact provider-named cardinality therefore moved from 216 to 220. Engineering Governance correctly rejected the stale count with `TIMEWEB_INVENTORY_PROVIDER_SURFACE_COUNT_DRIFT`. The repair updates the exact count and explicitly classifies all four additions as `KEEP`; no minimum-count weakening or unclassified-provider bypass is introduced.
+
 ## 9. Integration-ready preflight
 
 - [ ] Current replacement checkpoint is `CERTIFIED_GREEN`.

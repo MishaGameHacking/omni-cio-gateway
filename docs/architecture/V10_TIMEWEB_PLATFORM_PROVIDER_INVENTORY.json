@@ -274,6 +274,22 @@
     "infrastructure/hosted/hosted-readiness-contract.json": {
       "classification": "KEEP",
       "reason": "Current provider-neutral hosted readiness contract."
+    },
+    "docs/master-plan/OMNI_CIO_V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_AMENDMENT.md": {
+      "classification": "KEEP",
+      "reason": "Current Amendment 19 authority removes manual OWNER-laptop dependency from the Timeweb PR path while preserving fail-closed hosted secret custody."
+    },
+    "docs/architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json": {
+      "classification": "KEEP",
+      "reason": "Current machine-readable Amendment 19 contract for the Timeweb no-OWNER-laptop source/security boundary."
+    },
+    "scripts/check_v10_timeweb_no_owner_laptop_dependency.py": {
+      "classification": "KEEP",
+      "reason": "Current deterministic Timeweb source-security verifier replacing the machine-local WP17 PR prerequisite."
+    },
+    "tests/test_v10_timeweb_no_owner_laptop_dependency.py": {
+      "classification": "KEEP",
+      "reason": "Current regression evidence for the Timeweb no-OWNER-laptop and fail-closed broker-custody boundary."
     }
   },
   "path_rules": [
@@ -429,7 +445,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 216,
+  "expected_provider_named_file_count": 220,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
