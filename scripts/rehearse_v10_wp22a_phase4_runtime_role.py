@@ -33,7 +33,6 @@ BOOTSTRAP_ROLE = "omni_phase4_bootstrap"
 RUNTIME_ROLE = "omni_cio_hosted_api"
 
 
-
 def _required_dsn() -> str:
     value = os.environ.get(DSN_ENV, "").strip()
     if not value:
