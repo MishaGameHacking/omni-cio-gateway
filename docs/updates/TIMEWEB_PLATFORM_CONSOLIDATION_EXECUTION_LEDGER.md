@@ -279,7 +279,9 @@ workflow assertions to the manual historical workflow, makes current Timeweb bro
 mutation remain fail-closed, and extends the no-OWNER-laptop guard so this split cannot
 silently regress. This is a contract/topology repair, not test weakening: historical
 DPAPI/ACL tests remain required and the active Timeweb gate gains stronger negative
-proof that it cannot depend on the local vault.
+proof that it cannot depend on the local vault. The current correction also normalizes
+the WP17 security guard to the pinned Ruff formatter after exact-head WP17 found three
+long-line layout drifts; no assertion, security check or test is weakened.
 
 ## 9. Integration-ready preflight
 

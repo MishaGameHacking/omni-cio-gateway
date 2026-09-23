@@ -158,7 +158,9 @@ def _validate_historical_read_vault(
         "runs-on: [self-hosted",
     ):
         if forbidden in active_workflow:
-            failures.append(f"Timeweb WP17 gate regained local-vault dependency: {forbidden}")
+            failures.append(
+                f"Timeweb WP17 gate regained local-vault dependency: {forbidden}"
+            )
 
     historical_workflow = HISTORICAL_OWNER_READ_VAULT_WORKFLOW.read_text(
         encoding="utf-8"
@@ -257,7 +259,9 @@ def _validate_historical_vault_surface(failures: list[str]) -> None:
     if r"secrets\read-broker\connections" not in vault_text:
         failures.append("historical connection vault lost accepted read-broker root")
     if "_CRYPTPROTECT_LOCAL_MACHINE = 0x4" not in vault_text:
-        failures.append("historical connection vault lost DPAPI LocalMachine protection")
+        failures.append(
+            "historical connection vault lost DPAPI LocalMachine protection"
+        )
 
 
 def _validate_timeweb_runtime_surface(failures: list[str]) -> None:
@@ -278,7 +282,9 @@ def _validate_timeweb_runtime_surface(failures: list[str]) -> None:
         "BROKER_CREDENTIALS_DISABLED_IN_HOSTED_RUNTIME",
     ):
         if marker not in hosted_app:
-            failures.append(f"Timeweb broker mutation fail-closed marker missing: {marker}")
+            failures.append(
+                f"Timeweb broker mutation fail-closed marker missing: {marker}"
+            )
 
 
 def _validate_persistence_surface(failures: list[str]) -> None:

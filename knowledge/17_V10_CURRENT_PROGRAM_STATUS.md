@@ -553,7 +553,7 @@ contract/guard/test path must state that OWNER/Admin ACL evidence does not block
 Timeweb PR, while the old DPAPI/ACL scripts and direct negative permission proof remain
 preserved behind the manual historical workflow. Hosted broker credential mutation
 continues fail-closed until an accepted tenant-scoped encrypted hosted custody backend
-exists. A replacement commit invalidates all prior exact-head evidence and must receive
+exists. WP17 exact-head then reached all Web/browser checks successfully and stopped only at Ruff formatting of three long `failures.append(...)` lines in the new security guard. The correction is formatter-only and preserves every assertion. A replacement commit invalidates all prior exact-head evidence and must receive
 a fresh complete certification batch before TW-B can leave `RED_REPAIR_ONLY`.
 
 ## Current next action

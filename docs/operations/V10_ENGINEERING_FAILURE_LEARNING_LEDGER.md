@@ -458,7 +458,9 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 **Symptom / failing gate:** the new GitHub-hosted Timeweb WP17 source-security check
 passed, but WP17 Application Shell and WP15 Live Web Support both failed the same
 historical READ-vault test. Fast and authoritative gates also found formatter drift in
-the newly added Amendment-19 guard/test.
+the newly added Amendment-19 guard/test. WP17 later confirmed a third formatting drift
+in `scripts/check_v10_wp17_web_security.py` after all preceding Web, browser and npm-audit
+steps had passed.
 
 **Root cause:** the active workflow producer was correctly replaced, but directly coupled
 consumers were not closed in the same coherent batch. The WP17 contract, Web-security
@@ -482,7 +484,7 @@ consumer assertion was executed.
 local DPAPI custody in the WP17 contract; keep hosted broker mutation disabled; move
 Windows ACL workflow assertions to the manual historical workflow; update the WP17
 security guard and runbooks; strengthen the no-OWNER-laptop regression; normalize the
-new Python files to the pinned Ruff format.
+new Python files and the WP17 security guard to the pinned Ruff format.
 
 **Permanent regression/guard:** the Timeweb no-OWNER-laptop guard now verifies the active
 WP17 contract, active WP17 security guard, hosted runtime, GitHub-hosted required workflow
