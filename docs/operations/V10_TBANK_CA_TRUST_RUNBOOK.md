@@ -18,7 +18,9 @@ builds an ephemeral PEM bundle from:
 
 The checker then publishes that merged bundle only as `PIP_CERT` for later pip
 steps in the same GitHub Actions job and probes the exact official T-Bank index
-with certificate and hostname verification enabled.
+with certificate and hostname verification enabled. `GITHUB_ENV` propagation is
+job-local: a second job that installs the same dependency projection must run
+its own CA preflight before its first hash-locked install.
 
 The Windows `LocalMachine` provisioner remains available only for an
 environment that explicitly needs system trust outside this pip boundary. It is
@@ -141,8 +143,10 @@ GitHub Runner's job-temporary directory owns the generated file. No no-op commit
 or administrator action is required when the source boundary is healthy.
 
 After a source correction, verify the new exact head. If the checker returns
-`TBANK_PACKAGE_INDEX_TLS_READY`, allow the same workflow batch to continue
-through the normal hash-locked installs and all later quality/security gates.
+`TBANK_PACKAGE_INDEX_TLS_READY`, allow the same job to continue through its
+normal hash-locked installs and later gates. Every independent Windows job that
+installs `windows-requirements-dev.txt` must run its own checker first; a
+successful preflight in another job is not transferable evidence.
 
 If the checker remains RED, do not use `--trusted-host`, `--insecure`,
 disabled hostname verification, a different public package, another package

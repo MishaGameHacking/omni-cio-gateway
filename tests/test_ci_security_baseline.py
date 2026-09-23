@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import re
 
@@ -439,3 +440,81 @@ def test_detect_secrets_validator_allows_only_verified_tbank_public_root_pin(
         "potential secret: docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json:4 "
         "(Hex High Entropy String)"
     ]
+
+
+def test_windows_dependency_preflight_validator_is_job_local(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow_directory = tmp_path / ".github" / "workflows"
+    contract_path = (
+        tmp_path / "docs" / "architecture" / "V10_TBANK_CA_TRUST_CONTRACT.json"
+    )
+    workflow_directory.mkdir(parents=True)
+    contract_path.parent.mkdir(parents=True)
+
+    workflow_path = workflow_directory / "regression-shield.yml"
+    workflow_path.write_text(
+        "jobs:\n"
+        "  quality:\n"
+        "    runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+        "    steps:\n"
+        "      - run: " + baseline.TBANK_CA_PREFLIGHT_PROCESS + "\n"
+        "      - run: python -m pip install "
+        + baseline.WINDOWS_DEV_INSTALL_MARKER
+        + "\n"
+        "  security:\n"
+        "    runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+        "    steps:\n"
+        "      - run: python -m pip install "
+        + baseline.WINDOWS_DEV_INSTALL_MARKER
+        + "\n",
+        encoding="utf-8",
+    )
+    contract_path.write_text(
+        json.dumps(
+            {
+                "verification": {
+                    "dependency_install_boundary": "JOB_LOCAL",
+                    "every_windows_dependency_install_job_requires_preflight": True,
+                    "windows_dependency_install_jobs": [
+                        {
+                            "workflow": ".github/workflows/regression-shield.yml",
+                            "job": "quality",
+                        },
+                        {
+                            "workflow": ".github/workflows/regression-shield.yml",
+                            "job": "security",
+                        },
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+    monkeypatch.setattr(baseline, "WORKFLOW_DIRECTORY", workflow_directory)
+
+    failures: list[str] = []
+    baseline.validate_windows_dependency_preflights(failures)
+
+    assert failures == [
+        ".github/workflows/regression-shield.yml::security "
+        "must invoke the T-Bank CA preflight exactly once"
+    ]
+
+    workflow_path.write_text(
+        workflow_path.read_text(encoding="utf-8").replace(
+            "  security:\n"
+            "    runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+            "    steps:\n",
+            "  security:\n"
+            "    runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+            "    steps:\n"
+            "      - run: " + baseline.TBANK_CA_PREFLIGHT_PROCESS + "\n",
+        ),
+        encoding="utf-8",
+    )
+    failures = []
+    baseline.validate_windows_dependency_preflights(failures)
+    assert failures == []

@@ -75,7 +75,71 @@
       "certificate_verification_enabled": true,
       "hostname_verification_enabled": true
     },
-    "package_index_tls_probe_cert_source": "ephemeral_pip_cert_bundle"
+    "package_index_tls_probe_cert_source": "ephemeral_pip_cert_bundle",
+    "dependency_install_boundary": "JOB_LOCAL",
+    "windows_dependency_install_jobs": [
+      {
+        "workflow": ".github/workflows/regression-shield.yml",
+        "job": "quality-and-regression"
+      },
+      {
+        "workflow": ".github/workflows/regression-shield.yml",
+        "job": "security"
+      },
+      {
+        "workflow": ".github/workflows/self-hosted-windows-smoke.yml",
+        "job": "authoritative"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp13-postgresql-audit.yml",
+        "job": "audit"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp14-durable-jobs-audit.yml",
+        "job": "audit"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp15-live-web-support-audit.yml",
+        "job": "support-audit"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp15-tinvest-read-audit.yml",
+        "job": "audit"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp17-application-shell-audit.yml",
+        "job": "application-shell"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp18-portfolio-dashboard-audit.yml",
+        "job": "portfolio-dashboard"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp19-watchtower-incidents-audit.yml",
+        "job": "watchtower-incidents"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp20-research-dossier-audit.yml",
+        "job": "research-dossier"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp21-decision-risk-plan-audit.yml",
+        "job": "decision-plan"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp22-system-admin-audit.yml",
+        "job": "system-admin"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+        "job": "wp22a-clientless"
+      },
+      {
+        "workflow": ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml",
+        "job": "phase2-product-auth-tenant"
+      }
+    ],
+    "every_windows_dependency_install_job_requires_preflight": true
   },
   "protected_invariants": {
     "gateway_entrypoint": "app:app",

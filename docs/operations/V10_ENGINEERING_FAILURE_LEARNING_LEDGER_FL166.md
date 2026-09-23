@@ -287,3 +287,100 @@ must pass source/governance checks, build and verify the pinned ephemeral pip CA
 bundle, reach the official T-Bank package index with TLS verification enabled,
 then pass every applicable GitHub-native check. The squash-merged exact new main
 must pass post-merge Regression Shield.
+
+
+## Post-merge Regression Shield job-local consumer defect
+
+Squash-merged main `ce59d8e009b4ae9287cb657604e322223d554ab8`
+proved the #585 CA mechanism itself: Regression Shield run `35845076893`
+completed `Quality, contracts and coverage` successfully, including the
+T-Bank CA preflight and hash-locked dependency install. The independent
+`Dependency, code and secret security` job failed while installing the same
+`windows-requirements-dev.txt` projection and reproduced
+`SSLCertVerificationError` against the official T-Bank package index.
+
+Root cause: the project-wide consumer guard modeled one preflight per workflow
+file. `regression-shield.yml` contains two independent self-hosted Windows
+jobs that each create a fresh virtual environment and install the protected
+dependency projection. The first job published `PIP_CERT` through its own
+`GITHUB_ENV`, but that environment-file state is available only to subsequent
+steps in the same job. The second job therefore had no CA bundle.
+
+Systemic correction:
+
+- define the dependency trust boundary as `JOB_LOCAL`;
+- inventory every exact workflow/job pair that installs the Windows development
+  projection;
+- require one read-only CA preflight inside each such job before its first
+  hash-locked install;
+- make `scripts/check_ci_security_baseline.py` independently discover install
+  jobs across all workflow files and fail on undeclared, missing, duplicate or
+  late preflights;
+- strengthen the independent CA regression test to compare the machine-readable
+  job inventory with repository discovery;
+- keep TLS and hostname verification enabled, keep the official T-Bank package
+  source and hashes unchanged, and do not mutate `LocalMachine` trust.
+
+This closes the guard-design defect that allowed one workflow-level preflight to
+mask an unprotected sibling job.
+
+
+## PR #586 first DRAFT verification batch
+
+Exact head `93b8ec793e9f20ad0136255fb48143be8596d605` completed the
+whole first DRAFT verification batch. All applicable checks reached terminal
+state. The T-Bank CA correction itself was exercised successfully across the
+Windows dependency-install consumers, including the authoritative dependency
+installation and the formerly unprotected sibling jobs.
+
+Two checks were RED for one shared source-format defect only:
+
+- Fast policy and source contracts;
+- V10 authoritative merge gate.
+
+Both failed because Ruff format would rewrite only the newly changed regression
+test source. The remaining applicable GitHub-native checks completed
+successfully, including SonarQube Cloud, Engineering Governance, toolchain
+compatibility, the Windows smoke lane and the WP17-WP22A audits.
+
+The same batch exposed one non-blocking Sonar maintainability finding on the
+new workflow job-key regular expression. The correction batch therefore does
+both source-quality repairs together:
+
+- apply the exact Ruff canonical formatting reported by both failing jobs;
+- replace the workflow job-key regular expression with bounded plain-string
+  parsing for the repository's allowed unquoted job-id grammar.
+
+No dependency, package source, TLS policy, authentication, tenant, provider,
+broker or Real-money authority changes are included. Fresh exact-head
+verification is required because this correction creates a replacement SHA.
+
+
+## PR #586 second DRAFT verification batch
+
+Replacement head `bf5dee0a4e4fad5b1eac6e74085dcd7d16f5e06a`
+completed every GitHub-native check successfully except SonarQube Cloud.
+Fast policy/source contracts, the authoritative merge gate, Windows smoke,
+Engineering Governance, toolchain compatibility and all triggered WP audits
+were GREEN.
+
+SonarQube Cloud failed only the new-code duplication gate: **11.6%**, above the
+required **3%**. No security hotspot or runtime/test failure was reported.
+
+Root cause: the new job-local guard introduced a workflow job-block parser in
+`scripts/check_ci_security_baseline.py`, while the T-Bank contract regression
+test carried a second near-identical parser implementation. That duplicate
+verifier logic increased new-code duplication and also created an unnecessary
+risk that the two parsers could drift semantically.
+
+Systemic correction:
+
+- keep one canonical bounded parser in the CI/security baseline guard;
+- have the T-Bank contract regression reuse that parser only for job-block
+  segmentation, while retaining independent workflow enumeration, consumer
+  filtering, contract equality and preflight-order assertions;
+- retain the dedicated unit test that proves the canonical guard detects a
+  sibling job missing its preflight.
+
+No quality threshold is changed or suppressed. Fresh exact-head verification
+must prove Sonar duplication returns within the existing gate.
