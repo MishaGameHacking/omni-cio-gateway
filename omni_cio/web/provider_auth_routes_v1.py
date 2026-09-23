@@ -72,6 +72,10 @@ class ProviderAuthRouteServicesV1:
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     disabled_reasons: Mapping[IdentityProviderV1, str] = field(default_factory=dict)
     registration_enabled: bool = False
+    descriptor_providers: tuple[IdentityProviderV1, ...] = (
+        IdentityProviderV1.TELEGRAM,
+        IdentityProviderV1.VK_ID,
+    )
     abuse: ProviderAuthAbuseControlV1 = field(
         default_factory=ProviderAuthAbuseControlV1
     )
@@ -89,6 +93,10 @@ class ProviderAuthRouteServicesV1:
             raise ValueError("PROVIDER_AUTH_AUTHENTICATION_REQUIRED")
         if self.registration_enabled and self.authentication is None:
             raise ValueError("PROVIDER_AUTH_REGISTRATION_REQUIRES_AUTHENTICATION")
+        if len(self.descriptor_providers) != len(set(self.descriptor_providers)):
+            raise ValueError("PROVIDER_AUTH_DESCRIPTOR_PROVIDER_DUPLICATE")
+        if any(provider not in set(IdentityProviderV1) for provider in self.descriptor_providers):
+            raise ValueError("PROVIDER_AUTH_DESCRIPTOR_PROVIDER_INVALID")
         blocked = set(self.disabled_reasons)
         if blocked - set(IdentityProviderV1):
             raise ValueError("PROVIDER_AUTH_DISABLED_PROVIDER_INVALID")
@@ -125,7 +133,7 @@ class ProviderAuthRouteServicesV1:
                     else ProviderAvailabilityV1.NOT_CONFIGURED
                 ),
             )
-            for provider in (IdentityProviderV1.TELEGRAM, IdentityProviderV1.VK_ID)
+            for provider in self.descriptor_providers
         )
 
 
