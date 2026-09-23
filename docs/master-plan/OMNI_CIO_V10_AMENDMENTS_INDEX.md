@@ -363,6 +363,20 @@ Locks the 2026-09-21 OWNER final simplification direction:
 
 Amendment 18 supersedes Amendments 14/15 only for current/future provider selection and release target. Their accepted Cloudflare evidence remains historical. It also narrows human product login from Telegram/VK to Telegram only. It does not activate users, mutate providers or authorize Real money.
 
+### 19. Timeweb No-OWNER-Laptop Manual Dependency
+
+`OMNI_CIO_V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json`;
+- `../../scripts/check_v10_timeweb_no_owner_laptop_dependency.py`;
+- `../../tests/test_v10_timeweb_no_owner_laptop_dependency.py`;
+- `.github/workflows/v10-wp17-owner-read-vault-audit.yml`;
+- `.github/workflows/v10-wp17-local-read-vault-historical-audit.yml`.
+
+Locks the 2026-09-23 OWNER direction that Timeweb consolidation must not require manual Administrator-shell work on the OWNER laptop merely to advance a PR. The Windows WP17 READ-vault/ACL evidence remains historical/local-only. Current Timeweb source must not depend on that vault, live broker credential mutation remains fail-closed until hosted tenant secret custody is accepted, and the required WP17 check becomes a deterministic hosted source-security audit rather than a machine-local ACL proof. This amendment does not activate public users, broker write, Real money, WEB-VISUAL or WP23+.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.

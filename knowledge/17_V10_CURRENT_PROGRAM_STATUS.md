@@ -529,6 +529,12 @@ Current TW-B exact-head RED evidence on `c74e0ad8394076b866119c642e63bbe81b1bc68
 
 Canonical product authentication is `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`. Registration/login does not require a bot chat, `/start`, a bot-link record or `telegram:bot_access`; the source scope remains exactly `openid`. Telegram's BotFather-managed login application registration is provider client metadata, not product bot linkage. The optional Omni-CIO Telegram bot is a distinct future WP23+ companion capability and may be linked only after an Omni-CIO account and authenticated server-side session already exist. It cannot create accounts, mint/select tenants or replace Telegram Login.
 
+## Amendment 19 — no manual OWNER-laptop dependency for the Timeweb PR path
+
+OWNER explicitly directed on 2026-09-23 that Timeweb consolidation continue without requiring manual commands on the personal laptop. The prior WP17 `WP17_OWNER_EVIDENCE_HEAD_DRIFT` result remains valid historical evidence about the local Windows vault, but that local vault is not part of the deployed Timeweb runtime. Amendment 19 therefore supersedes the machine-local ACL proof as a blocking Timeweb PR prerequisite. The required check name is retained for branch-protection continuity and now proves, on a GitHub-hosted runner, that current Timeweb source has no Windows-vault dependency and that hosted broker credential mutation remains fail-closed until a tenant-scoped encrypted hosted backend passes its own gate. The old Windows audit is preserved as manual historical evidence only. No broker secret, provider secret or private payload is moved into GitHub by this transition.
+
+A new commit implementing Amendment 19 invalidates all earlier exact-head GREEN evidence by design. The branch returns to `PENDING` for a complete fresh exact-head verification batch; TW-C remains blocked until that replacement head is fully GREEN and accepted.
+
 ## Current next action
 
 1. finish TW-B exact-head verification only on `system/timeweb-platform-consolidation-tw-b`, based on accepted main `26bdc17c4e5d68c262f47b999e975b1eb8651858`;

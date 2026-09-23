@@ -248,6 +248,10 @@ Official references rechecked:
 
 Fast PR and authoritative Windows independently exposed one formatting-only defect in the two new Docker trust tests. Authoritative Windows then reached SAST and found Bandit B314/CWE-20 in the new whole-repository XML parser. Root cause is verifier threat-model expansion without parser hardening: repository XML is verifier input and must be treated as hostile. The first correction incorrectly imported `defusedxml` into a governance guard that runs before dependency installation and therefore failed with `ModuleNotFoundError`. The systemic correction instead reuses the repository's accepted dependency-free Expat hardening pattern with parameter entities disabled and DTD/entity/external-entity rejection, while retaining the malicious-DTD/entity regression and exact Ruff formatting; no scanner suppression or assertion weakening is allowed. WP17 OWNER evidence remains a separate exact-head binding blocker.
 
+### OWNER-laptop manual dependency removal — Amendment 19
+
+The repeated WP17 RED was not a runtime defect: the old required check demanded exact-head Windows ACL evidence stored on the OWNER laptop. OWNER explicitly removed that manual-machine dependency from the Timeweb PR path on 2026-09-23. The systemic replacement does not suppress the control: current Timeweb composition is forbidden from importing the Windows vault, hosted broker mutation remains fail-closed, a GitHub-hosted source-security guard becomes the required WP17 check, and the original local ACL audit is retained as manual historical evidence. This change intentionally creates a new exact head and invalidates the earlier 23/24 evidence set; full certification must rerun.
+
 ## 9. Integration-ready preflight
 
 - [ ] Current replacement checkpoint is `CERTIFIED_GREEN`.
@@ -272,7 +276,7 @@ Fast PR and authoritative Windows independently exposed one formatting-only defe
 - Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
-- State: `RED_REPAIR_ONLY / FINAL_SOURCE_CORRECTION_AND_OWNER_GATE_PENDING`; DRAFT PR #584 is open and TW-C remains blocked
+- State: `PENDING / AMENDMENT_19_NO_OWNER_LAPTOP_REPLACEMENT_VERIFICATION`; DRAFT PR #584 is open and TW-C remains blocked
 - Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
 - Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
 - Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
