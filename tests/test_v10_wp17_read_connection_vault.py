@@ -26,6 +26,9 @@ RUNNER_AUDITOR = (
 OWNER_AUDIT_WORKFLOW = (
     ROOT / ".github" / "workflows" / "v10-wp17-owner-read-vault-audit.yml"
 )
+HISTORICAL_OWNER_AUDIT_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "v10-wp17-local-read-vault-historical-audit.yml"
+)
 
 
 def fake_protect(payload: bytes) -> bytes:
@@ -125,10 +128,11 @@ def test_acl_verifier_normalizes_identity_references_to_sid() -> None:
         assert broad_sid in source
 
 
-def test_owner_acl_evidence_is_exact_head_bound_and_runner_verified() -> None:
+def test_owner_acl_evidence_is_preserved_as_historical_manual_gate() -> None:
     finalizer = OWNER_EVIDENCE_FINALIZER.read_text(encoding="utf-8")
     auditor = RUNNER_AUDITOR.read_text(encoding="utf-8")
-    workflow = OWNER_AUDIT_WORKFLOW.read_text(encoding="utf-8")
+    active_workflow = OWNER_AUDIT_WORKFLOW.read_text(encoding="utf-8")
+    historical_workflow = HISTORICAL_OWNER_AUDIT_WORKFLOW.read_text(encoding="utf-8")
 
     for marker in (
         "owner-read-vault-evidence.sanitized.local.json",
@@ -165,9 +169,26 @@ def test_owner_acl_evidence_is_exact_head_bound_and_runner_verified() -> None:
     ):
         assert reason in auditor
 
-    assert "audit_wp17_read_vault_runner.ps1" in workflow
-    assert "-ExpectedImplementationSha" in workflow
-    assert "github.event.pull_request.head.sha || github.sha" in workflow
-    assert (
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
-    )
+    for marker in (
+        "workflow_dispatch:",
+        "audit_wp17_read_vault_runner.ps1",
+        "-ExpectedImplementationSha",
+        "github.event.pull_request.head.sha || github.sha",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    ):
+        assert marker in historical_workflow
+    assert "pull_request:" not in historical_workflow
+    assert "push:" not in historical_workflow
+
+    for marker in (
+        "runs-on: ubuntu-latest",
+        "python scripts/check_v10_timeweb_no_owner_laptop_dependency.py",
+        "python -m unittest tests.test_v10_timeweb_no_owner_laptop_dependency",
+    ):
+        assert marker in active_workflow
+    for forbidden in (
+        "audit_wp17_read_vault_runner.ps1",
+        "owner-read-vault-evidence.sanitized.local.json",
+        "runs-on: [self-hosted",
+    ):
+        assert forbidden not in active_workflow

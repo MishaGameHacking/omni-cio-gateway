@@ -2,12 +2,14 @@
 
 Status: **accepted historical WP17 procedure / current Amendment 18 override applies**
 
-> **Amendment 18 CURRENT-AUTHORITY OVERRIDE:** this runbook retains the accepted
-> WP17 local/Windows security procedure because the READ-vault OWNER evidence is
-> still an exact-head acceptance boundary. It is not current Timeweb product-login
-> or deployment authority. Current deployed-product direction is Timeweb +
-> Telegram Login only; VK ID and the local private-test login are historical
-> acceptance surfaces and must not enter the Timeweb runtime composition.
+> **Amendments 18/19 CURRENT-AUTHORITY OVERRIDE:** this runbook retains the
+> accepted WP17 local/Windows DPAPI and ACL procedure as historical/manual evidence.
+> It is not a blocking Timeweb PR prerequisite and it is not current Timeweb
+> product-login, hosted secret-custody or deployment authority. Current deployed
+> direction is Timeweb + Telegram Login only. The Timeweb runtime must not import
+> the local Windows vault, and hosted broker credential mutation remains fail-closed
+> until a tenant-scoped encrypted hosted backend passes its own security/recovery
+> gate. No OWNER laptop command is required to certify TW-B source/runtime work.
 
 ## Scope
 
@@ -23,8 +25,10 @@ password, Google login, OWNER/admin/demo/preview product-session bypass, or
 browser-selected tenant authority is introduced.
 
 The remaining sections describing local/private WP17 acceptance are preserved
-only because they own historical Windows security evidence and the current
-READ-vault exact-head proof. They do not define the Timeweb product login path.
+only because they own historical Windows security evidence. Their exact-head
+proof applies only when that historical/manual local contour is deliberately
+rehearsed. It does not block the Timeweb PR and does not define the Timeweb
+product login or hosted credential-custody path.
 
 ## Historical local/private test identity
 

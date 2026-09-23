@@ -19,6 +19,8 @@ def _copy(root: Path) -> None:
         guard.HOSTED_APP,
         guard.HOSTED_RUNTIME,
         guard.TELEGRAM_AUTH,
+        guard.WP17_CONTRACT,
+        guard.WP17_SECURITY_GUARD,
         guard.CURRENT_WORKFLOW,
         guard.HISTORICAL_WORKFLOW,
         guard.PUBLIC_RUNTIME,
@@ -40,7 +42,8 @@ class TimewebNoOwnerLaptopGuardTests(unittest.TestCase):
             _copy(root)
             path = root / guard.HOSTED_RUNTIME.relative_to(ROOT)
             path.write_text(
-                path.read_text(encoding="utf-8") + "\nimport omni_cio.web.broker_vault_v1\n",
+                path.read_text(encoding="utf-8")
+                + "\nimport omni_cio.web.broker_vault_v1\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(
@@ -79,6 +82,35 @@ class TimewebNoOwnerLaptopGuardTests(unittest.TestCase):
                 "TIMEWEB_NO_LAPTOP_RUNTIME_BOUNDARY_DRIFT",
             ):
                 guard.validate(root)
+
+    def test_rejects_wp17_contract_requiring_owner_acl_for_timeweb_pr(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.WP17_CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["timeweb_broker_custody"][
+                "owner_admin_acl_evidence_required_for_timeweb_pr"
+            ] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_NO_LAPTOP_WP17_CUSTODY_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_historical_local_vault_remains_non_blocking(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.WP17_CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                payload["read_vault_acceptance"]["authority"],
+                "HISTORICAL_LOCAL_ONLY",
+            )
+            self.assertFalse(payload["read_vault_acceptance"]["blocks_timeweb_pr"])
+            guard.validate(root)
 
 
 if __name__ == "__main__":

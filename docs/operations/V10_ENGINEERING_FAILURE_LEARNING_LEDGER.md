@@ -450,6 +450,54 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-020 — Authority replacement must close every producer and consumer contract
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / Amendment 19
+
+**Symptom / failing gate:** the new GitHub-hosted Timeweb WP17 source-security check
+passed, but WP17 Application Shell and WP15 Live Web Support both failed the same
+historical READ-vault test. Fast and authoritative gates also found formatter drift in
+the newly added Amendment-19 guard/test.
+
+**Root cause:** the active workflow producer was correctly replaced, but directly coupled
+consumers were not closed in the same coherent batch. The WP17 contract, Web-security
+guard and local-vault regression still encoded OWNER/Admin exact-head Windows ACL proof
+as a current Timeweb acceptance dependency.
+
+**Blast radius searched:** active/historical WP17 workflows, local DPAPI provisioner/
+finalizer/auditor, WP17 machine contract and security guard, WP15 live-support consumer,
+Timeweb hosted runtime, no-OWNER-laptop guard, broker credential mutation endpoints,
+Timeweb provider inventory and current operator runbooks.
+
+**Why preflight missed it:** the first Amendment-19 correction proved the new workflow
+and runtime negative dependency but did not enumerate every test/contract/runbook that
+consumed the old workflow semantics. CI therefore became the first place the stale
+consumer assertion was executed.
+
+**Corrective change:** explicitly separate current Timeweb hosted custody from historical
+local DPAPI custody in the WP17 contract; keep hosted broker mutation disabled; move
+Windows ACL workflow assertions to the manual historical workflow; update the WP17
+security guard and runbooks; strengthen the no-OWNER-laptop regression; normalize the
+new Python files to the pinned Ruff format.
+
+**Permanent regression/guard:** the Timeweb no-OWNER-laptop guard now verifies the active
+WP17 contract, active WP17 security guard, hosted runtime, GitHub-hosted required workflow
+and manual historical workflow as one graph. Historical DPAPI/ACL unit/security coverage
+remains intact rather than being deleted or suppressed.
+
+**Future prevention rule:** when replacing an authority producer, enumerate and update
+all consumers, validators, tests, runbooks and status contracts before publishing the
+replacement checkpoint. A passing new producer does not prove the old authority has
+ceased to be a hidden prerequisite.
+
+**Dependency/tooling knowledge change:** a required-check name may be preserved for
+branch-protection continuity while its implementation authority changes, but every
+consumer must bind to the new semantics rather than infer them from the legacy check
+name.
+
+---
+
 ## Entry template
 
 ```text

@@ -2,6 +2,14 @@
 
 Status: **SUPPORT PATH ACCEPTED — REAL OWNER LIVE ACTION REQUIRED / WP18 LOCKED**
 
+> **Amendments 18/19 CURRENT TIMEWEB OVERRIDE:** the OWNER/Lenovo procedure below
+> is preserved as historical local live-read acceptance evidence. It is not a TW-B
+> merge prerequisite and no OWNER laptop command is required for current Timeweb
+> source/runtime certification. The Timeweb hosted runtime keeps broker credential
+> mutation disabled until a separate tenant-scoped encrypted hosted custody gate is
+> accepted. Do not move a real broker credential into GitHub, CI, chat or a Timeweb
+> variable merely to satisfy this historical procedure.
+
 Current canonical live-evidence marker remains:
 
 `LIVE_EVIDENCE_STATUS=DEFERRED_TO_WEB_PROVISIONING`

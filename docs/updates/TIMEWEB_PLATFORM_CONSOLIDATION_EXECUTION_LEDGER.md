@@ -256,6 +256,28 @@ The repeated WP17 RED was not a runtime defect: the old required check demanded 
 
 The Amendment 19 correction intentionally added four new Timeweb-named current surfaces (amendment, machine contract, guard and regression test). The TW-A provider inventory's exact provider-named cardinality therefore moved from 216 to 220. Engineering Governance correctly rejected the stale count with `TIMEWEB_INVENTORY_PROVIDER_SURFACE_COUNT_DRIFT`. The repair updates the exact count and explicitly classifies all four additions as `KEEP`; no minimum-count weakening or unclassified-provider bypass is introduced.
 
+### Amendment 19 producer/consumer closure repair
+
+Exact head `01cb544e87e71827aec6b22e0ada3292d96233e1` proved that the new GitHub-hosted
+Timeweb WP17 source-security gate itself was sound: it completed `success`, Engineering
+Governance completed `success`, and the whole-repository integrity pass read all 1,728
+discovered files. The replacement was still incomplete because two consumers continued
+to encode the superseded local-laptop topology: `tests/test_v10_wp17_read_connection_vault.py`
+expected the active required workflow to execute the Windows ACL auditor, and
+`scripts/check_v10_wp17_web_security.py` plus the WP17 machine contract still described
+OWNER exact-head ACL evidence as a current acceptance requirement. Fast/authoritative
+gates independently also caught Ruff formatting drift in the two newly added Amendment-19
+Python files.
+
+Root cause: the authority producer was changed before the complete producer/consumer
+closure was rewritten. The systemic correction separates **current Timeweb hosted
+custody** from **historical local DPAPI custody** in the WP17 contract, moves local ACL
+workflow assertions to the manual historical workflow, makes current Timeweb broker
+mutation remain fail-closed, and extends the no-OWNER-laptop guard so this split cannot
+silently regress. This is a contract/topology repair, not test weakening: historical
+DPAPI/ACL tests remain required and the active Timeweb gate gains stronger negative
+proof that it cannot depend on the local vault.
+
 ## 9. Integration-ready preflight
 
 - [ ] Current replacement checkpoint is `CERTIFIED_GREEN`.
@@ -280,7 +302,7 @@ The Amendment 19 correction intentionally added four new Timeweb-named current s
 - Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
-- State: `PENDING / AMENDMENT_19_NO_OWNER_LAPTOP_REPLACEMENT_VERIFICATION`; DRAFT PR #584 is open and TW-C remains blocked
+- State: `RED_REPAIR_ONLY / AMENDMENT_19_PRODUCER_CONSUMER_CLOSURE`; DRAFT PR #584 is open and TW-C remains blocked
 - Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
 - Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
 - Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin

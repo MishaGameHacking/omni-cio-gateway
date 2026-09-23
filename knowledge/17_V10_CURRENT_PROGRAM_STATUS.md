@@ -535,6 +535,24 @@ OWNER explicitly directed on 2026-09-23 that Timeweb consolidation continue with
 
 A new commit implementing Amendment 19 invalidates all earlier exact-head GREEN evidence by design. The branch returns to `PENDING` for a complete fresh exact-head verification batch; TW-C remains blocked until that replacement head is fully GREEN and accepted.
 
+## TW-B exact-head repair — Amendment 19 producer/consumer closure
+
+Exact head `01cb544e87e71827aec6b22e0ada3292d96233e1` completed Engineering Governance,
+Sonar, the new GitHub-hosted WP17 Timeweb source-security audit and the observed
+functional WP13/WP15/WP16/WP18-WP22A lanes successfully. It exposed two remaining
+repository defects: Ruff formatting drift in the newly added Amendment-19 guard/test,
+and a stale WP17 local-vault regression that still required the **active** Timeweb
+workflow to execute the historical Windows ACL auditor. The latter caused both WP17
+Application Shell and WP15 Live Web Support to fail the same test.
+
+The repair class is producer/consumer closure, not an OWNER action. The active Timeweb
+contract/guard/test path must state that OWNER/Admin ACL evidence does not block the
+Timeweb PR, while the old DPAPI/ACL scripts and direct negative permission proof remain
+preserved behind the manual historical workflow. Hosted broker credential mutation
+continues fail-closed until an accepted tenant-scoped encrypted hosted custody backend
+exists. A replacement commit invalidates all prior exact-head evidence and must receive
+a fresh complete certification batch before TW-B can leave `RED_REPAIR_ONLY`.
+
 ## Current next action
 
 1. finish TW-B exact-head verification only on `system/timeweb-platform-consolidation-tw-b`, based on accepted main `26bdc17c4e5d68c262f47b999e975b1eb8651858`;

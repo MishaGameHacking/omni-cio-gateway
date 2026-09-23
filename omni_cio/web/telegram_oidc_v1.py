@@ -501,7 +501,7 @@ class TelegramIdTokenVerifierV1:
 
 
 class TelegramOidcRuntimeV1:
-    """Dormant Telegram Authorization Code + PKCE adapter for WP22A Phase 5."""
+    """Telegram-only Authorization Code + PKCE adapter for the hosted V10 runtime."""
 
     def __init__(
         self,

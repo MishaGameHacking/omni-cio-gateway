@@ -7,14 +7,22 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json"
+CONTRACT = (
+    ROOT / "docs/architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json"
+)
 HOSTED_CUSTODY = ROOT / "omni_cio/web/hosted_secret_custody_v1.py"
 HOSTED_APP = ROOT / "apps/api/hosted_app.py"
 HOSTED_RUNTIME = ROOT / "apps/api/hosted_runtime.py"
 TELEGRAM_AUTH = ROOT / "apps/api/telegram_auth.py"
+WP17_CONTRACT = ROOT / "docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json"
+WP17_SECURITY_GUARD = ROOT / "scripts/check_v10_wp17_web_security.py"
 CURRENT_WORKFLOW = ROOT / ".github/workflows/v10-wp17-owner-read-vault-audit.yml"
-HISTORICAL_WORKFLOW = ROOT / ".github/workflows/v10-wp17-local-read-vault-historical-audit.yml"
-PUBLIC_RUNTIME = ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+HISTORICAL_WORKFLOW = (
+    ROOT / ".github/workflows/v10-wp17-local-read-vault-historical-audit.yml"
+)
+PUBLIC_RUNTIME = (
+    ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+)
 
 FORBIDDEN_CURRENT_MARKERS = (
     "broker_vault_v1",
@@ -34,6 +42,63 @@ def _json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError(f"TIMEWEB_NO_LAPTOP_JSON_ROOT_INVALID:{path.name}")
     return payload
+
+
+def _validate_wp17_transition(
+    root: Path,
+    contract: dict[str, Any],
+) -> None:
+    transition = contract.get("wp17_transition")
+    if not isinstance(transition, dict):
+        raise RuntimeError("TIMEWEB_NO_LAPTOP_WP17_TRANSITION_INVALID")
+    expected = {
+        "required_check_mode": "TIMEWEB_SOURCE_SECURITY_AUDIT",
+        "required_check_runner": "ubuntu-latest",
+        "historical_local_audit_mode": "MANUAL_ONLY",
+        "old_owner_evidence_blocks_timeweb_pr": False,
+        "active_wp17_contract_owner_acl_required": False,
+        "active_wp17_security_guard_local_vault_required": False,
+        "historical_local_vault_tests_preserved": True,
+        "historical_local_evidence_blocks_timeweb_pr": False,
+    }
+    for key, value in expected.items():
+        if transition.get(key) != value:
+            raise RuntimeError(f"TIMEWEB_NO_LAPTOP_WP17_TRANSITION_DRIFT:{key}")
+
+    wp17 = _json(root / WP17_CONTRACT.relative_to(ROOT))
+    custody = wp17.get("timeweb_broker_custody")
+    if not isinstance(custody, dict):
+        raise RuntimeError("TIMEWEB_NO_LAPTOP_WP17_CUSTODY_INVALID")
+    expected_custody = {
+        "mode": "FAIL_CLOSED_PENDING_HOSTED_BACKEND",
+        "local_windows_vault_dependency_allowed": False,
+        "owner_admin_acl_evidence_required_for_timeweb_pr": False,
+        "broker_mutation_enabled": False,
+        "global_shared_credential_allowed": False,
+        "required_pr_gate": "TIMEWEB_SOURCE_SECURITY_AUDIT",
+    }
+    for key, value in expected_custody.items():
+        if custody.get(key) != value:
+            raise RuntimeError(f"TIMEWEB_NO_LAPTOP_WP17_CUSTODY_DRIFT:{key}")
+
+    historical = wp17.get("read_vault_acceptance")
+    if not isinstance(historical, dict):
+        raise RuntimeError("TIMEWEB_NO_LAPTOP_WP17_HISTORICAL_VAULT_INVALID")
+    if (
+        historical.get("authority") != "HISTORICAL_LOCAL_ONLY"
+        or historical.get("blocks_timeweb_pr") is not False
+    ):
+        raise RuntimeError("TIMEWEB_NO_LAPTOP_WP17_HISTORICAL_VAULT_DRIFT")
+
+    security_guard = _text(root / WP17_SECURITY_GUARD.relative_to(ROOT))
+    for marker in (
+        "timeweb_broker_custody",
+        "HISTORICAL_OWNER_READ_VAULT_WORKFLOW",
+        "TIMEWEB_SOURCE_SECURITY_AUDIT",
+        "FAIL_CLOSED_PENDING_HOSTED_BACKEND",
+    ):
+        if marker not in security_guard:
+            raise RuntimeError(f"TIMEWEB_NO_LAPTOP_WP17_GUARD_DRIFT:{marker}")
 
 
 def validate(root: Path = ROOT) -> None:
@@ -67,6 +132,8 @@ def validate(root: Path = ROOT) -> None:
         if runtime.get(key) != expected:
             raise RuntimeError(f"TIMEWEB_NO_LAPTOP_RUNTIME_BOUNDARY_DRIFT:{key}")
 
+    _validate_wp17_transition(root, contract)
+
     current_sources = "\n".join(
         _text(root / path)
         for path in (
@@ -77,7 +144,9 @@ def validate(root: Path = ROOT) -> None:
     )
     for marker in FORBIDDEN_CURRENT_MARKERS:
         if marker in current_sources:
-            raise RuntimeError(f"TIMEWEB_NO_LAPTOP_CURRENT_LOCAL_VAULT_DEPENDENCY:{marker}")
+            raise RuntimeError(
+                f"TIMEWEB_NO_LAPTOP_CURRENT_LOCAL_VAULT_DEPENDENCY:{marker}"
+            )
     for marker in (
         "BROKER_CREDENTIALS_DISABLED_IN_HOSTED_RUNTIME",
         "broker_mutation_disabled",
@@ -114,7 +183,9 @@ def validate(root: Path = ROOT) -> None:
         "owner-read-vault-evidence.sanitized.local.json",
     ):
         if forbidden in workflow:
-            raise RuntimeError(f"TIMEWEB_NO_LAPTOP_REQUIRED_WORKFLOW_LOCAL_DEPENDENCY:{forbidden}")
+            raise RuntimeError(
+                f"TIMEWEB_NO_LAPTOP_REQUIRED_WORKFLOW_LOCAL_DEPENDENCY:{forbidden}"
+            )
 
     historical = _text(root / HISTORICAL_WORKFLOW.relative_to(ROOT))
     if "workflow_dispatch:" not in historical:
