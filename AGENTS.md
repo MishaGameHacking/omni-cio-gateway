@@ -21,13 +21,13 @@ Current synchronized snapshot:
 - **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED — Timeweb-only runtime/database/DNS/Telegram consolidation** is the current next package after Amendment 18 acceptance;
 - target active service model is ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
 - Timeweb is the only selected V10 production infrastructure target;
-- Telegram is the only selected human product login provider;
+- Telegram Login is the only selected human product login provider and authenticates the human Telegram USER account via OIDC; bot chat/`/start`/`telegram:bot_access` are not login prerequisites;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets;
 - WEB-VISUAL and WP23+ are paused;
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session.
+PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session. The optional Omni-CIO Telegram bot may only be linked after that account/session exists; bot chat, `/start`, Bot API identity or bot-token possession can never create an account, mint/select a tenant or replace product login.
 
 The WP22A technical gate is complete only through its accepted evidence chain. Amendments 14/15 remain historical evidence; Amendment 18 does not fabricate public activation, expand broker-write authority or start WP23.
 

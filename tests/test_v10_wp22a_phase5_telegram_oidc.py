@@ -18,6 +18,7 @@ import omni_cio.web.telegram_oidc_v1 as telegram_oidc
 from omni_cio.web.telegram_oidc_v1 import (
     TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT,
     TELEGRAM_OIDC_JWKS_ENDPOINT,
+    TELEGRAM_OIDC_LOGIN_SCOPE,
     TELEGRAM_OIDC_TOKEN_ENDPOINT,
     TelegramIdTokenVerifierV1,
     TelegramOidcConfigV1,
@@ -196,7 +197,9 @@ def test_start_builds_minimal_telegram_pkce_authorization_url() -> None:
     assert query["client_id"] == [CLIENT_ID]
     assert query["redirect_uri"] == [CALLBACK]
     assert query["response_type"] == ["code"]
+    assert query["scope"] == [TELEGRAM_OIDC_LOGIN_SCOPE]
     assert query["scope"] == ["openid"]
+    assert "telegram:bot_access" not in query["scope"][0]
     assert query["code_challenge_method"] == ["S256"]
     assert len(query["state"][0]) >= 43
     assert len(query["code_challenge"][0]) == 43

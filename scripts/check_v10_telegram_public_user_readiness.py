@@ -49,18 +49,37 @@ _EXPECTED_REGISTRATION = {
     "timeweb_canonical_origin_reconfirmation_required": True,
     "timeweb_canonical_origin_reconfirmation_accepted": False,
     "provider_secret_values_recorded": False,
+    "login_uses_telegram_user_account": True,
+    "login_requires_bot_chat": False,
+    "login_requires_bot_start": False,
+    "botfather_registration_is_oidc_client_metadata_only": True,
 }
 
 _EXPECTED_MINIMIZATION = {
     "telegram_oidc_scopes": ["openid"],
     "profile_scope_requested": False,
     "phone_scope_requested": False,
+    "bot_access_scope_requested": False,
     "raw_telegram_subject_persisted": False,
     "external_identity_binding": "HMAC_SHA256_KEYED",
     "raw_oauth_state_persisted": False,
     "raw_browser_proof_persisted": False,
     "provider_auth_transaction_max_minutes": 15,
     "session_authority": "SERVER_SIDE_OPAQUE_TOKEN_SHA256",
+}
+
+_EXPECTED_IDENTITY_BOT_SEPARATION = {
+    "login_capability": "TELEGRAM_USER_ACCOUNT_OIDC",
+    "product_bot_capability": "OPTIONAL_POST_AUTH_ACCOUNT_LINK",
+    "login_creates_or_resolves_omni_account": True,
+    "bot_link_requires_existing_authenticated_omni_account": True,
+    "bot_link_requires_existing_server_side_session": True,
+    "bot_link_can_create_omni_account": False,
+    "bot_link_can_mint_or_select_tenant": False,
+    "bot_chat_required_for_login": False,
+    "bot_start_required_for_login": False,
+    "telegram_bot_access_scope_requested_during_login": False,
+    "bot_linking_implementation_owner": "WP23_PLUS_SEPARATE_CAPABILITY",
 }
 
 _EXPECTED_CAPACITY = {
@@ -265,6 +284,18 @@ def _validate_data_minimization(contract: dict[str, Any]) -> None:
     )
 
 
+def _validate_identity_bot_separation(contract: dict[str, Any]) -> None:
+    separation = _mapping(
+        contract.get("identity_and_bot_separation"),
+        "TELEGRAM_PUBLIC_USER_READINESS_IDENTITY_BOT_SEPARATION_INVALID",
+    )
+    _require_equal(
+        separation,
+        _EXPECTED_IDENTITY_BOT_SEPARATION,
+        "TELEGRAM_PUBLIC_USER_READINESS_IDENTITY_BOT_SEPARATION_INVALID",
+    )
+
+
 def _validate_capacity(contract: dict[str, Any]) -> None:
     capacity = _mapping(
         contract.get("capacity_and_abuse"),
@@ -363,6 +394,7 @@ def _validate_contract(contract: dict[str, Any]) -> None:
     _validate_provider_registration(contract)
     _validate_provider_secret_readiness(contract)
     _validate_data_minimization(contract)
+    _validate_identity_bot_separation(contract)
     _validate_capacity(contract)
     _validate_operations(contract)
     _validate_legal_gate(contract)
@@ -415,12 +447,16 @@ def _class_defaults(source: str, class_name: str) -> dict[str, int]:
 
 def _validate_telegram_source(root: Path) -> None:
     telegram = _read(root, TELEGRAM)
-    scopes = re.findall(r'"scope"\s*:\s*"([^"]+)"', telegram)
-    _require_equal(
-        scopes,
-        ["openid"],
+    _require_text_markers(
+        telegram,
+        (
+            'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"',
+            '"scope": TELEGRAM_OIDC_LOGIN_SCOPE',
+        ),
         "TELEGRAM_PUBLIC_USER_READINESS_SCOPE_DRIFT",
     )
+    if "telegram:bot_access" in telegram:
+        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_BOT_ACCESS_SCOPE_FORBIDDEN")
 
 
 def _validate_identity_source(root: Path) -> None:
@@ -499,6 +535,10 @@ def _validate_runbook_source(root: Path) -> None:
         runbook,
         (
             "# V10 Telegram Login Production Activation Runbook",
+            "## Login identity vs optional Telegram bot",
+            "Telegram USER account",
+            "`telegram:bot_access`",
+            "already authenticated Omni-CIO account/session",
             "## Public activation flags",
             "## Acceptance sequence",
         ),

@@ -6,6 +6,14 @@ This runbook contains names and public callback/origin values only. Never paste 
 Telegram Client Secret, provider tokens, identity-binding key, CSRF key or any other real
 secret into GitHub, chat, CI logs, screenshots or artifacts.
 
+## Login identity vs optional Telegram bot
+
+Omni-CIO public registration/login authenticates the human **Telegram USER account** through OIDC. Login must not require a Telegram bot chat, a `/start` command, a bot-linking record, or the `telegram:bot_access` scope. The current login implementation requests only `openid`.
+
+Telegram's provider setup currently uses a BotFather-managed application representation to issue the OIDC Client ID/Secret and register Allowed URLs. Treat that only as Telegram Login client-registration metadata. It does **not** mean the user's Omni-CIO account is registered by chatting with the future Omni-CIO Telegram bot.
+
+The optional Omni-CIO Telegram bot is a separate future WP23+ companion surface. It may be connected only from an already authenticated Omni-CIO account/session and must bind to that existing USER/Tenant server-side. It cannot create an account, mint/select a Tenant, or replace the OIDC login path.
+
 ## Canonical production registration
 
 Official Telegram Login/OIDC reference:
@@ -18,7 +26,8 @@ Register with BotFather Login Widget / OIDC:
   `https://omnicio.ru/api/v10/web/auth/telegram/callback`
 
 Telegram documents Authorization Code flow with PKCE and requires Allowed URLs to be
-pre-registered before redirect/login processing.
+pre-registered before redirect/login processing. This registration must not request
+`telegram:bot_access`; bot messaging is not part of account creation or login.
 
 Accepted repository evidence now records the OWNER attestation already preserved in merged PR #551: both exact values above were registered before the readiness gate. This is a non-secret external-action attestation only; it does not expose Client ID/Secret values and does not by itself activate public users.
 

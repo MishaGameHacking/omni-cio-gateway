@@ -525,6 +525,10 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 
 Current TW-B exact-head RED evidence on `c74e0ad8394076b866119c642e63bbe81b1bc680`: all observed functional/governance lanes passed except Fast PR, authoritative Windows and WP17 OWNER evidence. Fast PR reported only Ruff quoting format in the two new Docker CA regression tests. Authoritative Windows passed the functional suite and failed later at Bandit B314/CWE-20 because the whole-repository audit parsed arbitrary XML with stdlib ElementTree. The first replacement attempted to use defusedxml, but Engineering Governance runs this inventory guard before dependency installation and correctly failed with `ModuleNotFoundError`. The next correction uses the repository's accepted dependency-free stdlib Expat hardening pattern with DTD/entity/external-entity rejection plus the malicious-DTD/entity regression; scanner suppression is forbidden. WP17 remains separately fail-closed on exact-head OWNER evidence binding.
 
+## Telegram identity / bot separation
+
+Canonical product authentication is `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`. Registration/login does not require a bot chat, `/start`, a bot-link record or `telegram:bot_access`; the source scope remains exactly `openid`. Telegram's BotFather-managed login application registration is provider client metadata, not product bot linkage. The optional Omni-CIO Telegram bot is a distinct future WP23+ companion capability and may be linked only after an Omni-CIO account and authenticated server-side session already exist. It cannot create accounts, mint/select tenants or replace Telegram Login.
+
 ## Current next action
 
 1. finish TW-B exact-head verification only on `system/timeweb-platform-consolidation-tw-b`, based on accepted main `26bdc17c4e5d68c262f47b999e975b1eb8651858`;

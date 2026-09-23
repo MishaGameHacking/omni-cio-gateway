@@ -157,14 +157,45 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_guard_rejects_bot_linking_as_login_prerequisite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["identity_and_bot_separation"]["bot_chat_required_for_login"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_IDENTITY_BOT_SEPARATION_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_telegram_bot_access_scope_in_login(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.TELEGRAM
+            source = path.read_text(encoding="utf-8").replace(
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"',
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"\nTELEGRAM_BOT_SCOPE = "telegram:bot_access"',
+                1,
+            )
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_BOT_ACCESS_SCOPE_FORBIDDEN",
+            ):
+                guard.validate(root)
+
     def test_guard_rejects_extra_telegram_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
             path = root / guard.TELEGRAM
             source = path.read_text(encoding="utf-8").replace(
-                '"scope": "openid"',
-                '"scope": "openid profile"',
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"',
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid profile"',
                 1,
             )
             path.write_text(source, encoding="utf-8")

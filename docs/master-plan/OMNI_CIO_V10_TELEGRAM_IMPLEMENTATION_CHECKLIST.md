@@ -16,6 +16,9 @@ This checklist converts the Block F product contract into an implementation-read
 - [ ] Telegram product contract and message registry validate in CI.
 - [ ] No implementation assumes paid bot middleware/SaaS.
 - [ ] No implementation requires broker trading credentials.
+- [ ] Canonical Web login already authenticates the Telegram USER account independently of the bot; bot chat/`/start`/`telegram:bot_access` are not login prerequisites.
+- [ ] Define an explicit post-auth account-link contract: existing OmniCIOUserAccount + authenticated server-side Session -> one-time/short-lived link challenge -> server-bound bot chat identity.
+- [ ] Bot linking cannot create accounts, mint/select tenants or bypass the canonical Telegram OIDC login/session boundary.
 
 # B. WP23 — Telegram Bot Foundation
 
@@ -42,10 +45,12 @@ This checklist converts the Block F product contract into an implementation-read
 ## B3. Authorization
 
 - [ ] Require private chat.
-- [ ] Require configured OWNER Telegram user ID.
-- [ ] Reject group/supergroup/channel/unknown identity before any Core private query.
+- [ ] Require a server-side bot-link record that belongs to an already existing authenticated OmniCIOUserAccount/Tenant.
+- [ ] Link creation requires proof of the authenticated Web session plus a bounded one-time/short-lived server challenge; chat identity alone is never account authority.
+- [ ] Reject unlinked, group/supergroup/channel or tenant-mismatched identities before any Core private query.
+- [ ] Bot `/start` must not create an Omni-CIO account or select a tenant.
 - [ ] Log denial class only; no sensitive identity/payload dump.
-- [ ] Add synthetic unauthorized-user fixtures.
+- [ ] Add synthetic unlinked/cross-tenant/unauthorized-user fixtures.
 
 ## B4. Commands
 
@@ -90,7 +95,7 @@ This checklist converts the Block F product contract into an implementation-read
 
 ## B8. WP23 Exit Gate
 
-PASS only if OWNER-only deterministic commands work through test/local integration, unauthorized identities receive no private data, restart/replay is safe, token handling is local/redacted, and Telegram contains no financial/broker-write business logic.
+PASS only if account-linked deterministic commands work through test/local integration, an unlinked or cross-tenant Telegram identity receives no private data, bot linking cannot create/select product identity, restart/replay is safe, token handling is redacted/approved, and Telegram contains no financial/broker-write business logic.
 
 # C. WP24 — Telegram Identity and Mini App Authentication
 
