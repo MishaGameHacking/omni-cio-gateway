@@ -459,9 +459,7 @@ def test_windows_dependency_preflight_validator_is_job_local(
         "  quality:\n"
         "    runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
         "    steps:\n"
-        "      - run: "
-        + baseline.TBANK_CA_PREFLIGHT_PROCESS
-        + "\n"
+        "      - run: " + baseline.TBANK_CA_PREFLIGHT_PROCESS + "\n"
         "      - run: python -m pip install "
         + baseline.WINDOWS_DEV_INSTALL_MARKER
         + "\n"
@@ -513,9 +511,7 @@ def test_windows_dependency_preflight_validator_is_job_local(
             "  security:\n"
             "    runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
             "    steps:\n"
-            "      - run: "
-            + baseline.TBANK_CA_PREFLIGHT_PROCESS
-            + "\n",
+            "      - run: " + baseline.TBANK_CA_PREFLIGHT_PROCESS + "\n",
         ),
         encoding="utf-8",
     )

@@ -323,3 +323,34 @@ Systemic correction:
 
 This closes the guard-design defect that allowed one workflow-level preflight to
 mask an unprotected sibling job.
+
+
+## PR #586 first DRAFT verification batch
+
+Exact head `93b8ec793e9f20ad0136255fb48143be8596d605` completed the
+whole first DRAFT verification batch. All applicable checks reached terminal
+state. The T-Bank CA correction itself was exercised successfully across the
+Windows dependency-install consumers, including the authoritative dependency
+installation and the formerly unprotected sibling jobs.
+
+Two checks were RED for one shared source-format defect only:
+
+- Fast policy and source contracts;
+- V10 authoritative merge gate.
+
+Both failed because Ruff format would rewrite only the newly changed regression
+test source. The remaining applicable GitHub-native checks completed
+successfully, including SonarQube Cloud, Engineering Governance, toolchain
+compatibility, the Windows smoke lane and the WP17-WP22A audits.
+
+The same batch exposed one non-blocking Sonar maintainability finding on the
+new workflow job-key regular expression. The correction batch therefore does
+both source-quality repairs together:
+
+- apply the exact Ruff canonical formatting reported by both failing jobs;
+- replace the workflow job-key regular expression with bounded plain-string
+  parsing for the repository's allowed unquoted job-id grammar.
+
+No dependency, package source, TLS policy, authentication, tenant, provider,
+broker or Real-money authority changes are included. Fresh exact-head
+verification is required because this correction creates a replacement SHA.

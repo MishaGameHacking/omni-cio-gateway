@@ -394,6 +394,23 @@ def validate_headless_repository_bootstrap(
             )
 
 
+def _workflow_job_name(line: str) -> str | None:
+    raw = line.rstrip("\r\n")
+    if not raw.startswith("  ") or raw.startswith("    "):
+        return None
+
+    declaration = raw[2:].split("#", maxsplit=1)[0].rstrip()
+    if not declaration.endswith(":"):
+        return None
+
+    name = declaration[:-1]
+    if not name or any(
+        not (character.isalnum() or character in "_-") for character in name
+    ):
+        return None
+    return name
+
+
 def workflow_job_blocks(workflow_text: str) -> dict[str, str]:
     lines = workflow_text.splitlines(keepends=True)
     jobs_index = next(
@@ -410,16 +427,15 @@ def workflow_job_blocks(workflow_text: str) -> dict[str, str]:
     blocks: dict[str, str] = {}
     current_name: str | None = None
     current_lines: list[str] = []
-    job_pattern = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$")
 
     for line in lines[jobs_index + 1 :]:
         if line.strip() and not line.startswith((" ", "#")):
             break
-        match = job_pattern.fullmatch(line.rstrip("\r\n"))
-        if match is not None:
+        job_name = _workflow_job_name(line)
+        if job_name is not None:
             if current_name is not None:
                 blocks[current_name] = "".join(current_lines)
-            current_name = match.group(1)
+            current_name = job_name
             current_lines = [line]
             continue
         if current_name is not None:
