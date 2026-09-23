@@ -269,7 +269,8 @@ def test_tbank_ca_syntax_checker_has_bounded_targets_and_no_mutation() -> None:
     assert "Invoke-WebRequest" not in source
 
 
-def test_every_self_hosted_windows_dependency_install_job_fails_fast_on_ca_trust() -> None:
+def test_every_self_hosted_windows_dependency_install_job_fails_fast_on_ca_trust(
+) -> None:
     payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
     verification = payload["verification"]
     configured_workflows = {
@@ -300,7 +301,9 @@ def test_every_self_hosted_windows_dependency_install_job_fails_fast_on_ca_trust
 
     assert verification["dependency_install_boundary"] == "JOB_LOCAL"
     assert verification["every_windows_dependency_consumer_requires_preflight"] is True
-    assert verification["every_windows_dependency_install_job_requires_preflight"] is True
+    assert (
+        verification["every_windows_dependency_install_job_requires_preflight"] is True
+    )
     assert configured_jobs == discovered_jobs
     assert {path for path, _ in configured_jobs} == configured_workflows
 

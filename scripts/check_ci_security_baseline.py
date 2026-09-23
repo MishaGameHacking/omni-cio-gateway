@@ -394,7 +394,6 @@ def validate_headless_repository_bootstrap(
             )
 
 
-
 def workflow_job_blocks(workflow_text: str) -> dict[str, str]:
     lines = workflow_text.splitlines(keepends=True)
     jobs_index = next(
@@ -411,12 +410,12 @@ def workflow_job_blocks(workflow_text: str) -> dict[str, str]:
     blocks: dict[str, str] = {}
     current_name: str | None = None
     current_lines: list[str] = []
-    job_pattern = re.compile(r"^  ([A-Za-z0-9_-]+):\\s*(?:#.*)?$")
+    job_pattern = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$")
 
     for line in lines[jobs_index + 1 :]:
         if line.strip() and not line.startswith((" ", "#")):
             break
-        match = job_pattern.fullmatch(line.rstrip("\\r\\n"))
+        match = job_pattern.fullmatch(line.rstrip("\r\n"))
         if match is not None:
             if current_name is not None:
                 blocks[current_name] = "".join(current_lines)
@@ -533,6 +532,7 @@ def validate_windows_dependency_preflights(failures: list[str]) -> None:
                 f"{workflow}::{job} must run the T-Bank CA preflight before "
                 "dependency install"
             )
+
 
 def validate_workflow(failures: list[str]) -> None:
     if not WORKFLOW_PATH.is_file():
