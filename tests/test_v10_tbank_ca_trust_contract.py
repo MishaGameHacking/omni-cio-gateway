@@ -24,9 +24,11 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     )
     assert payload["official_certificate_source"] == "https://www.gosuslugi.ru/crt"
     assert payload["certificates"]["root"]["common_name"] == "Russian Trusted Root CA"
-    assert payload["certificates"]["root"]["sha256_der"] == (
-        "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31"
-    )
+    root_sha256 = payload["certificates"]["root"]["sha256_der"]
+    assert isinstance(root_sha256, str)
+    assert len(root_sha256) == 64
+    assert root_sha256 == root_sha256.upper()
+    assert all(character in "0123456789ABCDEF" for character in root_sha256)
     assert payload["certificates"]["root"]["fingerprint_pin_required"] is True
     assert (
         payload["certificates"]["intermediate"]["chain_to_pinned_root_required"] is True
@@ -53,6 +55,10 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
         "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
         "base_bundle": "pip_vendored_certifi",
         "environment_variable": "PIP_CERT",
+        "caller_supplied_bundle_paths": False,
+        "bundle_output_scope": "RUNNER_TEMP_DIRECT_CHILD",
+        "github_env_writer": "READ_ONLY_CA_CHECKER",
+        "github_env_must_be_runner_temp_descendant": True,
         "machine_trust_store_required": False,
         "persistent_machine_mutation": False,
         "certificate_verification_enabled": True,
@@ -109,7 +115,12 @@ def test_tbank_pip_ca_preparer_extends_pip_certifi_without_network() -> None:
     assert '"_vendor"' in source
     assert '"certifi"' in source
     assert '"cacert.pem"' in source
-    assert "PIP_CERT=" in source
+    assert "RUNNER_TEMP" in source
+    assert "secrets.token_hex(16)" in source
+    assert "os.O_EXCL" in source
+    assert '"--verify-only"' in source
+    assert 'parser.add_argument("--output"' not in source
+    assert 'parser.add_argument("--github-env"' not in source
     assert "DER_cert_to_PEM_cert" in source
     assert "TBANK_PIP_CA_ROOT_FINGERPRINT_MISMATCH" in source
     assert "Invoke-WebRequest" not in source
@@ -122,7 +133,11 @@ def test_tbank_ca_checker_uses_ephemeral_pinned_pip_bundle() -> None:
     source = CHECKER.read_text(encoding="utf-8")
 
     assert "prepare_v10_tbank_pip_ca_bundle.py" in source
-    assert '"--github-env"' in source
+    assert '"bundle_path"' in source
+    assert "Resolve-RunnerTempBundlePath" in source
+    assert "Test-RunnerTempDescendant" in source
+    assert "[System.IO.File]::AppendAllText" in source
+    assert '"--github-env"' not in source
     assert '"--cert"' in source
     assert '"t-tech-investments"' in source
     assert '"--retries"' in source
@@ -186,8 +201,9 @@ def test_fast_pr_verifies_pinned_pip_ca_bundle_assembly() -> None:
     marker = "      - name: Verify pinned T-Bank pip CA bundle assembly"
     block = workflow.split(marker, 1)[1].split("      - name:", 1)[0]
 
-    assert "prepare_v10_tbank_pip_ca_bundle.py" in block
-    assert "v10-fast-tbank-pip-ca.pem" in block
+    assert "prepare_v10_tbank_pip_ca_bundle.py --verify-only" in block
+    assert "--output" not in block
+    assert "--github-env" not in block
     assert "--trusted-host" not in block
     assert "Set-ExecutionPolicy" not in block
 

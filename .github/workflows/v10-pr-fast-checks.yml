@@ -195,9 +195,8 @@ jobs:
       - name: Verify pinned T-Bank pip CA bundle assembly
         shell: cmd
         run: |
-          python scripts\prepare_v10_tbank_pip_ca_bundle.py --output "%RUNNER_TEMP%\v10-fast-tbank-pip-ca.pem"
+          python scripts\prepare_v10_tbank_pip_ca_bundle.py --verify-only
           if errorlevel 1 exit /b %errorlevel%
-          del /f /q "%RUNNER_TEMP%\v10-fast-tbank-pip-ca.pem"
 
       - name: Verify CI and security baseline
         run: python scripts\check_ci_security_baseline.py

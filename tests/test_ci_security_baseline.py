@@ -385,3 +385,57 @@ def test_detect_secrets_validator_allows_only_exact_wp22a_git_sha_evidence(
         r"docs\architecture\V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json:1 "
         "(Hex High Entropy String)"
     ]
+
+
+def test_detect_secrets_validator_allows_only_verified_tbank_public_root_pin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    contract_path = (
+        tmp_path / "docs" / "architecture" / "V10_TBANK_CA_TRUST_CONTRACT.json"
+    )
+    certificate_path = (
+        tmp_path
+        / "infrastructure"
+        / "certificates"
+        / "russian_trusted_root_ca_2022.der"
+    )
+    contract_path.parent.mkdir(parents=True)
+    certificate_path.parent.mkdir(parents=True)
+    certificate_bytes = b"public-root-certificate-fixture"
+    certificate_path.write_bytes(certificate_bytes)
+    checksum = hashlib.sha256(certificate_bytes).hexdigest().upper()
+    contract_path.write_text(
+        "{\n"
+        '  "certificates": {\n'
+        '    "root": {\n'
+        f'      "sha256_der": "{checksum}",\n'
+        '      "repository_der": '
+        '"infrastructure/certificates/russian_trusted_root_ca_2022.der"\n'
+        "    }\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+    report = {
+        "results": {
+            "docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json": [
+                {"type": "Hex High Entropy String", "line_number": 4}
+            ]
+        }
+    }
+
+    failures: list[str] = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == []
+
+    certificate_path.write_bytes(b"tampered-public-root-certificate")
+    failures = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == [
+        "potential secret: docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json:4 "
+        "(Hex High Entropy String)"
+    ]

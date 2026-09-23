@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import secrets
 import ssl
 import sys
 from typing import Any
@@ -119,39 +120,41 @@ def _read_base_bundle() -> tuple[str, tuple[str, ...], set[str]]:
     return text, blocks, fingerprints
 
 
-def _write_bundle(path: Path, text: str) -> None:
-    if "\n" in str(path) or "\r" in str(path):
-        raise BundleFailure("TBANK_PIP_CA_OUTPUT_INVALID")
-    parent = path.parent
-    if not parent.is_dir():
-        raise BundleFailure("TBANK_PIP_CA_OUTPUT_INVALID")
-    temporary = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+def _runner_temp_root() -> Path:
+    raw = os.environ.get("RUNNER_TEMP", "").strip()
+    if not raw or "\n" in raw or "\r" in raw or "\x00" in raw:
+        raise BundleFailure("TBANK_PIP_CA_RUNNER_TEMP_INVALID")
+    root = Path(raw).resolve()
+    if not root.is_dir():
+        raise BundleFailure("TBANK_PIP_CA_RUNNER_TEMP_INVALID")
+    return root
+
+
+def _new_bundle_path() -> Path:
+    return _runner_temp_root() / (
+        f"omni-cio-tbank-pip-ca-{secrets.token_hex(16)}.pem"
+    )
+
+
+def _write_bundle(text: str) -> Path:
+    path = _new_bundle_path()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        with temporary.open("w", encoding="ascii", newline="\n") as stream:
-            stream.write(text)
-        os.replace(temporary, path)
+        descriptor = os.open(path, flags, 0o600)
     except OSError as exc:
+        raise BundleFailure("TBANK_PIP_CA_OUTPUT_WRITE_FAILED") from exc
+    try:
+        with os.fdopen(descriptor, "w", encoding="ascii", newline="\n") as stream:
+            stream.write(text)
+    except (OSError, UnicodeError) as exc:
         try:
-            temporary.unlink(missing_ok=True)
+            path.unlink(missing_ok=True)
         except OSError:
             pass
         raise BundleFailure("TBANK_PIP_CA_OUTPUT_WRITE_FAILED") from exc
+    return path
 
-
-def _publish_github_env(github_env: Path | None, bundle_path: Path) -> bool:
-    if github_env is None:
-        return False
-    if "\n" in str(github_env) or "\r" in str(github_env):
-        raise BundleFailure("TBANK_PIP_CA_ENV_INVALID")
-    try:
-        with github_env.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(f"PIP_CERT={bundle_path}\n")
-    except OSError as exc:
-        raise BundleFailure("TBANK_PIP_CA_ENV_PUBLISH_FAILED") from exc
-    return True
-
-
-def _prepare(output: Path, github_env: Path | None) -> dict[str, Any]:
+def _prepare(*, verify_only: bool) -> dict[str, Any]:
     contract = _load_contract()
     root = contract.get("certificates", {}).get("root", {})
     ci_trust = contract.get("verification", {}).get("ci_pip_trust", {})
@@ -171,41 +174,36 @@ def _prepare(output: Path, github_env: Path | None) -> dict[str, Any]:
     if root_added:
         combined += "\n" + root_block
 
-    _write_bundle(output, combined)
-    try:
-        env_published = _publish_github_env(github_env, output)
-    except BundleFailure:
+    output = _write_bundle(combined)
+    if verify_only:
         try:
-            output.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+            output.unlink()
+        except OSError as exc:
+            raise BundleFailure("TBANK_PIP_CA_VERIFY_CLEANUP_FAILED") from exc
 
     return {
-        "schema_version": "1",
+        "schema_version": "2",
         "reason": "TBANK_PIP_CA_BUNDLE_READY",
         "root_sha256": fingerprint,
         "root_added": root_added,
         "base_certificate_count": len(base_blocks),
         "bundle_certificate_count": len(base_blocks) + int(root_added),
-        "env_published": env_published,
+        "bundle_path": None if verify_only else str(output),
+        "bundle_persisted": not verify_only,
         "ready": True,
     }
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--github-env")
+    parser.add_argument("--verify-only", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
-    output = Path(args.output)
-    github_env = Path(args.github_env) if args.github_env else None
     try:
-        result = _prepare(output, github_env)
+        result = _prepare(verify_only=args.verify_only)
     except BundleFailure as exc:
         print(
             json.dumps(

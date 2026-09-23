@@ -97,34 +97,33 @@ $python = Get-Command python.exe -ErrorAction SilentlyContinue
 $bundleResult = $null
 $bundlePath = $null
 $envPublishRequired = -not [string]::IsNullOrWhiteSpace($env:GITHUB_ENV)
+$tempRoot = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+    [System.IO.Path]::GetTempPath()
+}
+else {
+    [string]$env:RUNNER_TEMP
+}
+$tempRoot = [System.IO.Path]::GetFullPath($tempRoot)
+$runnerTempWasMissing = [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)
 
 if ($null -ne $python) {
-    $tempRoot = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
-        [System.IO.Path]::GetTempPath()
+    if ($runnerTempWasMissing) {
+        $env:RUNNER_TEMP = $tempRoot
     }
-    else {
-        [string]$env:RUNNER_TEMP
+    try {
+        $bundleCapture = @{
+            FilePath = $python.Source
+            ArgumentList = @("scripts\prepare_v10_tbank_pip_ca_bundle.py")
+            WorkingDirectory = $repoRoot
+        }
+        $bundleResult = Invoke-CapturedProcess @bundleCapture
     }
-    $bundlePath = Join-Path $tempRoot (
-        "omni-cio-tbank-pip-ca-{0}.pem" -f [guid]::NewGuid().ToString("N")
-    )
-    $bundleArguments = @(
-        "scripts\prepare_v10_tbank_pip_ca_bundle.py",
-        "--output",
-        $bundlePath
-    )
-    if ($envPublishRequired) {
-        $bundleArguments += @("--github-env", [string]$env:GITHUB_ENV)
+    finally {
+        if ($runnerTempWasMissing) {
+            Remove-Item Env:\RUNNER_TEMP -ErrorAction SilentlyContinue
+        }
     }
-
-    $bundleCapture = @{
-        FilePath = $python.Source
-        ArgumentList = $bundleArguments
-        WorkingDirectory = $repoRoot
-    }
-    $bundleResult = Invoke-CapturedProcess @bundleCapture
 }
-
 $bundleState = $null
 if (
     $null -ne $bundleResult -and
@@ -138,35 +137,106 @@ if (
         $bundleState = $null
     }
 }
+function Resolve-RunnerTempBundlePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$RawPath,
+        [Parameter(Mandatory = $true)][string]$RunnerTemp
+    )
+    try {
+        $candidate = (Resolve-Path -LiteralPath $RawPath -ErrorAction Stop).Path
+        $root = (Resolve-Path -LiteralPath $RunnerTemp -ErrorAction Stop).Path.TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        )
+    }
+    catch {
+        return $null
+    }
+    $parent = [System.IO.Path]::GetDirectoryName($candidate)
+    $name = [System.IO.Path]::GetFileName($candidate)
+    if (-not [string]::Equals($parent, $root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $null
+    }
+    if ($name -notmatch '^omni-cio-tbank-pip-ca-[0-9a-f]{32}\.pem$') {
+        return $null
+    }
+    return $candidate
+}
+
+function Test-RunnerTempDescendant {
+    param(
+        [Parameter(Mandatory = $true)][string]$RawPath,
+        [Parameter(Mandatory = $true)][string]$RunnerTemp
+    )
+    try {
+        $candidate = (Resolve-Path -LiteralPath $RawPath -ErrorAction Stop).Path
+        $root = (Resolve-Path -LiteralPath $RunnerTemp -ErrorAction Stop).Path.TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        )
+    }
+    catch {
+        return $false
+    }
+    $prefix = $root + [System.IO.Path]::DirectorySeparatorChar
+    return $candidate.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 
 $bundleShapeValid = Test-ObjectShape -Value $bundleState -RequiredProperties @(
     "reason",
     "root_sha256",
     "base_certificate_count",
     "bundle_certificate_count",
-    "env_published",
+    "bundle_path",
+    "bundle_persisted",
     "ready"
 )
+if (
+    $bundleShapeValid -and
+    [bool]$bundleState.bundle_persisted -and
+    -not [string]::IsNullOrWhiteSpace([string]$bundleState.bundle_path)
+) {
+    $bundlePath = Resolve-RunnerTempBundlePath -RawPath ([string]$bundleState.bundle_path) -RunnerTemp $tempRoot
+}
 $bundleReady = (
     $bundleShapeValid -and
     $bundleResult.exit_code -eq 0 -and
     [bool]$bundleState.ready -and
+    [bool]$bundleState.bundle_persisted -and
     [string]$bundleState.reason -eq "TBANK_PIP_CA_BUNDLE_READY" -and
     [string]$bundleState.root_sha256 -eq $expectedRootSha256 -and
     [int]$bundleState.base_certificate_count -gt 0 -and
     [int]$bundleState.bundle_certificate_count -ge
         [int]$bundleState.base_certificate_count -and
-    (
-        -not $envPublishRequired -or
-        [bool]$bundleState.env_published
-    ) -and
-    -not [string]::IsNullOrWhiteSpace($bundlePath) -and
-    (Test-Path -LiteralPath $bundlePath -PathType Leaf)
+    -not [string]::IsNullOrWhiteSpace($bundlePath)
 )
+
+$envPublished = $false
+$envPublishFailed = $false
+if ($bundleReady -and $envPublishRequired) {
+    if (-not (Test-RunnerTempDescendant -RawPath ([string]$env:GITHUB_ENV) -RunnerTemp $tempRoot)) {
+        $envPublishFailed = $true
+    }
+    else {
+        try {
+            $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            [System.IO.File]::AppendAllText(
+                [string]$env:GITHUB_ENV,
+                "PIP_CERT=$bundlePath" + [Environment]::NewLine,
+                $utf8NoBom
+            )
+            $envPublished = $true
+        }
+        catch {
+            $envPublishFailed = $true
+        }
+    }
+}
 
 $indexReady = $false
 $indexProbeFailed = $false
-if ($bundleReady) {
+if ($bundleReady -and -not $envPublishFailed) {
     $pipArguments = @(
         "-m",
         "pip",
@@ -200,6 +270,9 @@ if ($bundleReady) {
 $reason = if (-not $bundleReady) {
     "TBANK_PIP_CA_BUNDLE_FAILED"
 }
+elseif ($envPublishFailed) {
+    "TBANK_PIP_CA_ENV_PUBLISH_FAILED"
+}
 elseif ($indexProbeFailed) {
     "TBANK_PACKAGE_INDEX_PROBE_FAILED"
 }
@@ -227,13 +300,14 @@ $result = [ordered]@{
     bundle_preparer_exit_code = $bundleExitCode
     root_pin_verified = [bool]$bundleReady
     pip_ca_bundle_ready = [bool]$bundleReady
+    env_published = [bool]$envPublished
     package_index_tls_ready = [bool]$indexReady
     machine_trust_store_required = $false
     mutations_attempted = $false
     ready = [bool]$ready
 }
 
-if (-not $envPublishRequired -and -not [string]::IsNullOrWhiteSpace($bundlePath)) {
+if (-not $envPublished -and -not [string]::IsNullOrWhiteSpace($bundlePath)) {
     Remove-Item -LiteralPath $bundlePath -Force -ErrorAction SilentlyContinue
 }
 
@@ -247,7 +321,10 @@ else {
 if ($ready) {
     exit 0
 }
-if ($reason -eq "TBANK_PIP_CA_BUNDLE_FAILED") {
+if ($reason -in @(
+    "TBANK_PIP_CA_BUNDLE_FAILED",
+    "TBANK_PIP_CA_ENV_PUBLISH_FAILED"
+)) {
     exit 73
 }
 exit 72
