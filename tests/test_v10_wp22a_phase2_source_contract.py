@@ -96,7 +96,7 @@ def test_product_shell_has_no_engineering_edge_owner_login() -> None:
     assert "privateRemoteLogin" not in source
     assert "readPrivateRemoteStatus" not in source
     assert "Продолжить через Telegram" in source
-    assert "Продолжить через VK ID" in source
+    assert "Продолжить через VK ID" not in source
     assert "<span>USER</span>" in source
 
 

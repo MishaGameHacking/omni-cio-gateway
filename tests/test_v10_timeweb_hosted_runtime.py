@@ -114,9 +114,10 @@ def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> Non
 
 
 def test_provider_neutral_runtime_role_probe_rejects_identity_drift() -> None:
+    connection = _RuntimeProbeConnection("omni_cio_other_runtime")
     with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_ROLE_DRIFT"):
         probe_hosted_runtime_database(
-            _RuntimeProbeConnection("omni_cio_other_runtime"),
+            connection,
             expected_runtime_role="omni_cio_timeweb_candidate",
         )
 

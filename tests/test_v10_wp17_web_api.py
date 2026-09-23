@@ -152,13 +152,12 @@ def test_private_login_sets_httponly_strict_cookie_and_session_is_server_side() 
     assert "tenant:v1:owner" not in session.text
 
 
-def test_provider_surface_is_exactly_telegram_and_vk_without_password_or_google() -> (
-    None
-):
+def test_provider_surface_is_telegram_only_without_password_google_or_vk() -> None:
     client, _, _ = make_client()
     response = client.get("/api/v10/web/auth/providers")
     assert response.status_code == 200
-    assert [row["provider"] for row in response.json()] == ["telegram", "vk_id"]
+    assert [row["provider"] for row in response.json()] == ["telegram"]
+    assert "vk_id" not in response.text.lower()
     assert "google" not in response.text.lower()
     assert "password" not in response.text.lower()
 

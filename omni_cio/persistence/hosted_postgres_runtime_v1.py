@@ -298,27 +298,19 @@ def _expected_grant_statements() -> set[str]:
     return expected
 
 
-def validate_hosted_postgres_runtime_sql(
-    sql: str,
-    payload: Mapping[str, Any] | None = None,
-) -> None:
-    contract = (
-        payload if payload is not None else load_hosted_postgres_runtime_contract()
-    )
-    validate_hosted_postgres_runtime_contract(contract)
-    normalized = _normalize_sql(sql)
-
-    forbidden_user_management = (
+def _validate_provider_user_management(normalized: str) -> None:
+    for pattern in (
         r"\bCREATE\s+(?:ROLE|USER)\b",
         r"\bALTER\s+(?:ROLE|USER)\b",
         r"\bDROP\s+(?:ROLE|USER)\b",
-    )
-    for pattern in forbidden_user_management:
+    ):
         if re.search(pattern, normalized):
             raise HostedPostgresRuntimeContractError(
                 "HOSTED_POSTGRES_SQL_PROVIDER_USER_MANAGEMENT_FORBIDDEN"
             )
 
+
+def _validate_predefined_role_grants(normalized: str) -> None:
     for role_name in _EXPECTED_FORBIDDEN_PREDEFINED_ROLES:
         if re.search(
             rf"\bGRANT\s+{re.escape(role_name.upper())}\s+TO\s+"
@@ -329,6 +321,8 @@ def validate_hosted_postgres_runtime_sql(
                 "HOSTED_POSTGRES_SQL_BROAD_ROLE_GRANT"
             )
 
+
+def _validate_sql_safety_markers(normalized: str) -> None:
     required_markers = (
         "PG_CATALOG.PG_ROLES",
         "PG_CATALOG.PG_AUTH_MEMBERS",
@@ -363,30 +357,41 @@ def validate_hosted_postgres_runtime_sql(
         "REVOKE ALL ON ALL SEQUENCES IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
         "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
     )
-    for marker in required_markers:
-        if marker not in normalized:
-            raise HostedPostgresRuntimeContractError(
-                "HOSTED_POSTGRES_SQL_SAFETY_MARKER_MISSING"
-            )
+    if any(marker not in normalized for marker in required_markers):
+        raise HostedPostgresRuntimeContractError(
+            "HOSTED_POSTGRES_SQL_SAFETY_MARKER_MISSING"
+        )
 
-    for forbidden in ("ALTER DEFAULT PRIVILEGES", "SET ROLE"):
-        if forbidden in normalized:
-            raise HostedPostgresRuntimeContractError(
-                "HOSTED_POSTGRES_SQL_AUTHORITY_WIDENED"
-            )
 
+def _validate_static_sql_authority(normalized: str) -> None:
+    if any(
+        forbidden in normalized
+        for forbidden in ("ALTER DEFAULT PRIVILEGES", "SET ROLE")
+    ):
+        raise HostedPostgresRuntimeContractError(
+            "HOSTED_POSTGRES_SQL_AUTHORITY_WIDENED"
+        )
     if _grant_statements(normalized) != _expected_grant_statements():
         raise HostedPostgresRuntimeContractError("HOSTED_POSTGRES_SQL_GRANT_UNEXPECTED")
 
+
+def _validate_forced_rls(normalized: str) -> None:
     for relation in _EXPECTED_FORCED_RLS:
         qualified = f"{_SCHEMA_NAME.upper()}.{relation.upper()}"
-        for mode in ("ENABLE", "FORCE"):
-            marker = f"ALTER TABLE {qualified} {mode} ROW LEVEL SECURITY"
-            if marker not in normalized:
-                raise HostedPostgresRuntimeContractError(
-                    "HOSTED_POSTGRES_SQL_RLS_MARKER_MISSING"
-                )
+        expected = {
+            f"ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY",
+            f"ALTER TABLE {qualified} FORCE ROW LEVEL SECURITY",
+        }
+        if any(marker not in normalized for marker in expected):
+            raise HostedPostgresRuntimeContractError(
+                "HOSTED_POSTGRES_SQL_RLS_MARKER_MISSING"
+            )
 
+
+def _validate_forbidden_relation_grants(
+    normalized: str,
+    contract: Mapping[str, Any],
+) -> None:
     forbidden_relations = _as_string_sequence(
         contract.get("forbidden_relations"),
         "HOSTED_POSTGRES_FORBIDDEN_RELATIONS_INVALID",
@@ -400,3 +405,21 @@ def validate_hosted_postgres_runtime_sql(
             raise HostedPostgresRuntimeContractError(
                 "HOSTED_POSTGRES_SQL_FORBIDDEN_RELATION_GRANT"
             )
+
+
+def validate_hosted_postgres_runtime_sql(
+    sql: str,
+    payload: Mapping[str, Any] | None = None,
+) -> None:
+    contract = (
+        payload if payload is not None else load_hosted_postgres_runtime_contract()
+    )
+    validate_hosted_postgres_runtime_contract(contract)
+    normalized = _normalize_sql(sql)
+
+    _validate_provider_user_management(normalized)
+    _validate_predefined_role_grants(normalized)
+    _validate_sql_safety_markers(normalized)
+    _validate_static_sql_authority(normalized)
+    _validate_forced_rls(normalized)
+    _validate_forbidden_relation_grants(normalized, contract)

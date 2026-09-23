@@ -226,6 +226,113 @@ def validate_hosted_readiness_contract(payload: Mapping[str, Any]) -> None:
     )
 
 
+def _validate_correlation_id(value: object) -> None:
+    if not isinstance(value, str):
+        raise HostedReadinessContractError("HOSTED_HEALTH_CORRELATION_ID_INVALID")
+    try:
+        parsed = UUID(value)
+    except ValueError as exc:
+        raise HostedReadinessContractError(
+            "HOSTED_HEALTH_CORRELATION_ID_INVALID"
+        ) from exc
+    if parsed.version != 4 or str(parsed) != value:
+        raise HostedReadinessContractError("HOSTED_HEALTH_CORRELATION_ID_INVALID")
+
+
+def _validate_release_binding(
+    release_sha: object,
+    expected_release_sha: str,
+) -> None:
+    if (
+        not isinstance(expected_release_sha, str)
+        or _RELEASE_SHA_RE.fullmatch(expected_release_sha) is None
+    ):
+        raise HostedReadinessContractError("HOSTED_HEALTH_EXPECTED_RELEASE_SHA_INVALID")
+    if (
+        not isinstance(release_sha, str)
+        or _RELEASE_SHA_RE.fullmatch(release_sha) is None
+    ):
+        raise HostedReadinessContractError("HOSTED_HEALTH_RELEASE_SHA_INVALID")
+    if not hmac.compare_digest(release_sha, expected_release_sha):
+        raise HostedReadinessContractError("HOSTED_HEALTH_RELEASE_SHA_MISMATCH")
+
+
+def _validate_public_ingress(value: object) -> None:
+    if type(value) is not bool:
+        raise HostedReadinessContractError("HOSTED_HEALTH_PUBLIC_INGRESS_STATE_INVALID")
+    if value:
+        raise HostedReadinessContractError("HOSTED_HEALTH_PUBLIC_INGRESS_FORBIDDEN")
+
+
+def _validated_evidence_time(
+    value: object,
+    *,
+    now_utc: datetime | None,
+    maximum_age_seconds: int,
+) -> datetime:
+    checked_at = _parse_utc(value, "HOSTED_HEALTH_EVIDENCE_TIMESTAMP_INVALID")
+    now = now_utc or datetime.now(UTC)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise HostedReadinessContractError("HOSTED_HEALTH_NOW_NOT_UTC_AWARE")
+    now = now.astimezone(UTC)
+    if checked_at > now + timedelta(seconds=5):
+        raise HostedReadinessContractError("HOSTED_HEALTH_EVIDENCE_FROM_FUTURE")
+    if (now - checked_at).total_seconds() > maximum_age_seconds:
+        raise HostedReadinessContractError("HOSTED_HEALTH_EVIDENCE_STALE")
+    return checked_at
+
+
+def _validate_runtime_match_flags(evidence: Mapping[str, Any]) -> None:
+    for field in (
+        "migration_state_match",
+        "runtime_acl_match",
+        "tenant_boundary_match",
+    ):
+        if type(evidence[field]) is not bool:
+            raise HostedReadinessContractError(f"HOSTED_HEALTH_{field.upper()}_INVALID")
+
+
+def _validated_dependency_state(
+    item: object,
+    *,
+    reason_pattern: re.Pattern[str],
+) -> tuple[str, str]:
+    dependency = _as_mapping(item, "HOSTED_HEALTH_DEPENDENCY_INVALID")
+    if set(dependency) != _EXPECTED_DEPENDENCY_FIELDS:
+        raise HostedReadinessContractError("HOSTED_HEALTH_DEPENDENCY_FIELDS_INVALID")
+    domain = dependency.get("domain")
+    state = dependency.get("state")
+    reason_code = dependency.get("reason_code")
+    if not isinstance(domain, str) or domain not in _EXPECTED_DOMAINS:
+        raise HostedReadinessContractError("HOSTED_HEALTH_DOMAIN_INVALID")
+    if not isinstance(state, str) or state not in _EXPECTED_STATES:
+        raise HostedReadinessContractError("HOSTED_HEALTH_STATE_INVALID")
+    if state == "NOT_APPLICABLE" and domain != "broker_external":
+        raise HostedReadinessContractError("HOSTED_HEALTH_CORE_DOMAIN_NOT_APPLICABLE")
+    if not isinstance(reason_code, str) or reason_pattern.fullmatch(reason_code) is None:
+        raise HostedReadinessContractError("HOSTED_HEALTH_REASON_CODE_INVALID")
+    return domain, state
+
+
+def _normalize_dependency_states(
+    dependencies: Sequence[object],
+    *,
+    reason_pattern: re.Pattern[str],
+) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for item in dependencies:
+        domain, state = _validated_dependency_state(
+            item,
+            reason_pattern=reason_pattern,
+        )
+        if domain in normalized:
+            raise HostedReadinessContractError("HOSTED_HEALTH_DOMAIN_DUPLICATE")
+        normalized[domain] = state
+    if set(normalized) != set(_EXPECTED_DOMAINS):
+        raise HostedReadinessContractError("HOSTED_HEALTH_DOMAINS_INCOMPLETE")
+    return normalized
+
+
 def validate_hosted_health_evidence(
     evidence: Mapping[str, Any],
     *,
@@ -243,104 +350,30 @@ def validate_hosted_health_evidence(
     if evidence.get("schema_version") != _EVIDENCE_VERSION:
         raise HostedReadinessContractError("HOSTED_HEALTH_EVIDENCE_VERSION_INVALID")
 
-    correlation_id = evidence.get("correlation_id")
-    if not isinstance(correlation_id, str):
-        raise HostedReadinessContractError("HOSTED_HEALTH_CORRELATION_ID_INVALID")
-    try:
-        parsed_correlation_id = UUID(correlation_id)
-    except ValueError as exc:
-        raise HostedReadinessContractError(
-            "HOSTED_HEALTH_CORRELATION_ID_INVALID"
-        ) from exc
-    if (
-        parsed_correlation_id.version != 4
-        or str(parsed_correlation_id) != correlation_id
-    ):
-        raise HostedReadinessContractError("HOSTED_HEALTH_CORRELATION_ID_INVALID")
+    _validate_correlation_id(evidence.get("correlation_id"))
+    _validate_release_binding(evidence.get("release_sha"), expected_release_sha)
+    _validate_public_ingress(evidence.get("public_ingress_enabled"))
 
-    if (
-        not isinstance(expected_release_sha, str)
-        or _RELEASE_SHA_RE.fullmatch(expected_release_sha) is None
-    ):
-        raise HostedReadinessContractError("HOSTED_HEALTH_EXPECTED_RELEASE_SHA_INVALID")
-    release_sha = evidence.get("release_sha")
-    if (
-        not isinstance(release_sha, str)
-        or _RELEASE_SHA_RE.fullmatch(release_sha) is None
-    ):
-        raise HostedReadinessContractError("HOSTED_HEALTH_RELEASE_SHA_INVALID")
-    if not hmac.compare_digest(release_sha, expected_release_sha):
-        raise HostedReadinessContractError("HOSTED_HEALTH_RELEASE_SHA_MISMATCH")
-
-    public_ingress_enabled = evidence.get("public_ingress_enabled")
-    if type(public_ingress_enabled) is not bool:
-        raise HostedReadinessContractError("HOSTED_HEALTH_PUBLIC_INGRESS_STATE_INVALID")
-    if public_ingress_enabled:
-        raise HostedReadinessContractError("HOSTED_HEALTH_PUBLIC_INGRESS_FORBIDDEN")
-
-    checked_at = _parse_utc(
-        evidence.get("checked_at_utc"),
-        "HOSTED_HEALTH_EVIDENCE_TIMESTAMP_INVALID",
-    )
-    now = now_utc or datetime.now(UTC)
-    if now.tzinfo is None or now.utcoffset() is None:
-        raise HostedReadinessContractError("HOSTED_HEALTH_NOW_NOT_UTC_AWARE")
-    now = now.astimezone(UTC)
     observability = _as_mapping(
         active_contract["observability"],
         "HOSTED_READINESS_OBSERVABILITY_INVALID",
     )
-    if checked_at > now + timedelta(seconds=5):
-        raise HostedReadinessContractError("HOSTED_HEALTH_EVIDENCE_FROM_FUTURE")
-    age = (now - checked_at).total_seconds()
-    if age > int(observability["maximum_evidence_age_seconds"]):
-        raise HostedReadinessContractError("HOSTED_HEALTH_EVIDENCE_STALE")
+    _validated_evidence_time(
+        evidence.get("checked_at_utc"),
+        now_utc=now_utc,
+        maximum_age_seconds=int(observability["maximum_evidence_age_seconds"]),
+    )
+    _validate_runtime_match_flags(evidence)
 
-    for field in (
-        "migration_state_match",
-        "runtime_acl_match",
-        "tenant_boundary_match",
-    ):
-        if type(evidence[field]) is not bool:
-            raise HostedReadinessContractError(f"HOSTED_HEALTH_{field.upper()}_INVALID")
-
-    reason_pattern = re.compile(str(observability["reason_code_pattern"]))
     dependencies = _as_sequence(
         evidence.get("dependencies"),
         "HOSTED_HEALTH_DEPENDENCIES_INVALID",
     )
-    normalized: dict[str, str] = {}
-    for item in dependencies:
-        dependency = _as_mapping(item, "HOSTED_HEALTH_DEPENDENCY_INVALID")
-        if set(dependency) != _EXPECTED_DEPENDENCY_FIELDS:
-            raise HostedReadinessContractError(
-                "HOSTED_HEALTH_DEPENDENCY_FIELDS_INVALID"
-            )
-        domain = dependency.get("domain")
-        state = dependency.get("state")
-        reason_code = dependency.get("reason_code")
-        if not isinstance(domain, str) or domain not in _EXPECTED_DOMAINS:
-            raise HostedReadinessContractError("HOSTED_HEALTH_DOMAIN_INVALID")
-        if domain in normalized:
-            raise HostedReadinessContractError("HOSTED_HEALTH_DOMAIN_DUPLICATE")
-        if not isinstance(state, str) or state not in _EXPECTED_STATES:
-            raise HostedReadinessContractError("HOSTED_HEALTH_STATE_INVALID")
-        if state == "NOT_APPLICABLE" and domain != "broker_external":
-            raise HostedReadinessContractError(
-                "HOSTED_HEALTH_CORE_DOMAIN_NOT_APPLICABLE"
-            )
-        if (
-            not isinstance(reason_code, str)
-            or reason_pattern.fullmatch(reason_code) is None
-        ):
-            raise HostedReadinessContractError("HOSTED_HEALTH_REASON_CODE_INVALID")
-        normalized[domain] = state
-
-    if set(normalized) != set(_EXPECTED_DOMAINS):
-        raise HostedReadinessContractError("HOSTED_HEALTH_DOMAINS_INCOMPLETE")
-    return normalized
-
-
+    reason_pattern = re.compile(str(observability["reason_code_pattern"]))
+    return _normalize_dependency_states(
+        dependencies,
+        reason_pattern=reason_pattern,
+    )
 def aggregate_hosted_runtime_state(
     evidence: Mapping[str, Any],
     *,

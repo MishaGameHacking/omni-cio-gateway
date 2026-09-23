@@ -60,16 +60,20 @@ _EXPECTED_MANIFEST_FIELDS = (
     "forced_rls_relations",
     "encryption_state",
 )
-_ARCHIVE_NAME_PATTERN = r"wp22a-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}\.dump"
-_ARCHIVE_NAME_RE = re.compile(_ARCHIVE_NAME_PATTERN)
-_ARCHIVE_METADATA_RE = re.compile(r"^wp22a-([0-9]{8}T[0-9]{6}Z)-([a-f0-9]{12})\.dump$")
-_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
-_RELEASE_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
-_CREATED_AT_RE = re.compile(
-    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
-    r"[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+_ARCHIVE_NAME_PATTERN = r"wp22a-\d{8}T\d{6}Z-[a-f\d]{12}\.dump"
+_ARCHIVE_NAME_RE = re.compile(_ARCHIVE_NAME_PATTERN, flags=re.ASCII)
+_ARCHIVE_METADATA_RE = re.compile(
+    r"^wp22a-(\d{8}T\d{6}Z)-([a-f\d]{12})\.dump$",
+    flags=re.ASCII,
 )
-_DATABASE_RE = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+_SHA256_RE = re.compile(r"^[a-f\d]{64}$", flags=re.ASCII)
+_RELEASE_SHA_RE = re.compile(r"^[a-f\d]{40}$", flags=re.ASCII)
+_CREATED_AT_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T"
+    r"\d{2}:\d{2}:\d{2}Z$",
+    flags=re.ASCII,
+)
+_DATABASE_RE = re.compile(r"^[a-z][a-z\d_]{0,62}$", flags=re.ASCII)
 
 
 class HostedRecoveryContractError(RuntimeError):

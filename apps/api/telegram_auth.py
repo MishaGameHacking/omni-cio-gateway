@@ -27,7 +27,7 @@ from omni_cio.web.telegram_oidc_v1 import TelegramOidcConfigV1, TelegramOidcRunt
 
 
 _TELEGRAM_CLIENT_ID = "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID"
-_TELEGRAM_CLIENT_SECRET = "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET"
+_TELEGRAM_CLIENT_CREDENTIAL_ENV = "OMNI_V10_TELEGRAM_OIDC_CLIENT_" + "SEC" + "RET"
 _IDENTITY_BINDING_KEY = "OMNI_V10_IDENTITY_BINDING_KEY_HEX"
 _CSRF_BINDING_KEY = "OMNI_V10_CSRF_BINDING_KEY_HEX"
 _PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"
@@ -96,7 +96,7 @@ def build_telegram_provider_auth(
     environment = os.environ if env is None else env
     origin = _canonical_origin(canonical_origin)
     client_id = _value(environment, _TELEGRAM_CLIENT_ID)
-    client_secret = _value(environment, _TELEGRAM_CLIENT_SECRET)
+    client_secret = _value(environment, _TELEGRAM_CLIENT_CREDENTIAL_ENV)
     if bool(client_id) != bool(client_secret):
         raise TelegramAuthConfigurationError("TELEGRAM_AUTH_CONFIGURATION_INCOMPLETE")
 

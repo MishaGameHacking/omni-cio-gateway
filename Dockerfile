@@ -17,7 +17,7 @@ WORKDIR /app
 
 RUN groupadd --system omni && useradd --system --gid omni --home-dir /app omni
 COPY requirements.txt ./requirements.txt
-RUN python -m pip install --require-hashes -r requirements.txt
+RUN python -m pip install --only-binary=:all: --require-hashes -r requirements.txt
 
 COPY apps ./apps
 COPY omni_cio ./omni_cio
