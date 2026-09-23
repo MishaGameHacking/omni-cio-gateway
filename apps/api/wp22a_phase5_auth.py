@@ -267,7 +267,6 @@ def build_wp22a_phase5_provider_auth(
             authentication=None,
             cookies=cookies,
             now=now,
-            descriptor_providers=historical_providers,
         )
 
     disabled = _disabled_reasons(
@@ -291,7 +290,6 @@ def build_wp22a_phase5_provider_auth(
             now=now,
             disabled_reasons=disabled,
             registration_enabled=False,
-            descriptor_providers=historical_providers,
         )
 
     transactions = PostgresAuthorizationTransactionStoreV1(connection)
@@ -339,5 +337,4 @@ def build_wp22a_phase5_provider_auth(
         now=now,
         disabled_reasons=disabled,
         registration_enabled=True,
-        descriptor_providers=historical_providers,
     )
