@@ -280,6 +280,38 @@ The public root trust anchor is scoped to pip processes that receive
 machine. Dependency versions, hashes and the official T-Bank package source are
 unchanged.
 
+## Timeweb App Platform Docker dependency consumer
+
+TW-B repository-wide source review found a second platform-specific consumer of the
+same T-Bank CA trust prerequisite. The root `Dockerfile` installs the canonical
+`requirements.txt`, and that lock contains the official T-Bank package index as an
+extra resolver source. A stock `python:3.14.6-slim-bookworm` image does not inherit
+the protected Windows runner's job-local `PIP_CERT` bundle.
+
+This is a build-supply-chain defect class, not a reason to weaken TLS or remove the
+locked SDK. If left unfixed, the first Timeweb App Platform Docker build can fail
+during dependency resolution before Omni-CIO starts, reproducing the same
+certificate-verification class already proven on Windows.
+
+Systemic correction in TW-B:
+
+- reuse the accepted source-controlled Russian Trusted Root CA and reviewed DER
+  fingerprint contract;
+- reuse `prepare_v10_tbank_pip_ca_bundle.py` to merge that root with pip's own
+  vendored certifi bundle;
+- scope `PIP_CERT` to the single Docker build dependency-install command;
+- delete the temporary bundle immediately after the install step;
+- keep certificate and hostname verification enabled and forbid
+  `--trusted-host`/TLS bypasses;
+- set `SSL_TBANK_VERIFY=True` in the runtime image so the locked
+  `t-tech-investments==1.49.3` SDK uses its supported embedded Russian CA path;
+- do not bake broker, Telegram or PostgreSQL credentials into Docker build args or
+  image environment.
+
+This extends the existing reviewed trust primitive to a new consumer. It does not
+change dependency versions, package-source authority, broker permissions, or the
+OWNER/Admin machine-trust boundary.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head

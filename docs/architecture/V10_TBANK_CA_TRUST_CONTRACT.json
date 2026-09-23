@@ -139,7 +139,22 @@
         "job": "phase2-product-auth-tenant"
       }
     ],
-    "every_windows_dependency_install_job_requires_preflight": true
+    "every_windows_dependency_install_job_requires_preflight": true,
+    "timeweb_docker_pip_trust": {
+      "dockerfile": "Dockerfile",
+      "requirements_lock": "requirements.txt",
+      "bundle_preparer": "scripts/prepare_v10_tbank_pip_ca_bundle.py",
+      "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
+      "base_bundle": "pip_vendored_certifi",
+      "environment_variable": "PIP_CERT",
+      "bundle_scope": "DOCKER_BUILD_TEMP_ONLY",
+      "persistent_bundle": false,
+      "machine_trust_store_required": false,
+      "certificate_verification_enabled": true,
+      "hostname_verification_enabled": true,
+      "runtime_tinvest_sdk_verify_env": "SSL_TBANK_VERIFY",
+      "runtime_tinvest_sdk_verify_value": "True"
+    }
   },
   "protected_invariants": {
     "gateway_entrypoint": "app:app",

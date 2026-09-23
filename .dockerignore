@@ -22,6 +22,11 @@ test-results
 playwright-report
 tests
 docs
+!docs/
+docs/*
+!docs/architecture/
+docs/architecture/*
+!docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json
 knowledge
 broker-reports
 private-data

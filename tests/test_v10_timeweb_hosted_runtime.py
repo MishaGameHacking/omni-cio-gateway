@@ -294,6 +294,17 @@ def test_timeweb_dockerfile_uses_provider_neutral_runtime() -> None:
     assert "apps.api.hosted_runtime:create_app" in dockerfile
     assert "ARG OMNI_V10_RELEASE_SHA" not in dockerfile
     assert "ENV OMNI_V10_RELEASE_SHA" not in dockerfile
+    assert "SSL_TBANK_VERIFY=True" in dockerfile
+    assert "prepare_v10_tbank_pip_ca_bundle.py" in dockerfile
+    assert "PIP_CERT=\"$PIP_CERT_PATH\" python -m pip install" in dockerfile
+    for secret_name in (
+        "OMNI_V10_POSTGRES_DSN",
+        "TELEGRAM_BOT_TOKEN",
+        "TINVEST_TOKEN",
+        "TINVEST_TRADING_TOKEN",
+    ):
+        assert f"ARG {secret_name}" not in dockerfile
+        assert f"ENV {secret_name}" not in dockerfile
     assert "Dockerfile.cloudflare" not in dockerfile
     assert "wrangler" not in dockerfile.lower()
     assert "render" not in dockerfile.lower()

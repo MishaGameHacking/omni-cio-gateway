@@ -205,6 +205,7 @@ Only `CERTIFIED_GREEN` permits TW-B.
 | Final TW-B source correction had two Ruff format drifts | last source edits were semantically correct but were not normalized to the pinned formatter output | two changed regression tests | Fast PR source gate | deterministic RED before focused unit tests | final edit batch was published before formatter-equivalent review | apply the exact Ruff-emitted layout and keep changed-file formatting fail-closed |
 | Synthetic-create runbook guard used an exact whitespace-sensitive marker | the required no-production-cutover sentence was wrapped across Markdown lines | Timeweb RU-PG-B create runbook + source guard | authoritative pytest | one deterministic contract RED despite correct policy meaning | guard marker and prose layout were coupled | keep the explicit no-cutover sentence contiguous while preserving TW-D ownership of production DB cutover |
 | Timeweb inventory transitive-consumer validator exceeded Sonar complexity threshold | classification, historical-detachment, V9, VK and database-authority checks accumulated in one function | Timeweb provider inventory guard | Sonar maintainability | quality finding on the source/runtime checkpoint | responsibilities were not split after successive TW-A/TW-B hardening | extract bounded classification and authority helpers without weakening any check |
+| Timeweb Docker build inherited the T-Bank package-index CA prerequisite without a build-scoped trust bundle | canonical `requirements.txt` contains the official T-Bank extra index while the stock Linux image has no reviewed Russian Trusted Root CA augmentation | `Dockerfile`, T-Bank CA contract/preparer, Docker build context and runtime SDK TLS mode | Timeweb App Platform image build | dependency install can fail before application startup; TLS bypass would create a supply-chain regression | prior CA closure enumerated Windows job-local consumers but not the future Linux/Timeweb image-build consumer | reuse the pinned certifi+Russian-root `PIP_CERT` bundle only for Docker dependency install, delete it after use, enable locked SDK `SSL_TBANK_VERIFY=True`, and regression-test no TLS bypass/secret baking |
 ### TW-B Timeweb App Platform source constraints — verified 2026-09-23
 
 Applicable official Timeweb documentation was rechecked before this source correction.
@@ -235,6 +236,8 @@ Official references rechecked:
 - https://timeweb.cloud/docs/apps/healthcheck-path
 - https://timeweb.cloud/docs/apps/how-it-works
 - https://timeweb.cloud/docs/apps/variables
+- https://timeweb.cloud/docs/apps/trusted-certificates
+- https://developer.tbank.ru/docs/tls-settings
 - https://timeweb.cloud/docs/apps/upravlenie-apps-v-paneli
 - https://timeweb.cloud/docs/dbaas/postgresql
 - https://timeweb.cloud/docs/dbaas/postgresql/connect-to-database
