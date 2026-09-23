@@ -44,7 +44,7 @@
   },
   "bundle": {
     "backup_class": "POSTGRES_LOGICAL_PRIVATE_STATE",
-    "archive_name_pattern": "wp22a-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}\\.dump",
+    "archive_name_pattern": "wp22a-\\d{8}T\\d{6}Z-[a-f\\d]{12}\\.dump",
     "manifest_schema_version": "v10.wp22a.phase3.hosted-recovery-manifest.v1",
     "allowed_manifest_fields": [
       "schema_version",

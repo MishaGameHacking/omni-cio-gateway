@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-phase4-free-preview-deploy.yml"
 SCRIPT = ROOT / "scripts" / "provision_v10_render_neon_preview.py"
+PROVIDER_RUNTIME_PRIMITIVES = ROOT / "scripts" / "provider_runtime_primitives.py"
 HOSTED_APP = ROOT / "apps" / "api" / "hosted_preview.py"
 
 
@@ -296,12 +297,14 @@ def test_synthetic_record_hashes_are_real_and_stable() -> None:
 
 def test_http_failures_never_include_provider_response_body() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
+    primitives = PROVIDER_RUNTIME_PRIMITIVES.read_text(encoding="utf-8")
 
     assert "exc.read" not in source
     assert "response body" not in source.casefold()
     assert "PAYMENT_OR_CARD_REQUIRED" in source
     assert "API_KEY_INVALID_OR_INSUFFICIENT" in source
-    assert "::add-mask::" in source
+    assert "_mask = _provider_runtime._mask" in source
+    assert "::add-mask::" in primitives
 
 
 def test_provider_identifiers_reject_path_traversal() -> None:

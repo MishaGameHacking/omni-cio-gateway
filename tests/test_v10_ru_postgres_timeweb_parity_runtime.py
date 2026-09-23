@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -78,7 +79,7 @@ def test_runtime_dsn_preserves_transport_and_replaces_identity() -> None:
 
 def test_proof_uses_provider_neutral_postgres_runtime_primitives() -> None:
     assert proof.RUNTIME_ROLE == "omni_cio_timeweb_synthetic"
-    source = proof.Path(proof.__file__).read_text(encoding="utf-8")
+    source = Path(proof.__file__).read_text(encoding="utf-8")
     assert "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)" in source
     assert "postgres_runtime.converge_runtime_role(" in source
     assert "postgres_runtime.verify_runtime(runtime, RUNTIME_ROLE)" in source

@@ -94,7 +94,9 @@ def test_runtime_role_membership_drift_stops_before_create_or_retry() -> None:
 def test_postgres18_rehearsal_exercises_exact_create_and_retry_paths() -> None:
     bootstrap_source = inspect.getsource(rehearsal.rehearse_bootstrap)
 
-    assert bootstrap_source.count("_converge_runtime_role(") == 2
+    assert bootstrap_source.count(
+        "converge_runtime_role(bootstrap, RUNTIME_ROLE,"
+    ) == 2
     assert "first_password" in bootstrap_source
     assert "second_password" in bootstrap_source
     assert "PG18_HOSTED_RUNTIME_BOOTSTRAP=PASS" in bootstrap_source

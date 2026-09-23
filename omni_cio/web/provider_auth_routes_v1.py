@@ -190,6 +190,8 @@ def _delete_proof_cookie(
     provider: IdentityProviderV1,
     cookies: BrowserCookiePolicyV1,
 ) -> None:
+    if provider not in cookies.allowed_providers:
+        return
     response.delete_cookie(
         cookies.proof_cookie(provider),
         path="/",
