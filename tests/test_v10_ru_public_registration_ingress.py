@@ -84,11 +84,16 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
         wp15 = WP15_LIVE_RUNBOOK.read_text(encoding="utf-8")
         boundaries = SECURITY_BOUNDARIES.read_text(encoding="utf-8")
 
-        self.assertIn("Amendment 18 CURRENT-AUTHORITY OVERRIDE", wp17)
+        self.assertIn("CURRENT-AUTHORITY OVERRIDE", wp17)
         self.assertIn(
             "Current ordinary product login is exactly **Telegram Login**",
             wp17,
         )
+        self.assertIn(
+            "No OWNER laptop command is required to certify TW-B source/runtime work.",
+            wp17,
+        )
+        self.assertNotIn("still an exact-head acceptance boundary", wp17)
         self.assertIn(
             "Ordinary human product login provider: Telegram Login only",
             identity,

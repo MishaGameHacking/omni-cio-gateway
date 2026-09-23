@@ -270,7 +270,10 @@ gates independently also caught Ruff formatting drift in the two newly added Ame
 Python files.
 
 Root cause: the authority producer was changed before the complete producer/consumer
-closure was rewritten. The systemic correction separates **current Timeweb hosted
+closure was rewritten. The first closure repair then exposed one additional consumer:
+the Timeweb current-guidance guard/test were coupled to the literal Amendment-18 heading
+instead of the durable current-authority semantics, so an Amendment-19 wording update
+created a deterministic false RED. The systemic correction separates **current Timeweb hosted
 custody** from **historical local DPAPI custody** in the WP17 contract, moves local ACL
 workflow assertions to the manual historical workflow, makes current Timeweb broker
 mutation remain fail-closed, and extends the no-OWNER-laptop guard so this split cannot

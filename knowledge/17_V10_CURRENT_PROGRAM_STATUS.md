@@ -545,7 +545,10 @@ and a stale WP17 local-vault regression that still required the **active** Timew
 workflow to execute the historical Windows ACL auditor. The latter caused both WP17
 Application Shell and WP15 Live Web Support to fail the same test.
 
-The repair class is producer/consumer closure, not an OWNER action. The active Timeweb
+The repair class is producer/consumer closure, not an OWNER action. The first
+replacement also exposed a current-guidance guard coupled to the literal Amendment-18
+heading; that validator must bind to durable Timeweb/Telegram/no-laptop semantics rather
+than an amendment-number string. The active Timeweb
 contract/guard/test path must state that OWNER/Admin ACL evidence does not block the
 Timeweb PR, while the old DPAPI/ACL scripts and direct negative permission proof remain
 preserved behind the manual historical workflow. Hosted broker credential mutation

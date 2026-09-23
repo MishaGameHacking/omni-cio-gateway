@@ -463,7 +463,10 @@ the newly added Amendment-19 guard/test.
 **Root cause:** the active workflow producer was correctly replaced, but directly coupled
 consumers were not closed in the same coherent batch. The WP17 contract, Web-security
 guard and local-vault regression still encoded OWNER/Admin exact-head Windows ACL proof
-as a current Timeweb acceptance dependency.
+as a current Timeweb acceptance dependency. A second-order false RED also showed that
+the Timeweb current-guidance validator had coupled the required meaning to the literal
+`Amendment 18 CURRENT-AUTHORITY OVERRIDE` heading instead of the durable authority
+semantics.
 
 **Blast radius searched:** active/historical WP17 workflows, local DPAPI provisioner/
 finalizer/auditor, WP17 machine contract and security guard, WP15 live-support consumer,
@@ -488,7 +491,9 @@ remains intact rather than being deleted or suppressed.
 
 **Future prevention rule:** when replacing an authority producer, enumerate and update
 all consumers, validators, tests, runbooks and status contracts before publishing the
-replacement checkpoint. A passing new producer does not prove the old authority has
+replacement checkpoint. Document guards must validate durable semantic markers rather
+than amendment-number-specific prose when later accepted amendments may extend the same
+authority. A passing new producer does not prove the old authority has
 ceased to be a hidden prerequisite.
 
 **Dependency/tooling knowledge change:** a required-check name may be preserved for

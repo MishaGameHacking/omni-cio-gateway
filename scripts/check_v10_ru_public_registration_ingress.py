@@ -627,8 +627,9 @@ def _validate_retired_provider_guidance() -> None:
 def _validate_current_security_guidance() -> None:
     guidance = {
         WP17_RUNBOOK: (
-            "Amendment 18 CURRENT-AUTHORITY OVERRIDE",
+            "CURRENT-AUTHORITY OVERRIDE",
             "Current ordinary product login is exactly **Telegram Login**",
+            "No OWNER laptop command is required to certify TW-B source/runtime work.",
         ),
         IDENTITY_SECURITY_NOTES: (
             "Ordinary human product login provider: Telegram Login only",
