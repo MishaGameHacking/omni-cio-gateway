@@ -90,9 +90,7 @@ def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() ->
         "$mutationsAttempted = $true"
     )
     assert "Import-Certificate" in source
-    assert (
-        "$rootStore = [string]$contract.certificates.root.windows_store" in source
-    )
+    assert "$rootStore = [string]$contract.certificates.root.windows_store" in source
     assert (
         "$subStore = [string]$contract.certificates.intermediate.windows_store"
         in source
