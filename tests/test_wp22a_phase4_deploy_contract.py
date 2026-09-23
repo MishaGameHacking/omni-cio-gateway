@@ -122,9 +122,10 @@ def test_neon_organization_requires_one_free_plan() -> None:
             assert path == "/users/me/organizations"
             return {"organizations": self.organizations}
 
-    assert module._neon_organization(
-        Api([{"id": "org-free-preview", "plan": "free"}])
-    ) == "org-free-preview"
+    assert (
+        module._neon_organization(Api([{"id": "org-free-preview", "plan": "free"}]))
+        == "org-free-preview"
+    )
 
     with pytest.raises(
         module.ProvisioningStopped,
@@ -133,9 +134,7 @@ def test_neon_organization_requires_one_free_plan() -> None:
         module._neon_organization(Api([]))
 
     with pytest.raises(module.ProvisioningStopped, match="NEON_FREE_PLAN_REQUIRED"):
-        module._neon_organization(
-            Api([{"id": "org-paid-preview", "plan": "launch"}])
-        )
+        module._neon_organization(Api([{"id": "org-paid-preview", "plan": "launch"}]))
 
 
 def test_existing_neon_project_lookup_is_explicitly_org_scoped() -> None:
@@ -424,12 +423,12 @@ def test_database_bootstrap_stage_evidence_is_fixed_sanitized_and_ordered() -> N
         source.index("def _bootstrap_database(") : source.index("def _render_env(")
     ]
     markers = (
-        'DATABASE_BOOTSTRAP_STAGE=CONNECT',
-        'DATABASE_BOOTSTRAP_STAGE=MIGRATIONS',
-        'DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE',
-        'DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS',
-        'DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED',
-        'DATABASE_BOOTSTRAP_STAGE=COMPLETE',
+        "DATABASE_BOOTSTRAP_STAGE=CONNECT",
+        "DATABASE_BOOTSTRAP_STAGE=MIGRATIONS",
+        "DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE",
+        "DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS",
+        "DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED",
+        "DATABASE_BOOTSTRAP_STAGE=COMPLETE",
     )
     positions: list[int] = []
     for marker in markers:
@@ -438,6 +437,8 @@ def test_database_bootstrap_stage_evidence_is_fixed_sanitized_and_ordered() -> N
         positions.append(bootstrap.index(literal))
 
     assert positions == sorted(positions)
-    assert '_emit(str(' not in bootstrap
-    assert '_emit(repr(' not in bootstrap
-    assert 'raise ProvisioningStopped("DATABASE_BOOTSTRAP_FAILED") from None' in bootstrap
+    assert "_emit(str(" not in bootstrap
+    assert "_emit(repr(" not in bootstrap
+    assert (
+        'raise ProvisioningStopped("DATABASE_BOOTSTRAP_FAILED") from None' in bootstrap
+    )
