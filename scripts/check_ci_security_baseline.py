@@ -63,6 +63,8 @@ BRAND_CUSTODY_PATH = "docs/brand/OMNI_CIO_BRAND_ASSETS_CUSTODY.json"
 BRAND_PACKAGE_PATH = "docs/brand/omni-cio-brand-assets-v1"
 BRAND_MANIFEST_PATH = f"{BRAND_PACKAGE_PATH}/asset-manifest.json"
 BRAND_GUARD_PATH = "scripts/check_v10_brand_assets.py"
+TBANK_CA_CONTRACT_PATH = "docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json"
+TBANK_CA_ROOT_DIGEST_FIELD = "sha256_der"
 HEX_HIGH_ENTROPY_FINDING = "Hex High Entropy String"
 FINDING_TYPE_KEY = "type"
 FINDING_LINE_NUMBER_KEY = "line_number"
@@ -74,6 +76,10 @@ _HEX_JSON_LINE = re.compile(
     re.ASCII,
 )
 _SHA256_LITERAL_LINE = re.compile(r'^"(?P<value>[0-9a-f]{64})"$')
+_TBANK_CA_SHA256_JSON_LINE = re.compile(
+    r'^"sha256_der": "(?P<value>[A-F0-9]{64})",?$',
+    re.ASCII,
+)
 _BRAND_TRANSPARENT_PIXEL_SHA256 = "".join(
     (
         "28a92276",
@@ -721,6 +727,51 @@ def _approved_brand_integrity_finding(
     )
 
 
+def _verified_tbank_ca_public_fingerprint() -> str | None:
+    try:
+        payload = json.loads(
+            (ROOT / TBANK_CA_CONTRACT_PATH).read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    certificates = payload.get("certificates")
+    if not isinstance(certificates, dict):
+        return None
+    root_record = certificates.get("root")
+    if not isinstance(root_record, dict):
+        return None
+    expected = root_record.get(TBANK_CA_ROOT_DIGEST_FIELD)
+    if (
+        not isinstance(expected, str)
+        or re.fullmatch(r"[A-F0-9]{64}", expected, re.ASCII) is None
+    ):
+        return None
+    certificate = _safe_descendant(ROOT, root_record.get("repository_der"))
+    if certificate is None or not certificate.is_file():
+        return None
+    actual = _sha256_file(certificate).upper()
+    return expected if actual == expected else None
+
+
+def _approved_tbank_ca_public_fingerprint_finding(
+    filename: str,
+    finding: dict[str, Any],
+) -> bool:
+    located = _hex_entropy_finding_line(filename, finding)
+    if located is None:
+        return False
+    normalized, _, line = located
+    if normalized != TBANK_CA_CONTRACT_PATH:
+        return False
+    match = _TBANK_CA_SHA256_JSON_LINE.fullmatch(line)
+    verified = _verified_tbank_ca_public_fingerprint()
+    return (
+        match is not None and verified is not None and match.group("value") == verified
+    )
+
+
 def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:
     if finding.get(FINDING_TYPE_KEY) != "Secret Keyword":
         return False
@@ -761,6 +812,7 @@ def _approved_detect_secrets_finding(
         _approved_keyword_metadata_finding(filename, finding)
         or _approved_public_checksum_finding(filename, finding)
         or _approved_git_sha_evidence_finding(filename, finding)
+        or _approved_tbank_ca_public_fingerprint_finding(filename, finding)
         or _approved_brand_integrity_finding(
             filename,
             finding,

@@ -1,0 +1,88 @@
+{
+  "schema": "omni-cio.v10.tbank-ca-trust.v2",
+  "status": "FOCUSED_REPAIR_CONTRACT",
+  "official_certificate_source": "https://www.gosuslugi.ru/crt",
+  "official_tbank_reference": "https://developer.tbank.ru/docs/tls-settings",
+  "package_index": "https://opensource.tbank.ru/api/v4/projects/238/packages/pypi/simple",
+  "certificates": {
+    "root": {
+      "common_name": "Russian Trusted Root CA",
+      "windows_store": "Cert:\\LocalMachine\\Root",
+      "self_issued_required": true,
+      "ca_required": true,
+      "sha256_der": "D26D2D0231B7C39F92CC738512BA54103519E4405D68B5BD703E9788CA8ECF31",
+      "fingerprint_pin_required": true,
+      "distribution_url": "https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt",
+      "repository_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der"
+    },
+    "intermediate": {
+      "common_name": "Russian Trusted Sub CA",
+      "issuer_common_name": "Russian Trusted Root CA",
+      "windows_store": "Cert:\\LocalMachine\\CA",
+      "ca_required": true,
+      "chain_to_pinned_root_required": true
+    }
+  },
+  "mutation": {
+    "ci_runner_may_modify_machine_trust": false,
+    "apply_requires_windows_administrator": true,
+    "network_download_by_provisioner": false,
+    "owner_download_from_official_source_required": true,
+    "idempotent_import_required": true,
+    "certificate_fingerprint_rotation_requires_code_review": true,
+    "validate_all_inputs_before_first_store_mutation": true
+  },
+  "verification": {
+    "installed_certificates_must_be_current": true,
+    "package_index_tls_probe_client": "pip",
+    "package_index_tls_probe_read_only": true,
+    "tls_verification_may_be_disabled": false,
+    "hostname_verification_may_be_disabled": false,
+    "windows_dependency_consumers": [
+      ".github/workflows/regression-shield.yml",
+      ".github/workflows/self-hosted-windows-smoke.yml",
+      ".github/workflows/v10-wp13-postgresql-audit.yml",
+      ".github/workflows/v10-wp14-durable-jobs-audit.yml",
+      ".github/workflows/v10-wp15-live-web-support-audit.yml",
+      ".github/workflows/v10-wp15-tinvest-read-audit.yml",
+      ".github/workflows/v10-wp17-application-shell-audit.yml",
+      ".github/workflows/v10-wp18-portfolio-dashboard-audit.yml",
+      ".github/workflows/v10-wp19-watchtower-incidents-audit.yml",
+      ".github/workflows/v10-wp20-research-dossier-audit.yml",
+      ".github/workflows/v10-wp21-decision-risk-plan-audit.yml",
+      ".github/workflows/v10-wp22-system-admin-audit.yml",
+      ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+      ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
+    ],
+    "every_windows_dependency_consumer_requires_preflight": true,
+    "syntax_checker": "scripts/check_v10_tbank_ca_trust_syntax.ps1",
+    "syntax_checker_targets": [
+      "scripts/check_v10_tbank_ca_trust.ps1",
+      "infrastructure/windows/provision_v10_tbank_ca_trust.ps1"
+    ],
+    "syntax_checker_transport": "cmd_to_powershell_exe_process_local_bypass_file",
+    "ci_pip_trust": {
+      "mode": "ephemeral_pip_cert_bundle",
+      "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
+      "base_bundle": "pip_vendored_certifi",
+      "environment_variable": "PIP_CERT",
+      "caller_supplied_bundle_paths": false,
+      "bundle_output_scope": "RUNNER_TEMP_DIRECT_CHILD",
+      "github_env_writer": "READ_ONLY_CA_CHECKER",
+      "github_env_must_be_runner_temp_descendant": true,
+      "machine_trust_store_required": false,
+      "persistent_machine_mutation": false,
+      "certificate_verification_enabled": true,
+      "hostname_verification_enabled": true
+    },
+    "package_index_tls_probe_cert_source": "ephemeral_pip_cert_bundle"
+  },
+  "protected_invariants": {
+    "gateway_entrypoint": "app:app",
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false
+  }
+}

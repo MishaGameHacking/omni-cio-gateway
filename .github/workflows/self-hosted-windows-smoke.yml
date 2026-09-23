@@ -218,6 +218,10 @@ jobs:
           python -c "import json, os; p=os.environ['WP5_NODE_PROFILE_PATH']; print('WP5_OWNER_NODE_PROFILE_JSON='+json.dumps(json.load(open(p, encoding='utf-8')), separators=(',', ':'), sort_keys=True))"
           if errorlevel 1 exit /b %errorlevel%
 
+      - name: Verify T-Bank package CA trust boundary
+        shell: cmd
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\check_v10_tbank_ca_trust.ps1 -AsJson
+
       - name: Create isolated protected-runtime environment
         run: |
           VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
