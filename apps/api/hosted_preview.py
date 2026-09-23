@@ -26,12 +26,7 @@ from apps.api.hosted_app import (
 )
 from apps.api.hosted_database_runtime import probe_hosted_runtime_database
 from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth
-from omni_cio.persistence.hosted_synthetic_scope_v1 import (
-    SYNTHETIC_TENANT_ID as PREVIEW_TENANT_ID,
-    SYNTHETIC_USER_ID as PREVIEW_USER_ID,
-    record_sha256 as _record_sha256,
-    verify_synthetic_scope as _verify_synthetic_scope,
-)
+from omni_cio.persistence import hosted_synthetic_scope_v1 as _synthetic_scope
 from omni_cio.persistence.migration import connect_postgres
 from omni_cio.web.browser_security_v1 import (
     BROWSER_CSRF_COOKIE,
@@ -62,6 +57,13 @@ _PROVIDER_START_PATHS = frozenset({TELEGRAM_START_PATH, VK_ID_START_PATH})
 _SERVER_MUTATION_PATHS = frozenset({CF_D_DATABASE_BOOTSTRAP_PATH})
 _RENDER_HOST_SUFFIX = ".onrender.com"
 _HISTORICAL_RUNTIME_ROLE = "omni_cio_hosted_api"
+
+# Historical compatibility names are explicit aliases rather than unused imports.
+# Current Timeweb code imports hosted_synthetic_scope_v1 directly.
+PREVIEW_TENANT_ID = _synthetic_scope.SYNTHETIC_TENANT_ID
+PREVIEW_USER_ID = _synthetic_scope.SYNTHETIC_USER_ID
+_record_sha256 = _synthetic_scope.record_sha256
+_verify_synthetic_scope = _synthetic_scope.verify_synthetic_scope
 
 
 @dataclass(slots=True)
