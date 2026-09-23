@@ -145,6 +145,7 @@ def test_hosted_postgres_bootstrap_removes_public_privilege_paths() -> None:
         "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA omni_cio_v10 FROM PUBLIC",
     ):
         assert required in source
+    assert source.count("'GRANT CONNECT ON DATABASE %I TO %I'") == 1
     assert "GRANT EXECUTE ON FUNCTION" in source
 
 

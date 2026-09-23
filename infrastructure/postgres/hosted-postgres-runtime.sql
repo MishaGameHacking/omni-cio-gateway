@@ -110,11 +110,6 @@ $hosted_user$;
 DO $database_privileges$
 BEGIN
     EXECUTE pg_catalog.format(
-        'GRANT CONNECT ON DATABASE %I TO %I',
-        pg_catalog.current_database(),
-        'omni_cio_hosted_api'
-    );
-    EXECUTE pg_catalog.format(
         'REVOKE ALL PRIVILEGES ON DATABASE %I FROM %I',
         pg_catalog.current_database(),
         'omni_cio_hosted_api'
