@@ -768,9 +768,7 @@ def _approved_tbank_ca_public_fingerprint_finding(
     match = _TBANK_CA_SHA256_JSON_LINE.fullmatch(line)
     verified = _verified_tbank_ca_public_fingerprint()
     return (
-        match is not None
-        and verified is not None
-        and match.group("value") == verified
+        match is not None and verified is not None and match.group("value") == verified
     )
 
 def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:

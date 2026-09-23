@@ -131,9 +131,7 @@ def _runner_temp_root() -> Path:
 
 
 def _new_bundle_path() -> Path:
-    return _runner_temp_root() / (
-        f"omni-cio-tbank-pip-ca-{secrets.token_hex(16)}.pem"
-    )
+    return _runner_temp_root() / (f"omni-cio-tbank-pip-ca-{secrets.token_hex(16)}.pem")
 
 
 def _write_bundle(text: str) -> Path:
