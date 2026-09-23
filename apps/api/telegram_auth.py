@@ -58,9 +58,7 @@ def _require_activation_pair(
     login_enabled: bool,
 ) -> None:
     if public_enabled != login_enabled:
-        raise TelegramAuthConfigurationError(
-            "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH"
-        )
+        raise TelegramAuthConfigurationError("TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH")
 
 
 def _key(environment: Mapping[str, str], name: str) -> bytes:

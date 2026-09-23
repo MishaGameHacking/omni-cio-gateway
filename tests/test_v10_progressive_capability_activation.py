@@ -86,13 +86,19 @@ class ProgressiveCapabilityActivationTests(unittest.TestCase):
         assert broker["trading_methods_is_global_master_switch"] is False
         assert broker["read_only_contours_require_trading_methods_false"] is True
         assert broker["real_execution_surface_uses_real_trading_methods"] is True
-        assert broker["timeweb_hosted_runtime_may_import_v9_real_trading_gateway"] is False
+        assert (
+            broker["timeweb_hosted_runtime_may_import_v9_real_trading_gateway"] is False
+        )
         assert (
             broker["timeweb_hosted_runtime_may_consume_global_tinvest_trading_token"]
             is False
         )
-        assert broker["v10_real_execution_requires_tenant_scoped_trade_credential"] is True
-        assert broker["v10_real_execution_requires_authenticated_server_session"] is True
+        assert (
+            broker["v10_real_execution_requires_tenant_scoped_trade_credential"] is True
+        )
+        assert (
+            broker["v10_real_execution_requires_authenticated_server_session"] is True
+        )
         assert broker["v10_real_execution_is_mandatory_split_boundary"] is True
 
     def test_real_submit_requires_full_real_money_gate(self) -> None:
