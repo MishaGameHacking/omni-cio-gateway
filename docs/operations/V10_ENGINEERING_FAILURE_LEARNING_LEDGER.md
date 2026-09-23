@@ -505,6 +505,29 @@ name.
 
 ---
 
+## FL-021 — Metadata references must not impersonate credential values
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / authoritative Windows gate #3188
+
+**Symptom / failing gate:** compile, Ruff, formatting and mypy passed on the exact PR head, but the tracked-content secret scan rejected two new Timeweb no-OWNER-laptop metadata lines as `Secret Keyword` findings.
+
+**Root cause:** a machine contract field that stores only the repository path of the hosted custody contract used a credential-shaped field name. The deterministic verifier duplicated the same field name. The secret scanner correctly classifies representation rather than business meaning, so both non-secret path references looked like credential assignments.
+
+**Blast radius searched:** the Timeweb no-OWNER-laptop contract, its deterministic verifier and regression tests, the fail-closed secret-scan validator, all current PR patches for suppression/bypass patterns, current Timeweb runtime/auth/PostgreSQL authority and retired-provider archive references.
+
+**Why preflight missed it:** the new contract/verifier pair was semantically reviewed and passed focused logic checks, but the exact tracked-content secret-scan policy was not applied to the final metadata vocabulary before publication.
+
+**Corrective change:** rename the path-reference field to custody-oriented vocabulary in both producer and consumer, keep the referenced custody source unchanged, and add a regression test that freezes the exact runtime metadata key set. Do not add a scanner allowlist, exclusion or threshold change.
+
+**Permanent regression/guard:** the existing fail-closed tracked-content secret scan remains unchanged. The Timeweb regression now requires the custody-reference metadata shape, so a future credential-shaped alias becomes an unexpected contract key and fails focused validation before merge.
+
+**Future prevention rule:** use credential-sensitive words for actual secret values, secret bindings or deliberately protected boundaries; use `*_custody_*`, `*_reference` or `*_path` vocabulary for non-secret source/document references. Run the exact tracked-content secret scan on every final changed-text batch before external certification.
+
+**Dependency/tooling knowledge change:** secret scanners intentionally reason from lexical representation and entropy rather than project semantics. The preferred repair for a legitimate non-secret finding is to make the representation unambiguous when possible, not to weaken the detector.
+
+---
+
 ## Entry template
 
 ```text

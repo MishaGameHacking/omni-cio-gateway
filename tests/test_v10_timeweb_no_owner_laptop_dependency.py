@@ -69,6 +69,25 @@ class TimewebNoOwnerLaptopGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_runtime_metadata_uses_custody_contract_reference(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        runtime = payload["current_timeweb_runtime"]
+        self.assertEqual(
+            set(runtime),
+            {
+                "provider",
+                "local_windows_vault_dependency_allowed",
+                "windows_dpapi_dependency_allowed",
+                "broker_mutation_enabled",
+                "global_shared_broker_token_allowed",
+                "hosted_custody_contract",
+            },
+        )
+        self.assertEqual(
+            runtime["hosted_custody_contract"],
+            "omni_cio/web/hosted_secret_custody_v1.py",
+        )
+
     def test_rejects_broker_mutation_activation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

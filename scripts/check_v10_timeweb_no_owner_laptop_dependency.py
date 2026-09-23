@@ -126,7 +126,7 @@ def validate(root: Path = ROOT) -> None:
         "windows_dpapi_dependency_allowed": False,
         "broker_mutation_enabled": False,
         "global_shared_broker_token_allowed": False,
-        "hosted_secret_contract": "omni_cio/web/hosted_secret_custody_v1.py",
+        "hosted_custody_contract": "omni_cio/web/hosted_secret_custody_v1.py",
     }
     for key, expected in expected_runtime.items():
         if runtime.get(key) != expected:
