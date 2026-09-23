@@ -179,9 +179,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         )
         self.assertTrue(context.check_hostname)
         self.assertEqual(context.verify_mode, provisioner.ssl.CERT_REQUIRED)
-        context.load_verify_locations.assert_called_once_with(
-            cafile="provider-ca.crt"
-        )
+        context.load_verify_locations.assert_called_once_with(cafile="provider-ca.crt")
 
     def test_multiple_firewall_groups_are_rejected(self) -> None:
         api = mock.Mock()

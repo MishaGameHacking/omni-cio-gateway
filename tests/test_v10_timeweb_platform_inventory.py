@@ -49,6 +49,30 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         self.assertNotIn("import subprocess", source)
         self.assertNotIn("subprocess.", source)
 
+    def test_repository_integrity_reads_every_discovered_file(self) -> None:
+        files = inventory._repository_files()
+        stats = inventory._validate_repository_integrity(files)
+
+        self.assertEqual(stats["files"], len(files))
+        self.assertEqual(
+            stats["text_files"] + stats["binary_files"],
+            len(files),
+        )
+        self.assertGreater(stats["python_files"], 900)
+        self.assertGreater(stats["json_files"], 70)
+        self.assertGreater(stats["bytes"], 1_000_000)
+
+    def test_repository_integrity_rejects_conflict_and_syntax_drift(self) -> None:
+        self.assertTrue(inventory._has_conflict_marker("<<<<<<< HEAD\nvalue\n======="))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_INVENTORY_REPOSITORY_SYNTAX_INVALID",
+        ):
+            inventory._validate_structured_repository_text(
+                "scripts/broken.py",
+                "def broken(:\n",
+            )
+
     def test_current_timeweb_workflow_is_keep(self) -> None:
         self.assertEqual(
             inventory._classify_path(
@@ -163,9 +187,9 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
                 'TRACE_URL = "https://cloudflare.com/cdn-cgi/trace"'
             )
         )
-        discoverer = (
-            ROOT / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
-        ).read_text(encoding="utf-8")
+        discoverer = (ROOT / "scripts/discover_v10_ru_pg_verifier_ipv4.py").read_text(
+            encoding="utf-8"
+        )
         self.assertFalse(inventory._contains_retired_execution_marker(discoverer))
 
     def test_current_database_authority_cannot_reassert_retired_neon(self) -> None:

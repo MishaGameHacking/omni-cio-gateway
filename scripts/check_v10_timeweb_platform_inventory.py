@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
+import tomllib
 from typing import Any
+from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +43,32 @@ _MAX_MATCH_VALUES = 32
 _MAX_MATCH_TEXT_LENGTH = 256
 _MAX_REPOSITORY_FILES = 5_000
 _MAX_TOTAL_SCANNED_SOURCE_BYTES = 100_000_000
+_BINARY_REPOSITORY_SUFFIXES = frozenset({".der", ".ico", ".pdf", ".png"})
+_CONFLICT_GUARD_SUFFIXES = frozenset(
+    {
+        ".cmd",
+        ".css",
+        ".hcl",
+        ".html",
+        ".js",
+        ".json",
+        ".jsonc",
+        ".mjs",
+        ".ps1",
+        ".py",
+        ".pyfrag",
+        ".sh",
+        ".sql",
+        ".tf",
+        ".toml",
+        ".ts",
+        ".tsx",
+        ".xml",
+        ".yaml",
+        ".yml",
+    }
+)
+_CONFLICT_GUARD_FILENAMES = frozenset({"Dockerfile", "Dockerfile.cloudflare"})
 _IGNORED_DIRECTORIES = frozenset(
     {
         ".git",
@@ -171,6 +200,101 @@ def _repository_files(root: Path = ROOT) -> tuple[str, ...]:
             if len(result) > _MAX_REPOSITORY_FILES:
                 raise RuntimeError("TIMEWEB_INVENTORY_REPOSITORY_FILE_LIMIT")
     return tuple(sorted(result))
+
+
+def _has_conflict_marker(source: str) -> bool:
+    for line in source.splitlines():
+        if (
+            line.startswith("<<<<<<< ")
+            or line == "======="
+            or line.startswith(">>>>>>> ")
+        ):
+            return True
+    return False
+
+
+def _validate_structured_repository_text(relative: str, source: str) -> str | None:
+    suffix = Path(relative).suffix.lower()
+    try:
+        if suffix == ".py":
+            ast.parse(source, filename=relative)
+            return "python_files"
+        if suffix == ".json":
+            json.loads(source)
+            return "json_files"
+        if suffix == ".toml":
+            tomllib.loads(source)
+            return "toml_files"
+        if suffix == ".xml":
+            ElementTree.fromstring(source)
+            return "xml_files"
+    except (
+        SyntaxError,
+        json.JSONDecodeError,
+        tomllib.TOMLDecodeError,
+        ElementTree.ParseError,
+    ) as exc:
+        raise RuntimeError(
+            "TIMEWEB_INVENTORY_REPOSITORY_SYNTAX_INVALID:" + relative
+        ) from exc
+    return None
+
+
+def _validate_repository_integrity(files: tuple[str, ...]) -> dict[str, int]:
+    stats = {
+        "files": 0,
+        "bytes": 0,
+        "text_files": 0,
+        "binary_files": 0,
+        "python_files": 0,
+        "json_files": 0,
+        "toml_files": 0,
+        "xml_files": 0,
+    }
+    for relative in files:
+        path = ROOT / relative
+        try:
+            content = path.read_bytes()
+        except OSError as exc:
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_REPOSITORY_FILE_UNREADABLE:" + relative
+            ) from exc
+
+        stats["files"] += 1
+        stats["bytes"] += len(content)
+        if stats["bytes"] > _MAX_TOTAL_SCANNED_SOURCE_BYTES:
+            raise RuntimeError("TIMEWEB_INVENTORY_REPOSITORY_TOTAL_SIZE_LIMIT")
+
+        suffix = path.suffix.lower()
+        if suffix in _BINARY_REPOSITORY_SUFFIXES:
+            stats["binary_files"] += 1
+            continue
+
+        try:
+            source = content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_REPOSITORY_TEXT_ENCODING_INVALID:" + relative
+            ) from exc
+
+        stats["text_files"] += 1
+        if "\x00" in source:
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_REPOSITORY_TEXT_NUL_FORBIDDEN:" + relative
+            )
+        if (
+            suffix in _CONFLICT_GUARD_SUFFIXES
+            or path.name in _CONFLICT_GUARD_FILENAMES
+        ) and _has_conflict_marker(source):
+            raise RuntimeError(
+                "TIMEWEB_INVENTORY_REPOSITORY_CONFLICT_MARKER:" + relative
+            )
+
+        structured_kind = _validate_structured_repository_text(relative, source)
+        if structured_kind is not None:
+            stats[structured_kind] += 1
+
+    return stats
 
 
 def _classification(entry: object) -> str:
@@ -451,106 +575,43 @@ def _validate_content_consumers(
             )
 
 
-def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
-    current_required = {
-        "Dockerfile",
-        "apps/api/hosted_app.py",
-        "apps/api/hosted_database_runtime.py",
-        "apps/api/hosted_runtime.py",
-        "apps/api/telegram_auth.py",
-        "apps/web/e2e/app-shell.spec.ts",
-        "apps/web/e2e/system-admin.spec.ts",
-        "apps/web/src/app-shell/api.ts",
-        "apps/web/src/app-shell/app-shell.tsx",
-        "apps/web/src/app-shell/contracts.ts",
-        "apps/web/tests/app_shell_contract.test.ts",
-        "apps/web/vite.config.ts",
-        "infrastructure/hosted/hosted-readiness-contract.json",
-        "infrastructure/postgres/hosted-postgres-runtime-contract.json",
-        "infrastructure/postgres/hosted-postgres-runtime.sql",
-        "infrastructure/postgres/hosted-recovery-contract.json",
-        "omni_cio/observability/hosted_readiness_v1.py",
-        "omni_cio/persistence/_hosted_recovery_contract_v1.py",
-        "omni_cio/persistence/hosted_postgres_runtime_v1.py",
-        "omni_cio/persistence/hosted_synthetic_scope_v1.py",
-        "omni_cio/web/browser_security_v1.py",
-        "omni_cio/web/identity_v1.py",
-        "omni_cio/web/telegram_auth_routes_v1.py",
-        "omni_cio/web/telegram_auth_services_v1.py",
-        "scripts/check_v10_ru_postgres_data_residency_migration.py",
-        "scripts/check_v10_ru_postgres_timeweb_parity.py",
-        "scripts/check_v10_wp17_web_security.py",
-        "scripts/discover_v10_ru_pg_verifier_ipv4.py",
-        "scripts/postgres_runtime_primitives.py",
-        "scripts/probe_v10_timeweb_ipv4_custody.py",
-        "scripts/probe_v10_timeweb_postgres_control_plane.py",
-        "scripts/prove_v10_ru_postgres_timeweb_parity.py",
-        "scripts/provider_runtime_primitives.py",
-        "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
-        "scripts/provision_v10_timeweb_postgres_synthetic.py",
-        "scripts/rehearse_v10_wp22a_phase4_runtime_role.py",
-        "scripts/timeweb_ipv4_allocation_provider.py",
-    }
-    for path in current_required:
-        if _classify_path(path, payload) != "KEEP":
-            raise RuntimeError("TIMEWEB_INVENTORY_CURRENT_SURFACE_NOT_KEEP:" + path)
+def _require_classification(
+    payload: dict[str, Any],
+    paths: frozenset[str],
+    *,
+    expected: str,
+    code: str,
+) -> None:
+    for path in paths:
+        if _classify_path(path, payload) != expected:
+            raise RuntimeError(code + ":" + path)
 
-    historical_required = {
-        ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
-        ".github/workflows/v10-wp22a-phase5-technical-closeout.yml",
-        "apps/api/cf_d_database_bootstrap.py",
-        "apps/api/hosted_preview.py",
-        "apps/api/wp22a_phase5_auth.py",
-        "apps/api/wp22a_remote.py",
-        "infrastructure/cloudru/wp22a/hosted-postgres-runtime-contract.json",
-        "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql",
-        "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1",
-        "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql",
-        "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql",
-        "omni_cio/web/external_access_v1.py",
-        "omni_cio/web/provider_auth_routes_v1.py",
-        "omni_cio/web/provider_start_adapter_v1.py",
-        "scripts/check_v10_wp22a_phase4_public_acceptance.py",
-        "scripts/check_v10_cloudflare_runtime_compatibility.py",
-        "scripts/provision_v10_cloudflare_neon_runtime.py",
-        "scripts/provision_v10_render_neon_preview.py",
-        _WRANGLER_CONFIG_PATH,
-    }
-    for path in historical_required:
-        if _classify_path(path, payload) != "HISTORY":
-            raise RuntimeError("TIMEWEB_INVENTORY_HISTORY_CLASSIFICATION_DRIFT:" + path)
 
-    for path in (
-        ".github/workflows/live-gateway-authority.yml",
-        ".github/workflows/regression-shield.yml",
-        ".github/workflows/self-hosted-windows-smoke.yml",
-        ".github/workflows/v10-wp22a-clientless-access-audit.yml",
-        _RENDER_CONFIG_PATH,
-    ):
-        if _classify_path(path, payload) != "KEEP":
-            raise RuntimeError("TIMEWEB_INVENTORY_KEEP_CLASSIFICATION_DRIFT:" + path)
-
-    historical_cloudflare_runtime_guard = _read(
-        ROOT / "scripts/check_v10_cloudflare_runtime_compatibility.py"
-    )
-    for marker in (
+def _validate_historical_cloudflare_guard_detached() -> None:
+    source = _read(ROOT / "scripts/check_v10_cloudflare_runtime_compatibility.py")
+    forbidden_markers = (
         'WEB_CONFIG = ROOT / "apps/web/vite.config.ts"',
         "_validate_web_config()",
-    ):
-        if marker in historical_cloudflare_runtime_guard:
-            raise RuntimeError(
-                "TIMEWEB_INVENTORY_HISTORICAL_GUARD_CURRENT_WEB_COUPLING"
-            )
+    )
+    if any(marker in source for marker in forbidden_markers):
+        raise RuntimeError(
+            "TIMEWEB_INVENTORY_HISTORICAL_GUARD_CURRENT_WEB_COUPLING"
+        )
 
+
+def _validate_protected_v9_render_entrypoint() -> None:
     render = _read(ROOT / _RENDER_CONFIG_PATH)
     if "uvicorn app:app" not in render:
         raise RuntimeError("TIMEWEB_INVENTORY_V9_ENTRYPOINT_DRIFT")
-    if (
-        _classify_path("omni_cio/web/vk_id_oauth_v1.py", payload)
-        != _CLASS_RETIRE_NOW_AFTER_AUTHORITY
-    ):
+
+
+def _validate_vk_retirement(payload: dict[str, Any]) -> None:
+    classification = _classify_path("omni_cio/web/vk_id_oauth_v1.py", payload)
+    if classification != _CLASS_RETIRE_NOW_AFTER_AUTHORITY:
         raise RuntimeError("TIMEWEB_INVENTORY_VK_RETIREMENT_INVALID")
 
+
+def _validate_current_database_authority_sources() -> None:
     for relative in _CURRENT_DATABASE_AUTHORITY_SOURCES:
         source = _read(ROOT / relative)
         if _contains_stale_current_database_authority_marker(source):
@@ -558,6 +619,104 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
                 "TIMEWEB_INVENTORY_RETIRED_DATABASE_AUTHORITY_DRIFT:" + relative
             )
 
+
+def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
+    current_required = frozenset(
+        {
+            "Dockerfile",
+            "apps/api/hosted_app.py",
+            "apps/api/hosted_database_runtime.py",
+            "apps/api/hosted_runtime.py",
+            "apps/api/telegram_auth.py",
+            "apps/web/e2e/app-shell.spec.ts",
+            "apps/web/e2e/system-admin.spec.ts",
+            "apps/web/src/app-shell/api.ts",
+            "apps/web/src/app-shell/app-shell.tsx",
+            "apps/web/src/app-shell/contracts.ts",
+            "apps/web/tests/app_shell_contract.test.ts",
+            "apps/web/vite.config.ts",
+            "infrastructure/hosted/hosted-readiness-contract.json",
+            "infrastructure/postgres/hosted-postgres-runtime-contract.json",
+            "infrastructure/postgres/hosted-postgres-runtime.sql",
+            "infrastructure/postgres/hosted-recovery-contract.json",
+            "omni_cio/observability/hosted_readiness_v1.py",
+            "omni_cio/persistence/_hosted_recovery_contract_v1.py",
+            "omni_cio/persistence/hosted_postgres_runtime_v1.py",
+            "omni_cio/persistence/hosted_synthetic_scope_v1.py",
+            "omni_cio/web/browser_security_v1.py",
+            "omni_cio/web/identity_v1.py",
+            "omni_cio/web/telegram_auth_routes_v1.py",
+            "omni_cio/web/telegram_auth_services_v1.py",
+            "scripts/check_v10_ru_postgres_data_residency_migration.py",
+            "scripts/check_v10_ru_postgres_timeweb_parity.py",
+            "scripts/check_v10_wp17_web_security.py",
+            "scripts/discover_v10_ru_pg_verifier_ipv4.py",
+            "scripts/postgres_runtime_primitives.py",
+            "scripts/probe_v10_timeweb_ipv4_custody.py",
+            "scripts/probe_v10_timeweb_postgres_control_plane.py",
+            "scripts/prove_v10_ru_postgres_timeweb_parity.py",
+            "scripts/provider_runtime_primitives.py",
+            "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py",
+            "scripts/provision_v10_timeweb_postgres_synthetic.py",
+            "scripts/rehearse_v10_wp22a_phase4_runtime_role.py",
+            "scripts/timeweb_ipv4_allocation_provider.py",
+        }
+    )
+    historical_required = frozenset(
+        {
+            ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
+            ".github/workflows/v10-wp22a-phase5-technical-closeout.yml",
+            "apps/api/cf_d_database_bootstrap.py",
+            "apps/api/hosted_preview.py",
+            "apps/api/wp22a_phase5_auth.py",
+            "apps/api/wp22a_remote.py",
+            "infrastructure/cloudru/wp22a/hosted-postgres-runtime-contract.json",
+            "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql",
+            "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1",
+            "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql",
+            "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql",
+            "omni_cio/web/external_access_v1.py",
+            "omni_cio/web/provider_auth_routes_v1.py",
+            "omni_cio/web/provider_start_adapter_v1.py",
+            "scripts/check_v10_wp22a_phase4_public_acceptance.py",
+            "scripts/check_v10_cloudflare_runtime_compatibility.py",
+            "scripts/provision_v10_cloudflare_neon_runtime.py",
+            "scripts/provision_v10_render_neon_preview.py",
+            _WRANGLER_CONFIG_PATH,
+        }
+    )
+    keep_required = frozenset(
+        {
+            ".github/workflows/live-gateway-authority.yml",
+            ".github/workflows/regression-shield.yml",
+            ".github/workflows/self-hosted-windows-smoke.yml",
+            ".github/workflows/v10-wp22a-clientless-access-audit.yml",
+            _RENDER_CONFIG_PATH,
+        }
+    )
+
+    _require_classification(
+        payload,
+        current_required,
+        expected="KEEP",
+        code="TIMEWEB_INVENTORY_CURRENT_SURFACE_NOT_KEEP",
+    )
+    _require_classification(
+        payload,
+        historical_required,
+        expected="HISTORY",
+        code="TIMEWEB_INVENTORY_HISTORY_CLASSIFICATION_DRIFT",
+    )
+    _require_classification(
+        payload,
+        keep_required,
+        expected="KEEP",
+        code="TIMEWEB_INVENTORY_KEEP_CLASSIFICATION_DRIFT",
+    )
+    _validate_historical_cloudflare_guard_detached()
+    _validate_protected_v9_render_entrypoint()
+    _validate_vk_retirement(payload)
+    _validate_current_database_authority_sources()
 
 def _validate_external_surfaces(payload: dict[str, Any]) -> None:
     rows = payload.get("external_surfaces")
@@ -590,10 +749,19 @@ def main() -> int:
     payload = _load()
     keywords = _validate_contract(payload)
     files = _repository_files()
+    integrity = _validate_repository_integrity(files)
     _validate_coverage(payload, keywords, files)
     _validate_content_consumers(payload, files)
     _validate_known_transitive_consumers(payload)
     _validate_external_surfaces(payload)
+    print(
+        "V10_TIMEWEB_REPOSITORY_INTEGRITY=PASS "
+        f"files={integrity['files']} "
+        f"text={integrity['text_files']} "
+        f"binary={integrity['binary_files']} "
+        f"python={integrity['python_files']} "
+        f"json={integrity['json_files']}"
+    )
     print("V10_TIMEWEB_PLATFORM_INVENTORY=PASS")
     return 0
 
