@@ -152,6 +152,7 @@ def _write_bundle(text: str) -> Path:
         raise BundleFailure("TBANK_PIP_CA_OUTPUT_WRITE_FAILED") from exc
     return path
 
+
 def _prepare(*, verify_only: bool) -> dict[str, Any]:
     contract = _load_contract()
     root = contract.get("certificates", {}).get("root", {})

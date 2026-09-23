@@ -771,6 +771,7 @@ def _approved_tbank_ca_public_fingerprint_finding(
         match is not None and verified is not None and match.group("value") == verified
     )
 
+
 def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:
     if finding.get(FINDING_TYPE_KEY) != "Secret Keyword":
         return False
