@@ -203,14 +203,12 @@ def _repository_files(root: Path = ROOT) -> tuple[str, ...]:
 
 
 def _has_conflict_marker(source: str) -> bool:
-    for line in source.splitlines():
-        if (
-            line.startswith("<<<<<<< ")
-            or line == "======="
-            or line.startswith(">>>>>>> ")
-        ):
-            return True
-    return False
+    return any(
+        line.startswith("<<<<<<< ")
+        or line == "======="
+        or line.startswith(">>>>>>> ")
+        for line in source.splitlines()
+    )
 
 
 def _validate_structured_repository_text(relative: str, source: str) -> str | None:
@@ -240,8 +238,44 @@ def _validate_structured_repository_text(relative: str, source: str) -> str | No
     return None
 
 
-def _validate_repository_integrity(files: tuple[str, ...]) -> dict[str, int]:
-    stats = {
+def _read_repository_file(relative: str) -> tuple[int, str | None]:
+    path = ROOT / relative
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        raise RuntimeError(
+            "TIMEWEB_INVENTORY_REPOSITORY_FILE_UNREADABLE:" + relative
+        ) from exc
+
+    if path.suffix.lower() in _BINARY_REPOSITORY_SUFFIXES:
+        return len(content), None
+
+    try:
+        return len(content), content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(
+            "TIMEWEB_INVENTORY_REPOSITORY_TEXT_ENCODING_INVALID:" + relative
+        ) from exc
+
+
+def _validate_repository_text(relative: str, source: str) -> str | None:
+    path = Path(relative)
+    if "\x00" in source:
+        raise RuntimeError(
+            "TIMEWEB_INVENTORY_REPOSITORY_TEXT_NUL_FORBIDDEN:" + relative
+        )
+    if (
+        path.suffix.lower() in _CONFLICT_GUARD_SUFFIXES
+        or path.name in _CONFLICT_GUARD_FILENAMES
+    ) and _has_conflict_marker(source):
+        raise RuntimeError(
+            "TIMEWEB_INVENTORY_REPOSITORY_CONFLICT_MARKER:" + relative
+        )
+    return _validate_structured_repository_text(relative, source)
+
+
+def _repository_integrity_stats() -> dict[str, int]:
+    return {
         "files": 0,
         "bytes": 0,
         "text_files": 0,
@@ -251,50 +285,27 @@ def _validate_repository_integrity(files: tuple[str, ...]) -> dict[str, int]:
         "toml_files": 0,
         "xml_files": 0,
     }
-    for relative in files:
-        path = ROOT / relative
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise RuntimeError(
-                "TIMEWEB_INVENTORY_REPOSITORY_FILE_UNREADABLE:" + relative
-            ) from exc
 
+
+def _validate_repository_integrity(files: tuple[str, ...]) -> dict[str, int]:
+    stats = _repository_integrity_stats()
+    for relative in files:
+        size, source = _read_repository_file(relative)
         stats["files"] += 1
-        stats["bytes"] += len(content)
+        stats["bytes"] += size
         if stats["bytes"] > _MAX_TOTAL_SCANNED_SOURCE_BYTES:
             raise RuntimeError("TIMEWEB_INVENTORY_REPOSITORY_TOTAL_SIZE_LIMIT")
 
-        suffix = path.suffix.lower()
-        if suffix in _BINARY_REPOSITORY_SUFFIXES:
+        if source is None:
             stats["binary_files"] += 1
             continue
 
-        try:
-            source = content.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise RuntimeError(
-                "TIMEWEB_INVENTORY_REPOSITORY_TEXT_ENCODING_INVALID:" + relative
-            ) from exc
-
         stats["text_files"] += 1
-        if "\x00" in source:
-            raise RuntimeError(
-                "TIMEWEB_INVENTORY_REPOSITORY_TEXT_NUL_FORBIDDEN:" + relative
-            )
-        if (
-            suffix in _CONFLICT_GUARD_SUFFIXES or path.name in _CONFLICT_GUARD_FILENAMES
-        ) and _has_conflict_marker(source):
-            raise RuntimeError(
-                "TIMEWEB_INVENTORY_REPOSITORY_CONFLICT_MARKER:" + relative
-            )
-
-        structured_kind = _validate_structured_repository_text(relative, source)
+        structured_kind = _validate_repository_text(relative, source)
         if structured_kind is not None:
             stats[structured_kind] += 1
 
     return stats
-
 
 def _classification(entry: object) -> str:
     if not isinstance(entry, dict):
