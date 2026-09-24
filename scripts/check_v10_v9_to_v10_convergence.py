@@ -71,6 +71,11 @@ _LEGACY_IMPORT_ROOTS = {
     "broker_report_reconciliation",
 }
 _EXPECTED_RUNTIME_ROOTS = ("app.py", "app_v360.py", "app_v371.py", "main.py")
+_VERIFIER_WORKFLOW_RELATIVE_PATHS = (
+    Path(".github/workflows/v10-pr-fast-checks.yml"),
+    Path(".github/workflows/regression-shield.yml"),
+    Path(".github/workflows/self-hosted-windows-smoke.yml"),
+)
 
 
 def _text(path: Path) -> str:
@@ -292,10 +297,8 @@ def _validate_verifier_ownership(root: Path) -> None:
         if marker not in pyproject:
             raise RuntimeError(f"V9C_PYPROJECT_CANONICAL_TARGET_MISSING:{marker}")
 
-    workflow_paths = (
-        root / ".github/workflows/v10-pr-fast-checks.yml",
-        root / ".github/workflows/regression-shield.yml",
-        root / ".github/workflows/self-hosted-windows-smoke.yml",
+    workflow_paths = tuple(
+        root / relative for relative in _VERIFIER_WORKFLOW_RELATIVE_PATHS
     )
     legacy_file_tokens = tuple(
         source for source in _EXPECTED_ROOT_SOURCES if source.endswith(".py")
