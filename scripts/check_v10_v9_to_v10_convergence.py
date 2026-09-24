@@ -56,9 +56,7 @@ _LEGACY_FILE_PATH_LITERALS = frozenset(
     source for source in _EXPECTED_ROOT_SOURCES if source.endswith(".py")
 )
 _LEGACY_DIRECTORY_PATH_PREFIXES = ("broker_report_reconciliation/",)
-_NONCANONICAL_RECONCILIATION_PATH_PREFIXES = (
-    "omni_cio/reconciliation/broker_report/",
-)
+_NONCANONICAL_RECONCILIATION_PATH_PREFIXES = ("omni_cio/reconciliation/broker_report/",)
 
 _EXPECTED_TARGETS = (
     "omni_cio/portfolio/market_source_v1.py",
