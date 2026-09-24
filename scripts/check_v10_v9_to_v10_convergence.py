@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import sys
@@ -19,6 +20,7 @@ AGENTS = ROOT / "AGENTS.md"
 README = ROOT / "README.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
+PYPROJECT = ROOT / "pyproject.toml"
 
 _ACCEPTED_V9 = "".join(("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62"))
 _ACCEPTED_MAIN = "".join(("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858"))
@@ -43,6 +45,30 @@ _EXPECTED_ROOT_SOURCES = (
     "sdk_order_compat.py",
     "broker_report_reconciliation",
 )
+_EXPECTED_TARGETS = (
+    "omni_cio/portfolio/market_source_v1.py",
+    "omni_cio/analytics/portfolio_source_v1.py",
+    "omni_cio/analytics/cash_liquidity_v1.py",
+    "omni_cio/analytics/operations_source_v1.py",
+    "omni_cio/pretrade/purchase_capacity_v1.py",
+    "omni_cio/pretrade/purchase_capacity_integrity_v1.py",
+    "omni_cio/pretrade/sale_capacity_v1.py",
+    "omni_cio/pretrade/sale_capacity_normalization_v1.py",
+    "omni_cio/adapters/tinvest_order_compat_v1.py",
+    "omni_cio/reconciliation",
+)
+_LEGACY_IMPORT_ROOTS = {
+    "portfolio_market",
+    "portfolio_analytics",
+    "cash_liquidity",
+    "operations_analytics",
+    "purchase_capacity",
+    "purchase_capacity_integrity",
+    "sale_capacity",
+    "sale_capacity_normalization",
+    "sdk_order_compat",
+    "broker_report_reconciliation",
+}
 _EXPECTED_RUNTIME_ROOTS = ("app.py", "app_v360.py", "app_v371.py", "main.py")
 
 
@@ -86,7 +112,7 @@ def _validate_identity(contract: dict[str, Any]) -> None:
         "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "branch": _BRANCH,
         "pull_request": 584,
-        "current_checkpoint": "V9C-A",
+        "current_checkpoint": "V9C-B",
     }
     for key, value in expected.items():
         if contract.get(key) != value:
@@ -143,12 +169,14 @@ def _validate_inventory(root: Path, contract: dict[str, Any]) -> None:
     relocation = contract.get("root_relocation_plan")
     if not isinstance(relocation, list):
         raise RuntimeError("V9C_RELOCATION_PLAN_INVALID")
+
     sources: list[str] = []
+    targets: list[str] = []
     for row in relocation:
         if not isinstance(row, dict):
             raise RuntimeError("V9C_RELOCATION_ROW_INVALID")
-        if row.get("state") != "PLANNED":
-            raise RuntimeError("V9C_RELOCATION_PREMATURE_STATE")
+        if row.get("state") != "RELOCATED":
+            raise RuntimeError("V9C_RELOCATION_STATE_DRIFT")
         source = row.get("source")
         target = row.get("target")
         if not isinstance(source, str) or not source:
@@ -156,10 +184,16 @@ def _validate_inventory(root: Path, contract: dict[str, Any]) -> None:
         if not isinstance(target, str) or not target.startswith("omni_cio/"):
             raise RuntimeError("V9C_RELOCATION_TARGET_INVALID")
         sources.append(source)
-        if not (root / source).exists():
-            raise RuntimeError(f"V9C_SOURCE_MISSING:{source}")
+        targets.append(target)
+        if (root / source).exists():
+            raise RuntimeError(f"V9C_LEGACY_SOURCE_REINTRODUCED:{source}")
+        if not (root / target).exists():
+            raise RuntimeError(f"V9C_CANONICAL_TARGET_MISSING:{target}")
+
     if tuple(sources) != _EXPECTED_ROOT_SOURCES:
         raise RuntimeError("V9C_RELOCATION_SOURCE_SET_DRIFT")
+    if tuple(targets) != _EXPECTED_TARGETS:
+        raise RuntimeError("V9C_RELOCATION_TARGET_SET_DRIFT")
 
     retirements = contract.get("runtime_retirement_plan")
     if not isinstance(retirements, list):
@@ -178,6 +212,80 @@ def _validate_inventory(root: Path, contract: dict[str, Any]) -> None:
             raise RuntimeError(f"V9C_RUNTIME_SOURCE_MISSING:{path}")
     if tuple(runtime_paths) != _EXPECTED_RUNTIME_ROOTS:
         raise RuntimeError("V9C_RUNTIME_SOURCE_SET_DRIFT")
+
+
+def _validate_no_legacy_imports(root: Path) -> None:
+    for path in sorted(root.rglob("*.py")):
+        if any(part in {".git", ".venv", ".venv-ci"} for part in path.parts):
+            continue
+        relative = path.relative_to(root)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(relative))
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            raise RuntimeError(f"V9C_PYTHON_SCAN_FAILED:{relative}:{exc}") from exc
+        for node in ast.walk(tree):
+            imported: list[str] = []
+            if isinstance(node, ast.Import):
+                imported.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.append(node.module)
+            for module in imported:
+                root_name = module.split(".", 1)[0]
+                if root_name in _LEGACY_IMPORT_ROOTS:
+                    raise RuntimeError(
+                        f"V9C_LEGACY_IMPORT_REINTRODUCED:{relative}:{module}"
+                    )
+
+
+def _validate_verifier_ownership(root: Path) -> None:
+    pyproject = _text(root / PYPROJECT.relative_to(ROOT))
+    forbidden_pyproject = (
+        '"portfolio_market"',
+        '"portfolio_analytics"',
+        '"cash_liquidity"',
+        '"purchase_capacity"',
+        '"purchase_capacity_integrity"',
+        '"operations_analytics"',
+        '"sdk_order_compat"',
+        '"broker_report_reconciliation"',
+    )
+    for marker in forbidden_pyproject:
+        if marker in pyproject:
+            raise RuntimeError(f"V9C_PYPROJECT_LEGACY_TARGET:{marker}")
+
+    required_pyproject = (
+        '"omni_cio/portfolio"',
+        '"omni_cio/reconciliation"',
+        '"omni_cio.portfolio.market_source_v1"',
+        '"omni_cio.analytics.portfolio_source_v1"',
+        '"omni_cio.analytics.cash_liquidity_v1"',
+        '"omni_cio.analytics.operations_source_v1"',
+        '"omni_cio.pretrade.purchase_capacity_v1"',
+        '"omni_cio.pretrade.purchase_capacity_integrity_v1"',
+        '"omni_cio.pretrade.sale_capacity_v1"',
+        '"omni_cio.pretrade.sale_capacity_normalization_v1"',
+        '"omni_cio.adapters.tinvest_order_compat_v1"',
+        '"omni_cio.reconciliation"',
+    )
+    for marker in required_pyproject:
+        if marker not in pyproject:
+            raise RuntimeError(f"V9C_PYPROJECT_CANONICAL_TARGET_MISSING:{marker}")
+
+    workflow_paths = (
+        root / ".github/workflows/v10-pr-fast-checks.yml",
+        root / ".github/workflows/regression-shield.yml",
+        root / ".github/workflows/self-hosted-windows-smoke.yml",
+    )
+    legacy_file_tokens = tuple(
+        source for source in _EXPECTED_ROOT_SOURCES if source.endswith(".py")
+    ) + ("broker_report_reconciliation ",)
+    for workflow_path in workflow_paths:
+        workflow = _text(workflow_path)
+        for marker in legacy_file_tokens:
+            if marker in workflow:
+                raise RuntimeError(
+                    f"V9C_WORKFLOW_LEGACY_TARGET:{workflow_path.name}:{marker}"
+                )
 
 
 def _validate_deletion_and_authority(contract: dict[str, Any]) -> None:
@@ -221,7 +329,7 @@ def _validate_documentation(root: Path) -> None:
         AMENDMENT.relative_to(ROOT): (
             "accepted V9 repository target",
             "stale",
-            "V9C-A / AUTHORITY_AND_INVENTORY",
+            "V9C-B / DETERMINISTIC_SOURCE_RELOCATION",
             "must not be merged",
         ),
         INDEX.relative_to(ROOT): (
@@ -229,17 +337,18 @@ def _validate_documentation(root: Path) -> None:
             "OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md",
         ),
         STATUS.relative_to(ROOT): (
-            "V9C-A / AUTHORITY_AND_INVENTORY",
+            "V9C-B / DETERMINISTIC_SOURCE_RELOCATION",
             _ACCEPTED_V9,
             "PR #584",
         ),
         LEDGER.relative_to(ROOT): (
-            "| V9C-A | AUTHORITY_AND_INVENTORY |",
+            "| V9C-A | AUTHORITY_AND_INVENTORY | CERTIFIED_GREEN |",
+            "| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | IN_PROGRESS |",
             "| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF |",
         ),
-        AGENTS.relative_to(ROOT): ("V9 migration source", "V9C-A", "PR #584"),
-        README.relative_to(ROOT): ("V9 migration source", "V9C-A"),
-        CONTRIBUTING.relative_to(ROOT): ("V9 migration source", "V9C-A"),
+        AGENTS.relative_to(ROOT): ("V9 migration source", "V9C-B", "PR #584"),
+        README.relative_to(ROOT): ("V9 migration source", "V9C-B"),
+        CONTRIBUTING.relative_to(ROOT): ("V9 migration source", "V9C-B"),
     }
     for relative, markers in required.items():
         source = _text(root / relative)
@@ -266,6 +375,8 @@ def validate(root: Path = ROOT) -> None:
     _validate_history_policy(contract)
     _validate_runtime_target(contract)
     _validate_inventory(root, contract)
+    _validate_no_legacy_imports(root)
+    _validate_verifier_ownership(root)
     _validate_deletion_and_authority(contract)
     _validate_documentation(root)
     _validate_workflow(root)
@@ -274,11 +385,13 @@ def validate(root: Path = ROOT) -> None:
 def main() -> int:
     try:
         validate()
-    except (OSError, json.JSONDecodeError, RuntimeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RuntimeError) as exc:
         print(f"V10_V9_TO_V10_CONVERGENCE=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("V10_V9_TO_V10_CONVERGENCE=PASS checkpoint=V9C-A")
+    print("V10_V9_TO_V10_CONVERGENCE=PASS checkpoint=V9C-B")
     print(f"Accepted V9 migration source: {_ACCEPTED_V9}")
+    print("Legacy deterministic root imports: absent")
+    print("Canonical V10 package relocation: complete")
     print("Stale v9 branch merge: forbidden")
     print("PR #584 main merge: requires a new explicit OWNER instruction")
     return 0
