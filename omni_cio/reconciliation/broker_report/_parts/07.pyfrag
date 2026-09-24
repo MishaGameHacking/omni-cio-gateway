@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+
+RELEASE_VERSION = "3.9.1"
+
+
+def _promote_runtime_version(app: Any, release_version: str) -> None:
+    app.version = release_version
+    app.description = (
+        "Private read-only gateway between a Custom GPT and T-Invest API. "
+        f"Gateway release v{release_version} preserves asynchronous broker-report "
+        "task IDs, treats T-Invest error 30058 as a pending state, limits report "
+        "requests to 31 days, and keeps report retrieval read-only. It cannot "
+        "create, submit, replace, or cancel orders."
+    )
+
+    # Older route handlers resolve APP_VERSION from their defining module globals.
+    # Updating those globals promotes the complete stable gateway without changing
+    # Render's established `uvicorn app:app` entrypoint.
+    for route in getattr(app, "routes", []):
+        endpoint = getattr(route, "endpoint", None)
+        route_globals = getattr(endpoint, "__globals__", None)
+        if not isinstance(route_globals, dict):
+            continue
+        if "APP_VERSION" in route_globals:
+            route_globals["APP_VERSION"] = release_version
+        if "ENTRYPOINT" in route_globals:
+            route_globals["ENTRYPOINT"] = "app:app"
+
+
+def register_gateway(*, app: Any, base: Any, app_version: str) -> None:
+    release_version = str(app_version or RELEASE_VERSION).strip()
+    if not release_version:
+        release_version = RELEASE_VERSION
+    _promote_runtime_version(app, release_version)
+
+    for capability in (
+        "broker_report_reconciliation",
+        "broker_report_async_generation",
+        "broker_report_async_integrity",
+        "broker_report_trade_reconciliation",
+    ):
+        if capability not in base.CAPABILITIES:
+            base.CAPABILITIES.append(capability)
+
+    @app.get(
+        PATH,
+        operation_id=OPERATION_ID,
+        summary=(
+            "Generate or retrieve the official broker report and reconcile its "
+            "trades and commissions with executed API operations"
+        ),
+        dependencies=[Depends(base.require_gateway_key)],
+    )
+    def broker_report_reconciliation_endpoint(
+        days: int = Query(
+            30,
+            ge=1,
+            le=31,
+            description=(
+                "Requested calendar-day interval for an official broker report. "
+                "T-Invest rejects intervals longer than 31 days."
+            ),
+        ),
+        task_id: str | None = Query(
+            None,
+            min_length=1,
+            max_length=200,
+            description=(
+                "Task ID returned by an earlier pending call. Omit it to request "
+                "official broker-report generation."
+            ),
+        ),
+        wait_seconds: int = Query(
+            0,
+            ge=0,
+            le=10,
+            description=(
+                "Optional synchronous wait for report completion. Zero returns a "
+                "pending response with the generated task_id without a premature "
+                "status poll."
+            ),
+        ),
+    ) -> dict[str, Any]:
+        return get_broker_report_reconciliation(
+            base=base,
+            app_version=release_version,
+            days=days,
+            task_id=task_id,
+            wait_seconds=wait_seconds,
+        )
+
+    base._ACTION_200_SCHEMAS[PATH] = _schema(base)
+    app.openapi_schema = None
