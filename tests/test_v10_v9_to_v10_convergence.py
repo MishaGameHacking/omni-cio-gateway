@@ -28,6 +28,9 @@ def _copy(root: Path) -> None:
         guard.DOCKERFILE,
         ROOT / guard._CURRENT_RUNTIME_ENTRYPOINT,
         ROOT / "apps/api/hosted_app.py",
+        *(ROOT / relative for relative in guard._CURRENT_GPT_AUTHORITY_PATHS),
+        *(ROOT / relative for relative in guard._PROTECTED_V9_GPT_RECOVERY_PATHS),
+        *(ROOT / relative for relative in guard._RETIRED_PROVIDER_WORKFLOW_PATHS),
         *(ROOT / relative for relative in guard._VERIFIER_WORKFLOW_RELATIVE_PATHS),
     )
     for source in paths:
@@ -192,6 +195,89 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "V9C_CURRENT_RUNTIME_LEGACY_IMPORT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_retired_provider_import_in_current_runtime_graph(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            hosted_app = root / "apps/api/hosted_app.py"
+            source = hosted_app.read_text(encoding="utf-8")
+            hosted_app.write_text(
+                "import cloudflare.runtime\n" + source,
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_CURRENT_RUNTIME_RETIRED_PROVIDER_IMPORT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_current_gpt_authority_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard._CURRENT_GPT_AUTHORITY_PATHS[0]
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace("CURRENT AMENDMENT-21", "STALE AMENDMENT"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_CURRENT_GPT_AUTHORITY_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_unmarked_v9_gpt_recovery_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard._PROTECTED_V9_GPT_RECOVERY_PATHS[0]
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace(guard._PROTECTED_V9_GPT_MARKER, "stale recovery"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_V9_GPT_RECOVERY_MARKER_MISSING",
+            ):
+                guard.validate(root)
+
+    def test_rejects_retired_provider_workflow_auto_trigger(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard._RETIRED_PROVIDER_WORKFLOW_PATHS[0]
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace(
+                    "on:\n  workflow_dispatch:",
+                    "on:\n  workflow_dispatch:\n  push:",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_RETIRED_WORKFLOW_TRIGGER_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_reactivated_retired_provider_workflow_job(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard._RETIRED_PROVIDER_WORKFLOW_PATHS[0]
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace("    if: ${{ false }}\n", "", 1),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_RETIRED_WORKFLOW_NOT_HARD_DISABLED",
             ):
                 guard.validate(root)
 

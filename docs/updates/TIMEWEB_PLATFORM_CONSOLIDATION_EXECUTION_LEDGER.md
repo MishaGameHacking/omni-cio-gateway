@@ -41,8 +41,8 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 |---:|---|---|---|
 | V9C-A | AUTHORITY_AND_INVENTORY | CERTIFIED_GREEN | Exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`; 18/18 repository workflows `success`; accepted V9 lineage, migration inventory, no-stale-branch-merge rule and machine guard proven |
 | V9C-B | DETERMINISTIC_SOURCE_RELOCATION | CERTIFIED_GREEN | Exact head `4394e3f95558f2180a294827f150b1197bdf353c`; 19/19 repository workflows `success`; Sonar 0 new issues / 0 Security Hotspots; unresolved review threads 0 |
-| V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | IN_PROGRESS | Prove the supported Timeweb runtime and Docker deploy graph have zero dependency on `app.py` / `app_v360.py` / `app_v371.py` / `main.py`; preserve those files only as protected V9 compatibility/recovery |
-| V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | TODO | Migrate still-needed policy/evidence, then delete zero-consumer legacy provider/GPT working-tree artifacts |
+| V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | CERTIFIED_GREEN | Exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; 19/19 repository workflows `success`; supported Timeweb runtime/Docker graph has zero dependency on protected V9 runtime roots; unresolved review threads 0 |
+| V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | IN_PROGRESS | Current GPT authority -> Amendment 21 + Timeweb/Telegram; protected Custom GPT v9/Render docs -> explicit recovery-only; current runtime -> zero retired-provider imports; retained provider workflows -> manual-only hard-disabled history |
 | V9C-E | CI_RECOVERY_CONVERGENCE | TODO | Replace legacy entrypoint/provider checks with equal-or-stronger V10/Timeweb recovery/security gates |
 | V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF | TODO | Prove no current runtime/deploy/required-CI/current-authority dependency on retired paths |
 
@@ -56,8 +56,8 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: V9C-C provider-neutral runtime-entrypoint convergence
-- Current logical checkpoint ID: `V9C-C-RUNTIME-ENTRYPOINT-CONVERGENCE`
+- Current exact work item: V9C-D GPT/provider authority retirement and protected-history separation
+- Current logical checkpoint ID: `V9C-D-GPT-AND-RETIRED-PROVIDER-WORKTREE-RETIREMENT`
 - Accepted base: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
@@ -326,7 +326,7 @@ long-line layout drifts; no assertion, security check or test is weakened.
 - Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
-- State: `V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE / IN_PROGRESS`; V9C-B is branch-local `CERTIFIED_GREEN` on exact head `4394e3f95558f2180a294827f150b1197bdf353c`; DRAFT PR #584 remains open
+- State: `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT / IN_PROGRESS`; V9C-C is branch-local `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; DRAFT PR #584 remains open
 - Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
 - Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
 - Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
@@ -354,6 +354,12 @@ inside the existing PR #584 branch. The prior V9C-B exact head
 successfully, with Fast PR and authoritative Windows green and current Sonar reporting
 0 new issues / 0 Security Hotspots. It is therefore recorded as the branch-local
 `CERTIFIED_GREEN` source base before Amendment 21 work.
+
+V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE subsequently reached branch-local
+`CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`:
+all 19 repository workflows completed `success`, the supported Timeweb runtime/Docker
+import graph proved zero dependency on protected V9 runtime roots, and unresolved review
+threads were zero. V9C-D is the active checkpoint after that evidence.
 
 The branch now owns these ordered internal milestones:
 

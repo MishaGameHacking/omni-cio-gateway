@@ -1,5 +1,7 @@
 # Omni-CIO bot-only manifest
 
+> **PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHORITY.** This file preserves the accepted Custom GPT v9.0.0 / `app:app` recovery surface. Current V10 implementation authority is the Timeweb + Telegram path defined by Amendments 18–21 and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
 Этот manifest определяет **единственный** поддерживаемый Omni-CIO Custom GPT и связанные production/recovery assets.
 
 ## 1. Единственный продукт

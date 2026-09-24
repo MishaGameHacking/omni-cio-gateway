@@ -26,7 +26,7 @@ Current synchronized snapshot:
 - WEB-VISUAL and WP23+ are paused;
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
-- OWNER-approved V9→V10 convergence is active inside PR #584. `V9C-B / DETERMINISTIC_SOURCE_RELOCATION` is branch-local `CERTIFIED_GREEN` on exact head `4394e3f95558f2180a294827f150b1197bdf353c`; current checkpoint is `V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE`. Supported Timeweb V10 runtime/deploy code must have zero direct/transitive dependency on the protected V9 `app:app` chain. PR #584 must not merge to `main` without the required exact-head OWNER landing confirmation.
+- OWNER-approved V9→V10 convergence is active inside PR #584. `V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE` is branch-local `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; current checkpoint is `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT`. Current GPT development authority is Amendment 21 + Timeweb/Telegram; protected V9 GPT/Render material is recovery-only; supported V10 runtime code must have zero retired-provider imports. PR #584 must not merge to `main` without the required exact-head OWNER landing confirmation.
 
 PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session. The optional Omni-CIO Telegram bot may only be linked after that account/session exists; bot chat, `/start`, Bot API identity or bot-token possession can never create an account, mint/select a tenant or replace product login.
 

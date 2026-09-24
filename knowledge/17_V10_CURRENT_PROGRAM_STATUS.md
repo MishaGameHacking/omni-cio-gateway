@@ -4,7 +4,7 @@ Updated: 2026-09-24
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A ACCEPTED VIA PR #583 WITH EXACT-MAIN POST-MERGE GREEN / TW-B/V9C-B CERTIFIED GREEN / V9C-C RUNTIME ENTRYPOINT CONVERGENCE IN_PROGRESS / AMENDMENT 21 FULL PRODUCTION DELIVERY IMPLEMENTATION AUTHORIZED IN PR #584 / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A ACCEPTED VIA PR #583 WITH EXACT-MAIN POST-MERGE GREEN / TW-B/V9C-C CERTIFIED GREEN / V9C-D GPT AND RETIRED PROVIDER WORKTREE RETIREMENT IN_PROGRESS / AMENDMENT 21 FULL PRODUCTION DELIVERY IMPLEMENTATION AUTHORIZED IN PR #584 / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -24,7 +24,7 @@ PR #582 remains the accepted CI/provider-authority split. TW-A then completed th
 
 TW-A / INVENTORY_AND_AUTHORITY is therefore `CERTIFIED_GREEN / ACCEPTED`. Focused CA-trust repairs PR #585 and PR #586 were subsequently accepted on protected `main`; the current accepted base for PR #584 remains exact main `26bdc17c4e5d68c262f47b999e975b1eb8651858`.
 
-V9C-B / DETERMINISTIC_SOURCE_RELOCATION reached branch-local `CERTIFIED_GREEN` on exact head `4394e3f95558f2180a294827f150b1197bdf353c`: all 19 repository workflows completed `success`, Fast PR and authoritative Windows were green, unresolved review threads were zero, and Sonar Quality Gate reported 0 new issues and 0 Security Hotspots. V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE is now active. It must prove the Timeweb V10 runtime/deploy graph has no dependency on the protected V9 `app:app` compatibility chain while preserving that V9 recovery surface.
+V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE reached branch-local `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`: all 19 repository workflows completed `success`, supported Timeweb runtime/Docker dependency proof has zero dependency on protected V9 runtime roots, and unresolved review threads were zero. V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT is now active: current GPT development authority must point to Amendments 18–21 and Timeweb/Telegram; protected Custom GPT v9/Render documents must be recovery-only; current V10 runtime must import no retired provider modules; retained retired-provider workflows must remain manual-only and hard-disabled.
 
 On 2026-09-24 the OWNER explicitly widened PR #584 branch-local implementation authority through Amendment 21. The same integrated branch may now implement the complete repository-side six-milestone production-delivery chain: source/runtime convergence; exact-SHA Timeweb App Platform candidate/release control; PostgreSQL 18 production cutover/recovery control; `omnicio.ru` DNS/TLS/public-ingress acceptance; Telegram-only public activation control; and post-merge production acceptance/rollback proof. External paid/provider/network, database cutover, DNS/TLS, secret, legal/privacy, public activation, destructive cleanup and merge actions remain independent fail-closed gates and are not fabricated by source implementation.
 
@@ -65,11 +65,12 @@ The accepted V9 repository target
 accepted main. Therefore stale `v9/*` branch heads are not merged into PR #584.
 V9 is now the migration source for the one forward V10/Timeweb runtime.
 
-`V9C-A / AUTHORITY_AND_INVENTORY` is branch-local **CERTIFIED_GREEN** on exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`: all 18 repository workflows completed `success`, including Fast PR, authoritative Windows CI, Engineering Governance, Toolchain and the owning WP audits. V9C-B / DETERMINISTIC_SOURCE_RELOCATION is branch-local **CERTIFIED_GREEN** on exact head
-`4394e3f95558f2180a294827f150b1197bdf353c`. Current internal checkpoint is
-**V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE**. The supported Timeweb runtime must have
-zero direct/transitive dependency on protected V9 compatibility roots; `app:app`
-remains preserved for V9 recovery/compatibility rather than becoming a V10 product path.
+`V9C-A / AUTHORITY_AND_INVENTORY` is branch-local **CERTIFIED_GREEN** on exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`: all 18 repository workflows completed `success`, including Fast PR, authoritative Windows CI, Engineering Governance, Toolchain and the owning WP audits. V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE is branch-local **CERTIFIED_GREEN** on exact
+head `ddc780b43e74797bc0adea31a741db35eeb06605`. Current internal checkpoint is
+**V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT**. Current GPT development
+authority is Timeweb/Telegram under Amendments 18–21; protected V9 GPT/Render recovery
+material remains explicitly non-current; the supported V10 runtime must have zero
+retired-provider module imports.
 Ordered convergence is V9C-A authority/inventory -> V9C-B deterministic source relocation -> V9C-C runtime
 entrypoint convergence -> V9C-D GPT/retired-provider working-tree retirement -> V9C-E
 CI/recovery convergence -> V9C-F whole-tree legacy absence proof.

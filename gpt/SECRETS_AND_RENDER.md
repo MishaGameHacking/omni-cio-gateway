@@ -1,5 +1,7 @@
 # Omni-CIO — external secrets, Render, Upstash and QStash boundary
 
+> **PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHORITY.** This file preserves the accepted Custom GPT v9.0.0 / `app:app` recovery surface. Current V10 implementation authority is the Timeweb + Telegram path defined by Amendments 18–21 and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
 This file records only **roles and environment variable names**. Secret values never belong in GitHub, GPT Instructions, GPT Knowledge or user-facing responses.
 
 ## 1. Single production service

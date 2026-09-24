@@ -1,5 +1,7 @@
 # Omni-CIO Custom GPT
 
+> **PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHORITY.** This file preserves the accepted Custom GPT v9.0.0 / `app:app` recovery surface. Current V10 implementation authority is the Timeweb + Telegram path defined by Amendments 18–21 and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
 `gpt/` — каноническая папка applied/recovery configuration единственного пользовательского интерфейса проекта: existing Custom GPT `Omni-CIO API | Управляющий и аналитик v9.0.0`.
 
 Applied v9.0.0 was owner-accepted in place on 2026-08-05. Protected rollback remains v8.6.1.

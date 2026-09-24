@@ -65,11 +65,11 @@ contracts and authority gates.
 
 The branch uses these internal checkpoints.
 
-Current checkpoint: **V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE**. V9C-B is
-`CERTIFIED_GREEN` on exact head
-`4394e3f95558f2180a294827f150b1197bdf353c`; all 19 repository workflows completed
-`success`, Sonar Quality Gate passed with 0 new issues / 0 Security Hotspots, and
-unresolved review threads were zero.
+Current checkpoint: **V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT**.
+V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE is branch-local `CERTIFIED_GREEN` on exact
+head `ddc780b43e74797bc0adea31a741db35eeb06605`; all 19 repository workflows completed
+`success`, the supported Timeweb runtime dependency graph proved zero dependency on
+protected V9 runtime roots, and unresolved review threads were zero.
 
 1. **V9C-A / AUTHORITY_AND_INVENTORY** — establish this amendment, exact source
    inventory, migration map and machine guard.
@@ -81,10 +81,13 @@ unresolved review threads were zero.
    `app.py`, `app_v360.py`, `app_v371.py` and `main.py`. The protected V9
    compatibility files stay present for recovery/compatibility, but are forbidden
    dependencies of the supported Timeweb runtime.
-4. **V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT** — extract any still-needed
-   V9 GPT policy/knowledge and historical provider logic into current V10 authority or
-   Git history, then remove obsolete V9/Render/Cloudflare/Neon/Cloud.ru/VK working-tree
-   artifacts that have zero current consumers.
+4. **V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT** — bind current GPT
+   development authority to Amendments 18–21 and Timeweb/Telegram, label protected
+   Custom GPT v9/Render documents as recovery-only, prove the supported Timeweb runtime
+   has zero imports from retired provider modules, and keep any retained provider
+   workflow history manual-only and hard-disabled. Historical worktree artifacts may
+   remain only when required for accepted provenance or protected V9 recovery; they do
+   not regain current V10 feature/deploy authority.
 5. **V9C-E / CI_RECOVERY_CONVERGENCE** — replace checks that require retired
    entrypoints/providers with equal-or-stronger V10/Timeweb checks; recovery must stand
    on current Timeweb source, PostgreSQL backup/restore and Git provenance.

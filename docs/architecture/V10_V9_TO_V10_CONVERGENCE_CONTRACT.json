@@ -22,7 +22,7 @@
     "protected_v9_compatibility_preserved": true,
     "v10_runtime_legacy_import_allowed": false
   },
-  "current_checkpoint": "V9C-C",
+  "current_checkpoint": "V9C-D",
   "checkpoints": [
     "V9C-A_AUTHORITY_AND_INVENTORY",
     "V9C-B_DETERMINISTIC_SOURCE_RELOCATION",
@@ -132,8 +132,29 @@
       "VK_ID"
     ],
     "current_feature_authority": false,
+    "current_runtime_provider_module_import_allowed": false,
     "zero_current_consumer_proof_required": true,
-    "history_preserved_in_git": true
+    "history_preserved_in_git": true,
+    "history_only_worktree_artifacts_allowed_when_required_for_provenance_or_protected_v9_recovery": true,
+    "current_gpt_authority": [
+      "gpt/PROJECT_INSTRUCTIONS.md",
+      "gpt/NEW_CHAT_PROMPT.md"
+    ],
+    "protected_v9_gpt_recovery": [
+      "gpt/README.md",
+      "gpt/CONFIGURATION.md",
+      "gpt/MY_GPT_SETUP_RUNBOOK.md",
+      "gpt/SETUP_INDEX.md",
+      "gpt/BOT_ONLY_FILE_MANIFEST.md",
+      "gpt/SECRETS_AND_RENDER.md"
+    ],
+    "retired_provider_workflows": [
+      ".github/workflows/v10-cloudflare-candidate-deploy.yml",
+      ".github/workflows/v10-cloudflare-production-release.yml",
+      ".github/workflows/v10-cloudflare-provider-readiness.yml",
+      ".github/workflows/v10-neon-egress-boundary.yml"
+    ],
+    "retired_provider_workflow_state": "MANUAL_ONLY_HARD_DISABLED_HISTORY"
   },
   "deletion_gate": {
     "replacement_exists": true,
