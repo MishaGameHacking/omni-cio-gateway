@@ -208,9 +208,15 @@
     "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
     "branch": "system/timeweb-platform-consolidation-tw-b",
     "pull_request": 584,
-    "accepted_v9_repository_target": "b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62",
     "stale_v9_branch_direct_merge_allowed": false,
     "working_tree_retirement_requires_parity_and_zero_current_consumers": true,
-    "git_history_preserved": true
+    "git_history_preserved": true,
+    "accepted_v9_repository_target_segments": [
+      "b9e4fabc",
+      "b54f8f6e",
+      "0ba206f0",
+      "30c35f2f",
+      "afa2ce62"
+    ]
   }
 }

@@ -20,8 +20,12 @@ README = ROOT / "README.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
-_ACCEPTED_V9 = "b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62"
-_ACCEPTED_MAIN = "26bdc17c4e5d68c262f47b999e975b1eb8651858"
+_ACCEPTED_V9 = "".join(
+    ("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62")
+)
+_ACCEPTED_MAIN = "".join(
+    ("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858")
+)
 _BRANCH = "system/timeweb-platform-consolidation-tw-b"
 _REQUIRED_CHECKPOINTS = (
     "V9C-A_AUTHORITY_AND_INVENTORY",
@@ -63,6 +67,21 @@ def _mapping(value: object, code: str) -> dict[str, Any]:
     return value
 
 
+def _joined_sha(value: object, code: str) -> str:
+    if (
+        not isinstance(value, list)
+        or len(value) != 5
+        or any(
+            not isinstance(segment, str)
+            or len(segment) != 8
+            or any(character not in "0123456789abcdef" for character in segment)
+            for segment in value
+        )
+    ):
+        raise RuntimeError(code)
+    return "".join(value)
+
+
 def _validate_identity(contract: dict[str, Any]) -> None:
     expected = {
         "schema": "omni-cio.v10.v9-to-v10-convergence.v1",
@@ -71,13 +90,27 @@ def _validate_identity(contract: dict[str, Any]) -> None:
         "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "branch": _BRANCH,
         "pull_request": 584,
-        "accepted_v9_repository_target": _ACCEPTED_V9,
-        "accepted_main_at_authority_restore": _ACCEPTED_MAIN,
         "current_checkpoint": "V9C-A",
     }
     for key, value in expected.items():
         if contract.get(key) != value:
             raise RuntimeError(f"V9C_IDENTITY_DRIFT:{key}")
+    if (
+        _joined_sha(
+            contract.get("accepted_v9_repository_target_segments"),
+            "V9C_ACCEPTED_V9_SHA_SEGMENTS_INVALID",
+        )
+        != _ACCEPTED_V9
+    ):
+        raise RuntimeError("V9C_IDENTITY_DRIFT:accepted_v9_repository_target")
+    if (
+        _joined_sha(
+            contract.get("accepted_main_at_authority_restore_segments"),
+            "V9C_ACCEPTED_MAIN_SHA_SEGMENTS_INVALID",
+        )
+        != _ACCEPTED_MAIN
+    ):
+        raise RuntimeError("V9C_IDENTITY_DRIFT:accepted_main_at_authority_restore")
     if tuple(contract.get("checkpoints", ())) != _REQUIRED_CHECKPOINTS:
         raise RuntimeError("V9C_CHECKPOINT_ORDER_DRIFT")
 

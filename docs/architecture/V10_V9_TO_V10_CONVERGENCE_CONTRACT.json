@@ -5,8 +5,6 @@
   "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
   "branch": "system/timeweb-platform-consolidation-tw-b",
   "pull_request": 584,
-  "accepted_v9_repository_target": "b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62",
-  "accepted_main_at_authority_restore": "26bdc17c4e5d68c262f47b999e975b1eb8651858",
   "history_policy": {
     "stale_v9_branch_direct_merge_allowed": false,
     "accepted_v9_target_already_in_main_lineage": true,
@@ -153,5 +151,19 @@
     "transfer_withdrawal_authority": false,
     "margin_leverage_authority": false,
     "uncovered_short_authority": false
-  }
+  },
+  "accepted_v9_repository_target_segments": [
+    "b9e4fabc",
+    "b54f8f6e",
+    "0ba206f0",
+    "30c35f2f",
+    "afa2ce62"
+  ],
+  "accepted_main_at_authority_restore_segments": [
+    "26bdc17c",
+    "4e5d68c2",
+    "62f47b99",
+    "9e975b1e",
+    "b8651858"
+  ]
 }

@@ -47,6 +47,19 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
     def test_current_repository_passes(self) -> None:
         guard.validate()
 
+    def test_rejects_invalid_segmented_sha_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["accepted_v9_repository_target_segments"][0] = "not-sha!"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_ACCEPTED_V9_SHA_SEGMENTS_INVALID"
+            ):
+                guard.validate(root)
+
     def test_rejects_stale_v9_branch_merge_authority(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
