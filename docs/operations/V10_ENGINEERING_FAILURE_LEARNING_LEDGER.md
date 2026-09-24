@@ -635,3 +635,26 @@ Permanent regression/guard:
 Future prevention rule:
 Dependency/tooling knowledge change:
 ```
+---
+
+## FL-027 — Runtime readiness must cover secondary PostgreSQL authority and schema invariants
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / pre-merge whole-branch audit
+
+**Symptom / failing gate:** the exact-head CI and hosted readiness tests were GREEN while the runtime probe still had three blind spots: it rejected memberships held by the runtime role but did not inspect roles that were members of the runtime role; it compared table-level grants but did not inspect explicit column ACLs; and it checked auth/session relation existence without proving the security-critical FK/UNIQUE/CHECK constraints used for identity-to-tenant binding and one-time browser authorization.
+
+**Root cause:** bootstrap-time PostgreSQL hardening and runtime-start readiness evolved independently. The canonical bootstrap SQL had stronger PostgreSQL 18 creator-membership semantics than the runtime probe, while the runtime probe treated exact table/routine grants and table existence as a sufficient proxy for the full authority/schema contract.
+
+**Blast radius searched:** provider-neutral hosted PostgreSQL bootstrap SQL and contract, PostgreSQL 18 creator-edge rehearsal, product identity repository, session registry, durable provider-auth transaction store, current Timeweb runtime composition, tenant RLS policies, all runtime-role grants and the focused Timeweb hosted-runtime regression surface.
+
+**Why preflight missed it:** current guards proved direct role grants, ownership, PUBLIC table/routine privileges and FORCE-RLS policy shape, but no regression mutated pg_auth_members on the granted-role side, created a column-specific ACL, or removed a critical account-plane constraint while leaving the relation present.
+
+**Corrective change:** runtime readiness now permits at most the PostgreSQL 18 safe creator-admin membership shape (ADMIN=true, INHERIT=false, SET=false), rejects any wider/member drift, rejects explicit runtime/PUBLIC column ACLs, and verifies the named validated PK/UNIQUE/FK/CHECK constraints required for session scope, external identity scope and browser-auth replay protection.
+
+**Permanent regression/guard:** focused tests cover the safe PostgreSQL 18 creator edge and fail closed on inherited member authority, column-level privilege drift and missing identity-scope constraints. The SQL test double is also dispatched through specific query handlers instead of one long overlapping conditional chain.
+
+**Future prevention rule:** when bootstrap authority is strengthened, enumerate every catalog surface that can carry equivalent authority (pg_auth_members, object ACLs, column ACLs, ownership, constraints, policies) and make runtime readiness verify the same security class rather than only the most common representation.
+
+**Dependency/tooling knowledge change:** PostgreSQL 18 records role-membership ADMIN, INHERIT and SET options in pg_auth_members; column-specific privileges live in pg_attribute.attacl, separately from ordinary table ACLs.
+

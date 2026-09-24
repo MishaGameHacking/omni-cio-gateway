@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -80,138 +81,246 @@ class _RuntimeProbeConnection:
         extra_relation_privilege: bool = False,
         policy_drift: bool = False,
         function_drift: bool = False,
+        runtime_members: list[tuple[bool, bool, bool]] | None = None,
+        column_privilege_drift: bool = False,
+        missing_constraint: str | None = None,
     ) -> None:
         self._role = role
         self._missing_relation = missing_relation
         self._extra_relation_privilege = extra_relation_privilege
         self._policy_drift = policy_drift
         self._function_drift = function_drift
+        self._runtime_members = [] if runtime_members is None else runtime_members
+        self._column_privilege_drift = column_privilege_drift
+        self._missing_constraint = missing_constraint
+
+    def _role_record(self) -> _Result:
+        return _Result(
+            one=(
+                self._role,
+                True,
+                False,
+                False,
+                False,
+                False,
+                False,
+            )
+        )
+
+    def _role_members(self) -> _Result:
+        return _Result(rows=[tuple(row) for row in self._runtime_members])
+
+    def _relation_grants(self) -> _Result:
+        rows = [
+            ("broker_accounts", "INSERT", "NO"),
+            ("broker_accounts", "SELECT", "NO"),
+            ("broker_connection_accounts", "INSERT", "NO"),
+            ("broker_connection_accounts", "SELECT", "NO"),
+            ("broker_connections", "INSERT", "NO"),
+            ("broker_connections", "SELECT", "NO"),
+            ("broker_connections", "UPDATE", "NO"),
+            ("external_identity_bindings", "INSERT", "NO"),
+            ("external_identity_bindings", "SELECT", "NO"),
+            ("provider_auth_transactions", "DELETE", "NO"),
+            ("provider_auth_transactions", "INSERT", "NO"),
+            ("provider_auth_transactions", "SELECT", "NO"),
+            ("tenants", "INSERT", "NO"),
+            ("users", "INSERT", "NO"),
+            ("users", "SELECT", "NO"),
+            ("web_sessions", "DELETE", "NO"),
+            ("web_sessions", "INSERT", "NO"),
+            ("web_sessions", "SELECT", "NO"),
+            ("web_sessions", "UPDATE", "NO"),
+        ]
+        if self._extra_relation_privilege:
+            rows.append(("tenants", "SELECT", "NO"))
+        return _Result(rows=rows)
+
+    def _required_relations(self) -> _Result:
+        relations: list[object | None] = [
+            "omni_cio_v10.tenants",
+            "omni_cio_v10.users",
+            "omni_cio_v10.external_identity_bindings",
+            "omni_cio_v10.web_sessions",
+            "omni_cio_v10.provider_auth_transactions",
+        ]
+        if self._missing_relation is not None:
+            relations[relations.index(self._missing_relation)] = None
+        return _Result(one=tuple(relations))
+
+    def _security_constraints(self) -> _Result:
+        rows = [
+            ("users", "users_user_tenant_uq", "u", True),
+            ("users", "users_one_account_per_tenant", "u", True),
+            ("web_sessions", "web_sessions_pkey", "p", True),
+            ("web_sessions", "web_session_token_sha256", "c", True),
+            ("web_sessions", "web_session_user_scope_fk", "f", True),
+            ("web_sessions", "web_session_time_order", "c", True),
+            (
+                "external_identity_bindings",
+                "external_identity_bindings_pkey",
+                "p",
+                True,
+            ),
+            (
+                "external_identity_bindings",
+                "external_identity_product_scope",
+                "c",
+                True,
+            ),
+            (
+                "external_identity_bindings",
+                "external_identity_user_scope_fk",
+                "f",
+                True,
+            ),
+            (
+                "external_identity_bindings",
+                "external_identity_one_provider_per_user",
+                "u",
+                True,
+            ),
+            (
+                "provider_auth_transactions",
+                "provider_auth_transactions_pkey",
+                "p",
+                True,
+            ),
+            (
+                "provider_auth_transactions",
+                "provider_auth_transactions_browser_proof_sha256_key",
+                "u",
+                True,
+            ),
+            (
+                "provider_auth_transactions",
+                "provider_auth_state_sha256",
+                "c",
+                True,
+            ),
+            (
+                "provider_auth_transactions",
+                "provider_auth_browser_proof_sha256",
+                "c",
+                True,
+            ),
+            (
+                "provider_auth_transactions",
+                "provider_auth_lifetime",
+                "c",
+                True,
+            ),
+        ]
+        if self._missing_constraint is not None:
+            rows = [row for row in rows if row[1] != self._missing_constraint]
+        return _Result(rows=rows)
+
+    def _tenant_scope_function(self) -> _Result:
+        source = (
+            "SELECT 'tenant:v1:owner'"
+            if self._function_drift
+            else "SELECT NULLIF("
+            "pg_catalog.current_setting('omni_cio.tenant_id', true), '')"
+        )
+        return _Result(one=("sql", "s", False, False, source))
+
+    def _tenant_policies(self) -> _Result:
+        expression = (
+            "tenant_id = 'tenant:v1:owner'"
+            if self._policy_drift
+            else "tenant_id = omni_cio_v10.current_tenant_scope()"
+        )
+        return _Result(
+            rows=[
+                (
+                    "broker_accounts",
+                    "broker_accounts_tenant_isolation",
+                    "*",
+                    True,
+                    True,
+                    expression,
+                    expression,
+                ),
+                (
+                    "broker_connection_accounts",
+                    "broker_connection_accounts_tenant_isolation",
+                    "*",
+                    True,
+                    True,
+                    expression,
+                    expression,
+                ),
+                (
+                    "broker_connections",
+                    "broker_connections_tenant_isolation",
+                    "*",
+                    True,
+                    True,
+                    expression,
+                    expression,
+                ),
+            ]
+        )
+
+    def _query_handlers(self) -> tuple[tuple[str, Callable[[], _Result]], ...]:
+        return (
+            ("AS database_owned", lambda: _Result(one=(0, 0, 0, 0))),
+            ("JOIN pg_catalog.pg_roles granted_role", self._role_members),
+            ("FROM pg_catalog.pg_roles", self._role_record),
+            ("FROM pg_catalog.pg_auth_members", lambda: _Result(one=(0,))),
+            (
+                "has_database_privilege",
+                lambda: _Result(one=(True, False, False)),
+            ),
+            (
+                "has_schema_privilege",
+                lambda: _Result(one=(True, False, False)),
+            ),
+            (
+                "FROM pg_catalog.pg_attribute attribute_record",
+                lambda: _Result(one=(1 if self._column_privilege_drift else 0,)),
+            ),
+            ("aclexplode", lambda: _Result(one=(0,))),
+            ("information_schema.role_table_grants", self._relation_grants),
+            ("information_schema.table_privileges", lambda: _Result(rows=[])),
+            (
+                "information_schema.role_routine_grants",
+                lambda: _Result(
+                    rows=[("current_tenant_scope", "EXECUTE", "NO")]
+                ),
+            ),
+            ("information_schema.routine_privileges", lambda: _Result(rows=[])),
+            ("has_sequence_privilege", lambda: _Result(one=(0,))),
+            ("SELECT to_regclass", self._required_relations),
+            (
+                "FROM pg_catalog.pg_constraint constraint_record",
+                self._security_constraints,
+            ),
+            (
+                "FROM pg_catalog.pg_proc function_record",
+                self._tenant_scope_function,
+            ),
+            ("FROM pg_catalog.pg_policy p", self._tenant_policies),
+            (
+                "FROM pg_catalog.pg_class c",
+                lambda: _Result(
+                    rows=[
+                        ("broker_accounts", True, True),
+                        ("broker_connection_accounts", True, True),
+                        ("broker_connections", True, True),
+                    ]
+                ),
+            ),
+        )
 
     def execute(self, statement: str, params: object = None) -> _Result:
         del params
         if statement == "SHOW server_version_num":
             return _Result(one=("180000",))
-        if "AS database_owned" in statement:
-            return _Result(one=(0, 0, 0, 0))
-        if "FROM pg_catalog.pg_roles" in statement:
-            return _Result(
-                one=(
-                    self._role,
-                    True,
-                    False,
-                    False,
-                    False,
-                    False,
-                    False,
-                )
-            )
-        if "FROM pg_catalog.pg_auth_members" in statement:
-            return _Result(one=(0,))
-        if "has_database_privilege" in statement:
-            return _Result(one=(True, False, False))
-        if "has_schema_privilege" in statement:
-            return _Result(one=(True, False, False))
-        if "aclexplode" in statement:
-            return _Result(one=(0,))
-        if "information_schema.role_table_grants" in statement:
-            rows = [
-                ("broker_accounts", "INSERT", "NO"),
-                ("broker_accounts", "SELECT", "NO"),
-                ("broker_connection_accounts", "INSERT", "NO"),
-                ("broker_connection_accounts", "SELECT", "NO"),
-                ("broker_connections", "INSERT", "NO"),
-                ("broker_connections", "SELECT", "NO"),
-                ("broker_connections", "UPDATE", "NO"),
-                ("external_identity_bindings", "INSERT", "NO"),
-                ("external_identity_bindings", "SELECT", "NO"),
-                ("provider_auth_transactions", "DELETE", "NO"),
-                ("provider_auth_transactions", "INSERT", "NO"),
-                ("provider_auth_transactions", "SELECT", "NO"),
-                ("tenants", "INSERT", "NO"),
-                ("users", "INSERT", "NO"),
-                ("users", "SELECT", "NO"),
-                ("web_sessions", "DELETE", "NO"),
-                ("web_sessions", "INSERT", "NO"),
-                ("web_sessions", "SELECT", "NO"),
-                ("web_sessions", "UPDATE", "NO"),
-            ]
-            if self._extra_relation_privilege:
-                rows.append(("tenants", "SELECT", "NO"))
-            return _Result(rows=rows)
-        if "information_schema.table_privileges" in statement:
-            return _Result(rows=[])
-        if "information_schema.role_routine_grants" in statement:
-            return _Result(rows=[("current_tenant_scope", "EXECUTE", "NO")])
-        if "information_schema.routine_privileges" in statement:
-            return _Result(rows=[])
-        if "has_sequence_privilege" in statement:
-            return _Result(one=(0,))
-        if "SELECT to_regclass" in statement:
-            relations: list[object | None] = [
-                "omni_cio_v10.tenants",
-                "omni_cio_v10.users",
-                "omni_cio_v10.external_identity_bindings",
-                "omni_cio_v10.web_sessions",
-                "omni_cio_v10.provider_auth_transactions",
-            ]
-            if self._missing_relation is not None:
-                relations[relations.index(self._missing_relation)] = None
-            return _Result(one=tuple(relations))
-        if "FROM pg_catalog.pg_proc function_record" in statement:
-            source = (
-                "SELECT 'tenant:v1:owner'"
-                if self._function_drift
-                else "SELECT NULLIF("
-                "pg_catalog.current_setting('omni_cio.tenant_id', true), '')"
-            )
-            return _Result(one=("sql", "s", False, False, source))
-        if "FROM pg_catalog.pg_policy p" in statement:
-            expression = (
-                "tenant_id = 'tenant:v1:owner'"
-                if self._policy_drift
-                else "tenant_id = omni_cio_v10.current_tenant_scope()"
-            )
-            return _Result(
-                rows=[
-                    (
-                        "broker_accounts",
-                        "broker_accounts_tenant_isolation",
-                        "*",
-                        True,
-                        True,
-                        expression,
-                        expression,
-                    ),
-                    (
-                        "broker_connection_accounts",
-                        "broker_connection_accounts_tenant_isolation",
-                        "*",
-                        True,
-                        True,
-                        expression,
-                        expression,
-                    ),
-                    (
-                        "broker_connections",
-                        "broker_connections_tenant_isolation",
-                        "*",
-                        True,
-                        True,
-                        expression,
-                        expression,
-                    ),
-                ]
-            )
-        if "FROM pg_catalog.pg_class c" in statement:
-            return _Result(
-                rows=[
-                    ("broker_accounts", True, True),
-                    ("broker_connection_accounts", True, True),
-                    ("broker_connections", True, True),
-                ]
-            )
+        for marker, handler in self._query_handlers():
+            if marker in statement:
+                return handler()
         raise AssertionError(statement)
-
 
 def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> None:
     role = validate_hosted_runtime_role("omni_cio_timeweb_candidate")
@@ -219,6 +328,59 @@ def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> Non
         _RuntimeProbeConnection(role),
         expected_runtime_role=role,
     )
+
+
+def test_provider_neutral_runtime_role_probe_accepts_pg18_safe_creator_edge() -> None:
+    role = "omni_cio_timeweb_candidate"
+    probe_hosted_runtime_database(
+        _RuntimeProbeConnection(
+            role,
+            runtime_members=[(True, False, False)],
+        ),
+        expected_runtime_role=role,
+    )
+
+
+def test_provider_neutral_runtime_role_probe_rejects_member_authority_drift() -> None:
+    role = "omni_cio_timeweb_candidate"
+    with pytest.raises(
+        RuntimeError,
+        match="HOSTED_RUNTIME_DATABASE_ROLE_MEMBER_DRIFT",
+    ):
+        probe_hosted_runtime_database(
+            _RuntimeProbeConnection(
+                role,
+                runtime_members=[(True, True, False)],
+            ),
+            expected_runtime_role=role,
+        )
+
+
+def test_provider_neutral_runtime_probe_rejects_column_authority_drift() -> None:
+    role = "omni_cio_timeweb_candidate"
+    with pytest.raises(
+        RuntimeError,
+        match="HOSTED_RUNTIME_COLUMN_PRIVILEGE_FORBIDDEN",
+    ):
+        probe_hosted_runtime_database(
+            _RuntimeProbeConnection(role, column_privilege_drift=True),
+            expected_runtime_role=role,
+        )
+
+
+def test_provider_neutral_runtime_probe_rejects_security_constraint_drift() -> None:
+    role = "omni_cio_timeweb_candidate"
+    with pytest.raises(
+        RuntimeError,
+        match="HOSTED_RUNTIME_DATABASE_CONSTRAINT_DRIFT",
+    ):
+        probe_hosted_runtime_database(
+            _RuntimeProbeConnection(
+                role,
+                missing_constraint="external_identity_user_scope_fk",
+            ),
+            expected_runtime_role=role,
+        )
 
 
 def test_provider_neutral_runtime_role_probe_rejects_identity_drift() -> None:

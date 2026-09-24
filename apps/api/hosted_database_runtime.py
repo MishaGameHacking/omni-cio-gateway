@@ -29,6 +29,70 @@ _EXPECTED_RELATION_PRIVILEGES = frozenset(
     }
 )
 _EXPECTED_ROUTINE_PRIVILEGES = frozenset({("current_tenant_scope", "EXECUTE", "NO")})
+_EXPECTED_SECURITY_CONSTRAINTS = frozenset(
+    {
+        ("users", "users_user_tenant_uq", "u", True),
+        ("users", "users_one_account_per_tenant", "u", True),
+        ("web_sessions", "web_sessions_pkey", "p", True),
+        ("web_sessions", "web_session_token_sha256", "c", True),
+        ("web_sessions", "web_session_user_scope_fk", "f", True),
+        ("web_sessions", "web_session_time_order", "c", True),
+        (
+            "external_identity_bindings",
+            "external_identity_bindings_pkey",
+            "p",
+            True,
+        ),
+        (
+            "external_identity_bindings",
+            "external_identity_product_scope",
+            "c",
+            True,
+        ),
+        (
+            "external_identity_bindings",
+            "external_identity_user_scope_fk",
+            "f",
+            True,
+        ),
+        (
+            "external_identity_bindings",
+            "external_identity_one_provider_per_user",
+            "u",
+            True,
+        ),
+        (
+            "provider_auth_transactions",
+            "provider_auth_transactions_pkey",
+            "p",
+            True,
+        ),
+        (
+            "provider_auth_transactions",
+            "provider_auth_transactions_browser_proof_sha256_key",
+            "u",
+            True,
+        ),
+        (
+            "provider_auth_transactions",
+            "provider_auth_state_sha256",
+            "c",
+            True,
+        ),
+        (
+            "provider_auth_transactions",
+            "provider_auth_browser_proof_sha256",
+            "c",
+            True,
+        ),
+        (
+            "provider_auth_transactions",
+            "provider_auth_lifetime",
+            "c",
+            True,
+        ),
+    }
+)
 _EXPECTED_RLS_POLICIES = {
     "broker_accounts": "broker_accounts_tenant_isolation",
     "broker_connection_accounts": "broker_connection_accounts_tenant_isolation",
@@ -92,6 +156,21 @@ def _validate_runtime_role(connection: Any, expected_role: str) -> None:
     ).fetchone()
     if memberships is None or int(memberships[0]) != 0:
         raise RuntimeError("HOSTED_RUNTIME_DATABASE_MEMBERSHIP_FORBIDDEN")
+
+    role_members = connection.execute(
+        "SELECT membership.admin_option, membership.inherit_option, "
+        "membership.set_option "
+        "FROM pg_catalog.pg_auth_members membership "
+        "JOIN pg_catalog.pg_roles granted_role "
+        "ON granted_role.oid = membership.roleid "
+        "WHERE granted_role.rolname = current_user "
+        "ORDER BY membership.member"
+    ).fetchall()
+    if len(role_members) > 1 or any(
+        tuple(bool(value) for value in row) != (True, False, False)
+        for row in role_members
+    ):
+        raise RuntimeError("HOSTED_RUNTIME_DATABASE_ROLE_MEMBER_DRIFT")
 
 
 def _validate_runtime_ownership(connection: Any) -> None:
@@ -166,6 +245,25 @@ def _validate_runtime_privileges(connection: Any) -> None:
     if public_relations:
         raise RuntimeError("HOSTED_RUNTIME_PUBLIC_RELATION_PRIVILEGE_FORBIDDEN")
 
+    column_acl = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_attribute attribute_record "
+        "JOIN pg_catalog.pg_class relation_record "
+        "ON relation_record.oid = attribute_record.attrelid "
+        "JOIN pg_catalog.pg_namespace schema_record "
+        "ON schema_record.oid = relation_record.relnamespace "
+        "CROSS JOIN LATERAL pg_catalog.aclexplode(attribute_record.attacl) acl "
+        "WHERE schema_record.nspname = 'omni_cio_v10' "
+        "AND attribute_record.attnum > 0 "
+        "AND NOT attribute_record.attisdropped "
+        "AND attribute_record.attacl IS NOT NULL "
+        "AND acl.grantee IN ("
+        "0::oid, "
+        "(SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)"
+        ")"
+    ).fetchone()
+    if column_acl is None or int(column_acl[0]) != 0:
+        raise RuntimeError("HOSTED_RUNTIME_COLUMN_PRIVILEGE_FORBIDDEN")
+
     routine_rows = connection.execute(
         "SELECT routine_name, privilege_type, is_grantable "
         "FROM information_schema.role_routine_grants "
@@ -206,6 +304,30 @@ def _validate_runtime_schema(connection: Any) -> None:
     ).fetchone()
     if required is None or any(value is None for value in required):
         raise RuntimeError("HOSTED_RUNTIME_DATABASE_SCHEMA_INCOMPLETE")
+
+    constraint_names = sorted(
+        constraint_name
+        for _, constraint_name, _, _ in _EXPECTED_SECURITY_CONSTRAINTS
+    )
+    constraint_rows = connection.execute(
+        "SELECT relation_record.relname, constraint_record.conname, "
+        "constraint_record.contype, constraint_record.convalidated "
+        "FROM pg_catalog.pg_constraint constraint_record "
+        "JOIN pg_catalog.pg_class relation_record "
+        "ON relation_record.oid = constraint_record.conrelid "
+        "JOIN pg_catalog.pg_namespace schema_record "
+        "ON schema_record.oid = relation_record.relnamespace "
+        "WHERE schema_record.nspname = 'omni_cio_v10' "
+        "AND constraint_record.conname = ANY(%s) "
+        "ORDER BY relation_record.relname, constraint_record.conname",
+        (constraint_names,),
+    ).fetchall()
+    actual_constraints = frozenset(
+        (str(row[0]), str(row[1]), str(row[2]), bool(row[3]))
+        for row in constraint_rows
+    )
+    if actual_constraints != _EXPECTED_SECURITY_CONSTRAINTS:
+        raise RuntimeError("HOSTED_RUNTIME_DATABASE_CONSTRAINT_DRIFT")
 
 
 def _validate_tenant_scope_function(connection: Any) -> None:
