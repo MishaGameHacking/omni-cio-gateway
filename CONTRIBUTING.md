@@ -17,7 +17,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` для V9;
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–18;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–20;
 9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, current Timeweb/Telegram owning contracts и остальные applicable current contracts; historical Cloudflare contracts read only when recovery/provenance/compatibility review requires them;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;

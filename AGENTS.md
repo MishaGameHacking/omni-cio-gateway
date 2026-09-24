@@ -44,7 +44,7 @@ Before material work restore from current GitHub `main`, not chat memory:
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-9. all applicable active amendments, especially Amendments 8–18;
+9. all applicable active amendments, especially Amendments 8–20;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. owning execution-unit contracts/runbooks/ledgers;

@@ -196,8 +196,8 @@ def _validate_documentation(root: Path) -> None:
             "PR #584",
         ),
         LEDGER.relative_to(ROOT): (
-            "V9C-A / AUTHORITY_AND_INVENTORY",
-            "V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF",
+            "| V9C-A | AUTHORITY_AND_INVENTORY |",
+            "| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF |",
         ),
         AGENTS.relative_to(ROOT): ("V9 migration source", "V9C-A", "PR #584"),
         README.relative_to(ROOT): ("V9 migration source", "V9C-A"),
