@@ -25,6 +25,7 @@ def _copy(root: Path) -> None:
         guard.CONTRIBUTING,
         guard.WORKFLOW,
         guard.PYPROJECT,
+        *(ROOT / relative for relative in guard._VERIFIER_WORKFLOW_RELATIVE_PATHS),
     )
     for source in paths:
         relative = source.relative_to(ROOT)
