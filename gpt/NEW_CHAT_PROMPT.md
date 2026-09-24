@@ -46,7 +46,7 @@ Current target after Amendment 18 acceptance:
 - initial TW-A branch `system/timeweb-platform-consolidation` is merged via PR #583; current TW-B continuation branch = `system/timeweb-platform-consolidation-tw-b`;
 - milestones = TW-A inventory/authority -> TW-B source/runtime -> TW-C Timeweb candidate -> TW-D PostgreSQL cutover -> TW-E DNS/no-VPN ingress -> TW-F Telegram public activation -> TW-G external-provider decommission;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are historical/retirement targets, not new feature authority;
-- legacy files remain archive-in-place by default and must not be mass-deleted;
+- Amendment 20 governs legacy working-tree retirement: migrate useful semantics first, prove parity/zero current consumers/recovery, then delete the obsolete working-tree artifact while preserving Git history;
 - historical files may be touched only when a compatibility/governance check must acknowledge the new current authority;
 - retired provider resources/secrets/workflow actions are disabled/revoked only after replacement/cutover/recovery evidence;
 - GitHub-native checks are the active quality/security authority; external CI/review SaaS is historical and must not be required by current/future workflows;
