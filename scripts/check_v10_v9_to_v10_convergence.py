@@ -290,6 +290,7 @@ def _dynamic_import_module(node: ast.AST) -> str | None:
         return None
     return first.value
 
+
 def _module_name(relative: Path) -> str:
     module_path = (
         relative.parent
