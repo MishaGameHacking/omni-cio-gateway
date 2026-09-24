@@ -29,7 +29,7 @@ This box is not a second progress ledger. Exact state is only `knowledge/17_V10_
 
 ## V9→V10 convergence inside PR #584
 
-Current branch-local checkpoint is `V9C-A / AUTHORITY_AND_INVENTORY`. Existing deterministic engines already under `omni_cio/` are reused, not rewritten. Remaining top-level V9 compatibility/financial sources are relocated into canonical V10 packages with parity evidence; only then are obsolete runtime/provider/GPT working-tree files deleted. Git history remains the historical archive.
+Current branch-local checkpoint is `V9C-B / DETERMINISTIC_SOURCE_RELOCATION`. `V9C-A` is branch-local `CERTIFIED_GREEN` on exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35` (18/18 repository workflows `success`). Remaining deterministic V9 root engines are being relocated into canonical `omni_cio/` packages without financial-semantic rewrite; root implementation paths are removed only after consumers, verifier ownership and parity guards move with them. Runtime-wrapper/provider/GPT retirement remains gated by V9C-C/V9C-D. Git history remains the historical archive.
 
 A stale `v9/*` branch merge is explicitly forbidden: the accepted V9 target is already an ancestor of current main.
 
@@ -121,7 +121,7 @@ One account owns one isolated tenant in the baseline. Tenant scope is derived fr
 Public broker credentials remain tenant-owned `BrokerConnection` credentials. There is no shared/global user broker token: no shared/global user broker token is allowed.
 
 
-Cloudflare/Neon/Render/Cloud.ru/VK files remain archive-in-place project history. They are not current implementation authority and new code must not depend on them.
+Cloudflare/Neon/Render/Cloud.ru/VK working-tree artifacts are migration/retirement inputs under Amendment 20, not current implementation authority. New code must not depend on them; artifacts with zero current consumers may be removed at their owning V9C-D/V9C-E gates while Git history remains the archive.
 
 Public activation still requires Timeweb runtime/database/DNS acceptance plus Telegram, privacy/personal-data, capacity, monitoring and production-security gates.
 
