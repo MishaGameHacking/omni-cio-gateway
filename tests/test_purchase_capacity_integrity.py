@@ -1,4 +1,4 @@
-import purchase_capacity_integrity
+from omni_cio.pretrade import purchase_capacity_integrity_v1 as purchase_capacity_integrity
 
 
 def base_payload() -> dict[str, object]:
