@@ -215,7 +215,8 @@ def _validate_inventory(root: Path, contract: dict[str, Any]) -> None:
 
 
 def _validate_no_legacy_imports(root: Path) -> None:
-    for path in sorted(root.rglob("*.py")):
+    source_paths = sorted({*root.rglob("*.py"), *root.rglob("*.pyfrag")})
+    for path in source_paths:
         if any(part in {".git", ".venv", ".venv-ci"} for part in path.parts):
             continue
         relative = path.relative_to(root)
