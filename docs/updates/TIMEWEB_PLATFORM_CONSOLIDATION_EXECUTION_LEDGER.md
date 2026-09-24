@@ -304,7 +304,7 @@ long-line layout drifts; no assertion, security check or test is weakened.
 
 ## 9. Integration-ready preflight
 
-- [ ] Current replacement checkpoint is `CERTIFIED_GREEN`.
+- [x] V9C-B replacement checkpoint reached `CERTIFIED_GREEN` on `2d16dbe20e558c33fed6f8b130847f71149e2ade`; later commits invalidate it for final acceptance.
 - [x] Complete changed surface reviewed.
 - [x] Directly coupled workflow/contract/guard/test/runbook surfaces reviewed.
 - [x] Analogous live Cloudflare workflows searched.
@@ -312,9 +312,9 @@ long-line layout drifts; no assertion, security check or test is weakened.
 - [x] Deterministic graph regression guards added.
 - [x] Security/authority/secret/recovery consequences reviewed.
 - [x] Full final diff reviewed on replacement exact head.
-- [ ] DRAFT exact-head applicable checks all success.
+- [x] V9C-B exact-head DRAFT applicable checks all completed success on `2d16dbe20e558c33fed6f8b130847f71149e2ade`.
 - [ ] READY exact-head applicable checks all success.
-- [ ] Zero unresolved blocking review threads.
+- [x] Zero unresolved blocking review threads at the V9C-B certified checkpoint.
 
 ## 10. Handoff
 
@@ -345,4 +345,33 @@ The current TW-B branch remains unmerged and in RED repair. Exact-head verificat
 No provider resources, DNS, secrets, public-user activation, broker-write authority or real-trading authority are changed by this repair.
 
 A later material boundary remains explicit rather than hidden: the Docker dependency lock still carries the historical T-Invest package/index and the hosted runtime still uses one bounded serialized PostgreSQL connection. Splitting broker-only dependencies and introducing a production connection-pool/reconnect design are dependency/toolchain/capacity changes and remain mandatory split-gate work before public multi-user production acceptance. Exact migration-state proof remains a deployment/release gate with migration authority; the least-privilege runtime role must not gain read access to `schema_migrations` merely to make runtime health claim exact migration truth.
+
+## 11. 2026-09-24 OWNER expansion — Amendment 21 / six-milestone production delivery
+
+OWNER explicitly authorized the complete repository-side delivery chain to be implemented
+inside the existing PR #584 branch. The prior V9C-B exact head
+`2d16dbe20e558c33fed6f8b130847f71149e2ade` completed all 19 repository workflows
+successfully, with Fast PR and authoritative Windows green and current Sonar reporting
+0 new issues / 0 Security Hotspots. It is therefore recorded as the branch-local
+`CERTIFIED_GREEN` source base before Amendment 21 work.
+
+The branch now owns these ordered internal milestones:
+
+1. P1 source/runtime + V9 convergence;
+2. P2 exact-SHA Timeweb App Platform candidate/release control;
+3. P3 Timeweb PostgreSQL 18 production cutover/recovery control;
+4. P4 `omnicio.ru` DNS/TLS/public-ingress acceptance;
+5. P5 Telegram-only production login readiness/activation control;
+6. P6 exact-main post-merge production acceptance and rollback proof.
+
+This is one integrated **source branch**, not one irreversible transaction. Paid provider
+creation/capacity, immutable network selection, production DB migration/cutover, DNS/TLS
+mutation, production secrets, BotFather registration, legal/privacy actions, public-user
+activation, destructive decommission and PR landing remain independent fail-closed gates.
+
+Current implementation checkpoint after this ledger change:
+`P0_FULL_PRODUCTION_DELIVERY_AUTHORITY_AND_CONTRACT`.
+
+No production provider mutation is performed by P0. A fresh exact-head verification
+batch is mandatory before P2 implementation begins.
 

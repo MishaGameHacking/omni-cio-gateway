@@ -294,6 +294,22 @@
     "tests/test_v10_timeweb_no_owner_laptop_dependency.py": {
       "classification": "KEEP",
       "reason": "Current regression evidence for the Timeweb no-OWNER-laptop and fail-closed broker-custody boundary."
+    },
+    "docs/master-plan/OMNI_CIO_V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_AMENDMENT.md": {
+      "classification": "KEEP",
+      "reason": "Current Amendment 21 branch-local authority for the integrated Timeweb production-delivery implementation in PR #584."
+    },
+    "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json": {
+      "classification": "KEEP",
+      "reason": "Current machine-readable exact-SHA/fail-closed Timeweb production-delivery contract."
+    },
+    "scripts/check_v10_timeweb_full_production_delivery.py": {
+      "classification": "KEEP",
+      "reason": "Current deterministic guard for Timeweb exact-SHA release, PostgreSQL, omnicio.ru and Telegram activation boundaries."
+    },
+    "tests/test_v10_timeweb_full_production_delivery.py": {
+      "classification": "KEEP",
+      "reason": "Current regression evidence for Amendment 21 production-delivery authority and protected invariants."
     }
   },
   "path_rules": [
@@ -449,7 +465,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 220,
+  "expected_provider_named_file_count": 224,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",

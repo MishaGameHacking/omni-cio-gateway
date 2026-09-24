@@ -1,0 +1,124 @@
+{
+  "schema": "omni-cio.v10.timeweb-full-production-delivery.v1",
+  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_ACCEPTANCE_PENDING",
+  "decision_date": "2026-09-24",
+  "owning_issue": 580,
+  "owning_pr": 584,
+  "branch": "system/timeweb-platform-consolidation-tw-b",
+  "canonical_domain": "omnicio.ru",
+  "canonical_origin": "https://omnicio.ru",
+  "telegram_redirect_uri": "https://omnicio.ru/api/v10/web/auth/telegram/callback",
+  "release": {
+    "source_authority": "GITHUB_PROTECTED_MAIN",
+    "deployment_platform": "TIMEWEB_APP_PLATFORM",
+    "exact_commit_sha_required": true,
+    "production_autodeploy_allowed": false,
+    "runtime_release_env": "OMNI_V10_RELEASE_SHA",
+    "liveness_path": "/livez",
+    "database_readiness_path": "/healthz",
+    "deployed_sha_must_equal_accepted_main_sha": true,
+    "last_known_good_rollback_required": true,
+    "mismatch_state": "OUT_OF_SYNC/DEPLOYMENT_BLOCKED"
+  },
+  "runtime": {
+    "dockerfile": "Dockerfile",
+    "port": 8080,
+    "app_factory": "apps.api.hosted_runtime:create_app",
+    "required_non_secret_env": {
+      "OMNI_V10_HOSTED_RUNTIME": "1",
+      "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru"
+    },
+    "secret_env_names": [
+      "OMNI_V10_POSTGRES_DSN",
+      "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
+      "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET",
+      "OMNI_V10_IDENTITY_BINDING_KEY_HEX",
+      "OMNI_V10_CSRF_BINDING_KEY_HEX"
+    ],
+    "secret_values_in_repository_allowed": false
+  },
+  "postgres": {
+    "engine": "PostgreSQL",
+    "major_version": 18,
+    "canonical_runtime_contract": "infrastructure/postgres/hosted-postgres-runtime-contract.json",
+    "migrations_required": true,
+    "least_privilege_required": true,
+    "rls_required": true,
+    "force_rls_required": true,
+    "cross_tenant_negative_required": true,
+    "backup_restore_required": true,
+    "production_cutover_requires_independent_acceptance": true
+  },
+  "public_ingress": {
+    "custom_domain": "omnicio.ru",
+    "tls_required": true,
+    "cloudflare_required_hop": false,
+    "owner_home_network_dependency_allowed": false,
+    "representative_russian_no_vpn_evidence_required": true,
+    "undocumented_provider_domain_api_allowed": false
+  },
+  "telegram": {
+    "provider": "TELEGRAM",
+    "oidc_authorization_code_pkce_required": true,
+    "allowed_scope": [
+      "openid"
+    ],
+    "bot_access_scope_allowed": false,
+    "public_multi_user_flag": "PUBLIC_MULTI_USER_ENABLED",
+    "provider_activation_flag": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+    "flags_must_transition_together": true,
+    "current_public_multi_user_enabled": false,
+    "current_telegram_login_enabled": false,
+    "provider_secret_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+    "real_login_account_tenant_session_proof_required": true,
+    "cross_tenant_negative_required": true
+  },
+  "external_action_gates": {
+    "app_creation_or_paid_capacity": "OWNER_OR_PROVIDER_CONFIRMATION_REQUIRED",
+    "immutable_network_selection": "OWNER_OR_PROVIDER_CONFIRMATION_REQUIRED",
+    "production_database_cutover": "INDEPENDENT_ACCEPTANCE_REQUIRED",
+    "dns_tls_cutover": "INDEPENDENT_ACCEPTANCE_REQUIRED",
+    "telegram_registration_and_secrets": "OWNER_SECRET_PROVIDER_ACTION_REQUIRED",
+    "legal_privacy_regulatory": "OWNER_LEGAL_ACTION_REQUIRED",
+    "public_activation": "CAPABILITY_ACCEPTANCE_REQUIRED",
+    "destructive_decommission": "POST_ACCEPTANCE_ONLY"
+  },
+  "branch_milestones": [
+    {
+      "id": "P1_SOURCE_RUNTIME_CONVERGENCE",
+      "state": "CERTIFIED_GREEN_SOURCE_BASE"
+    },
+    {
+      "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
+      "state": "AUTHORIZED_IMPLEMENTATION"
+    },
+    {
+      "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
+      "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED"
+    },
+    {
+      "id": "P4_OMNICIO_RU_DNS_TLS",
+      "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED"
+    },
+    {
+      "id": "P5_TELEGRAM_PUBLIC_ACTIVATION",
+      "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED"
+    },
+    {
+      "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
+      "state": "AUTHORIZED_IMPLEMENTATION_POST_MERGE_EXECUTION"
+    }
+  ],
+  "protected_invariants": {
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "transfer_withdrawal": false,
+    "margin_leverage": false,
+    "uncovered_short": false,
+    "browser_tenant_selection": false,
+    "web_visual_started": false,
+    "wp23_unlocked": false,
+    "merge_without_exact_head_confirmation": false
+  }
+}

@@ -399,6 +399,27 @@ before merge to `main`. This amendment does not activate public users, deploy TW
 cut over production data/DNS, authorize broker write/Real money, start WEB-VISUAL or
 unlock WP23+.
 
+### 21. Timeweb Full Production Delivery in PR #584
+
+`OMNI_CIO_V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json`;
+- `../../scripts/check_v10_timeweb_full_production_delivery.py`;
+- `../../tests/test_v10_timeweb_full_production_delivery.py`;
+- `../updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md`.
+
+Records the 2026-09-24 OWNER decision to implement the complete repository-side
+production-delivery chain in the existing PR #584 instead of creating competing source
+branches. The branch may implement source/runtime convergence, exact-SHA Timeweb App
+Platform release control, PostgreSQL 18 production-cutover/recovery control,
+`omnicio.ru` DNS/TLS acceptance, Telegram-only public activation control and
+post-merge production acceptance. Provider/payment/network, production DB, DNS/TLS,
+secret, legal/privacy, public-activation, destructive-decommission and merge boundaries
+remain independently fail-closed and require their owning evidence. This amendment
+does not authorize broker write, Real money, WEB-VISUAL or WP23+.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -412,7 +433,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13/14/15/16/17/18/19/20 for current product/public-hosting/delivery/activation/platform/engineering/data-residency/Russia-ingress/convergence semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14/15/16/17/18/19/20/21 for current product/public-hosting/delivery/activation/platform/engineering/data-residency/Russia-ingress/convergence/production-delivery semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
