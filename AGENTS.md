@@ -26,7 +26,7 @@ Current synchronized snapshot:
 - WEB-VISUAL and WP23+ are paused;
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
-- OWNER-approved V9→V10 convergence is active inside PR #584 beginning with `V9C-A / AUTHORITY_AND_INVENTORY`; PR #584 must not merge to `main` without a new explicit OWNER instruction.
+- OWNER-approved V9→V10 convergence is active inside PR #584. `V9C-A / AUTHORITY_AND_INVENTORY` is branch-local `CERTIFIED_GREEN`; current checkpoint is `V9C-B / DETERMINISTIC_SOURCE_RELOCATION`. PR #584 must not merge to `main` without a new explicit OWNER instruction.
 
 PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session. The optional Omni-CIO Telegram bot may only be linked after that account/session exists; bot chat, `/start`, Bot API identity or bot-token possession can never create an account, mint/select a tenant or replace product login.
 
@@ -271,7 +271,7 @@ Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow
 
 ## 14. V9 / V10 boundary
 
-Amendment 20 changes the forward architecture: V9 is a migration source, not a permanent parallel runtime. Current checkpoint `V9C-A` inventories the accepted V9 source already present in the main lineage. Remaining deterministic root modules move into canonical `omni_cio/` packages by reuse/extraction; `app.py`, `app_v360.py`, `app_v371.py`, `main.py` and retired provider/GPT working-tree artifacts are removed only after their replacement/parity/consumer/recovery gates. Git history is preserved. Until V9C-C/V9C-D actually close those gates, existing paths remain present and must not be deleted prematurely.
+Amendment 20 changes the forward architecture: V9 is a migration source, not a permanent parallel runtime. `V9C-A` completed the accepted-lineage inventory; current checkpoint `V9C-B` relocates the remaining deterministic root engines into canonical `omni_cio/` packages by reuse/extraction and requires zero legacy imports plus parity/verifier migration before root-source deletion. `app.py`, `app_v360.py`, `app_v371.py`, `main.py` remain V9C-C migration inputs; retired provider/GPT working-tree artifacts remain V9C-D inputs. Git history is preserved.
 
 ## 15. OWNER participation / handoff law
 
