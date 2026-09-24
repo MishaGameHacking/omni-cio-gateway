@@ -53,13 +53,15 @@
     {
       "id": "COMP-DETERMINISTIC-CORE",
       "current_paths": [
-        "omni_cio/",
-        "portfolio_market.py",
-        "portfolio_analytics.py",
-        "cash_liquidity.py",
-        "purchase_capacity.py",
-        "purchase_capacity_integrity.py",
-        "operations_analytics.py"
+        "omni_cio/portfolio/market_source_v1.py",
+        "omni_cio/analytics/portfolio_source_v1.py",
+        "omni_cio/analytics/cash_liquidity_v1.py",
+        "omni_cio/analytics/operations_source_v1.py",
+        "omni_cio/pretrade/purchase_capacity_v1.py",
+        "omni_cio/pretrade/purchase_capacity_integrity_v1.py",
+        "omni_cio/pretrade/sale_capacity_v1.py",
+        "omni_cio/pretrade/sale_capacity_normalization_v1.py",
+        "omni_cio/adapters/tinvest_order_compat_v1.py"
       ],
       "role": "deterministic financial/domain engines",
       "decision": "EXTRACT_TO_CORE",
@@ -70,7 +72,8 @@
       "rewrite_default": "DENY",
       "financial_semantics_change_allowed": "ONLY_WITH_VERSIONED_CONTRACT_AND_PARITY_EVIDENCE",
       "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
-      "reason": "Most V9 engines already live under omni_cio; remaining root-level deterministic modules are relocated without semantic rewrite."
+      "reason": "V9C-B preserves the accepted implementations while relocating ownership under canonical omni_cio packages; root source paths are retired only with zero-consumer and parity evidence.",
+      "current_state": "RELOCATED_IN_V9C_B"
     },
     {
       "id": "COMP-V10-CANONICAL-DOMAIN-IDENTITY",
@@ -95,7 +98,7 @@
     {
       "id": "COMP-BROKER-RECON",
       "current_paths": [
-        "broker_report_reconciliation/"
+        "omni_cio/reconciliation/"
       ],
       "role": "broker report reconciliation",
       "decision": "EXTRACT_TO_CORE",
@@ -106,7 +109,8 @@
       "rewrite_default": "DENY",
       "financial_semantics_change_allowed": "ONLY_WITH_VERSIONED_CONTRACT_AND_PARITY_EVIDENCE",
       "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
-      "reason": "Move the existing reconciliation implementation under canonical omni_cio ownership before removing the root package."
+      "reason": "V9C-B moves the existing fragment-backed reconciliation implementation under canonical omni_cio/reconciliation ownership without changing broker authority.",
+      "current_state": "RELOCATED_IN_V9C_B"
     },
     {
       "id": "COMP-CURRENT-GPT-ASSETS",
