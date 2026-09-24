@@ -11,7 +11,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient
 
 import app as gateway_module
-import portfolio_market
+from omni_cio.portfolio import market_snapshot_v1 as portfolio_market
 
 
 client = TestClient(gateway_module.app)
