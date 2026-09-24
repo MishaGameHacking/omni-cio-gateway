@@ -109,7 +109,9 @@ def test_current_operational_docs_do_not_reintroduce_pre_v9_status() -> None:
     for relative in CURRENT_STATE_DOCS:
         text = _read(relative)
         for marker in STALE_CURRENT_STATE_MARKERS:
-            assert marker not in text, f"{relative}: stale current-state marker {marker!r}"
+            assert marker not in text, (
+                f"{relative}: stale current-state marker {marker!r}"
+            )
 
 
 def test_current_navigation_describes_v9_as_migration_source() -> None:
