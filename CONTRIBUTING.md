@@ -2,7 +2,7 @@
 
 Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается в PR #584.
 
-OWNER-approved convergence выполняется внутри той же ветки #584 начиная с `V9C-A / AUTHORITY_AND_INVENTORY`: reuse/extract нужной V9-логики в canonical V10/Timeweb, затем доказанное удаление legacy working-tree paths при сохранении Git history.
+OWNER-approved convergence выполняется внутри той же ветки #584. `V9C-A / AUTHORITY_AND_INVENTORY` уже branch-local `CERTIFIED_GREEN`; текущий checkpoint — `V9C-B / DETERMINISTIC_SOURCE_RELOCATION`: reuse/extract нужной V9-логики в canonical `omni_cio/`, миграция всех consumers/verifiers и доказанное удаление deterministic root sources при сохранении Git history.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
