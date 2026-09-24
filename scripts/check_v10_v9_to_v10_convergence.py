@@ -20,12 +20,8 @@ README = ROOT / "README.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
-_ACCEPTED_V9 = "".join(
-    ("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62")
-)
-_ACCEPTED_MAIN = "".join(
-    ("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858")
-)
+_ACCEPTED_V9 = "".join(("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62"))
+_ACCEPTED_MAIN = "".join(("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858"))
 _BRANCH = "system/timeweb-platform-consolidation-tw-b"
 _REQUIRED_CHECKPOINTS = (
     "V9C-A_AUTHORITY_AND_INVENTORY",
