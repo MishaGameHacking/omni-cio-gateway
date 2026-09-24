@@ -238,6 +238,25 @@ def _validate_no_legacy_imports(root: Path) -> None:
                         f"V9C_LEGACY_IMPORT_REINTRODUCED:{relative}:{module}"
                     )
 
+            if isinstance(node, ast.Call) and node.args:
+                dynamic_import = False
+                if isinstance(node.func, ast.Name) and node.func.id == "__import__":
+                    dynamic_import = True
+                elif (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "import_module"
+                ):
+                    dynamic_import = True
+                if dynamic_import and isinstance(node.args[0], ast.Constant):
+                    module = node.args[0].value
+                    if isinstance(module, str):
+                        root_name = module.split(".", 1)[0]
+                        if root_name in _LEGACY_IMPORT_ROOTS:
+                            raise RuntimeError(
+                                "V9C_LEGACY_DYNAMIC_IMPORT_REINTRODUCED:"
+                                f"{relative}:{module}"
+                            )
+
 
 def _validate_verifier_ownership(root: Path) -> None:
     pyproject = _text(root / PYPROJECT.relative_to(ROOT))
