@@ -80,8 +80,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             root = Path(temporary)
             _copy(root)
             readiness_path = (
-                root
-                / "docs/architecture/"
+                root / "docs/architecture/"
                 "V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
             )
             payload = json.loads(readiness_path.read_text(encoding="utf-8"))

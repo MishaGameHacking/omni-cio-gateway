@@ -8,21 +8,19 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 AMENDMENT = (
-    ROOT
-    / "docs/master-plan/OMNI_CIO_V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_AMENDMENT.md"
+    ROOT / "docs/master-plan/OMNI_CIO_V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_AMENDMENT.md"
 )
 CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
 RUNTIME = ROOT / "apps/api/hosted_runtime.py"
 TELEGRAM_AUTH = ROOT / "apps/api/telegram_auth.py"
 TELEGRAM_READINESS = (
-    ROOT / "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
+    ROOT
+    / "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
 )
 DOCKERFILE = ROOT / "Dockerfile"
 
 _CANONICAL_ORIGIN = "https://omnicio.ru"
-_CANONICAL_CALLBACK = (
-    "https://omnicio.ru/api/v10/web/auth/telegram/callback"
-)
+_CANONICAL_CALLBACK = "https://omnicio.ru/api/v10/web/auth/telegram/callback"
 _EXPECTED_BRANCH = "system/timeweb-platform-consolidation-tw-b"
 _SECRET_ENV_NAMES = {
     "OMNI_V10_POSTGRES_DSN",
@@ -145,18 +143,16 @@ def _validate_runtime(payload: dict[str, Any]) -> None:
 
     hosted_runtime = _text(RUNTIME)
     for marker in (
-        'OMNI_V10_HOSTED_RUNTIME',
-        'OMNI_V10_PUBLIC_HOSTNAME',
-        'OMNI_V10_RELEASE_SHA',
-        'OMNI_V10_POSTGRES_DSN',
-        'OMNI_V10_POSTGRES_RUNTIME_ROLE',
+        "OMNI_V10_HOSTED_RUNTIME",
+        "OMNI_V10_PUBLIC_HOSTNAME",
+        "OMNI_V10_RELEASE_SHA",
+        "OMNI_V10_POSTGRES_DSN",
+        "OMNI_V10_POSTGRES_RUNTIME_ROLE",
         'canonical_origin=f"https://{hostname}"',
-        'provider_route_installer=install_telegram_auth_routes_v1',
+        "provider_route_installer=install_telegram_auth_routes_v1",
     ):
         if marker not in hosted_runtime:
-            raise RuntimeError(
-                f"TIMEWEB_FULL_DELIVERY_HOSTED_RUNTIME_DRIFT:{marker}"
-            )
+            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_HOSTED_RUNTIME_DRIFT:{marker}")
 
 
 def _validate_postgres(payload: dict[str, Any]) -> None:
@@ -214,15 +210,13 @@ def _validate_telegram(payload: dict[str, Any]) -> None:
 
     source = _text(TELEGRAM_AUTH)
     for marker in (
-        'PUBLIC_MULTI_USER_ENABLED',
-        'OMNI_V10_TELEGRAM_LOGIN_ENABLED',
-        'TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH',
-        'allowed_providers=(IdentityProviderV1.TELEGRAM,)',
+        "PUBLIC_MULTI_USER_ENABLED",
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+        "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
+        "allowed_providers=(IdentityProviderV1.TELEGRAM,)",
     ):
         if marker not in source:
-            raise RuntimeError(
-                f"TIMEWEB_FULL_DELIVERY_TELEGRAM_SOURCE_DRIFT:{marker}"
-            )
+            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_TELEGRAM_SOURCE_DRIFT:{marker}")
 
     readiness = _json(TELEGRAM_READINESS)
     if readiness.get("activation_allowed") is not False:
@@ -249,9 +243,7 @@ def _validate_external_gates(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_EXTERNAL_GATE_SET_DRIFT")
     for key, value in gates.items():
         if not isinstance(value, str) or not value.endswith(("REQUIRED", "ONLY")):
-            raise RuntimeError(
-                f"TIMEWEB_FULL_DELIVERY_EXTERNAL_GATE_INVALID:{key}"
-            )
+            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_EXTERNAL_GATE_INVALID:{key}")
 
 
 def _validate_protected_invariants(payload: dict[str, Any]) -> None:
@@ -273,15 +265,39 @@ def _validate_protected_invariants(payload: dict[str, Any]) -> None:
 
 
 def validate(root: Path = ROOT) -> None:
-    global ROOT, AMENDMENT, CONTRACT, RUNTIME, TELEGRAM_AUTH, TELEGRAM_READINESS, DOCKERFILE
-    original = (ROOT, AMENDMENT, CONTRACT, RUNTIME, TELEGRAM_AUTH, TELEGRAM_READINESS, DOCKERFILE)
+    global \
+        ROOT, \
+        AMENDMENT, \
+        CONTRACT, \
+        RUNTIME, \
+        TELEGRAM_AUTH, \
+        TELEGRAM_READINESS, \
+        DOCKERFILE
+    original = (
+        ROOT,
+        AMENDMENT,
+        CONTRACT,
+        RUNTIME,
+        TELEGRAM_AUTH,
+        TELEGRAM_READINESS,
+        DOCKERFILE,
+    )
     if root != ROOT:
         ROOT = root
-        AMENDMENT = root / "docs/master-plan/OMNI_CIO_V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_AMENDMENT.md"
-        CONTRACT = root / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+        AMENDMENT = (
+            root
+            / "docs/master-plan/OMNI_CIO_V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_AMENDMENT.md"
+        )
+        CONTRACT = (
+            root
+            / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+        )
         RUNTIME = root / "apps/api/hosted_runtime.py"
         TELEGRAM_AUTH = root / "apps/api/telegram_auth.py"
-        TELEGRAM_READINESS = root / "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
+        TELEGRAM_READINESS = (
+            root
+            / "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
+        )
         DOCKERFILE = root / "Dockerfile"
     try:
         payload = _json(CONTRACT)
