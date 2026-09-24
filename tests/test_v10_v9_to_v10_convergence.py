@@ -113,6 +113,21 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_dynamic_legacy_import_reintroduction(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            consumer = root / "tests/dynamic_legacy_consumer.py"
+            consumer.parent.mkdir(parents=True, exist_ok=True)
+            consumer.write_text(
+                'import importlib\nimportlib.import_module("portfolio_market")\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_LEGACY_DYNAMIC_IMPORT_REINTRODUCED"
+            ):
+                guard.validate(root)
+
     def test_rejects_unproven_relocation_parity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
