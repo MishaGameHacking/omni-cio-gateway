@@ -10,7 +10,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient
 
 import app as gateway_module
-import purchase_capacity
+from omni_cio.pretrade import purchase_capacity_v1 as purchase_capacity
 
 
 INSTRUMENT_UID = "e6123145-9665-43e0-8413-cd61b8aa9b13"
