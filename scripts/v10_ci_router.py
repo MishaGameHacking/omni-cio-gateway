@@ -43,18 +43,12 @@ def classify_path(path: str) -> set[str]:
             "app_v371.py",
             "app_v360.py",
             "main.py",
-            "portfolio_market.py",
-            "portfolio_analytics.py",
-            "cash_liquidity.py",
-            "purchase_capacity.py",
-            "purchase_capacity_integrity.py",
-            "operations_analytics.py",
         }
     ):
         categories.add("backend_core_contracts")
 
     if normalized.startswith(
-        ("broker_report_reconciliation/", "tests/fixtures/broker")
+        ("omni_cio/reconciliation/broker_report/", "tests/fixtures/broker")
     ):
         categories.add("broker_parser_data")
 
