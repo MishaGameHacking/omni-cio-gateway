@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-import broker_report_reconciliation as broker
+from omni_cio.reconciliation import broker_report as broker
 
 
 class FakeBase:
