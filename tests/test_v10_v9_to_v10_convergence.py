@@ -74,7 +74,9 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["runtime_retirement_plan"][0]["state"] = "RETIRED"
             path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "V9C_RUNTIME_RETIREMENT_PREMATURE"):
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_RUNTIME_RETIREMENT_PREMATURE"
+            ):
                 guard.validate(root)
 
     def test_rejects_merge_without_new_owner_instruction(self) -> None:

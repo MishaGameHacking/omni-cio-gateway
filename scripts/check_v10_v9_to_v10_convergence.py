@@ -163,11 +163,17 @@ def _validate_deletion_and_authority(contract: dict[str, Any]) -> None:
         raise RuntimeError("V9C_DELETION_GATE_DRIFT")
 
     merge = _mapping(contract.get("merge_authority"), "V9C_MERGE_AUTHORITY_INVALID")
-    if merge.get("pr_584_merge_without_new_explicit_owner_instruction_allowed") is not False:
+    if (
+        merge.get("pr_584_merge_without_new_explicit_owner_instruction_allowed")
+        is not False
+    ):
         raise RuntimeError("V9C_UNAUTHORIZED_MAIN_MERGE")
     if merge.get("internal_checkpoint_merge_to_main_required") is not False:
         raise RuntimeError("V9C_INTERNAL_MAIN_MERGE_DRIFT")
-    if merge.get("exact_new_main_postmerge_required_after_owner_authorized_landing") is not True:
+    if (
+        merge.get("exact_new_main_postmerge_required_after_owner_authorized_landing")
+        is not True
+    ):
         raise RuntimeError("V9C_POSTMERGE_EVIDENCE_DRIFT")
 
     protected = _mapping(
