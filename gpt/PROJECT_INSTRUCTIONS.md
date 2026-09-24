@@ -44,7 +44,7 @@ Current accepted/convenience state after Amendment 18 acceptance:
 - Timeweb Cloud is the selected production runtime/database/domain/network/backup/monitoring platform;
 - Telegram Login is the only selected human product login provider;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID receive no new feature authority;
-- their repository artifacts stay archive-in-place unless separate OWNER authority later approves cleanup;
+- Amendment 20 supplies the OWNER-approved cleanup authority inside PR #584: migrate useful semantics, prove parity/zero current consumers/recovery, then retire obsolete working-tree artifacts while preserving Git history;
 - WEB-VISUAL and WP23+ remain paused/locked behind the platform-consolidation path;
 - public activation remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write, `trading_methods` and Real execution remain disabled.
@@ -63,7 +63,7 @@ Current product/platform direction:
 - Telegram OIDC is the only human login path: `Telegram -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`;
 - VK ID is historical/retired and must not be composed into the deployed product;
 - Cloudflare/Neon/Render/Cloud.ru code and docs may remain as historical project memory but must not be used for new implementation;
-- no mass repository deletion is required; archive-in-place is the default;
+- no blind mass deletion is allowed; Amendment-20 V9C-D/V9C-E retirement is evidence-driven and Git history remains the archive;
 - retired provider workflows/secrets/resources are disabled/revoked only after the replacement cutover/recovery gate;
 - GitHub-native checks are the active quality/security authority; external CI/review SaaS is historical and must not be required by current/future workflows;
 - production Timeweb autodeploy must not bypass accepted GitHub exact-SHA release gates;
