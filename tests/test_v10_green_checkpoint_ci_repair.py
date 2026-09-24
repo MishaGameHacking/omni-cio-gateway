@@ -209,7 +209,7 @@ class GreenCheckpointTargetedCiRepairTests(unittest.TestCase):
         for marker in (
             "Compile complete repository Python surface",
             "python -m compileall -q",
-            "broker_report_reconciliation",
+            "app.py app_v371.py app_v360.py main.py",
             "omni_cio apps tests scripts",
             "Run early repository Python lint and changed-file format gates",
             "python -m ruff check .",
