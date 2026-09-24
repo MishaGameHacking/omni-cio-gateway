@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+def get_broker_report_reconciliation(
+    *,
+    base: Any,
+    app_version: str,
+    days: int,
+    task_id: str | None,
+    wait_seconds: int,
+) -> dict[str, Any]:
+    base.ensure_configured()
+    end_time = datetime.now(timezone.utc)
+    requested_start = end_time - timedelta(days=days)
+    year_start = datetime(end_time.year, 1, 1, tzinfo=timezone.utc)
+    start_time = max(requested_start, year_start)
+    period_adjusted = start_time != requested_start
+
+    try:
+        with base.Client(base.TINVEST_TOKEN) as client:
+            account_id, safe_account = base.get_open_account(client)
+            raw_operations, operations_pagination = (
+                operations_analytics.load_operations_pages(
+                    base=base,
+                    client=client,
+                    account_id=account_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                )
+            )
+            operations_payload = operations_analytics.build_operations_analytics(
+                base=base,
+                app_version=app_version,
+                account=safe_account,
+                raw_operations=raw_operations,
+                period={
+                    "from": start_time.isoformat(),
+                    "to": end_time.isoformat(),
+                    "days": days,
+                },
+                pagination=operations_pagination,
+                component_errors=[],
+                retrieved_at=end_time.isoformat(),
+            )
+            (
+                report_generation,
+                report_rows,
+                report_pagination,
+                report_errors,
+            ) = load_broker_report(
+                base=base,
+                client=client,
+                account_id=account_id,
+                start_time=start_time,
+                end_time=end_time,
+                task_id=task_id,
+                wait_seconds=wait_seconds,
+            )
+            payload = build_reconciliation_payload(
+                base=base,
+                app_version=app_version,
+                account=safe_account,
+                period={
+                    "from": start_time.isoformat(),
+                    "to": end_time.isoformat(),
+                    "requested_days": days,
+                    "period_adjusted_to_calendar_year": period_adjusted,
+                },
+                report_generation=report_generation,
+                report_rows=report_rows,
+                report_pagination=report_pagination,
+                operations_payload=operations_payload,
+                raw_operations=raw_operations,
+                component_errors=report_errors,
+                retrieved_at=end_time.isoformat(),
+            )
+            if period_adjusted:
+                payload["warnings"].append(
+                    "The requested interval crossed a calendar-year boundary. "
+                    "The broker-report period was limited to January 1 of the "
+                    "current year because report boundaries must be within one "
+                    "calendar year."
+                )
+            return payload
+    except grpc.RpcError as exc:
+        http_status, detail = base.grpc_error_payload(exc)
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=http_status, detail=detail) from exc
+    except Exception as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": (
+                    "GATEWAY_SDK_COMPATIBILITY_ERROR"
+                    if isinstance(exc, (AttributeError, TypeError))
+                    else "GATEWAY_BROKER_REPORT_RECONCILIATION_ERROR"
+                ),
+                "exception_type": type(exc).__name__,
+                "message": base.safe_error_message(exc),
+            },
+        ) from exc
+
