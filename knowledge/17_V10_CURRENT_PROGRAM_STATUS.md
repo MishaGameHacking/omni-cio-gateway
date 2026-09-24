@@ -59,7 +59,7 @@ The accepted V9 repository target
 accepted main. Therefore stale `v9/*` branch heads are not merged into PR #584.
 V9 is now the migration source for the one forward V10/Timeweb runtime.
 
-Current internal checkpoint is **V9C-A / AUTHORITY_AND_INVENTORY**. Ordered convergence
+`V9C-A / AUTHORITY_AND_INVENTORY` is branch-local **CERTIFIED_GREEN** on exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`: all 18 repository workflows completed `success`, including Fast PR, authoritative Windows CI, Engineering Governance, Toolchain and the owning WP audits. Current internal checkpoint is **V9C-B / DETERMINISTIC_SOURCE_RELOCATION**. Ordered convergence
 is V9C-A authority/inventory -> V9C-B deterministic source relocation -> V9C-C runtime
 entrypoint convergence -> V9C-D GPT/retired-provider working-tree retirement -> V9C-E
 CI/recovery convergence -> V9C-F whole-tree legacy absence proof.
