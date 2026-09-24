@@ -4,10 +4,10 @@ from typing import Any
 from fastapi import Depends, Query
 from fastapi.routing import APIRoute
 
-from omni_cio.portfolio import cash_liquidity_v1 as cash_liquidity_engine
+from omni_cio.analytics import cash_liquidity_v1 as cash_liquidity_engine
 import main as base
-from omni_cio.analytics import portfolio_structure_v1 as portfolio_analytics_engine
-from omni_cio.portfolio import market_snapshot_v1 as portfolio_market_engine
+from omni_cio.analytics import portfolio_source_v1 as portfolio_analytics_engine
+from omni_cio.portfolio import market_source_v1 as portfolio_market_engine
 
 
 APP_VERSION = "3.6.0"
