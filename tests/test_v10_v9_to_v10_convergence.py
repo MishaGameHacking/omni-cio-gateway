@@ -23,24 +23,30 @@ def _copy(root: Path) -> None:
         guard.README,
         guard.CONTRIBUTING,
         guard.WORKFLOW,
+        guard.PYPROJECT,
     )
     for source in paths:
         relative = source.relative_to(ROOT)
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-    for source in guard._EXPECTED_ROOT_SOURCES:
-        original = ROOT / source
-        target = root / source
-        if original.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-        else:
+
+    for target_name in guard._EXPECTED_TARGETS:
+        target = root / target_name
+        if target_name.endswith(".py"):
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("# fixture\n", encoding="utf-8")
+            target.write_text("# canonical fixture\n", encoding="utf-8")
+        else:
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "__init__.py").write_text(
+                "# canonical reconciliation fixture\n",
+                encoding="utf-8",
+            )
+
     for source in guard._EXPECTED_RUNTIME_ROOTS:
         target = root / source
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("# fixture\n", encoding="utf-8")
+        target.write_text("# runtime fixture\n", encoding="utf-8")
 
 
 class V9ToV10ConvergenceGuardTests(unittest.TestCase):
@@ -71,12 +77,39 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "V9C_HISTORY_POLICY_DRIFT"):
                 guard.validate(root)
 
-    def test_rejects_premature_legacy_source_deletion(self) -> None:
+    def test_rejects_reintroduced_legacy_root_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            (root / "portfolio_market.py").unlink()
-            with self.assertRaisesRegex(RuntimeError, "V9C_SOURCE_MISSING"):
+            (root / "portfolio_market.py").write_text(
+                "# forbidden legacy source\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_LEGACY_SOURCE_REINTRODUCED"
+            ):
+                guard.validate(root)
+
+    def test_rejects_missing_canonical_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            (root / "omni_cio/portfolio/market_source_v1.py").unlink()
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_CANONICAL_TARGET_MISSING"
+            ):
+                guard.validate(root)
+
+    def test_rejects_legacy_import_reintroduction(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            consumer = root / "tests/legacy_consumer.py"
+            consumer.parent.mkdir(parents=True, exist_ok=True)
+            consumer.write_text("import portfolio_market\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_LEGACY_IMPORT_REINTRODUCED"
+            ):
                 guard.validate(root)
 
     def test_rejects_premature_runtime_retirement(self) -> None:
