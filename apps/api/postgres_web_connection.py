@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 import threading
 from typing import Any
 
@@ -23,15 +23,16 @@ class _SerializedCursor:
 
 
 class _SerializedTransaction:
-    def __init__(self, connection: Any, lock: Any) -> None:
-        self._connection = connection
+    def __init__(self, owner: _SerializedWebConnection, lock: Any) -> None:
+        self._owner = owner
         self._lock = lock
         self._transaction: Any | None = None
 
     def __enter__(self) -> Any:
         self._lock.acquire()
         try:
-            self._transaction = self._connection.transaction()
+            connection = self._owner._connection_for_use_locked()
+            self._transaction = connection.transaction()
             return self._transaction.__enter__()
         except BaseException:
             self._transaction = None
@@ -50,11 +51,28 @@ class _SerializedTransaction:
 
 
 class _SerializedWebConnection:
-    """Preserve request transaction boundaries on one PostgreSQL session."""
+    """Serialize one PostgreSQL session and recover before a later operation."""
 
-    def __init__(self, connection: Any) -> None:
+    def __init__(
+        self,
+        connection: Any,
+        *,
+        reconnect: Callable[[], Any] | None = None,
+    ) -> None:
         self._connection = connection
+        self._reconnect = reconnect
         self._lock = threading.RLock()
+
+    def _connection_for_use_locked(self) -> Any:
+        if not bool(getattr(self._connection, "closed", False)):
+            return self._connection
+        if self._reconnect is None:
+            raise RuntimeError("WEB_RUNTIME_POSTGRES_CONNECTION_CLOSED")
+        replacement = self._reconnect()
+        if bool(getattr(replacement, "closed", False)):
+            raise RuntimeError("WEB_RUNTIME_POSTGRES_RECONNECT_INVALID")
+        self._connection = replacement
+        return replacement
 
     def execute(
         self,
@@ -64,11 +82,12 @@ class _SerializedWebConnection:
         prepare: bool | None = None,
     ) -> CursorLike:
         with self._lock:
-            cursor = self._connection.execute(query, params, prepare=prepare)
+            connection = self._connection_for_use_locked()
+            cursor = connection.execute(query, params, prepare=prepare)
             return _SerializedCursor(cursor, self._lock)
 
     def transaction(self) -> TransactionContext:
-        return _SerializedTransaction(self._connection, self._lock)
+        return _SerializedTransaction(self, self._lock)
 
 
 def _configure_long_lived_web_connection(connection: Any) -> None:

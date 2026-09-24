@@ -306,8 +306,7 @@ def _validate_runtime_schema(connection: Any) -> None:
         raise RuntimeError("HOSTED_RUNTIME_DATABASE_SCHEMA_INCOMPLETE")
 
     constraint_names = sorted(
-        constraint_name
-        for _, constraint_name, _, _ in _EXPECTED_SECURITY_CONSTRAINTS
+        constraint_name for _, constraint_name, _, _ in _EXPECTED_SECURITY_CONSTRAINTS
     )
     constraint_rows = connection.execute(
         "SELECT relation_record.relname, constraint_record.conname, "
@@ -323,8 +322,7 @@ def _validate_runtime_schema(connection: Any) -> None:
         (constraint_names,),
     ).fetchall()
     actual_constraints = frozenset(
-        (str(row[0]), str(row[1]), str(row[2]), bool(row[3]))
-        for row in constraint_rows
+        (str(row[0]), str(row[1]), str(row[2]), bool(row[3])) for row in constraint_rows
     )
     if actual_constraints != _EXPECTED_SECURITY_CONSTRAINTS:
         raise RuntimeError("HOSTED_RUNTIME_DATABASE_CONSTRAINT_DRIFT")

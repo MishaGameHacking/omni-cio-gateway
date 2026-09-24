@@ -658,3 +658,45 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** PostgreSQL 18 records role-membership ADMIN, INHERIT and SET options in pg_auth_members; column-specific privileges live in pg_attribute.attacl, separately from ordinary table ACLs.
 
+---
+
+## FL-028 — Fake SQL dispatch must prefer specific catalog queries over nested broad markers
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / exact head `edd78c6f9f31f7b849c45b8d913fdcb72f186f47`
+
+**Symptom / failing gate:** the column-ACL readiness query was correct, but Regression Shield produced seven focused failures because the test double interpreted a nested `FROM pg_catalog.pg_roles` subquery as the top-level role query.
+
+**Root cause:** the dispatcher retained a broad role marker before more specific catalog-query markers. The representation changed while the prior substring-shadowing defect class survived.
+
+**Blast radius searched:** every query emitted by `apps/api/hosted_database_runtime.py`, the focused Timeweb runtime fake and the prior FL-026 failure class. No production SQL defect was found from this failure.
+
+**Why preflight missed it:** the new focused tests were not executed before the published verification head.
+
+**Corrective change:** specific catalog markers precede the broad role fallback, and exact Ruff output from the completed verification batch is applied in the same correction.
+
+**Permanent regression/guard:** the positive runtime probe traverses the column-ACL query and fails if broad role matching shadows it.
+
+**Future prevention rule:** test SQL dispatchers are parsers; use the most specific match first and any broad fallback last.
+
+---
+
+## FL-029 — Process-only liveness requires database-session recovery
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / pre-merge recovery audit
+
+**Symptom / failing gate:** no CI gate found this first. Timeweb correctly uses process-only `/livez`, but the runtime held one PostgreSQL session for the process lifetime. A broken session could leave liveness healthy while readiness, login and private API remained unavailable until restart.
+
+**Root cause:** liveness/readiness separation was corrected for Timeweb, but the old hosted runtime single-session lifecycle was carried forward without an independent reconnect path.
+
+**Blast radius searched:** hosted runtime startup, serialized request transactions, session registry, product identity repository, durable provider-auth transactions, health/readiness behavior and Timeweb localhost health semantics.
+
+**Why preflight missed it:** tests covered startup, serialization and degraded readiness but never transitioned the underlying PostgreSQL session from healthy to closed while the process remained alive.
+
+**Corrective change:** the serialized connection replaces only an already-closed session before a later operation. The reconnect factory reapplies autocommit and the full PostgreSQL 18 authority/schema/RLS probe. The failed operation itself is never replayed. Startup/reconnect attempts use a bounded connection timeout.
+
+**Permanent regression/guard:** focused tests prove closed-session replacement and prove that a failed operation is surfaced once and is not automatically replayed before the next request.
+
+**Future prevention rule:** when liveness excludes an external dependency, that dependency needs its own bounded recovery path. Never retry a write whose commit outcome may be unknown.
+

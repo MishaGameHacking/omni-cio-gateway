@@ -19,6 +19,7 @@ from apps.api.hosted_runtime import (
     HOSTED_SESSION_POLICY,
     _trusted_edge_tls_terminated,
 )
+from apps.api.postgres_web_connection import _SerializedWebConnection
 from apps.api.telegram_auth import (
     TelegramAuthConfigurationError,
     build_telegram_provider_auth,
@@ -64,6 +65,7 @@ class _Result:
     ) -> None:
         self._one = one
         self._rows = [] if rows is None else rows
+        self.rowcount = len(self._rows) if rows is not None else int(one is not None)
 
     def fetchone(self) -> tuple[object, ...] | None:
         return self._one
@@ -266,7 +268,6 @@ class _RuntimeProbeConnection:
         return (
             ("AS database_owned", lambda: _Result(one=(0, 0, 0, 0))),
             ("JOIN pg_catalog.pg_roles granted_role", self._role_members),
-            ("FROM pg_catalog.pg_roles", self._role_record),
             ("FROM pg_catalog.pg_auth_members", lambda: _Result(one=(0,))),
             (
                 "has_database_privilege",
@@ -285,9 +286,7 @@ class _RuntimeProbeConnection:
             ("information_schema.table_privileges", lambda: _Result(rows=[])),
             (
                 "information_schema.role_routine_grants",
-                lambda: _Result(
-                    rows=[("current_tenant_scope", "EXECUTE", "NO")]
-                ),
+                lambda: _Result(rows=[("current_tenant_scope", "EXECUTE", "NO")]),
             ),
             ("information_schema.routine_privileges", lambda: _Result(rows=[])),
             ("has_sequence_privilege", lambda: _Result(one=(0,))),
@@ -311,6 +310,7 @@ class _RuntimeProbeConnection:
                     ]
                 ),
             ),
+            ("FROM pg_catalog.pg_roles", self._role_record),
         )
 
     def execute(self, statement: str, params: object = None) -> _Result:
@@ -321,6 +321,66 @@ class _RuntimeProbeConnection:
             if marker in statement:
                 return handler()
         raise AssertionError(statement)
+
+
+class _ReconnectableRawConnection:
+    def __init__(self, *, closed: bool = False, fail_once: bool = False) -> None:
+        self.closed = closed
+        self.autocommit = True
+        self.fail_once = fail_once
+        self.execute_calls = 0
+
+    def execute(
+        self,
+        query: object,
+        params: object = None,
+        *,
+        prepare: bool | None = None,
+    ) -> _Result:
+        del query, params, prepare
+        self.execute_calls += 1
+        if self.fail_once:
+            self.fail_once = False
+            self.closed = True
+            raise RuntimeError("simulated connection loss")
+        return _Result(one=("ok",))
+
+
+def test_serialized_web_connection_reconnects_before_next_operation() -> None:
+    stale = _ReconnectableRawConnection(closed=True)
+    replacement = _ReconnectableRawConnection()
+    reconnect_calls: list[str] = []
+
+    def reconnect() -> _ReconnectableRawConnection:
+        reconnect_calls.append("reconnect")
+        return replacement
+
+    connection = _SerializedWebConnection(stale, reconnect=reconnect)
+
+    assert connection.execute("SELECT 1").fetchone() == ("ok",)
+    assert reconnect_calls == ["reconnect"]
+    assert replacement.execute_calls == 1
+
+
+def test_serialized_web_connection_never_replays_failed_operation() -> None:
+    broken = _ReconnectableRawConnection(fail_once=True)
+    replacement = _ReconnectableRawConnection()
+    reconnect_calls: list[str] = []
+
+    def reconnect() -> _ReconnectableRawConnection:
+        reconnect_calls.append("reconnect")
+        return replacement
+
+    connection = _SerializedWebConnection(broken, reconnect=reconnect)
+
+    with pytest.raises(RuntimeError, match="simulated connection loss"):
+        connection.execute("INSERT INTO example VALUES (1)")
+    assert reconnect_calls == []
+
+    assert connection.execute("SELECT 1").fetchone() == ("ok",)
+    assert reconnect_calls == ["reconnect"]
+    assert replacement.execute_calls == 1
+
 
 def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> None:
     role = validate_hosted_runtime_role("omni_cio_timeweb_candidate")
@@ -694,6 +754,8 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "_probe_runtime_database" not in runtime
     assert "_probe_hosted_preview_database" not in runtime
     assert "OMNI_V10_POSTGRES_RUNTIME_ROLE" in runtime
+    assert "connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS" in runtime
+    assert "reconnect=lambda:" in runtime
     assert "omni_cio_hosted_api" not in runtime
     assert "omni_cio_cloudflare_" not in runtime
     assert "HOSTED_SESSION_POLICY" in runtime

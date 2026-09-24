@@ -21,7 +21,7 @@ from apps.api.hosted_database_runtime import (
     validate_hosted_runtime_role,
 )
 from apps.api.telegram_auth import build_telegram_provider_auth
-from omni_cio.persistence.migration import connect_postgres
+from omni_cio.persistence.migration import ConnectionLike, connect_postgres
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 from omni_cio.web.session_v1 import SessionPolicyV1
 from omni_cio.web.telegram_auth_routes_v1 import (
@@ -36,6 +36,7 @@ _RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 _DSN_ENV = "OMNI_V10_POSTGRES_DSN"
 _RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
+_DATABASE_CONNECT_TIMEOUT_SECONDS = 15
 HOSTED_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
@@ -51,6 +52,19 @@ def _trusted_edge_tls_terminated() -> bool:
     raise RuntimeError("HOSTED_RUNTIME_TRUSTED_EDGE_TLS_FLAG_INVALID")
 
 
+def _open_runtime_database(database_dsn: str, runtime_role: str) -> ConnectionLike:
+    raw_connection = connect_postgres(
+        database_dsn,
+        connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
+    )
+    _configure_long_lived_web_connection(raw_connection)
+    probe_hosted_runtime_database(
+        raw_connection,
+        expected_runtime_role=runtime_role,
+    )
+    return raw_connection
+
+
 def create_app() -> FastAPI:
     """Create the provider-neutral Timeweb-targeted V10 Web/API runtime."""
 
@@ -59,12 +73,11 @@ def create_app() -> FastAPI:
     hostname = _hostname(_required_env(_HOSTNAME_ENV))
     release_sha = _release_sha(_required_env(_RELEASE_SHA_ENV))
     runtime_role = validate_hosted_runtime_role(_required_env(_RUNTIME_ROLE_ENV))
-    raw_connection = connect_postgres(_required_env(_DSN_ENV))
-    _configure_long_lived_web_connection(raw_connection)
-    connection = _SerializedWebConnection(raw_connection)
-    probe_hosted_runtime_database(
-        connection,
-        expected_runtime_role=runtime_role,
+    database_dsn = _required_env(_DSN_ENV)
+    raw_connection = _open_runtime_database(database_dsn, runtime_role)
+    connection = _SerializedWebConnection(
+        raw_connection,
+        reconnect=lambda: _open_runtime_database(database_dsn, runtime_role),
     )
     sessions = PostgresWebSessionRegistryV1(
         connection,
