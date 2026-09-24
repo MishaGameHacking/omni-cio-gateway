@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+from typing import Callable
 
 
 CATEGORIES = (
@@ -17,74 +18,92 @@ CATEGORIES = (
 )
 
 
-def classify_path(path: str) -> set[str]:
-    normalized = path.strip().replace("\\", "/").lstrip("./")
-    if not normalized:
-        return set()
-    categories: set[str] = set()
-
-    if normalized.startswith(("docs/", "knowledge/")) or normalized in {
+def _is_docs_path(path: str) -> bool:
+    return path.startswith(("docs/", "knowledge/")) or path in {
         "AGENTS.md",
         "README.md",
         "CONTRIBUTING.md",
         "CHANGELOG.md",
-    }:
-        categories.add("docs_program")
+    }
 
-    if (
-        normalized.startswith("omni_cio/")
-        or (
-            normalized.startswith("tests/")
-            and not normalized.startswith("tests/toolchain/frontend/")
-        )
-        or normalized
-        in {
-            "app.py",
-            "app_v371.py",
-            "app_v360.py",
-            "main.py",
+
+def _is_backend_path(path: str) -> bool:
+    if path.startswith("omni_cio/"):
+        return True
+    if path.startswith("tests/"):
+        return not path.startswith("tests/toolchain/frontend/")
+    return path in {"app.py", "app_v371.py", "app_v360.py", "main.py"}
+
+
+def _is_broker_parser_path(path: str) -> bool:
+    return path.startswith(("omni_cio/reconciliation/", "tests/fixtures/broker"))
+
+
+def _is_frontend_path(path: str) -> bool:
+    return path.startswith(("apps/web/", "tests/toolchain/frontend/"))
+
+
+def _is_infrastructure_path(path: str) -> bool:
+    return path.startswith(
+        ("infrastructure/", "deploy/", "ops/", "scripts/bootstrap")
+    )
+
+
+def _is_ai_cortex_path(path: str) -> bool:
+    return path.startswith(("ai/", "tests/contracts/ai/", "tests/evals/"))
+
+
+def _is_dependency_path(path: str) -> bool:
+    return (
+        path.startswith(("requirements", "constraints"))
+        or path in {
+            "pyproject.toml",
+            "package.json",
+            "package-lock.json",
+            ".github/dependabot.yml",
         }
-    ):
-        categories.add("backend_core_contracts")
+        or "V10_TOOLCHAIN_BASELINE" in path
+    )
 
-    if normalized.startswith(("omni_cio/reconciliation/", "tests/fixtures/broker")):
-        categories.add("broker_parser_data")
 
-    if normalized.startswith(("apps/web/", "tests/toolchain/frontend/")):
-        categories.add("frontend")
+def _is_release_security_path(path: str) -> bool:
+    return (
+        path.startswith((".github/workflows/", "scripts/check_", "scripts/v10_"))
+        or "V10_RELEASE" in path
+        or "V10_SECURITY" in path
+        or "V10_GITHUB_PRO" in path
+        or path in {"SECURITY.md", ".github/CODEOWNERS"}
+    )
 
-    if normalized.startswith(
-        ("infrastructure/", "deploy/", "ops/")
-    ) or normalized.startswith("scripts/bootstrap"):
-        categories.add("infrastructure_bootstrap")
 
-    if normalized.startswith(("ai/", "tests/contracts/ai/", "tests/evals/")):
-        categories.add("ai_cortex_evals")
+_PATH_CLASSIFIERS: tuple[tuple[str, Callable[[str], bool]], ...] = (
+    ("docs_program", _is_docs_path),
+    ("backend_core_contracts", _is_backend_path),
+    ("broker_parser_data", _is_broker_parser_path),
+    ("frontend", _is_frontend_path),
+    ("infrastructure_bootstrap", _is_infrastructure_path),
+    ("ai_cortex_evals", _is_ai_cortex_path),
+    ("dependency_toolchain", _is_dependency_path),
+    ("release_security_authority", _is_release_security_path),
+)
 
-    if (
-        normalized.startswith(("requirements", "constraints"))
-        or normalized in {"pyproject.toml", "package.json", "package-lock.json"}
-        or "V10_TOOLCHAIN_BASELINE" in normalized
-        or normalized == ".github/dependabot.yml"
-    ):
-        categories.add("dependency_toolchain")
 
-    if (
-        normalized.startswith(".github/workflows/")
-        or normalized.startswith("scripts/check_")
-        or normalized.startswith("scripts/v10_")
-        or "V10_RELEASE" in normalized
-        or "V10_SECURITY" in normalized
-        or "V10_GITHUB_PRO" in normalized
-        or normalized in {"SECURITY.md", ".github/CODEOWNERS"}
-    ):
-        categories.add("release_security_authority")
+def classify_path(path: str) -> set[str]:
+    normalized = path.strip().replace("\\", "/").lstrip("./")
+    if not normalized:
+        return set()
 
-    if not categories:
-        # Unknown paths are deliberately conservative. A new root cannot silently
-        # evade clean-room compatibility or release/security review.
-        categories.update({"backend_core_contracts", "release_security_authority"})
-    return categories
+    categories = {
+        category
+        for category, classifier in _PATH_CLASSIFIERS
+        if classifier(normalized)
+    }
+    if categories:
+        return categories
+
+    # Unknown paths are deliberately conservative. A new root cannot silently
+    # evade clean-room compatibility or release/security review.
+    return {"backend_core_contracts", "release_security_authority"}
 
 
 def classify(paths: list[str]) -> dict[str, object]:

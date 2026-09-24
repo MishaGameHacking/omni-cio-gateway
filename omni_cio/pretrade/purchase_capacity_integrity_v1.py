@@ -454,7 +454,6 @@ def build_limit_summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _initial_amount_check(
     *,
-    payload: dict[str, Any],
     request: dict[str, Any],
     instrument: dict[str, Any],
     market_price: dict[str, Any],
@@ -558,7 +557,6 @@ def build_calculation_checks(
     order_preview = _dict(payload.get("order_preview"))
 
     initial_check = _initial_amount_check(
-        payload=payload,
         request=request,
         instrument=instrument,
         market_price=market_price,

@@ -108,6 +108,19 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "V9C_LEGACY_IMPORT_REINTRODUCED"):
                 guard.validate(root)
 
+    def test_rejects_legacy_import_among_multiple_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            consumer = root / "tests/multi_legacy_consumer.py"
+            consumer.parent.mkdir(parents=True, exist_ok=True)
+            consumer.write_text(
+                "import json, portfolio_market\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "V9C_LEGACY_IMPORT_REINTRODUCED"):
+                guard.validate(root)
+
     def test_rejects_dynamic_legacy_import_reintroduction(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

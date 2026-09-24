@@ -238,8 +238,7 @@ def _validate_inventory(root: Path, contract: dict[str, Any]) -> None:
     if not isinstance(retirements, list):
         raise RuntimeError("V9C_RUNTIME_RETIREMENT_PLAN_INVALID")
     runtime_paths = tuple(
-        _runtime_retirement_path(root, row)
-        for row in retirements
+        _runtime_retirement_path(root, row) for row in retirements
     )
     if runtime_paths != _EXPECTED_RUNTIME_ROOTS:
         raise RuntimeError("V9C_RUNTIME_SOURCE_SET_DRIFT")
@@ -263,12 +262,12 @@ def _parsed_python(root: Path, path: Path, code: str) -> tuple[Path, ast.AST]:
     return relative, tree
 
 
-def _imported_modules(node: ast.AST) -> tuple[str, ...]:
+def _imported_modules(node: ast.AST) -> list[str]:
     if isinstance(node, ast.Import):
-        return tuple(alias.name for alias in node.names)
+        return [alias.name for alias in node.names]
     if isinstance(node, ast.ImportFrom) and node.module:
-        return (node.module,)
-    return ()
+        return [node.module]
+    return []
 
 
 def _dynamic_import_module(node: ast.AST) -> str | None:
@@ -319,8 +318,7 @@ def _validate_legacy_path_literal(relative: Path, literal: str) -> None:
         )
     if normalized.startswith(_NONCANONICAL_RECONCILIATION_PATH_PREFIXES):
         raise RuntimeError(
-            "V9C_NONCANONICAL_RECONCILIATION_PATH_CONSUMER:"
-            f"{relative}:{normalized}"
+            f"V9C_NONCANONICAL_RECONCILIATION_PATH_CONSUMER:{relative}:{normalized}"
         )
 
 

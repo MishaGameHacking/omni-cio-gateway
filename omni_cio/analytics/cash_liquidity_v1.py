@@ -300,6 +300,27 @@ def _cash_warnings(
     return warnings
 
 
+def _cash_snapshot_status(
+    *,
+    positions_status: str,
+    withdraw_limits_status: str,
+    complete: bool,
+) -> str:
+    if positions_status == "error" and withdraw_limits_status == "error":
+        return "error"
+    if complete:
+        return "ok"
+    return "partial"
+
+
+def _cash_mode(currencies: list[str]) -> str:
+    if not currencies:
+        return "empty"
+    if len(currencies) == 1:
+        return "single_currency"
+    return "multi_currency"
+
+
 def build_cash_liquidity_snapshot(
     *,
     base: Any,
@@ -345,20 +366,12 @@ def build_cash_liquidity_snapshot(
         and invalid_money_rows == 0
         and not limits_loading_in_progress
     )
-    status = (
-        "error"
-        if positions_status == "error" and withdraw_limits_status == "error"
-        else "ok"
-        if complete
-        else "partial"
+    status = _cash_snapshot_status(
+        positions_status=positions_status,
+        withdraw_limits_status=withdraw_limits_status,
+        complete=complete,
     )
-    cash_mode = (
-        "empty"
-        if not currencies
-        else "single_currency"
-        if len(currencies) == 1
-        else "multi_currency"
-    )
+    cash_mode = _cash_mode(currencies)
 
     payload = {
         "status": status,
