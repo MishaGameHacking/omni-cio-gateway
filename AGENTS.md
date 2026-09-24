@@ -237,7 +237,7 @@ Existing React/Vite Web remains canonical source. Python/FastAPI product code st
 
 Timeweb App Platform is the selected runtime target and Timeweb Managed PostgreSQL 18 is the final relational target after the owning cutover. Preserve PostgreSQL migrations, exact numeric financial semantics, least-privilege roles, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery.
 
-Cloudflare/Neon/Render/Cloud.ru/VK historical files remain archive-in-place by default. Do not add new dependencies on them and do not mass-delete them merely for cleanup. Disable/revoke their live provider actions only after replacement acceptance.
+Cloudflare/Neon/Render/Cloud.ru/VK historical files are Amendment-20 retirement inputs. Do not add new dependencies on them and do not delete them blindly: migrate any still-required security/recovery semantics first, prove zero current consumers and current recovery, then remove obsolete working-tree artifacts at V9C-D/V9C-E while Git history remains the archive.
 
 GitHub/self-hosted Windows checks remain authoritative until an equivalent GitHub-executed replacement is accepted. Retiring external CI/review SaaS may not weaken lint/type/test/security/coverage/review requirements.
 
