@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-import operations_analytics
+from omni_cio.analytics import operations_v1 as operations_analytics
 
 
 class FakeBase:
