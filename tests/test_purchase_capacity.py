@@ -7,7 +7,9 @@ os.environ.setdefault(
     "https://omni-cio-gateway.onrender.com",
 )
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+import pytest
 
 import app as gateway_module
 from omni_cio.pretrade import purchase_capacity_v1 as purchase_capacity
@@ -156,6 +158,20 @@ def test_manual_price_validation_is_strict() -> None:
     )
     assert selected["price"] == "269.33"
     assert selected["freshness"]["status"] == "manual_input"
+
+
+@pytest.mark.parametrize("manual_price", ["NaN", "Infinity", "-Infinity"])
+def test_manual_price_rejects_non_finite_decimals(manual_price: str) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        purchase_capacity.select_price(
+            base=gateway_module.base,
+            price_basis="manual",
+            manual_price=manual_price,
+            market_snapshot=None,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "INVALID_DECIMAL_VALUE"
 
 
 class FakeUsers:

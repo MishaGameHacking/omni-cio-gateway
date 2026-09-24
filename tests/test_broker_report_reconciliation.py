@@ -64,8 +64,7 @@ class FakeBase:
             return value.isoformat()
         if isinstance(value, dict):
             return {
-                str(key): FakeBase.json_safe_value(item)
-                for key, item in value.items()
+                str(key): FakeBase.json_safe_value(item) for key, item in value.items()
             }
         if isinstance(value, (list, tuple, set)):
             return [FakeBase.json_safe_value(item) for item in value]

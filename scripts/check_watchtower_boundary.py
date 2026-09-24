@@ -140,7 +140,9 @@ def main() -> int:
                 failures,
             )
 
-    gateway_hook = ROOT / "omni_cio" / "reconciliation" / "broker_report" / "__init__.py"
+    gateway_hook = (
+        ROOT / "omni_cio" / "reconciliation" / "broker_report" / "__init__.py"
+    )
     if gateway_hook.is_file():
         gateway_source = gateway_hook.read_text(encoding="utf-8")
         for required in (

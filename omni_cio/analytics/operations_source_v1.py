@@ -201,12 +201,16 @@ def deduplicate_operations(
         parent_id = str(operation.get("parent_operation_id", "") or "").strip()
         _, currency = _money_parts(base, operation.get("payment"))
 
-        if category in {
-            "broker_commissions",
-            "service_fees",
-            "margin_fees",
-            "other_fees",
-        } and parent_id:
+        if (
+            category
+            in {
+                "broker_commissions",
+                "service_fees",
+                "margin_fees",
+                "other_fees",
+            }
+            and parent_id
+        ):
             semantic_key = (parent_id, operation_type, currency or "UNKNOWN")
             existing_index = commission_positions.get(semantic_key)
             if existing_index is not None:
@@ -225,9 +229,7 @@ def deduplicate_operations(
     return result, {
         "exact_duplicates_removed": exact_duplicates_removed,
         "commission_updates_collapsed": commission_updates_collapsed,
-        "duplicates_removed": (
-            exact_duplicates_removed + commission_updates_collapsed
-        ),
+        "duplicates_removed": (exact_duplicates_removed + commission_updates_collapsed),
     }
 
 
@@ -337,9 +339,7 @@ def load_operations_pages(
             server_period_filter_applied and request_has_period
         )
         response = client.operations.get_operations_by_cursor(request)
-        page_items, page_has_next, next_cursor = base.operation_response_items(
-            response
-        )
+        page_items, page_has_next, next_cursor = base.operation_response_items(response)
         items.extend(page_items)
         pages_fetched += 1
 
@@ -555,9 +555,7 @@ def build_operations_analytics(
                 "currency": currency,
                 "deposits": base.decimal_string(deposits),
                 "withdrawals": base.decimal_string(withdrawals),
-                "net_external_flow": base.decimal_string(
-                    deposits - withdrawals
-                ),
+                "net_external_flow": base.decimal_string(deposits - withdrawals),
             }
         )
         turnover.append(
@@ -570,10 +568,7 @@ def build_operations_analytics(
         )
 
         categories_net = sum(
-            (
-                categories[category]["net_payment"]
-                for category in CATEGORY_ORDER
-            ),
+            (categories[category]["net_payment"] for category in CATEGORY_ORDER),
             Decimal("0"),
         )
         operations_net = currency_total_net[currency]
@@ -608,13 +603,9 @@ def build_operations_analytics(
     parent_child_protection = {
         "status": "applied",
         "top_level_operations_only": True,
-        "embedded_child_operations_excluded": (
-            embedded_child_operations_excluded
-        ),
+        "embedded_child_operations_excluded": (embedded_child_operations_excluded),
         "embedded_trades_excluded": embedded_trades_excluded,
-        "top_level_parent_linked_operations": (
-            top_level_parent_linked_operations
-        ),
+        "top_level_parent_linked_operations": (top_level_parent_linked_operations),
         "passed": True,
     }
 
@@ -646,15 +637,12 @@ def build_operations_analytics(
                 "sales": base.decimal_string(group["sales"]),
                 "coupons": base.decimal_string(group["coupons"]),
                 "dividends": base.decimal_string(group["dividends"]),
-                "bond_redemptions": base.decimal_string(
-                    group["bond_redemptions"]
-                ),
+                "bond_redemptions": base.decimal_string(group["bond_redemptions"]),
                 "net_payment": base.decimal_string(group["net_payment"]),
             }
         )
     serialized_instrument_groups.sort(
-        key=lambda row: Decimal(str(row["purchases"]))
-        + Decimal(str(row["sales"])),
+        key=lambda row: Decimal(str(row["purchases"])) + Decimal(str(row["sales"])),
         reverse=True,
     )
     instrument_groups_total = len(serialized_instrument_groups)
@@ -662,9 +650,7 @@ def build_operations_analytics(
         0,
         instrument_groups_total - MAX_INSTRUMENT_GROUPS,
     )
-    serialized_instrument_groups = serialized_instrument_groups[
-        :MAX_INSTRUMENT_GROUPS
-    ]
+    serialized_instrument_groups = serialized_instrument_groups[:MAX_INSTRUMENT_GROUPS]
 
     pagination_complete = not bool(pagination.get("truncated", False))
     errors = component_errors or []
@@ -782,9 +768,7 @@ def build_operations_analytics(
             "raw_items_received": len(raw_operations),
             "items_outside_period": outside_period,
             "invalid_date_rows": invalid_date_rows,
-            "exact_duplicates_removed": duplicate_quality[
-                "exact_duplicates_removed"
-            ],
+            "exact_duplicates_removed": duplicate_quality["exact_duplicates_removed"],
             "commission_updates_collapsed": duplicate_quality[
                 "commission_updates_collapsed"
             ],

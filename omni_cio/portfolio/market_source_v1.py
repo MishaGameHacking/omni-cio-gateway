@@ -41,7 +41,9 @@ def _normalized_kind(item: dict[str, Any], metadata: dict[str, Any]) -> str:
     return aliases.get(normalized, normalized or "INSTRUMENT_TYPE_UNSPECIFIED")
 
 
-def _position_quantity(base: Any, item: dict[str, Any], metadata: dict[str, Any]) -> Decimal | None:
+def _position_quantity(
+    base: Any, item: dict[str, Any], metadata: dict[str, Any]
+) -> Decimal | None:
     """Return instrument units, not lots, for a portfolio position."""
     for field_name in ("quantity", "balance"):
         value = base.decimal_from_any(item.get(field_name))
@@ -57,14 +59,13 @@ def _position_quantity(base: Any, item: dict[str, Any], metadata: dict[str, Any]
 
 def _instrument_uid(item: dict[str, Any], metadata: dict[str, Any]) -> str:
     return str(
-        metadata.get("uid")
-        or item.get("instrument_uid")
-        or item.get("uid")
-        or ""
+        metadata.get("uid") or item.get("instrument_uid") or item.get("uid") or ""
     ).strip()
 
 
-def _compact_instrument(item: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+def _compact_instrument(
+    item: dict[str, Any], metadata: dict[str, Any]
+) -> dict[str, Any]:
     result = {
         "name": metadata.get("name"),
         "ticker": metadata.get("ticker"),
@@ -73,7 +74,8 @@ def _compact_instrument(item: dict[str, Any], metadata: dict[str, Any]) -> dict[
         "uid": _instrument_uid(item, metadata),
         "position_uid": metadata.get("position_uid") or item.get("position_uid"),
         "class_code": metadata.get("class_code"),
-        "instrument_type": metadata.get("instrument_type") or item.get("instrument_type"),
+        "instrument_type": metadata.get("instrument_type")
+        or item.get("instrument_type"),
         "instrument_kind": _normalized_kind(item, metadata),
         "lot": metadata.get("lot"),
         "currency": metadata.get("currency"),
@@ -83,7 +85,9 @@ def _compact_instrument(item: dict[str, Any], metadata: dict[str, Any]) -> dict[
     return {key: value for key, value in result.items() if value not in (None, "")}
 
 
-def _group_market_positions(base: Any, enriched_positions: Any) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def _group_market_positions(
+    base: Any, enriched_positions: Any
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     grouped: dict[str, dict[str, Any]] = {}
     quality = {
         "portfolio_position_count": 0,
@@ -119,7 +123,9 @@ def _group_market_positions(base: Any, enriched_positions: Any) -> tuple[list[di
             continue
 
         compact = _compact_instrument(item, safe_metadata)
-        position_uid = str(item.get("position_uid") or safe_metadata.get("position_uid") or "").strip()
+        position_uid = str(
+            item.get("position_uid") or safe_metadata.get("position_uid") or ""
+        ).strip()
 
         if uid not in grouped:
             grouped[uid] = {
@@ -170,13 +176,17 @@ def build_cash_balances(base: Any, positions_data: Any) -> list[dict[str, Any]]:
         {
             "currency": currency,
             "reported_money": base.decimal_string(reported.get(currency, Decimal("0"))),
-            "reported_blocked": base.decimal_string(blocked.get(currency, Decimal("0"))),
+            "reported_blocked": base.decimal_string(
+                blocked.get(currency, Decimal("0"))
+            ),
         }
         for currency in currencies
     ]
 
 
-def _safe_last_price_item(base: Any, raw_price: dict[str, Any], retrieved_at: datetime) -> dict[str, Any]:
+def _safe_last_price_item(
+    base: Any, raw_price: dict[str, Any], retrieved_at: datetime
+) -> dict[str, Any]:
     price_time = raw_price.get("time")
     result = {
         "status": "ok",
@@ -191,7 +201,9 @@ def _safe_last_price_item(base: Any, raw_price: dict[str, Any], retrieved_at: da
             "LAST_PRICE_UNSPECIFIED",
         ),
     }
-    return base.json_safe_value({key: value for key, value in result.items() if value is not None})
+    return base.json_safe_value(
+        {key: value for key, value in result.items() if value is not None}
+    )
 
 
 def _batch_last_prices(
@@ -222,18 +234,26 @@ def _batch_last_prices(
                     by_uid[uid] = safe_price
                 if figi:
                     by_figi[figi] = safe_price
-        return by_uid, by_figi, {
-            "status": "ok",
-            "requested_instruments": len(uids),
-            "returned_prices": len(by_uid) if by_uid else len(by_figi),
-            "api_calls": 1,
-        }
+        return (
+            by_uid,
+            by_figi,
+            {
+                "status": "ok",
+                "requested_instruments": len(uids),
+                "returned_prices": len(by_uid) if by_uid else len(by_figi),
+                "api_calls": 1,
+            },
+        )
     except Exception as exc:
-        return {}, {}, {
-            **base.market_component_error("last_prices_batch", exc),
-            "requested_instruments": len(uids),
-            "api_calls": 1,
-        }
+        return (
+            {},
+            {},
+            {
+                **base.market_component_error("last_prices_batch", exc),
+                "requested_instruments": len(uids),
+                "api_calls": 1,
+            },
+        )
 
 
 def _price_from_level(base: Any, level: Any) -> Decimal | None:
@@ -266,7 +286,9 @@ def calculate_position_valuation(
     result: dict[str, Any] = {
         "status": "unavailable",
         "currency": currency or None,
-        "quantity_units": base.decimal_string(quantity) if quantity is not None else None,
+        "quantity_units": base.decimal_string(quantity)
+        if quantity is not None
+        else None,
         "instrument_kind": kind or None,
         "basis": None,
         "values": {},
@@ -275,23 +297,35 @@ def calculate_position_valuation(
 
     if quantity is None:
         result["reason"] = "Position quantity was not available."
-        return base.json_safe_value({k: v for k, v in result.items() if v is not None}), totals
+        return base.json_safe_value(
+            {k: v for k, v in result.items() if v is not None}
+        ), totals
     if not prices:
         result["reason"] = "No usable last price, best bid, or best ask was returned."
-        return base.json_safe_value({k: v for k, v in result.items() if v is not None}), totals
+        return base.json_safe_value(
+            {k: v for k, v in result.items() if v is not None}
+        ), totals
 
     if kind in SPOT_INSTRUMENT_KINDS:
         totals = {name: quantity * price for name, price in prices.items()}
         result["basis"] = "quantity_units_times_price_per_instrument"
-        result["values"] = {name: base.decimal_string(value) for name, value in totals.items()}
+        result["values"] = {
+            name: base.decimal_string(value) for name, value in totals.items()
+        }
     elif kind == BOND_INSTRUMENT_KIND:
         nominal = base.decimal_from_any(instrument.get("nominal"))
         if nominal is None:
             result["basis"] = "bond_price_percent_of_nominal"
-            result["reason"] = "Bond nominal was not available, so valuation was not calculated."
-            return base.json_safe_value({k: v for k, v in result.items() if v is not None}), totals
+            result["reason"] = (
+                "Bond nominal was not available, so valuation was not calculated."
+            )
+            return base.json_safe_value(
+                {k: v for k, v in result.items() if v is not None}
+            ), totals
 
-        accrued = base.decimal_from_any(instrument.get("accrued_interest")) or Decimal("0")
+        accrued = base.decimal_from_any(instrument.get("accrued_interest")) or Decimal(
+            "0"
+        )
         clean_values = {
             name: quantity * nominal * price / Decimal("100")
             for name, price in prices.items()
@@ -300,23 +334,31 @@ def calculate_position_valuation(
             name: clean_value + quantity * accrued
             for name, clean_value in clean_values.items()
         }
-        result["basis"] = "quantity_times_nominal_times_price_percent_plus_accrued_interest"
+        result["basis"] = (
+            "quantity_times_nominal_times_price_percent_plus_accrued_interest"
+        )
         result["nominal_per_instrument"] = base.decimal_string(nominal)
         result["accrued_interest_per_instrument"] = base.decimal_string(accrued)
         result["clean_values"] = {
             name: base.decimal_string(value) for name, value in clean_values.items()
         }
-        result["values"] = {name: base.decimal_string(value) for name, value in totals.items()}
+        result["values"] = {
+            name: base.decimal_string(value) for name, value in totals.items()
+        }
     else:
         result["basis"] = "unsupported_generic_valuation"
         result["reason"] = (
             "The gateway does not apply a generic portfolio valuation formula "
             "to this instrument type."
         )
-        return base.json_safe_value({k: v for k, v in result.items() if v is not None}), totals
+        return base.json_safe_value(
+            {k: v for k, v in result.items() if v is not None}
+        ), totals
 
     result["status"] = "ok" if len(totals) == 3 else "partial"
-    return base.json_safe_value({k: v for k, v in result.items() if v is not None}), totals
+    return base.json_safe_value(
+        {k: v for k, v in result.items() if v is not None}
+    ), totals
 
 
 def _compact_order_book(order_book: dict[str, Any]) -> dict[str, Any]:
@@ -348,8 +390,10 @@ def _totals_rows(
     for row in cash_balances:
         currency = str(row.get("currency", "UNKNOWN") or "UNKNOWN").upper()
         cash_map[currency] = {
-            "reported_money": base.decimal_from_any(row.get("reported_money")) or Decimal("0"),
-            "reported_blocked": base.decimal_from_any(row.get("reported_blocked")) or Decimal("0"),
+            "reported_money": base.decimal_from_any(row.get("reported_money"))
+            or Decimal("0"),
+            "reported_blocked": base.decimal_from_any(row.get("reported_blocked"))
+            or Decimal("0"),
         }
 
     currencies = sorted(set(cash_map) | set(valuation_totals))
@@ -373,7 +417,9 @@ def _totals_rows(
                 "securities_last_price": base.decimal_string(last_value),
                 "securities_best_bid": base.decimal_string(bid_value),
                 "securities_best_ask": base.decimal_string(ask_value),
-                "portfolio_last_price": base.decimal_string(reported_money + last_value),
+                "portfolio_last_price": base.decimal_string(
+                    reported_money + last_value
+                ),
                 "portfolio_best_bid": base.decimal_string(reported_money + bid_value),
                 "portfolio_best_ask": base.decimal_string(reported_money + ask_value),
                 "positions_valued_last_price": int(counts.get("last_price", 0)),
@@ -388,8 +434,12 @@ def get_portfolio_market_snapshot(
     *,
     base: Any,
     app_version: str,
-    market_dealer_session: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], bool],
-    trading_flag_consistency_issues: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], list[str]],
+    market_dealer_session: Callable[
+        [dict[str, Any], dict[str, Any], dict[str, Any]], bool
+    ],
+    trading_flag_consistency_issues: Callable[
+        [dict[str, Any], dict[str, Any], dict[str, Any]], list[str]
+    ],
     depth: int,
     max_instruments: int,
 ) -> dict[str, Any]:
@@ -399,7 +449,9 @@ def get_portfolio_market_snapshot(
     try:
         enriched = base.enriched_snapshot()
         enriched_positions = enriched.get("enriched_portfolio_positions", [])
-        grouped_positions, grouping_quality = _group_market_positions(base, enriched_positions)
+        grouped_positions, grouping_quality = _group_market_positions(
+            base, enriched_positions
+        )
         cash_balances = build_cash_balances(base, enriched.get("positions"))
 
         positions_to_process = grouped_positions[:max_instruments]
@@ -429,11 +481,15 @@ def get_portfolio_market_snapshot(
                 instrument = entry["instrument"]
                 uid = str(instrument.get("uid", "") or "").strip()
                 figi = str(instrument.get("figi", "") or "").strip()
-                last_price = last_by_uid.get(uid) or last_by_figi.get(figi) or {
-                    "status": "unavailable",
-                    "reason": "The batch last-price response did not include this instrument.",
-                    "instrument_uid": uid,
-                }
+                last_price = (
+                    last_by_uid.get(uid)
+                    or last_by_figi.get(figi)
+                    or {
+                        "status": "unavailable",
+                        "reason": "The batch last-price response did not include this instrument.",
+                        "instrument_uid": uid,
+                    }
+                )
 
                 try:
                     trading_status_calls += 1
@@ -472,7 +528,9 @@ def get_portfolio_market_snapshot(
                     last_price,
                     order_book,
                 )
-                currency = str(valuation.get("currency", "UNKNOWN") or "UNKNOWN").upper()
+                currency = str(
+                    valuation.get("currency", "UNKNOWN") or "UNKNOWN"
+                ).upper()
                 for source_name, value in decimal_values.items():
                     valuation_totals[currency][source_name] += value
                     valuation_counts[currency][source_name] += 1
@@ -564,7 +622,11 @@ def get_portfolio_market_snapshot(
         eligible_positions = len(grouped_positions)
         if eligible_positions == 0:
             overall_status = "ok"
-        elif valued_positions == len(positions_to_process) and not positions_skipped and component_errors == 0:
+        elif (
+            valued_positions == len(positions_to_process)
+            and not positions_skipped
+            and component_errors == 0
+        ):
             overall_status = "ok"
         elif valued_positions > 0:
             overall_status = "partial"
@@ -586,7 +648,9 @@ def get_portfolio_market_snapshot(
                 f"Market data was limited to {max_instruments} unique instruments in this request."
             )
         if last_batch.get("status") == "error":
-            warnings.append("The batch last-price request failed; order-book and trading-status results may still be present.")
+            warnings.append(
+                "The batch last-price request failed; order-book and trading-status results may still be present."
+            )
 
         return base.json_safe_value(
             {
@@ -612,7 +676,9 @@ def get_portfolio_market_snapshot(
                     "market_instruments_processed": len(positions_to_process),
                     "market_instruments_skipped_by_limit": len(positions_skipped),
                     "positions_with_any_valuation": valued_positions,
-                    "positions_without_valuation": max(0, eligible_positions - valued_positions),
+                    "positions_without_valuation": max(
+                        0, eligible_positions - valued_positions
+                    ),
                     "last_price_batch_calls": int(last_batch.get("api_calls", 0) or 0),
                     "order_book_calls": order_book_calls,
                     "trading_status_calls": trading_status_calls,

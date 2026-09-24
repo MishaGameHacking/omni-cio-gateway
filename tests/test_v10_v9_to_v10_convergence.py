@@ -87,9 +87,7 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
                 "# forbidden legacy source\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(
-                RuntimeError, "V9C_LEGACY_SOURCE_REINTRODUCED"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "V9C_LEGACY_SOURCE_REINTRODUCED"):
                 guard.validate(root)
 
     def test_rejects_missing_canonical_target(self) -> None:
@@ -97,9 +95,7 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             root = Path(temporary)
             _copy(root)
             (root / "omni_cio/portfolio/market_source_v1.py").unlink()
-            with self.assertRaisesRegex(
-                RuntimeError, "V9C_CANONICAL_TARGET_MISSING"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "V9C_CANONICAL_TARGET_MISSING"):
                 guard.validate(root)
 
     def test_rejects_legacy_import_reintroduction(self) -> None:
@@ -109,9 +105,7 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             consumer = root / "tests/legacy_consumer.py"
             consumer.parent.mkdir(parents=True, exist_ok=True)
             consumer.write_text("import portfolio_market\n", encoding="utf-8")
-            with self.assertRaisesRegex(
-                RuntimeError, "V9C_LEGACY_IMPORT_REINTRODUCED"
-            ):
+            with self.assertRaisesRegex(RuntimeError, "V9C_LEGACY_IMPORT_REINTRODUCED"):
                 guard.validate(root)
 
     def test_rejects_dynamic_legacy_import_reintroduction(self) -> None:

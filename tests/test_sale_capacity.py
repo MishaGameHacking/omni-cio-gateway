@@ -184,9 +184,7 @@ def test_builder_collects_read_only_sale_evidence_but_leaves_tax_blocked() -> No
         "amount": "100",
         "currency": "RUB",
     }
-    assert payload["commission_summary"]["canonical_source"] == (
-        "executed_commission"
-    )
+    assert payload["commission_summary"]["canonical_source"] == ("executed_commission")
     assert payload["tax_basis"]["confirmed"] is False
     assert payload["calculation_checks"]["integrity_confirmed"] is False
     assert payload["quality"]["complete"] is True

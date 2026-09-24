@@ -57,12 +57,10 @@ def test_builder_preserves_source_meanings_and_detects_difference() -> None:
     assert row["blocked_guarantee"] == "5"
     assert row["cash_difference"] == "100"
     assert row["cash_status"] == "source_difference"
-    assert "reported_money_differs_from_withdrawable_money" in row[
-        "discrepancy_reasons"
-    ]
-    assert "blocked_value_differs_between_sources" in row[
-        "discrepancy_reasons"
-    ]
+    assert (
+        "reported_money_differs_from_withdrawable_money" in row["discrepancy_reasons"]
+    )
+    assert "blocked_value_differs_between_sources" in row["discrepancy_reasons"]
 
     quality = payload["quality"]
     assert quality["positions_source_status"] == "ok"

@@ -50,9 +50,7 @@ def remove_get_route(path: str) -> None:
 
 def build_metadata() -> dict[str, str]:
     raw_commit = (
-        os.environ.get("RENDER_GIT_COMMIT")
-        or os.environ.get("GITHUB_SHA")
-        or "unknown"
+        os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GITHUB_SHA") or "unknown"
     )
     commit_sha = raw_commit[:12] if raw_commit != "unknown" else raw_commit
     deployment_platform = (
@@ -121,12 +119,8 @@ def market_dealer_session(
 ) -> bool:
     """Infer a dealer session separately from the raw API fields."""
     status_name = str(trading_status.get("trading_status", "") or "").upper()
-    last_price_type = str(
-        last_price.get("last_price_type", "") or ""
-    ).upper()
-    order_book_type = str(
-        order_book.get("order_book_type", "") or ""
-    ).upper()
+    last_price_type = str(last_price.get("last_price_type", "") or "").upper()
+    order_book_type = str(order_book.get("order_book_type", "") or "").upper()
 
     return (
         "DEALER" in status_name
@@ -143,19 +137,13 @@ def trading_flag_consistency_issues(
     """Report notable divergences without overriding any T-Invest value."""
     issues: list[str] = []
     status_name = str(trading_status.get("trading_status", "") or "").upper()
-    last_price_type = str(
-        last_price.get("last_price_type", "") or ""
-    ).upper()
-    order_book_type = str(
-        order_book.get("order_book_type", "") or ""
-    ).upper()
+    last_price_type = str(last_price.get("last_price_type", "") or "").upper()
+    order_book_type = str(order_book.get("order_book_type", "") or "").upper()
 
     limit_available = trading_status.get("limit_order_available_flag")
     market_available = trading_status.get("market_order_available_flag")
     api_available = trading_status.get("api_trade_available_flag")
-    bestprice_available = trading_status.get(
-        "bestprice_order_available_flag"
-    )
+    bestprice_available = trading_status.get("bestprice_order_available_flag")
     only_best_price = trading_status.get("only_best_price")
     order_flags = (
         limit_available,
@@ -165,8 +153,7 @@ def trading_flag_consistency_issues(
 
     if only_best_price is True and bestprice_available is False:
         issues.append(
-            "only_best_price is true while "
-            "bestprice_order_available_flag is false."
+            "only_best_price is true while bestprice_order_available_flag is false."
         )
 
     if api_available is False and any(flag is True for flag in order_flags):
@@ -192,13 +179,11 @@ def trading_flag_consistency_issues(
     if "DEALER" in status_name:
         if last_price_type == "LAST_PRICE_EXCHANGE":
             issues.append(
-                "Dealer trading status was returned with an exchange "
-                "last-price source."
+                "Dealer trading status was returned with an exchange last-price source."
             )
         if order_book_type == "ORDERBOOK_TYPE_EXCHANGE":
             issues.append(
-                "Dealer trading status was returned with an exchange-only "
-                "order book."
+                "Dealer trading status was returned with an exchange-only order book."
             )
 
     return issues
@@ -245,9 +230,7 @@ def market_snapshot_v350(
     order_book = result.get("order_book")
 
     safe_last_price = last_price if isinstance(last_price, dict) else {}
-    safe_trading_status = (
-        trading_status if isinstance(trading_status, dict) else {}
-    )
+    safe_trading_status = trading_status if isinstance(trading_status, dict) else {}
     safe_order_book = order_book if isinstance(order_book, dict) else {}
 
     dealer_session = market_dealer_session(

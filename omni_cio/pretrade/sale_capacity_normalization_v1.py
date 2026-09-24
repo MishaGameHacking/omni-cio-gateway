@@ -89,9 +89,7 @@ def select_sale_price(
             else "unavailable"
         ),
         "source_time": source_time or "unavailable",
-        "age_seconds": (
-            str(age_seconds) if age_seconds is not None else "unavailable"
-        ),
+        "age_seconds": (str(age_seconds) if age_seconds is not None else "unavailable"),
         "freshness": freshness,
     }
     return result
@@ -131,9 +129,7 @@ def _position_limits_view(
                 invalid_rows += 1
                 continue
             row_uid = str(
-                row.get("instrument_uid")
-                or row.get("instrument_id")
-                or ""
+                row.get("instrument_uid") or row.get("instrument_id") or ""
             ).strip()
             if row_uid == instrument_uid:
                 matching_rows.append(row)
@@ -205,9 +201,7 @@ def _open_orders_view(
                 invalid_rows += 1
                 continue
             row_uid = str(
-                row.get("instrument_uid")
-                or row.get("instrument_id")
-                or ""
+                row.get("instrument_uid") or row.get("instrument_id") or ""
             ).strip()
             if row_uid != instrument_uid or not _direction_is_sell(
                 row.get("direction")
@@ -282,9 +276,7 @@ def _sale_currency_consistency(
         "market_price": str(market_price.get("currency", "") or "").upper(),
         "position_limits": str(position_limits.get("currency", "") or "").upper(),
         "initial_order_amount": str(
-            _status_dict(order_preview.get("initial_order_amount")).get(
-                "currency", ""
-            )
+            _status_dict(order_preview.get("initial_order_amount")).get("currency", "")
             or ""
         ).upper(),
         "aci_value": str(
@@ -362,11 +354,10 @@ def build_sale_capacity_preview(
         order_preview["gross_proceeds"] = gross_proceeds
     commission_summary = build_commission_summary(order_preview)
     market_price = dict(price_info)
-    market_price["currency"] = str(
-        instrument.get("currency")
-        or position_limits.get("currency")
-        or ""
-    ).upper() or "unavailable"
+    market_price["currency"] = (
+        str(instrument.get("currency") or position_limits.get("currency") or "").upper()
+        or "unavailable"
+    )
     market_price["lot_size"] = lot_size if lot_size is not None else 0
     currency_consistency = _sale_currency_consistency(
         instrument=instrument,

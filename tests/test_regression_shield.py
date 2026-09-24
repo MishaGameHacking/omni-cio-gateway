@@ -53,10 +53,7 @@ PROTECTED_URLS = (
     "/operations/analytics?days=1",
     "/operations/broker-report-reconciliation?days=1&wait_seconds=0",
     "/instruments/search?query=SBER&limit=1",
-    (
-        "/market/snapshot?"
-        "instrument_uid=e6123145-9665-43e0-8413-cd61b8aa9b13&depth=1"
-    ),
+    ("/market/snapshot?instrument_uid=e6123145-9665-43e0-8413-cd61b8aa9b13&depth=1"),
     (
         "/decision/final-review?account=****1234&"
         "requested_option_id=option.limited&final_option_id=option.limited&"
@@ -131,9 +128,7 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     schema = response.json()
 
     assert schema["info"]["version"] == EXPECTED_VERSION
-    assert schema["servers"][0]["url"] == (
-        "https://omni-cio-gateway.onrender.com"
-    )
+    assert schema["servers"][0]["url"] == ("https://omni-cio-gateway.onrender.com")
 
     operation_ids: list[str] = []
     for path, expected_operation_id in EXPECTED_ACTION_PATHS.items():
@@ -141,9 +136,9 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
         assert operation["operationId"] == expected_operation_id
         operation_ids.append(operation["operationId"])
 
-        response_schema = operation["responses"]["200"]["content"][
-            "application/json"
-        ]["schema"]
+        response_schema = operation["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
         if "$ref" in response_schema:
             component_name = response_schema["$ref"].rsplit("/", maxsplit=1)[-1]
             response_schema = schema["components"]["schemas"][component_name]
@@ -160,9 +155,9 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     assert "calculation_checks" in purchase_properties
     assert "integrity_status" in purchase_properties
 
-    operations_schema = schema["paths"]["/operations/analytics"]["get"][
-        "responses"
-    ]["200"]["content"]["application/json"]["schema"]
+    operations_schema = schema["paths"]["/operations/analytics"]["get"]["responses"][
+        "200"
+    ]["content"]["application/json"]["schema"]
     operations_properties = operations_schema["properties"]
     assert "cash_summary_by_currency" in operations_properties
     assert "net_external_flow" in operations_properties
@@ -171,12 +166,12 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     assert "quality" in operations_properties
     assert "complete" in operations_properties
 
-    broker_operation = schema["paths"][
-        "/operations/broker-report-reconciliation"
-    ]["get"]
-    broker_schema = broker_operation["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
+    broker_operation = schema["paths"]["/operations/broker-report-reconciliation"][
+        "get"
+    ]
+    broker_schema = broker_operation["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
     broker_properties = broker_schema["properties"]
     assert "report_generation" in broker_properties
     assert "broker_report_summary" in broker_properties
@@ -256,26 +251,28 @@ def test_purchase_preview_uses_an_explicit_broker_sdk_allowlist() -> None:
         {"users", "instruments", "orders"}
     )
 
-    orders_adapter_source = Path("sdk_order_compat.py").read_text(
-        encoding="utf-8"
-    ).split("class ClientView", maxsplit=1)[0]
+    orders_adapter_source = (
+        Path("sdk_order_compat.py")
+        .read_text(encoding="utf-8")
+        .split("class ClientView", maxsplit=1)[0]
+    )
     assert "def __getattr__" not in orders_adapter_source
 
-    client_view_source = Path("sdk_order_compat.py").read_text(
-        encoding="utf-8"
-    ).split("class ClientView", maxsplit=1)[1].split(
-        "class ClientContextAdapter",
-        maxsplit=1,
-    )[0]
+    client_view_source = (
+        Path("sdk_order_compat.py")
+        .read_text(encoding="utf-8")
+        .split("class ClientView", maxsplit=1)[1]
+        .split(
+            "class ClientContextAdapter",
+            maxsplit=1,
+        )[0]
+    )
     assert "def __getattr__" not in client_view_source
 
 
 def test_render_uses_only_the_stable_application_entrypoint() -> None:
     render_config = Path("render.yaml").read_text(encoding="utf-8")
-    assert (
-        "startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT"
-        in render_config
-    )
+    assert "startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT" in render_config
     assert "healthCheckPath: /health" in render_config
     assert "main_v" not in render_config
 
@@ -284,18 +281,19 @@ def test_market_source_diagnostics_remain_active() -> None:
     assert gateway_module.app is gateway_module.base.app
     assert gateway_module.app.version == EXPECTED_VERSION
 
-    assert gateway_module.market_dealer_session(
-        {"last_price_type": "LAST_PRICE_EXCHANGE"},
-        {"trading_status": "SECURITY_TRADING_STATUS_DEALER_NORMAL_TRADING"},
-        {"order_book_type": "ORDERBOOK_TYPE_UNSPECIFIED"},
-    ) is True
+    assert (
+        gateway_module.market_dealer_session(
+            {"last_price_type": "LAST_PRICE_EXCHANGE"},
+            {"trading_status": "SECURITY_TRADING_STATUS_DEALER_NORMAL_TRADING"},
+            {"order_book_type": "ORDERBOOK_TYPE_UNSPECIFIED"},
+        )
+        is True
+    )
 
     issues = gateway_module.trading_flag_consistency_issues(
         {"last_price_type": "LAST_PRICE_EXCHANGE"},
         {
-            "trading_status": (
-                "SECURITY_TRADING_STATUS_NOT_AVAILABLE_FOR_TRADING"
-            ),
+            "trading_status": ("SECURITY_TRADING_STATUS_NOT_AVAILABLE_FOR_TRADING"),
             "limit_order_available_flag": True,
             "market_order_available_flag": False,
             "api_trade_available_flag": False,

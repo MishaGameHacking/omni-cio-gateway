@@ -723,3 +723,27 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** a repository guard that reads additional files must expose its dependency set as data and test fixtures must consume that same data; never maintain a second manually duplicated dependency list.
 
 **Dependency/tooling knowledge change:** none.
+
+
+---
+
+## FL-031 — Relocated legacy modules must satisfy the destination static-quality baseline
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B / PR #584 / exact head `ce09e9149b261a1f9549aa98efadcc42e22aa9f9`
+
+**Symptom / failing gate:** multiple otherwise unrelated WP workflows failed at the same repository-wide mypy invocation in `omni_cio/pretrade/purchase_capacity_v1.py`, while Fast PR and the authoritative merge gate independently reported Ruff-format drift across 20 relocated/current Python files.
+
+**Root cause:** V9C-B moved behavior-preserving legacy modules into canonical typed/formatted V10 package paths, but the relocation checkpoint did not fully apply the destination package's static-quality contract. In `select_price()`, one local name represented both an always-present manual `Decimal` and a market-derived `Decimal | None`, causing incompatible mypy inference. Separately, `Decimal.as_tuple().exponent` retains a special-value union in its type even after the runtime finite-value check. The relocated files also preserved historical layout that differs from the pinned Ruff 0.16.1 formatter.
+
+**Blast radius searched:** all exact-head failed workflow logs, every file reported by the changed-file Ruff formatter, all relocated V9C-B deterministic source targets, the purchase-capacity tests, and the whole-repository mypy consumers. The profile-specific WP tests reached static quality and converged on the same four mypy diagnostics rather than independent product failures.
+
+**Why preflight missed it:** relocation parity focused on behavior/import convergence and whole-tree structural integrity. Those checks proved source presence, syntax and parity contracts, but did not certify the exact destination mypy/formatter baseline before publication.
+
+**Corrective change:** apply the exact pinned Ruff formatter output to all 20 reported files; give the manual-price branch a distinct local; explicitly fail closed if a Decimal exponent is not an integer before scale comparison; and add regression coverage for non-finite manual Decimal input.
+
+**Permanent regression/guard:** existing global mypy plus changed-file Ruff formatting remain mandatory; the purchase-capacity regression now freezes fail-closed non-finite input behavior. No ignore, cast, formatter exclusion, coverage weakening or security-gate suppression is introduced.
+
+**Future prevention rule:** every source relocation into a stricter package boundary must pass the destination lint/type/format baseline as part of the relocation preflight, even when runtime behavior is intentionally unchanged.
+
+**Dependency/tooling knowledge change:** Python Decimal tuple exponents are typed as an integer or special-value marker; runtime finite checks do not necessarily narrow that union for static type checkers.

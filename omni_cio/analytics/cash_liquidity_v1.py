@@ -90,11 +90,7 @@ def build_cash_liquidity_snapshot(
     retrieved_at: str | None = None,
 ) -> dict[str, Any]:
     positions = positions_data if isinstance(positions_data, dict) else {}
-    withdraw = (
-        withdraw_limits_data
-        if isinstance(withdraw_limits_data, dict)
-        else {}
-    )
+    withdraw = withdraw_limits_data if isinstance(withdraw_limits_data, dict) else {}
 
     (
         reported_money,
@@ -138,8 +134,7 @@ def build_cash_liquidity_snapshot(
 
     for currency in currencies:
         has_positions = (
-            currency in reported_money_present
-            or currency in positions_blocked_present
+            currency in reported_money_present or currency in positions_blocked_present
         )
         has_withdraw = (
             currency in withdrawable_money_present
@@ -198,9 +193,7 @@ def build_cash_liquidity_snapshot(
             and positions_blocked_value != withdraw_blocked_value
         ):
             reasons.append("blocked_value_differs_between_sources")
-        elif (
-            currency in positions_blocked_present
-        ) != (
+        elif (currency in positions_blocked_present) != (
             currency in withdraw_blocked_present
         ):
             reasons.append("blocked_value_missing_from_one_source")
@@ -280,13 +273,9 @@ def build_cash_liquidity_snapshot(
     limits_loading_in_progress = bool(
         positions.get("limits_loading_in_progress", False)
     )
-    both_sources_ok = (
-        positions_status == "ok" and withdraw_limits_status == "ok"
-    )
+    both_sources_ok = positions_status == "ok" and withdraw_limits_status == "ok"
     complete = (
-        both_sources_ok
-        and invalid_money_rows == 0
-        and not limits_loading_in_progress
+        both_sources_ok and invalid_money_rows == 0 and not limits_loading_in_progress
     )
 
     if positions_status == "error" and withdraw_limits_status == "error":
@@ -358,9 +347,7 @@ def build_cash_liquidity_snapshot(
             "positions_source_status": positions_status,
             "withdraw_limits_source_status": withdraw_limits_status,
             "currencies_detected": len(currencies),
-            "currencies_present_in_both_sources": (
-                currencies_present_in_both_sources
-            ),
+            "currencies_present_in_both_sources": (currencies_present_in_both_sources),
             "currencies_matched": currencies_matched,
             "source_discrepancies": source_discrepancies,
             "negative_values_detected": negative_values_detected,
@@ -410,14 +397,10 @@ def get_cash_liquidity_snapshot(
                 )
 
             try:
-                withdraw_limits_response = (
-                    client.operations.get_withdraw_limits(
-                        account_id=account_id
-                    )
+                withdraw_limits_response = client.operations.get_withdraw_limits(
+                    account_id=account_id
                 )
-                withdraw_limits_data = base.proto_to_dict(
-                    withdraw_limits_response
-                )
+                withdraw_limits_data = base.proto_to_dict(withdraw_limits_response)
                 withdraw_limits_status = "ok"
             except Exception as exc:
                 errors.append(

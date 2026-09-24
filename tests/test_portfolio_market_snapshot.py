@@ -99,7 +99,9 @@ def test_cash_balances_keep_blocked_money_separate() -> None:
     ]
 
 
-def test_endpoint_returns_partial_failure_tolerant_portfolio_totals(monkeypatch) -> None:
+def test_endpoint_returns_partial_failure_tolerant_portfolio_totals(
+    monkeypatch,
+) -> None:
     fake_enriched = {
         "status": "ok",
         "version": "3.5.0",
@@ -196,12 +198,8 @@ def test_endpoint_returns_partial_failure_tolerant_portfolio_totals(monkeypatch)
                 "depth": 1,
                 "orderbook_ts": "2026-07-27T05:00:00+00:00",
                 "order_book_type": "ORDERBOOK_TYPE_EXCHANGE",
-                "bids": [
-                    {"price": {"units": "99", "nano": 0}, "quantity": 4}
-                ],
-                "asks": [
-                    {"price": {"units": "101", "nano": 0}, "quantity": 3}
-                ],
+                "bids": [{"price": {"units": "99", "nano": 0}, "quantity": 4}],
+                "asks": [{"price": {"units": "101", "nano": 0}, "quantity": 3}],
             }
 
     class FakeClient:

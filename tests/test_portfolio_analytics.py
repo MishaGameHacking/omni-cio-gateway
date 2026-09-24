@@ -163,8 +163,12 @@ def test_weights_and_concentration_are_calculated_separately_by_currency() -> No
         top_n=2,
     )
 
-    rub = next(row for row in payload["summary_by_currency"] if row["currency"] == "RUB")
-    usd = next(row for row in payload["summary_by_currency"] if row["currency"] == "USD")
+    rub = next(
+        row for row in payload["summary_by_currency"] if row["currency"] == "RUB"
+    )
+    usd = next(
+        row for row in payload["summary_by_currency"] if row["currency"] == "USD"
+    )
 
     assert rub["portfolio_value"] == "1500"
     assert rub["cash_share_percent"] == "66.666667"
@@ -182,10 +186,12 @@ def test_weights_and_concentration_are_calculated_separately_by_currency() -> No
         row for row in payload["position_weights"] if row["currency"] == "RUB"
     ]
     assert [row["rank_within_currency"] for row in rub_weights] == [1, 2]
-    assert [row["portfolio_weight_percent"] for row in rub_weights] == ["20", "13.333333"]
+    assert [row["portfolio_weight_percent"] for row in rub_weights] == [
+        "20",
+        "13.333333",
+    ]
     assert all(
-        row["cross_currency_share_percent"]
-        == "not_calculated_without_fx_conversion"
+        row["cross_currency_share_percent"] == "not_calculated_without_fx_conversion"
         for row in payload["currency_exposure"]
     )
 
@@ -226,7 +232,9 @@ def test_unvalued_position_makes_analytics_partial() -> None:
     assert payload["quality"]["complete_for_selected_basis"] is False
 
 
-def test_analytics_endpoint_uses_one_source_snapshot_and_remains_read_only(monkeypatch) -> None:
+def test_analytics_endpoint_uses_one_source_snapshot_and_remains_read_only(
+    monkeypatch,
+) -> None:
     calls = []
 
     def fake_snapshot(**kwargs):

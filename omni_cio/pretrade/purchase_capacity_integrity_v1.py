@@ -155,7 +155,9 @@ def build_commission_summary(order_preview: Any) -> dict[str, Any]:
         canonical_amount, canonical_currency = executed_rub
     else:
         component_values = [item for item in (service, deal) if item is not None]
-        component_currencies = {currency for _, currency in component_values if currency}
+        component_currencies = {
+            currency for _, currency in component_values if currency
+        }
         if component_values and len(component_currencies) <= 1:
             canonical_source = "service_plus_deal_fallback"
             canonical_amount = sum(
@@ -196,9 +198,7 @@ def build_commission_summary(order_preview: Any) -> dict[str, Any]:
         difference = components_sum - canonical_amount
         components_sum_check = {
             "status": (
-                "matched"
-                if abs(difference) <= MONEY_TOLERANCE
-                else "different"
+                "matched" if abs(difference) <= MONEY_TOLERANCE else "different"
             ),
             "components_sum": _decimal_string(components_sum),
             "canonical_amount": _decimal_string(canonical_amount),
@@ -297,9 +297,7 @@ def build_currency_consistency(
             )
         ),
     }
-    visible_fields = {
-        key: value or "unavailable" for key, value in fields.items()
-    }
+    visible_fields = {key: value or "unavailable" for key, value in fields.items()}
     available = [value for value in fields.values() if value]
     unique = sorted(set(available))
 
@@ -311,7 +309,9 @@ def build_currency_consistency(
     critical_complete = all(fields[key] for key in critical_keys)
     issues: list[str] = []
     if len(unique) > 1:
-        issues.append("Currency mismatch detected between purchase-capacity components.")
+        issues.append(
+            "Currency mismatch detected between purchase-capacity components."
+        )
     if not critical_complete:
         issues.append("At least one critical currency is unavailable.")
 
@@ -382,17 +382,13 @@ def build_calculation_checks(
     quantity_lots = _integer(request.get("quantity_lots"))
     lot_size = _integer(market_price.get("lot_size") or instrument.get("lot"))
     price = _decimal(market_price.get("price"))
-    initial_amount, initial_currency = _money(
-        order_preview.get("initial_order_amount")
-    )
+    initial_amount, initial_currency = _money(order_preview.get("initial_order_amount"))
     total_amount, total_currency = _money(order_preview.get("total_order_amount"))
     own_money = _decimal(own_funds.get("buy_money_amount"))
     remaining_reported = _decimal(payload.get("remaining_cash_estimate"))
 
     instrument_type = str(
-        instrument.get("instrument_kind")
-        or instrument.get("instrument_type")
-        or ""
+        instrument.get("instrument_kind") or instrument.get("instrument_type") or ""
     )
     simple_price_formula = instrument_type in PRICE_TIMES_LOT_TYPES
     initial_expected = None
@@ -408,8 +404,7 @@ def build_calculation_checks(
         formula="price × lot_size × quantity_lots = initial_order_amount",
         expected=initial_expected,
         reported=initial_amount,
-        currency=initial_currency
-        or _currency(market_price.get("currency")),
+        currency=initial_currency or _currency(market_price.get("currency")),
         not_applicable=not simple_price_formula,
         reason=(
             "Bond and futures quotations require instrument-specific nominal, "

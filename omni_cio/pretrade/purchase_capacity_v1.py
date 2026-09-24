@@ -59,6 +59,15 @@ def _parse_positive_decimal(value: Any, field_name: str) -> Decimal:
         )
 
     exponent = result.as_tuple().exponent
+    if not isinstance(exponent, int):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_DECIMAL_VALUE",
+                "field": field_name,
+                "message": f"{field_name} must be a finite decimal value.",
+            },
+        )
     if exponent < -9:
         raise HTTPException(
             status_code=422,
@@ -161,12 +170,12 @@ def select_price(
                     "message": "manual_price is required when price_basis=manual.",
                 },
             )
-        price = _parse_positive_decimal(manual_price, "manual_price")
+        manual_value = _parse_positive_decimal(manual_price, "manual_price")
         return {
             "status": "ok",
             "basis": "manual",
             "source": "manual_input",
-            "price": base.decimal_string(price),
+            "price": base.decimal_string(manual_value),
             "source_time": "not_applicable",
             "age_seconds": "not_applicable",
             "freshness": _price_freshness(None, None, "manual"),
@@ -217,9 +226,7 @@ def select_price(
         "source": source_name,
         "price": base.decimal_string(price),
         "source_time": source_time or "unavailable",
-        "age_seconds": (
-            str(age_seconds) if age_seconds is not None else "unavailable"
-        ),
+        "age_seconds": (str(age_seconds) if age_seconds is not None else "unavailable"),
         "freshness": _price_freshness(age_seconds, source_time, price_basis),
     }
 
@@ -317,9 +324,7 @@ def _order_preview_view(
         aci_value = _money_view(base, extra_bond.get("aci_value"))
         if aci_value is not None:
             bond_result["aci_value"] = aci_value
-        conversion_rate = base.safe_quotation(
-            extra_bond.get("nominal_conversion_rate")
-        )
+        conversion_rate = base.safe_quotation(extra_bond.get("nominal_conversion_rate"))
         if conversion_rate is not None:
             bond_result["nominal_conversion_rate"] = conversion_rate
         if bond_result:
@@ -373,9 +378,7 @@ def _affordability(
             reasons.append("requested_lots_exceed_own_funds_limit")
 
     currencies_compatible = (
-        not max_currency
-        or not total_currency
-        or max_currency == total_currency
+        not max_currency or not total_currency or max_currency == total_currency
     )
     if buy_money is None or total_amount is None:
         reasons.append("amount_comparison_unavailable")
@@ -454,12 +457,15 @@ def build_purchase_capacity_preview(
 
     lot_size = _int_or_none(instrument.get("lot"))
     market_price = dict(price_info)
-    market_price["currency"] = str(
-        instrument.get("currency")
-        or own_funds.get("currency")
-        or affordability.get("currency")
-        or ""
-    ).upper() or "unavailable"
+    market_price["currency"] = (
+        str(
+            instrument.get("currency")
+            or own_funds.get("currency")
+            or affordability.get("currency")
+            or ""
+        ).upper()
+        or "unavailable"
+    )
     market_price["lot_size"] = lot_size if lot_size is not None else 0
 
     instrument_resolved = resolution.get("status") == "resolved"
@@ -476,7 +482,12 @@ def build_purchase_capacity_preview(
 
     if complete:
         status = "ok"
-    elif price_available or instrument_resolved or max_lots_available or order_price_available:
+    elif (
+        price_available
+        or instrument_resolved
+        or max_lots_available
+        or order_price_available
+    ):
         status = "partial"
     else:
         status = "error"

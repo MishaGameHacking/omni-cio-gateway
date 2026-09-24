@@ -32,9 +32,7 @@ def _decimal(base: Any, value: Any) -> Decimal | None:
 def _percent_string(base: Any, numerator: Decimal, denominator: Decimal) -> str:
     if denominator <= 0:
         return "unavailable"
-    value = (numerator * Decimal("100") / denominator).quantize(
-        PERCENT_QUANTUM
-    )
+    value = (numerator * Decimal("100") / denominator).quantize(PERCENT_QUANTUM)
     return base.decimal_string(value)
 
 
@@ -53,9 +51,7 @@ def _position_currency(position: dict[str, Any]) -> str:
     safe_valuation = valuation if isinstance(valuation, dict) else {}
     instrument = _safe_instrument(position)
     return str(
-        safe_valuation.get("currency")
-        or instrument.get("currency")
-        or "UNKNOWN"
+        safe_valuation.get("currency") or instrument.get("currency") or "UNKNOWN"
     ).upper()
 
 
@@ -387,9 +383,7 @@ def build_portfolio_analytics(
     skipped_by_limit = int(
         safe_source_quality.get("market_instruments_skipped_by_limit", 0) or 0
     )
-    identity_conflicts = int(
-        safe_enrichment_quality.get("identity_conflicts", 0) or 0
-    )
+    identity_conflicts = int(safe_enrichment_quality.get("identity_conflicts", 0) or 0)
     complete_for_selected_basis = (
         total_unvalued_positions == 0
         and skipped_by_limit == 0

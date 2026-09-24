@@ -343,9 +343,7 @@ _base_openapi = app.openapi
 _GPT_ACTIONS_HTTP_METHODS = frozenset(
     {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 )
-_GPT_ACTIONS_IGNORED_TRACE_HEADERS = frozenset(
-    {"X-Correlation-ID", "X-Request-ID"}
-)
+_GPT_ACTIONS_IGNORED_TRACE_HEADERS = frozenset({"X-Correlation-ID", "X-Request-ID"})
 
 
 def _patch_gpt_actions_openapi_compat(schema: dict[str, Any]) -> dict[str, Any]:
