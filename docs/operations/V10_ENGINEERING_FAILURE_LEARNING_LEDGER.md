@@ -700,3 +700,26 @@ Dependency/tooling knowledge change:
 
 **Future prevention rule:** when liveness excludes an external dependency, that dependency needs its own bounded recovery path. Never retry a write whose commit outcome may be unknown.
 
+
+---
+
+## FL-030 — Guard fixtures must mirror the guard's complete repository dependency set
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B / PR #584 / superseded exact head `8aef5013439bb69d8feca846426fba5513f1feaf`
+
+**Symptom / failing gate:** V10 Engineering Governance passed the real V9C-B convergence guard against the full repository but two negative unit tests errored with `FileNotFoundError` for `.github/workflows/v10-pr-fast-checks.yml` instead of reaching their intended fail-closed assertions.
+
+**Root cause:** V9C-B expanded `_validate_verifier_ownership()` to read three current verifier workflows, while the temporary-repository test fixture copied only the original governance workflow and canonical documents. The guard dependency graph and its fixture dependency graph had diverged.
+
+**Blast radius searched:** every V9C-B guard input, all negative tests using `_copy()`, the three verifier workflows, parity-ledger fixture data, the whole-tree legacy import scan and the current repository execution path. The real repository guard itself passed; no product/runtime semantic defect was found from this RED.
+
+**Why preflight missed it:** the current-repository positive guard path had all files available, so it could not expose an incomplete isolated fixture. The dependency set was duplicated implicitly between production guard code and tests instead of being represented once.
+
+**Corrective change:** define one canonical `_VERIFIER_WORKFLOW_RELATIVE_PATHS` tuple in the guard, derive verifier reads from it, and make the isolated fixture copy the same tuple.
+
+**Permanent regression/guard:** the existing negative tests now traverse verifier ownership before reaching their intended parity/merge-authority failures. Any future verifier workflow dependency added to the canonical tuple is automatically included in the fixture.
+
+**Future prevention rule:** a repository guard that reads additional files must expose its dependency set as data and test fixtures must consume that same data; never maintain a second manually duplicated dependency list.
+
+**Dependency/tooling knowledge change:** none.
