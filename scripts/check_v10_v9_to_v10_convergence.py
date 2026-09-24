@@ -27,6 +27,7 @@ _ACCEPTED_V9 = "".join(("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce6
 _ACCEPTED_MAIN = "".join(("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858"))
 _BRANCH = "system/timeweb-platform-consolidation-tw-b"
 _CURRENT_CHECKPOINT = "V9C-B"
+_V9_MIGRATION_SOURCE_MARKER = "V9 migration source"
 _REQUIRED_CHECKPOINTS = (
     "V9C-A_AUTHORITY_AND_INVENTORY",
     "V9C-B_DETERMINISTIC_SOURCE_RELOCATION",
@@ -477,9 +478,16 @@ def _validate_documentation(root: Path) -> None:
             f"| {_CURRENT_CHECKPOINT} | DETERMINISTIC_SOURCE_RELOCATION | IN_PROGRESS |",
             "| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF |",
         ),
-        AGENTS.relative_to(ROOT): ("V9 migration source", _CURRENT_CHECKPOINT, "PR #584"),
-        README.relative_to(ROOT): ("V9 migration source", _CURRENT_CHECKPOINT),
-        CONTRIBUTING.relative_to(ROOT): ("V9 migration source", _CURRENT_CHECKPOINT),
+        AGENTS.relative_to(ROOT): (
+            _V9_MIGRATION_SOURCE_MARKER,
+            _CURRENT_CHECKPOINT,
+            "PR #584",
+        ),
+        README.relative_to(ROOT): (_V9_MIGRATION_SOURCE_MARKER, _CURRENT_CHECKPOINT),
+        CONTRIBUTING.relative_to(ROOT): (
+            _V9_MIGRATION_SOURCE_MARKER,
+            _CURRENT_CHECKPOINT,
+        ),
     }
     for relative, markers in required.items():
         source = _text(root / relative)

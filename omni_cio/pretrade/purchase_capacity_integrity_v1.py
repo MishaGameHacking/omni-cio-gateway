@@ -63,6 +63,30 @@ def _money_view(amount: Decimal, currency: str) -> dict[str, str]:
     }
 
 
+
+def _comparison_base(
+    *,
+    status: str,
+    formula: str,
+    expected: str,
+    reported: str,
+    difference: str,
+    tolerance: Decimal,
+    currency: str,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "formula": formula,
+        "expected": expected,
+        "reported": reported,
+        "difference": difference,
+        "tolerance": _decimal_string(tolerance),
+        "currency": currency or "unavailable",
+        "reason": reason,
+    }
+
+
 def _comparison(
     *,
     formula: str,
@@ -74,49 +98,45 @@ def _comparison(
     not_applicable: bool = False,
 ) -> dict[str, Any]:
     if not_applicable:
-        return {
-            "status": "not_applicable",
-            "formula": formula,
-            "expected": "not_applicable",
-            "reported": (
+        return _comparison_base(
+            status="not_applicable",
+            formula=formula,
+            expected="not_applicable",
+            reported=(
                 "unavailable" if reported is None else _decimal_string(reported)
             ),
-            "difference": "not_applicable",
-            "tolerance": _decimal_string(tolerance),
-            "currency": currency or "unavailable",
-            "reason": reason or "The formula is not applicable to this instrument.",
-        }
-
+            difference="not_applicable",
+            tolerance=tolerance,
+            currency=currency,
+            reason=reason or "The formula is not applicable to this instrument.",
+        )
     if expected is None or reported is None:
-        return {
-            "status": "unavailable",
-            "formula": formula,
-            "expected": (
+        return _comparison_base(
+            status="unavailable",
+            formula=formula,
+            expected=(
                 "unavailable" if expected is None else _decimal_string(expected)
             ),
-            "reported": (
+            reported=(
                 "unavailable" if reported is None else _decimal_string(reported)
             ),
-            "difference": "unavailable",
-            "tolerance": _decimal_string(tolerance),
-            "currency": currency or "unavailable",
-            "reason": reason or "At least one required value is unavailable.",
-        }
+            difference="unavailable",
+            tolerance=tolerance,
+            currency=currency,
+            reason=reason or "At least one required value is unavailable.",
+        )
 
     difference = reported - expected
-    passed = abs(difference) <= tolerance
-    return {
-        "status": "passed" if passed else "failed",
-        "formula": formula,
-        "expected": _decimal_string(expected),
-        "reported": _decimal_string(reported),
-        "difference": _decimal_string(difference),
-        "tolerance": _decimal_string(tolerance),
-        "currency": currency or "unavailable",
-        "reason": reason or "",
-    }
-
-
+    return _comparison_base(
+        status="passed" if abs(difference) <= tolerance else "failed",
+        formula=formula,
+        expected=_decimal_string(expected),
+        reported=_decimal_string(reported),
+        difference=_decimal_string(difference),
+        tolerance=tolerance,
+        currency=currency,
+        reason=reason or "",
+    )
 
 def _commission_candidates(
     order: dict[str, Any],
@@ -167,14 +187,11 @@ def _canonical_commission(
     )
 
 
-def _component_commission_check(
-    *,
+
+def _commission_components(
     candidates: dict[str, tuple[Decimal, str]],
-    canonical_amount: Decimal | None,
-    canonical_currency: str,
-    preview_currency: str,
-) -> dict[str, Any]:
-    component_values = [
+) -> tuple[list[tuple[Decimal, str]], set[str]]:
+    values = [
         item
         for item in (
             candidates.get("service_commission"),
@@ -182,7 +199,34 @@ def _component_commission_check(
         )
         if item is not None
     ]
-    component_currencies = {currency for _, currency in component_values if currency}
+    currencies = {currency for _, currency in values if currency}
+    return values, currencies
+
+
+def _commission_components_comparable(
+    *,
+    canonical_amount: Decimal | None,
+    canonical_currency: str,
+    component_values: list[tuple[Decimal, str]],
+    component_currencies: set[str],
+) -> bool:
+    if canonical_amount is None or not component_values:
+        return False
+    if len(component_currencies) > 1:
+        return False
+    if canonical_currency and component_currencies:
+        return canonical_currency in component_currencies
+    return True
+
+
+def _component_commission_check(
+    *,
+    candidates: dict[str, tuple[Decimal, str]],
+    canonical_amount: Decimal | None,
+    canonical_currency: str,
+    preview_currency: str,
+) -> dict[str, Any]:
+    component_values, component_currencies = _commission_components(candidates)
     result: dict[str, Any] = {
         "status": "unavailable",
         "components_sum": "unavailable",
@@ -194,19 +238,15 @@ def _component_commission_check(
         "difference": "unavailable",
         "currency": canonical_currency or preview_currency or "unavailable",
     }
-    currencies_compatible = (
-        not canonical_currency
-        or not component_currencies
-        or canonical_currency in component_currencies
-    )
-    if (
-        canonical_amount is None
-        or not component_values
-        or len(component_currencies) > 1
-        or not currencies_compatible
+    if not _commission_components_comparable(
+        canonical_amount=canonical_amount,
+        canonical_currency=canonical_currency,
+        component_values=component_values,
+        component_currencies=component_currencies,
     ):
         return result
 
+    assert canonical_amount is not None
     components_sum = sum(
         (amount for amount, _ in component_values),
         Decimal("0"),
@@ -219,7 +259,6 @@ def _component_commission_check(
         "difference": _decimal_string(difference),
         "currency": canonical_currency or preview_currency or "unavailable",
     }
-
 
 def _incorrect_commission_sum(
     *,

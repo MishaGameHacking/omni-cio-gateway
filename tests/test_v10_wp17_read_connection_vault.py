@@ -82,8 +82,9 @@ def test_vault_rejects_path_traversal_and_unprovisioned_root(tmp_path: Path) -> 
         protect=fake_protect,
         unprotect=fake_unprotect,
     )
+    secret_ref = new_read_connection_secret_ref()
     with pytest.raises(ReadConnectionVaultError, match="NOT_PROVISIONED"):
-        missing.store(secret_ref=new_read_connection_secret_ref(), token="read-token")
+        missing.store(secret_ref=secret_ref, token="read-token")
 
     root = ready_root(tmp_path)
     vault = ReadBrokerConnectionVaultV1(
@@ -104,12 +105,14 @@ def test_vault_requires_exact_owner_marker(tmp_path: Path) -> None:
         protect=fake_protect,
         unprotect=fake_unprotect,
     )
+    secret_ref = new_read_connection_secret_ref()
     with pytest.raises(ReadConnectionVaultError, match="MARKER_MISSING"):
-        vault.store(secret_ref=new_read_connection_secret_ref(), token="read-token")
+        vault.store(secret_ref=secret_ref, token="read-token")
 
     (root / READ_CONNECTION_MARKER).write_text("wrong", encoding="ascii")
+    invalid_marker_secret_ref = new_read_connection_secret_ref()
     with pytest.raises(ReadConnectionVaultError, match="MARKER_INVALID"):
-        vault.store(secret_ref=new_read_connection_secret_ref(), token="read-token")
+        vault.store(secret_ref=invalid_marker_secret_ref, token="read-token")
 
 
 def test_acl_verifier_normalizes_identity_references_to_sid() -> None:
