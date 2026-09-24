@@ -1,6 +1,6 @@
-# Omni-CIO — V9 protected runtime + V10 active development program
+# Omni-CIO — V10 active development program / V9 migration source
 
-Omni-CIO is one investment platform. The protected owner-accepted Custom GPT v9.0.0 + one production Gateway remains the current production/recovery baseline while V10 is developed sequentially in this same repository.
+Omni-CIO is one investment platform. V10 is the single forward product/runtime line. The accepted V9 repository target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` is a **V9 migration source** already contained in the current main lineage, not a stale branch that should be merged again.
 
 Current V10 progress and current/next execution authority are defined only by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -22,9 +22,16 @@ Repository-front-door snapshot of accepted/current program authority:
 - public multi-user and capability activation remain fail-closed until their Timeweb/Telegram/privacy/legal/capacity gates pass;
 - WEB-VISUAL remains paused during platform consolidation; WP23+ remains locked;
 - broker-write / Real-execution authority remains unchanged;
-- `trading_methods=false`, `REAL_TRADING_ENABLED=false` and tenant/RLS protections remain intact.
+- `trading_methods=false`, `REAL_TRADING_ENABLED=false` and tenant/RLS protections remain intact;
+- PR #584 now contains the OWNER-approved V9→V10 convergence sequence `V9C-A` through `V9C-F`; no merge to `main` is authorized without a new explicit OWNER instruction.
 
 This box is not a second progress ledger. Exact state is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+## V9→V10 convergence inside PR #584
+
+Current branch-local checkpoint is `V9C-A / AUTHORITY_AND_INVENTORY`. Existing deterministic engines already under `omni_cio/` are reused, not rewritten. Remaining top-level V9 compatibility/financial sources are relocated into canonical V10 packages with parity evidence; only then are obsolete runtime/provider/GPT working-tree files deleted. Git history remains the historical archive.
+
+A stale `v9/*` branch merge is explicitly forbidden: the accepted V9 target is already an ancestor of current main.
 
 ## Current platform authority — GitHub + Timeweb + Telegram
 

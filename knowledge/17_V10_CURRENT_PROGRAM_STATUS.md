@@ -48,6 +48,31 @@ Exact head `3acb0490893dc4aed81667e5f8145ba2da645501` confirmed that workflow/so
 
 Exact head `f6ec32b10d6cf2ca39072cd89d14110ca474c140` then passed the new TW-A inventory guard and compiled governance source, but its stdlib regression found a fail-closed ordering defect in `_rule_matches`: unknown matcher keys were checked only after selector evaluation, so a non-matching valid prefix could return `False` before an injected unknown key was rejected. The correction validates the complete matcher shape before any matching operation, preserving bounded non-regex evaluation while making malformed contract input deterministically fatal.
 
+## Amendment 20 — V9-to-V10 convergence / legacy working-tree retirement (branch-local)
+
+OWNER decision on 2026-09-24 extends the current `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
+update inside PR #584. This is branch-local implementation authority until an
+OWNER-authorized merge; accepted-main progress remains 54%.
+
+The accepted V9 repository target
+`b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` is already an ancestor of current
+accepted main. Therefore stale `v9/*` branch heads are not merged into PR #584.
+V9 is now the migration source for the one forward V10/Timeweb runtime.
+
+Current internal checkpoint is **V9C-A / AUTHORITY_AND_INVENTORY**. Ordered convergence
+is V9C-A authority/inventory -> V9C-B deterministic source relocation -> V9C-C runtime
+entrypoint convergence -> V9C-D GPT/retired-provider working-tree retirement -> V9C-E
+CI/recovery convergence -> V9C-F whole-tree legacy absence proof.
+
+Legacy files may be deleted only after replacement, producer/consumer migration,
+parity/contract regression, zero required current consumers, and recovery/security
+proof. Git history is retained. PR #584 must not be merged to `main` without a new
+explicit OWNER instruction.
+
+This authority does not deploy TW-C, cut over production PostgreSQL, mutate DNS/TLS,
+activate Telegram public users, authorize broker write or Real money, start WEB-VISUAL,
+or unlock WP23+.
+
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
 Accepted historical Cloudflare/Render/Neon chains remain evidence of what earlier code proved, but they do not remain future platform authority after Amendment 18 acceptance.

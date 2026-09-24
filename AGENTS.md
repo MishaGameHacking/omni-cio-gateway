@@ -4,7 +4,7 @@
 
 ## 1. Product boundary
 
-Поддерживается **один Omni-CIO product line**. Protected owner-accepted V9 production/recovery baseline остаётся `existing Omni-CIO Custom GPT v9.0.0 -> Omni-CIO Gateway (app:app) -> protected broker contours`. V10 productize/migrate этот же продукт; не создавать второй Gateway/Web/product-auth/AI/scheduler/broker/execution stack.
+Поддерживается **один Omni-CIO product line**. V9 теперь является **V9 migration source** внутри текущего V10 lineage: accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` уже является предком current main, поэтому stale `v9/*` branch-head нельзя вливать в PR #584. Полезная V9-логика переносится/переиспользуется в canonical V10/Timeweb surfaces, после parity + zero-consumer + recovery proof legacy working-tree paths удаляются; Git history остаётся архивом.
 
 For public V10, broker credentials are tenant-scoped `BrokerConnection` credentials, never global application credentials. GitHub/Timeweb engineering access never means broker/trading authority.
 
@@ -25,7 +25,8 @@ Current synchronized snapshot:
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets;
 - WEB-VISUAL and WP23+ are paused;
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
-- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
+- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
+- OWNER-approved V9→V10 convergence is active inside PR #584 beginning with `V9C-A / AUTHORITY_AND_INVENTORY`; PR #584 must not merge to `main` without a new explicit OWNER instruction.
 
 PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session. The optional Omni-CIO Telegram bot may only be linked after that account/session exists; bot chat, `/start`, Bot API identity or bot-token possession can never create an account, mint/select a tenant or replace product login.
 
@@ -270,7 +271,7 @@ Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow
 
 ## 14. V9 / V10 boundary
 
-Protected V9 remains production/recovery until an explicit parity/decommission gate. Stable entrypoint remains `app:app`. Do not mutate/delete protected V9 Render merely because Render is retired from **new V10** authority. V10 is controlled migration/productization, not greenfield rewrite.
+Amendment 20 changes the forward architecture: V9 is a migration source, not a permanent parallel runtime. Current checkpoint `V9C-A` inventories the accepted V9 source already present in the main lineage. Remaining deterministic root modules move into canonical `omni_cio/` packages by reuse/extraction; `app.py`, `app_v360.py`, `app_v371.py`, `main.py` and retired provider/GPT working-tree artifacts are removed only after their replacement/parity/consumer/recovery gates. Git history is preserved. Until V9C-C/V9C-D actually close those gates, existing paths remain present and must not be deleted prematurely.
 
 ## 15. OWNER participation / handoff law
 

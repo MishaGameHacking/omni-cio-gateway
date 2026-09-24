@@ -1,0 +1,157 @@
+{
+  "schema": "omni-cio.v10.v9-to-v10-convergence.v1",
+  "status": "OWNER_APPROVED_BRANCH_LOCAL_ACTIVE",
+  "decision_date": "2026-09-24",
+  "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+  "branch": "system/timeweb-platform-consolidation-tw-b",
+  "pull_request": 584,
+  "accepted_v9_repository_target": "b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62",
+  "accepted_main_at_authority_restore": "26bdc17c4e5d68c262f47b999e975b1eb8651858",
+  "history_policy": {
+    "stale_v9_branch_direct_merge_allowed": false,
+    "accepted_v9_target_already_in_main_lineage": true,
+    "git_history_rewrite_allowed": false,
+    "git_history_is_historical_archive": true,
+    "working_tree_legacy_retirement_allowed_after_gate": true
+  },
+  "final_runtime": {
+    "product_line": "V10_ONLY_AFTER_CONVERGENCE_AND_OWNER_ACCEPTED_LANDING",
+    "provider": "TIMEWEB_APP_PLATFORM",
+    "application_entrypoint": "apps.api.hosted_runtime:create_app",
+    "database": "TIMEWEB_POSTGRESQL_18_AFTER_TW_D",
+    "human_login_provider": "TELEGRAM_LOGIN_ONLY"
+  },
+  "current_checkpoint": "V9C-A",
+  "checkpoints": [
+    "V9C-A_AUTHORITY_AND_INVENTORY",
+    "V9C-B_DETERMINISTIC_SOURCE_RELOCATION",
+    "V9C-C_RUNTIME_ENTRYPOINT_CONVERGENCE",
+    "V9C-D_GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT",
+    "V9C-E_CI_RECOVERY_CONVERGENCE",
+    "V9C-F_WHOLE_TREE_LEGACY_ABSENCE_PROOF"
+  ],
+  "already_canonical_reuse": [
+    "omni_cio/router",
+    "omni_cio/policy",
+    "omni_cio/universe",
+    "omni_cio/candidates",
+    "omni_cio/research",
+    "omni_cio/credit",
+    "omni_cio/funds",
+    "omni_cio/risk",
+    "omni_cio/strategy",
+    "omni_cio/optimizer",
+    "omni_cio/plans",
+    "omni_cio/plan_execution",
+    "omni_cio/watchtower",
+    "omni_cio/decision_journal",
+    "omni_cio/real_trading"
+  ],
+  "root_relocation_plan": [
+    {
+      "source": "portfolio_market.py",
+      "target": "omni_cio/portfolio/market_source_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "portfolio_analytics.py",
+      "target": "omni_cio/analytics/portfolio_source_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "cash_liquidity.py",
+      "target": "omni_cio/analytics/cash_liquidity_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "operations_analytics.py",
+      "target": "omni_cio/analytics/operations_source_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "purchase_capacity.py",
+      "target": "omni_cio/pretrade/purchase_capacity_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "purchase_capacity_integrity.py",
+      "target": "omni_cio/pretrade/purchase_capacity_integrity_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "sale_capacity.py",
+      "target": "omni_cio/pretrade/sale_capacity_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "sale_capacity_normalization.py",
+      "target": "omni_cio/pretrade/sale_capacity_normalization_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "sdk_order_compat.py",
+      "target": "omni_cio/adapters/tinvest_order_compat_v1.py",
+      "state": "PLANNED"
+    },
+    {
+      "source": "broker_report_reconciliation",
+      "target": "omni_cio/reconciliation",
+      "state": "PLANNED"
+    }
+  ],
+  "runtime_retirement_plan": [
+    {
+      "path": "app.py",
+      "state": "BLOCKED_UNTIL_V9C_C"
+    },
+    {
+      "path": "app_v360.py",
+      "state": "BLOCKED_UNTIL_V9C_C"
+    },
+    {
+      "path": "app_v371.py",
+      "state": "BLOCKED_UNTIL_V9C_C"
+    },
+    {
+      "path": "main.py",
+      "state": "BLOCKED_UNTIL_V9C_C"
+    }
+  ],
+  "provider_worktree_retirement": {
+    "checkpoint": "V9C-D",
+    "providers": [
+      "RENDER",
+      "CLOUDFLARE",
+      "NEON",
+      "CLOUD_RU",
+      "VK_ID"
+    ],
+    "current_feature_authority": false,
+    "zero_current_consumer_proof_required": true,
+    "history_preserved_in_git": true
+  },
+  "deletion_gate": {
+    "replacement_exists": true,
+    "current_consumers_migrated": true,
+    "parity_or_contract_tests_green": true,
+    "required_runtime_ci_consumer_count_zero": true,
+    "current_recovery_proven": true,
+    "security_and_tenant_boundaries_preserved": true,
+    "no_guard_weakening": true
+  },
+  "merge_authority": {
+    "pr_584_merge_without_new_explicit_owner_instruction_allowed": false,
+    "internal_checkpoint_merge_to_main_required": false,
+    "exact_new_main_postmerge_required_after_owner_authorized_landing": true
+  },
+  "protected_invariants": {
+    "public_multi_user_enabled": false,
+    "telegram_public_activation_enabled": false,
+    "broker_write_enabled": false,
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "transfer_withdrawal_authority": false,
+    "margin_leverage_authority": false,
+    "uncovered_short_authority": false
+  }
+}

@@ -1,8 +1,8 @@
 {
   "matrix": "V10_COMPONENT_REUSE_MATRIX",
-  "version": 2,
-  "status": "WP12_REFINED_MATRIX",
-  "effective_date": "2026-08-09",
+  "version": 3,
+  "status": "AMENDMENT_20_V9_CONVERGENCE_REFINED_MATRIX",
+  "effective_date": "2026-09-24",
   "decision_values": [
     "REUSE_AS_IS",
     "WRAP_ADAPTER",
@@ -38,23 +38,39 @@
   "components": [
     {
       "id": "COMP-V9-ENTRYPOINT",
-      "current_paths": ["app.py", "app_v*.py", "main.py"],
-      "role": "protected V9 Gateway/runtime compatibility entrypoint",
-      "decision": "WRAP_ADAPTER",
-      "reason": "V9 app:app remains protected until owning V10 cutover gate; V10 must coexist before replacement",
+      "current_paths": [
+        "app.py",
+        "app_v*.py",
+        "main.py"
+      ],
+      "role": "V9 compatibility runtime migration source pending V9C-C retirement",
+      "decision": "RETIRE",
+      "reason": "Amendment 20 selects the V10 Timeweb hosted runtime as the only forward runtime after parity/consumer/recovery proof; stale V9 branch history is not merged.",
       "financial_semantics_change_allowed": false,
-      "owning_wp": "WP4 and later API/runtime cutover WPs",
-      "retirement_gate": "explicit V10 replacement parity + recovery acceptance"
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-C",
+      "retirement_gate": "V9C-C replacement parity + zero current runtime/CI consumers + recovery acceptance"
     },
     {
       "id": "COMP-DETERMINISTIC-CORE",
-      "current_paths": ["omni_cio/", "portfolio_market.py", "portfolio_analytics.py", "cash_liquidity.py", "purchase_capacity.py", "purchase_capacity_integrity.py", "operations_analytics.py"],
+      "current_paths": [
+        "omni_cio/",
+        "portfolio_market.py",
+        "portfolio_analytics.py",
+        "cash_liquidity.py",
+        "purchase_capacity.py",
+        "purchase_capacity_integrity.py",
+        "operations_analytics.py"
+      ],
       "role": "deterministic financial/domain engines",
-      "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["REUSE_AS_IS", "WRAP_ADAPTER", "EXTRACT_TO_CORE"],
+      "decision": "EXTRACT_TO_CORE",
+      "preferred_choices": [
+        "REUSE_AS_IS",
+        "EXTRACT_TO_CORE"
+      ],
       "rewrite_default": "DENY",
       "financial_semantics_change_allowed": "ONLY_WITH_VERSIONED_CONTRACT_AND_PARITY_EVIDENCE",
-      "owning_wp": "Block D/H/I owning WPs"
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
+      "reason": "Most V9 engines already live under omni_cio; remaining root-level deterministic modules are relocated without semantic rewrite."
     },
     {
       "id": "COMP-V10-CANONICAL-DOMAIN-IDENTITY",
@@ -78,27 +94,40 @@
     },
     {
       "id": "COMP-BROKER-RECON",
-      "current_paths": ["broker_report_reconciliation/"],
+      "current_paths": [
+        "broker_report_reconciliation/"
+      ],
       "role": "broker report reconciliation",
-      "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["REUSE_AS_IS", "WRAP_ADAPTER", "EXTRACT_TO_CORE"],
+      "decision": "EXTRACT_TO_CORE",
+      "preferred_choices": [
+        "REUSE_AS_IS",
+        "EXTRACT_TO_CORE"
+      ],
       "rewrite_default": "DENY",
       "financial_semantics_change_allowed": "ONLY_WITH_VERSIONED_CONTRACT_AND_PARITY_EVIDENCE",
-      "owning_wp": "Block D broker report WPs"
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
+      "reason": "Move the existing reconciliation implementation under canonical omni_cio ownership before removing the root package."
     },
     {
       "id": "COMP-CURRENT-GPT-ASSETS",
-      "current_paths": ["gpt/"],
+      "current_paths": [
+        "gpt/"
+      ],
       "role": "current GPT setup/knowledge/recovery assets",
-      "decision": "WRAP_ADAPTER",
-      "reason": "inventory accepted instructions/knowledge/tool expectations and migrate useful authority into V10 Cortex policy/RAG/tool contracts while keeping GPT as fallback until parity gate",
+      "decision": "EXTRACT_TO_CORE",
+      "reason": "Migrate still-current policy/knowledge/tool authority into V10 project/system contracts, then retire V9-specific working-tree GPT assets at V9C-D; Git history preserves provenance.",
       "financial_semantics_change_allowed": false,
-      "owning_wp": "Block G",
-      "retirement_gate": "GPT parity/decommission gate"
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-D",
+      "retirement_gate": "V9C-D current-policy parity + zero current runtime/tool consumer proof"
     },
     {
       "id": "COMP-GITHUB-CI",
-      "current_paths": [".github/workflows/", ".github/dependabot.yml", ".github/CODEOWNERS", ".github/pull_request_template.md"],
+      "current_paths": [
+        ".github/workflows/",
+        ".github/dependabot.yml",
+        ".github/CODEOWNERS",
+        ".github/pull_request_template.md"
+      ],
       "role": "engineering control plane and CI policy",
       "decision": "REUSE_AS_IS",
       "reason": "WP0-WP3 accepted hybrid GitHub-hosted + Lenovo authoritative baseline is protected and extended incrementally in WP4",
@@ -107,25 +136,37 @@
     },
     {
       "id": "COMP-V10-AI-ROOT",
-      "current_paths": ["ai/"],
+      "current_paths": [
+        "ai/"
+      ],
       "role": "reserved V10 Cortex/policy/eval root",
       "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["WRAP_ADAPTER", "EXTRACT_TO_CORE"],
+      "preferred_choices": [
+        "WRAP_ADAPTER",
+        "EXTRACT_TO_CORE"
+      ],
       "rewrite_default": "NOT_APPLICABLE_FOR_NEW_RESERVED_ROOT",
       "owning_wp": "Block G"
     },
     {
       "id": "COMP-V10-APPS-ROOT",
-      "current_paths": ["apps/"],
+      "current_paths": [
+        "apps/"
+      ],
       "role": "reserved V10 application/adaptor root",
       "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["WRAP_ADAPTER", "EXTRACT_TO_CORE"],
+      "preferred_choices": [
+        "WRAP_ADAPTER",
+        "EXTRACT_TO_CORE"
+      ],
       "rewrite_default": "NOT_APPLICABLE_FOR_NEW_RESERVED_ROOT",
       "owning_wp": "Block E/F"
     },
     {
       "id": "COMP-V10-INFRASTRUCTURE-ROOT",
-      "current_paths": ["infrastructure/"],
+      "current_paths": [
+        "infrastructure/"
+      ],
       "role": "reserved V10 node/bootstrap/deployment infrastructure",
       "decision": "REUSE_AS_IS",
       "reason": "WP5-WP8 established and accepted the Lenovo node, privilege, bootstrap and local-secret infrastructure; WP9 extends those reviewed boundaries narrowly rather than replacing them",
@@ -137,17 +178,26 @@
       "current_paths": [],
       "role": "future source-controlled V10 Web cabinet",
       "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["WRAP_ADAPTER"],
+      "preferred_choices": [
+        "WRAP_ADAPTER"
+      ],
       "rewrite_default": "NOT_APPLICABLE_NEW_PRODUCT_SURFACE",
       "business_logic_rule": "Web renders canonical Core contracts and must not become a second financial engine",
       "owning_wp": "Block E"
     },
     {
       "id": "COMP-REAL-EXECUTION",
-      "current_paths": ["omni_cio/real_trading/", "omni_cio/plan_execution/"],
+      "current_paths": [
+        "omni_cio/real_trading/",
+        "omni_cio/plan_execution/"
+      ],
       "role": "protected money-critical execution lifecycle",
       "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["REUSE_AS_IS", "WRAP_ADAPTER", "EXTRACT_TO_CORE"],
+      "preferred_choices": [
+        "REUSE_AS_IS",
+        "WRAP_ADAPTER",
+        "EXTRACT_TO_CORE"
+      ],
       "rewrite_default": "DENY",
       "authority_change_allowed": "ONLY_BLOCK_I_OWNER_APPROVED_GATE",
       "owning_wp": "Block I"

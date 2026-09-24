@@ -1,8 +1,8 @@
 # Вклад в Omni-CIO
 
-Omni-CIO — один продукт. Protected V9 production/recovery baseline остаётся `existing Custom GPT v9.0.0 + production Gateway app:app`; V10 — единственная active feature program в этом же репозитории.
+Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается в PR #584.
 
-Protected V9 v9.0.0 remains in controlled maintenance; V10 changes must not reinterpret that historical recovery state.
+OWNER-approved convergence выполняется внутри той же ветки #584 начиная с `V9C-A / AUTHORITY_AND_INVENTORY`: reuse/extract нужной V9-логики в canonical V10/Timeweb, затем доказанное удаление legacy working-tree paths при сохранении Git history.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -37,7 +37,8 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - Cloudflare/Neon/Render/Cloud.ru/VK ID are retirement targets;
 - WEB-VISUAL and WP23+ remain paused during consolidation;
 - public multi-user remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
-- broker-write and Real-money remain disabled.
+- broker-write and Real-money remain disabled;
+- V9C-A→V9C-F convergence runs inside PR #584; merging PR #584 to `main` still requires a new explicit OWNER instruction.
 
 Exact dynamic state still comes only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 

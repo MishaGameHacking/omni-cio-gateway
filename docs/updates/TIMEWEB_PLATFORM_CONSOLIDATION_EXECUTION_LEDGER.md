@@ -26,7 +26,7 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 | Order | Member milestone | State | Branch-local evidence | Notes |
 |---:|---|---|---|---|
 | 1 | TW-A / INVENTORY_AND_AUTHORITY | CERTIFIED_GREEN / ACCEPTED | PR #583; post-merge Regression Shield #1647 + Governance #1909 + Timeweb Proof #14 | Inventory/authority cleanup accepted on exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4` |
-| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | IN_PROGRESS | continuation branch `system/timeweb-platform-consolidation-tw-b` | Provider-neutral source/runtime only; no production cutover |
+| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | IN_PROGRESS | continuation branch `system/timeweb-platform-consolidation-tw-b` | Includes OWNER-approved V9C-A→V9C-F source/runtime convergence; no production cutover |
 | 3 | TW-C / TIMEWEB_APP_CANDIDATE | TODO |  | Technical Timeweb candidate only after TW-B |
 | 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | TODO |  | Mandatory production DB split gate |
 | 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | TODO |  | Mandatory DNS/public cutover split gate |
@@ -34,6 +34,25 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 | 7 | TW-G / LEGACY_PROVIDER_DECOMMISSION | TODO |  | External proof + active-authority cleanup; repository history stays archive-in-place |
 
 Milestone state is branch-local only and does not change accepted V10 implementation progress.
+
+## 2A. V9-to-V10 convergence checkpoints inside TW-B
+
+| Order | Convergence checkpoint | State | Purpose |
+|---:|---|---|---|
+| V9C-A | AUTHORITY_AND_INVENTORY | IN_PROGRESS | Lock accepted V9 lineage, migration inventory, no-stale-branch-merge rule and machine guard |
+| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | TODO | Move remaining root deterministic sources into canonical `omni_cio/` packages with parity |
+| V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | TODO | Eliminate supported-runtime consumers of `app.py` / `app_v360.py` / `app_v371.py` / `main.py`, then retire them |
+| V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | TODO | Migrate still-needed policy/evidence, then delete zero-consumer legacy provider/GPT working-tree artifacts |
+| V9C-E | CI_RECOVERY_CONVERGENCE | TODO | Replace legacy entrypoint/provider checks with equal-or-stronger V10/Timeweb recovery/security gates |
+| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF | TODO | Prove no current runtime/deploy/required-CI/current-authority dependency on retired paths |
+
+Accepted V9 migration source is
+`b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62`, already contained in current main
+ancestry. Direct merge of stale `v9/*` branch heads is forbidden. Git history remains
+the immutable archive while proven obsolete working-tree files are retired.
+
+PR #584 remains the sole integrated continuation branch and must not merge to `main`
+without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
