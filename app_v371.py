@@ -8,7 +8,7 @@ import app_v360 as legacy
 from app_v360 import *  # noqa: F401,F403
 from omni_cio.pretrade import purchase_capacity_v1 as purchase_capacity_engine
 from omni_cio.pretrade import purchase_capacity_integrity_v1 as purchase_capacity_integrity
-from omni_cio.adapters import sdk_order_compat_v1 as sdk_order_compat
+from omni_cio.adapters import tinvest_order_compat_v1 as sdk_order_compat
 
 
 APP_VERSION = "3.7.1"
