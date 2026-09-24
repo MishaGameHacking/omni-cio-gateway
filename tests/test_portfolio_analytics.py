@@ -10,7 +10,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient
 
 import app as gateway_module
-from omni_cio.analytics import portfolio_structure_v1 as portfolio_analytics
+from omni_cio.analytics import portfolio_source_v1 as portfolio_analytics
 
 
 client = TestClient(gateway_module.app)
