@@ -127,7 +127,6 @@ def _exact_lots(
     return result if result >= 0 else None
 
 
-
 def _matching_security_rows(
     positions_data: Mapping[str, Any] | None,
     instrument_uid: str,
@@ -308,6 +307,7 @@ def _open_orders_view(
         "invalid_order_rows": invalid_rows,
     }
 
+
 def _normalized_money(
     base: Any,
     value: Any,
@@ -387,8 +387,6 @@ def _sale_currency_consistency(
     }
 
 
-
-
 def _sale_preview_status(
     *,
     instrument_resolved: bool,
@@ -447,6 +445,7 @@ def _sale_preview_warnings(freshness: Mapping[str, Any]) -> list[str]:
             "The selected sale price is stale relative to the gateway freshness threshold."
         )
     return warnings
+
 
 def build_sale_capacity_preview(
     *,

@@ -123,7 +123,6 @@ def _position_record(
     return result
 
 
-
 def _portfolio_records_by_currency(
     *,
     base: Any,

@@ -63,7 +63,6 @@ def _money_view(amount: Decimal, currency: str) -> dict[str, str]:
     }
 
 
-
 def _comparison_base(
     *,
     status: str,
@@ -138,6 +137,7 @@ def _comparison(
         reason=reason or "",
     )
 
+
 def _commission_candidates(
     order: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, tuple[Decimal, str]]]:
@@ -185,7 +185,6 @@ def _canonical_commission(
         sum((amount for amount, _ in components), Decimal("0")),
         next(iter(component_currencies), "") or preview_currency,
     )
-
 
 
 def _commission_components(
@@ -259,6 +258,7 @@ def _component_commission_check(
         "difference": _decimal_string(difference),
         "currency": canonical_currency or preview_currency or "unavailable",
     }
+
 
 def _incorrect_commission_sum(
     *,
@@ -350,6 +350,7 @@ def build_commission_summary(order_preview: Any) -> dict[str, Any]:
             ),
         ],
     }
+
 
 def build_currency_consistency(
     payload: dict[str, Any],
@@ -449,7 +450,6 @@ def build_limit_summary(payload: dict[str, Any]) -> dict[str, Any]:
             "current-market diagnostic."
         ),
     }
-
 
 
 def _initial_amount_check(
@@ -610,6 +610,7 @@ def build_calculation_checks(
         "not_applicable": not_applicable,
         "integrity_confirmed": integrity_confirmed,
     }
+
 
 def apply_purchase_capacity_integrity(payload: Any) -> dict[str, Any]:
     result = deepcopy(_dict(payload))

@@ -367,7 +367,6 @@ def load_operations_pages(
     }
 
 
-
 def _period_rows(
     *,
     base: Any,
@@ -903,6 +902,7 @@ def build_operations_analytics(
         ),
     }
     return base.json_safe_value(payload)
+
 
 def get_operations_analytics(
     *,

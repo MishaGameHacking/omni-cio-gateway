@@ -79,7 +79,6 @@ def _sell_direction() -> _SellDirectionValue:
     return _SellDirectionValue()
 
 
-
 def _load_sale_position_evidence(
     *,
     base: Any,

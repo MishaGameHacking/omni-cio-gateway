@@ -85,7 +85,6 @@ def _compact_instrument(
     return {key: value for key, value in result.items() if value not in (None, "")}
 
 
-
 def _market_position_candidate(
     base: Any,
     item: object,
@@ -176,6 +175,7 @@ def _group_market_positions(
         _merge_market_position(existing, candidate)
     return list(grouped.values()), quality
 
+
 def _money_rows(base: Any, raw_rows: Any) -> dict[str, Decimal]:
     result: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     if not isinstance(raw_rows, list):
@@ -228,7 +228,6 @@ def _safe_last_price_item(
     return base.json_safe_value(
         {key: value for key, value in result.items() if value is not None}
     )
-
 
 
 def _index_last_prices(
@@ -297,11 +296,11 @@ def _batch_last_prices(
             },
         )
 
+
 def _price_from_level(base: Any, level: Any) -> Decimal | None:
     if not isinstance(level, dict):
         return None
     return base.decimal_from_any(level.get("price"))
-
 
 
 def _valuation_prices(
@@ -432,6 +431,7 @@ def calculate_position_valuation(
         totals,
     )
 
+
 def _compact_order_book(order_book: dict[str, Any]) -> dict[str, Any]:
     fields = (
         "status",
@@ -499,7 +499,6 @@ def _totals_rows(
             }
         )
     return rows
-
 
 
 def _market_component(

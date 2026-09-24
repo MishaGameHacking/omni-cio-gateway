@@ -355,7 +355,6 @@ def _order_preview_view(
     return result
 
 
-
 def _max_lots_check(
     *,
     quantity_lots: int,
@@ -466,7 +465,6 @@ def _affordability(
     }
 
 
-
 def _purchase_preview_status(
     *,
     instrument_resolved: bool,
@@ -530,6 +528,7 @@ def _purchase_preview_warnings(
             "own-funds or preliminary-cost comparison is unavailable."
         )
     return warnings
+
 
 def build_purchase_capacity_preview(
     *,
@@ -661,7 +660,6 @@ def build_purchase_capacity_preview(
         "warnings": warnings,
     }
     return base.json_safe_value(payload)
-
 
 
 def _load_read_only_market_snapshot(

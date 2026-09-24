@@ -77,7 +77,6 @@ def _value_or_unavailable(
     return base.decimal_string(values.get(currency, Decimal("0")))
 
 
-
 def _cash_sources(
     *,
     base: Any,
@@ -103,7 +102,6 @@ def _source_value(
 ) -> tuple[Decimal, bool]:
     values, present, _ = sources[name]
     return values.get(currency, Decimal("0")), currency in present
-
 
 
 def _cash_discrepancies(
@@ -407,6 +405,7 @@ def build_cash_liquidity_snapshot(
         ),
     }
     return base.json_safe_value(payload)
+
 
 def get_cash_liquidity_snapshot(
     *,
