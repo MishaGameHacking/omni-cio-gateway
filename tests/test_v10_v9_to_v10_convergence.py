@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def _copy(root: Path) -> None:
     paths = (
         guard.CONTRACT,
+        guard.PARITY_LEDGER,
         guard.AMENDMENT,
         guard.INDEX,
         guard.STATUS,
@@ -110,6 +111,19 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError, "V9C_LEGACY_IMPORT_REINTRODUCED"
             ):
+                guard.validate(root)
+
+    def test_rejects_unproven_relocation_parity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.PARITY_LEDGER.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            for row in payload["capabilities"]:
+                if row.get("id") == "PARITY-PRETRADE-CAPACITY":
+                    row["status"] = "CONTRACT_DEFINED"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "V9C_PARITY_STATE_DRIFT"):
                 guard.validate(root)
 
     def test_rejects_premature_runtime_retirement(self) -> None:
