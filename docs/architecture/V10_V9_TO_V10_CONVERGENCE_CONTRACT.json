@@ -19,7 +19,7 @@
     "database": "TIMEWEB_POSTGRESQL_18_AFTER_TW_D",
     "human_login_provider": "TELEGRAM_LOGIN_ONLY"
   },
-  "current_checkpoint": "V9C-A",
+  "current_checkpoint": "V9C-B",
   "checkpoints": [
     "V9C-A_AUTHORITY_AND_INVENTORY",
     "V9C-B_DETERMINISTIC_SOURCE_RELOCATION",
@@ -49,52 +49,52 @@
     {
       "source": "portfolio_market.py",
       "target": "omni_cio/portfolio/market_source_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "portfolio_analytics.py",
       "target": "omni_cio/analytics/portfolio_source_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "cash_liquidity.py",
       "target": "omni_cio/analytics/cash_liquidity_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "operations_analytics.py",
       "target": "omni_cio/analytics/operations_source_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "purchase_capacity.py",
       "target": "omni_cio/pretrade/purchase_capacity_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "purchase_capacity_integrity.py",
       "target": "omni_cio/pretrade/purchase_capacity_integrity_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "sale_capacity.py",
       "target": "omni_cio/pretrade/sale_capacity_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "sale_capacity_normalization.py",
       "target": "omni_cio/pretrade/sale_capacity_normalization_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "sdk_order_compat.py",
       "target": "omni_cio/adapters/tinvest_order_compat_v1.py",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     },
     {
       "source": "broker_report_reconciliation",
       "target": "omni_cio/reconciliation",
-      "state": "PLANNED"
+      "state": "RELOCATED"
     }
   ],
   "runtime_retirement_plan": [
