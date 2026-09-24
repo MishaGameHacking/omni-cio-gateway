@@ -91,7 +91,6 @@ _IGNORED_DIRECTORIES = frozenset(
 )
 _CONTENT_SCAN_PREFIXES = (
     "apps/",
-    "broker_report_reconciliation/",
     "cloudflare/",
     "infrastructure/",
     "omni_cio/",
