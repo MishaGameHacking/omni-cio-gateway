@@ -10,7 +10,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient
 
 import app as gateway_module
-import cash_liquidity
+from omni_cio.portfolio import cash_liquidity_v1 as cash_liquidity
 
 
 def money(currency: str, units: int, nano: int = 0) -> dict[str, object]:
