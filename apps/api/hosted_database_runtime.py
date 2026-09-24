@@ -28,9 +28,7 @@ _EXPECTED_RELATION_PRIVILEGES = frozenset(
         ("web_sessions", "UPDATE", "NO"),
     }
 )
-_EXPECTED_ROUTINE_PRIVILEGES = frozenset(
-    {("current_tenant_scope", "EXECUTE", "NO")}
-)
+_EXPECTED_ROUTINE_PRIVILEGES = frozenset({("current_tenant_scope", "EXECUTE", "NO")})
 _EXPECTED_RLS_POLICIES = {
     "broker_accounts": "broker_accounts_tenant_isolation",
     "broker_connection_accounts": "broker_connection_accounts_tenant_isolation",
@@ -249,7 +247,15 @@ def _validate_force_rls_policies(connection: Any) -> None:
     ).fetchall()
     if len(policies) != len(relation_names):
         raise RuntimeError("HOSTED_RUNTIME_TENANT_POLICY_DRIFT")
-    for relation, policy_name, command, permissive, public_only, using, check in policies:
+    for (
+        relation,
+        policy_name,
+        command,
+        permissive,
+        public_only,
+        using,
+        check,
+    ) in policies:
         expected_name = _EXPECTED_RLS_POLICIES.get(str(relation))
         if (
             policy_name != expected_name

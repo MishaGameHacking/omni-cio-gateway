@@ -89,6 +89,8 @@ class _RuntimeProbeConnection:
         del params
         if statement == "SHOW server_version_num":
             return _Result(one=("180000",))
+        if "AS database_owned" in statement:
+            return _Result(one=(0, 0, 0, 0))
         if "FROM pg_catalog.pg_roles" in statement:
             return _Result(
                 one=(
@@ -103,8 +105,6 @@ class _RuntimeProbeConnection:
             )
         if "FROM pg_catalog.pg_auth_members" in statement:
             return _Result(one=(0,))
-        if "AS database_owned" in statement:
-            return _Result(one=(0, 0, 0, 0))
         if "has_database_privilege" in statement:
             return _Result(one=(True, False, False))
         if "has_schema_privilege" in statement:
@@ -113,25 +113,25 @@ class _RuntimeProbeConnection:
             return _Result(one=(0,))
         if "information_schema.role_table_grants" in statement:
             rows = [
-                    ("broker_accounts", "INSERT", "NO"),
-                    ("broker_accounts", "SELECT", "NO"),
-                    ("broker_connection_accounts", "INSERT", "NO"),
-                    ("broker_connection_accounts", "SELECT", "NO"),
-                    ("broker_connections", "INSERT", "NO"),
-                    ("broker_connections", "SELECT", "NO"),
-                    ("broker_connections", "UPDATE", "NO"),
-                    ("external_identity_bindings", "INSERT", "NO"),
-                    ("external_identity_bindings", "SELECT", "NO"),
-                    ("provider_auth_transactions", "DELETE", "NO"),
-                    ("provider_auth_transactions", "INSERT", "NO"),
-                    ("provider_auth_transactions", "SELECT", "NO"),
-                    ("tenants", "INSERT", "NO"),
-                    ("users", "INSERT", "NO"),
-                    ("users", "SELECT", "NO"),
-                    ("web_sessions", "DELETE", "NO"),
-                    ("web_sessions", "INSERT", "NO"),
-                    ("web_sessions", "SELECT", "NO"),
-                    ("web_sessions", "UPDATE", "NO"),
+                ("broker_accounts", "INSERT", "NO"),
+                ("broker_accounts", "SELECT", "NO"),
+                ("broker_connection_accounts", "INSERT", "NO"),
+                ("broker_connection_accounts", "SELECT", "NO"),
+                ("broker_connections", "INSERT", "NO"),
+                ("broker_connections", "SELECT", "NO"),
+                ("broker_connections", "UPDATE", "NO"),
+                ("external_identity_bindings", "INSERT", "NO"),
+                ("external_identity_bindings", "SELECT", "NO"),
+                ("provider_auth_transactions", "DELETE", "NO"),
+                ("provider_auth_transactions", "INSERT", "NO"),
+                ("provider_auth_transactions", "SELECT", "NO"),
+                ("tenants", "INSERT", "NO"),
+                ("users", "INSERT", "NO"),
+                ("users", "SELECT", "NO"),
+                ("web_sessions", "DELETE", "NO"),
+                ("web_sessions", "INSERT", "NO"),
+                ("web_sessions", "SELECT", "NO"),
+                ("web_sessions", "UPDATE", "NO"),
             ]
             if self._extra_relation_privilege:
                 rows.append(("tenants", "SELECT", "NO"))

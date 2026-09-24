@@ -598,6 +598,27 @@ name.
 
 ---
 
+## FL-026 — SQL test doubles must dispatch on the most specific query signature
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / exact head `f5a69c0fd34fc58ed9b79c0d13840a25c17a5c66`
+
+**Symptom / failing gate:** the authoritative Regression Shield reported four failures in the new hosted PostgreSQL readiness tests. The production probe called the ownership query, but the fake connection returned the runtime-role tuple instead; converting the role name to `int` then raised `ValueError`. WP17/Fast PR also rejected two newly edited files on Ruff formatting.
+
+**Root cause:** the fake SQL dispatcher matched the broad substring `FROM pg_catalog.pg_roles` before the ownership query's more specific `AS database_owned` signature. The ownership query legitimately contains nested `pg_roles` subqueries, so the broad branch shadowed the intended fake response. The same correction batch had also been published without reproducing the exact formatter scope.
+
+**Blast radius searched:** every branch in `_RuntimeProbeConnection.execute`, every SQL statement emitted by `probe_hosted_runtime_database`, the authoritative PostgreSQL readiness tests, WP17 static-quality scope and Fast PR changed-file formatter scope.
+
+**Why preflight missed it:** source review treated SQL substring dispatch branches as independent predicates and did not test overlap/precedence among them. Formatting was checked conceptually rather than by the exact pinned Ruff formatter before publishing the commit.
+
+**Corrective change:** dispatch the specific ownership-query marker before the broad role-catalog marker, preserve the production probe unchanged, and apply the exact formatter output reported by CI to both affected Python files.
+
+**Permanent regression/guard:** the positive readiness test now traverses the ownership branch successfully, while the existing negative ACL/RLS cases continue through the same fake. Future fake SQL dispatchers must order predicates from most specific to least specific or use exact normalized statement keys.
+
+**Future prevention rule:** when a test double routes by substring, perform an overlap audit of all predicates before publication; when CI has an exact formatter gate, reproduce that formatter scope before creating the next exact-head checkpoint.
+
+---
+
 ## Entry template
 
 ```text
