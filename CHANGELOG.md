@@ -2,19 +2,19 @@
 
 Краткая история заметных изменений Omni-CIO. Подробная инженерная последовательность остаётся в Git commits, issues и PR; этот файл фиксирует release/program milestones без создания второго current-state ledger.
 
-> **Правило чтения истории.** Закрытые issues, merged PR, package-local records и старые комментарии являются историческими снимками состояния на момент работы. Они не определяют текущий V10 WP/progress. Для текущего состояния использовать accepted `main`, `README.md`, `knowledge/16_CURRENT_PROGRAM_STATUS.md` для protected V9 runtime и `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` для active V10 program. Lifecycle: `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
+> **Правило чтения истории.** Закрытые issues, merged PR, package-local records и старые комментарии являются историческими снимками состояния на момент работы. Они не определяют текущий V10 WP/progress. Для текущего состояния использовать accepted `main`, `README.md` и `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; `knowledge/16_CURRENT_PROGRAM_STATUS.md` сохраняет историческое V9 acceptance/recovery evidence и не задаёт отдельную forward runtime line. Lifecycle: `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
 ## [Unreleased]
 
-### Active V10 development + protected V9 maintenance
+### Active V10 development / V9 migration source
 
-- Omni-CIO v9.0.0 полностью реализован, merged и owner-accepted на **существующем** Custom GPT; V9 remains **controlled maintenance / recovery baseline**.
+- Accepted V9 target remains historical acceptance/recovery evidence and a **V9 migration source** for the single forward V10/Timeweb runtime; stale `v9/*` branch heads are not merged into PR #584.
 - Omni-CIO V10 является **активной feature-development program** после OWNER command `START V10` 2026-08-05. Точный accepted progress/current-next WP намеренно не дублируется в changelog и читается только из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 - V10 work идёт через current authorized Work Package, focused branch/PR, root-cause/blast-radius preflight, all applicable exact-head checks SUCCESS, squash merge и required post-merge verification.
-- V9 maintenance остаётся ограниченной dependency/security updates, compatibility fixes, documentation/recovery hygiene и другими owner-approved maintenance изменениями; она не расширяет broker authority.
+- OWNER-approved Amendment 20 converges remaining useful V9 behavior into canonical V10 packages/runtime inside PR #584, then retires zero-consumer legacy working-tree paths while Git history preserves provenance.
 - Изменения applied GPT configuration или reviewed Action contract дополнительно требуют owner Preview/`Update` на том же GPT; обычная backend/doc/V10 repository work не означает автоматическое изменение GPT Editor.
 - Protected rollback v8.6.1 сохраняется как проверенный recovery baseline и не является текущей applied-версией.
-- `app:app`, `trading_methods=false` и `REAL_TRADING_ENABLED=false` остаются защищёнными текущими safety invariants, пока owning accepted gate явно не меняет соответствующую authority.
+- `app:app` remains a temporary migration/recovery input until the V9C-C replacement/parity/recovery gate; `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain protected safety invariants.
 
 ## [2026-08-16] Engineering Quality / Pre-CI / Green-Merge governance — accepted
 

@@ -1,11 +1,11 @@
 # GitHub Copilot Instructions — Omni-CIO
 
-> **CURRENT AMENDMENT-18 OVERRIDE (2026-09-21):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+> **CURRENT AMENDMENT-20 OVERRIDE (2026-09-24):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** in PR #584. V9 is a **V9 migration source**, not a parallel forward runtime; stale `v9/*` branch heads are not merged. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets. Proven zero-consumer legacy working-tree paths are removed after replacement/parity/recovery proof while Git history preserves provenance. WEB-VISUAL and WP23+ remain paused.
 
 
 Работай только над существующим продуктом Omni-CIO в `MishaGameHacking/omni-cio-gateway`. Не создавай параллельный проект, второй Web/Core/Gateway/Telegram/AI/execution stack.
 
-Protected effective production/recovery V9 baseline остаётся `existing Omni-CIO Custom GPT v9.0.0 -> Omni-CIO Gateway (app:app) -> protected broker contours` in controlled maintenance. V10 — единственная active feature program.
+V10 is the single forward feature/runtime line. Accepted V9 behavior is a V9 migration source already present in current main ancestry. `app:app` and other root compatibility paths remain only until their owning V9C replacement/parity/recovery gates prove retirement safe.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -18,12 +18,12 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - Timeweb Cloud is the selected production runtime/database/domain platform;
 - Telegram Login is the only selected human login provider;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are historical/retirement targets with no new feature authority;
-- historical provider files remain archive-in-place by default;
+- historical provider/source artifacts may remain only while a current consumer, recovery gate or accepted evidence dependency still requires them; otherwise the working-tree copy is retired and Git history is the archive;
 - WEB-VISUAL and WP23+ remain paused/locked during consolidation;
 - `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-Before material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 status, V10 Program Lock/Master Plan/Amendments Index, Amendment 18, current status, owning contracts, open PR/issues and GitHub Actions.
+Before material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, historical V9 status, V10 Program Lock/Master Plan/Amendments Index, Amendments 18–20, current status, owning contracts, open PR/issues and GitHub Actions.
 
 ## GitHub / Timeweb authority
 
@@ -39,7 +39,7 @@ Timeweb Cloud is the selected production infrastructure platform after Amendment
 
 Telegram is identity only. It cannot mint tenant/infrastructure authority.
 
-Cloudflare, Neon, Render, Cloud.ru and VK ID are not current implementation targets. Their files may remain in the repository as archive-in-place historical evidence, but new code must not depend on them. Do not mass-delete historical provider files.
+Cloudflare, Neon, Render, Cloud.ru and VK ID are not current implementation targets. New code must not depend on them. Amendment 20 authorizes retirement of obsolete working-tree provider/runtime artifacts only after replacement, zero-current-consumer and recovery/security proof; provenance remains in Git history.
 
 Retired provider workflows/resources/secrets may be disabled/revoked only after the replacement Timeweb cutover/recovery gate.
 
@@ -139,7 +139,7 @@ Keep React/Vite and the Python/FastAPI product API provider-neutral. Timeweb-spe
 
 Timeweb Managed PostgreSQL 18 is the final relational target. Preserve migrations, exact numeric storage, least-privilege roles, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and migrated-data verification.
 
-Do not introduce new Cloudflare/Neon/Render/Cloud.ru/VK dependencies. Historical files may remain archive-in-place and are not deleted merely to clean keyword searches.
+Do not introduce new Cloudflare/Neon/Render/Cloud.ru/VK dependencies. Historical files are not deleted merely to clean keyword searches, but obsolete working-tree artifacts are retired after the Amendment-20 deletion gate proves replacement, zero current consumers and recovery/security continuity.
 
 Telegram Login is the only selected human authentication provider. Product path remains:
 
@@ -161,7 +161,7 @@ Never put real secrets in source, chat, PR comments, CI logs, screenshots or art
 
 Never request real broker/Telegram/VK/provider/DB/encryption/recovery credentials if the task can be completed without receiving them.
 
-Cloudflare API tokens/secrets belong in approved secret custody at the owning provider-action gate.
+Timeweb/Telegram/database secrets belong only in approved runtime secret custody at their owning gate; retired-provider secrets must not be recreated.
 
 Broker write remains OFF. `trading_methods=false`. `REAL_TRADING_ENABLED=false`. No transfer/withdrawal/margin/leverage/uncovered-short authority.
 
