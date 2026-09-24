@@ -26,6 +26,7 @@ PYPROJECT = ROOT / "pyproject.toml"
 _ACCEPTED_V9 = "".join(("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62"))
 _ACCEPTED_MAIN = "".join(("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858"))
 _BRANCH = "system/timeweb-platform-consolidation-tw-b"
+_CURRENT_CHECKPOINT = "V9C-B"
 _REQUIRED_CHECKPOINTS = (
     "V9C-A_AUTHORITY_AND_INVENTORY",
     "V9C-B_DETERMINISTIC_SOURCE_RELOCATION",
@@ -130,7 +131,7 @@ def _validate_identity(contract: dict[str, Any]) -> None:
         "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "branch": _BRANCH,
         "pull_request": 584,
-        "current_checkpoint": "V9C-B",
+        "current_checkpoint": _CURRENT_CHECKPOINT,
     }
     for key, value in expected.items():
         if contract.get(key) != value:
@@ -183,128 +184,162 @@ def _validate_runtime_target(contract: dict[str, Any]) -> None:
             raise RuntimeError(f"V9C_RUNTIME_TARGET_DRIFT:{key}")
 
 
+def _relocation_row(
+    root: Path,
+    row: object,
+) -> tuple[str, str]:
+    if not isinstance(row, dict):
+        raise RuntimeError("V9C_RELOCATION_ROW_INVALID")
+    if row.get("state") != "RELOCATED":
+        raise RuntimeError("V9C_RELOCATION_STATE_DRIFT")
+
+    source = row.get("source")
+    target = row.get("target")
+    if not isinstance(source, str) or not source:
+        raise RuntimeError("V9C_RELOCATION_SOURCE_INVALID")
+    if not isinstance(target, str) or not target.startswith("omni_cio/"):
+        raise RuntimeError("V9C_RELOCATION_TARGET_INVALID")
+    if (root / source).exists():
+        raise RuntimeError(f"V9C_LEGACY_SOURCE_REINTRODUCED:{source}")
+    if not (root / target).exists():
+        raise RuntimeError(f"V9C_CANONICAL_TARGET_MISSING:{target}")
+    return source, target
+
+
+def _runtime_retirement_path(root: Path, row: object) -> str:
+    if not isinstance(row, dict):
+        raise RuntimeError("V9C_RUNTIME_RETIREMENT_ROW_INVALID")
+    if row.get("state") != "BLOCKED_UNTIL_V9C_C":
+        raise RuntimeError("V9C_RUNTIME_RETIREMENT_PREMATURE")
+
+    path = row.get("path")
+    if not isinstance(path, str):
+        raise RuntimeError("V9C_RUNTIME_RETIREMENT_PATH_INVALID")
+    if not (root / path).is_file():
+        raise RuntimeError(f"V9C_RUNTIME_SOURCE_MISSING:{path}")
+    return path
+
+
 def _validate_inventory(root: Path, contract: dict[str, Any]) -> None:
     relocation = contract.get("root_relocation_plan")
     if not isinstance(relocation, list):
         raise RuntimeError("V9C_RELOCATION_PLAN_INVALID")
 
-    sources: list[str] = []
-    targets: list[str] = []
-    for row in relocation:
-        if not isinstance(row, dict):
-            raise RuntimeError("V9C_RELOCATION_ROW_INVALID")
-        if row.get("state") != "RELOCATED":
-            raise RuntimeError("V9C_RELOCATION_STATE_DRIFT")
-        source = row.get("source")
-        target = row.get("target")
-        if not isinstance(source, str) or not source:
-            raise RuntimeError("V9C_RELOCATION_SOURCE_INVALID")
-        if not isinstance(target, str) or not target.startswith("omni_cio/"):
-            raise RuntimeError("V9C_RELOCATION_TARGET_INVALID")
-        sources.append(source)
-        targets.append(target)
-        if (root / source).exists():
-            raise RuntimeError(f"V9C_LEGACY_SOURCE_REINTRODUCED:{source}")
-        if not (root / target).exists():
-            raise RuntimeError(f"V9C_CANONICAL_TARGET_MISSING:{target}")
-
-    if tuple(sources) != _EXPECTED_ROOT_SOURCES:
+    relocated = [_relocation_row(root, row) for row in relocation]
+    sources = tuple(source for source, _ in relocated)
+    targets = tuple(target for _, target in relocated)
+    if sources != _EXPECTED_ROOT_SOURCES:
         raise RuntimeError("V9C_RELOCATION_SOURCE_SET_DRIFT")
-    if tuple(targets) != _EXPECTED_TARGETS:
+    if targets != _EXPECTED_TARGETS:
         raise RuntimeError("V9C_RELOCATION_TARGET_SET_DRIFT")
 
     retirements = contract.get("runtime_retirement_plan")
     if not isinstance(retirements, list):
         raise RuntimeError("V9C_RUNTIME_RETIREMENT_PLAN_INVALID")
-    runtime_paths: list[str] = []
-    for row in retirements:
-        if not isinstance(row, dict):
-            raise RuntimeError("V9C_RUNTIME_RETIREMENT_ROW_INVALID")
-        if row.get("state") != "BLOCKED_UNTIL_V9C_C":
-            raise RuntimeError("V9C_RUNTIME_RETIREMENT_PREMATURE")
-        path = row.get("path")
-        if not isinstance(path, str):
-            raise RuntimeError("V9C_RUNTIME_RETIREMENT_PATH_INVALID")
-        runtime_paths.append(path)
-        if not (root / path).is_file():
-            raise RuntimeError(f"V9C_RUNTIME_SOURCE_MISSING:{path}")
-    if tuple(runtime_paths) != _EXPECTED_RUNTIME_ROOTS:
+    runtime_paths = tuple(
+        _runtime_retirement_path(root, row)
+        for row in retirements
+    )
+    if runtime_paths != _EXPECTED_RUNTIME_ROOTS:
         raise RuntimeError("V9C_RUNTIME_SOURCE_SET_DRIFT")
 
 
-def _validate_no_legacy_imports(root: Path) -> None:
-    source_paths = sorted({*root.rglob("*.py"), *root.rglob("*.pyfrag")})
-    for path in source_paths:
-        if any(part in {".git", ".venv", ".venv-ci"} for part in path.parts):
-            continue
-        relative = path.relative_to(root)
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(relative))
-        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
-            raise RuntimeError(f"V9C_PYTHON_SCAN_FAILED:{relative}:{exc}") from exc
-        for node in ast.walk(tree):
-            imported: list[str] = []
-            if isinstance(node, ast.Import):
-                imported.extend(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                imported.append(node.module)
-            for module in imported:
-                root_name = module.split(".", 1)[0]
-                if root_name in _LEGACY_IMPORT_ROOTS:
-                    raise RuntimeError(
-                        f"V9C_LEGACY_IMPORT_REINTRODUCED:{relative}:{module}"
-                    )
+def _python_scan_paths(root: Path) -> list[Path]:
+    paths = sorted({*root.rglob("*.py"), *root.rglob("*.pyfrag")})
+    return [
+        path
+        for path in paths
+        if not any(part in {".git", ".venv", ".venv-ci"} for part in path.parts)
+    ]
 
-            if isinstance(node, ast.Call) and node.args:
-                dynamic_import = False
-                if isinstance(node.func, ast.Name) and node.func.id == "__import__":
-                    dynamic_import = True
-                elif (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "import_module"
-                ):
-                    dynamic_import = True
-                if dynamic_import and isinstance(node.args[0], ast.Constant):
-                    module = node.args[0].value
-                    if isinstance(module, str):
-                        root_name = module.split(".", 1)[0]
-                        if root_name in _LEGACY_IMPORT_ROOTS:
-                            raise RuntimeError(
-                                "V9C_LEGACY_DYNAMIC_IMPORT_REINTRODUCED:"
-                                f"{relative}:{module}"
-                            )
+
+def _parsed_python(root: Path, path: Path, code: str) -> tuple[Path, ast.AST]:
+    relative = path.relative_to(root)
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(relative))
+    except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+        raise RuntimeError(f"{code}:{relative}:{exc}") from exc
+    return relative, tree
+
+
+def _imported_modules(node: ast.AST) -> tuple[str, ...]:
+    if isinstance(node, ast.Import):
+        return tuple(alias.name for alias in node.names)
+    if isinstance(node, ast.ImportFrom) and node.module:
+        return (node.module,)
+    return ()
+
+
+def _dynamic_import_module(node: ast.AST) -> str | None:
+    if not isinstance(node, ast.Call) or not node.args:
+        return None
+    named_import = isinstance(node.func, ast.Name) and node.func.id == "__import__"
+    module_import = (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "import_module"
+    )
+    if not (named_import or module_import):
+        return None
+    first = node.args[0]
+    if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+        return None
+    return first.value
+
+
+def _reject_legacy_import(relative: Path, module: str, *, dynamic: bool) -> None:
+    if module.split(".", 1)[0] not in _LEGACY_IMPORT_ROOTS:
+        return
+    code = (
+        "V9C_LEGACY_DYNAMIC_IMPORT_REINTRODUCED"
+        if dynamic
+        else "V9C_LEGACY_IMPORT_REINTRODUCED"
+    )
+    raise RuntimeError(f"{code}:{relative}:{module}")
+
+
+def _validate_no_legacy_imports(root: Path) -> None:
+    for path in _python_scan_paths(root):
+        relative, tree = _parsed_python(root, path, "V9C_PYTHON_SCAN_FAILED")
+        for node in ast.walk(tree):
+            for module in _imported_modules(node):
+                _reject_legacy_import(relative, module, dynamic=False)
+            dynamic_module = _dynamic_import_module(node)
+            if dynamic_module is not None:
+                _reject_legacy_import(relative, dynamic_module, dynamic=True)
+
+
+def _validate_legacy_path_literal(relative: Path, literal: str) -> None:
+    normalized = literal.replace("\\", "/")
+    is_legacy_file = normalized in _LEGACY_FILE_PATH_LITERALS
+    is_legacy_directory = normalized.startswith(_LEGACY_DIRECTORY_PATH_PREFIXES)
+    if is_legacy_file or is_legacy_directory:
+        raise RuntimeError(
+            f"V9C_LEGACY_PATH_CONSUMER_REINTRODUCED:{relative}:{normalized}"
+        )
+    if normalized.startswith(_NONCANONICAL_RECONCILIATION_PATH_PREFIXES):
+        raise RuntimeError(
+            "V9C_NONCANONICAL_RECONCILIATION_PATH_CONSUMER:"
+            f"{relative}:{normalized}"
+        )
 
 
 def _validate_no_stale_relocation_path_consumers(root: Path) -> None:
-    source_paths = sorted({*root.rglob("*.py"), *root.rglob("*.pyfrag")})
-    for path in source_paths:
-        if any(part in {".git", ".venv", ".venv-ci"} for part in path.parts):
-            continue
+    for path in _python_scan_paths(root):
         relative = path.relative_to(root)
         if relative in _LEGACY_PATH_LITERAL_ALLOWLIST:
             continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(relative))
-        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
-            raise RuntimeError(
-                f"V9C_PATH_CONSUMER_SCAN_FAILED:{relative}:{exc}"
-            ) from exc
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
-                continue
-            literal = node.value.replace("\\", "/")
-            if literal in _LEGACY_FILE_PATH_LITERALS or literal.startswith(
-                _LEGACY_DIRECTORY_PATH_PREFIXES
-            ):
-                raise RuntimeError(
-                    f"V9C_LEGACY_PATH_CONSUMER_REINTRODUCED:{relative}:{literal}"
-                )
-            if literal.startswith(_NONCANONICAL_RECONCILIATION_PATH_PREFIXES):
-                raise RuntimeError(
-                    "V9C_NONCANONICAL_RECONCILIATION_PATH_CONSUMER:"
-                    f"{relative}:{literal}"
-                )
+        relative, tree = _parsed_python(
+            root,
+            path,
+            "V9C_PATH_CONSUMER_SCAN_FAILED",
+        )
+        literals = (
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        )
+        for literal in literals:
+            _validate_legacy_path_literal(relative, literal)
 
 
 def _validate_verifier_ownership(root: Path) -> None:
@@ -425,7 +460,7 @@ def _validate_documentation(root: Path) -> None:
         AMENDMENT.relative_to(ROOT): (
             "accepted V9 repository target",
             "stale",
-            "V9C-B / DETERMINISTIC_SOURCE_RELOCATION",
+            f"{_CURRENT_CHECKPOINT} / DETERMINISTIC_SOURCE_RELOCATION",
             "must not be merged",
         ),
         INDEX.relative_to(ROOT): (
@@ -433,18 +468,18 @@ def _validate_documentation(root: Path) -> None:
             "OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md",
         ),
         STATUS.relative_to(ROOT): (
-            "V9C-B / DETERMINISTIC_SOURCE_RELOCATION",
+            f"{_CURRENT_CHECKPOINT} / DETERMINISTIC_SOURCE_RELOCATION",
             _ACCEPTED_V9,
             "PR #584",
         ),
         LEDGER.relative_to(ROOT): (
             "| V9C-A | AUTHORITY_AND_INVENTORY | CERTIFIED_GREEN |",
-            "| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | IN_PROGRESS |",
+            f"| {_CURRENT_CHECKPOINT} | DETERMINISTIC_SOURCE_RELOCATION | IN_PROGRESS |",
             "| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF |",
         ),
-        AGENTS.relative_to(ROOT): ("V9 migration source", "V9C-B", "PR #584"),
-        README.relative_to(ROOT): ("V9 migration source", "V9C-B"),
-        CONTRIBUTING.relative_to(ROOT): ("V9 migration source", "V9C-B"),
+        AGENTS.relative_to(ROOT): ("V9 migration source", _CURRENT_CHECKPOINT, "PR #584"),
+        README.relative_to(ROOT): ("V9 migration source", _CURRENT_CHECKPOINT),
+        CONTRIBUTING.relative_to(ROOT): ("V9 migration source", _CURRENT_CHECKPOINT),
     }
     for relative, markers in required.items():
         source = _text(root / relative)
@@ -486,7 +521,7 @@ def main() -> int:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, RuntimeError) as exc:
         print(f"V10_V9_TO_V10_CONVERGENCE=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("V10_V9_TO_V10_CONVERGENCE=PASS checkpoint=V9C-B")
+    print(f"V10_V9_TO_V10_CONVERGENCE=PASS checkpoint={_CURRENT_CHECKPOINT}")
     print(f"Accepted V9 migration source: {_ACCEPTED_V9}")
     print("Legacy deterministic root imports: absent")
     print("Canonical V10 package relocation: complete")

@@ -10,7 +10,9 @@ from omni_cio.pretrade.purchase_capacity_v1 import (
     PRICE_FRESH_SECONDS as PRICE_FRESH_SECONDS,
     _component_error,
     _decimal_or_none,
+    _load_read_only_market_snapshot,
     _quotation_from_decimal,
+    _resolve_read_only_instrument,
 )
 from omni_cio.pretrade.sale_capacity_normalization_v1 import (
     build_sale_capacity_preview,
@@ -76,6 +78,101 @@ def _sell_direction() -> _SellDirectionValue:
     return _SellDirectionValue()
 
 
+
+def _load_sale_position_evidence(
+    *,
+    base: Any,
+    client: Any,
+    account_id: str,
+    component_statuses: dict[str, str],
+    component_errors: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    positions_data: dict[str, Any] | None = None
+    try:
+        response = client.operations.get_positions(account_id=account_id)
+        positions_data = base.proto_to_dict(response)
+        component_statuses["positions"] = "ok"
+    except Exception as exc:
+        component_statuses["positions"] = "error"
+        component_errors.append(
+            {"component": "positions", "error": _component_error(base, exc)}
+        )
+
+    orders_data: dict[str, Any] | None = None
+    try:
+        response = client.orders.get_orders(account_id=account_id)
+        orders_data = base.proto_to_dict(response)
+        component_statuses["open_orders"] = "ok"
+    except Exception as exc:
+        component_statuses["open_orders"] = "error"
+        component_errors.append(
+            {"component": "open_orders", "error": _component_error(base, exc)}
+        )
+    return positions_data, orders_data
+
+
+def _load_sale_price_evidence(
+    *,
+    base: Any,
+    client: Any,
+    account_id: str,
+    instrument_uid: str,
+    quantity_lots: int,
+    price_value: Decimal | None,
+    component_statuses: dict[str, str],
+    component_errors: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if price_value is None or price_value <= 0:
+        component_errors.append(
+            {
+                "component": "selected_price",
+                "error": {
+                    "code": "SELECTED_PRICE_UNAVAILABLE",
+                    "message": (
+                        "The selected sale price basis did not provide a "
+                        "positive price; sale calculations were not requested."
+                    ),
+                },
+            }
+        )
+        return None, None
+
+    quotation = _quotation_from_decimal(price_value)
+    sell_direction = _sell_direction()
+    max_lots_data: dict[str, Any] | None = None
+    try:
+        response = client.orders.get_max_lots(
+            account_id=account_id,
+            instrument_id=instrument_uid,
+            price=quotation,
+        )
+        max_lots_data = base.proto_to_dict(response)
+        component_statuses["max_lots"] = "ok"
+    except Exception as exc:
+        component_statuses["max_lots"] = "error"
+        component_errors.append(
+            {"component": "max_lots", "error": _component_error(base, exc)}
+        )
+
+    order_price_data: dict[str, Any] | None = None
+    try:
+        response = client.orders.get_order_price(
+            account_id=account_id,
+            instrument_id=instrument_uid,
+            price=quotation,
+            direction=sell_direction,
+            quantity=quantity_lots,
+        )
+        order_price_data = base.proto_to_dict(response)
+        component_statuses["order_price"] = "ok"
+    except Exception as exc:
+        component_statuses["order_price"] = "error"
+        component_errors.append(
+            {"component": "order_price", "error": _component_error(base, exc)}
+        )
+    return max_lots_data, order_price_data
+
+
 def get_sale_capacity_preview(
     *,
     base: Any,
@@ -109,16 +206,13 @@ def get_sale_capacity_preview(
         "open_orders": "not_requested",
         "order_price": "not_requested",
     }
-
-    market_snapshot: dict[str, Any] | None = None
-    try:
-        market_snapshot = market_snapshot_loader(instrument_uid, 1)
-        component_statuses["market_snapshot"] = "ok"
-    except Exception as exc:
-        component_errors.append(
-            {"component": "market_snapshot", "error": _component_error(base, exc)}
-        )
-
+    market_snapshot = _load_read_only_market_snapshot(
+        base=base,
+        market_snapshot_loader=market_snapshot_loader,
+        instrument_uid=instrument_uid,
+        component_statuses=component_statuses,
+        component_errors=component_errors,
+    )
     price_info = select_sale_price(
         base=base,
         price_basis=price_basis,
@@ -129,113 +223,30 @@ def get_sale_capacity_preview(
     try:
         with base.Client(base.TINVEST_TOKEN) as client:
             account_id, safe_account = base.get_open_account(client)
-
-            instrument_resolution: dict[str, Any] | None = None
-            try:
-                instrument_resolution = base.resolve_instrument_reference(
-                    client,
-                    {"instrument_uid": instrument_uid},
-                )
-                component_statuses["instrument_reference"] = (
-                    "ok"
-                    if instrument_resolution.get("status") == "resolved"
-                    else "unresolved"
-                )
-                if instrument_resolution.get("status") != "resolved":
-                    component_errors.append(
-                        {
-                            "component": "instrument_reference",
-                            "error": {
-                                "code": "INSTRUMENT_REFERENCE_UNRESOLVED",
-                                "message": "The exact instrument UID could not be resolved.",
-                            },
-                        }
-                    )
-            except Exception as exc:
-                component_errors.append(
-                    {
-                        "component": "instrument_reference",
-                        "error": _component_error(base, exc),
-                    }
-                )
-
-            positions_data: dict[str, Any] | None = None
-            max_lots_data: dict[str, Any] | None = None
-            orders_data: dict[str, Any] | None = None
-            order_price_data: dict[str, Any] | None = None
-
-            try:
-                positions_response = client.operations.get_positions(
-                    account_id=account_id
-                )
-                positions_data = base.proto_to_dict(positions_response)
-                component_statuses["positions"] = "ok"
-            except Exception as exc:
-                component_statuses["positions"] = "error"
-                component_errors.append(
-                    {"component": "positions", "error": _component_error(base, exc)}
-                )
-
-            try:
-                orders_response = client.orders.get_orders(account_id=account_id)
-                orders_data = base.proto_to_dict(orders_response)
-                component_statuses["open_orders"] = "ok"
-            except Exception as exc:
-                component_statuses["open_orders"] = "error"
-                component_errors.append(
-                    {"component": "open_orders", "error": _component_error(base, exc)}
-                )
-
-            if price_value is None or price_value <= 0:
-                component_errors.append(
-                    {
-                        "component": "selected_price",
-                        "error": {
-                            "code": "SELECTED_PRICE_UNAVAILABLE",
-                            "message": (
-                                "The selected sale price basis did not provide a "
-                                "positive price; sale calculations were not requested."
-                            ),
-                        },
-                    }
-                )
-            else:
-                quotation = _quotation_from_decimal(price_value)
-                sell_direction = _sell_direction()
-
-                try:
-                    max_lots_response = client.orders.get_max_lots(
-                        account_id=account_id,
-                        instrument_id=instrument_uid,
-                        price=quotation,
-                    )
-                    max_lots_data = base.proto_to_dict(max_lots_response)
-                    component_statuses["max_lots"] = "ok"
-                except Exception as exc:
-                    component_statuses["max_lots"] = "error"
-                    component_errors.append(
-                        {"component": "max_lots", "error": _component_error(base, exc)}
-                    )
-
-                try:
-                    order_price_response = client.orders.get_order_price(
-                        account_id=account_id,
-                        instrument_id=instrument_uid,
-                        price=quotation,
-                        direction=sell_direction,
-                        quantity=quantity,
-                    )
-                    order_price_data = base.proto_to_dict(order_price_response)
-                    component_statuses["order_price"] = "ok"
-                except Exception as exc:
-                    component_statuses["order_price"] = "error"
-                    component_errors.append(
-                        {
-                            "component": "order_price",
-                            "error": _component_error(base, exc),
-                        }
-                    )
-
+            instrument_resolution = _resolve_read_only_instrument(
+                base=base,
+                client=client,
+                instrument_uid=instrument_uid,
+                component_statuses=component_statuses,
+                component_errors=component_errors,
+            )
+            positions_data, orders_data = _load_sale_position_evidence(
+                base=base,
+                client=client,
+                account_id=account_id,
+                component_statuses=component_statuses,
+                component_errors=component_errors,
+            )
+            max_lots_data, order_price_data = _load_sale_price_evidence(
+                base=base,
+                client=client,
+                account_id=account_id,
+                instrument_uid=instrument_uid,
+                quantity_lots=quantity,
+                price_value=price_value,
+                component_statuses=component_statuses,
+                component_errors=component_errors,
+            )
             return build_sale_capacity_preview(
                 base=base,
                 app_version=app_version,
@@ -264,3 +275,4 @@ def get_sale_capacity_preview(
             status_code=502,
             detail=_component_error(base, exc),
         ) from exc
+

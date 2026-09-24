@@ -205,8 +205,10 @@ def test_recovery_manifest_accepts_allowlisted_fields_in_any_json_order(
 
 
 def test_recovery_manifest_rejects_corrupt_archive(tmp_path: Path) -> None:
+    manifest = _manifest()
+    corrupt_archive = b"X" + _ARCHIVE[1:]
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SHA256_MISMATCH"):
-        _validate_manifest(tmp_path, _manifest(), b"X" + _ARCHIVE[1:])
+        _validate_manifest(tmp_path, manifest, corrupt_archive)
 
 
 def test_recovery_manifest_rejects_empty_archive(tmp_path: Path) -> None:
@@ -219,10 +221,11 @@ def test_recovery_manifest_rejects_empty_archive(tmp_path: Path) -> None:
 
 def test_stream_integrity_enforces_runtime_size_bound(tmp_path: Path) -> None:
     archive_path = _write_archive(tmp_path)
+    maximum_archive_bytes = len(_ARCHIVE) - 1
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SIZE_EXCEEDED"):
         _archive_file_integrity(
             archive_path,
-            maximum_archive_bytes=len(_ARCHIVE) - 1,
+            maximum_archive_bytes=maximum_archive_bytes,
         )
 
 
@@ -364,8 +367,9 @@ def test_restore_commands_validate_exact_archive_before_building_argv(
             manifest,
             destination_database="omni_hosted",
         )
+    relative_archive_path = Path(_ARCHIVE_NAME)
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_PATH_NOT_ABSOLUTE"):
-        _build_restore_commands(Path(_ARCHIVE_NAME), manifest)
+        _build_restore_commands(relative_archive_path, manifest)
 
 
 def test_restore_commands_reject_unverified_or_changed_archive(tmp_path: Path) -> None:

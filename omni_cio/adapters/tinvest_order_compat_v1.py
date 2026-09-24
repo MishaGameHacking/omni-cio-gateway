@@ -219,10 +219,12 @@ class PurchaseCapacityBaseProxy:
     def __init__(self, base: Any) -> None:
         self._base = base
 
-    def Client(self, *args: Any, **kwargs: Any) -> ClientContextAdapter:
+    def _client_context(self, *args: Any, **kwargs: Any) -> ClientContextAdapter:
         return ClientContextAdapter(self._base.Client(*args, **kwargs))
 
     def __getattr__(self, name: str) -> Any:
+        if name == "Client":
+            return self._client_context
         return getattr(self._base, name)
 
 
@@ -230,10 +232,12 @@ class SaleCapacityBaseProxy:
     def __init__(self, base: Any) -> None:
         self._base = base
 
-    def Client(self, *args: Any, **kwargs: Any) -> SaleClientContextAdapter:
+    def _client_context(self, *args: Any, **kwargs: Any) -> SaleClientContextAdapter:
         return SaleClientContextAdapter(self._base.Client(*args, **kwargs))
 
     def __getattr__(self, name: str) -> Any:
+        if name == "Client":
+            return self._client_context
         return getattr(self._base, name)
 
 

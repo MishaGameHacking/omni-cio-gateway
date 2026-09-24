@@ -135,7 +135,6 @@ def trading_flag_consistency_issues(
     order_book: dict[str, Any],
 ) -> list[str]:
     """Report notable divergences without overriding any T-Invest value."""
-    issues: list[str] = []
     status_name = str(trading_status.get("trading_status", "") or "").upper()
     last_price_type = str(last_price.get("last_price_type", "") or "").upper()
     order_book_type = str(order_book.get("order_book_type", "") or "").upper()
@@ -145,48 +144,43 @@ def trading_flag_consistency_issues(
     api_available = trading_status.get("api_trade_available_flag")
     bestprice_available = trading_status.get("bestprice_order_available_flag")
     only_best_price = trading_status.get("only_best_price")
-    order_flags = (
-        limit_available,
-        market_available,
-        bestprice_available,
+    any_order_type_available = any(
+        flag is True
+        for flag in (limit_available, market_available, bestprice_available)
     )
+    any_trade_flag_available = any_order_type_available or api_available is True
+    dealer_status = "DEALER" in status_name
 
-    if only_best_price is True and bestprice_available is False:
-        issues.append(
-            "only_best_price is true while bestprice_order_available_flag is false."
-        )
-
-    if api_available is False and any(flag is True for flag in order_flags):
-        issues.append(
+    rules = (
+        (
+            only_best_price is True and bestprice_available is False,
+            "only_best_price is true while bestprice_order_available_flag is false.",
+        ),
+        (
+            api_available is False and any_order_type_available,
             "api_trade_available_flag is false while at least one "
-            "order-type availability flag is true."
-        )
-
-    if "NORMAL_TRADING" in status_name and api_available is False:
-        issues.append(
+            "order-type availability flag is true.",
+        ),
+        (
+            "NORMAL_TRADING" in status_name and api_available is False,
             "The trading-status name indicates normal trading while "
-            "api_trade_available_flag is false."
-        )
-
-    if "NOT_AVAILABLE_FOR_TRADING" in status_name and any(
-        flag is True for flag in (*order_flags, api_available)
-    ):
-        issues.append(
+            "api_trade_available_flag is false.",
+        ),
+        (
+            "NOT_AVAILABLE_FOR_TRADING" in status_name and any_trade_flag_available,
             "The trading-status name indicates that trading is unavailable "
-            "while at least one availability flag is true."
-        )
-
-    if "DEALER" in status_name:
-        if last_price_type == "LAST_PRICE_EXCHANGE":
-            issues.append(
-                "Dealer trading status was returned with an exchange last-price source."
-            )
-        if order_book_type == "ORDERBOOK_TYPE_EXCHANGE":
-            issues.append(
-                "Dealer trading status was returned with an exchange-only order book."
-            )
-
-    return issues
+            "while at least one availability flag is true.",
+        ),
+        (
+            dealer_status and last_price_type == "LAST_PRICE_EXCHANGE",
+            "Dealer trading status was returned with an exchange last-price source.",
+        ),
+        (
+            dealer_status and order_book_type == "ORDERBOOK_TYPE_EXCHANGE",
+            "Dealer trading status was returned with an exchange-only order book.",
+        ),
+    )
+    return [message for triggered, message in rules if triggered]
 
 
 # Replace only GET /market/snapshot. The core function remains responsible for

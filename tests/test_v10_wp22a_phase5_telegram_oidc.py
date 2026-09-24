@@ -536,18 +536,21 @@ def test_unknown_kid_does_not_trigger_repeat_fetch_while_cache_is_fresh(
     client = httpx.Client(transport=httpx.MockTransport(handler))
     verifier = TelegramIdTokenVerifierV1(_config())
 
+    unknown_token = _token(kid="unknown-key")
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN"):
         verifier.verify(
-            _token(kid="unknown-key"),
+            unknown_token,
             expected_nonce="expected-nonce",
             now=NOW,
             client=client,
         )
+    another_unknown_token = _token(kid="another-unknown-key")
+    second_attempt_at = NOW + timedelta(seconds=5)
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN"):
         verifier.verify(
-            _token(kid="another-unknown-key"),
+            another_unknown_token,
             expected_nonce="expected-nonce",
-            now=NOW + timedelta(seconds=5),
+            now=second_attempt_at,
             client=client,
         )
     assert calls == 1
@@ -620,9 +623,10 @@ def test_signature_failure_blocks_external_identity() -> None:
         transport=httpx.MockTransport(lambda _: _json_response(_jwks()))
     )
     verifier = TelegramIdTokenVerifierV1(_config())
+    token = _token()
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_SIGNATURE_INVALID"):
         verifier.verify(
-            _token(),
+            token,
             expected_nonce="expected-nonce",
             now=NOW,
             client=client,
@@ -646,9 +650,10 @@ def test_jwks_algorithm_confusion_key_is_rejected() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     verifier = TelegramIdTokenVerifierV1(_config())
+    token = _token()
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_JWKS_INVALID"):
         verifier.verify(
-            _token(),
+            token,
             expected_nonce="expected-nonce",
             now=NOW,
             client=client,
@@ -675,9 +680,10 @@ def test_jwks_rs256_candidate_cannot_use_non_rsa_key_type() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     verifier = TelegramIdTokenVerifierV1(_config())
+    token = _token()
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_JWKS_INVALID"):
         verifier.verify(
-            _token(),
+            token,
             expected_nonce="expected-nonce",
             now=NOW,
             client=client,

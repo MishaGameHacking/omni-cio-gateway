@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Mapping
+from typing import Any, Mapping, NotRequired, TypedDict, Unpack
 
 from fastapi import HTTPException
 
@@ -18,6 +18,24 @@ from omni_cio.pretrade.purchase_capacity_integrity_v1 import build_commission_su
 
 
 _ALLOWED_PRICE_BASES = frozenset({"best_bid", "last_price"})
+
+
+class SaleCapacityPreviewFieldsV1(TypedDict):
+    app_version: str
+    account: Mapping[str, Any]
+    instrument_uid: str
+    instrument_resolution: Mapping[str, Any] | None
+    price_basis: str
+    quantity_lots: int
+    price_info: Mapping[str, Any]
+    positions_data: Mapping[str, Any] | None
+    max_lots_data: Mapping[str, Any] | None
+    orders_data: Mapping[str, Any] | None
+    order_price_data: Mapping[str, Any] | None
+    component_statuses: Mapping[str, str]
+    component_errors: NotRequired[list[dict[str, Any]] | None]
+    market_snapshot: NotRequired[Mapping[str, Any] | None]
+    retrieved_at: NotRequired[str | None]
 
 
 def _integer_or_none(value: Any) -> int | None:
@@ -109,6 +127,71 @@ def _exact_lots(
     return result if result >= 0 else None
 
 
+
+def _matching_security_rows(
+    positions_data: Mapping[str, Any] | None,
+    instrument_uid: str,
+) -> tuple[list[Mapping[str, Any]], int]:
+    positions = _status_dict(positions_data)
+    securities = positions.get("securities")
+    if securities is None:
+        return [], 0
+    if not isinstance(securities, list):
+        return [], 1
+
+    matching_rows: list[Mapping[str, Any]] = []
+    invalid_rows = 0
+    for row in securities:
+        if not isinstance(row, Mapping):
+            invalid_rows += 1
+            continue
+        row_uid = str(
+            row.get("instrument_uid") or row.get("instrument_id") or ""
+        ).strip()
+        if row_uid == instrument_uid:
+            matching_rows.append(row)
+    return matching_rows, invalid_rows
+
+
+def _position_units(
+    *,
+    base: Any,
+    matching_rows: list[Mapping[str, Any]],
+) -> tuple[Decimal | None, Decimal | None]:
+    if len(matching_rows) != 1:
+        return None, None
+    row = matching_rows[0]
+    return (
+        _decimal_or_none(base, row.get("balance")),
+        _decimal_or_none(base, row.get("blocked")),
+    )
+
+
+def _position_limits_complete(
+    *,
+    positions_status: str,
+    max_lots_status: str,
+    matching_rows: list[Mapping[str, Any]],
+    invalid_rows: int,
+    duplicate_rows: int,
+    position_lots: int | None,
+    blocked_lots: int | None,
+    sell_max_lots: int | None,
+) -> bool:
+    return all(
+        (
+            positions_status == "ok",
+            max_lots_status == "ok",
+            len(matching_rows) == 1,
+            invalid_rows == 0,
+            duplicate_rows == 0,
+            position_lots is not None,
+            blocked_lots is not None,
+            sell_max_lots is not None,
+        )
+    )
+
+
 def _position_limits_view(
     *,
     base: Any,
@@ -119,29 +202,15 @@ def _position_limits_view(
     positions_status: str,
     max_lots_status: str,
 ) -> dict[str, Any]:
-    positions = _status_dict(positions_data)
-    securities = positions.get("securities")
-    matching_rows: list[Mapping[str, Any]] = []
-    invalid_rows = 0
-    if isinstance(securities, list):
-        for row in securities:
-            if not isinstance(row, Mapping):
-                invalid_rows += 1
-                continue
-            row_uid = str(
-                row.get("instrument_uid") or row.get("instrument_id") or ""
-            ).strip()
-            if row_uid == instrument_uid:
-                matching_rows.append(row)
-    elif securities is not None:
-        invalid_rows += 1
-
-    balance_units: Decimal | None = None
-    blocked_units: Decimal | None = None
+    matching_rows, invalid_rows = _matching_security_rows(
+        positions_data,
+        instrument_uid,
+    )
     duplicate_rows = max(0, len(matching_rows) - 1)
-    if len(matching_rows) == 1:
-        balance_units = _decimal_or_none(base, matching_rows[0].get("balance"))
-        blocked_units = _decimal_or_none(base, matching_rows[0].get("blocked"))
+    balance_units, blocked_units = _position_units(
+        base=base,
+        matching_rows=matching_rows,
+    )
     position_lots = _exact_lots(units=balance_units, lot_size=lot_size)
     blocked_lots = _exact_lots(units=blocked_units, lot_size=lot_size)
 
@@ -149,15 +218,15 @@ def _position_limits_view(
     sell_limits = _status_dict(max_data.get("sell_limits"))
     sell_max_lots = _integer_or_none(sell_limits.get("sell_max_lots"))
     currency = str(max_data.get("currency", "") or "").upper()
-    complete = (
-        positions_status == "ok"
-        and max_lots_status == "ok"
-        and len(matching_rows) == 1
-        and invalid_rows == 0
-        and duplicate_rows == 0
-        and position_lots is not None
-        and blocked_lots is not None
-        and sell_max_lots is not None
+    complete = _position_limits_complete(
+        positions_status=positions_status,
+        max_lots_status=max_lots_status,
+        matching_rows=matching_rows,
+        invalid_rows=invalid_rows,
+        duplicate_rows=duplicate_rows,
+        position_lots=position_lots,
+        blocked_lots=blocked_lots,
+        sell_max_lots=sell_max_lots,
     )
     return {
         "status": "ok" if complete else "partial",
@@ -184,6 +253,43 @@ def _position_limits_view(
     }
 
 
+def _open_sell_order_counts(
+    rows: object,
+    instrument_uid: str,
+) -> tuple[int, int, int]:
+    if rows is None:
+        return 0, 0, 0
+    if not isinstance(rows, list):
+        return 0, 0, 1
+
+    conflicting_lots = 0
+    matching_orders = 0
+    invalid_rows = 0
+    for row in rows:
+        if not isinstance(row, Mapping):
+            invalid_rows += 1
+            continue
+        row_uid = str(
+            row.get("instrument_uid") or row.get("instrument_id") or ""
+        ).strip()
+        if row_uid != instrument_uid or not _direction_is_sell(row.get("direction")):
+            continue
+        requested = _integer_or_none(row.get("lots_requested"))
+        executed = _integer_or_none(row.get("lots_executed"))
+        invalid_quantities = (
+            requested is None
+            or requested < 0
+            or executed is None
+            or executed < 0
+        )
+        if invalid_quantities:
+            invalid_rows += 1
+            continue
+        matching_orders += 1
+        conflicting_lots += max(0, requested - executed)
+    return conflicting_lots, matching_orders, invalid_rows
+
+
 def _open_orders_view(
     *,
     orders_data: Mapping[str, Any] | None,
@@ -191,31 +297,10 @@ def _open_orders_view(
     orders_status: str,
 ) -> dict[str, Any]:
     payload = _status_dict(orders_data)
-    rows = payload.get("orders")
-    conflicting_lots = 0
-    matching_orders = 0
-    invalid_rows = 0
-    if isinstance(rows, list):
-        for row in rows:
-            if not isinstance(row, Mapping):
-                invalid_rows += 1
-                continue
-            row_uid = str(
-                row.get("instrument_uid") or row.get("instrument_id") or ""
-            ).strip()
-            if row_uid != instrument_uid or not _direction_is_sell(
-                row.get("direction")
-            ):
-                continue
-            requested = _integer_or_none(row.get("lots_requested"))
-            executed = _integer_or_none(row.get("lots_executed"))
-            if requested is None or requested < 0 or executed is None or executed < 0:
-                invalid_rows += 1
-                continue
-            matching_orders += 1
-            conflicting_lots += max(0, requested - executed)
-    elif rows is not None:
-        invalid_rows += 1
+    conflicting_lots, matching_orders, invalid_rows = _open_sell_order_counts(
+        payload.get("orders"),
+        instrument_uid,
+    )
     checked = orders_status == "ok" and invalid_rows == 0
     return {
         "status": "ok" if checked else "partial",
@@ -225,7 +310,6 @@ def _open_orders_view(
         "conflicting_sell_lots": conflicting_lots,
         "invalid_order_rows": invalid_rows,
     }
-
 
 def _normalized_money(
     base: Any,
@@ -306,25 +390,87 @@ def _sale_currency_consistency(
     }
 
 
+
+
+def _sale_preview_status(
+    *,
+    instrument_resolved: bool,
+    price_available: bool,
+    position_available: bool,
+    open_orders_checked: bool,
+    order_price_available: bool,
+    commission_available: bool,
+    currency_consistent: bool,
+    component_errors: list[dict[str, Any]] | None,
+) -> tuple[str, bool]:
+    source_complete = all(
+        (
+            instrument_resolved,
+            price_available,
+            position_available,
+            open_orders_checked,
+            order_price_available,
+            commission_available,
+            currency_consistent,
+            not component_errors,
+        )
+    )
+    if source_complete:
+        return "ok", True
+    any_available = any(
+        (
+            instrument_resolved,
+            price_available,
+            position_available,
+            open_orders_checked,
+            order_price_available,
+        )
+    )
+    return ("partial" if any_available else "error"), False
+
+
+def _sale_preview_warnings(freshness: Mapping[str, Any]) -> list[str]:
+    warnings = [
+        (
+            "This service performs read-only sale-capacity calculations and does not "
+            "create, replace, cancel, or submit an order."
+        ),
+        (
+            "The tax basis is intentionally unavailable in this collector. A strict "
+            "sell pre-trade preview must remain blocked until separate verified tax "
+            "evidence is supplied."
+        ),
+        (
+            "GetMaxLots own-position sale limits and active orders are preserved "
+            "separately. Short selling is not permitted."
+        ),
+    ]
+    if freshness.get("status") == "stale":
+        warnings.append(
+            "The selected sale price is stale relative to the gateway freshness threshold."
+        )
+    return warnings
+
 def build_sale_capacity_preview(
     *,
     base: Any,
-    app_version: str,
-    account: Mapping[str, Any],
-    instrument_uid: str,
-    instrument_resolution: Mapping[str, Any] | None,
-    price_basis: str,
-    quantity_lots: int,
-    price_info: Mapping[str, Any],
-    positions_data: Mapping[str, Any] | None,
-    max_lots_data: Mapping[str, Any] | None,
-    orders_data: Mapping[str, Any] | None,
-    order_price_data: Mapping[str, Any] | None,
-    component_statuses: Mapping[str, str],
-    component_errors: list[dict[str, Any]] | None = None,
-    market_snapshot: Mapping[str, Any] | None = None,
-    retrieved_at: str | None = None,
+    **fields: Unpack[SaleCapacityPreviewFieldsV1],
 ) -> dict[str, Any]:
+    app_version = fields["app_version"]
+    account = fields["account"]
+    instrument_uid = fields["instrument_uid"]
+    instrument_resolution = fields["instrument_resolution"]
+    price_basis = fields["price_basis"]
+    quantity_lots = fields["quantity_lots"]
+    price_info = fields["price_info"]
+    positions_data = fields["positions_data"]
+    max_lots_data = fields["max_lots_data"]
+    orders_data = fields["orders_data"]
+    order_price_data = fields["order_price_data"]
+    component_statuses = fields["component_statuses"]
+    component_errors = fields.get("component_errors")
+    market_snapshot = fields.get("market_snapshot")
+    retrieved_at = fields.get("retrieved_at")
     resolution = _status_dict(instrument_resolution)
     instrument = _instrument_from_resolution(resolution)
     lot_size = _integer_or_none(instrument.get("lot"))
@@ -372,52 +518,20 @@ def build_sale_capacity_preview(
     position_available = position_limits.get("complete") is True
     open_orders_checked = open_orders.get("checked") is True
     commission_available = commission_summary.get("status") == "ok"
-    source_complete = (
-        instrument_resolved
-        and price_available
-        and position_available
-        and open_orders_checked
-        and order_price_status == "ok"
-        and commission_available
-        and currency_consistency.get("status") == "ok"
-        and not component_errors
+    status, source_complete = _sale_preview_status(
+        instrument_resolved=instrument_resolved,
+        price_available=price_available,
+        position_available=position_available,
+        open_orders_checked=open_orders_checked,
+        order_price_available=order_price_status == "ok",
+        commission_available=commission_available,
+        currency_consistent=currency_consistency.get("status") == "ok",
+        component_errors=component_errors,
     )
-    if source_complete:
-        status = "ok"
-    elif any(
-        (
-            instrument_resolved,
-            price_available,
-            position_available,
-            open_orders_checked,
-            order_price_status == "ok",
-        )
-    ):
-        status = "partial"
-    else:
-        status = "error"
 
     snapshot = _status_dict(market_snapshot)
     freshness = _status_dict(price_info.get("freshness"))
-    warnings = [
-        (
-            "This service performs read-only sale-capacity calculations and does not "
-            "create, replace, cancel, or submit an order."
-        ),
-        (
-            "The tax basis is intentionally unavailable in this collector. A strict "
-            "sell pre-trade preview must remain blocked until separate verified tax "
-            "evidence is supplied."
-        ),
-        (
-            "GetMaxLots own-position sale limits and active orders are preserved "
-            "separately. Short selling is not permitted."
-        ),
-    ]
-    if freshness.get("status") == "stale":
-        warnings.append(
-            "The selected sale price is stale relative to the gateway freshness threshold."
-        )
+    warnings = _sale_preview_warnings(freshness)
     payload = {
         "status": status,
         "version": app_version,

@@ -367,20 +367,14 @@ def load_operations_pages(
     }
 
 
-def build_operations_analytics(
+
+def _period_rows(
     *,
     base: Any,
-    app_version: str,
-    account: dict[str, Any],
     raw_operations: list[dict[str, Any]],
-    period: dict[str, Any],
-    pagination: dict[str, Any],
-    component_errors: list[dict[str, Any]] | None = None,
-    retrieved_at: str | None = None,
-) -> dict[str, Any]:
-    start_time = base.parse_datetime(period.get("from"))
-    end_time = base.parse_datetime(period.get("to"))
-
+    start_time: datetime | None,
+    end_time: datetime | None,
+) -> tuple[list[dict[str, Any]], int, int]:
     in_period: list[dict[str, Any]] = []
     outside_period = 0
     invalid_date_rows = 0
@@ -389,153 +383,207 @@ def build_operations_analytics(
         if operation_date is None:
             invalid_date_rows += 1
             in_period.append(operation)
-            continue
-        if start_time is not None and operation_date < start_time:
+        elif start_time is not None and operation_date < start_time:
             outside_period += 1
-            continue
-        if end_time is not None and operation_date > end_time:
+        elif end_time is not None and operation_date > end_time:
             outside_period += 1
-            continue
-        in_period.append(operation)
+        else:
+            in_period.append(operation)
+    return in_period, outside_period, invalid_date_rows
 
-    deduplicated, duplicate_quality = deduplicate_operations(
-        base=base,
-        operations=in_period,
-    )
-    deduplicated.sort(
-        key=lambda item: _operation_sort_time(base, item),
-        reverse=True,
-    )
 
-    state_counts: dict[str, int] = defaultdict(int)
-    category_counts: dict[str, int] = defaultdict(int)
-    currency_buckets: dict[str, dict[str, dict[str, Any]]] = defaultdict(
-        lambda: {category: _empty_bucket() for category in CATEGORY_ORDER}
-    )
-    currency_total_net: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    instrument_groups: dict[str, dict[str, Any]] = {}
+def _operation_state_store() -> dict[str, Any]:
+    return {
+        "state_counts": defaultdict(int),
+        "category_counts": defaultdict(int),
+        "currency_buckets": defaultdict(
+            lambda: {category: _empty_bucket() for category in CATEGORY_ORDER}
+        ),
+        "currency_total_net": defaultdict(lambda: Decimal("0")),
+        "instrument_groups": {},
+        "unknown_operation_types": 0,
+        "invalid_money_rows": 0,
+        "executed_operations": 0,
+        "canceled_operations": 0,
+        "operations_in_progress": 0,
+        "nested_commission_fields_excluded": 0,
+        "embedded_child_operations_excluded": 0,
+        "embedded_trades_excluded": 0,
+        "top_level_parent_linked_operations": 0,
+        "sign_checked": 0,
+        "sign_mismatches": [],
+        "currencies_detected": set(),
+    }
 
-    unknown_operation_types = 0
-    invalid_money_rows = 0
-    executed_operations = 0
-    canceled_operations = 0
-    operations_in_progress = 0
-    nested_commission_fields_excluded = 0
-    embedded_child_operations_excluded = 0
-    embedded_trades_excluded = 0
-    top_level_parent_linked_operations = 0
-    sign_checked = 0
-    sign_mismatches: list[dict[str, Any]] = []
-    currencies_detected: set[str] = set()
 
-    for operation in deduplicated:
-        operation_type = _operation_type(base, operation)
-        state = _operation_state(base, operation)
-        category = classify_operation(operation_type)
-        state_counts[state] += 1
-        category_counts[category] += 1
-
-        if operation_type == "OPERATION_TYPE_UNSPECIFIED" or (
+def _is_unknown_operation_type(operation_type: str) -> bool:
+    return (
+        operation_type == "OPERATION_TYPE_UNSPECIFIED"
+        or (
             operation_type not in TYPE_TO_CATEGORY
             and operation_type not in KNOWN_OTHER_TYPES
             and "TAX" not in operation_type
-        ):
-            unknown_operation_types += 1
-
-        if state == "OPERATION_STATE_EXECUTED":
-            executed_operations += 1
-        elif state == "OPERATION_STATE_CANCELED":
-            canceled_operations += 1
-        elif state == "OPERATION_STATE_PROGRESS":
-            operations_in_progress += 1
-
-        child_operations = operation.get("child_operations")
-        if isinstance(child_operations, list):
-            embedded_child_operations_excluded += len(child_operations)
-        trades_info = operation.get("trades_info")
-        if isinstance(trades_info, dict):
-            trades = trades_info.get("trades")
-            if isinstance(trades, list):
-                embedded_trades_excluded += len(trades)
-        if str(operation.get("parent_operation_id", "") or "").strip():
-            top_level_parent_linked_operations += 1
-
-        nested_commission_amount, _ = _money_parts(
-            base,
-            operation.get("commission"),
         )
-        if nested_commission_amount not in (None, Decimal("0")):
-            nested_commission_fields_excluded += 1
+    )
 
-        # Only executed top-level operation.payment changes the financial summary.
-        if state != "OPERATION_STATE_EXECUTED":
-            continue
 
-        amount, currency = _money_parts(base, operation.get("payment"))
-        if amount is None or not currency:
-            invalid_money_rows += 1
-            continue
+def _record_operation_metadata(
+    *,
+    base: Any,
+    operation: dict[str, Any],
+    operation_type: str,
+    state: str,
+    category: str,
+    store: dict[str, Any],
+) -> None:
+    store["state_counts"][state] += 1
+    store["category_counts"][category] += 1
+    store["unknown_operation_types"] += int(
+        _is_unknown_operation_type(operation_type)
+    )
+    store["executed_operations"] += int(state == "OPERATION_STATE_EXECUTED")
+    store["canceled_operations"] += int(state == "OPERATION_STATE_CANCELED")
+    store["operations_in_progress"] += int(state == "OPERATION_STATE_PROGRESS")
 
-        currencies_detected.add(currency)
-        _add_to_bucket(currency_buckets[currency][category], amount)
-        currency_total_net[currency] += amount
+    child_operations = operation.get("child_operations")
+    if isinstance(child_operations, list):
+        store["embedded_child_operations_excluded"] += len(child_operations)
+    trades_info = operation.get("trades_info")
+    trades = trades_info.get("trades") if isinstance(trades_info, dict) else None
+    if isinstance(trades, list):
+        store["embedded_trades_excluded"] += len(trades)
+    store["top_level_parent_linked_operations"] += int(
+        bool(str(operation.get("parent_operation_id", "") or "").strip())
+    )
+    nested_commission_amount, _ = _money_parts(base, operation.get("commission"))
+    store["nested_commission_fields_excluded"] += int(
+        nested_commission_amount not in (None, Decimal("0"))
+    )
 
-        if category in POSITIVE_EXPECTED_CATEGORIES:
-            sign_checked += 1
-            if amount < 0:
-                sign_mismatches.append(
-                    {
-                        "type": operation_type,
-                        "category": category,
-                        "currency": currency,
-                        "payment": base.decimal_string(amount),
-                        "expected_sign": "nonnegative",
-                    }
-                )
-        elif category in NEGATIVE_EXPECTED_CATEGORIES:
-            sign_checked += 1
-            if amount > 0:
-                sign_mismatches.append(
-                    {
-                        "type": operation_type,
-                        "category": category,
-                        "currency": currency,
-                        "payment": base.decimal_string(amount),
-                        "expected_sign": "nonpositive",
-                    }
-                )
 
-        if category in INSTRUMENT_ACTIVITY_CATEGORIES:
-            key = _instrument_key(operation)
-            group = instrument_groups.setdefault(
-                key,
-                {
-                    "instrument_uid": operation.get("instrument_uid") or None,
-                    "position_uid": operation.get("position_uid") or None,
-                    "figi": operation.get("figi") or None,
-                    "name": operation.get("name") or None,
-                    "instrument_type": operation.get("instrument_type") or None,
-                    "currency": currency,
-                    "operation_count": 0,
-                    "purchases": Decimal("0"),
-                    "sales": Decimal("0"),
-                    "coupons": Decimal("0"),
-                    "dividends": Decimal("0"),
-                    "bond_redemptions": Decimal("0"),
-                    "net_payment": Decimal("0"),
-                },
-            )
-            group["operation_count"] += 1
-            group[category] += abs(amount)
-            group["net_payment"] += amount
+def _record_payment_sign(
+    *,
+    base: Any,
+    operation_type: str,
+    category: str,
+    currency: str,
+    amount: Decimal,
+    store: dict[str, Any],
+) -> None:
+    expected_sign = None
+    mismatch = False
+    if category in POSITIVE_EXPECTED_CATEGORIES:
+        expected_sign = "nonnegative"
+        mismatch = amount < 0
+    elif category in NEGATIVE_EXPECTED_CATEGORIES:
+        expected_sign = "nonpositive"
+        mismatch = amount > 0
+    else:
+        return
 
+    store["sign_checked"] += 1
+    if mismatch:
+        store["sign_mismatches"].append(
+            {
+                "type": operation_type,
+                "category": category,
+                "currency": currency,
+                "payment": base.decimal_string(amount),
+                "expected_sign": expected_sign,
+            }
+        )
+
+
+def _record_instrument_activity(
+    *,
+    operation: dict[str, Any],
+    category: str,
+    currency: str,
+    amount: Decimal,
+    store: dict[str, Any],
+) -> None:
+    if category not in INSTRUMENT_ACTIVITY_CATEGORIES:
+        return
+    groups = store["instrument_groups"]
+    key = _instrument_key(operation)
+    group = groups.setdefault(
+        key,
+        {
+            "instrument_uid": operation.get("instrument_uid") or None,
+            "position_uid": operation.get("position_uid") or None,
+            "figi": operation.get("figi") or None,
+            "name": operation.get("name") or None,
+            "instrument_type": operation.get("instrument_type") or None,
+            "currency": currency,
+            "operation_count": 0,
+            "purchases": Decimal("0"),
+            "sales": Decimal("0"),
+            "coupons": Decimal("0"),
+            "dividends": Decimal("0"),
+            "bond_redemptions": Decimal("0"),
+            "net_payment": Decimal("0"),
+        },
+    )
+    group["operation_count"] += 1
+    group[category] += abs(amount)
+    group["net_payment"] += amount
+
+
+def _record_operation(
+    *,
+    base: Any,
+    operation: dict[str, Any],
+    store: dict[str, Any],
+) -> None:
+    operation_type = _operation_type(base, operation)
+    state = _operation_state(base, operation)
+    category = classify_operation(operation_type)
+    _record_operation_metadata(
+        base=base,
+        operation=operation,
+        operation_type=operation_type,
+        state=state,
+        category=category,
+        store=store,
+    )
+    if state != "OPERATION_STATE_EXECUTED":
+        return
+
+    amount, currency = _money_parts(base, operation.get("payment"))
+    if amount is None or not currency:
+        store["invalid_money_rows"] += 1
+        return
+    store["currencies_detected"].add(currency)
+    _add_to_bucket(store["currency_buckets"][currency][category], amount)
+    store["currency_total_net"][currency] += amount
+    _record_payment_sign(
+        base=base,
+        operation_type=operation_type,
+        category=category,
+        currency=currency,
+        amount=amount,
+        store=store,
+    )
+    _record_instrument_activity(
+        operation=operation,
+        category=category,
+        currency=currency,
+        amount=amount,
+        store=store,
+    )
+
+
+def _currency_operation_summaries(
+    *,
+    base: Any,
+    store: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     cash_rows: list[dict[str, Any]] = []
     net_external_flow: list[dict[str, Any]] = []
     turnover: list[dict[str, Any]] = []
     category_total_checks: list[dict[str, Any]] = []
-
-    for currency in sorted(currencies_detected):
-        categories = currency_buckets[currency]
+    for currency in sorted(store["currencies_detected"]):
+        categories = store["currency_buckets"][currency]
         cash_rows.append(
             {
                 "currency": currency,
@@ -545,7 +593,6 @@ def build_operations_analytics(
                 },
             }
         )
-
         deposits = categories["deposits"]["gross_amount"]
         withdrawals = categories["withdrawals"]["gross_amount"]
         purchases = categories["purchases"]["gross_amount"]
@@ -566,12 +613,11 @@ def build_operations_analytics(
                 "turnover": base.decimal_string(purchases + sales),
             }
         )
-
         categories_net = sum(
             (categories[category]["net_payment"] for category in CATEGORY_ORDER),
             Decimal("0"),
         )
-        operations_net = currency_total_net[currency]
+        operations_net = store["currency_total_net"][currency]
         difference = categories_net - operations_net
         category_total_checks.append(
             {
@@ -582,87 +628,55 @@ def build_operations_analytics(
                 "status": "passed" if difference == 0 else "failed",
             }
         )
+    return cash_rows, net_external_flow, turnover, category_total_checks
 
-    sign_status = "passed" if not sign_mismatches else "warning"
-    category_totals_status = (
-        "passed"
-        if all(check["status"] == "passed" for check in category_total_checks)
-        and invalid_money_rows == 0
-        else "warning"
-    )
 
-    commission_protection = {
-        "status": "applied",
-        "canonical_cash_basis": "top_level_operation.payment",
-        "nested_commission_fields_excluded": nested_commission_fields_excluded,
-        "parent_type_updates_collapsed": duplicate_quality[
-            "commission_updates_collapsed"
-        ],
-        "passed": True,
-    }
-    parent_child_protection = {
-        "status": "applied",
-        "top_level_operations_only": True,
-        "embedded_child_operations_excluded": (embedded_child_operations_excluded),
-        "embedded_trades_excluded": embedded_trades_excluded,
-        "top_level_parent_linked_operations": (top_level_parent_linked_operations),
-        "passed": True,
-    }
-
-    reconciliation_status = (
-        "ok"
-        if sign_status == "passed" and category_totals_status == "passed"
-        else "warning"
-    )
-    reconciliation_confirmed = reconciliation_status == "ok"
-
-    serialized_instrument_groups: list[dict[str, Any]] = []
-    for group in instrument_groups.values():
-        serialized_instrument_groups.append(
-            {
-                **{
-                    key: value
-                    for key, value in group.items()
-                    if key
-                    not in {
-                        "purchases",
-                        "sales",
-                        "coupons",
-                        "dividends",
-                        "bond_redemptions",
-                        "net_payment",
-                    }
-                },
-                "purchases": base.decimal_string(group["purchases"]),
-                "sales": base.decimal_string(group["sales"]),
-                "coupons": base.decimal_string(group["coupons"]),
-                "dividends": base.decimal_string(group["dividends"]),
-                "bond_redemptions": base.decimal_string(group["bond_redemptions"]),
-                "net_payment": base.decimal_string(group["net_payment"]),
-            }
-        )
-    serialized_instrument_groups.sort(
+def _instrument_activity_rows(
+    *,
+    base: Any,
+    groups: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    rows = [
+        {
+            **{
+                key: value
+                for key, value in group.items()
+                if key
+                not in {
+                    "purchases",
+                    "sales",
+                    "coupons",
+                    "dividends",
+                    "bond_redemptions",
+                    "net_payment",
+                }
+            },
+            "purchases": base.decimal_string(group["purchases"]),
+            "sales": base.decimal_string(group["sales"]),
+            "coupons": base.decimal_string(group["coupons"]),
+            "dividends": base.decimal_string(group["dividends"]),
+            "bond_redemptions": base.decimal_string(group["bond_redemptions"]),
+            "net_payment": base.decimal_string(group["net_payment"]),
+        }
+        for group in groups.values()
+    ]
+    rows.sort(
         key=lambda row: Decimal(str(row["purchases"])) + Decimal(str(row["sales"])),
         reverse=True,
     )
-    instrument_groups_total = len(serialized_instrument_groups)
-    instrument_groups_skipped = max(
-        0,
-        instrument_groups_total - MAX_INSTRUMENT_GROUPS,
-    )
-    serialized_instrument_groups = serialized_instrument_groups[:MAX_INSTRUMENT_GROUPS]
+    total = len(rows)
+    skipped = max(0, total - MAX_INSTRUMENT_GROUPS)
+    return rows[:MAX_INSTRUMENT_GROUPS], total, skipped
 
-    pagination_complete = not bool(pagination.get("truncated", False))
-    errors = component_errors or []
-    complete = (
-        not errors
-        and pagination_complete
-        and invalid_date_rows == 0
-        and invalid_money_rows == 0
-        and reconciliation_confirmed
-    )
-    status = "ok" if complete else "partial"
 
+def _operation_warnings(
+    *,
+    pagination: dict[str, Any],
+    sign_mismatches: list[dict[str, Any]],
+    invalid_money_rows: int,
+    unknown_operation_types: int,
+    instrument_groups_skipped: int,
+) -> list[str]:
     warnings = [
         (
             "Financial summaries include only OPERATION_STATE_EXECUTED top-level "
@@ -698,37 +712,109 @@ def build_operations_analytics(
             "lots. This endpoint remains read-only and exposes no trading methods."
         ),
     ]
-    if pagination.get("truncated"):
-        warnings.append(
-            "Pagination did not finish; totals cover only the pages received."
-        )
-    if not pagination.get("server_period_filter_applied", True):
-        warnings.append(
+    conditional = (
+        (
+            bool(pagination.get("truncated")),
+            "Pagination did not finish; totals cover only the pages received.",
+        ),
+        (
+            not pagination.get("server_period_filter_applied", True),
             "The installed SDK did not accept period fields in the cursor request; "
-            "the gateway applied the requested UTC period locally."
-        )
-    if sign_mismatches:
-        warnings.append(
+            "the gateway applied the requested UTC period locally.",
+        ),
+        (
+            bool(sign_mismatches),
             "At least one executed payment had an unexpected sign for its "
-            "category. Raw signs were preserved; see payment_sign_check."
-        )
-    if invalid_money_rows:
-        warnings.append(
+            "category. Raw signs were preserved; see payment_sign_check.",
+        ),
+        (
+            bool(invalid_money_rows),
             "At least one executed operation had no valid payment amount or "
-            "currency and was excluded from financial totals."
-        )
-    if unknown_operation_types:
-        warnings.append(
+            "currency and was excluded from financial totals.",
+        ),
+        (
+            bool(unknown_operation_types),
             "At least one operation type was not recognized by the local "
-            "classification table and was placed in other."
-        )
-    if instrument_groups_skipped:
-        warnings.append(
-            f"Instrument activity was limited to {MAX_INSTRUMENT_GROUPS} groups."
-        )
+            "classification table and was placed in other.",
+        ),
+        (
+            bool(instrument_groups_skipped),
+            f"Instrument activity was limited to {MAX_INSTRUMENT_GROUPS} groups.",
+        ),
+    )
+    warnings.extend(message for condition, message in conditional if condition)
+    return warnings
 
+
+def build_operations_analytics(
+    *,
+    base: Any,
+    app_version: str,
+    account: dict[str, Any],
+    raw_operations: list[dict[str, Any]],
+    period: dict[str, Any],
+    pagination: dict[str, Any],
+    component_errors: list[dict[str, Any]] | None = None,
+    retrieved_at: str | None = None,
+) -> dict[str, Any]:
+    start_time = base.parse_datetime(period.get("from"))
+    end_time = base.parse_datetime(period.get("to"))
+    in_period, outside_period, invalid_date_rows = _period_rows(
+        base=base,
+        raw_operations=raw_operations,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    deduplicated, duplicate_quality = deduplicate_operations(
+        base=base,
+        operations=in_period,
+    )
+    deduplicated.sort(
+        key=lambda item: _operation_sort_time(base, item),
+        reverse=True,
+    )
+    store = _operation_state_store()
+    for operation in deduplicated:
+        _record_operation(base=base, operation=operation, store=store)
+
+    (
+        cash_rows,
+        net_external_flow,
+        turnover,
+        category_total_checks,
+    ) = _currency_operation_summaries(base=base, store=store)
+    sign_mismatches = store["sign_mismatches"]
+    sign_status = "passed" if not sign_mismatches else "warning"
+    category_totals_status = (
+        "passed"
+        if all(check["status"] == "passed" for check in category_total_checks)
+        and store["invalid_money_rows"] == 0
+        else "warning"
+    )
+    reconciliation_status = (
+        "ok"
+        if sign_status == "passed" and category_totals_status == "passed"
+        else "warning"
+    )
+    reconciliation_confirmed = reconciliation_status == "ok"
+    instrument_activity, instrument_groups_total, instrument_groups_skipped = (
+        _instrument_activity_rows(
+            base=base,
+            groups=store["instrument_groups"],
+        )
+    )
+
+    pagination_complete = not bool(pagination.get("truncated", False))
+    errors = component_errors or []
+    complete = (
+        not errors
+        and pagination_complete
+        and invalid_date_rows == 0
+        and store["invalid_money_rows"] == 0
+        and reconciliation_confirmed
+    )
     payload = {
-        "status": status,
+        "status": "ok" if complete else "partial",
         "version": app_version,
         "retrieved_at": retrieved_at or datetime.now(timezone.utc).isoformat(),
         "account": account,
@@ -736,23 +822,23 @@ def build_operations_analytics(
         "pagination": pagination,
         "operations_count": len(deduplicated),
         "duplicates_removed": duplicate_quality["duplicates_removed"],
-        "executed_operations": executed_operations,
-        "canceled_operations": canceled_operations,
-        "operations_in_progress": operations_in_progress,
-        "state_counts": dict(sorted(state_counts.items())),
+        "executed_operations": store["executed_operations"],
+        "canceled_operations": store["canceled_operations"],
+        "operations_in_progress": store["operations_in_progress"],
+        "state_counts": dict(sorted(store["state_counts"].items())),
         "category_counts": {
-            category: int(category_counts.get(category, 0))
+            category: int(store["category_counts"].get(category, 0))
             for category in CATEGORY_ORDER
         },
         "cash_summary_by_currency": cash_rows,
         "net_external_flow": net_external_flow,
         "turnover": turnover,
-        "instrument_activity": serialized_instrument_groups,
+        "instrument_activity": instrument_activity,
         "reconciliation": {
             "executed_only": True,
             "payment_sign_check": {
                 "status": sign_status,
-                "checked": sign_checked,
+                "checked": store["sign_checked"],
                 "mismatches": len(sign_mismatches),
                 "examples": sign_mismatches[:20],
             },
@@ -760,8 +846,29 @@ def build_operations_analytics(
                 "status": category_totals_status,
                 "checks": category_total_checks,
             },
-            "commission_double_count_protection": commission_protection,
-            "parent_child_double_count_protection": parent_child_protection,
+            "commission_double_count_protection": {
+                "status": "applied",
+                "canonical_cash_basis": "top_level_operation.payment",
+                "nested_commission_fields_excluded": store[
+                    "nested_commission_fields_excluded"
+                ],
+                "parent_type_updates_collapsed": duplicate_quality[
+                    "commission_updates_collapsed"
+                ],
+                "passed": True,
+            },
+            "parent_child_double_count_protection": {
+                "status": "applied",
+                "top_level_operations_only": True,
+                "embedded_child_operations_excluded": store[
+                    "embedded_child_operations_excluded"
+                ],
+                "embedded_trades_excluded": store["embedded_trades_excluded"],
+                "top_level_parent_linked_operations": store[
+                    "top_level_parent_linked_operations"
+                ],
+                "passed": True,
+            },
             "status": reconciliation_status,
         },
         "quality": {
@@ -772,13 +879,13 @@ def build_operations_analytics(
             "commission_updates_collapsed": duplicate_quality[
                 "commission_updates_collapsed"
             ],
-            "currencies_detected": len(currencies_detected),
-            "unknown_operation_types": unknown_operation_types,
-            "invalid_money_rows": invalid_money_rows,
+            "currencies_detected": len(store["currencies_detected"]),
+            "unknown_operation_types": store["unknown_operation_types"],
+            "invalid_money_rows": store["invalid_money_rows"],
             "pagination_complete": pagination_complete,
             "reconciliation_confirmed": reconciliation_confirmed,
             "instrument_groups_total": instrument_groups_total,
-            "instrument_groups_returned": len(serialized_instrument_groups),
+            "instrument_groups_returned": len(instrument_activity),
             "instrument_groups_skipped_by_limit": instrument_groups_skipped,
             "complete": complete,
             "no_cross_currency_aggregation": True,
@@ -787,10 +894,15 @@ def build_operations_analytics(
         "complete": complete,
         "component_errors": errors,
         "trading_methods": False,
-        "warnings": warnings,
+        "warnings": _operation_warnings(
+            pagination=pagination,
+            sign_mismatches=sign_mismatches,
+            invalid_money_rows=store["invalid_money_rows"],
+            unknown_operation_types=store["unknown_operation_types"],
+            instrument_groups_skipped=instrument_groups_skipped,
+        ),
     }
     return base.json_safe_value(payload)
-
 
 def get_operations_analytics(
     *,

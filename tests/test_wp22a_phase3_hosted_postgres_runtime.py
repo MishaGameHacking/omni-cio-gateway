@@ -190,6 +190,7 @@ def test_hosted_postgres_validator_rejects_provider_or_broad_role_mutation() -> 
             "HOSTED_POSTGRES_SQL_GRANT_UNEXPECTED",
         ),
     )
+    contract = _contract()
     for unsafe, expected in unsafe_inputs:
         with pytest.raises(HostedPostgresRuntimeContractError, match=expected):
-            validate_hosted_postgres_runtime_sql(unsafe, _contract())
+            validate_hosted_postgres_runtime_sql(unsafe, contract)

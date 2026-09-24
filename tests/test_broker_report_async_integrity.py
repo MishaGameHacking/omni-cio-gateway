@@ -149,10 +149,11 @@ def test_non_pending_request_error_is_not_silently_reclassified(
     configure_requests(monkeypatch)
     start_time, end_time = interval()
 
+    client = SimpleNamespace(operations=FatalOperations())
     with pytest.raises(FakeRequestError, match="account is unavailable"):
         broker.load_broker_report(
             base=FakeBase,
-            client=SimpleNamespace(operations=FatalOperations()),
+            client=client,
             account_id="account-1",
             start_time=start_time,
             end_time=end_time,

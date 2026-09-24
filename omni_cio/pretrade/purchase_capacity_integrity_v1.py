@@ -117,13 +117,10 @@ def _comparison(
     }
 
 
-def build_commission_summary(order_preview: Any) -> dict[str, Any]:
-    order = _dict(order_preview)
-    preview_currency = _currency(
-        _dict(order.get("total_order_amount")).get("currency")
-        or _dict(order.get("initial_order_amount")).get("currency")
-    )
 
+def _commission_candidates(
+    order: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, tuple[Decimal, str]]]:
     source_fields: dict[str, Any] = {}
     candidates: dict[str, tuple[Decimal, str]] = {}
     for field_name in (
@@ -137,38 +134,56 @@ def build_commission_summary(order_preview: Any) -> dict[str, Any]:
             continue
         source_fields[field_name] = _money_view(amount, currency)
         candidates[field_name] = (amount, currency)
+    return source_fields, candidates
 
-    canonical_source = "unavailable"
-    canonical_amount: Decimal | None = None
-    canonical_currency = ""
 
+def _canonical_commission(
+    candidates: dict[str, tuple[Decimal, str]],
+    preview_currency: str,
+) -> tuple[str, Decimal | None, str]:
     executed = candidates.get("executed_commission")
-    executed_rub = candidates.get("executed_commission_rub")
-    service = candidates.get("service_commission")
-    deal = candidates.get("deal_commission")
-
     if executed is not None:
-        canonical_source = "executed_commission"
-        canonical_amount, canonical_currency = executed
-    elif executed_rub is not None and preview_currency == "RUB":
-        canonical_source = "executed_commission_rub"
-        canonical_amount, canonical_currency = executed_rub
-    else:
-        component_values = [item for item in (service, deal) if item is not None]
-        component_currencies = {
-            currency for _, currency in component_values if currency
-        }
-        if component_values and len(component_currencies) <= 1:
-            canonical_source = "service_plus_deal_fallback"
-            canonical_amount = sum(
-                (amount for amount, _ in component_values),
-                Decimal("0"),
-            )
-            canonical_currency = (
-                next(iter(component_currencies), "") or preview_currency
-            )
+        return "executed_commission", executed[0], executed[1]
 
-    components_sum_check: dict[str, Any] = {
+    executed_rub = candidates.get("executed_commission_rub")
+    if executed_rub is not None and preview_currency == "RUB":
+        return "executed_commission_rub", executed_rub[0], executed_rub[1]
+
+    components = [
+        item
+        for item in (
+            candidates.get("service_commission"),
+            candidates.get("deal_commission"),
+        )
+        if item is not None
+    ]
+    component_currencies = {currency for _, currency in components if currency}
+    if not components or len(component_currencies) > 1:
+        return "unavailable", None, ""
+    return (
+        "service_plus_deal_fallback",
+        sum((amount for amount, _ in components), Decimal("0")),
+        next(iter(component_currencies), "") or preview_currency,
+    )
+
+
+def _component_commission_check(
+    *,
+    candidates: dict[str, tuple[Decimal, str]],
+    canonical_amount: Decimal | None,
+    canonical_currency: str,
+    preview_currency: str,
+) -> dict[str, Any]:
+    component_values = [
+        item
+        for item in (
+            candidates.get("service_commission"),
+            candidates.get("deal_commission"),
+        )
+        if item is not None
+    ]
+    component_currencies = {currency for _, currency in component_values if currency}
+    result: dict[str, Any] = {
         "status": "unavailable",
         "components_sum": "unavailable",
         "canonical_amount": (
@@ -179,45 +194,75 @@ def build_commission_summary(order_preview: Any) -> dict[str, Any]:
         "difference": "unavailable",
         "currency": canonical_currency or preview_currency or "unavailable",
     }
-    component_values = [item for item in (service, deal) if item is not None]
-    component_currencies = {currency for _, currency in component_values if currency}
+    currencies_compatible = (
+        not canonical_currency
+        or not component_currencies
+        or canonical_currency in component_currencies
+    )
     if (
-        canonical_amount is not None
-        and component_values
-        and len(component_currencies) <= 1
-        and (
-            not canonical_currency
-            or not component_currencies
-            or canonical_currency in component_currencies
-        )
+        canonical_amount is None
+        or not component_values
+        or len(component_currencies) > 1
+        or not currencies_compatible
     ):
-        components_sum = sum(
-            (amount for amount, _ in component_values),
-            Decimal("0"),
-        )
-        difference = components_sum - canonical_amount
-        components_sum_check = {
-            "status": (
-                "matched" if abs(difference) <= MONEY_TOLERANCE else "different"
-            ),
-            "components_sum": _decimal_string(components_sum),
-            "canonical_amount": _decimal_string(canonical_amount),
-            "difference": _decimal_string(difference),
-            "currency": canonical_currency or preview_currency or "unavailable",
-        }
+        return result
 
-    same_currency_values: list[Decimal] = []
+    components_sum = sum(
+        (amount for amount, _ in component_values),
+        Decimal("0"),
+    )
+    difference = components_sum - canonical_amount
+    return {
+        "status": "matched" if abs(difference) <= MONEY_TOLERANCE else "different",
+        "components_sum": _decimal_string(components_sum),
+        "canonical_amount": _decimal_string(canonical_amount),
+        "difference": _decimal_string(difference),
+        "currency": canonical_currency or preview_currency or "unavailable",
+    }
+
+
+def _incorrect_commission_sum(
+    *,
+    candidates: dict[str, tuple[Decimal, str]],
+    canonical_amount: Decimal | None,
+    target_currency: str,
+) -> tuple[Decimal | None, Decimal | None]:
+    if canonical_amount is None or not target_currency:
+        return None, None
+    same_currency_values = [
+        amount
+        for amount, currency in candidates.values()
+        if currency == target_currency
+    ]
+    if not same_currency_values:
+        return None, None
+    naive_sum = sum(same_currency_values, Decimal("0"))
+    return naive_sum, naive_sum - canonical_amount
+
+
+def build_commission_summary(order_preview: Any) -> dict[str, Any]:
+    order = _dict(order_preview)
+    preview_currency = _currency(
+        _dict(order.get("total_order_amount")).get("currency")
+        or _dict(order.get("initial_order_amount")).get("currency")
+    )
+    source_fields, candidates = _commission_candidates(order)
+    canonical_source, canonical_amount, canonical_currency = _canonical_commission(
+        candidates,
+        preview_currency,
+    )
+    components_sum_check = _component_commission_check(
+        candidates=candidates,
+        canonical_amount=canonical_amount,
+        canonical_currency=canonical_currency,
+        preview_currency=preview_currency,
+    )
     target_currency = canonical_currency or preview_currency
-    if target_currency:
-        for amount, currency in candidates.values():
-            if currency == target_currency:
-                same_currency_values.append(amount)
-
-    naive_sum: Decimal | None = None
-    overstatement: Decimal | None = None
-    if canonical_amount is not None and same_currency_values:
-        naive_sum = sum(same_currency_values, Decimal("0"))
-        overstatement = naive_sum - canonical_amount
+    naive_sum, overstatement = _incorrect_commission_sum(
+        candidates=candidates,
+        canonical_amount=canonical_amount,
+        target_currency=target_currency,
+    )
 
     return {
         "status": "ok" if canonical_amount is not None else "unavailable",
@@ -266,7 +311,6 @@ def build_commission_summary(order_preview: Any) -> dict[str, Any]:
             ),
         ],
     }
-
 
 def build_currency_consistency(
     payload: dict[str, Any],
@@ -368,41 +412,34 @@ def build_limit_summary(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_calculation_checks(
-    payload: dict[str, Any],
-    commission_summary: dict[str, Any],
-    currency_consistency: dict[str, Any],
-) -> dict[str, Any]:
-    request = _dict(payload.get("request"))
-    instrument = _dict(payload.get("instrument"))
-    market_price = _dict(payload.get("market_price"))
-    own_funds = _dict(payload.get("own_funds"))
-    order_preview = _dict(payload.get("order_preview"))
 
+def _initial_amount_check(
+    *,
+    payload: dict[str, Any],
+    request: dict[str, Any],
+    instrument: dict[str, Any],
+    market_price: dict[str, Any],
+    order_preview: dict[str, Any],
+) -> dict[str, Any]:
     quantity_lots = _integer(request.get("quantity_lots"))
     lot_size = _integer(market_price.get("lot_size") or instrument.get("lot"))
     price = _decimal(market_price.get("price"))
     initial_amount, initial_currency = _money(order_preview.get("initial_order_amount"))
-    total_amount, total_currency = _money(order_preview.get("total_order_amount"))
-    own_money = _decimal(own_funds.get("buy_money_amount"))
-    remaining_reported = _decimal(payload.get("remaining_cash_estimate"))
-
     instrument_type = str(
         instrument.get("instrument_kind") or instrument.get("instrument_type") or ""
     )
     simple_price_formula = instrument_type in PRICE_TIMES_LOT_TYPES
-    initial_expected = None
+    expected = None
     if (
         simple_price_formula
         and quantity_lots is not None
         and lot_size is not None
         and price is not None
     ):
-        initial_expected = price * Decimal(lot_size) * Decimal(quantity_lots)
-
-    initial_check = _comparison(
+        expected = price * Decimal(lot_size) * Decimal(quantity_lots)
+    return _comparison(
         formula="price × lot_size × quantity_lots = initial_order_amount",
-        expected=initial_expected,
+        expected=expected,
         reported=initial_amount,
         currency=initial_currency or _currency(market_price.get("currency")),
         not_applicable=not simple_price_formula,
@@ -415,37 +452,90 @@ def build_calculation_checks(
         ),
     )
 
+
+def _total_amount_check(
+    *,
+    order_preview: dict[str, Any],
+    commission_summary: dict[str, Any],
+) -> tuple[dict[str, Any], Decimal | None]:
+    initial_amount, _ = _money(order_preview.get("initial_order_amount"))
+    total_amount, total_currency = _money(order_preview.get("total_order_amount"))
     canonical_amount, canonical_currency = _money(
         commission_summary.get("canonical_commission")
     )
     aci_amount, aci_currency = _money(
         _dict(order_preview.get("extra_bond")).get("aci_value")
     )
-    total_expected = None
+    expected = None
     if initial_amount is not None and canonical_amount is not None:
-        total_expected = initial_amount + canonical_amount
-        if aci_amount is not None:
-            total_expected += aci_amount
+        expected = initial_amount + canonical_amount + (aci_amount or Decimal("0"))
 
-    total_formula = "initial_order_amount + canonical_commission"
+    formula = "initial_order_amount + canonical_commission"
     if aci_amount is not None:
-        total_formula += " + aci_value"
-    total_formula += " = total_order_amount"
-
-    total_check = _comparison(
-        formula=total_formula,
-        expected=total_expected,
-        reported=total_amount,
-        currency=total_currency or canonical_currency or aci_currency,
-        reason=(
-            "GetOrderPrice may include instrument-specific values. The check uses "
-            "only the aggregate commission once and adds returned bond ACI once."
+        formula += " + aci_value"
+    formula += " = total_order_amount"
+    return (
+        _comparison(
+            formula=formula,
+            expected=expected,
+            reported=total_amount,
+            currency=total_currency or canonical_currency or aci_currency,
+            reason=(
+                "GetOrderPrice may include instrument-specific values. The check uses "
+                "only the aggregate commission once and adds returned bond ACI once."
+            ),
         ),
+        total_amount,
     )
 
-    remaining_expected = None
-    if own_money is not None and total_amount is not None:
-        remaining_expected = own_money - total_amount
+
+def _calculation_overall_status(
+    checks: list[dict[str, Any]],
+) -> tuple[str, int, int, int, int]:
+    passed = sum(check["status"] == "passed" for check in checks)
+    failed = sum(check["status"] == "failed" for check in checks)
+    unavailable = sum(check["status"] == "unavailable" for check in checks)
+    not_applicable = sum(check["status"] == "not_applicable" for check in checks)
+    if failed:
+        status = "failed"
+    elif passed and unavailable == 0:
+        status = "passed"
+    elif passed:
+        status = "partial"
+    else:
+        status = "unavailable"
+    return status, passed, failed, unavailable, not_applicable
+
+
+def build_calculation_checks(
+    payload: dict[str, Any],
+    commission_summary: dict[str, Any],
+    currency_consistency: dict[str, Any],
+) -> dict[str, Any]:
+    request = _dict(payload.get("request"))
+    instrument = _dict(payload.get("instrument"))
+    market_price = _dict(payload.get("market_price"))
+    own_funds = _dict(payload.get("own_funds"))
+    order_preview = _dict(payload.get("order_preview"))
+
+    initial_check = _initial_amount_check(
+        payload=payload,
+        request=request,
+        instrument=instrument,
+        market_price=market_price,
+        order_preview=order_preview,
+    )
+    total_check, total_amount = _total_amount_check(
+        order_preview=order_preview,
+        commission_summary=commission_summary,
+    )
+    own_money = _decimal(own_funds.get("buy_money_amount"))
+    remaining_reported = _decimal(payload.get("remaining_cash_estimate"))
+    remaining_expected = (
+        own_money - total_amount
+        if own_money is not None and total_amount is not None
+        else None
+    )
     remaining_check = _comparison(
         formula="buy_money_amount - total_order_amount = remaining_cash_estimate",
         expected=remaining_expected,
@@ -454,25 +544,20 @@ def build_calculation_checks(
     )
 
     checks = [initial_check, total_check, remaining_check]
-    passed = sum(check["status"] == "passed" for check in checks)
-    failed = sum(check["status"] == "failed" for check in checks)
-    unavailable = sum(check["status"] == "unavailable" for check in checks)
-    not_applicable = sum(check["status"] == "not_applicable" for check in checks)
-
-    if failed:
-        overall_status = "failed"
-    elif passed and unavailable == 0:
-        overall_status = "passed"
-    elif passed:
-        overall_status = "partial"
-    else:
-        overall_status = "unavailable"
-
-    integrity_confirmed = (
-        overall_status == "passed"
-        and currency_consistency.get("status") == "ok"
-        and commission_summary.get("status") == "ok"
-        and commission_summary.get("double_count_protection") is True
+    (
+        overall_status,
+        passed,
+        failed,
+        unavailable,
+        not_applicable,
+    ) = _calculation_overall_status(checks)
+    integrity_confirmed = all(
+        (
+            overall_status == "passed",
+            currency_consistency.get("status") == "ok",
+            commission_summary.get("status") == "ok",
+            commission_summary.get("double_count_protection") is True,
+        )
     )
 
     return {
@@ -486,7 +571,6 @@ def build_calculation_checks(
         "not_applicable": not_applicable,
         "integrity_confirmed": integrity_confirmed,
     }
-
 
 def apply_purchase_capacity_integrity(payload: Any) -> dict[str, Any]:
     result = deepcopy(_dict(payload))

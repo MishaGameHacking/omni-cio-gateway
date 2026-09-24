@@ -77,221 +77,200 @@ def _value_or_unavailable(
     return base.decimal_string(values.get(currency, Decimal("0")))
 
 
-def build_cash_liquidity_snapshot(
+
+def _cash_sources(
     *,
     base: Any,
-    app_version: str,
-    account: dict[str, Any],
-    positions_data: dict[str, Any] | None,
-    withdraw_limits_data: dict[str, Any] | None,
-    positions_status: str,
-    withdraw_limits_status: str,
-    component_errors: list[dict[str, Any]] | None = None,
-    retrieved_at: str | None = None,
-) -> dict[str, Any]:
-    positions = positions_data if isinstance(positions_data, dict) else {}
-    withdraw = withdraw_limits_data if isinstance(withdraw_limits_data, dict) else {}
+    positions: dict[str, Any],
+    withdraw: dict[str, Any],
+) -> dict[str, tuple[dict[str, Decimal], set[str], int]]:
+    return {
+        "reported_money": _money_map(base=base, rows=positions.get("money")),
+        "positions_blocked": _money_map(base=base, rows=positions.get("blocked")),
+        "withdrawable_money": _money_map(base=base, rows=withdraw.get("money")),
+        "withdraw_blocked": _money_map(base=base, rows=withdraw.get("blocked")),
+        "blocked_guarantee": _money_map(
+            base=base,
+            rows=withdraw.get("blocked_guarantee"),
+        ),
+    }
 
-    (
-        reported_money,
-        reported_money_present,
-        invalid_reported_money,
-    ) = _money_map(base=base, rows=positions.get("money"))
-    (
-        positions_blocked,
-        positions_blocked_present,
-        invalid_positions_blocked,
-    ) = _money_map(base=base, rows=positions.get("blocked"))
-    (
-        withdrawable_money,
-        withdrawable_money_present,
-        invalid_withdrawable_money,
-    ) = _money_map(base=base, rows=withdraw.get("money"))
-    (
-        withdraw_blocked,
-        withdraw_blocked_present,
-        invalid_withdraw_blocked,
-    ) = _money_map(base=base, rows=withdraw.get("blocked"))
-    (
-        blocked_guarantee,
-        blocked_guarantee_present,
-        invalid_blocked_guarantee,
-    ) = _money_map(base=base, rows=withdraw.get("blocked_guarantee"))
 
-    currencies = sorted(
-        reported_money_present
-        | positions_blocked_present
-        | withdrawable_money_present
-        | withdraw_blocked_present
-        | blocked_guarantee_present
+def _source_value(
+    sources: dict[str, tuple[dict[str, Decimal], set[str], int]],
+    name: str,
+    currency: str,
+) -> tuple[Decimal, bool]:
+    values, present, _ = sources[name]
+    return values.get(currency, Decimal("0")), currency in present
+
+
+
+def _cash_discrepancies(
+    *,
+    reported_value: Decimal,
+    reported_present: bool,
+    positions_blocked_value: Decimal,
+    positions_blocked_present: bool,
+    withdrawable_value: Decimal,
+    withdrawable_present: bool,
+    withdraw_blocked_value: Decimal,
+    withdraw_blocked_present: bool,
+    has_positions: bool,
+    has_withdraw: bool,
+) -> tuple[list[str], Decimal | None]:
+    reasons: list[str] = []
+    difference = (
+        reported_value - withdrawable_value
+        if reported_present and withdrawable_present
+        else None
     )
+    if difference is None:
+        reasons.append("money_value_missing_from_one_source")
+    elif difference != 0:
+        reasons.append("reported_money_differs_from_withdrawable_money")
 
-    rows: list[dict[str, Any]] = []
-    currencies_matched = 0
-    currencies_present_in_both_sources = 0
-    source_discrepancies = 0
-    negative_values_detected = 0
-
-    for currency in currencies:
-        has_positions = (
-            currency in reported_money_present or currency in positions_blocked_present
-        )
-        has_withdraw = (
-            currency in withdrawable_money_present
-            or currency in withdraw_blocked_present
-            or currency in blocked_guarantee_present
-        )
-        if has_positions and has_withdraw:
-            currencies_present_in_both_sources += 1
-
-        reported_value = reported_money.get(currency, Decimal("0"))
-        positions_blocked_value = positions_blocked.get(
-            currency,
-            Decimal("0"),
-        )
-        withdrawable_value = withdrawable_money.get(
-            currency,
-            Decimal("0"),
-        )
-        withdraw_blocked_value = withdraw_blocked.get(
-            currency,
-            Decimal("0"),
-        )
-        guarantee_value = blocked_guarantee.get(
-            currency,
-            Decimal("0"),
-        )
-
-        negative_values_detected += sum(
-            value < 0
-            for value, present_set in (
-                (reported_value, reported_money_present),
-                (positions_blocked_value, positions_blocked_present),
-                (withdrawable_value, withdrawable_money_present),
-                (withdraw_blocked_value, withdraw_blocked_present),
-                (guarantee_value, blocked_guarantee_present),
-            )
-            if currency in present_set
-        )
-
-        reasons: list[str] = []
-        cash_difference: str = "unavailable"
-        if (
-            currency in reported_money_present
-            and currency in withdrawable_money_present
-        ):
-            difference = reported_value - withdrawable_value
-            cash_difference = base.decimal_string(difference)
-            if difference != 0:
-                reasons.append("reported_money_differs_from_withdrawable_money")
-        else:
-            reasons.append("money_value_missing_from_one_source")
-
-        if (
-            currency in positions_blocked_present
-            and currency in withdraw_blocked_present
-            and positions_blocked_value != withdraw_blocked_value
-        ):
+    if positions_blocked_present and withdraw_blocked_present:
+        if positions_blocked_value != withdraw_blocked_value:
             reasons.append("blocked_value_differs_between_sources")
-        elif (currency in positions_blocked_present) != (
-            currency in withdraw_blocked_present
-        ):
-            reasons.append("blocked_value_missing_from_one_source")
+    elif positions_blocked_present != withdraw_blocked_present:
+        reasons.append("blocked_value_missing_from_one_source")
 
-        if not has_positions:
-            reasons.append("currency_missing_from_positions")
-        if not has_withdraw:
-            reasons.append("currency_missing_from_withdraw_limits")
+    if not has_positions:
+        reasons.append("currency_missing_from_positions")
+    if not has_withdraw:
+        reasons.append("currency_missing_from_withdraw_limits")
+    return reasons, difference
 
-        if reasons:
-            source_discrepancies += 1
-            if has_positions and has_withdraw:
-                cash_status = "source_difference"
-            elif has_positions:
-                cash_status = "positions_only"
-            elif has_withdraw:
-                cash_status = "withdraw_limits_only"
-            else:
-                cash_status = "unavailable"
-        else:
-            cash_status = "matched"
-            currencies_matched += 1
 
-        rows.append(
-            {
-                "currency": currency,
-                "reported_money": _value_or_unavailable(
-                    base=base,
-                    values=reported_money,
-                    present=reported_money_present,
-                    currency=currency,
-                ),
-                "positions_blocked": _value_or_unavailable(
-                    base=base,
-                    values=positions_blocked,
-                    present=positions_blocked_present,
-                    currency=currency,
-                ),
-                "withdrawable_money": _value_or_unavailable(
-                    base=base,
-                    values=withdrawable_money,
-                    present=withdrawable_money_present,
-                    currency=currency,
-                ),
-                "withdraw_blocked": _value_or_unavailable(
-                    base=base,
-                    values=withdraw_blocked,
-                    present=withdraw_blocked_present,
-                    currency=currency,
-                ),
-                "blocked_guarantee": _value_or_unavailable(
-                    base=base,
-                    values=blocked_guarantee,
-                    present=blocked_guarantee_present,
-                    currency=currency,
-                ),
-                "cash_difference": cash_difference,
-                "cash_difference_basis": "reported_money_minus_withdrawable_money",
-                "cash_status": cash_status,
-                "source_presence": {
-                    "positions": has_positions,
-                    "withdraw_limits": has_withdraw,
-                },
-                "discrepancy_reasons": reasons,
-            }
-        )
+def _cash_status(
+    *,
+    reasons: list[str],
+    has_positions: bool,
+    has_withdraw: bool,
+) -> str:
+    if not reasons:
+        return "matched"
+    if has_positions and has_withdraw:
+        return "source_difference"
+    if has_positions:
+        return "positions_only"
+    if has_withdraw:
+        return "withdraw_limits_only"
+    return "unavailable"
 
-    invalid_money_rows = sum(
+
+def _cash_row(
+    *,
+    base: Any,
+    currency: str,
+    sources: dict[str, tuple[dict[str, Decimal], set[str], int]],
+) -> tuple[dict[str, Any], bool, bool, int]:
+    reported_value, reported_present = _source_value(
+        sources, "reported_money", currency
+    )
+    positions_blocked_value, positions_blocked_present = _source_value(
+        sources, "positions_blocked", currency
+    )
+    withdrawable_value, withdrawable_present = _source_value(
+        sources, "withdrawable_money", currency
+    )
+    withdraw_blocked_value, withdraw_blocked_present = _source_value(
+        sources, "withdraw_blocked", currency
+    )
+    guarantee_value, guarantee_present = _source_value(
+        sources, "blocked_guarantee", currency
+    )
+
+    has_positions = reported_present or positions_blocked_present
+    has_withdraw = (
+        withdrawable_present or withdraw_blocked_present or guarantee_present
+    )
+    negative_values = sum(
         (
-            invalid_reported_money,
-            invalid_positions_blocked,
-            invalid_withdrawable_money,
-            invalid_withdraw_blocked,
-            invalid_blocked_guarantee,
+            reported_present and reported_value < 0,
+            positions_blocked_present and positions_blocked_value < 0,
+            withdrawable_present and withdrawable_value < 0,
+            withdraw_blocked_present and withdraw_blocked_value < 0,
+            guarantee_present and guarantee_value < 0,
         )
     )
-    limits_loading_in_progress = bool(
-        positions.get("limits_loading_in_progress", False)
+
+    reasons, difference = _cash_discrepancies(
+        reported_value=reported_value,
+        reported_present=reported_present,
+        positions_blocked_value=positions_blocked_value,
+        positions_blocked_present=positions_blocked_present,
+        withdrawable_value=withdrawable_value,
+        withdrawable_present=withdrawable_present,
+        withdraw_blocked_value=withdraw_blocked_value,
+        withdraw_blocked_present=withdraw_blocked_present,
+        has_positions=has_positions,
+        has_withdraw=has_withdraw,
     )
-    both_sources_ok = positions_status == "ok" and withdraw_limits_status == "ok"
-    complete = (
-        both_sources_ok and invalid_money_rows == 0 and not limits_loading_in_progress
+    cash_difference = (
+        base.decimal_string(difference)
+        if difference is not None
+        else "unavailable"
+    )
+    cash_status = _cash_status(
+        reasons=reasons,
+        has_positions=has_positions,
+        has_withdraw=has_withdraw,
     )
 
-    if positions_status == "error" and withdraw_limits_status == "error":
-        status = "error"
-    elif not complete:
-        status = "partial"
-    else:
-        status = "ok"
+    row = {
+        "currency": currency,
+        "reported_money": _value_or_unavailable(
+            base=base,
+            values=sources["reported_money"][0],
+            present=sources["reported_money"][1],
+            currency=currency,
+        ),
+        "positions_blocked": _value_or_unavailable(
+            base=base,
+            values=sources["positions_blocked"][0],
+            present=sources["positions_blocked"][1],
+            currency=currency,
+        ),
+        "withdrawable_money": _value_or_unavailable(
+            base=base,
+            values=sources["withdrawable_money"][0],
+            present=sources["withdrawable_money"][1],
+            currency=currency,
+        ),
+        "withdraw_blocked": _value_or_unavailable(
+            base=base,
+            values=sources["withdraw_blocked"][0],
+            present=sources["withdraw_blocked"][1],
+            currency=currency,
+        ),
+        "blocked_guarantee": _value_or_unavailable(
+            base=base,
+            values=sources["blocked_guarantee"][0],
+            present=sources["blocked_guarantee"][1],
+            currency=currency,
+        ),
+        "cash_difference": cash_difference,
+        "cash_difference_basis": "reported_money_minus_withdrawable_money",
+        "cash_status": cash_status,
+        "source_presence": {
+            "positions": has_positions,
+            "withdraw_limits": has_withdraw,
+        },
+        "discrepancy_reasons": reasons,
+    }
+    matched = not reasons
+    both_sources = has_positions and has_withdraw
+    return row, matched, both_sources, negative_values
 
-    if not currencies:
-        cash_mode = "empty"
-    elif len(currencies) == 1:
-        cash_mode = "single_currency"
-    else:
-        cash_mode = "multi_currency"
 
+def _cash_warnings(
+    *,
+    limits_loading_in_progress: bool,
+    source_discrepancies: int,
+    negative_values_detected: int,
+) -> list[str]:
     warnings = [
         BUYING_POWER_REASON,
         (
@@ -320,6 +299,68 @@ def build_cash_liquidity_snapshot(
             "At least one source returned a negative money value; the raw sign "
             "was preserved."
         )
+    return warnings
+
+
+def build_cash_liquidity_snapshot(
+    *,
+    base: Any,
+    app_version: str,
+    account: dict[str, Any],
+    positions_data: dict[str, Any] | None,
+    withdraw_limits_data: dict[str, Any] | None,
+    positions_status: str,
+    withdraw_limits_status: str,
+    component_errors: list[dict[str, Any]] | None = None,
+    retrieved_at: str | None = None,
+) -> dict[str, Any]:
+    positions = positions_data if isinstance(positions_data, dict) else {}
+    withdraw = withdraw_limits_data if isinstance(withdraw_limits_data, dict) else {}
+    sources = _cash_sources(base=base, positions=positions, withdraw=withdraw)
+
+    currencies = sorted(
+        set().union(*(present for _, present, _ in sources.values()))
+    )
+    rows: list[dict[str, Any]] = []
+    currencies_matched = 0
+    currencies_present_in_both_sources = 0
+    negative_values_detected = 0
+    for currency in currencies:
+        row, matched, both_sources, negative_values = _cash_row(
+            base=base,
+            currency=currency,
+            sources=sources,
+        )
+        rows.append(row)
+        currencies_matched += int(matched)
+        currencies_present_in_both_sources += int(both_sources)
+        negative_values_detected += negative_values
+
+    source_discrepancies = len(currencies) - currencies_matched
+    invalid_money_rows = sum(invalid for _, _, invalid in sources.values())
+    limits_loading_in_progress = bool(
+        positions.get("limits_loading_in_progress", False)
+    )
+    complete = (
+        positions_status == "ok"
+        and withdraw_limits_status == "ok"
+        and invalid_money_rows == 0
+        and not limits_loading_in_progress
+    )
+    status = (
+        "error"
+        if positions_status == "error" and withdraw_limits_status == "error"
+        else "ok"
+        if complete
+        else "partial"
+    )
+    cash_mode = (
+        "empty"
+        if not currencies
+        else "single_currency"
+        if len(currencies) == 1
+        else "multi_currency"
+    )
 
     payload = {
         "status": status,
@@ -347,7 +388,7 @@ def build_cash_liquidity_snapshot(
             "positions_source_status": positions_status,
             "withdraw_limits_source_status": withdraw_limits_status,
             "currencies_detected": len(currencies),
-            "currencies_present_in_both_sources": (currencies_present_in_both_sources),
+            "currencies_present_in_both_sources": currencies_present_in_both_sources,
             "currencies_matched": currencies_matched,
             "source_discrepancies": source_discrepancies,
             "negative_values_detected": negative_values_detected,
@@ -359,10 +400,13 @@ def build_cash_liquidity_snapshot(
         },
         "component_errors": component_errors or [],
         "trading_methods": False,
-        "warnings": warnings,
+        "warnings": _cash_warnings(
+            limits_loading_in_progress=limits_loading_in_progress,
+            source_discrepancies=source_discrepancies,
+            negative_values_detected=negative_values_detected,
+        ),
     }
     return base.json_safe_value(payload)
-
 
 def get_cash_liquidity_snapshot(
     *,

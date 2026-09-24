@@ -403,42 +403,45 @@ def test_provider_neutral_runtime_role_probe_accepts_pg18_safe_creator_edge() ->
 
 def test_provider_neutral_runtime_role_probe_rejects_member_authority_drift() -> None:
     role = "omni_cio_timeweb_candidate"
+    connection = _RuntimeProbeConnection(
+        role,
+        runtime_members=[(True, True, False)],
+    )
     with pytest.raises(
         RuntimeError,
         match="HOSTED_RUNTIME_DATABASE_ROLE_MEMBER_DRIFT",
     ):
         probe_hosted_runtime_database(
-            _RuntimeProbeConnection(
-                role,
-                runtime_members=[(True, True, False)],
-            ),
+            connection,
             expected_runtime_role=role,
         )
 
 
 def test_provider_neutral_runtime_probe_rejects_column_authority_drift() -> None:
     role = "omni_cio_timeweb_candidate"
+    connection = _RuntimeProbeConnection(role, column_privilege_drift=True)
     with pytest.raises(
         RuntimeError,
         match="HOSTED_RUNTIME_COLUMN_PRIVILEGE_FORBIDDEN",
     ):
         probe_hosted_runtime_database(
-            _RuntimeProbeConnection(role, column_privilege_drift=True),
+            connection,
             expected_runtime_role=role,
         )
 
 
 def test_provider_neutral_runtime_probe_rejects_security_constraint_drift() -> None:
     role = "omni_cio_timeweb_candidate"
+    connection = _RuntimeProbeConnection(
+        role,
+        missing_constraint="external_identity_user_scope_fk",
+    )
     with pytest.raises(
         RuntimeError,
         match="HOSTED_RUNTIME_DATABASE_CONSTRAINT_DRIFT",
     ):
         probe_hosted_runtime_database(
-            _RuntimeProbeConnection(
-                role,
-                missing_constraint="external_identity_user_scope_fk",
-            ),
+            connection,
             expected_runtime_role=role,
         )
 
@@ -467,33 +470,36 @@ def test_provider_neutral_runtime_probe_rejects_incomplete_auth_schema() -> None
 
 def test_provider_neutral_runtime_probe_rejects_extra_relation_authority() -> None:
     role = "omni_cio_timeweb_candidate"
+    connection = _RuntimeProbeConnection(role, extra_relation_privilege=True)
     with pytest.raises(
         RuntimeError,
         match="HOSTED_RUNTIME_RELATION_PRIVILEGE_DRIFT",
     ):
         probe_hosted_runtime_database(
-            _RuntimeProbeConnection(role, extra_relation_privilege=True),
+            connection,
             expected_runtime_role=role,
         )
 
 
 def test_provider_neutral_runtime_probe_rejects_tenant_scope_function_drift() -> None:
     role = "omni_cio_timeweb_candidate"
+    connection = _RuntimeProbeConnection(role, function_drift=True)
     with pytest.raises(
         RuntimeError,
         match="HOSTED_RUNTIME_TENANT_SCOPE_FUNCTION_DRIFT",
     ):
         probe_hosted_runtime_database(
-            _RuntimeProbeConnection(role, function_drift=True),
+            connection,
             expected_runtime_role=role,
         )
 
 
 def test_provider_neutral_runtime_probe_rejects_rls_policy_drift() -> None:
     role = "omni_cio_timeweb_candidate"
+    connection = _RuntimeProbeConnection(role, policy_drift=True)
     with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_TENANT_POLICY_DRIFT"):
         probe_hosted_runtime_database(
-            _RuntimeProbeConnection(role, policy_drift=True),
+            connection,
             expected_runtime_role=role,
         )
 
