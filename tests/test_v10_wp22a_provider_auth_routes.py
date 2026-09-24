@@ -277,11 +277,17 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
         session_token=fresh_token,
         csrf_token=csrf,
     )
-    csrf_header = next(
-        value for value in _set_cookie_headers(response) if BROWSER_CSRF_COOKIE in value
+    cookies = _set_cookie_headers(response)
+    session_header = next(
+        value for value in cookies if BROWSER_SESSION_COOKIE in value
     )
+    csrf_header = next(value for value in cookies if BROWSER_CSRF_COOKIE in value)
+    assert "HttpOnly" in session_header
+    assert "Secure" in session_header
+    assert "SameSite=strict" in session_header
     assert "HttpOnly" in csrf_header
     assert "Secure" in csrf_header
+    assert "SameSite=strict" in csrf_header
     assert (
         client.cookies.get(
             "__Host-omni_v10_oauth_telegram",

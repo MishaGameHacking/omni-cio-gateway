@@ -19,6 +19,7 @@ from apps.api.telegram_auth import (
     TelegramAuthConfigurationError,
     build_telegram_provider_auth,
 )
+from omni_cio.persistence.migration import discover_migrations
 from omni_cio.web.browser_security_v1 import BrowserCookiePolicyV1
 from omni_cio.web.identity_v1 import (
     ORDINARY_LOGIN_PROVIDERS,
@@ -68,8 +69,14 @@ class _Result:
 
 
 class _RuntimeProbeConnection:
-    def __init__(self, role: str) -> None:
+    def __init__(
+        self,
+        role: str,
+        *,
+        missing_relation: str | None = None,
+    ) -> None:
         self._role = role
+        self._missing_relation = missing_relation
 
     def execute(self, statement: str, params: object = None) -> _Result:
         del params
@@ -90,13 +97,16 @@ class _RuntimeProbeConnection:
         if "FROM pg_catalog.pg_auth_members" in statement:
             return _Result(one=(0,))
         if "SELECT to_regclass" in statement:
-            return _Result(
-                one=(
-                    "omni_cio_v10.tenants",
-                    "omni_cio_v10.users",
-                    "omni_cio_v10.web_sessions",
-                )
-            )
+            relations: list[object | None] = [
+                "omni_cio_v10.tenants",
+                "omni_cio_v10.users",
+                "omni_cio_v10.external_identity_bindings",
+                "omni_cio_v10.web_sessions",
+                "omni_cio_v10.provider_auth_transactions",
+            ]
+            if self._missing_relation is not None:
+                relations[relations.index(self._missing_relation)] = None
+            return _Result(one=tuple(relations))
         if "FROM pg_catalog.pg_class" in statement:
             return _Result(
                 rows=[
@@ -122,6 +132,19 @@ def test_provider_neutral_runtime_role_probe_rejects_identity_drift() -> None:
         probe_hosted_runtime_database(
             connection,
             expected_runtime_role="omni_cio_timeweb_candidate",
+        )
+
+
+def test_provider_neutral_runtime_probe_rejects_incomplete_auth_schema() -> None:
+    role = "omni_cio_timeweb_candidate"
+    connection = _RuntimeProbeConnection(
+        role,
+        missing_relation="omni_cio_v10.provider_auth_transactions",
+    )
+    with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_SCHEMA_INCOMPLETE"):
+        probe_hosted_runtime_database(
+            connection,
+            expected_runtime_role=role,
         )
 
 
@@ -210,7 +233,14 @@ def test_non_synthetic_status_is_provider_neutral() -> None:
 
     payload = _system_status(services, now="2026-09-22T12:00:00+00:00")
     database = next(item for item in payload["services"] if item["id"] == "database")
+    expected_series = discover_migrations()
+    expected_latest = expected_series[-1]
+    expected_label = f"{expected_latest.version:04d}_{expected_latest.name}"
     assert database["label"] == "PostgreSQL 18"
+    assert payload["database"]["current_migration"] is None
+    assert payload["database"]["expected_migration"] == expected_label
+    assert payload["database"]["migration_count"] == len(expected_series)
+    assert payload["database"]["exact_migration_state"] is False
     assert "Neon" not in str(payload)
 
 

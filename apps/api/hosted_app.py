@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from omni_cio.persistence.migration import discover_migrations
 from omni_cio.web.browser_security_v1 import (
     BROWSER_CSRF_COOKIE,
     BROWSER_CSRF_HEADER,
@@ -432,6 +433,9 @@ def _system_status(
     now: str,
 ) -> dict[str, object]:
     services.database_probe()
+    migrations = discover_migrations()
+    latest = migrations[-1]
+    expected_migration = f"{latest.version:04d}_{latest.name}"
     return {
         "schema_version": "1.0.0",
         "generated_at": now,
@@ -448,10 +452,10 @@ def _system_status(
         "database": {
             "state": "READY",
             "availability": "AVAILABLE",
-            "current_migration": "0005_browser_bound_provider_auth",
-            "expected_migration": "0005_browser_bound_provider_auth",
-            "migration_count": 5,
-            "exact_migration_state": True,
+            "current_migration": None,
+            "expected_migration": expected_migration,
+            "migration_count": len(migrations),
+            "exact_migration_state": False,
         },
         "backup": {
             "state": "BLOCKED",

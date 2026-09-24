@@ -222,7 +222,7 @@ def _establish_authenticated_session(
         token,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="strict",
         path="/",
         max_age=services.cookies.session_max_age_seconds,
     )
@@ -231,7 +231,7 @@ def _establish_authenticated_session(
         csrf,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="strict",
         path="/",
         max_age=services.cookies.session_max_age_seconds,
     )

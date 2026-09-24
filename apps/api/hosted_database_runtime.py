@@ -54,7 +54,9 @@ def probe_hosted_runtime_database(
     required = connection.execute(
         "SELECT to_regclass('omni_cio_v10.tenants'), "
         "to_regclass('omni_cio_v10.users'), "
-        "to_regclass('omni_cio_v10.web_sessions')"
+        "to_regclass('omni_cio_v10.external_identity_bindings'), "
+        "to_regclass('omni_cio_v10.web_sessions'), "
+        "to_regclass('omni_cio_v10.provider_auth_transactions')"
     ).fetchone()
     if required is None or any(value is None for value in required):
         raise RuntimeError("HOSTED_RUNTIME_DATABASE_SCHEMA_INCOMPLETE")
