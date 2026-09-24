@@ -75,7 +75,7 @@ Internal v9 routing/policy/universe/research/credit/fund/risk/strategy/optimizer
 ## 7. Runtime files that must remain
 
 - `app.py` and current compatibility/runtime dependencies;
-- `broker_report_reconciliation/` gateway extension hook;
+- `omni_cio/reconciliation/` canonical broker-report reconciliation/gateway extension hook;
 - `omni_cio/` domain/runtime packages including v9 modules;
 - `render.yaml` and non-secret environment templates;
 - canonical dependency inputs/lock files;
