@@ -28,6 +28,7 @@ files = [
   "omni_cio/adapters",
   "omni_cio/quality",
   "omni_cio/analytics",
+  "omni_cio/portfolio",
   "omni_cio/core",
   "omni_cio/persistence",
   "omni_cio/jobs",
@@ -96,14 +97,16 @@ branch = true
 source = [
   "app",
   "main",
-  "omni_cio.portfolio.market_snapshot_v1",
-  "omni_cio.analytics.portfolio_structure_v1",
-  "omni_cio.portfolio.cash_liquidity_v1",
+  "omni_cio.portfolio.market_source_v1",
+  "omni_cio.analytics.portfolio_source_v1",
+  "omni_cio.analytics.cash_liquidity_v1",
   "omni_cio.pretrade.purchase_capacity_v1",
   "omni_cio.pretrade.purchase_capacity_integrity_v1",
-  "omni_cio.analytics.operations_v1",
-  "omni_cio.adapters.sdk_order_compat_v1",
-  "omni_cio.reconciliation.broker_report",
+  "omni_cio.pretrade.sale_capacity_v1",
+  "omni_cio.pretrade.sale_capacity_normalization_v1",
+  "omni_cio.analytics.operations_source_v1",
+  "omni_cio.adapters.tinvest_order_compat_v1",
+  "omni_cio.reconciliation",
 ]
 
 [tool.coverage.report]
