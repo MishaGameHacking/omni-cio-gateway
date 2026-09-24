@@ -276,13 +276,10 @@ def _open_sell_order_counts(
             continue
         requested = _integer_or_none(row.get("lots_requested"))
         executed = _integer_or_none(row.get("lots_executed"))
-        invalid_quantities = (
-            requested is None
-            or requested < 0
-            or executed is None
-            or executed < 0
-        )
-        if invalid_quantities:
+        if requested is None or requested < 0:
+            invalid_rows += 1
+            continue
+        if executed is None or executed < 0:
             invalid_rows += 1
             continue
         matching_orders += 1

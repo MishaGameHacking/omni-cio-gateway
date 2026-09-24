@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Callable
 
 import grpc
@@ -210,6 +211,7 @@ def get_sale_capacity_preview(
         base=base,
         market_snapshot_loader=market_snapshot_loader,
         instrument_uid=instrument_uid,
+        price_basis=price_basis,
         component_statuses=component_statuses,
         component_errors=component_errors,
     )
