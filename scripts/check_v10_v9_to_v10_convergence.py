@@ -294,9 +294,8 @@ def _validate_no_stale_relocation_path_consumers(root: Path) -> None:
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
             literal = node.value.replace("\\", "/")
-            if (
-                literal in _LEGACY_FILE_PATH_LITERALS
-                or literal.startswith(_LEGACY_DIRECTORY_PATH_PREFIXES)
+            if literal in _LEGACY_FILE_PATH_LITERALS or literal.startswith(
+                _LEGACY_DIRECTORY_PATH_PREFIXES
             ):
                 raise RuntimeError(
                     f"V9C_LEGACY_PATH_CONSUMER_REINTRODUCED:{relative}:{literal}"
