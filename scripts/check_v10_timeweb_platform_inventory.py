@@ -648,6 +648,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
             "apps/api/hosted_app.py",
             "apps/api/hosted_database_runtime.py",
             "apps/api/hosted_runtime.py",
+            "apps/api/postgres_web_connection.py",
             "apps/api/telegram_auth.py",
             "apps/web/e2e/app-shell.spec.ts",
             "apps/web/e2e/system-admin.spec.ts",

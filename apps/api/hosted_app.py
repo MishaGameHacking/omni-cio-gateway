@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import ipaddress
 import re
 import secrets
 from typing import Any, Protocol
@@ -201,6 +202,7 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
         sessions: SessionRegistryLike,
         now: Callable[[], datetime],
         trusted_edge_tls_terminated: bool = False,
+        allow_insecure_loopback_livez: bool = False,
         provider_start_paths: frozenset[str] = frozenset(),
         server_mutation_paths: frozenset[str] = frozenset(),
         abuse: HostedRequestAbuseControlV1 | None = None,
@@ -212,6 +214,7 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
         self._sessions = sessions
         self._now = now
         self._trusted_edge_tls_terminated = trusted_edge_tls_terminated
+        self._allow_insecure_loopback_livez = allow_insecure_loopback_livez
         self._provider_start_paths = provider_start_paths
         self._server_mutation_paths = server_mutation_paths
         self._abuse = abuse or HostedRequestAbuseControlV1()
@@ -220,12 +223,20 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
         # Never treat a client-controlled forwarded header as TLS authority. A managed
         # reverse-proxy boundary may terminate TLS only when source composition explicitly
         # marks that provider boundary as trusted.
+        if request.url.scheme.lower() == "https" or self._trusted_edge_tls_terminated:
+            return None
+        client = request.client
         if (
-            request.url.scheme.lower() != "https"
-            and not self._trusted_edge_tls_terminated
+            self._allow_insecure_loopback_livez
+            and request.url.path == _LIVEZ_PATH
+            and client is not None
         ):
-            return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
-        return None
+            try:
+                if ipaddress.ip_address(client.host).is_loopback:
+                    return None
+            except ValueError:
+                pass
+        return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
 
     def _resolve_session(self, request: Request) -> Response | None:
         session_token = request.cookies.get(BROWSER_SESSION_COOKIE)
@@ -834,6 +845,7 @@ def create_hosted_app(
     web_dist: Path = WEB_DIST,
     additional_hosts: tuple[str, ...] = (),
     trusted_edge_tls_terminated: bool = False,
+    allow_insecure_loopback_livez: bool = False,
     provider_start_paths: frozenset[str] = frozenset(),
     server_mutation_paths: frozenset[str] = frozenset(),
     include_livez: bool = True,
@@ -869,6 +881,7 @@ def create_hosted_app(
         sessions=services.sessions,
         now=services.now,
         trusted_edge_tls_terminated=trusted_edge_tls_terminated,
+        allow_insecure_loopback_livez=allow_insecure_loopback_livez,
         provider_start_paths=provider_start_paths,
         server_mutation_paths=server_mutation_paths,
         abuse=HostedRequestAbuseControlV1(),

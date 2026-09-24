@@ -5,7 +5,10 @@ import os
 
 from fastapi import FastAPI
 
-from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
+from apps.api.postgres_web_connection import (
+    _SerializedWebConnection,
+    _configure_long_lived_web_connection,
+)
 from apps.api.hosted_app import (
     HostedRuntimeServicesV1,
     _hostname,
@@ -32,10 +35,20 @@ _HOSTNAME_ENV = "OMNI_V10_PUBLIC_HOSTNAME"
 _RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 _DSN_ENV = "OMNI_V10_POSTGRES_DSN"
 _RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
+_TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
 HOSTED_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
 )
+
+
+def _trusted_edge_tls_terminated() -> bool:
+    raw = os.environ.get(_TRUSTED_EDGE_TLS_ENV, "").strip().lower()
+    if raw in {"", "0", "false"}:
+        return False
+    if raw in {"1", "true"}:
+        return True
+    raise RuntimeError("HOSTED_RUNTIME_TRUSTED_EDGE_TLS_FLAG_INVALID")
 
 
 def create_app() -> FastAPI:
@@ -79,7 +92,8 @@ def create_app() -> FastAPI:
             web_artifact_source="GITHUB_SOURCE_BUILD",
         ),
         additional_hosts=("localhost",),
-        trusted_edge_tls_terminated=True,
+        trusted_edge_tls_terminated=_trusted_edge_tls_terminated(),
+        allow_insecure_loopback_livez=True,
         provider_start_paths=frozenset({TELEGRAM_START_PATH}),
         server_mutation_paths=frozenset(),
         provider_route_installer=install_telegram_auth_routes_v1,

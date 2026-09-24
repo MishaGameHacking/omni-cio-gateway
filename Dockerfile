@@ -24,7 +24,8 @@ COPY infrastructure/certificates/russian_trusted_root_ca_2022.der ./infrastructu
 RUN set -eu; \
     export RUNNER_TEMP=/tmp; \
     python scripts/prepare_v10_tbank_pip_ca_bundle.py > /tmp/tbank-pip-ca.json; \
-    PIP_CERT_PATH="$(python -c 'import json, pathlib; print(json.loads(pathlib.Path("/tmp/tbank-pip-ca.json").read_text(encoding="utf-8"))["bundle_path"])')"; \
+    PIP_CERT_PATH="$(python -c \
+        'import json; print(json.load(open("/tmp/tbank-pip-ca.json", encoding="utf-8"))["bundle_path"])')"; \
     test -f "$PIP_CERT_PATH"; \
     PIP_CERT="$PIP_CERT_PATH" python -m pip install \
         --only-binary=:all: --require-hashes -r requirements.txt; \

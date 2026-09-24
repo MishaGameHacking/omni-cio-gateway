@@ -55,6 +55,7 @@ class FakeProviderRuntime:
     authorization_url_override: str | None = None
     authorization_query_override: str | None = None
     returned_browser_proof_override: str | None = None
+    returned_provider_override: IdentityProviderV1 | None = None
     started_browser_proof: str | None = None
 
     def start(
@@ -88,7 +89,7 @@ class FakeProviderRuntime:
         assert browser_proof == self.started_browser_proof
         self.completions.append((state, code, browser_proof, device_id))
         return VerifiedExternalIdentityV1(
-            provider=self.provider,
+            provider=self.returned_provider_override or self.provider,
             subject=f"subject-{self.provider.value}",
         )
 
@@ -278,9 +279,7 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
         csrf_token=csrf,
     )
     cookies = _set_cookie_headers(response)
-    session_header = next(
-        value for value in cookies if BROWSER_SESSION_COOKIE in value
-    )
+    session_header = next(value for value in cookies if BROWSER_SESSION_COOKIE in value)
     csrf_header = next(value for value in cookies if BROWSER_CSRF_COOKIE in value)
     assert "HttpOnly" in session_header
     assert "Secure" in session_header
@@ -296,6 +295,23 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
         )
         is None
     )
+
+
+def test_callback_rejects_runtime_identity_provider_mismatch() -> None:
+    app, runtimes, authentication = _app(IdentityProviderV1.TELEGRAM)
+    runtimes[0].returned_provider_override = IdentityProviderV1.VK_ID
+    client = TestClient(app, base_url="https://omni.example")
+    assert client.post(TELEGRAM_START_PATH, follow_redirects=False).status_code == 303
+
+    response = client.get(
+        TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "AUTHENTICATION_REJECTED"}
+    assert authentication.identities == []
+    assert authentication.bound_tokens == []
 
 
 def test_provider_proof_cannot_be_reused_across_fixed_callback_routes() -> None:

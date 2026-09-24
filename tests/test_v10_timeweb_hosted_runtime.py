@@ -14,7 +14,10 @@ from apps.api.hosted_database_runtime import (
     probe_hosted_runtime_database,
     validate_hosted_runtime_role,
 )
-from apps.api.hosted_runtime import HOSTED_SESSION_POLICY
+from apps.api.hosted_runtime import (
+    HOSTED_SESSION_POLICY,
+    _trusted_edge_tls_terminated,
+)
 from apps.api.telegram_auth import (
     TelegramAuthConfigurationError,
     build_telegram_provider_auth,
@@ -74,9 +77,13 @@ class _RuntimeProbeConnection:
         role: str,
         *,
         missing_relation: str | None = None,
+        extra_relation_privilege: bool = False,
+        policy_drift: bool = False,
     ) -> None:
         self._role = role
         self._missing_relation = missing_relation
+        self._extra_relation_privilege = extra_relation_privilege
+        self._policy_drift = policy_drift
 
     def execute(self, statement: str, params: object = None) -> _Result:
         del params
@@ -96,6 +103,47 @@ class _RuntimeProbeConnection:
             )
         if "FROM pg_catalog.pg_auth_members" in statement:
             return _Result(one=(0,))
+        if "AS database_owned" in statement:
+            return _Result(one=(0, 0, 0, 0))
+        if "has_database_privilege" in statement:
+            return _Result(one=(True, False, False))
+        if "has_schema_privilege" in statement:
+            return _Result(one=(True, False, False))
+        if "aclexplode" in statement:
+            return _Result(one=(0,))
+        if "information_schema.role_table_grants" in statement:
+            rows = [
+                    ("broker_accounts", "INSERT", "NO"),
+                    ("broker_accounts", "SELECT", "NO"),
+                    ("broker_connection_accounts", "INSERT", "NO"),
+                    ("broker_connection_accounts", "SELECT", "NO"),
+                    ("broker_connections", "INSERT", "NO"),
+                    ("broker_connections", "SELECT", "NO"),
+                    ("broker_connections", "UPDATE", "NO"),
+                    ("external_identity_bindings", "INSERT", "NO"),
+                    ("external_identity_bindings", "SELECT", "NO"),
+                    ("provider_auth_transactions", "DELETE", "NO"),
+                    ("provider_auth_transactions", "INSERT", "NO"),
+                    ("provider_auth_transactions", "SELECT", "NO"),
+                    ("tenants", "INSERT", "NO"),
+                    ("users", "INSERT", "NO"),
+                    ("users", "SELECT", "NO"),
+                    ("web_sessions", "DELETE", "NO"),
+                    ("web_sessions", "INSERT", "NO"),
+                    ("web_sessions", "SELECT", "NO"),
+                    ("web_sessions", "UPDATE", "NO"),
+            ]
+            if self._extra_relation_privilege:
+                rows.append(("tenants", "SELECT", "NO"))
+            return _Result(rows=rows)
+        if "information_schema.table_privileges" in statement:
+            return _Result(rows=[])
+        if "information_schema.role_routine_grants" in statement:
+            return _Result(rows=[("current_tenant_scope", "EXECUTE", "NO")])
+        if "information_schema.routine_privileges" in statement:
+            return _Result(rows=[])
+        if "c.relkind = 'S'" in statement:
+            return _Result(one=(0,))
         if "SELECT to_regclass" in statement:
             relations: list[object | None] = [
                 "omni_cio_v10.tenants",
@@ -107,7 +155,55 @@ class _RuntimeProbeConnection:
             if self._missing_relation is not None:
                 relations[relations.index(self._missing_relation)] = None
             return _Result(one=tuple(relations))
-        if "FROM pg_catalog.pg_class" in statement:
+        if "FROM pg_catalog.pg_proc function_record" in statement:
+            return _Result(
+                one=(
+                    "sql",
+                    "s",
+                    False,
+                    False,
+                    "SELECT NULLIF("
+                    "pg_catalog.current_setting('omni_cio.tenant_id', true), '')",
+                )
+            )
+        if "FROM pg_catalog.pg_policy p" in statement:
+            expression = (
+                "tenant_id = 'tenant:v1:owner'"
+                if self._policy_drift
+                else "tenant_id = omni_cio_v10.current_tenant_scope()"
+            )
+            return _Result(
+                rows=[
+                    (
+                        "broker_accounts",
+                        "broker_accounts_tenant_isolation",
+                        "*",
+                        True,
+                        True,
+                        expression,
+                        expression,
+                    ),
+                    (
+                        "broker_connection_accounts",
+                        "broker_connection_accounts_tenant_isolation",
+                        "*",
+                        True,
+                        True,
+                        expression,
+                        expression,
+                    ),
+                    (
+                        "broker_connections",
+                        "broker_connections_tenant_isolation",
+                        "*",
+                        True,
+                        True,
+                        expression,
+                        expression,
+                    ),
+                ]
+            )
+        if "FROM pg_catalog.pg_class c" in statement:
             return _Result(
                 rows=[
                     ("broker_accounts", True, True),
@@ -144,6 +240,27 @@ def test_provider_neutral_runtime_probe_rejects_incomplete_auth_schema() -> None
     with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_SCHEMA_INCOMPLETE"):
         probe_hosted_runtime_database(
             connection,
+            expected_runtime_role=role,
+        )
+
+
+def test_provider_neutral_runtime_probe_rejects_extra_relation_authority() -> None:
+    role = "omni_cio_timeweb_candidate"
+    with pytest.raises(
+        RuntimeError,
+        match="HOSTED_RUNTIME_RELATION_PRIVILEGE_DRIFT",
+    ):
+        probe_hosted_runtime_database(
+            _RuntimeProbeConnection(role, extra_relation_privilege=True),
+            expected_runtime_role=role,
+        )
+
+
+def test_provider_neutral_runtime_probe_rejects_rls_policy_drift() -> None:
+    role = "omni_cio_timeweb_candidate"
+    with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_TENANT_POLICY_DRIFT"):
+        probe_hosted_runtime_database(
+            _RuntimeProbeConnection(role, policy_drift=True),
             expected_runtime_role=role,
         )
 
@@ -193,6 +310,56 @@ def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
     assert ready.status_code == 503
     assert ready.json()["status"] == "unavailable"
     assert state["calls"] == 2
+
+
+def test_livez_can_use_plain_http_only_from_explicit_loopback(tmp_path: Path) -> None:
+    app = create_hosted_app(
+        HostedRuntimeServicesV1(
+            sessions=SessionRegistryV1(HOSTED_SESSION_POLICY),
+            database_probe=lambda: None,
+            hostname=HOSTNAME,
+            release_sha=RELEASE_SHA,
+            provider_auth=_disabled_auth(),
+            synthetic_preview=False,
+        ),
+        web_dist=_web_dist(tmp_path),
+        additional_hosts=("localhost",),
+        trusted_edge_tls_terminated=False,
+        allow_insecure_loopback_livez=True,
+        provider_start_paths=frozenset(),
+        provider_route_installer=lambda app, *, services: None,
+    )
+    loopback = TestClient(
+        app,
+        base_url="http://localhost",
+        client=("127.0.0.1", 50000),
+    )
+    assert loopback.get("/livez").status_code == 200
+    assert loopback.get("/healthz").status_code == 403
+
+    non_loopback = TestClient(
+        app,
+        base_url="http://localhost",
+        client=("203.0.113.10", 50000),
+    )
+    assert non_loopback.get("/livez").status_code == 403
+
+
+def test_timeweb_trusted_edge_flag_is_explicit_and_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED", raising=False)
+    assert _trusted_edge_tls_terminated() is False
+
+    monkeypatch.setenv("OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED", "true")
+    assert _trusted_edge_tls_terminated() is True
+
+    monkeypatch.setenv("OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED", "unexpected")
+    with pytest.raises(
+        RuntimeError,
+        match="HOSTED_RUNTIME_TRUSTED_EDGE_TLS_FLAG_INVALID",
+    ):
+        _trusted_edge_tls_terminated()
 
 
 def test_private_routes_fail_closed_without_session(tmp_path: Path) -> None:
@@ -360,6 +527,16 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     hosted_app = current_sources[1].read_text(encoding="utf-8")
     assert "HOSTED_SESSION_POLICY" not in hosted_app
     assert 'additional_hosts=("localhost",)' in runtime
+    assert "from apps.api.app import" not in runtime
+    assert "trusted_edge_tls_terminated=True" not in runtime
+    assert "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED" in runtime
+    assert "allow_insecure_loopback_livez=True" in runtime
+
+    postgres_connection = (
+        root / "apps" / "api" / "postgres_web_connection.py"
+    ).read_text(encoding="utf-8")
+    assert "t_tech" not in postgres_connection
+    assert "grpc" not in postgres_connection
 
 
 def test_timeweb_dockerfile_uses_provider_neutral_runtime() -> None:

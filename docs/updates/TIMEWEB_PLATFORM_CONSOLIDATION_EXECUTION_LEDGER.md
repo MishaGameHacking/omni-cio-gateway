@@ -312,3 +312,18 @@ long-line layout drifts; no assertion, security check or test is weakened.
 - Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
 - Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
 - TW-C remains forbidden until TW-B is certified and accepted
+
+### 2026-09-24 — TW-B pre-merge security/correctness audit
+
+The current TW-B branch remains unmerged and in RED repair. Exact-head verification exposed authenticated-cookie policy drift and Ruff formatting drift. Deeper producer/consumer review found adjacent risks corrected in the same coherent batch:
+
+- authenticated product session + CSRF cookies are `SameSite=Strict` in every session-minting route; the OIDC browser-proof cookie alone remains `SameSite=Lax`;
+- fixed provider callbacks reject a verified identity whose provider does not match the callback route;
+- Timeweb edge TLS termination is no longer an unconditional source assertion; it is fail-closed runtime configuration, while plain HTTP liveness is loopback-only;
+- provider-neutral PostgreSQL connection serialization no longer imports the legacy broker/T-Invest app composition transitively;
+- PostgreSQL startup readiness verifies least-privilege grants/ownership and exact tenant RLS policy semantics rather than only role flags and FORCE-RLS booleans.
+
+No provider resources, DNS, secrets, public-user activation, broker-write authority or real-trading authority are changed by this repair.
+
+A later material boundary remains explicit rather than hidden: the Docker dependency lock still carries the historical T-Invest package/index and the hosted runtime still uses one bounded serialized PostgreSQL connection. Splitting broker-only dependencies and introducing a production connection-pool/reconnect design are dependency/toolchain/capacity changes and remain mandatory split-gate work before public multi-user production acceptance. Exact migration-state proof remains a deployment/release gate with migration authority; the least-privilege runtime role must not gain read access to `schema_migrations` merely to make runtime health claim exact migration truth.
+

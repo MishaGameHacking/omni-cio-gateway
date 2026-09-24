@@ -239,6 +239,10 @@
       "classification": "KEEP",
       "reason": "Current Timeweb-targeted provider-neutral Web/API runtime entrypoint."
     },
+    "apps/api/postgres_web_connection.py": {
+      "classification": "KEEP",
+      "reason": "Provider-neutral serialized PostgreSQL request-transaction adapter shared without importing legacy broker/T-Invest runtime modules."
+    },
     "apps/api/telegram_auth.py": {
       "classification": "KEEP",
       "reason": "Current Telegram-only authentication composition."

@@ -310,7 +310,7 @@ def _complete_provider_identity(
     if not services.abuse.acquire_outbound():
         return _rate_error(services)
     try:
-        return runtime.complete(
+        identity = runtime.complete(
             state=state,
             code=code,
             browser_proof=browser_proof,
@@ -319,6 +319,9 @@ def _complete_provider_identity(
         )
     finally:
         services.abuse.release_outbound()
+    if identity.provider != provider:
+        raise ProviderAuthorizationError("PROVIDER_AUTH_PROVIDER_MISMATCH")
+    return identity
 
 
 def _establish_authenticated_session(
@@ -358,7 +361,7 @@ def _establish_authenticated_session(
         token,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="strict",
         path="/",
         max_age=services.cookies.session_max_age_seconds,
     )
@@ -369,7 +372,7 @@ def _establish_authenticated_session(
         csrf,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="strict",
         path="/",
         max_age=services.cookies.session_max_age_seconds,
     )
