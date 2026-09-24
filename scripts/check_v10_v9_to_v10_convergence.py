@@ -9,6 +9,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_V9_TO_V10_CONVERGENCE_CONTRACT.json"
+PARITY_LEDGER = ROOT / "docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json"
 AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md"
@@ -289,6 +290,34 @@ def _validate_verifier_ownership(root: Path) -> None:
                 )
 
 
+def _validate_parity_ledger(root: Path) -> None:
+    payload = _json(root / PARITY_LEDGER.relative_to(ROOT))
+    rows = payload.get("capabilities")
+    if not isinstance(rows, list):
+        raise RuntimeError("V9C_PARITY_LEDGER_INVALID")
+    indexed = {
+        row.get("id"): row
+        for row in rows
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    }
+    required = {
+        "PARITY-PORTFOLIO-CORE": "omni_cio/portfolio + omni_cio/analytics",
+        "PARITY-PRETRADE-CAPACITY": "omni_cio/pretrade + omni_cio/adapters",
+        "PARITY-OPERATIONS-ANALYTICS": "omni_cio/analytics/operations_source_v1.py",
+        "PARITY-BROKER-REPORT-RECON": "omni_cio/reconciliation",
+    }
+    for row_id, owner in required.items():
+        row = indexed.get(row_id)
+        if not isinstance(row, dict):
+            raise RuntimeError(f"V9C_PARITY_ROW_MISSING:{row_id}")
+        if row.get("status") != "IMPLEMENTED":
+            raise RuntimeError(f"V9C_PARITY_STATE_DRIFT:{row_id}")
+        if row.get("v10_owner") != owner:
+            raise RuntimeError(f"V9C_PARITY_OWNER_DRIFT:{row_id}")
+        if not row.get("v9_tests_refs") or not row.get("evidence"):
+            raise RuntimeError(f"V9C_PARITY_EVIDENCE_MISSING:{row_id}")
+
+
 def _validate_deletion_and_authority(contract: dict[str, Any]) -> None:
     gate = _mapping(contract.get("deletion_gate"), "V9C_DELETION_GATE_INVALID")
     required = {
@@ -378,6 +407,7 @@ def validate(root: Path = ROOT) -> None:
     _validate_inventory(root, contract)
     _validate_no_legacy_imports(root)
     _validate_verifier_ownership(root)
+    _validate_parity_ledger(root)
     _validate_deletion_and_authority(contract)
     _validate_documentation(root)
     _validate_workflow(root)
