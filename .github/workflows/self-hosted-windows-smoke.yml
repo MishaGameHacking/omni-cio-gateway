@@ -266,9 +266,7 @@ jobs:
       - name: Compile protected runtime and Core
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
-          portfolio_market.py portfolio_analytics.py cash_liquidity.py
-          purchase_capacity.py purchase_capacity_integrity.py
-          operations_analytics.py broker_report_reconciliation omni_cio tests scripts
+          omni_cio apps tests scripts
 
       - name: Run protected runtime static quality
         run: |
@@ -312,14 +310,14 @@ jobs:
           --junitxml=pytest-results.xml
           --cov=app
           --cov=main
-          --cov=portfolio_market
-          --cov=portfolio_analytics
-          --cov=cash_liquidity
-          --cov=purchase_capacity
-          --cov=purchase_capacity_integrity
-          --cov=operations_analytics
-          --cov=sdk_order_compat
-          --cov=broker_report_reconciliation
+          --cov=omni_cio.portfolio.market_snapshot_v1
+          --cov=omni_cio.analytics.portfolio_structure_v1
+          --cov=omni_cio.portfolio.cash_liquidity_v1
+          --cov=omni_cio.pretrade.purchase_capacity_v1
+          --cov=omni_cio.pretrade.purchase_capacity_integrity_v1
+          --cov=omni_cio.analytics.operations_v1
+          --cov=omni_cio.adapters.sdk_order_compat_v1
+          --cov=omni_cio.reconciliation.broker_report
           --cov-branch
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
