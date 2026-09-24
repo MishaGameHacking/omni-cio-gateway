@@ -13,7 +13,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient
 
 import app as gateway_module
-import sdk_order_compat
+from omni_cio.adapters import sdk_order_compat_v1 as sdk_order_compat
 
 
 EXPECTED_VERSION = "3.10.0"
