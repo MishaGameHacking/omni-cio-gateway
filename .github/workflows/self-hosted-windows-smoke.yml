@@ -310,14 +310,16 @@ jobs:
           --junitxml=pytest-results.xml
           --cov=app
           --cov=main
-          --cov=omni_cio.portfolio.market_snapshot_v1
-          --cov=omni_cio.analytics.portfolio_structure_v1
-          --cov=omni_cio.portfolio.cash_liquidity_v1
+          --cov=omni_cio.portfolio.market_source_v1
+          --cov=omni_cio.analytics.portfolio_source_v1
+          --cov=omni_cio.analytics.cash_liquidity_v1
           --cov=omni_cio.pretrade.purchase_capacity_v1
           --cov=omni_cio.pretrade.purchase_capacity_integrity_v1
-          --cov=omni_cio.analytics.operations_v1
-          --cov=omni_cio.adapters.sdk_order_compat_v1
-          --cov=omni_cio.reconciliation.broker_report
+          --cov=omni_cio.pretrade.sale_capacity_v1
+          --cov=omni_cio.pretrade.sale_capacity_normalization_v1
+          --cov=omni_cio.analytics.operations_source_v1
+          --cov=omni_cio.adapters.tinvest_order_compat_v1
+          --cov=omni_cio.reconciliation
           --cov-branch
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
