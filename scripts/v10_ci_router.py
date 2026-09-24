@@ -48,7 +48,7 @@ def classify_path(path: str) -> set[str]:
         categories.add("backend_core_contracts")
 
     if normalized.startswith(
-        ("omni_cio/reconciliation/broker_report/", "tests/fixtures/broker")
+        ("omni_cio/reconciliation/", "tests/fixtures/broker")
     ):
         categories.add("broker_parser_data")
 

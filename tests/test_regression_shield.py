@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 from pathlib import Path
@@ -251,22 +252,12 @@ def test_purchase_preview_uses_an_explicit_broker_sdk_allowlist() -> None:
         {"users", "instruments", "orders"}
     )
 
-    orders_adapter_source = (
-        Path("sdk_order_compat.py")
-        .read_text(encoding="utf-8")
-        .split("class ClientView", maxsplit=1)[0]
+    orders_adapter_source = inspect.getsource(
+        sdk_order_compat.OrdersServiceRequestAdapter
     )
     assert "def __getattr__" not in orders_adapter_source
 
-    client_view_source = (
-        Path("sdk_order_compat.py")
-        .read_text(encoding="utf-8")
-        .split("class ClientView", maxsplit=1)[1]
-        .split(
-            "class ClientContextAdapter",
-            maxsplit=1,
-        )[0]
-    )
+    client_view_source = inspect.getsource(sdk_order_compat.ClientView)
     assert "def __getattr__" not in client_view_source
 
 

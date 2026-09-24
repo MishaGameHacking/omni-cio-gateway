@@ -123,6 +123,37 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_stale_legacy_path_consumer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            consumer = root / "tests/stale_path_consumer.py"
+            consumer.parent.mkdir(parents=True, exist_ok=True)
+            consumer.write_text(
+                'LEGACY_SOURCE = "sdk_order_compat.py"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_LEGACY_PATH_CONSUMER_REINTRODUCED"
+            ):
+                guard.validate(root)
+
+    def test_rejects_noncanonical_reconciliation_subpath_consumer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            consumer = root / "tests/noncanonical_reconciliation_consumer.py"
+            consumer.parent.mkdir(parents=True, exist_ok=True)
+            consumer.write_text(
+                'PATH = "omni_cio/reconciliation/broker_report/__init__.py"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_NONCANONICAL_RECONCILIATION_PATH_CONSUMER",
+            ):
+                guard.validate(root)
+
     def test_rejects_unproven_relocation_parity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

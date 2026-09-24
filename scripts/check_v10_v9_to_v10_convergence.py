@@ -46,6 +46,20 @@ _EXPECTED_ROOT_SOURCES = (
     "sdk_order_compat.py",
     "broker_report_reconciliation",
 )
+_LEGACY_PATH_LITERAL_ALLOWLIST = frozenset(
+    {
+        Path("scripts/check_v10_v9_to_v10_convergence.py"),
+        Path("tests/test_v10_v9_to_v10_convergence.py"),
+    }
+)
+_LEGACY_FILE_PATH_LITERALS = frozenset(
+    source for source in _EXPECTED_ROOT_SOURCES if source.endswith(".py")
+)
+_LEGACY_DIRECTORY_PATH_PREFIXES = ("broker_report_reconciliation/",)
+_NONCANONICAL_RECONCILIATION_PATH_PREFIXES = (
+    "omni_cio/reconciliation/broker_report/",
+)
+
 _EXPECTED_TARGETS = (
     "omni_cio/portfolio/market_source_v1.py",
     "omni_cio/analytics/portfolio_source_v1.py",
@@ -263,6 +277,40 @@ def _validate_no_legacy_imports(root: Path) -> None:
                             )
 
 
+def _validate_no_stale_relocation_path_consumers(root: Path) -> None:
+    source_paths = sorted({*root.rglob("*.py"), *root.rglob("*.pyfrag")})
+    for path in source_paths:
+        if any(part in {".git", ".venv", ".venv-ci"} for part in path.parts):
+            continue
+        relative = path.relative_to(root)
+        if relative in _LEGACY_PATH_LITERAL_ALLOWLIST:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(relative))
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            raise RuntimeError(
+                f"V9C_PATH_CONSUMER_SCAN_FAILED:{relative}:{exc}"
+            ) from exc
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            literal = node.value.replace("\\", "/")
+            if (
+                literal in _LEGACY_FILE_PATH_LITERALS
+                or literal.startswith(_LEGACY_DIRECTORY_PATH_PREFIXES)
+            ):
+                raise RuntimeError(
+                    "V9C_LEGACY_PATH_CONSUMER_REINTRODUCED:"
+                    f"{relative}:{literal}"
+                )
+            if literal.startswith(_NONCANONICAL_RECONCILIATION_PATH_PREFIXES):
+                raise RuntimeError(
+                    "V9C_NONCANONICAL_RECONCILIATION_PATH_CONSUMER:"
+                    f"{relative}:{literal}"
+                )
+
+
 def _validate_verifier_ownership(root: Path) -> None:
     pyproject = _text(root / PYPROJECT.relative_to(ROOT))
     forbidden_pyproject = (
@@ -428,6 +476,7 @@ def validate(root: Path = ROOT) -> None:
     _validate_runtime_target(contract)
     _validate_inventory(root, contract)
     _validate_no_legacy_imports(root)
+    _validate_no_stale_relocation_path_consumers(root)
     _validate_verifier_ownership(root)
     _validate_parity_ledger(root)
     _validate_deletion_and_authority(contract)

@@ -8,9 +8,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 WATCHTOWER_ROOT = ROOT / "omni_cio" / "watchtower"
 CONTRACT_PATH = ROOT / "omni_cio" / "contracts" / "v1" / "watchtower.py"
+RECONCILIATION_GATEWAY_PATH = "omni_cio/reconciliation/__init__.py"
 
 REQUIRED_PATHS = (
-    "omni_cio/reconciliation/broker_report/__init__.py",
+    RECONCILIATION_GATEWAY_PATH,
     "omni_cio/contracts/v1/watchtower.py",
     "omni_cio/watchtower/__init__.py",
     "omni_cio/watchtower/engine_v1.py",
@@ -140,9 +141,7 @@ def main() -> int:
                 failures,
             )
 
-    gateway_hook = (
-        ROOT / "omni_cio" / "reconciliation" / "broker_report" / "__init__.py"
-    )
+    gateway_hook = ROOT / RECONCILIATION_GATEWAY_PATH
     if gateway_hook.is_file():
         gateway_source = gateway_hook.read_text(encoding="utf-8")
         for required in (
