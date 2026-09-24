@@ -416,13 +416,10 @@ def _operation_state_store() -> dict[str, Any]:
 
 
 def _is_unknown_operation_type(operation_type: str) -> bool:
-    return (
-        operation_type == "OPERATION_TYPE_UNSPECIFIED"
-        or (
-            operation_type not in TYPE_TO_CATEGORY
-            and operation_type not in KNOWN_OTHER_TYPES
-            and "TAX" not in operation_type
-        )
+    return operation_type == "OPERATION_TYPE_UNSPECIFIED" or (
+        operation_type not in TYPE_TO_CATEGORY
+        and operation_type not in KNOWN_OTHER_TYPES
+        and "TAX" not in operation_type
     )
 
 
@@ -437,9 +434,7 @@ def _record_operation_metadata(
 ) -> None:
     store["state_counts"][state] += 1
     store["category_counts"][category] += 1
-    store["unknown_operation_types"] += int(
-        _is_unknown_operation_type(operation_type)
-    )
+    store["unknown_operation_types"] += int(_is_unknown_operation_type(operation_type))
     store["executed_operations"] += int(state == "OPERATION_STATE_EXECUTED")
     store["canceled_operations"] += int(state == "OPERATION_STATE_CANCELED")
     store["operations_in_progress"] += int(state == "OPERATION_STATE_PROGRESS")
@@ -576,7 +571,12 @@ def _currency_operation_summaries(
     *,
     base: Any,
     store: dict[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     cash_rows: list[dict[str, Any]] = []
     net_external_flow: list[dict[str, Any]] = []
     turnover: list[dict[str, Any]] = []

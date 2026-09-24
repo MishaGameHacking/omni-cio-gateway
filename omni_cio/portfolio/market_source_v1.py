@@ -313,11 +313,7 @@ def _valuation_prices(
         "best_bid": _price_from_level(base, order_book.get("best_bid")),
         "best_ask": _price_from_level(base, order_book.get("best_ask")),
     }
-    return {
-        name: value
-        for name, value in candidates.items()
-        if value is not None
-    }
+    return {name: value for name, value in candidates.items() if value is not None}
 
 
 def _spot_valuation(
@@ -360,9 +356,7 @@ def _bond_valuation(
         name: clean_value + quantity * accrued
         for name, clean_value in clean_values.items()
     }
-    result["basis"] = (
-        "quantity_times_nominal_times_price_percent_plus_accrued_interest"
-    )
+    result["basis"] = "quantity_times_nominal_times_price_percent_plus_accrued_interest"
     result["nominal_per_instrument"] = base.decimal_string(nominal)
     result["accrued_interest_per_instrument"] = base.decimal_string(accrued)
     result["clean_values"] = {
@@ -759,8 +753,7 @@ def get_portfolio_market_snapshot(
                 valued_positions += int(bool(decimal_values))
 
         output_positions.extend(
-            _skipped_market_position(base, entry)
-            for entry in positions_skipped
+            _skipped_market_position(base, entry) for entry in positions_skipped
         )
         totals_by_currency = _totals_rows(
             base,
@@ -843,4 +836,3 @@ def get_portfolio_market_snapshot(
                 },
             },
         ) from exc
-

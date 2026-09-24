@@ -237,9 +237,7 @@ def _validate_inventory(root: Path, contract: dict[str, Any]) -> None:
     retirements = contract.get("runtime_retirement_plan")
     if not isinstance(retirements, list):
         raise RuntimeError("V9C_RUNTIME_RETIREMENT_PLAN_INVALID")
-    runtime_paths = tuple(
-        _runtime_retirement_path(root, row) for row in retirements
-    )
+    runtime_paths = tuple(_runtime_retirement_path(root, row) for row in retirements)
     if runtime_paths != _EXPECTED_RUNTIME_ROOTS:
         raise RuntimeError("V9C_RUNTIME_SOURCE_SET_DRIFT")
 
@@ -275,8 +273,7 @@ def _dynamic_import_module(node: ast.AST) -> str | None:
         return None
     named_import = isinstance(node.func, ast.Name) and node.func.id == "__import__"
     module_import = (
-        isinstance(node.func, ast.Attribute)
-        and node.func.attr == "import_module"
+        isinstance(node.func, ast.Attribute) and node.func.attr == "import_module"
     )
     if not (named_import or module_import):
         return None

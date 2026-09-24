@@ -426,9 +426,7 @@ def _affordability(
         else ""
     )
     currencies_compatible = (
-        not max_currency
-        or not total_currency
-        or max_currency == total_currency
+        not max_currency or not total_currency or max_currency == total_currency
     )
     by_max_lots, lot_reasons = _max_lots_check(
         quantity_lots=quantity_lots,
@@ -445,9 +443,7 @@ def _affordability(
     )
     remaining = (
         base.decimal_string(buy_money - total_amount)
-        if buy_money is not None
-        and total_amount is not None
-        and currencies_compatible
+        if buy_money is not None and total_amount is not None and currencies_compatible
         else "unavailable"
     )
     return {
@@ -868,4 +864,3 @@ def get_purchase_capacity_preview(
             status_code=502,
             detail=_component_error(base, exc),
         ) from exc
-

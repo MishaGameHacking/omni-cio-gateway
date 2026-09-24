@@ -181,9 +181,7 @@ def _cash_row(
     )
 
     has_positions = reported_present or positions_blocked_present
-    has_withdraw = (
-        withdrawable_present or withdraw_blocked_present or guarantee_present
-    )
+    has_withdraw = withdrawable_present or withdraw_blocked_present or guarantee_present
     negative_values = sum(
         (
             reported_present and reported_value < 0,
@@ -207,9 +205,7 @@ def _cash_row(
         has_withdraw=has_withdraw,
     )
     cash_difference = (
-        base.decimal_string(difference)
-        if difference is not None
-        else "unavailable"
+        base.decimal_string(difference) if difference is not None else "unavailable"
     )
     cash_status = _cash_status(
         reasons=reasons,
@@ -337,9 +333,7 @@ def build_cash_liquidity_snapshot(
     withdraw = withdraw_limits_data if isinstance(withdraw_limits_data, dict) else {}
     sources = _cash_sources(base=base, positions=positions, withdraw=withdraw)
 
-    currencies = sorted(
-        set().union(*(present for _, present, _ in sources.values()))
-    )
+    currencies = sorted(set().union(*(present for _, present, _ in sources.values())))
     rows: list[dict[str, Any]] = []
     currencies_matched = 0
     currencies_present_in_both_sources = 0

@@ -44,9 +44,7 @@ def _is_frontend_path(path: str) -> bool:
 
 
 def _is_infrastructure_path(path: str) -> bool:
-    return path.startswith(
-        ("infrastructure/", "deploy/", "ops/", "scripts/bootstrap")
-    )
+    return path.startswith(("infrastructure/", "deploy/", "ops/", "scripts/bootstrap"))
 
 
 def _is_ai_cortex_path(path: str) -> bool:
@@ -56,7 +54,8 @@ def _is_ai_cortex_path(path: str) -> bool:
 def _is_dependency_path(path: str) -> bool:
     return (
         path.startswith(("requirements", "constraints"))
-        or path in {
+        or path
+        in {
             "pyproject.toml",
             "package.json",
             "package-lock.json",
@@ -94,9 +93,7 @@ def classify_path(path: str) -> set[str]:
         return set()
 
     categories = {
-        category
-        for category, classifier in _PATH_CLASSIFIERS
-        if classifier(normalized)
+        category for category, classifier in _PATH_CLASSIFIERS if classifier(normalized)
     }
     if categories:
         return categories

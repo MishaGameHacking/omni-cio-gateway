@@ -101,9 +101,7 @@ def _comparison(
             status="not_applicable",
             formula=formula,
             expected="not_applicable",
-            reported=(
-                "unavailable" if reported is None else _decimal_string(reported)
-            ),
+            reported=("unavailable" if reported is None else _decimal_string(reported)),
             difference="not_applicable",
             tolerance=tolerance,
             currency=currency,
@@ -113,12 +111,8 @@ def _comparison(
         return _comparison_base(
             status="unavailable",
             formula=formula,
-            expected=(
-                "unavailable" if expected is None else _decimal_string(expected)
-            ),
-            reported=(
-                "unavailable" if reported is None else _decimal_string(reported)
-            ),
+            expected=("unavailable" if expected is None else _decimal_string(expected)),
+            reported=("unavailable" if reported is None else _decimal_string(reported)),
             difference="unavailable",
             tolerance=tolerance,
             currency=currency,

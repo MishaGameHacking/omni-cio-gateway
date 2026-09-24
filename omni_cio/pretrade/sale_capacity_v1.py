@@ -276,4 +276,3 @@ def get_sale_capacity_preview(
             status_code=502,
             detail=_component_error(base, exc),
         ) from exc
-

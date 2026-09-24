@@ -564,4 +564,3 @@ def build_portfolio_analytics(
             ),
         }
     )
-
