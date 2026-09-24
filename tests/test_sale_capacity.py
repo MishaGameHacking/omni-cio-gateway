@@ -9,8 +9,8 @@ os.environ.setdefault("TINVEST_TOKEN", "regression-test-tinvest-token")
 os.environ.setdefault("GATEWAY_API_KEY", "regression-test-gateway-key")
 
 import app as gateway_module
-import sale_capacity
-from sdk_order_compat import with_sale_request_object_services
+from omni_cio.pretrade import sale_capacity_v1 as sale_capacity
+from omni_cio.adapters.sdk_order_compat_v1 import with_sale_request_object_services
 
 
 INSTRUMENT_UID = "e6123145-9665-43e0-8413-cd61b8aa9b13"
