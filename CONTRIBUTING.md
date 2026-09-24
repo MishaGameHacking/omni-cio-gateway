@@ -197,7 +197,7 @@ Existing React/Vite Web and Python/FastAPI product API remain canonical/provider
 
 Timeweb Managed PostgreSQL 18 is the final relational target after the owning production cutover. Preserve migrations, exact numeric semantics, least-privilege runtime role, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery evidence.
 
-Cloudflare/Neon/Render/Cloud.ru/VK files stay archive-in-place by default. Do not add new dependencies on them and do not mass-delete them merely to simplify the tree. Their live provider resources/secrets/actions are decommissioned only after replacement acceptance.
+Cloudflare/Neon/Render/Cloud.ru/VK files are Amendment-20 retirement inputs. Do not add new dependencies and do not delete them blindly. At V9C-D/V9C-E, migrate useful invariants, prove zero current consumers and recovery, then remove obsolete working-tree artifacts while Git history preserves provenance. Live provider resources/secrets/actions remain separately gated.
 
 GitHub/self-hosted verification remains authoritative until a stronger GitHub-executed replacement is accepted. External CI/review SaaS may not be removed by weakening quality gates.
 
