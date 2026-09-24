@@ -40,7 +40,7 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 | Order | Convergence checkpoint | State | Purpose |
 |---:|---|---|---|
 | V9C-A | AUTHORITY_AND_INVENTORY | CERTIFIED_GREEN | Exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`; 18/18 repository workflows `success`; accepted V9 lineage, migration inventory, no-stale-branch-merge rule and machine guard proven |
-| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | TODO | Move remaining root deterministic sources into canonical `omni_cio/` packages with parity |
+| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | IN_PROGRESS | Relocate remaining root deterministic sources into canonical `omni_cio/` packages, migrate runtime/test/CI consumers, remove root implementations only after zero-consumer proof, then certify the exact replacement head |
 | V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | TODO | Eliminate supported-runtime consumers of `app.py` / `app_v360.py` / `app_v371.py` / `main.py`, then retire them |
 | V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | TODO | Migrate still-needed policy/evidence, then delete zero-consumer legacy provider/GPT working-tree artifacts |
 | V9C-E | CI_RECOVERY_CONVERGENCE | TODO | Replace legacy entrypoint/provider checks with equal-or-stronger V10/Timeweb recovery/security gates |
