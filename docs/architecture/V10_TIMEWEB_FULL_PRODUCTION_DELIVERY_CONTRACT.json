@@ -24,18 +24,18 @@
     "dockerfile": "Dockerfile",
     "port": 8080,
     "app_factory": "apps.api.hosted_runtime:create_app",
-    "required_non_secret_env": {
+    "required_plain_env": {
       "OMNI_V10_HOSTED_RUNTIME": "1",
       "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru"
     },
-    "secret_env_names": [
+    "runtime_credential_env_names": [
       "OMNI_V10_POSTGRES_DSN",
       "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
       "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET",
       "OMNI_V10_IDENTITY_BINDING_KEY_HEX",
       "OMNI_V10_CSRF_BINDING_KEY_HEX"
     ],
-    "secret_values_in_repository_allowed": false
+    "credential_values_in_repository_allowed": false
   },
   "postgres": {
     "engine": "PostgreSQL",
@@ -69,7 +69,7 @@
     "flags_must_transition_together": true,
     "current_public_multi_user_enabled": false,
     "current_telegram_login_enabled": false,
-    "provider_secret_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+    "provider_credential_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
     "real_login_account_tenant_session_proof_required": true,
     "cross_tenant_negative_required": true
   },
@@ -78,7 +78,7 @@
     "immutable_network_selection": "OWNER_OR_PROVIDER_CONFIRMATION_REQUIRED",
     "production_database_cutover": "INDEPENDENT_ACCEPTANCE_REQUIRED",
     "dns_tls_cutover": "INDEPENDENT_ACCEPTANCE_REQUIRED",
-    "telegram_registration_and_secrets": "OWNER_SECRET_PROVIDER_ACTION_REQUIRED",
+    "telegram_registration_and_credentials": "OWNER_SECRET_PROVIDER_ACTION_REQUIRED",
     "legal_privacy_regulatory": "OWNER_LEGAL_ACTION_REQUIRED",
     "public_activation": "CAPABILITY_ACCEPTANCE_REQUIRED",
     "destructive_decommission": "POST_ACCEPTANCE_ONLY"

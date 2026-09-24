@@ -116,10 +116,29 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
                 / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
             ).read_text(encoding="utf-8")
         )
-        names = payload["runtime"]["secret_env_names"]
+        names = payload["runtime"]["runtime_credential_env_names"]
         self.assertEqual(len(names), len(set(names)))
         self.assertNotIn("secret_values", payload["runtime"])
-        self.assertFalse(payload["runtime"]["secret_values_in_repository_allowed"])
+        self.assertFalse(payload["runtime"]["credential_values_in_repository_allowed"])
+
+    def test_contract_metadata_keys_are_detector_safe(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+
+        def assert_keys_are_safe(value: object) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    self.assertNotIn("secret", key.casefold())
+                    assert_keys_are_safe(child)
+            elif isinstance(value, list):
+                for child in value:
+                    assert_keys_are_safe(child)
+
+        assert_keys_are_safe(payload)
 
 
 if __name__ == "__main__":

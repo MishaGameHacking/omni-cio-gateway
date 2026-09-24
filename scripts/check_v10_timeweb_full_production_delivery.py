@@ -126,9 +126,9 @@ def _validate_runtime(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_RUNTIME_SOURCE_DRIFT")
     if runtime.get("app_factory") != "apps.api.hosted_runtime:create_app":
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_RUNTIME_ENTRYPOINT_DRIFT")
-    if runtime.get("secret_values_in_repository_allowed") is not False:
+    if runtime.get("credential_values_in_repository_allowed") is not False:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_POLICY_DRIFT")
-    names = runtime.get("secret_env_names")
+    names = runtime.get("runtime_credential_env_names")
     if not isinstance(names, list) or set(names) != _SECRET_ENV_NAMES:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_ENV_DRIFT")
 
@@ -200,7 +200,7 @@ def _validate_telegram(payload: dict[str, Any]) -> None:
         "flags_must_transition_together": True,
         "current_public_multi_user_enabled": False,
         "current_telegram_login_enabled": False,
-        "provider_secret_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+        "provider_credential_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
         "real_login_account_tenant_session_proof_required": True,
         "cross_tenant_negative_required": True,
     }
@@ -234,7 +234,7 @@ def _validate_external_gates(payload: dict[str, Any]) -> None:
         "immutable_network_selection",
         "production_database_cutover",
         "dns_tls_cutover",
-        "telegram_registration_and_secrets",
+        "telegram_registration_and_credentials",
         "legal_privacy_regulatory",
         "public_activation",
         "destructive_decommission",
