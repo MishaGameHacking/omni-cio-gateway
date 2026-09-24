@@ -301,8 +301,7 @@ def _validate_no_stale_relocation_path_consumers(root: Path) -> None:
                 or literal.startswith(_LEGACY_DIRECTORY_PATH_PREFIXES)
             ):
                 raise RuntimeError(
-                    "V9C_LEGACY_PATH_CONSUMER_REINTRODUCED:"
-                    f"{relative}:{literal}"
+                    f"V9C_LEGACY_PATH_CONSUMER_REINTRODUCED:{relative}:{literal}"
                 )
             if literal.startswith(_NONCANONICAL_RECONCILIATION_PATH_PREFIXES):
                 raise RuntimeError(
