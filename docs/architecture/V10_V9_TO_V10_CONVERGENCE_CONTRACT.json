@@ -17,9 +17,12 @@
     "provider": "TIMEWEB_APP_PLATFORM",
     "application_entrypoint": "apps.api.hosted_runtime:create_app",
     "database": "TIMEWEB_POSTGRESQL_18_AFTER_TW_D",
-    "human_login_provider": "TELEGRAM_LOGIN_ONLY"
+    "human_login_provider": "TELEGRAM_LOGIN_ONLY",
+    "protected_v9_compatibility_entrypoint": "app:app",
+    "protected_v9_compatibility_preserved": true,
+    "v10_runtime_legacy_import_allowed": false
   },
-  "current_checkpoint": "V9C-B",
+  "current_checkpoint": "V9C-C",
   "checkpoints": [
     "V9C-A_AUTHORITY_AND_INVENTORY",
     "V9C-B_DETERMINISTIC_SOURCE_RELOCATION",
@@ -100,19 +103,23 @@
   "runtime_retirement_plan": [
     {
       "path": "app.py",
-      "state": "BLOCKED_UNTIL_V9C_C"
+      "state": "PROTECTED_V9_COMPATIBILITY_ONLY",
+      "v10_supported_runtime_consumer_allowed": false
     },
     {
       "path": "app_v360.py",
-      "state": "BLOCKED_UNTIL_V9C_C"
+      "state": "PROTECTED_V9_COMPATIBILITY_ONLY",
+      "v10_supported_runtime_consumer_allowed": false
     },
     {
       "path": "app_v371.py",
-      "state": "BLOCKED_UNTIL_V9C_C"
+      "state": "PROTECTED_V9_COMPATIBILITY_ONLY",
+      "v10_supported_runtime_consumer_allowed": false
     },
     {
       "path": "main.py",
-      "state": "BLOCKED_UNTIL_V9C_C"
+      "state": "PROTECTED_V9_COMPATIBILITY_ONLY",
+      "v10_supported_runtime_consumer_allowed": false
     }
   ],
   "provider_worktree_retirement": {

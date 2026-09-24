@@ -392,12 +392,16 @@ Machine/governance companions:
 Locks the 2026-09-24 OWNER direction that accepted V9 behavior is migrated into the
 single forward V10/Timeweb runtime inside PR #584. The accepted V9 target is already in
 the main lineage, so stale `v9/*` branches are not merged. Remaining useful
-root-level source is reused/extracted into canonical V10 packages before legacy
-working-tree paths are deleted; Git history remains the archive. The internal sequence
-is V9C-A through V9C-F, and PR #584 still requires a new explicit OWNER instruction
-before merge to `main`. This amendment does not activate public users, deploy TW-C,
-cut over production data/DNS, authorize broker write/Real money, start WEB-VISUAL or
-unlock WP23+.
+root-level source is reused/extracted into canonical V10 packages before obsolete
+working-tree paths are deleted; Git history remains the archive. The protected V9
+`app:app` compatibility/recovery chain is retained until separate accepted
+decommission authority, while the supported V10 runtime is forbidden from depending
+on it. The internal sequence is V9C-A through V9C-F, and PR #584 still requires the
+normal exact-head OWNER landing confirmation before merge to `main`. Amendment 21
+supersedes Amendment 20 only by allowing later Timeweb production-delivery controls
+to be implemented in the same branch; external provider/database/DNS/public-activation
+gates remain fail-closed. Neither amendment authorizes broker write/Real money,
+WEB-VISUAL or WP23+.
 
 ### 21. Timeweb Full Production Delivery in PR #584
 

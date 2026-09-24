@@ -25,6 +25,9 @@ def _copy(root: Path) -> None:
         guard.CONTRIBUTING,
         guard.WORKFLOW,
         guard.PYPROJECT,
+        guard.DOCKERFILE,
+        ROOT / guard._CURRENT_RUNTIME_ENTRYPOINT,
+        ROOT / "apps/api/hosted_app.py",
         *(ROOT / relative for relative in guard._VERIFIER_WORKFLOW_RELATIVE_PATHS),
     )
     for source in paths:
@@ -180,6 +183,34 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "V9C_PARITY_STATE_DRIFT"):
                 guard.validate(root)
 
+    def test_rejects_current_runtime_transitive_legacy_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            hosted_app = root / "apps/api/hosted_app.py"
+            hosted_app.write_text("import app\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_CURRENT_RUNTIME_LEGACY_IMPORT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_v10_runtime_authority_on_protected_v9_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["runtime_retirement_plan"][0][
+                "v10_supported_runtime_consumer_allowed"
+            ] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_RUNTIME_COMPATIBILITY_AUTHORITY_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_rejects_premature_runtime_retirement(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -189,7 +220,7 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             payload["runtime_retirement_plan"][0]["state"] = "RETIRED"
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
-                RuntimeError, "V9C_RUNTIME_RETIREMENT_PREMATURE"
+                RuntimeError, "V9C_RUNTIME_COMPATIBILITY_STATE_DRIFT"
             ):
                 guard.validate(root)
 

@@ -40,8 +40,8 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 | Order | Convergence checkpoint | State | Purpose |
 |---:|---|---|---|
 | V9C-A | AUTHORITY_AND_INVENTORY | CERTIFIED_GREEN | Exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`; 18/18 repository workflows `success`; accepted V9 lineage, migration inventory, no-stale-branch-merge rule and machine guard proven |
-| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | IN_PROGRESS | Relocate remaining root deterministic sources into canonical `omni_cio/` packages, migrate runtime/test/CI consumers, remove root implementations only after zero-consumer proof, then certify the exact replacement head |
-| V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | TODO | Eliminate supported-runtime consumers of `app.py` / `app_v360.py` / `app_v371.py` / `main.py`, then retire them |
+| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | CERTIFIED_GREEN | Exact head `4394e3f95558f2180a294827f150b1197bdf353c`; 19/19 repository workflows `success`; Sonar 0 new issues / 0 Security Hotspots; unresolved review threads 0 |
+| V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | IN_PROGRESS | Prove the supported Timeweb runtime and Docker deploy graph have zero dependency on `app.py` / `app_v360.py` / `app_v371.py` / `main.py`; preserve those files only as protected V9 compatibility/recovery |
 | V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | TODO | Migrate still-needed policy/evidence, then delete zero-consumer legacy provider/GPT working-tree artifacts |
 | V9C-E | CI_RECOVERY_CONVERGENCE | TODO | Replace legacy entrypoint/provider checks with equal-or-stronger V10/Timeweb recovery/security gates |
 | V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF | TODO | Prove no current runtime/deploy/required-CI/current-authority dependency on retired paths |
@@ -56,8 +56,8 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: TW-B provider-neutral source/runtime consolidation
-- Current logical checkpoint ID: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
+- Current exact work item: V9C-C provider-neutral runtime-entrypoint convergence
+- Current logical checkpoint ID: `V9C-C-RUNTIME-ENTRYPOINT-CONVERGENCE`
 - Accepted base: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
@@ -72,7 +72,7 @@ without a new explicit OWNER instruction.
 - Timeweb IPv4 recovery remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
 - Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
 - TW-B source scope started from the 33 accepted `TIMEWEB_REPLACE` consumers/producers identified by TW-A; branch-local closure now classifies all completed current source consumers as `KEEP` and detached provider wrappers as `HISTORY`, with no explicit `TIMEWEB_REPLACE` source consumer remaining.
-- TW-B does not authorize provider mutation, Timeweb App Platform deployment, production DB cutover, DNS cutover, public-user activation or Real-money authority.
+- Amendment 21 authorizes repository-side implementation for TW-C/TW-D/TW-E/TW-F/P6 in this same PR, while paid/provider/network/database/DNS/secret/legal/public-activation mutations remain independent fail-closed external gates. Real-money authority remains forbidden.
 - TW-B runtime root-cause review found that the first provider-neutral entrypoint still called `_probe_hosted_preview_database()`, which requires the historical synthetic preview USER/TENANT fixture. A clean Timeweb production database must not depend on that Phase-4 fixture.
 - Correction head `7306c2ae0dfa806c49774d2ccfa629da5e1f85e7` replaces the Timeweb runtime probe with the production runtime-only PostgreSQL 18 / least-privilege / schema / FORCE-RLS probe, gives the Timeweb entrypoint its own hosted session policy, and keeps historical synthetic verification inside the historical preview path.
 - The same correction adds a process-only `/livez` Docker health check and explicitly permits `localhost` for the container-local Timeweb health probe; `/healthz` remains database readiness and is intentionally not used as the process liveness gate.
@@ -326,7 +326,7 @@ long-line layout drifts; no assertion, security check or test is weakened.
 - Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
-- State: `RED_REPAIR_ONLY / AMENDMENT_19_PRODUCER_CONSUMER_CLOSURE`; DRAFT PR #584 is open and TW-C remains blocked
+- State: `V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE / IN_PROGRESS`; V9C-B is branch-local `CERTIFIED_GREEN` on exact head `4394e3f95558f2180a294827f150b1197bdf353c`; DRAFT PR #584 remains open
 - Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
 - Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
 - Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin

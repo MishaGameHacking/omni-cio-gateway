@@ -22,11 +22,12 @@ README = ROOT / "README.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 PYPROJECT = ROOT / "pyproject.toml"
+DOCKERFILE = ROOT / "Dockerfile"
 
 _ACCEPTED_V9 = "".join(("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62"))
 _ACCEPTED_MAIN = "".join(("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858"))
 _BRANCH = "system/timeweb-platform-consolidation-tw-b"
-_CURRENT_CHECKPOINT = "V9C-B"
+_CURRENT_CHECKPOINT = "V9C-C"
 _V9_MIGRATION_SOURCE_MARKER = "V9 migration source"
 _REQUIRED_CHECKPOINTS = (
     "V9C-A_AUTHORITY_AND_INVENTORY",
@@ -85,6 +86,8 @@ _LEGACY_IMPORT_ROOTS = {
     "broker_report_reconciliation",
 }
 _EXPECTED_RUNTIME_ROOTS = ("app.py", "app_v360.py", "app_v371.py", "main.py")
+_CURRENT_RUNTIME_ENTRYPOINT = Path("apps/api/hosted_runtime.py")
+_LEGACY_RUNTIME_MODULE_ROOTS = frozenset({"app", "app_v360", "app_v371", "main"})
 _VERIFIER_WORKFLOW_RELATIVE_PATHS = (
     Path(".github/workflows/v10-pr-fast-checks.yml"),
     Path(".github/workflows/regression-shield.yml"),
@@ -179,6 +182,9 @@ def _validate_runtime_target(contract: dict[str, Any]) -> None:
         "application_entrypoint": "apps.api.hosted_runtime:create_app",
         "database": "TIMEWEB_POSTGRESQL_18_AFTER_TW_D",
         "human_login_provider": "TELEGRAM_LOGIN_ONLY",
+        "protected_v9_compatibility_entrypoint": "app:app",
+        "protected_v9_compatibility_preserved": True,
+        "v10_runtime_legacy_import_allowed": False,
     }
     for key, value in expected.items():
         if runtime.get(key) != value:
@@ -210,14 +216,16 @@ def _relocation_row(
 def _runtime_retirement_path(root: Path, row: object) -> str:
     if not isinstance(row, dict):
         raise RuntimeError("V9C_RUNTIME_RETIREMENT_ROW_INVALID")
-    if row.get("state") != "BLOCKED_UNTIL_V9C_C":
-        raise RuntimeError("V9C_RUNTIME_RETIREMENT_PREMATURE")
+    if row.get("state") != "PROTECTED_V9_COMPATIBILITY_ONLY":
+        raise RuntimeError("V9C_RUNTIME_COMPATIBILITY_STATE_DRIFT")
+    if row.get("v10_supported_runtime_consumer_allowed") is not False:
+        raise RuntimeError("V9C_RUNTIME_COMPATIBILITY_AUTHORITY_DRIFT")
 
     path = row.get("path")
     if not isinstance(path, str):
         raise RuntimeError("V9C_RUNTIME_RETIREMENT_PATH_INVALID")
     if not (root / path).is_file():
-        raise RuntimeError(f"V9C_RUNTIME_SOURCE_MISSING:{path}")
+        raise RuntimeError(f"V9C_PROTECTED_V9_RUNTIME_MISSING:{path}")
     return path
 
 
@@ -281,6 +289,99 @@ def _dynamic_import_module(node: ast.AST) -> str | None:
     if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
         return None
     return first.value
+
+def _module_name(relative: Path) -> str:
+    module_path = (
+        relative.parent
+        if relative.name == "__init__.py"
+        else relative.with_suffix("")
+    )
+    return ".".join(module_path.parts)
+
+
+def _local_module_path(root: Path, module: str) -> Path | None:
+    if not module:
+        return None
+    relative = Path(*module.split("."))
+    candidates = (relative.with_suffix(".py"), relative / "__init__.py")
+    return next(
+        (candidate for candidate in candidates if (root / candidate).is_file()),
+        None,
+    )
+
+
+def _import_from_base(relative: Path, node: ast.ImportFrom) -> str | None:
+    if node.level == 0:
+        return node.module
+    package_parts = _module_name(relative).split(".")
+    if relative.name != "__init__.py":
+        package_parts = package_parts[:-1]
+    ascent = node.level - 1
+    if ascent > len(package_parts):
+        return None
+    base_parts = package_parts[: len(package_parts) - ascent]
+    if node.module:
+        base_parts.extend(node.module.split("."))
+    return ".".join(part for part in base_parts if part)
+
+
+def _runtime_import_candidates(relative: Path, node: ast.AST) -> tuple[str, ...]:
+    if isinstance(node, ast.Import):
+        return tuple(alias.name for alias in node.names)
+    if not isinstance(node, ast.ImportFrom):
+        return ()
+    base = _import_from_base(relative, node)
+    if not base:
+        return ()
+    submodules = tuple(
+        f"{base}.{alias.name}" for alias in node.names if alias.name != "*"
+    )
+    return (base, *submodules)
+
+
+def _reject_legacy_runtime_module(relative: Path, module: str) -> None:
+    if module.split(".", 1)[0] in _LEGACY_RUNTIME_MODULE_ROOTS:
+        raise RuntimeError(f"V9C_CURRENT_RUNTIME_LEGACY_IMPORT:{relative}:{module}")
+
+
+def _validate_current_runtime_dependency_graph(root: Path) -> int:
+    entrypoint = root / _CURRENT_RUNTIME_ENTRYPOINT
+    if not entrypoint.is_file():
+        raise RuntimeError("V9C_CURRENT_RUNTIME_ENTRYPOINT_MISSING")
+
+    queue = [_CURRENT_RUNTIME_ENTRYPOINT]
+    visited: set[Path] = set()
+    while queue:
+        relative = queue.pop()
+        if relative in visited:
+            continue
+        visited.add(relative)
+        _, tree = _parsed_python(
+            root,
+            root / relative,
+            "V9C_CURRENT_RUNTIME_SCAN_FAILED",
+        )
+        for node in ast.walk(tree):
+            for module in _runtime_import_candidates(relative, node):
+                _reject_legacy_runtime_module(relative, module)
+                local = _local_module_path(root, module)
+                if local is not None and local not in visited:
+                    queue.append(local)
+            dynamic_module = _dynamic_import_module(node)
+            if dynamic_module is not None:
+                _reject_legacy_runtime_module(relative, dynamic_module)
+    return len(visited)
+
+
+def _validate_runtime_entrypoint_convergence(root: Path) -> None:
+    dockerfile = _text(root / DOCKERFILE.relative_to(ROOT))
+    if "apps.api.hosted_runtime:create_app" not in dockerfile:
+        raise RuntimeError("V9C_TIMEWEB_ENTRYPOINT_MISSING")
+    for forbidden in ("app:app", "main:app", "app_v360", "app_v371"):
+        if forbidden in dockerfile:
+            raise RuntimeError(f"V9C_TIMEWEB_LEGACY_ENTRYPOINT_CONSUMER:{forbidden}")
+    if _validate_current_runtime_dependency_graph(root) < 2:
+        raise RuntimeError("V9C_CURRENT_RUNTIME_GRAPH_TOO_SHALLOW")
 
 
 def _reject_legacy_import(relative: Path, module: str, *, dynamic: bool) -> None:
@@ -456,21 +557,22 @@ def _validate_documentation(root: Path) -> None:
         AMENDMENT.relative_to(ROOT): (
             "accepted V9 repository target",
             "stale",
-            f"{_CURRENT_CHECKPOINT} / DETERMINISTIC_SOURCE_RELOCATION",
+            f"{_CURRENT_CHECKPOINT} / RUNTIME_ENTRYPOINT_CONVERGENCE",
             "must not be merged",
+            "protected V9 compatibility",
         ),
         INDEX.relative_to(ROOT): (
             "### 20. V9-to-V10 Convergence and Legacy Working-Tree Retirement",
             "OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md",
         ),
         STATUS.relative_to(ROOT): (
-            f"{_CURRENT_CHECKPOINT} / DETERMINISTIC_SOURCE_RELOCATION",
+            f"{_CURRENT_CHECKPOINT} / RUNTIME_ENTRYPOINT_CONVERGENCE",
             _ACCEPTED_V9,
             "PR #584",
         ),
         LEDGER.relative_to(ROOT): (
-            "| V9C-A | AUTHORITY_AND_INVENTORY | CERTIFIED_GREEN |",
-            f"| {_CURRENT_CHECKPOINT} | DETERMINISTIC_SOURCE_RELOCATION | IN_PROGRESS |",
+            "| V9C-B | DETERMINISTIC_SOURCE_RELOCATION | CERTIFIED_GREEN |",
+            f"| {_CURRENT_CHECKPOINT} | RUNTIME_ENTRYPOINT_CONVERGENCE | IN_PROGRESS |",
             "| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF |",
         ),
         AGENTS.relative_to(ROOT): (
@@ -511,6 +613,7 @@ def validate(root: Path = ROOT) -> None:
     _validate_inventory(root, contract)
     _validate_no_legacy_imports(root)
     _validate_no_stale_relocation_path_consumers(root)
+    _validate_runtime_entrypoint_convergence(root)
     _validate_verifier_ownership(root)
     _validate_parity_ledger(root)
     _validate_deletion_and_authority(contract)
@@ -528,6 +631,8 @@ def main() -> int:
     print(f"Accepted V9 migration source: {_ACCEPTED_V9}")
     print("Legacy deterministic root imports: absent")
     print("Canonical V10 package relocation: complete")
+    print("Timeweb V10 runtime dependency on protected V9 roots: absent")
+    print("Protected V9 compatibility entrypoint: preserved as app:app")
     print("Stale v9 branch merge: forbidden")
     print("PR #584 main merge: requires a new explicit OWNER instruction")
     return 0

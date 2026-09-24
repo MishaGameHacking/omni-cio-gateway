@@ -35,8 +35,10 @@ Human product identity remains Telegram Login only.
 
 The target application entrypoint is the current provider-neutral hosted composition
 `apps.api.hosted_runtime:create_app` as invoked by the Timeweb Docker runtime.
-`app:app`, `app_v360.py`, `app_v371.py` and `main.py` are migration inputs,
-not permanent parallel product runtimes.
+`app:app`, `app_v360.py`, `app_v371.py` and `main.py` are not supported V10
+product runtimes. They remain a **protected V9 compatibility** and recovery surface
+until a separate accepted decommission authority explicitly permits their removal.
+Current V10 runtime/deploy code must not import or execute through those roots.
 
 This amendment changes source/runtime convergence authority only. It does not itself
 deploy Timeweb, cut over production PostgreSQL, mutate DNS/TLS, activate public users,
@@ -61,7 +63,13 @@ contracts and authority gates.
 
 ## 4. Ordered V9 convergence milestones inside PR #584
 
-The branch uses these internal checkpoints:
+The branch uses these internal checkpoints.
+
+Current checkpoint: **V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE**. V9C-B is
+`CERTIFIED_GREEN` on exact head
+`4394e3f95558f2180a294827f150b1197bdf353c`; all 19 repository workflows completed
+`success`, Sonar Quality Gate passed with 0 new issues / 0 Security Hotspots, and
+unresolved review threads were zero.
 
 1. **V9C-A / AUTHORITY_AND_INVENTORY** — establish this amendment, exact source
    inventory, migration map and machine guard.
@@ -69,9 +77,10 @@ The branch uses these internal checkpoints:
    deterministic V9 source into canonical V10 packages, update producers/consumers and
    prove parity before deleting old source paths.
 3. **V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE** — move all supported runtime/API
-   behavior to the V10 Timeweb composition, eliminate current consumers of
-   `app.py`, `app_v360.py`, `app_v371.py` and `main.py`, then retire those
-   working-tree files.
+   behavior to the V10 Timeweb composition and eliminate current V10 consumers of
+   `app.py`, `app_v360.py`, `app_v371.py` and `main.py`. The protected V9
+   compatibility files stay present for recovery/compatibility, but are forbidden
+   dependencies of the supported Timeweb runtime.
 4. **V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT** — extract any still-needed
    V9 GPT policy/knowledge and historical provider logic into current V10 authority or
    Git history, then remove obsolete V9/Render/Cloudflare/Neon/Cloud.ru/VK working-tree

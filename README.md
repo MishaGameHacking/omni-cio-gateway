@@ -29,7 +29,7 @@ This box is not a second progress ledger. Exact state is only `knowledge/17_V10_
 
 ## V9→V10 convergence inside PR #584
 
-Current branch-local checkpoint is `V9C-B / DETERMINISTIC_SOURCE_RELOCATION`. `V9C-A` is branch-local `CERTIFIED_GREEN` on exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35` (18/18 repository workflows `success`). Remaining deterministic V9 root engines are being relocated into canonical `omni_cio/` packages without financial-semantic rewrite; root implementation paths are removed only after consumers, verifier ownership and parity guards move with them. Runtime-wrapper/provider/GPT retirement remains gated by V9C-C/V9C-D. Git history remains the historical archive.
+Current branch-local checkpoint is `V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE`. `V9C-B / DETERMINISTIC_SOURCE_RELOCATION` is branch-local `CERTIFIED_GREEN` on exact head `4394e3f95558f2180a294827f150b1197bdf353c` (19/19 repository workflows `success`, Sonar 0 new issues / 0 Security Hotspots, unresolved review threads 0). Deterministic root engines have moved into canonical `omni_cio/` packages. V9C-C now proves that the supported Timeweb V10 Docker/runtime dependency graph does not import or execute through `app.py`, `app_v360.py`, `app_v371.py` or `main.py`; those files remain only as the protected V9 compatibility/recovery chain until separate decommission authority. Git history remains the historical archive.
 
 A stale `v9/*` branch merge is explicitly forbidden: the accepted V9 target is already an ancestor of current main.
 

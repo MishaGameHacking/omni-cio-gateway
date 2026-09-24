@@ -4,7 +4,7 @@
 
 ## 1. Product boundary
 
-Поддерживается **один Omni-CIO product line**. V9 теперь является **V9 migration source** внутри текущего V10 lineage: accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` уже является предком current main, поэтому stale `v9/*` branch-head нельзя вливать в PR #584. Полезная V9-логика переносится/переиспользуется в canonical V10/Timeweb surfaces, после parity + zero-consumer + recovery proof legacy working-tree paths удаляются; Git history остаётся архивом.
+Поддерживается **один Omni-CIO product line**. V9 теперь является **V9 migration source** внутри текущего V10 lineage: accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` уже является предком current main, поэтому stale `v9/*` branch-head нельзя вливать в PR #584. Полезная V9-логика переносится/переиспользуется в canonical V10/Timeweb surfaces. После parity + zero-consumer + recovery proof obsolete working-tree paths могут удаляться, но protected V9 compatibility entrypoint `app:app` и его compatibility chain сохраняются до отдельного accepted decommission authority; Git history остаётся архивом.
 
 For public V10, broker credentials are tenant-scoped `BrokerConnection` credentials, never global application credentials. GitHub/Timeweb engineering access never means broker/trading authority.
 
@@ -26,7 +26,7 @@ Current synchronized snapshot:
 - WEB-VISUAL and WP23+ are paused;
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
-- OWNER-approved V9→V10 convergence is active inside PR #584. `V9C-A / AUTHORITY_AND_INVENTORY` is branch-local `CERTIFIED_GREEN`; current checkpoint is `V9C-B / DETERMINISTIC_SOURCE_RELOCATION`. PR #584 must not merge to `main` without a new explicit OWNER instruction.
+- OWNER-approved V9→V10 convergence is active inside PR #584. `V9C-B / DETERMINISTIC_SOURCE_RELOCATION` is branch-local `CERTIFIED_GREEN` on exact head `4394e3f95558f2180a294827f150b1197bdf353c`; current checkpoint is `V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE`. Supported Timeweb V10 runtime/deploy code must have zero direct/transitive dependency on the protected V9 `app:app` chain. PR #584 must not merge to `main` without the required exact-head OWNER landing confirmation.
 
 PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session. The optional Omni-CIO Telegram bot may only be linked after that account/session exists; bot chat, `/start`, Bot API identity or bot-token possession can never create an account, mint/select a tenant or replace product login.
 
@@ -44,7 +44,7 @@ Before material work restore from current GitHub `main`, not chat memory:
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-9. all applicable active amendments, especially Amendments 8–20;
+9. all applicable active amendments, especially Amendments 8–21;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. owning execution-unit contracts/runbooks/ledgers;
