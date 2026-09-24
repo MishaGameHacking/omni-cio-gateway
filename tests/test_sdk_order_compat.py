@@ -5,7 +5,7 @@ import pytest
 os.environ.setdefault("TINVEST_TOKEN", "regression-test-tinvest-token")
 os.environ.setdefault("GATEWAY_API_KEY", "regression-test-gateway-key")
 
-from omni_cio.adapters import sdk_order_compat_v1 as sdk_order_compat
+from omni_cio.adapters import tinvest_order_compat_v1 as sdk_order_compat
 
 
 class RequestObjectOrders:
