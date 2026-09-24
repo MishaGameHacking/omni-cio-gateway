@@ -590,7 +590,7 @@ name.
 
 **Root cause:** bootstrap-time least-privilege validation was stronger than runtime-start readiness. A later ACL or policy drift could therefore leave the process reporting READY with authority wider than the accepted contract.
 
-**Corrective change:** startup readiness now compares exact table/routine grants including grantability, rejects PUBLIC table/routine/schema grants, verifies effective database/schema privileges, rejects database/schema/object ownership, verifies the tenant-scope function semantics and verifies the exact forced RLS policy set and expressions.
+**Corrective change:** startup readiness now compares exact table/routine grants including grantability, rejects PUBLIC table/routine/schema grants, verifies effective database/schema privileges, rejects database/schema/object ownership, verifies the tenant-scope function semantics and verifies the exact forced RLS policy set and expressions. SQL canonicalization preserves function-call and Boolean-grouping parentheses; only whitespace and one deparser-added outer policy wrapper are normalized. Sequence objects may exist in later migrations, but the runtime must have no effective USAGE/SELECT/UPDATE privilege on them.
 
 **Permanent regression/guard:** focused runtime tests reject an extra table privilege and a modified tenant policy in addition to existing role/schema/FORCE-RLS negatives.
 

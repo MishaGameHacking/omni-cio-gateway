@@ -34,7 +34,7 @@ _EXPECTED_RLS_POLICIES = {
     "broker_connection_accounts": "broker_connection_accounts_tenant_isolation",
     "broker_connections": "broker_connections_tenant_isolation",
 }
-_TENANT_POLICY_EXPRESSION = "tenant_id=omni_cio_v10.current_tenant_scope"
+_TENANT_POLICY_EXPRESSION = "tenant_id=omni_cio_v10.current_tenant_scope()"
 _TENANT_SCOPE_FUNCTION_SOURCE = (
     "selectnullif(pg_catalog.current_setting('omni_cio.tenant_id',true),'')"
 )
@@ -55,10 +55,17 @@ def _normalized_privileges(
     )
 
 
-def _normalize_expression(value: object) -> str:
+def _compact_sql(value: object) -> str:
     if not isinstance(value, str):
         return ""
-    return re.sub(r"[\s()]+", "", value).lower()
+    return re.sub(r"\s+", "", value).lower()
+
+
+def _normalize_policy_expression(value: object) -> str:
+    compact = _compact_sql(value)
+    if compact.startswith("(") and compact.endswith(")"):
+        return compact[1:-1]
+    return compact
 
 
 def _validate_runtime_role(connection: Any, expected_role: str) -> None:
@@ -177,13 +184,16 @@ def _validate_runtime_privileges(connection: Any) -> None:
     if public_routines:
         raise RuntimeError("HOSTED_RUNTIME_PUBLIC_ROUTINE_PRIVILEGE_FORBIDDEN")
 
-    sequences = connection.execute(
+    sequence_privileges = connection.execute(
         "SELECT count(*) FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-        "WHERE n.nspname = 'omni_cio_v10' AND c.relkind = 'S'"
+        "WHERE n.nspname = 'omni_cio_v10' AND c.relkind = 'S' AND ("
+        "pg_catalog.has_sequence_privilege(current_user, c.oid, 'USAGE') OR "
+        "pg_catalog.has_sequence_privilege(current_user, c.oid, 'SELECT') OR "
+        "pg_catalog.has_sequence_privilege(current_user, c.oid, 'UPDATE'))"
     ).fetchone()
-    if sequences is None or int(sequences[0]) != 0:
-        raise RuntimeError("HOSTED_RUNTIME_SEQUENCE_SURFACE_UNEXPECTED")
+    if sequence_privileges is None or int(sequence_privileges[0]) != 0:
+        raise RuntimeError("HOSTED_RUNTIME_SEQUENCE_PRIVILEGE_FORBIDDEN")
 
 
 def _validate_runtime_schema(connection: Any) -> None:
@@ -214,7 +224,7 @@ def _validate_tenant_scope_function(connection: Any) -> None:
     ).fetchone()
     if row is None or tuple(row[:4]) != ("sql", "s", False, False):
         raise RuntimeError("HOSTED_RUNTIME_TENANT_SCOPE_FUNCTION_DRIFT")
-    if _normalize_expression(row[4]) != _TENANT_SCOPE_FUNCTION_SOURCE:
+    if _compact_sql(row[4]) != _TENANT_SCOPE_FUNCTION_SOURCE:
         raise RuntimeError("HOSTED_RUNTIME_TENANT_SCOPE_FUNCTION_DRIFT")
 
 
@@ -262,8 +272,8 @@ def _validate_force_rls_policies(connection: Any) -> None:
             or command != "*"
             or permissive is not True
             or public_only is not True
-            or _normalize_expression(using) != _TENANT_POLICY_EXPRESSION
-            or _normalize_expression(check) != _TENANT_POLICY_EXPRESSION
+            or _normalize_policy_expression(using) != _TENANT_POLICY_EXPRESSION
+            or _normalize_policy_expression(check) != _TENANT_POLICY_EXPRESSION
         ):
             raise RuntimeError("HOSTED_RUNTIME_TENANT_POLICY_DRIFT")
 

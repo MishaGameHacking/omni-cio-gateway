@@ -79,11 +79,13 @@ class _RuntimeProbeConnection:
         missing_relation: str | None = None,
         extra_relation_privilege: bool = False,
         policy_drift: bool = False,
+        function_drift: bool = False,
     ) -> None:
         self._role = role
         self._missing_relation = missing_relation
         self._extra_relation_privilege = extra_relation_privilege
         self._policy_drift = policy_drift
+        self._function_drift = function_drift
 
     def execute(self, statement: str, params: object = None) -> _Result:
         del params
@@ -142,7 +144,7 @@ class _RuntimeProbeConnection:
             return _Result(rows=[("current_tenant_scope", "EXECUTE", "NO")])
         if "information_schema.routine_privileges" in statement:
             return _Result(rows=[])
-        if "c.relkind = 'S'" in statement:
+        if "has_sequence_privilege" in statement:
             return _Result(one=(0,))
         if "SELECT to_regclass" in statement:
             relations: list[object | None] = [
@@ -156,16 +158,13 @@ class _RuntimeProbeConnection:
                 relations[relations.index(self._missing_relation)] = None
             return _Result(one=tuple(relations))
         if "FROM pg_catalog.pg_proc function_record" in statement:
-            return _Result(
-                one=(
-                    "sql",
-                    "s",
-                    False,
-                    False,
-                    "SELECT NULLIF("
-                    "pg_catalog.current_setting('omni_cio.tenant_id', true), '')",
-                )
+            source = (
+                "SELECT 'tenant:v1:owner'"
+                if self._function_drift
+                else "SELECT NULLIF("
+                "pg_catalog.current_setting('omni_cio.tenant_id', true), '')"
             )
+            return _Result(one=("sql", "s", False, False, source))
         if "FROM pg_catalog.pg_policy p" in statement:
             expression = (
                 "tenant_id = 'tenant:v1:owner'"
@@ -252,6 +251,18 @@ def test_provider_neutral_runtime_probe_rejects_extra_relation_authority() -> No
     ):
         probe_hosted_runtime_database(
             _RuntimeProbeConnection(role, extra_relation_privilege=True),
+            expected_runtime_role=role,
+        )
+
+
+def test_provider_neutral_runtime_probe_rejects_tenant_scope_function_drift() -> None:
+    role = "omni_cio_timeweb_candidate"
+    with pytest.raises(
+        RuntimeError,
+        match="HOSTED_RUNTIME_TENANT_SCOPE_FUNCTION_DRIFT",
+    ):
+        probe_hosted_runtime_database(
+            _RuntimeProbeConnection(role, function_drift=True),
             expected_runtime_role=role,
         )
 
