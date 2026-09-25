@@ -198,8 +198,7 @@ def test_tbank_ca_checker_uses_ephemeral_pinned_pip_bundle() -> None:
     assert '"--retries"' in source
     assert '"--timeout"' in source
     assert (
-        "$probeRetries = "
-        "[int]$contract.verification.package_index_tls_probe_retries"
+        "$probeRetries = [int]$contract.verification.package_index_tls_probe_retries"
     ) in source
     assert (
         "$probeTimeoutSeconds = "
