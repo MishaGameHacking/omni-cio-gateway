@@ -344,7 +344,9 @@ def _dynamic_import_module(node: ast.AST) -> str | None:
 
 def _module_name(relative: Path) -> str:
     module_path = (
-        relative.parent if relative.name == _PACKAGE_INIT_FILENAME else relative.with_suffix("")
+        relative.parent
+        if relative.name == _PACKAGE_INIT_FILENAME
+        else relative.with_suffix("")
     )
     return ".".join(module_path.parts)
 
