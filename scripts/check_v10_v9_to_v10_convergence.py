@@ -352,18 +352,18 @@ def _import_from_base(relative: Path, node: ast.ImportFrom) -> str | None:
     return ".".join(part for part in base_parts if part)
 
 
-def _runtime_import_candidates(relative: Path, node: ast.AST) -> tuple[str, ...]:
+def _runtime_import_candidates(relative: Path, node: ast.AST) -> list[str]:
     if isinstance(node, ast.Import):
-        return tuple(alias.name for alias in node.names)
+        return [alias.name for alias in node.names]
     if not isinstance(node, ast.ImportFrom):
-        return ()
+        return []
     base = _import_from_base(relative, node)
     if not base:
-        return ()
-    submodules = tuple(
+        return []
+    submodules = [
         f"{base}.{alias.name}" for alias in node.names if alias.name != "*"
-    )
-    return (base, *submodules)
+    ]
+    return [base, *submodules]
 
 
 def _reject_legacy_runtime_module(relative: Path, module: str) -> None:
@@ -390,6 +390,34 @@ def _reject_retired_provider_runtime_module(relative: Path, module: str) -> None
         )
 
 
+def _runtime_dependency_modules(
+    relative: Path,
+    tree: ast.AST,
+) -> list[str]:
+    modules: list[str] = []
+    for node in ast.walk(tree):
+        modules.extend(_runtime_import_candidates(relative, node))
+        dynamic_module = _dynamic_import_module(node)
+        if dynamic_module is not None:
+            modules.append(dynamic_module)
+    return modules
+
+
+def _append_local_runtime_dependency(
+    *,
+    root: Path,
+    relative: Path,
+    module: str,
+    queue: list[Path],
+    visited: set[Path],
+) -> None:
+    _reject_legacy_runtime_module(relative, module)
+    _reject_retired_provider_runtime_module(relative, module)
+    local = _local_module_path(root, module)
+    if local is not None and local not in visited:
+        queue.append(local)
+
+
 def _validate_current_runtime_dependency_graph(root: Path) -> int:
     entrypoint = root / _CURRENT_RUNTIME_ENTRYPOINT
     if not entrypoint.is_file():
@@ -407,17 +435,14 @@ def _validate_current_runtime_dependency_graph(root: Path) -> int:
             root / relative,
             "V9C_CURRENT_RUNTIME_SCAN_FAILED",
         )
-        for node in ast.walk(tree):
-            for module in _runtime_import_candidates(relative, node):
-                _reject_legacy_runtime_module(relative, module)
-                _reject_retired_provider_runtime_module(relative, module)
-                local = _local_module_path(root, module)
-                if local is not None and local not in visited:
-                    queue.append(local)
-            dynamic_module = _dynamic_import_module(node)
-            if dynamic_module is not None:
-                _reject_legacy_runtime_module(relative, dynamic_module)
-                _reject_retired_provider_runtime_module(relative, dynamic_module)
+        for module in _runtime_dependency_modules(relative, tree):
+            _append_local_runtime_dependency(
+                root=root,
+                relative=relative,
+                module=module,
+                queue=queue,
+                visited=visited,
+            )
     return len(visited)
 
 

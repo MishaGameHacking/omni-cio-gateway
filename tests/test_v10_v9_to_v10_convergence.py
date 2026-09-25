@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path, PureWindowsPath
 import shutil
@@ -67,6 +68,15 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             guard._repository_contract_path(windows_path),
             "gpt/PROJECT_INSTRUCTIONS.md",
         )
+
+    def test_runtime_import_candidates_use_homogeneous_list(self) -> None:
+        tree = ast.parse("import json, pathlib\n")
+        modules = guard._runtime_import_candidates(
+            Path("apps/api/example.py"),
+            tree.body[0],
+        )
+        self.assertIsInstance(modules, list)
+        self.assertEqual(modules, ["json", "pathlib"])
 
     def test_rejects_invalid_segmented_sha_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
