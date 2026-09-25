@@ -77,9 +77,7 @@ def _app(*, active_sha: str = LKG_SHA, status: str = "active") -> dict[str, obje
 class _Api:
     def __init__(self, app: dict[str, object]) -> None:
         self.app_payload = app
-        self.rows = [
-            {"id": "deploy-lkg", "commit_sha": LKG_SHA, "status": "success"}
-        ]
+        self.rows = [{"id": "deploy-lkg", "commit_sha": LKG_SHA, "status": "success"}]
         self.calls: list[tuple[str, str]] = []
         self.sleeper = lambda _seconds: None
 
@@ -104,7 +102,9 @@ class _Api:
 
 
 def test_observe_requires_current_main_sha() -> None:
-    with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_MAIN_SHA_DRIFT"):
+    with pytest.raises(
+        release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_MAIN_SHA_DRIFT"
+    ):
         release.run(
             operation="observe",
             expected_sha=EXPECTED_SHA,
@@ -128,7 +128,9 @@ def test_observe_accepts_exact_active_sha_and_livez() -> None:
 
 
 def test_observe_rejects_release_sha_drift() -> None:
-    with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT"):
+    with pytest.raises(
+        release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT"
+    ):
         release.run(
             operation="observe",
             expected_sha=EXPECTED_SHA,
@@ -142,7 +144,9 @@ def test_observe_rejects_release_sha_drift() -> None:
 def test_candidate_rejects_autodeploy_and_public_activation() -> None:
     autodeploy = _app(active_sha=EXPECTED_SHA)
     autodeploy["is_auto_deploy"] = True
-    with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_AUTODEPLOY_FORBIDDEN"):
+    with pytest.raises(
+        release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_AUTODEPLOY_FORBIDDEN"
+    ):
         release.run(
             operation="observe",
             expected_sha=EXPECTED_SHA,
@@ -169,7 +173,9 @@ def test_candidate_rejects_autodeploy_and_public_activation() -> None:
 def test_candidate_rejects_canonical_domain_before_p4() -> None:
     app = _app(active_sha=EXPECTED_SHA)
     app["domains"] = [{"fqdn": CANDIDATE_HOST}, {"fqdn": "omnicio.ru"}]
-    with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_PREMATURE_CANONICAL_DOMAIN"):
+    with pytest.raises(
+        release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_PREMATURE_CANONICAL_DOMAIN"
+    ):
         release.run(
             operation="observe",
             expected_sha=EXPECTED_SHA,
@@ -182,7 +188,9 @@ def test_candidate_rejects_canonical_domain_before_p4() -> None:
 
 def test_deploy_requires_confirmation_and_mutates_only_exact_sha() -> None:
     api = _Api(_app())
-    with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_CONFIRMATION_REQUIRED"):
+    with pytest.raises(
+        release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_CONFIRMATION_REQUIRED"
+    ):
         release.run(
             operation="deploy",
             expected_sha=EXPECTED_SHA,
@@ -207,12 +215,20 @@ def test_deploy_requires_confirmation_and_mutates_only_exact_sha() -> None:
 
 
 def test_wire_deploy_body_is_exact_commit_only() -> None:
-    opener = _Opener([
-        _Response(
-            {"deploy": {"id": "deploy-new", "commit_sha": EXPECTED_SHA, "status": "created"}},
-            status=201,
-        )
-    ])
+    opener = _Opener(
+        [
+            _Response(
+                {
+                    "deploy": {
+                        "id": "deploy-new",
+                        "commit_sha": EXPECTED_SHA,
+                        "status": "created",
+                    }
+                },
+                status=201,
+            )
+        ]
+    )
     api = release.TimewebAppApi("opaque-token", opener=opener, sleeper=lambda _: None)
     api.deploy_once("17", EXPECTED_SHA)
     assert len(opener.requests) == 1

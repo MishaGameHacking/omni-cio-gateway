@@ -34,12 +34,24 @@ _GET_DELAYS = (1.0, 2.0)
 _POLL_DELAYS = (0.0, 5.0, 10.0, 20.0, 30.0, 60.0, 60.0)
 _TRANSIENT = frozenset({408, 429, 500, 502, 503, 504})
 _TERMINAL_FAILURE = frozenset({"failure", "access_error", "stopped"})
-_VALID_DEPLOY_STATUS = frozenset({
-    "created", "started", "preparing_environment", "cloning_code",
-    "installing_dependencies", "building_code", "checking_ssl_certs",
-    "cleaning_up", "running_container", "stopping", "stopped",
-    "failure", "success", "access_error",
-})
+_VALID_DEPLOY_STATUS = frozenset(
+    {
+        "created",
+        "started",
+        "preparing_environment",
+        "cloning_code",
+        "installing_dependencies",
+        "building_code",
+        "checking_ssl_certs",
+        "cleaning_up",
+        "running_container",
+        "stopping",
+        "stopped",
+        "failure",
+        "success",
+        "access_error",
+    }
+)
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
 _ID_RE = re.compile(r"^[A-Za-z0-9-]{1,96}$", re.ASCII)
 _HOST_RE = re.compile(
@@ -67,6 +79,7 @@ class AmbiguousDeploy(RuntimeError):
 
 class ApiLike(Protocol):
     sleeper: Sleep
+
     def list_apps(self) -> dict[str, Any]: ...
     def get_app(self, app_id: str) -> dict[str, Any]: ...
     def list_deploys(self, app_id: str) -> dict[str, Any]: ...
@@ -158,7 +171,9 @@ def _decode(status: int, raw: bytes, expected: int, code: str) -> dict[str, Any]
 
 
 class TimewebAppApi:
-    def __init__(self, token: str, *, opener: Any | None = None, sleeper: Sleep = time.sleep) -> None:
+    def __init__(
+        self, token: str, *, opener: Any | None = None, sleeper: Sleep = time.sleep
+    ) -> None:
         if not token:
             _stop("TIMEWEB_CLOUD_API_TOKEN_REQUIRED")
         _mask(token)
@@ -166,7 +181,9 @@ class TimewebAppApi:
         self._opener = opener or _NO_REDIRECT_OPENER
         self.sleeper = sleeper
 
-    def _request(self, method: str, path: str, body: dict[str, object] | None = None) -> Request:
+    def _request(
+        self, method: str, path: str, body: dict[str, object] | None = None
+    ) -> Request:
         if not path.startswith("/api/v1/") or ".." in path or "://" in path:
             _stop("TIMEWEB_APP_RELEASE_API_PATH_INVALID")
         headers = {
@@ -245,7 +262,9 @@ class TimewebAppApi:
 
 
 def _repository(app: dict[str, Any]) -> str:
-    repository = _mapping(app.get("repository"), "TIMEWEB_APP_RELEASE_REPOSITORY_INVALID")
+    repository = _mapping(
+        app.get("repository"), "TIMEWEB_APP_RELEASE_REPOSITORY_INVALID"
+    )
     full_name = repository.get("full_name")
     if not isinstance(full_name, str):
         _stop("TIMEWEB_APP_RELEASE_REPOSITORY_INVALID")
@@ -280,7 +299,8 @@ def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, st
     matches = [
         row
         for row in _rows(api.list_apps(), "apps", "TIMEWEB_APP_RELEASE_APPS_INVALID")
-        if row.get("name") == CANONICAL_APP_NAME and _repository(row) == CANONICAL_REPOSITORY
+        if row.get("name") == CANONICAL_APP_NAME
+        and _repository(row) == CANONICAL_REPOSITORY
     ]
     if len(matches) != 1:
         _stop("TIMEWEB_APP_RELEASE_TARGET_NOT_UNIQUE")
@@ -327,7 +347,10 @@ def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, st
         "TIMEWEB_APP_RELEASE_CANDIDATE_HOST_INVALID",
     )
     domains = {
-        _host(_mapping(row, "TIMEWEB_APP_RELEASE_DOMAINS_INVALID").get("fqdn"), "TIMEWEB_APP_RELEASE_DOMAINS_INVALID")
+        _host(
+            _mapping(row, "TIMEWEB_APP_RELEASE_DOMAINS_INVALID").get("fqdn"),
+            "TIMEWEB_APP_RELEASE_DOMAINS_INVALID",
+        )
         for row in app.get("domains", [])
     }
     if candidate not in domains:
@@ -340,7 +363,10 @@ def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, st
 def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) -> None:
     request = Request(
         f"https://{hostname}/livez",
-        headers={"Accept": "application/json", "User-Agent": "omni-cio-v10-timeweb-livez"},
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "omni-cio-v10-timeweb-livez",
+        },
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
@@ -358,7 +384,10 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
         _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
     if payload.get("status") != "ok":
         _stop("TIMEWEB_APP_RELEASE_LIVEZ_NOT_OK")
-    if _sha(payload.get("release_sha"), "TIMEWEB_APP_RELEASE_LIVEZ_SHA_INVALID") != expected:
+    if (
+        _sha(payload.get("release_sha"), "TIMEWEB_APP_RELEASE_LIVEZ_SHA_INVALID")
+        != expected
+    ):
         _stop("TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT")
 
 
@@ -398,9 +427,15 @@ def _wait(api: ApiLike, app_id: str, deploy_id: str, expected: str) -> None:
     _stop("TIMEWEB_APP_RELEASE_DEPLOY_TIMEOUT")
 
 
-def observe(api: ApiLike, expected: str, *, livez_opener: Any | None = None) -> str | None:
+def observe(
+    api: ApiLike, expected: str, *, livez_opener: Any | None = None
+) -> str | None:
     app, app_id, hostname = _candidate_app(api, expected)
-    if app.get("status") != "active" or _sha(app.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_ACTIVE_SHA_INVALID") != expected:
+    if (
+        app.get("status") != "active"
+        or _sha(app.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_ACTIVE_SHA_INVALID")
+        != expected
+    ):
         _stop("TIMEWEB_APP_RELEASE_NOT_ACTIVE_EXACT_SHA")
     _verify_livez(hostname, expected, opener=livez_opener)
     return _last_known_good(_deploys(api, app_id), expected)
@@ -427,7 +462,9 @@ def deploy(
     except AmbiguousDeploy:
         deploy_id = _reconcile(api, app_id, before, expected)
     else:
-        row = _mapping(response.get("deploy"), "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID")
+        row = _mapping(
+            response.get("deploy"), "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID"
+        )
         deploy_id, commit, _status = _deploy(row)
         if commit != expected or deploy_id in before:
             _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
@@ -437,7 +474,10 @@ def deploy(
         _stop("TIMEWEB_APP_RELEASE_APP_POSTDEPLOY_DRIFT")
     if (
         refreshed.get("status") != "active"
-        or _sha(refreshed.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_ACTIVE_SHA_INVALID") != expected
+        or _sha(
+            refreshed.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_ACTIVE_SHA_INVALID"
+        )
+        != expected
     ):
         _stop("TIMEWEB_APP_RELEASE_POSTDEPLOY_NOT_ACTIVE")
     _verify_livez(hostname, expected, opener=livez_opener)

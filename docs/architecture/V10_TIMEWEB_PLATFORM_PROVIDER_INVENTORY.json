@@ -310,6 +310,14 @@
     "tests/test_v10_timeweb_full_production_delivery.py": {
       "classification": "KEEP",
       "reason": "Current regression evidence for Amendment 21 production-delivery authority and protected invariants."
+    },
+    "docs/architecture/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_CONTRACT.json": {
+      "classification": "KEEP",
+      "reason": "Current P2 exact-SHA Timeweb App candidate machine contract under Amendment 21."
+    },
+    "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md": {
+      "classification": "KEEP",
+      "reason": "Current P2 exact-SHA Timeweb App candidate operating runbook under Amendment 21."
     }
   },
   "path_rules": [
@@ -398,8 +406,8 @@
     {
       "surface": "Timeweb Cloud App Platform",
       "classification": "KEEP",
-      "state": "SELECTED_TARGET",
-      "authority": "TW-C only after TW-B certification"
+      "state": "EXACT_SHA_CANDIDATE_IMPLEMENTATION_PENDING_ACCEPTANCE",
+      "authority": "P2 implementation in PR #584; provider execution only after accepted-main and external application/environment gates"
     },
     {
       "surface": "Timeweb Cloud Managed PostgreSQL 18",
@@ -465,7 +473,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 224,
+  "expected_provider_named_file_count": 231,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",

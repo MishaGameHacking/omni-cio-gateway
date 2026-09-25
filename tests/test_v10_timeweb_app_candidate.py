@@ -15,7 +15,9 @@ assert SPEC is not None
 assert SPEC.loader is not None
 guard = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(guard)
-CONTRACT_RELATIVE = "docs/architecture/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_CONTRACT.json"
+CONTRACT_RELATIVE = (
+    "docs/architecture/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_CONTRACT.json"
+)
 
 
 class TimewebAppCandidateGuardTests(unittest.TestCase):
@@ -51,7 +53,9 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         payload = json.loads(path.read_text(encoding="utf-8"))
         payload["target"]["auto_deploy_allowed"] = True
         path.write_text(json.dumps(payload), encoding="utf-8")
-        with self.assertRaisesRegex(RuntimeError, "TIMEWEB_APP_CANDIDATE_TARGET_INVALID"):
+        with self.assertRaisesRegex(
+            RuntimeError, "TIMEWEB_APP_CANDIDATE_TARGET_INVALID"
+        ):
             guard.validate(root)
 
     def test_rejects_automatic_workflow_trigger(self) -> None:

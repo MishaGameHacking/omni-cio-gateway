@@ -130,7 +130,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     if (
         runtime.get("vk_login_must_be_false_or_absent") is not True
         or runtime.get("retired_provider_env_forbidden") is not True
-        or runtime.get("telegram_runtime_credential_custody_accepted_by_p2") is not False
+        or runtime.get("telegram_runtime_credential_custody_accepted_by_p2")
+        is not False
     ):
         raise RuntimeError(_RUNTIME_ENV_INVALID)
 
