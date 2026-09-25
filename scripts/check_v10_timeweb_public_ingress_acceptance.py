@@ -78,7 +78,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     }
     if states.get("P3_POSTGRES18_PRODUCTION_CUTOVER") != "CERTIFIED_GREEN_BRANCH_LOCAL":
         raise RuntimeError("TIMEWEB_PUBLIC_INGRESS_P3_GATE_NOT_GREEN")
-    if states.get("P4_OMNICIO_RU_DNS_TLS") != "IMPLEMENTED_VERIFICATION_PENDING":
+    if states.get("P4_OMNICIO_RU_DNS_TLS") != "CERTIFIED_GREEN_BRANCH_LOCAL":
         raise RuntimeError("TIMEWEB_PUBLIC_INGRESS_MILESTONE_DRIFT")
 
 

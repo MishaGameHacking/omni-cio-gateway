@@ -303,6 +303,9 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 workflows / "v10-timeweb-postgres-production-cutover.yml"
             )
             public_ingress = workflows / "v10-timeweb-public-ingress-acceptance.yml"
+            telegram_activation = (
+                workflows / "v10-timeweb-telegram-public-activation.yml"
+            )
             readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -335,6 +338,10 @@ class TimewebControlPlaneTests(unittest.TestCase):
             public_ingress.write_text(
                 "environment: timeweb-production\n"
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                encoding="utf-8",
+            )
+            telegram_activation.write_text(
+                "environment: timeweb-production\n",
                 encoding="utf-8",
             )
             with (
@@ -373,6 +380,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
                     guard,
                     "PUBLIC_INGRESS_WORKFLOW",
                     public_ingress,
+                ),
+                mock.patch.object(
+                    guard,
+                    "TELEGRAM_ACTIVATION_WORKFLOW",
+                    telegram_activation,
                 ),
             ):
                 guard._validate_timeweb_secret_scope()

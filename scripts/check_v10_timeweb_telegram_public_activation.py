@@ -121,6 +121,19 @@ def _validate_contract(root: Path) -> None:
     if credentials.get("sanitized_runtime_probe_required") is not True:
         raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_CREDENTIAL_POLICY_INVALID")
 
+    github = _mapping(
+        contract.get("github"),
+        "TIMEWEB_TELEGRAM_ACTIVATION_GITHUB_POLICY_INVALID",
+    )
+    if github != {
+        "environment": "timeweb-production",
+        "manual_dispatch_only": True,
+        "environment_policy_verification_required": True,
+        "permissions": {"actions": "read", "contents": "read"},
+        "provider_credential_values_in_workflow_allowed": False,
+    }:
+        raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_GITHUB_POLICY_INVALID")
+
     phases = contract.get("operations")
     if phases != ["observe", "ready", "accept"]:
         raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_OPERATIONS_INVALID")
@@ -162,11 +175,14 @@ def _validate_workflow(root: Path) -> None:
     required = (
         "workflow_dispatch:",
         "environment: timeweb-production",
+        "actions: read",
         "contents: read",
         "expected_main_sha",
         "external_readiness_evidence_sha256",
         "readiness_sha256",
         "live_acceptance_evidence_sha256",
+        "python -m scripts.verify_v10_timeweb_github_environment",
+        "--environment-name timeweb-production",
         "python -m scripts.check_v10_timeweb_telegram_public_activation",
         "python -m scripts.timeweb_telegram_public_activation",
     )

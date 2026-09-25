@@ -128,3 +128,12 @@ The same action must preserve `OMNI_V10_VK_ID_LOGIN_ENABLED=false`. It must not 
 Phase 2 may produce `LIVE_OPERABLE` only when the same exact SHA and readiness seal are presented, the public provider surface reports Telegram `enabled=true`, and sanitized real-user acceptance evidence covers login/callback/account/Tenant/session, logout/revoke/re-login, provider fail-closed behavior and cross-tenant negatives.
 
 A digest is only a binding mechanism for previously accepted evidence. Supplying an arbitrary digest does not create or replace legal, regulatory, provider, privacy, recovery or real-user evidence.
+
+
+### GitHub production-environment gate
+
+The P5 workflow is manual-only and uses the existing `timeweb-production` GitHub Environment as a release/acceptance protection boundary. Before any readiness or acceptance probe it re-verifies that environment with the repository's read-only environment-policy verifier. Workflow permissions are limited to `actions: read` and `contents: read`; no Timeweb or Telegram credential value is injected into the workflow.
+
+The actual Timeweb runtime-variable transition remains a bounded provider-panel action outside this read-only workflow. Timeweb App Platform variables are deployment settings for the application; do not copy their values into GitHub inputs, comments, logs or evidence files.
+
+After the provider-panel change, redeploy/restart the application as required by Timeweb and then run the `accept` phase against the canonical production runtime. A provider-panel change by itself is never `LIVE_OPERABLE`.

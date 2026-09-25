@@ -262,8 +262,7 @@ def run(
         _probe_release(expected, opener=opener)
         state = _provider_state(opener=opener)
         print(
-            "TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION=OBSERVED "
-            f"sha={expected} state={state}"
+            f"TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION=OBSERVED sha={expected} state={state}"
         )
         return
 

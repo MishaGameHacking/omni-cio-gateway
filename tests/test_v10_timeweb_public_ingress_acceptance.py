@@ -176,6 +176,23 @@ class TimewebPublicIngressTests(unittest.TestCase):
     def test_repository_guard_passes(self) -> None:
         guard.validate(ROOT)
 
+
+    def test_guard_requires_certified_p4_state_after_transition(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        for row in payload["branch_milestones"]:
+            if row["id"] == "P4_OMNICIO_RU_DNS_TLS":
+                row["state"] = "IMPLEMENTED_VERIFICATION_PENDING"
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_PUBLIC_INGRESS_MILESTONE_DRIFT",
+        ):
+            guard._validate_contract(payload)
+
     def test_observe_accepts_exact_public_runtime_without_provider_access(self) -> None:
         opener = _opener()
         ingress.run(

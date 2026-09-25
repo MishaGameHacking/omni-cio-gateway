@@ -92,5 +92,15 @@
     "uncovered_short": false,
     "web_visual_started": false,
     "wp23_unlocked": false
+  },
+  "github": {
+    "environment": "timeweb-production",
+    "manual_dispatch_only": true,
+    "environment_policy_verification_required": true,
+    "permissions": {
+      "actions": "read",
+      "contents": "read"
+    },
+    "provider_credential_values_in_workflow_allowed": false
   }
 }

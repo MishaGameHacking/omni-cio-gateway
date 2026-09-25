@@ -29,8 +29,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 | 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; 25/25 observed checks success | P1 source/runtime convergence complete; accepted-main progress unchanged |
 | 3 | TW-C / TIMEWEB_APP_CANDIDATE | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; 19/19 observed workflows success; review threads 0 | P2 repository implementation certified; physical provider execution remains post-acceptance |
 | 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; 25/25 exact-head checks success; Sonar 0 issues/hotspots; review threads 0 | Source machinery certified; physical production DB mutation/recovery acceptance remains an independent external gate |
-| 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | IMPLEMENTED_VERIFICATION_PENDING | P4 read-only public-ingress controller/workflow/guard/runbook/tests in current batch | Mandatory DNS/domain action remains an independent external split gate |
-| 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | TODO |  | Auth/privacy/legal/capacity gate |
+| 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c`; 19/19 applicable workflows success; review threads 0 | Source machinery certified; DNS/TLS/no-VPN acceptance remains an independent external split gate |
+| 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | IMPLEMENTED_VERIFICATION_PENDING | P5 two-phase evidence-sealed activation controller/workflow/guard/tests | Provider credential custody, legal/privacy/capacity and real-user acceptance remain fail-closed |
 | 7 | TW-G / LEGACY_PROVIDER_DECOMMISSION | TODO |  | External proof + active-authority cleanup; repository history stays archive-in-place |
 
 Milestone state is branch-local only and does not change accepted V10 implementation progress.
@@ -56,15 +56,17 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: P4 `omnicio.ru` DNS/TLS/public-ingress acceptance implementation
-- Current logical checkpoint ID: `P4-OMNICIO-RU-DNS-TLS-PUBLIC-INGRESS`
+- Current exact work item: P5 Telegram/public-user activation implementation
+- Current logical checkpoint ID: `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION`
 - P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
 - P2 exact-SHA candidate implementation is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; all 19 observed repository workflows completed `success` and unresolved review threads were zero.
 - P3 repository-side production-cutover/recovery implementation is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; all 25 exact-head checks completed `success`, Sonar reported 0 new issues / 0 Security Hotspots and unresolved review threads were zero. This does not claim physical production DB mutation or recovery acceptance.
-- P4 source machinery is `IMPLEMENTED_VERIFICATION_PENDING`; external DNS/domain mutation and representative no-VPN evidence remain independent gates.
+- P4 source machinery is branch-local `CERTIFIED_GREEN` on exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c`; external DNS/domain mutation and representative no-VPN evidence remain independent gates.
+- P5 source machinery is `IMPLEMENTED_VERIFICATION_PENDING`; production credential custody, legal/privacy/capacity and real-user evidence remain independent gates.
 - Machine checkpoint anchor: `P2-TIMEWEB-EXACT-SHA-CANDIDATE` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
 - Machine checkpoint anchor: `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P4-TIMEWEB-OMNICIO-RU-PUBLIC-INGRESS` = `IMPLEMENTED_VERIFICATION_PENDING`.
+- Machine checkpoint anchor: `P4-TIMEWEB-OMNICIO-RU-PUBLIC-INGRESS` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
+- Machine checkpoint anchor: `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION` = `IMPLEMENTED_VERIFICATION_PENDING`.
 - Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
@@ -483,3 +485,14 @@ The previous head is diagnostic evidence only; exact-head certification must res
 - Current internal milestone advances to P5 two-phase Telegram/public-user activation implementation.
 - P5 is read-only with respect to provider configuration. It binds P3/P4/external/rollback evidence to the exact release SHA, emits `READY_TO_ACTIVATE` only while public flags remain disabled, then requires the same evidence seal and real-user evidence before `LIVE_OPERABLE`.
 - `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, `OMNI_V10_VK_ID_LOGIN_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and broker write remain unchanged by this implementation checkpoint.
+
+
+### P5 first-head producer/consumer closure — 2026-09-25
+
+Exact head `9da0698497563bebe42abe5c3c4aaaa4cd2310ce` preserved the P4 milestone evidence but exposed three deterministic P5 integration defects:
+
+- the repository-wide Timeweb control-plane guard still allowed `timeweb-production` only for the older P2/P3/P4 workflows, so the new read-only P5 workflow was correctly rejected as an unreviewed environment consumer;
+- the P4 public-ingress guard still encoded the pre-certification milestone state `IMPLEMENTED_VERIFICATION_PENDING` after P4 had become branch-local `CERTIFIED_GREEN`;
+- the authoritative Windows Ruff gate found one formatter-only drift in the new P5 observation marker.
+
+Root cause: the P4→P5 state transition updated the primary production-delivery contract before every cross-cutting environment/milestone consumer was advanced to the same state. The correction closes the producer/consumer set rather than weakening a gate: P5 becomes an explicit no-provider-secret consumer of the hardened `timeweb-production` environment, the P5 workflow verifies that GitHub Environment policy read-only before probing production, the P4 guard now requires its certified state, and the Ruff-equivalent formatting is applied. No secret scope, provider mutation, public activation, TLS exception, broker authority or Real-money authority is widened.

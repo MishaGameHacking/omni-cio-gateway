@@ -58,6 +58,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -139,6 +140,14 @@ jobs:
       - name: Bootstrap protected runner Python
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify GitHub production environment policy
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python -m scripts.verify_v10_timeweb_github_environment
+          --environment-name timeweb-production
 
       - name: Verify P5 source contract
         shell: cmd
