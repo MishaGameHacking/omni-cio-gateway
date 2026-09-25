@@ -347,8 +347,7 @@ class _ReconnectableRawConnection:
         self.execute_calls += 1
         if self.fail_once:
             self.fail_once = False
-            if self.close_on_failure:
-                self.closed = True
+            self.closed = True
             raise RuntimeError("simulated connection loss")
         return _Result(one=("ok",))
 
@@ -372,17 +371,10 @@ class _PoolRawConnection(_ReconnectableRawConnection):
         *,
         closed: bool = False,
         fail_once: bool = False,
-        close_on_failure: bool = True,
     ) -> None:
         super().__init__(closed=closed, fail_once=fail_once)
         self.name = name
-        self.close_on_failure = close_on_failure
-        self.close_calls = 0
         self.transaction_enters = 0
-
-    def close(self) -> None:
-        self.close_calls += 1
-        self.closed = True
 
     def transaction(self) -> _PoolTransaction:
         return _PoolTransaction(self)
@@ -472,11 +464,7 @@ def test_bounded_pool_allows_two_concurrent_transactions() -> None:
 
 
 def test_bounded_pool_drops_failed_connection_without_replay() -> None:
-    initial = _PoolRawConnection(
-        "initial",
-        fail_once=True,
-        close_on_failure=False,
-    )
+    initial = _PoolRawConnection("initial", fail_once=True)
     replacement = _PoolRawConnection("replacement")
     connect_calls: list[str] = []
 
@@ -495,7 +483,7 @@ def test_bounded_pool_drops_failed_connection_without_replay() -> None:
         with pool.transaction():
             pool.execute("INSERT INTO example VALUES (1)")
     assert initial.execute_calls == 1
-    assert initial.close_calls == 1
+    assert initial.closed is True
     assert connect_calls == []
 
     with pool.transaction():

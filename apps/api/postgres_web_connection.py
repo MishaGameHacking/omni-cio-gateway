@@ -103,7 +103,6 @@ def _configure_long_lived_web_connection(connection: Any) -> None:
         raise RuntimeError("WEB_RUNTIME_POSTGRES_AUTOCOMMIT_REQUIRED")
 
 
-
 class _BufferedCursor:
     def __init__(self, *, rowcount: int, rows: list[Sequence[Any]]) -> None:
         self.rowcount = rowcount
