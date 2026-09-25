@@ -39,8 +39,7 @@ def _copy(root: Path) -> None:
 
 def _contract_path(root: Path) -> Path:
     return root / (
-        "docs/architecture/"
-        "V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
+        "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
     )
 
 

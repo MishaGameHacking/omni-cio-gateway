@@ -363,9 +363,7 @@ def run(
     runtime_dsn, runtime_params = _dsn(RUNTIME_DSN_ENV)
     _validate_target_pair(bootstrap_params, runtime_params)
 
-    if operation != "accept" and (
-        recovery_attestation or recovery_evidence_sha256
-    ):
+    if operation != "accept" and (recovery_attestation or recovery_evidence_sha256):
         _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_RECOVERY_EVIDENCE")
 
     if operation == "prepare":

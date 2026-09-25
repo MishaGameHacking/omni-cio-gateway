@@ -19,6 +19,9 @@ SYNTHETIC_CREATE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-synthetic-create.y
 PUBLIC_IPV4_TLS_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-public-ipv4-tls.yml"
 TIMEWEB_ALLOCATION_WORKFLOW = WORKFLOWS / "v10-timeweb-ipv4-allocation.yml"
 APP_CANDIDATE_WORKFLOW = WORKFLOWS / "v10-timeweb-app-candidate.yml"
+PRODUCTION_CUTOVER_WORKFLOW = (
+    WORKFLOWS / "v10-timeweb-postgres-production-cutover.yml"
+)
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
 _PRODUCTION_ENVIRONMENT_NAME = "timeweb-production"
@@ -599,26 +602,38 @@ def _validate_live_workflow() -> None:
 
 
 def _validate_timeweb_secret_scope() -> None:
-    allowed = {
+    secret_bearing = {
         LIVE_WORKFLOW.resolve(),
         SYNTHETIC_CREATE_WORKFLOW.resolve(),
         PUBLIC_IPV4_TLS_WORKFLOW.resolve(),
         TIMEWEB_ALLOCATION_WORKFLOW.resolve(),
         APP_CANDIDATE_WORKFLOW.resolve(),
+        PRODUCTION_CUTOVER_WORKFLOW.resolve(),
+    }
+    synthetic_environment = {
+        LIVE_WORKFLOW.resolve(),
+        SYNTHETIC_CREATE_WORKFLOW.resolve(),
+        PUBLIC_IPV4_TLS_WORKFLOW.resolve(),
+        TIMEWEB_ALLOCATION_WORKFLOW.resolve(),
+    }
+    production_environment = {
+        APP_CANDIDATE_WORKFLOW.resolve(),
+        PRODUCTION_CUTOVER_WORKFLOW.resolve(),
     }
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):
             source = _read(path)
-            if _TIMEWEB_BINDING in source and path.resolve() not in allowed:
+            resolved = path.resolve()
+            if _TIMEWEB_BINDING in source and resolved not in secret_bearing:
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD")
             if (
                 f"environment: {_ENVIRONMENT_NAME}" in source
-                and path.resolve() not in allowed
+                and resolved not in synthetic_environment
             ):
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_SCOPE_TOO_BROAD")
             if (
                 f"environment: {_PRODUCTION_ENVIRONMENT_NAME}" in source
-                and path.resolve() != APP_CANDIDATE_WORKFLOW.resolve()
+                and resolved not in production_environment
             ):
                 raise RuntimeError(
                     "TIMEWEB_CONTROL_PLANE_PRODUCTION_ENVIRONMENT_SCOPE_TOO_BROAD"

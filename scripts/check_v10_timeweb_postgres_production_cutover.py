@@ -23,9 +23,7 @@ _RECOVERY_ATTESTATION = (
 _CONTROL_PLANE_SECRET = "${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}"
 _BOOTSTRAP_DSN_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}"
 _RUNTIME_DSN_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}"
-_RECOVERY_ATTESTATION_SECRET = (
-    "${{ secrets.OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION }}"
-)
+_RECOVERY_ATTESTATION_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION }}"
 
 
 class CutoverContractError(RuntimeError):
@@ -58,9 +56,7 @@ def _markers(source: str, required: tuple[str, ...], code: str) -> None:
 
 
 def _false_map(value: object, keys: tuple[str, ...], code: str) -> None:
-    if not isinstance(value, dict) or any(
-        value.get(key) is not False for key in keys
-    ):
+    if not isinstance(value, dict) or any(value.get(key) is not False for key in keys):
         raise CutoverContractError(code)
 
 
@@ -214,9 +210,7 @@ def _validate_workflow_secret_scope(workflow: str) -> None:
     }
     for reference, expected_count in expected_counts.items():
         if workflow.count(reference) != expected_count:
-            raise CutoverContractError(
-                "TIMEWEB_PG_CUTOVER_WORKFLOW_SECRET_SCOPE_DRIFT"
-            )
+            raise CutoverContractError("TIMEWEB_PG_CUTOVER_WORKFLOW_SECRET_SCOPE_DRIFT")
     if _RECOVERY_ATTESTATION_SECRET in workflow:
         raise CutoverContractError(
             "TIMEWEB_PG_CUTOVER_RECOVERY_ATTESTATION_SECRET_FORBIDDEN"
@@ -284,9 +278,7 @@ def _validate_sources() -> None:
     if any(
         item in workflow for item in ("\n  push:", "\n  pull_request:", "schedule:")
     ):
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_WORKFLOW_AUTO_TRIGGER_FORBIDDEN"
-        )
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_WORKFLOW_AUTO_TRIGGER_FORBIDDEN")
 
     _markers(
         _text(RUNBOOK),

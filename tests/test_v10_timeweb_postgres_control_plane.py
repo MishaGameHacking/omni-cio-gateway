@@ -299,6 +299,9 @@ class TimewebControlPlaneTests(unittest.TestCase):
             public_ipv4_tls = workflows / "v10-timeweb-postgres-public-ipv4-tls.yml"
             allocation = workflows / "v10-timeweb-ipv4-allocation.yml"
             candidate = workflows / "v10-timeweb-app-candidate.yml"
+            production_cutover = (
+                workflows / "v10-timeweb-postgres-production-cutover.yml"
+            )
             readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -319,6 +322,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 encoding="utf-8",
             )
             candidate.write_text(
+                "environment: timeweb-production\n"
+                "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                encoding="utf-8",
+            )
+            production_cutover.write_text(
                 "environment: timeweb-production\n"
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -350,6 +358,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
                     "APP_CANDIDATE_WORKFLOW",
                     candidate,
                 ),
+                mock.patch.object(
+                    guard,
+                    "PRODUCTION_CUTOVER_WORKFLOW",
+                    production_cutover,
+                ),
             ):
                 guard._validate_timeweb_secret_scope()
                 (workflows / "other.yml").write_text(
@@ -359,6 +372,28 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     RuntimeError,
                     "TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD",
+                ):
+                    guard._validate_timeweb_secret_scope()
+
+                (workflows / "other.yml").write_text(
+                    "environment: timeweb-production\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "TIMEWEB_CONTROL_PLANE_PRODUCTION_ENVIRONMENT_SCOPE_TOO_BROAD",
+                ):
+                    guard._validate_timeweb_secret_scope()
+                (workflows / "other.yml").unlink()
+
+                production_cutover.write_text(
+                    "environment: timeweb-synthetic\n"
+                    "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "TIMEWEB_CONTROL_PLANE_ENVIRONMENT_SCOPE_TOO_BROAD",
                 ):
                     guard._validate_timeweb_secret_scope()
 
