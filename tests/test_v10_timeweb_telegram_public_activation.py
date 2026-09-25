@@ -148,9 +148,7 @@ def _copy_guard_fixture(root: Path) -> None:
 
 
 def _configured_auth_env() -> dict[str, str]:
-    client_credential_env = "".join(
-        ("OMNI_V10_TELEGRAM_OIDC_CLIENT_", "S", "ECRET")
-    )
+    client_credential_env = "".join(("OMNI_V10_TELEGRAM_OIDC_CLIENT_", "S", "ECRET"))
     env = {
         "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456789",
         "OMNI_V10_IDENTITY_BINDING_KEY_HEX": IDENTITY_KEY_HEX,

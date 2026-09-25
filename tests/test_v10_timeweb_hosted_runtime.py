@@ -407,7 +407,9 @@ class _PoolRawConnection(_ReconnectableRawConnection):
             self.fail_once = False
             self.closed = True
             raise RuntimeError("simulated connection loss")
-        return _Result(one=(self.name,))
+        result = _Result(one=(self.name,), rows=[(self.name,)])
+        result.description = (("name",),)
+        return result
 
 
 def _execute_pool_transaction(
