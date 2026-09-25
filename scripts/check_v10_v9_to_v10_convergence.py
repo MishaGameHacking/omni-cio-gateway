@@ -116,6 +116,8 @@ _PROTECTED_V9_GPT_MARKER = "PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHO
 def _repository_contract_path(path: PurePath) -> str:
     """Serialize repository-relative paths independently of runner OS semantics."""
     return path.as_posix()
+
+
 _VERIFIER_WORKFLOW_RELATIVE_PATHS = (
     Path(".github/workflows/v10-pr-fast-checks.yml"),
     Path(".github/workflows/regression-shield.yml"),
