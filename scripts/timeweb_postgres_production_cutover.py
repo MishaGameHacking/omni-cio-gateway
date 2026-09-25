@@ -177,7 +177,7 @@ def _verify_cross_tenant_negative(connection: Any) -> None:
     tenant_a = f"tenant:v1:p3a_{nonce}"
     tenant_b = f"tenant:v1:p3b_{nonce}"
     connection_id = "broker-connection:v1:" + secrets.token_hex(32)
-    secret_ref = "read-connection:v1:" + secrets.token_hex(32)
+    credential_handle = "read-connection:v1:" + secrets.token_hex(32)
     payload = _probe_identity_payload(tenant_a)
 
     try:
@@ -201,7 +201,7 @@ def _verify_cross_tenant_negative(connection: Any) -> None:
                 "(connection_id, tenant_id, provider, credential_role, state, "
                 "secret_ref, created_at, last_verified_at) "
                 "VALUES (%s, %s, 't_invest', 'read', 'ACTIVE', %s, now(), now())",
-                (connection_id, tenant_a, secret_ref),
+                (connection_id, tenant_a, credential_handle),
             )
             visible = connection.execute(
                 "SELECT connection_id FROM omni_cio_v10.broker_connections"
@@ -289,22 +289,36 @@ def _verify_runtime_database(runtime_dsn: str) -> None:
         _require_clean_product_state(bootstrap)
 
 
+def _is_canonical_app_row(value: object) -> bool:
+    if (
+        not isinstance(value, dict)
+        or value.get("name") != app_release.CANONICAL_APP_NAME
+    ):
+        return False
+    repository = value.get("repository")
+    return (
+        isinstance(repository, dict)
+        and repository.get("full_name") == app_release.CANONICAL_REPOSITORY
+    )
+
+
+def _require_canonical_app_shape(payload: dict[str, Any]) -> None:
+    expected = {
+        "type": "backend",
+        "framework": app_release.CANONICAL_FRAMEWORK,
+        "branch_name": app_release.CANONICAL_BRANCH,
+    }
+    if any(payload.get(key) != value for key, value in expected.items()):
+        _stop("TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT")
+    if payload.get("is_auto_deploy") is not False:
+        _stop("TIMEWEB_PG_PRODUCTION_APP_AUTODEPLOY_FORBIDDEN")
+
+
 def _app_envs(api: app_release.TimewebAppApi) -> dict[str, str]:
     rows = api.list_apps().get("apps")
     if not isinstance(rows, list):
         _stop("TIMEWEB_PG_PRODUCTION_APP_LIST_INVALID")
-    matches = []
-    for value in rows:
-        if (
-            not isinstance(value, dict)
-            or value.get("name") != app_release.CANONICAL_APP_NAME
-        ):
-            continue
-        repository = value.get("repository")
-        if not isinstance(repository, dict):
-            continue
-        if repository.get("full_name") == app_release.CANONICAL_REPOSITORY:
-            matches.append(value)
+    matches = [value for value in rows if _is_canonical_app_row(value)]
     if len(matches) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_APP_NOT_UNIQUE")
     app_id = str(matches[0].get("id", "")).strip()
@@ -313,14 +327,7 @@ def _app_envs(api: app_release.TimewebAppApi) -> dict[str, str]:
     payload = api.get_app(app_id).get("app")
     if not isinstance(payload, dict):
         _stop("TIMEWEB_PG_PRODUCTION_APP_INVALID")
-    if (
-        payload.get("type") != "backend"
-        or payload.get("framework") != app_release.CANONICAL_FRAMEWORK
-        or payload.get("branch_name") != app_release.CANONICAL_BRANCH
-    ):
-        _stop("TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT")
-    if payload.get("is_auto_deploy") is not False:
-        _stop("TIMEWEB_PG_PRODUCTION_APP_AUTODEPLOY_FORBIDDEN")
+    _require_canonical_app_shape(payload)
     envs = payload.get("envs")
     if not isinstance(envs, dict):
         _stop("TIMEWEB_PG_PRODUCTION_APP_ENV_INVALID")

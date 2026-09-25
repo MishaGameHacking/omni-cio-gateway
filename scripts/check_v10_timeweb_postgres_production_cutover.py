@@ -66,25 +66,28 @@ def _true_map(value: object, keys: tuple[str, ...], code: str) -> None:
         raise CutoverContractError(code)
 
 
-def _validate_contract(payload: dict[str, Any]) -> None:
-    expected_root = {
-        "schema": "omni-cio.v10.timeweb-postgres-production-cutover.v1",
-        "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
-        "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
-        "owning_pr": 584,
-        "milestone": "P3_POSTGRES18_PRODUCTION_CUTOVER",
-    }
-    if any(payload.get(key) != value for key, value in expected_root.items()):
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_IDENTITY_DRIFT")
+def _mapping(value: object, code: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise CutoverContractError(code)
+    return value
 
-    target = payload.get("target")
-    if not isinstance(target, dict) or target.get("postgres_major") != 18:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_TARGET_INVALID")
-    if target.get("synthetic_fixture_promotion_allowed") is not False:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_TARGET_INVALID")
 
-    role = payload.get("runtime_role")
-    if not isinstance(role, dict) or role.get("name") != "omni_cio_hosted_api":
+def _validate_target(payload: dict[str, Any]) -> None:
+    code = "TIMEWEB_PG_CUTOVER_TARGET_INVALID"
+    target = _mapping(payload.get("target"), code)
+    if (
+        target.get("postgres_major") != 18
+        or target.get("synthetic_fixture_promotion_allowed") is not False
+    ):
+        raise CutoverContractError(code)
+
+
+def _validate_runtime_role(payload: dict[str, Any]) -> None:
+    role = _mapping(
+        payload.get("runtime_role"),
+        "TIMEWEB_PG_CUTOVER_RUNTIME_ROLE_INVALID",
+    )
+    if role.get("name") != "omni_cio_hosted_api":
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_RUNTIME_ROLE_INVALID")
     _false_map(
         role,
@@ -104,11 +107,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PG_CUTOVER_RUNTIME_ROLE_WIDENED",
     )
 
-    prepare = payload.get("prepare")
-    if (
-        not isinstance(prepare, dict)
-        or prepare.get("confirmation") != _PREPARE_CONFIRMATION
-    ):
+
+def _validate_prepare(payload: dict[str, Any]) -> None:
+    prepare = _mapping(payload.get("prepare"), "TIMEWEB_PG_CUTOVER_PREPARE_INVALID")
+    if prepare.get("confirmation") != _PREPARE_CONFIRMATION:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_PREPARE_INVALID")
     _true_map(
         prepare,
@@ -127,10 +129,13 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PG_CUTOVER_DESTRUCTIVE_AUTHORITY",
     )
 
-    recovery = payload.get("recovery")
-    if not isinstance(recovery, dict):
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_RECOVERY_INVALID")
-    expected_recovery = {
+
+def _validate_recovery(payload: dict[str, Any]) -> None:
+    recovery = _mapping(
+        payload.get("recovery"),
+        "TIMEWEB_PG_CUTOVER_RECOVERY_INVALID",
+    )
+    expected = {
         "recovery_attestation_source": "WORKFLOW_DISPATCH_INPUT",
         "recovery_attestation_input": "recovery_attestation",
         "recovery_attestation_value": _RECOVERY_ATTESTATION,
@@ -139,7 +144,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "recovery_evidence_digest_is_not_secret": True,
         "actions_secret_for_recovery_attestation_allowed": False,
     }
-    for key, value in expected_recovery.items():
+    for key, value in expected.items():
         if recovery.get(key) != value:
             raise CutoverContractError(f"TIMEWEB_PG_CUTOVER_RECOVERY_DRIFT:{key}")
     _true_map(
@@ -153,9 +158,12 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PG_CUTOVER_RECOVERY_INVALID",
     )
 
-    binding = payload.get("app_binding")
-    if not isinstance(binding, dict):
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID")
+
+def _validate_app_binding(payload: dict[str, Any]) -> None:
+    binding = _mapping(
+        payload.get("app_binding"),
+        "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
+    )
     _false_map(
         binding,
         (
@@ -165,11 +173,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
     )
 
-    github = payload.get("github")
-    if (
-        not isinstance(github, dict)
-        or github.get("environment") != "timeweb-production"
-    ):
+
+def _validate_github(payload: dict[str, Any]) -> None:
+    github = _mapping(payload.get("github"), _GITHUB_INVALID)
+    if github.get("environment") != "timeweb-production":
         raise CutoverContractError(_GITHUB_INVALID)
     _true_map(
         github,
@@ -186,6 +193,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     if github.get("recovery_attestation_as_actions_secret_allowed") is not False:
         raise CutoverContractError(_GITHUB_INVALID)
 
+
+def _validate_protected_invariants(payload: dict[str, Any]) -> None:
     _false_map(
         payload.get("protected_invariants"),
         (
@@ -201,6 +210,25 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         ),
         "TIMEWEB_PG_CUTOVER_AUTHORITY_WIDENED",
     )
+
+
+def _validate_contract(payload: dict[str, Any]) -> None:
+    expected_root = {
+        "schema": "omni-cio.v10.timeweb-postgres-production-cutover.v1",
+        "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+        "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+        "owning_pr": 584,
+        "milestone": "P3_POSTGRES18_PRODUCTION_CUTOVER",
+    }
+    if any(payload.get(key) != value for key, value in expected_root.items()):
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_IDENTITY_DRIFT")
+    _validate_target(payload)
+    _validate_runtime_role(payload)
+    _validate_prepare(payload)
+    _validate_recovery(payload)
+    _validate_app_binding(payload)
+    _validate_github(payload)
+    _validate_protected_invariants(payload)
 
 
 def _validate_workflow_secret_scope(workflow: str) -> None:
