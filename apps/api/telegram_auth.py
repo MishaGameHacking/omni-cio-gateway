@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+import hashlib
+import hmac
 import os
 import re
 import secrets
@@ -29,6 +31,7 @@ from omni_cio.web.telegram_oidc_v1 import TelegramOidcConfigV1, TelegramOidcRunt
 _TELEGRAM_CLIENT_ID = "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID"
 _TELEGRAM_CLIENT_CREDENTIAL_ENV = "OMNI_V10_TELEGRAM_OIDC_CLIENT_" + "SEC" + "RET"
 _IDENTITY_BINDING_KEY = "OMNI_V10_IDENTITY_BINDING_KEY_HEX"
+_IDENTITY_BINDING_FINGERPRINT = "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256"
 _CSRF_BINDING_KEY = "OMNI_V10_CSRF_BINDING_KEY_HEX"
 _PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"
 _TELEGRAM_LOGIN_ENABLED = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"
@@ -66,6 +69,25 @@ def _key(environment: Mapping[str, str], name: str) -> bytes:
     if _HEX_32_PATTERN.fullmatch(value) is None:
         raise TelegramAuthConfigurationError(f"{name}_INVALID")
     return bytes.fromhex(value)
+
+
+def _identity_binding_key(environment: Mapping[str, str]) -> bytes:
+    key = _key(environment, _IDENTITY_BINDING_KEY)
+    fingerprint = _value(environment, _IDENTITY_BINDING_FINGERPRINT).lower()
+    if not fingerprint:
+        raise TelegramAuthConfigurationError(
+            "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256_REQUIRED"
+        )
+    if _HEX_32_PATTERN.fullmatch(fingerprint) is None:
+        raise TelegramAuthConfigurationError(
+            "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256_INVALID"
+        )
+    actual = hashlib.sha256(key).hexdigest()
+    if not hmac.compare_digest(actual, fingerprint):
+        raise TelegramAuthConfigurationError(
+            "TELEGRAM_AUTH_IDENTITY_BINDING_FINGERPRINT_MISMATCH"
+        )
+    return key
 
 
 def _canonical_origin(value: str) -> str:
@@ -123,7 +145,7 @@ def build_telegram_provider_auth(
 
     if configured:
         csrf_binding_key = _key(environment, _CSRF_BINDING_KEY)
-        identity_binding_key = _key(environment, _IDENTITY_BINDING_KEY)
+        identity_binding_key = _identity_binding_key(environment)
     else:
         csrf_binding_key = secrets.token_bytes(32)
         identity_binding_key = b""

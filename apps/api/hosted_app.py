@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from omni_cio.persistence.migration import discover_migrations
@@ -238,12 +239,13 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
                 pass
         return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
 
-    def _resolve_session(self, request: Request) -> Response | None:
+    async def _resolve_session(self, request: Request) -> Response | None:
         session_token = request.cookies.get(BROWSER_SESSION_COOKIE)
         scope: SessionScopeV1 | None = None
         if is_session_token_candidate(session_token):
             try:
-                scope = self._sessions.resolve(
+                scope = await run_in_threadpool(
+                    self._sessions.resolve,
                     session_token,
                     now=_utc(self._now()),
                 )
@@ -258,7 +260,12 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
             )
         return None
 
-    def _admission_error(self, request: Request, *, api_path: bool) -> Response | None:
+    async def _admission_error(
+        self,
+        request: Request,
+        *,
+        api_path: bool,
+    ) -> Response | None:
         if request.url.path == _LIVEZ_PATH:
             return None
         if request.url.path == _HEALTHZ_PATH:
@@ -275,7 +282,7 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
                 retry_after_seconds=self._abuse.policy.retry_after_seconds,
                 api_path=True,
             )
-        return self._resolve_session(request)
+        return await self._resolve_session(request)
 
     def _csrf_valid(self, request: Request) -> bool:
         session_token = request.cookies.get(BROWSER_SESSION_COOKIE, "")
@@ -320,7 +327,7 @@ class HostedSecurityMiddlewareV1(BaseHTTPMiddleware):
         api_path = _is_api_path(request.url.path)
         error = self._transport_error(request, api_path=api_path)
         if error is None:
-            error = self._admission_error(request, api_path=api_path)
+            error = await self._admission_error(request, api_path=api_path)
         if error is None:
             error = self._mutation_error(request, api_path=api_path)
         if error is not None:

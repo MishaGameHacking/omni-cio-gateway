@@ -26,6 +26,7 @@ FULL_DELIVERY_RELATIVE = Path(
 _EXPECTED_SCHEMA = "omni-cio.v10.timeweb-telegram-public-activation.v1"
 _EXPECTED_ORIGIN = "https://omnicio.ru"
 _EXPECTED_CALLBACK = "https://omnicio.ru/api/v10/web/auth/telegram/callback"
+_IDENTITY_FINGERPRINT_ENV = "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256"
 _REQUIRED_CREDENTIAL_NAMES = {
     "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
     "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET",
@@ -121,6 +122,36 @@ def _validate_contract(root: Path) -> None:
     if credentials.get("sanitized_runtime_probe_required") is not True:
         raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_CREDENTIAL_POLICY_INVALID")
 
+    continuity = _mapping(
+        contract.get("identity_binding_continuity"),
+        "TIMEWEB_TELEGRAM_ACTIVATION_IDENTITY_CONTINUITY_INVALID",
+    )
+    if continuity != {
+        "fingerprint_env": _IDENTITY_FINGERPRINT_ENV,
+        "fingerprint_algorithm": "SHA-256",
+        "fingerprint_value_is_secret": False,
+        "runtime_match_required_when_provider_configured": True,
+        "silent_key_rotation_allowed": False,
+        "existing_binding_rekey_requires_reviewed_migration": True,
+    }:
+        raise RuntimeError(
+            "TIMEWEB_TELEGRAM_ACTIVATION_IDENTITY_CONTINUITY_INVALID"
+        )
+
+    capacity = _mapping(
+        contract.get("capacity_safety"),
+        "TIMEWEB_TELEGRAM_ACTIVATION_CAPACITY_POLICY_INVALID",
+    )
+    if capacity != {
+        "bounded_postgres_pool_required": True,
+        "postgres_pool_max_size": 4,
+        "postgres_pool_acquire_timeout_seconds": 5.0,
+        "session_lookup_off_event_loop_required": True,
+        "horizontal_app_scaling_requires_distributed_abuse_control": True,
+        "current_horizontal_app_scaling_allowed": False,
+    }:
+        raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_CAPACITY_POLICY_INVALID")
+
     github = _mapping(
         contract.get("github"),
         "TIMEWEB_TELEGRAM_ACTIVATION_GITHUB_POLICY_INVALID",
@@ -204,6 +235,10 @@ def _validate_composition(root: Path) -> None:
         "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
         "if public_enabled != login_enabled:",
         "allowed_providers=(IdentityProviderV1.TELEGRAM,)",
+        _IDENTITY_FINGERPRINT_ENV,
+        "hashlib.sha256(key).hexdigest()",
+        "hmac.compare_digest(actual, fingerprint)",
+        "TELEGRAM_AUTH_IDENTITY_BINDING_FINGERPRINT_MISMATCH",
     ):
         if marker not in auth_source:
             raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_AUTH_RUNTIME_DRIFT")
@@ -221,6 +256,23 @@ def _validate_composition(root: Path) -> None:
         full_delivery.get("telegram"),
         "TIMEWEB_TELEGRAM_ACTIVATION_FULL_DELIVERY_DRIFT",
     )
+    runtime = _mapping(
+        full_delivery.get("runtime"),
+        "TIMEWEB_TELEGRAM_ACTIVATION_FULL_DELIVERY_DRIFT",
+    )
+    if (
+        runtime.get("postgres_pool_max_size") != 4
+        or runtime.get("postgres_pool_acquire_timeout_seconds") != 5.0
+        or runtime.get("single_serialized_runtime_connection_allowed") is not False
+        or runtime.get("session_lookup_event_loop_blocking_allowed") is not False
+    ):
+        raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_FULL_DELIVERY_DRIFT")
+    if (
+        telegram.get("horizontal_app_scaling_without_distributed_abuse_control_allowed")
+        is not False
+    ):
+        raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_FULL_DELIVERY_DRIFT")
+
     expected_paths = {
         "activation_contract": CONTRACT_RELATIVE.as_posix(),
         "activation_controller": CONTROLLER_RELATIVE.as_posix(),
@@ -242,6 +294,10 @@ def _validate_runbook(root: Path) -> None:
         "OMNI_V10_VK_ID_LOGIN_ENABLED=false",
         "LIVE_OPERABLE",
         "No workflow in this gate mutates Timeweb App Platform settings",
+        "Identity-binding continuity and rotation",
+        "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+        "P5 capacity and concurrency boundary",
+        "horizontal App Platform fan-out",
     )
     for marker in required:
         if marker not in source:

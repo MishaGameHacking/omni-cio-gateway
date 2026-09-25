@@ -353,7 +353,7 @@ The current TW-B branch remains unmerged and in RED repair. Exact-head verificat
 
 No provider resources, DNS, secrets, public-user activation, broker-write authority or real-trading authority are changed by this repair.
 
-A later material boundary remains explicit rather than hidden: the Docker dependency lock still carries the historical T-Invest package/index and the hosted runtime still uses one bounded serialized PostgreSQL connection. Splitting broker-only dependencies and introducing a production connection-pool/reconnect design are dependency/toolchain/capacity changes and remain mandatory split-gate work before public multi-user production acceptance. Exact migration-state proof remains a deployment/release gate with migration authority; the least-privilege runtime role must not gain read access to `schema_migrations` merely to make runtime health claim exact migration truth.
+A later material boundary remains explicit rather than hidden: the Docker dependency lock still carries the historical T-Invest package/index, so splitting broker-only dependencies remains a separate dependency/toolchain decision. The earlier single-serialized-PostgreSQL-connection blocker is now closed by the P5 preventive hardening batch: current Timeweb runtime uses a bounded pool with transaction-local affinity, bounded acquisition, per-connection validation/reconnect and no failed-operation replay, while synchronous session lookup is moved off the ASGI event loop. Exact migration-state proof remains a deployment/release gate with migration authority; the least-privilege runtime role must not gain read access to `schema_migrations` merely to make runtime health claim exact migration truth.
 
 ## 11. 2026-09-24 OWNER expansion — Amendment 21 / six-milestone production delivery
 
@@ -503,3 +503,44 @@ Root cause: the P4→P5 state transition updated the primary production-delivery
 Full-diff review of the first correction commit caught a dangerous allowlist-placement ambiguity before Governance reached the file: `TELEGRAM_ACTIVATION_WORKFLOW` had been inserted into the provider-token-bearing set instead of the production-environment consumer set. No secret was actually injected into the workflow, but leaving that classification would have silently widened future authority.
 
 The correction moves P5 exclusively into the `timeweb-production` environment allowlist and keeps it out of the `TIMEWEB_CLOUD_API_TOKEN` allowlist. A dedicated regression now mutates the P5 fixture to reference the Timeweb provider token and requires `TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD`. This preserves the intended architecture: P5 may be protected by the production Environment but may not consume provider control-plane credentials.
+
+
+### P5 implementation pre-hardening exact-head certification
+
+Exact head `e9ac1475ed64d99454544478ac4cbd5dcdf7db71` completed all 19
+applicable repository workflows with `success`, zero unresolved review threads, a
+mergeable Draft PR and no accepted-main divergence. That evidence proves the P5
+implementation/producer-consumer correction baseline before the preventive hardening
+below. The new hardening commit intentionally invalidates `e9ac1475...` as final merge
+evidence and must earn a fresh exact-head verification cycle.
+
+### P5 preventive hardening — identity continuity and runtime concurrency
+
+Pre-merge review identified two future production-only failure classes not adequately modeled
+by earlier exact-head GREEN evidence.
+
+First, `OMNI_V10_IDENTITY_BINDING_KEY_HEX` is the durable key behind the HMAC lookup
+that maps a verified Telegram subject to the existing internal USER/Tenant. Silent
+replacement would make existing bindings unresolvable. The runtime now requires the
+non-secret `OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256`, computed over the decoded
+32-byte key, and fails provider composition on missing/malformed/mismatched continuity
+metadata. Matching a new fingerprint does not authorize rotation: existing bindings still
+require a separately reviewed rekey migration/recovery procedure.
+
+Second, the current Timeweb runtime still used one process-wide serialized PostgreSQL
+connection. Although reconnect-safe, that design created head-of-line blocking for real
+multi-user traffic. The replacement uses a bounded four-connection stdlib pool with a
+five-second acquisition deadline, transaction-local connection affinity, lazy validated
+connection creation, closed-connection replacement and no SQL replay after ambiguous
+failure. Standalone cursors are buffered before their connection returns to the pool.
+Authenticated session lookup is offloaded from the ASGI event loop so synchronous
+PostgreSQL I/O cannot block unrelated event-loop work.
+
+Provider-auth request limits remain process-local. Timeweb documents horizontal App
+Platform scaling by placing multiple applications behind a Load Balancer; therefore P5
+explicitly forbids horizontal application fan-out until a distributed abuse-control/rate
+limit design is separately reviewed and accepted. The current activation capacity gate
+must prove the bounded single-application topology.
+
+These changes introduce no new dependency, provider mutation, secret value, public-user
+activation, TLS exception, broker write or Real-money authority.

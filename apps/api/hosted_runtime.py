@@ -6,7 +6,7 @@ import os
 from fastapi import FastAPI
 
 from apps.api.postgres_web_connection import (
-    _SerializedWebConnection,
+    _BoundedWebConnectionPool,
     _configure_long_lived_web_connection,
 )
 from apps.api.hosted_app import (
@@ -38,6 +38,8 @@ _RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
 _CANDIDATE_HOSTNAME_ENV = "OMNI_V10_CANDIDATE_HOSTNAME"
 _DATABASE_CONNECT_TIMEOUT_SECONDS = 15
+_DATABASE_POOL_MAX_SIZE = 4
+_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS = 5.0
 HOSTED_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
@@ -85,9 +87,11 @@ def create_app() -> FastAPI:
     candidate_hostname = _optional_candidate_hostname()
     candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
     raw_connection = _open_runtime_database(database_dsn, runtime_role)
-    connection = _SerializedWebConnection(
+    connection = _BoundedWebConnectionPool(
         raw_connection,
-        reconnect=lambda: _open_runtime_database(database_dsn, runtime_role),
+        connect=lambda: _open_runtime_database(database_dsn, runtime_role),
+        max_size=_DATABASE_POOL_MAX_SIZE,
+        acquire_timeout_seconds=_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS,
     )
     sessions = PostgresWebSessionRegistryV1(
         connection,

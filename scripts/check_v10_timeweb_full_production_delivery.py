@@ -12,6 +12,8 @@ AMENDMENT = (
 )
 CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
 RUNTIME = ROOT / "apps/api/hosted_runtime.py"
+HOSTED_APP = ROOT / "apps/api/hosted_app.py"
+POSTGRES_CONNECTION = ROOT / "apps/api/postgres_web_connection.py"
 TELEGRAM_AUTH = ROOT / "apps/api/telegram_auth.py"
 TELEGRAM_READINESS = (
     ROOT
@@ -128,6 +130,15 @@ def _validate_runtime(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_RUNTIME_ENTRYPOINT_DRIFT")
     if runtime.get("credential_values_in_repository_allowed") is not False:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_POLICY_DRIFT")
+    expected_capacity = {
+        "postgres_pool_max_size": 4,
+        "postgres_pool_acquire_timeout_seconds": 5.0,
+        "single_serialized_runtime_connection_allowed": False,
+        "session_lookup_event_loop_blocking_allowed": False,
+    }
+    for key, value in expected_capacity.items():
+        if runtime.get(key) != value:
+            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT:{key}")
     names = runtime.get("runtime_credential_env_names")
     if not isinstance(names, list) or set(names) != _SECRET_ENV_NAMES:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_ENV_DRIFT")
@@ -150,9 +161,34 @@ def _validate_runtime(payload: dict[str, Any]) -> None:
         "OMNI_V10_POSTGRES_RUNTIME_ROLE",
         'canonical_origin=f"https://{hostname}"',
         "provider_route_installer=install_telegram_auth_routes_v1",
+        "_BoundedWebConnectionPool",
+        "_DATABASE_POOL_MAX_SIZE = 4",
+        "_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS = 5.0",
+        "connect=lambda:",
     ):
         if marker not in hosted_runtime:
             raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_HOSTED_RUNTIME_DRIFT:{marker}")
+    if "_SerializedWebConnection(" in hosted_runtime:
+        raise RuntimeError("TIMEWEB_FULL_DELIVERY_SINGLE_CONNECTION_FORBIDDEN")
+
+    hosted_app = _text(HOSTED_APP)
+    for marker in (
+        "from starlette.concurrency import run_in_threadpool",
+        "scope = await run_in_threadpool(",
+        "async def _resolve_session(",
+    ):
+        if marker not in hosted_app:
+            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_EVENT_LOOP_DRIFT:{marker}")
+
+    postgres_connection = _text(POSTGRES_CONNECTION)
+    for marker in (
+        "class _BoundedWebConnectionPool",
+        "WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED",
+        "transaction_connection",
+        "LifoQueue",
+    ):
+        if marker not in postgres_connection:
+            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_POOL_DRIFT:{marker}")
 
 
 def _validate_postgres(payload: dict[str, Any]) -> None:
@@ -228,6 +264,12 @@ def _validate_telegram(payload: dict[str, Any]) -> None:
         "activation_controller": "scripts/timeweb_telegram_public_activation.py",
         "activation_workflow": ".github/workflows/v10-timeweb-telegram-public-activation.yml",
         "activation_runbook": "docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md",
+        "identity_binding_fingerprint_env": "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+        "identity_binding_fingerprint_algorithm": "SHA-256",
+        "identity_binding_fingerprint_match_required": True,
+        "silent_identity_binding_key_rotation_allowed": False,
+        "identity_binding_rekey_requires_reviewed_migration": True,
+        "horizontal_app_scaling_without_distributed_abuse_control_allowed": False,
     }
     for key, value in expected.items():
         if telegram.get(key) != value:
@@ -239,6 +281,8 @@ def _validate_telegram(payload: dict[str, Any]) -> None:
         "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
         "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
         "allowed_providers=(IdentityProviderV1.TELEGRAM,)",
+        "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+        "TELEGRAM_AUTH_IDENTITY_BINDING_FINGERPRINT_MISMATCH",
     ):
         if marker not in source:
             raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_TELEGRAM_SOURCE_DRIFT:{marker}")
@@ -323,6 +367,8 @@ def validate(root: Path = ROOT) -> None:
         AMENDMENT, \
         CONTRACT, \
         RUNTIME, \
+        HOSTED_APP, \
+        POSTGRES_CONNECTION, \
         TELEGRAM_AUTH, \
         TELEGRAM_READINESS, \
         DOCKERFILE
@@ -331,6 +377,8 @@ def validate(root: Path = ROOT) -> None:
         AMENDMENT,
         CONTRACT,
         RUNTIME,
+        HOSTED_APP,
+        POSTGRES_CONNECTION,
         TELEGRAM_AUTH,
         TELEGRAM_READINESS,
         DOCKERFILE,
@@ -346,6 +394,8 @@ def validate(root: Path = ROOT) -> None:
             / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
         )
         RUNTIME = root / "apps/api/hosted_runtime.py"
+        HOSTED_APP = root / "apps/api/hosted_app.py"
+        POSTGRES_CONNECTION = root / "apps/api/postgres_web_connection.py"
         TELEGRAM_AUTH = root / "apps/api/telegram_auth.py"
         TELEGRAM_READINESS = (
             root
@@ -369,6 +419,8 @@ def validate(root: Path = ROOT) -> None:
             AMENDMENT,
             CONTRACT,
             RUNTIME,
+            HOSTED_APP,
+            POSTGRES_CONNECTION,
             TELEGRAM_AUTH,
             TELEGRAM_READINESS,
             DOCKERFILE,

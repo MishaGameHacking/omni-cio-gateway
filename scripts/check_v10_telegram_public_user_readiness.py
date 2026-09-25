@@ -101,6 +101,12 @@ _EXPECTED_CAPACITY = {
     "timeweb_runtime_capacity_accepted": False,
     "automatic_capacity_expansion_authorized": False,
     "real_user_capacity_claim": False,
+    "bounded_postgres_pool_required": True,
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5.0,
+    "session_lookup_off_event_loop_required": True,
+    "horizontal_app_scaling_requires_distributed_abuse_control": True,
+    "current_horizontal_app_scaling_allowed": False,
 }
 
 _EXPECTED_HISTORICAL_CLOUDFLARE_RELEASE = {
@@ -536,6 +542,8 @@ def _validate_provider_neutral_activation_defaults(root: Path) -> None:
             "def _require_activation_pair(",
             "if public_enabled != login_enabled:",
             "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
+            '_IDENTITY_BINDING_FINGERPRINT = "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256"',
+            "TELEGRAM_AUTH_IDENTITY_BINDING_FINGERPRINT_MISMATCH",
         ),
         "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_DEFAULT_DRIFT",
     )
@@ -569,6 +577,10 @@ def _validate_runbook_source(root: Path) -> None:
             "already authenticated Omni-CIO account/session",
             "## Public activation flags",
             "## Acceptance sequence",
+            "## Identity-binding continuity and rotation",
+            "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+            "## P5 capacity and concurrency boundary",
+            "horizontal App Platform fan-out",
         ),
         "TELEGRAM_PUBLIC_USER_READINESS_RUNBOOK_DRIFT",
     )

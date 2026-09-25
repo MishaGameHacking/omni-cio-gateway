@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import shutil
 import tempfile
+from typing import Any, cast
 import unittest
 from urllib.request import Request
+
+from apps.api.telegram_auth import (
+    TelegramAuthConfigurationError,
+    build_telegram_provider_auth,
+)
+from omni_cio.web.identity_v1 import IdentityProviderV1
+from omni_cio.web.session_v1 import SessionRegistryV1
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +44,9 @@ EXPECTED_SHA = "a" * 40
 ROLLBACK_SHA = "b" * 40
 DIGEST = "c" * 64
 LIVE_DIGEST = "d" * 64
+IDENTITY_KEY_HEX = "11" * 32
+CSRF_KEY_HEX = "22" * 32
+IDENTITY_FINGERPRINT = hashlib.sha256(bytes.fromhex(IDENTITY_KEY_HEX)).hexdigest()
 
 
 class _Response:
@@ -110,9 +122,54 @@ def _seal() -> str:
     )
 
 
+def _configured_auth_env() -> dict[str, str]:
+    return {
+        "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456789",
+        "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": "fixture-client-credential-material",
+        "OMNI_V10_IDENTITY_BINDING_KEY_HEX": IDENTITY_KEY_HEX,
+        "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256": IDENTITY_FINGERPRINT,
+        "OMNI_V10_CSRF_BINDING_KEY_HEX": CSRF_KEY_HEX,
+    }
+
+
+def _build_auth(env: dict[str, str]):
+    return build_telegram_provider_auth(
+        connection=cast(Any, object()),
+        sessions=SessionRegistryV1(),
+        canonical_origin="https://omnicio.ru",
+        env=env,
+    )
+
+
 class TimewebTelegramPublicActivationTests(unittest.TestCase):
     def test_repository_guard_passes(self) -> None:
         guard.validate(ROOT)
+
+    def test_runtime_requires_identity_binding_fingerprint(self) -> None:
+        env = _configured_auth_env()
+        del env["OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256"]
+        with self.assertRaisesRegex(
+            TelegramAuthConfigurationError,
+            "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256_REQUIRED",
+        ):
+            _build_auth(env)
+
+    def test_runtime_rejects_identity_binding_fingerprint_drift(self) -> None:
+        env = _configured_auth_env()
+        env["OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256"] = "f" * 64
+        with self.assertRaisesRegex(
+            TelegramAuthConfigurationError,
+            "TELEGRAM_AUTH_IDENTITY_BINDING_FINGERPRINT_MISMATCH",
+        ):
+            _build_auth(env)
+
+    def test_runtime_accepts_matching_identity_binding_fingerprint(self) -> None:
+        services = _build_auth(_configured_auth_env())
+        self.assertFalse(services.registration_enabled)
+        self.assertEqual(
+            services.disabled_reason(IdentityProviderV1.TELEGRAM),
+            "PUBLIC_MULTI_USER_DISABLED",
+        )
 
     def test_ready_requires_configured_runtime_while_flags_remain_off(self) -> None:
         opener = _opener(enabled=False)
@@ -210,6 +267,60 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
                 opener=_opener(enabled=False),
                 **evidence,
             )
+
+    def test_guard_rejects_silent_identity_key_rotation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative in (
+                guard.CONTRACT_RELATIVE,
+                guard.CONTROLLER_RELATIVE,
+                guard.WORKFLOW_RELATIVE,
+                guard.RUNBOOK_RELATIVE,
+                guard.READINESS_RELATIVE,
+                guard.AUTH_RUNTIME_RELATIVE,
+                guard.FULL_DELIVERY_RELATIVE,
+            ):
+                original = ROOT / relative
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(original, target)
+            contract = root / guard.CONTRACT_RELATIVE
+            payload = json.loads(contract.read_text(encoding="utf-8"))
+            payload["identity_binding_continuity"]["silent_key_rotation_allowed"] = (
+                True
+            )
+            contract.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_TELEGRAM_ACTIVATION_IDENTITY_CONTINUITY_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_horizontal_scaling_without_distributed_limits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative in (
+                guard.CONTRACT_RELATIVE,
+                guard.CONTROLLER_RELATIVE,
+                guard.WORKFLOW_RELATIVE,
+                guard.RUNBOOK_RELATIVE,
+                guard.READINESS_RELATIVE,
+                guard.AUTH_RUNTIME_RELATIVE,
+                guard.FULL_DELIVERY_RELATIVE,
+            ):
+                original = ROOT / relative
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(original, target)
+            contract = root / guard.CONTRACT_RELATIVE
+            payload = json.loads(contract.read_text(encoding="utf-8"))
+            payload["capacity_safety"]["current_horizontal_app_scaling_allowed"] = True
+            contract.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_TELEGRAM_ACTIVATION_CAPACITY_POLICY_INVALID",
+            ):
+                guard.validate(root)
 
     def test_guard_rejects_write_all_workflow_regression(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

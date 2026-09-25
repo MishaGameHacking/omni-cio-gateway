@@ -62,7 +62,13 @@
     "retry_after_seconds": 1,
     "timeweb_runtime_capacity_accepted": false,
     "automatic_capacity_expansion_authorized": false,
-    "real_user_capacity_claim": false
+    "real_user_capacity_claim": false,
+    "bounded_postgres_pool_required": true,
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5,
+    "session_lookup_off_event_loop_required": true,
+    "horizontal_app_scaling_requires_distributed_abuse_control": true,
+    "current_horizontal_app_scaling_allowed": false
   },
   "operations": {
     "current_timeweb_release_accepted": false,

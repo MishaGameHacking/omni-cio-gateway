@@ -24,6 +24,8 @@ DEPENDENCIES = (
     "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json",
     "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json",
     "apps/api/hosted_runtime.py",
+    "apps/api/hosted_app.py",
+    "apps/api/postgres_web_connection.py",
     "apps/api/telegram_auth.py",
     "Dockerfile",
 )
@@ -133,6 +135,46 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
                 "TIMEWEB_FULL_DELIVERY_AUTHORITY_WIDENED:broker_write",
             ):
                 guard.validate(root)
+
+    def test_runtime_capacity_is_bounded_and_nonblocking(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        runtime = payload["runtime"]
+        self.assertEqual(runtime["postgres_pool_max_size"], 4)
+        self.assertEqual(runtime["postgres_pool_acquire_timeout_seconds"], 5.0)
+        self.assertFalse(runtime["single_serialized_runtime_connection_allowed"])
+        self.assertFalse(runtime["session_lookup_event_loop_blocking_allowed"])
+
+    def test_identity_binding_continuity_is_fail_closed(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        telegram = payload["telegram"]
+        self.assertEqual(
+            telegram["identity_binding_fingerprint_env"],
+            "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+        )
+        self.assertEqual(
+            telegram["identity_binding_fingerprint_algorithm"],
+            "SHA-256",
+        )
+        self.assertTrue(telegram["identity_binding_fingerprint_match_required"])
+        self.assertFalse(telegram["silent_identity_binding_key_rotation_allowed"])
+        self.assertTrue(
+            telegram["identity_binding_rekey_requires_reviewed_migration"]
+        )
+        self.assertFalse(
+            telegram[
+                "horizontal_app_scaling_without_distributed_abuse_control_allowed"
+            ]
+        )
 
     def test_secret_allowlist_contains_names_not_values(self) -> None:
         payload = json.loads(

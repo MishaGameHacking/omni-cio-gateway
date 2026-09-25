@@ -58,6 +58,7 @@
     "external_readiness_bundle_must_cover": [
       "telegram_allowed_origin_and_redirect_registration",
       "timeweb_runtime_credential_custody",
+      "identity_binding_key_fingerprint_continuity",
       "legal_privacy_and_regulatory_acceptance",
       "capacity_monitoring_and_incident_readiness",
       "public_privacy_policy_and_data_subject_request_channel"
@@ -102,5 +103,21 @@
       "contents": "read"
     },
     "provider_credential_values_in_workflow_allowed": false
+  },
+  "identity_binding_continuity": {
+    "fingerprint_env": "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+    "fingerprint_algorithm": "SHA-256",
+    "fingerprint_value_is_secret": false,
+    "runtime_match_required_when_provider_configured": true,
+    "silent_key_rotation_allowed": false,
+    "existing_binding_rekey_requires_reviewed_migration": true
+  },
+  "capacity_safety": {
+    "bounded_postgres_pool_required": true,
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5,
+    "session_lookup_off_event_loop_required": true,
+    "horizontal_app_scaling_requires_distributed_abuse_control": true,
+    "current_horizontal_app_scaling_allowed": false
   }
 }

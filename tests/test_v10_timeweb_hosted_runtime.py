@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import threading
 
 from fastapi.testclient import TestClient
 import pytest
@@ -20,7 +22,10 @@ from apps.api.hosted_runtime import (
     _optional_candidate_hostname,
     _trusted_edge_tls_terminated,
 )
-from apps.api.postgres_web_connection import _SerializedWebConnection
+from apps.api.postgres_web_connection import (
+    _BoundedWebConnectionPool,
+    _SerializedWebConnection,
+)
 from apps.api.telegram_auth import (
     TelegramAuthConfigurationError,
     build_telegram_provider_auth,
@@ -342,9 +347,60 @@ class _ReconnectableRawConnection:
         self.execute_calls += 1
         if self.fail_once:
             self.fail_once = False
-            self.closed = True
+            if self.close_on_failure:
+                self.closed = True
             raise RuntimeError("simulated connection loss")
         return _Result(one=("ok",))
+
+
+class _PoolTransaction:
+    def __init__(self, owner: "_PoolRawConnection") -> None:
+        self._owner = owner
+
+    def __enter__(self) -> "_PoolTransaction":
+        self._owner.transaction_enters += 1
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        del args
+
+
+class _PoolRawConnection(_ReconnectableRawConnection):
+    def __init__(
+        self,
+        name: str,
+        *,
+        closed: bool = False,
+        fail_once: bool = False,
+        close_on_failure: bool = True,
+    ) -> None:
+        super().__init__(closed=closed, fail_once=fail_once)
+        self.name = name
+        self.close_on_failure = close_on_failure
+        self.close_calls = 0
+        self.transaction_enters = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+        self.closed = True
+
+    def transaction(self) -> _PoolTransaction:
+        return _PoolTransaction(self)
+
+    def execute(
+        self,
+        query: object,
+        params: object = None,
+        *,
+        prepare: bool | None = None,
+    ) -> _Result:
+        del query, params, prepare
+        self.execute_calls += 1
+        if self.fail_once:
+            self.fail_once = False
+            self.closed = True
+            raise RuntimeError("simulated connection loss")
+        return _Result(one=(self.name,))
 
 
 def test_serialized_web_connection_reconnects_before_next_operation() -> None:
@@ -381,6 +437,93 @@ def test_serialized_web_connection_never_replays_failed_operation() -> None:
     assert connection.execute("SELECT 1").fetchone() == ("ok",)
     assert reconnect_calls == ["reconnect"]
     assert replacement.execute_calls == 1
+
+
+def test_bounded_pool_allows_two_concurrent_transactions() -> None:
+    initial = _PoolRawConnection("initial")
+    replacement = _PoolRawConnection("replacement")
+    connect_calls: list[str] = []
+
+    def connect() -> _PoolRawConnection:
+        connect_calls.append("connect")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        initial,
+        connect=connect,
+        max_size=2,
+        acquire_timeout_seconds=1.0,
+    )
+    barrier = threading.Barrier(2)
+
+    def transaction_name() -> str:
+        with pool.transaction():
+            row = pool.execute("SELECT 1").fetchone()
+            assert row is not None
+            barrier.wait(timeout=1.0)
+            return str(row[0])
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(transaction_name) for _ in range(2)]
+        names = {future.result(timeout=2.0) for future in futures}
+
+    assert names == {"initial", "replacement"}
+    assert connect_calls == ["connect"]
+
+
+def test_bounded_pool_drops_failed_connection_without_replay() -> None:
+    initial = _PoolRawConnection(
+        "initial",
+        fail_once=True,
+        close_on_failure=False,
+    )
+    replacement = _PoolRawConnection("replacement")
+    connect_calls: list[str] = []
+
+    def connect() -> _PoolRawConnection:
+        connect_calls.append("connect")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        initial,
+        connect=connect,
+        max_size=1,
+        acquire_timeout_seconds=1.0,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated connection loss"):
+        with pool.transaction():
+            pool.execute("INSERT INTO example VALUES (1)")
+    assert initial.execute_calls == 1
+    assert initial.close_calls == 1
+    assert connect_calls == []
+
+    with pool.transaction():
+        assert pool.execute("SELECT 1").fetchone() == ("replacement",)
+    assert connect_calls == ["connect"]
+    assert replacement.execute_calls == 1
+
+
+def test_bounded_pool_exhaustion_is_time_bounded() -> None:
+    pool = _BoundedWebConnectionPool(
+        _PoolRawConnection("initial"),
+        connect=lambda: _PoolRawConnection("unexpected"),
+        max_size=1,
+        acquire_timeout_seconds=0.01,
+    )
+
+    def blocked_checkout() -> str:
+        with pytest.raises(
+            RuntimeError,
+            match="WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED",
+        ):
+            with pool.transaction():
+                raise AssertionError("pool checkout unexpectedly succeeded")
+        return "blocked"
+
+    with pool.transaction():
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(blocked_checkout).result(timeout=1.0) == "blocked"
 
 
 def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> None:
@@ -776,12 +919,18 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "_probe_hosted_preview_database" not in runtime
     assert "OMNI_V10_POSTGRES_RUNTIME_ROLE" in runtime
     assert "connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS" in runtime
-    assert "reconnect=lambda:" in runtime
+    assert "connect=lambda:" in runtime
+    assert "_BoundedWebConnectionPool(" in runtime
+    assert "_SerializedWebConnection(" not in runtime
+    assert "_DATABASE_POOL_MAX_SIZE = 4" in runtime
+    assert "_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS = 5.0" in runtime
     assert "omni_cio_hosted_api" not in runtime
     assert "omni_cio_cloudflare_" not in runtime
     assert "HOSTED_SESSION_POLICY" in runtime
     hosted_app = current_sources[1].read_text(encoding="utf-8")
     assert "HOSTED_SESSION_POLICY" not in hosted_app
+    assert "from starlette.concurrency import run_in_threadpool" in hosted_app
+    assert "scope = await run_in_threadpool(" in hosted_app
     assert 'additional_hosts=("localhost", *candidate_hosts)' in runtime
     assert "OMNI_V10_CANDIDATE_HOSTNAME" in runtime
     assert "from apps.api.app import" not in runtime

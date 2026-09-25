@@ -41,7 +41,11 @@
       "OMNI_V10_CSRF_BINDING_KEY_HEX"
     ],
     "credential_values_in_repository_allowed": false,
-    "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME"
+    "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME",
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5,
+    "single_serialized_runtime_connection_allowed": false,
+    "session_lookup_event_loop_blocking_allowed": false
   },
   "postgres": {
     "engine": "PostgreSQL",
@@ -105,7 +109,13 @@
     "activation_contract": "docs/architecture/V10_TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION_CONTRACT.json",
     "activation_controller": "scripts/timeweb_telegram_public_activation.py",
     "activation_workflow": ".github/workflows/v10-timeweb-telegram-public-activation.yml",
-    "activation_runbook": "docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md"
+    "activation_runbook": "docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md",
+    "identity_binding_fingerprint_env": "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+    "identity_binding_fingerprint_algorithm": "SHA-256",
+    "identity_binding_fingerprint_match_required": true,
+    "silent_identity_binding_key_rotation_allowed": false,
+    "identity_binding_rekey_requires_reviewed_migration": true,
+    "horizontal_app_scaling_without_distributed_abuse_control_allowed": false
   },
   "external_action_gates": {
     "app_creation_or_paid_capacity": "OWNER_OR_PROVIDER_CONFIRMATION_REQUIRED",
