@@ -7,7 +7,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-_CONTRACT = "docs/architecture/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_CONTRACT.json"
+_CONTRACT = (\n    "docs/architecture/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_CONTRACT.json"\n)
 _CONTROLLER = "scripts/timeweb_production_acceptance.py"
 _WORKFLOW = ".github/workflows/v10-timeweb-post-merge-production-acceptance.yml"
 
