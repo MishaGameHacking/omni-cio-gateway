@@ -240,9 +240,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         self.assertTrue(p6["public_probe_only"])
         self.assertFalse(p6["provider_mutation_allowed"])
         sensitive_policy_keys = [
-            key
-            for key in p6
-            if security_baseline._SENSITIVE_WORD in key.casefold()
+            key for key in p6 if security_baseline._SENSITIVE_WORD in key.casefold()
         ]
         self.assertEqual(len(sensitive_policy_keys), 1)
         self.assertFalse(p6[sensitive_policy_keys[0]])
