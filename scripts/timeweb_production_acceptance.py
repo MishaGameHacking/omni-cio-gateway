@@ -67,8 +67,7 @@ def _mapping(value: object, code: str) -> dict[str, Any]:
 def _headers(response: object) -> dict[str, str]:
     try:
         return {
-            str(key).casefold(): str(value)
-            for key, value in response.headers.items()
+            str(key).casefold(): str(value) for key, value in response.headers.items()
         }
     except AttributeError:
         _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_HEADERS_INVALID")

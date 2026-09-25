@@ -108,9 +108,7 @@ def _import_targets(
     targets: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            targets.update(
-                alias.name for alias in node.names if alias.name in modules
-            )
+            targets.update(alias.name for alias in node.names if alias.name in modules)
         elif isinstance(node, ast.ImportFrom):
             targets.update(_from_import_targets(current, node, modules))
     return targets
@@ -153,7 +151,10 @@ def _retired_modules(
     for relative, row in explicit.items():
         if not isinstance(relative, str) or not relative.endswith(".py"):
             continue
-        if not isinstance(row, dict) or row.get("classification") not in classifications:
+        if (
+            not isinstance(row, dict)
+            or row.get("classification") not in classifications
+        ):
             continue
         path = root / relative
         if path.is_file():
@@ -163,7 +164,9 @@ def _retired_modules(
 
 def _config(
     root: Path,
-) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], str]:
+) -> tuple[
+    str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], str
+]:
     contract = _json(root / _CONTRACT)
     config = contract.get("runtime_reachability")
     if not isinstance(config, dict):
