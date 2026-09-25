@@ -228,7 +228,9 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
         self.assertNotIn("git reset --hard HEAD || true", cleanup)
         self.assertNotIn("git clean -ffdx || true", cleanup)
 
-    def test_retired_render_workflows_are_manual_only_and_do_not_bootstrap(self) -> None:
+    def test_retired_render_workflows_are_manual_only_and_do_not_bootstrap(
+        self,
+    ) -> None:
         expected = {
             "v10-phase4-free-preview-deploy.yml": (
                 "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14",
