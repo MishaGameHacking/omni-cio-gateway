@@ -16,6 +16,7 @@ CANONICAL_HOSTNAME = "omnicio.ru"
 CANONICAL_ORIGIN = "https://omnicio.ru"
 ACCEPT_CONFIRMATION = "ACCEPT_OMNICIO_RU_TIMEWEB_PUBLIC_INGRESS"
 MAX_RESPONSE_BYTES = 1024 * 1024
+_PAGE_SIZE = 100
 _JSON_CONTENT_TYPE = "application/json"
 _HTML_CONTENT_TYPE = "text/html"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
@@ -122,7 +123,13 @@ def _rows(payload: dict[str, Any], key: str, code: str) -> list[dict[str, Any]]:
     raw = payload.get(key)
     if not isinstance(raw, list):
         _stop(code)
-    return [_mapping(item, code) for item in raw]
+    rows = [_mapping(item, code) for item in raw]
+    meta = payload.get("meta")
+    if meta is not None:
+        total = _mapping(meta, code).get("total")
+        if type(total) is not int or total != len(rows) or total > _PAGE_SIZE:
+            _stop(code)
+    return rows
 
 
 def _repository(row: dict[str, Any]) -> str:
@@ -147,16 +154,30 @@ def _normalized_headers(response: Any) -> dict[str, str]:
 
 
 def _hsts_max_age(value: str) -> int:
+    values: list[int] = []
     for item in value.split(";"):
         name, separator, raw = item.strip().partition("=")
-        if (
-            separator
-            and name.casefold() == "max-age"
-            and raw.isascii()
-            and raw.isdigit()
-        ):
-            return int(raw)
-    return -1
+        if name.casefold() != "max-age":
+            continue
+        if not separator or not raw.isascii() or not raw.isdigit():
+            return -1
+        values.append(int(raw))
+    if len(values) != 1:
+        return -1
+    return values[0]
+
+
+def _csp_directives(value: str) -> set[str]:
+    directives: dict[str, str] = {}
+    for item in value.split(";"):
+        normalized = " ".join(item.strip().casefold().split())
+        if not normalized:
+            continue
+        name = normalized.partition(" ")[0]
+        if name in directives:
+            _stop("TIMEWEB_PUBLIC_INGRESS_CSP_INVALID")
+        directives[name] = normalized
+    return set(directives.values())
 
 
 def _require_security_headers(headers: dict[str, str], *, api_path: bool) -> None:
@@ -170,8 +191,8 @@ def _require_security_headers(headers: dict[str, str], *, api_path: bool) -> Non
 
     if _hsts_max_age(headers.get("strict-transport-security", "")) < 31_536_000:
         _stop("TIMEWEB_PUBLIC_INGRESS_HSTS_INVALID")
-    csp = headers.get("content-security-policy", "").casefold()
-    if any(item not in csp for item in _REQUIRED_CSP_DIRECTIVES):
+    csp = _csp_directives(headers.get("content-security-policy", ""))
+    if not set(_REQUIRED_CSP_DIRECTIVES) <= csp:
         _stop("TIMEWEB_PUBLIC_INGRESS_CSP_INVALID")
     expected = {
         "cross-origin-opener-policy": "same-origin",

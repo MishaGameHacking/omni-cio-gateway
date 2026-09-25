@@ -279,6 +279,57 @@ class TimewebPublicIngressTests(unittest.TestCase):
                 opener=opener,
             )
 
+    def test_observe_rejects_duplicate_hsts_directive(self) -> None:
+        headers = _security_headers(api=True)
+        headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains; max-age=0"
+        )
+        opener = _opener(live_headers=headers)
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_HSTS_INVALID",
+        ):
+            ingress.run(
+                operation="observe",
+                expected_sha=EXPECTED_SHA,
+                observed_main_sha=EXPECTED_SHA,
+                opener=opener,
+            )
+
+    def test_observe_rejects_csp_substring_spoof(self) -> None:
+        headers = _security_headers(api=True)
+        headers["Content-Security-Policy"] = (
+            "x-default-src 'self'; base-uri 'none'; object-src 'none'; "
+            "frame-ancestors 'none'; form-action 'self'"
+        )
+        opener = _opener(live_headers=headers)
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_CSP_INVALID",
+        ):
+            ingress.run(
+                operation="observe",
+                expected_sha=EXPECTED_SHA,
+                observed_main_sha=EXPECTED_SHA,
+                opener=opener,
+            )
+
+    def test_accept_rejects_truncated_provider_pagination(self) -> None:
+        api = _Api(_app())
+        original = api.list_apps
+
+        def paginated_apps() -> dict[str, object]:
+            payload = original()
+            payload["meta"] = {"total": 101}
+            return payload
+
+        api.list_apps = paginated_apps  # type: ignore[method-assign]
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_APPS_INVALID",
+        ):
+            _accept(api)
+
     def test_guard_rejects_provider_mutation_marker(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

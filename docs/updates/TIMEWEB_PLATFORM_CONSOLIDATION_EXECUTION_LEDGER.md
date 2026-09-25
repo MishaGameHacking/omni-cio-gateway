@@ -433,3 +433,15 @@ semantic constants, formatter-required line breaks are applied, every exception 
 prepares fixtures outside the assertion context, and HSTS downgrade receives an explicit
 negative regression. No test, threshold, security header, TLS requirement, provider
 boundary or authority gate is weakened.
+
+
+## 14. 2026-09-25 P4 adjacent evidence-parser hardening
+
+Before accepting the replacement head, adjacent review compared the P4 verifier against
+the production response middleware and the Timeweb list/deploy response shape. Three
+future-failure classes were closed proactively: truncated provider pagination can no
+longer masquerade as a complete inventory, duplicate/ambiguous HSTS `max-age` directives
+fail closed, and CSP acceptance now parses exact directive tokens instead of substring
+matching. Regression tests cover HSTS downgrade, duplicate HSTS, CSP prefix-spoofing and
+incomplete provider pagination. This is verification hardening only and adds no provider
+mutation or activation authority.
