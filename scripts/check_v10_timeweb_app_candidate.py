@@ -205,6 +205,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _validate_github(payload)
     _validate_invariants(payload)
 
+
 def _validate_controller(path: Path) -> None:
     source = _text(path)
     required = (

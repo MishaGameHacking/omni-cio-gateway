@@ -392,6 +392,7 @@ def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, st
     _validate_candidate_domains(app, candidate)
     return app, app_id, candidate
 
+
 def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) -> None:
     request = Request(
         f"https://{hostname}/livez",
@@ -469,6 +470,7 @@ def _wait(api: ApiLike, app_id: str, deploy_id: str, expected: str) -> None:
             _stop(f"TIMEWEB_APP_RELEASE_DEPLOY_TERMINAL_{status.upper()}")
     _stop("TIMEWEB_APP_RELEASE_DEPLOY_TIMEOUT")
 
+
 def observe(
     api: ApiLike, expected: str, *, livez_opener: Any | None = None
 ) -> str | None:
@@ -538,6 +540,7 @@ def deploy(
 
     _verify_livez(hostname, expected, opener=livez_opener)
     return last_known_good
+
 
 def run(
     *,
