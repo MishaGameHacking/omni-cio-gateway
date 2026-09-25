@@ -545,10 +545,12 @@ def test_bounded_pool_discards_connection_when_transaction_exit_fails() -> None:
         acquire_timeout_seconds=1.0,
     )
 
+    initial_row: object = None
     with pytest.raises(RuntimeError, match="simulated transaction exit failure"):
         with pool.transaction():
-            assert pool.execute("SELECT 1").fetchone() == ("initial",)
+            initial_row = pool.execute("SELECT 1").fetchone()
 
+    assert initial_row == ("initial",)
     with pool.transaction():
         assert pool.execute("SELECT 1").fetchone() == ("replacement",)
     assert connect_calls == ["connect"]
