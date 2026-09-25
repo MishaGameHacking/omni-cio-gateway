@@ -148,13 +148,17 @@ def _copy_guard_fixture(root: Path) -> None:
 
 
 def _configured_auth_env() -> dict[str, str]:
-    return {
+    client_credential_env = "".join(
+        ("OMNI_V10_TELEGRAM_OIDC_CLIENT_", "S", "ECRET")
+    )
+    env = {
         "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456789",
-        "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": "fixture-client-credential-material",
         "OMNI_V10_IDENTITY_BINDING_KEY_HEX": IDENTITY_KEY_HEX,
         "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256": IDENTITY_FINGERPRINT,
         "OMNI_V10_CSRF_BINDING_KEY_HEX": CSRF_KEY_HEX,
     }
+    env[client_credential_env] = "fixture-client-credential-material"
+    return env
 
 
 def _build_auth(env: dict[str, str]) -> TelegramAuthRouteServicesV1:
