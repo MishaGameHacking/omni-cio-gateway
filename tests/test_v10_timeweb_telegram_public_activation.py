@@ -16,6 +16,7 @@ from apps.api.telegram_auth import (
 )
 from omni_cio.web.identity_v1 import IdentityProviderV1
 from omni_cio.web.session_v1 import SessionRegistryV1
+from omni_cio.web.telegram_auth_services_v1 import TelegramAuthRouteServicesV1
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,8 +63,13 @@ class _Response:
     def __enter__(self) -> _Response:
         return self
 
-    def __exit__(self, *args: object) -> None:
-        del args
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_value: object,
+        traceback: object,
+    ) -> None:
+        del exc_type, exc_value, traceback
 
 
 class _Opener:
@@ -122,6 +128,25 @@ def _seal() -> str:
     )
 
 
+_GUARD_FIXTURE_PATHS = (
+    guard.CONTRACT_RELATIVE,
+    guard.CONTROLLER_RELATIVE,
+    guard.WORKFLOW_RELATIVE,
+    guard.RUNBOOK_RELATIVE,
+    guard.READINESS_RELATIVE,
+    guard.AUTH_RUNTIME_RELATIVE,
+    guard.FULL_DELIVERY_RELATIVE,
+)
+
+
+def _copy_guard_fixture(root: Path) -> None:
+    for relative in _GUARD_FIXTURE_PATHS:
+        source = ROOT / relative
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
 def _configured_auth_env() -> dict[str, str]:
     return {
         "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456789",
@@ -132,7 +157,7 @@ def _configured_auth_env() -> dict[str, str]:
     }
 
 
-def _build_auth(env: dict[str, str]):
+def _build_auth(env: dict[str, str]) -> TelegramAuthRouteServicesV1:
     return build_telegram_provider_auth(
         connection=cast(Any, object()),
         sessions=SessionRegistryV1(),
@@ -271,24 +296,10 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
     def test_guard_rejects_silent_identity_key_rotation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for relative in (
-                guard.CONTRACT_RELATIVE,
-                guard.CONTROLLER_RELATIVE,
-                guard.WORKFLOW_RELATIVE,
-                guard.RUNBOOK_RELATIVE,
-                guard.READINESS_RELATIVE,
-                guard.AUTH_RUNTIME_RELATIVE,
-                guard.FULL_DELIVERY_RELATIVE,
-            ):
-                original = ROOT / relative
-                target = root / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(original, target)
+            _copy_guard_fixture(root)
             contract = root / guard.CONTRACT_RELATIVE
             payload = json.loads(contract.read_text(encoding="utf-8"))
-            payload["identity_binding_continuity"]["silent_key_rotation_allowed"] = (
-                True
-            )
+            payload["identity_binding_continuity"]["silent_key_rotation_allowed"] = True
             contract.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
@@ -299,19 +310,7 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
     def test_guard_rejects_horizontal_scaling_without_distributed_limits(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for relative in (
-                guard.CONTRACT_RELATIVE,
-                guard.CONTROLLER_RELATIVE,
-                guard.WORKFLOW_RELATIVE,
-                guard.RUNBOOK_RELATIVE,
-                guard.READINESS_RELATIVE,
-                guard.AUTH_RUNTIME_RELATIVE,
-                guard.FULL_DELIVERY_RELATIVE,
-            ):
-                original = ROOT / relative
-                target = root / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(original, target)
+            _copy_guard_fixture(root)
             contract = root / guard.CONTRACT_RELATIVE
             payload = json.loads(contract.read_text(encoding="utf-8"))
             payload["capacity_safety"]["current_horizontal_app_scaling_allowed"] = True
@@ -325,19 +324,7 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
     def test_guard_rejects_write_all_workflow_regression(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for relative in (
-                guard.CONTRACT_RELATIVE,
-                guard.CONTROLLER_RELATIVE,
-                guard.WORKFLOW_RELATIVE,
-                guard.RUNBOOK_RELATIVE,
-                guard.READINESS_RELATIVE,
-                guard.AUTH_RUNTIME_RELATIVE,
-                guard.FULL_DELIVERY_RELATIVE,
-            ):
-                source = ROOT / relative
-                target = root / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
+            _copy_guard_fixture(root)
             workflow = root / guard.WORKFLOW_RELATIVE
             workflow.write_text(
                 workflow.read_text(encoding="utf-8") + "\npermissions: write-all\n",

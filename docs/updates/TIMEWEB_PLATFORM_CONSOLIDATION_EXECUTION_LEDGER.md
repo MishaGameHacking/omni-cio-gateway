@@ -553,3 +553,16 @@ Pre-merge review found a stale-evidence class that ordinary exact-head checks di
 The correction is fail-closed and does not weaken any CI lane. Fast PR and Toolchain Compatibility now require the current fetched base SHA to equal the event `BASE_SHA` and prove that exact base is an ancestor of the exact head. Both authoritative Windows jobs independently fetch the current base branch and reject any event/current-base mismatch before substantive verification. `check_v10_regression_shield.py` now guards those workflow invariants and focused regression tests reject stale/unbound base contracts.
 
 Result: advancing `main` invalidates old PR evidence instead of allowing it to be treated as merge-ready. A fresh exact-head/base verification cycle is required after every base movement.
+
+
+### P5 Sonar reliability + formatter correction — 2026-09-25
+
+Exact head `509ca7bcbc48402223df91914c47c733705629a7` exposed a combined source-quality defect set and is superseded for acceptance:
+
+- SonarQube Cloud failed the PR Quality Gate at `C Reliability Rating on New Code` with nine annotations;
+- Fast PR and authoritative Windows found the same pinned-Ruff formatting class in the new PostgreSQL pool/base-freshness/P5 tests;
+- WP17 independently found the PostgreSQL pool formatting subset.
+
+The correction does not suppress Sonar or weaken any threshold. New context-manager test doubles implement the explicit `__exit__(type, value, traceback)` contract; pooled transaction cleanup no longer uses an explicit re-raise from `__exit__`; standalone pooled execution returns or discards a checked-out connection through one deterministic `finally` path; close failures remain best-effort only after that connection has left reusable authority. Regression coverage proves that a transaction-exit failure discards the connection and that a failed connection factory releases its reserved pool slot for a later bounded attempt.
+
+The exact Ruff-emitted layouts are applied to all five paths reported by Fast PR. The P5 activation test fixture dependency set is centralized rather than copied across negative tests. Public activation, provider mutation, TLS verification, tenant authority, broker write, `trading_methods` and `REAL_TRADING_ENABLED` remain unchanged and fail-closed.

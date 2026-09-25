@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from queue import Empty, Full, LifoQueue
 import threading
 import time
@@ -153,22 +154,23 @@ class _PooledTransaction:
         connection = self._connection
         if transaction is None or connection is None:
             raise RuntimeError("WEB_RUNTIME_POSTGRES_TRANSACTION_UNAVAILABLE")
+        reusable = False
         try:
             result = transaction.__exit__(exc_type, exc, traceback)
-        except BaseException:
-            if self._owns_connection:
-                self._owner._unbind_transaction_connection(connection)
-                self._owner._discard_connection(connection)
-            raise
-        else:
-            if self._owns_connection:
-                self._owner._unbind_transaction_connection(connection)
-                self._owner._return_connection(connection)
+            reusable = True
             return result
         finally:
-            self._transaction = None
-            self._connection = None
-            self._owns_connection = False
+            try:
+                if self._owns_connection:
+                    self._owner._unbind_transaction_connection(connection)
+                    if reusable:
+                        self._owner._return_connection(connection)
+                    else:
+                        self._owner._discard_connection(connection)
+            finally:
+                self._transaction = None
+                self._connection = None
+                self._owns_connection = False
 
 
 class _BoundedWebConnectionPool:
@@ -243,9 +245,7 @@ class _BoundedWebConnectionPool:
         transaction_connection = self._transaction_connection()
         if transaction_connection is not None:
             if bool(getattr(transaction_connection, "closed", False)):
-                raise RuntimeError(
-                    "WEB_RUNTIME_POSTGRES_TRANSACTION_CONNECTION_CLOSED"
-                )
+                raise RuntimeError("WEB_RUNTIME_POSTGRES_TRANSACTION_CONNECTION_CLOSED")
             return transaction_connection, False
 
         deadline = time.monotonic() + self._acquire_timeout_seconds
@@ -261,9 +261,7 @@ class _BoundedWebConnectionPool:
                 try:
                     connection = self._available.get(timeout=remaining)
                 except Empty:
-                    raise RuntimeError(
-                        "WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED"
-                    ) from None
+                    raise RuntimeError("WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED") from None
 
             if bool(getattr(connection, "closed", False)):
                 self._release_connection_slot()
@@ -273,10 +271,8 @@ class _BoundedWebConnectionPool:
     def _discard_connection(self, connection: Any) -> None:
         close = getattr(connection, "close", None)
         if callable(close):
-            try:
+            with suppress(Exception):
                 close()
-            except Exception:
-                pass
         self._release_connection_slot()
 
     def _return_connection(self, connection: Any) -> None:
@@ -309,14 +305,17 @@ class _BoundedWebConnectionPool:
         connection, owns_connection = self._checkout()
         if not owns_connection:
             return connection.execute(query, params, prepare=prepare)
+        reusable = False
         try:
             cursor = connection.execute(query, params, prepare=prepare)
             result = self._buffer_cursor(cursor)
-        except BaseException:
-            self._discard_connection(connection)
-            raise
-        self._return_connection(connection)
-        return result
+            reusable = True
+            return result
+        finally:
+            if reusable:
+                self._return_connection(connection)
+            else:
+                self._discard_connection(connection)
 
     def transaction(self) -> TransactionContext:
         return _PooledTransaction(self)

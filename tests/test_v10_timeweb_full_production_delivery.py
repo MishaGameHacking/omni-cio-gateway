@@ -167,13 +167,9 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         )
         self.assertTrue(telegram["identity_binding_fingerprint_match_required"])
         self.assertFalse(telegram["silent_identity_binding_key_rotation_allowed"])
-        self.assertTrue(
-            telegram["identity_binding_rekey_requires_reviewed_migration"]
-        )
+        self.assertTrue(telegram["identity_binding_rekey_requires_reviewed_migration"])
         self.assertFalse(
-            telegram[
-                "horizontal_app_scaling_without_distributed_abuse_control_allowed"
-            ]
+            telegram["horizontal_app_scaling_without_distributed_abuse_control_allowed"]
         )
 
     def test_secret_allowlist_contains_names_not_values(self) -> None:

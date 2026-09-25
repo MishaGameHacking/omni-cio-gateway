@@ -165,9 +165,7 @@ def validate_self_hosted_repository_bootstrap(
     )
 
 
-_PR_BASE_CURRENT_MARKER = (
-    'CURRENT_BASE_SHA="$(git rev-parse refs/remotes/origin/base)"'
-)
+_PR_BASE_CURRENT_MARKER = 'CURRENT_BASE_SHA="$(git rev-parse refs/remotes/origin/base)"'
 _PR_BASE_COMPARE_MARKER = 'if [ "$CURRENT_BASE_SHA" != "$BASE_SHA" ]; then'
 _PR_BASE_STALE_MARKER = "exact-head evidence is stale"
 _PR_BASE_ANCESTRY_MARKER = (
@@ -201,6 +199,7 @@ def validate_pr_base_freshness(
         failures.append(
             f"{display(path)} must prove current PR base is an ancestor of exact head"
         )
+
 
 def validate_common_workflow(path: Path, failures: list[str]) -> str:
     if not path.is_file():

@@ -360,8 +360,16 @@ class _PoolTransaction:
         self._owner.transaction_enters += 1
         return self
 
-    def __exit__(self, *args: object) -> None:
-        del args
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_value: object,
+        traceback: object,
+    ) -> None:
+        del exc_type, exc_value, traceback
+        if self._owner.fail_transaction_exit:
+            self._owner.closed = True
+            raise RuntimeError("simulated transaction exit failure")
 
 
 class _PoolRawConnection(_ReconnectableRawConnection):
@@ -371,9 +379,11 @@ class _PoolRawConnection(_ReconnectableRawConnection):
         *,
         closed: bool = False,
         fail_once: bool = False,
+        fail_transaction_exit: bool = False,
     ) -> None:
         super().__init__(closed=closed, fail_once=fail_once)
         self.name = name
+        self.fail_transaction_exit = fail_transaction_exit
         self.transaction_enters = 0
 
     def transaction(self) -> _PoolTransaction:
@@ -513,6 +523,65 @@ def test_bounded_pool_exhaustion_is_time_bounded() -> None:
         with ThreadPoolExecutor(max_workers=1) as executor:
             assert executor.submit(blocked_checkout).result(timeout=1.0) == "blocked"
 
+
+
+def test_bounded_pool_discards_connection_when_transaction_exit_fails() -> None:
+    initial = _PoolRawConnection("initial", fail_transaction_exit=True)
+    replacement = _PoolRawConnection("replacement")
+    connect_calls: list[str] = []
+
+    def connect() -> _PoolRawConnection:
+        connect_calls.append("connect")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        initial,
+        connect=connect,
+        max_size=1,
+        acquire_timeout_seconds=1.0,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated transaction exit failure"):
+        with pool.transaction():
+            assert pool.execute("SELECT 1").fetchone() == ("initial",)
+
+    assert initial.closed is True
+    with pool.transaction():
+        assert pool.execute("SELECT 1").fetchone() == ("replacement",)
+    assert connect_calls == ["connect"]
+
+
+def test_bounded_pool_releases_reserved_slot_after_connect_failure() -> None:
+    initial = _PoolRawConnection("initial")
+    replacement = _PoolRawConnection("replacement")
+    attempts = 0
+
+    def connect() -> _PoolRawConnection:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("simulated connect failure")
+        return replacement
+
+    def execute_once(pool: _BoundedWebConnectionPool) -> object:
+        return pool.execute("SELECT 1").fetchone()
+
+    pool = _BoundedWebConnectionPool(
+        initial,
+        connect=connect,
+        max_size=2,
+        acquire_timeout_seconds=1.0,
+    )
+
+    with pool.transaction():
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            with pytest.raises(RuntimeError, match="simulated connect failure"):
+                executor.submit(execute_once, pool).result(timeout=1.0)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(execute_once, pool).result(timeout=1.0)
+
+    assert result == ("replacement",)
+    assert attempts == 2
 
 def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> None:
     role = validate_hosted_runtime_role("omni_cio_timeweb_candidate")

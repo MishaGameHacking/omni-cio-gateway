@@ -161,6 +161,7 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
                 require_ancestry=True,
             )
             self.assertEqual(failures, [])
+
     def test_python_contract_requires_test_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
