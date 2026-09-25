@@ -363,9 +363,7 @@ def _runtime_import_candidates(relative: Path, node: ast.AST) -> list[str]:
         if base:
             modules.append(base)
             modules.extend(
-                f"{base}.{alias.name}"
-                for alias in node.names
-                if alias.name != "*"
+                f"{base}.{alias.name}" for alias in node.names if alias.name != "*"
             )
     return modules
 
