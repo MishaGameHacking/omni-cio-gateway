@@ -92,6 +92,23 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_branch_milestones_track_p2_green_and_p3_implementation(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        states = {row["id"]: row["state"] for row in payload["branch_milestones"]}
+        self.assertEqual(
+            states["P2_TIMEWEB_EXACT_SHA_CANDIDATE"],
+            "CERTIFIED_GREEN_BRANCH_LOCAL",
+        )
+        self.assertEqual(
+            states["P3_POSTGRES18_PRODUCTION_CUTOVER"],
+            "IMPLEMENTED_VERIFICATION_PENDING",
+        )
+
     def test_rejects_broker_write_authority_widening(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

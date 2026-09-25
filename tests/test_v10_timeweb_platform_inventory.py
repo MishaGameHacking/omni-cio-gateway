@@ -122,6 +122,12 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "tests/test_v10_timeweb_no_owner_laptop_dependency.py",
             "docs/architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json",
             "docs/master-plan/OMNI_CIO_V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_AMENDMENT.md",
+            "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
+            "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOOK.md",
+            ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
+            "scripts/check_v10_timeweb_postgres_production_cutover.py",
+            "scripts/timeweb_postgres_production_cutover.py",
+            "tests/test_v10_timeweb_postgres_production_cutover.py",
         ):
             with self.subTest(path=path):
                 self.assertEqual(

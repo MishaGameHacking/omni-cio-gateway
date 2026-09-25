@@ -213,6 +213,8 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           if exist scripts\check_v10_ci_cost_control.py python scripts\check_v10_ci_cost_control.py
           if errorlevel 1 exit /b %errorlevel%
+          if exist scripts\check_v10_timeweb_postgres_production_cutover.py python scripts\check_v10_timeweb_postgres_production_cutover.py
+          if errorlevel 1 exit /b %errorlevel%
 
       - name: Verify V10 toolchain baseline
         run: python scripts\check_v10_toolchain_baseline.py
@@ -257,6 +259,7 @@ jobs:
           tests.test_v10_release_provenance
           tests.test_v10_web_baseline
           tests.test_v10_tbank_ca_trust_contract
+          tests.test_v10_timeweb_postgres_production_cutover
 
       - name: Clean policy workspace
         if: always()

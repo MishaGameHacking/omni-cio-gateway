@@ -1,0 +1,103 @@
+{
+  "schema": "omni-cio.v10.timeweb-postgres-production-cutover.v1",
+  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+  "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+  "owning_pr": 584,
+  "milestone": "P3_POSTGRES18_PRODUCTION_CUTOVER",
+  "source_authority": {
+    "repository": "MishaGameHacking/omni-cio-gateway",
+    "branch": "main",
+    "exact_main_sha_required": true,
+    "accepted_main_sha_must_equal_observed_main": true
+  },
+  "target": {
+    "provider": "TIMEWEB_CLOUD",
+    "service": "MANAGED_POSTGRESQL",
+    "postgres_major": 18,
+    "production_cluster_identity_must_be_distinct_from_synthetic": true,
+    "synthetic_fixture_promotion_allowed": false,
+    "clean_product_identity_tables_required_before_acceptance": true,
+    "retired_provider_host_allowed": false
+  },
+  "transport": {
+    "sslmode": "verify-full",
+    "sslrootcert_required": true,
+    "encrypted_session_required": true,
+    "plaintext_dsn_in_repository_allowed": false
+  },
+  "runtime_role": {
+    "name": "omni_cio_hosted_api",
+    "provider_user_must_preexist": true,
+    "controller_creates_login": false,
+    "controller_alters_login_password": false,
+    "superuser_allowed": false,
+    "createdb_allowed": false,
+    "createrole_allowed": false,
+    "replication_allowed": false,
+    "bypassrls_allowed": false,
+    "membership_widening_allowed": false,
+    "database_owner_allowed": false,
+    "schema_owner_allowed": false,
+    "object_owner_allowed": false
+  },
+  "prepare": {
+    "confirmation": "PREPARE_TIMEWEB_PRODUCTION_POSTGRES",
+    "migrations_apply_required": true,
+    "migration_retry_idempotence_required": true,
+    "provider_neutral_runtime_acl_required": true,
+    "force_rls_required": true,
+    "cross_tenant_negative_required": true,
+    "data_deletion_allowed": false,
+    "drop_schema_allowed": false,
+    "truncate_allowed": false
+  },
+  "recovery": {
+    "timeweb_physical_backup_required": true,
+    "physical_backup_is_additive_to_logical_recovery": true,
+    "logical_backup_contract": "infrastructure/postgres/hosted-recovery-contract.json",
+    "separate_restore_rehearsal_required": true,
+    "provider_panel_action_allowed_when_no_documented_safe_api_exists": true,
+    "recovery_attestation_env": "OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION",
+    "recovery_attestation_value": "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
+  },
+  "app_binding": {
+    "application_name": "omni-cio-v10",
+    "runtime_dsn_env": "OMNI_V10_POSTGRES_DSN",
+    "runtime_release_env": "OMNI_V10_RELEASE_SHA",
+    "public_multi_user_env": "PUBLIC_MULTI_USER_ENABLED",
+    "telegram_login_env": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+    "runtime_dsn_promotion_by_controller_allowed": false,
+    "undocumented_timeweb_app_settings_api_allowed": false,
+    "accepted_binding_must_equal_verified_runtime_dsn": true,
+    "accepted_release_sha_must_equal_exact_main_sha": true,
+    "public_multi_user_must_remain_false": true,
+    "telegram_login_must_remain_false": true
+  },
+  "operations": {
+    "observe": "READ_ONLY_DATABASE_AND_APP_BINDING_VERIFICATION",
+    "prepare": "DATABASE_SCHEMA_AND_RUNTIME_ACL_MUTATION_ONLY",
+    "accept": "READ_ONLY_FINAL_ACCEPTANCE_AFTER_EXTERNAL_RECOVERY_AND_DSN_PROMOTION"
+  },
+  "github": {
+    "workflow": ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
+    "environment": "timeweb-production",
+    "manual_dispatch_only": true,
+    "provider_token_step_scope_only": true,
+    "database_bindings_step_scope_only": true
+  },
+  "success": {
+    "sanitized_marker": "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED",
+    "repository_implementation_does_not_equal_external_acceptance": true
+  },
+  "protected_invariants": {
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "canonical_domain_mutation": false,
+    "web_visual_started": false,
+    "wp23_unlocked": false
+  }
+}

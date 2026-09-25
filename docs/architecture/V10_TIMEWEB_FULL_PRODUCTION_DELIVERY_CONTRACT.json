@@ -53,7 +53,10 @@
     "force_rls_required": true,
     "cross_tenant_negative_required": true,
     "backup_restore_required": true,
-    "production_cutover_requires_independent_acceptance": true
+    "production_cutover_requires_independent_acceptance": true,
+    "production_cutover_contract": "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
+    "production_cutover_controller": "scripts/timeweb_postgres_production_cutover.py",
+    "production_cutover_workflow": ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
   },
   "public_ingress": {
     "custom_domain": "omnicio.ru",
@@ -96,11 +99,11 @@
     },
     {
       "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
-      "state": "IMPLEMENTED_VERIFICATION_PENDING"
+      "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
     },
     {
       "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
-      "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED"
+      "state": "IMPLEMENTED_VERIFICATION_PENDING"
     },
     {
       "id": "P4_OMNICIO_RU_DNS_TLS",

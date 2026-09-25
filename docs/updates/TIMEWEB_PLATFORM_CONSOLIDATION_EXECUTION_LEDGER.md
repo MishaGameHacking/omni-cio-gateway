@@ -27,8 +27,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 |---:|---|---|---|---|
 | 1 | TW-A / INVENTORY_AND_AUTHORITY | CERTIFIED_GREEN / ACCEPTED | PR #583; post-merge Regression Shield #1647 + Governance #1909 + Timeweb Proof #14 | Inventory/authority cleanup accepted on exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4` |
 | 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; 25/25 observed checks success | P1 source/runtime convergence complete; accepted-main progress unchanged |
-| 3 | TW-C / TIMEWEB_APP_CANDIDATE | IMPLEMENTED_VERIFICATION_PENDING | same integrated branch; P2 exact-SHA controller/workflow/contract implemented | No provider mutation until accepted-main + external app/environment gate |
-| 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | TODO |  | Mandatory production DB split gate |
+| 3 | TW-C / TIMEWEB_APP_CANDIDATE | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; 19/19 observed workflows success; review threads 0 | P2 repository implementation certified; physical provider execution remains post-acceptance |
+| 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | IMPLEMENTED_VERIFICATION_PENDING | P3 contract/controller/workflow/guard/tests in current integrated batch | Production DB mutation/recovery acceptance remains an independent external gate |
 | 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | TODO |  | Mandatory DNS/public cutover split gate |
 | 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | TODO |  | Auth/privacy/legal/capacity gate |
 | 7 | TW-G / LEGACY_PROVIDER_DECOMMISSION | TODO |  | External proof + active-authority cleanup; repository history stays archive-in-place |
@@ -56,10 +56,11 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: P2 Timeweb App Platform exact-SHA candidate/release control
-- Current logical checkpoint ID: `P2-TIMEWEB-EXACT-SHA-CANDIDATE`
+- Current exact work item: P3 Timeweb PostgreSQL 18 production cutover/recovery control
+- Current logical checkpoint ID: `P3-POSTGRES18-PRODUCTION-CUTOVER`
 - P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
-- P2 repository implementation is now `IMPLEMENTED_VERIFICATION_PENDING`; the next published head must receive a fresh complete exact-head DRAFT cycle before P3 begins.
+- P2 exact-SHA candidate implementation is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; all 19 observed repository workflows completed `success` and unresolved review threads were zero.
+- P3 repository implementation is `IMPLEMENTED_VERIFICATION_PENDING`; no production database mutation or recovery acceptance is claimed by source implementation alone.
 - Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
