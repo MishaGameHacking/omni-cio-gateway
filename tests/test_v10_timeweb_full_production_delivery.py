@@ -92,7 +92,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
-    def test_branch_milestones_track_p3_green_and_p4_implementation(self) -> None:
+    def test_branch_milestones_track_p4_green_and_p5_implementation(self) -> None:
         payload = json.loads(
             (
                 ROOT
@@ -110,6 +110,10 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         )
         self.assertEqual(
             states["P4_OMNICIO_RU_DNS_TLS"],
+            "CERTIFIED_GREEN_BRANCH_LOCAL",
+        )
+        self.assertEqual(
+            states["P5_TELEGRAM_PUBLIC_ACTIVATION"],
             "IMPLEMENTED_VERIFICATION_PENDING",
         )
 

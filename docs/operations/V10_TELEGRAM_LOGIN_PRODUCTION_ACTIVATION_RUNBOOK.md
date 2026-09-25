@@ -102,3 +102,29 @@ release.
 19. capability state updates only from accepted real evidence.
 
 At no point does login activation authorize broker write or Real-money execution.
+
+
+## Two-phase Timeweb activation evidence seal
+
+P5 uses a read-only, two-phase acceptance controller. No workflow in this gate mutates Timeweb App Platform settings, provider credentials, DNS, PostgreSQL, or deployment state.
+
+Phase 1 produces `READY_TO_ACTIVATE` only when all of the following are true:
+
+- the observed protected `main` SHA equals the expected release SHA;
+- `/livez` and `/healthz` are healthy on `https://omnicio.ru`;
+- the public provider surface reports Telegram as configured while public access remains disabled with `PUBLIC_MULTI_USER_DISABLED`;
+- sanitized P3, P4, external legal/privacy/provider/capacity and rollback evidence digests are supplied;
+- the rollback SHA is distinct from the current release.
+
+The controller hashes that exact evidence set into a deterministic readiness seal. The seal must be carried unchanged into final acceptance. This prevents accepting a different release or different prerequisite set after the readiness decision.
+
+Only after `READY_TO_ACTIVATE` may the bounded Timeweb runtime configuration action set both:
+
+- `PUBLIC_MULTI_USER_ENABLED=true`;
+- `OMNI_V10_TELEGRAM_LOGIN_ENABLED=true`.
+
+The same action must preserve `OMNI_V10_VK_ID_LOGIN_ENABLED=false`. It must not change broker authority, `trading_methods`, `REAL_TRADING_ENABLED`, TLS verification, or any unrelated runtime permission.
+
+Phase 2 may produce `LIVE_OPERABLE` only when the same exact SHA and readiness seal are presented, the public provider surface reports Telegram `enabled=true`, and sanitized real-user acceptance evidence covers login/callback/account/Tenant/session, logout/revoke/re-login, provider fail-closed behavior and cross-tenant negatives.
+
+A digest is only a binding mechanism for previously accepted evidence. Supplying an arbitrary digest does not create or replace legal, regulatory, provider, privacy, recovery or real-user evidence.

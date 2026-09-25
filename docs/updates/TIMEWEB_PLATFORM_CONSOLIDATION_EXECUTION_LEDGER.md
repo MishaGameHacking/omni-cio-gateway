@@ -473,3 +473,13 @@ chain while preserving the same fail-closed error codes and media-type semantics
 
 This closes the formatter defect class instead of suppressing Ruff or weakening checks.
 The previous head is diagnostic evidence only; exact-head certification must restart.
+
+
+### P4 source certification / P5 implementation checkpoint — 2026-09-25
+
+- P4 source head `d2240886ba3e7484622898670ac9b37ee45a7c6c` completed the fresh repository verification cycle with all 19 applicable workflow runs successful and zero unresolved review threads.
+- Whole-repository integrity evidence on that head: `V10_TIMEWEB_REPOSITORY_INTEGRITY=PASS files=1760 text=1730 binary=30 python=937 json=85`.
+- This certifies the repository-side P4 public-ingress implementation only. It does not claim that Timeweb DNS/TLS, Russian no-VPN evidence or public-user activation have been externally accepted.
+- Current internal milestone advances to P5 two-phase Telegram/public-user activation implementation.
+- P5 is read-only with respect to provider configuration. It binds P3/P4/external/rollback evidence to the exact release SHA, emits `READY_TO_ACTIVATE` only while public flags remain disabled, then requires the same evidence seal and real-user evidence before `LIVE_OPERABLE`.
+- `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, `OMNI_V10_VK_ID_LOGIN_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and broker write remain unchanged by this implementation checkpoint.

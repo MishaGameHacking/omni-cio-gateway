@@ -330,6 +330,26 @@
     "docs/operations/V10_TIMEWEB_PUBLIC_INGRESS_ACCEPTANCE_RUNBOOK.md": {
       "classification": "KEEP",
       "reason": "Current P4 omnicio.ru Timeweb public-ingress acceptance runbook under Amendment 21."
+    },
+    "docs/architecture/V10_TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION_CONTRACT.json": {
+      "classification": "KEEP",
+      "reason": "Current P5 two-phase Telegram/public-user activation contract with evidence-sealed fail-closed acceptance."
+    },
+    ".github/workflows/v10-timeweb-telegram-public-activation.yml": {
+      "classification": "KEEP",
+      "reason": "Current P5 read-only exact-main Telegram/public-user activation acceptance workflow."
+    },
+    "scripts/timeweb_telegram_public_activation.py": {
+      "classification": "KEEP",
+      "reason": "Current P5 read-only Telegram/public-user activation evidence controller."
+    },
+    "scripts/check_v10_timeweb_telegram_public_activation.py": {
+      "classification": "KEEP",
+      "reason": "Current deterministic P5 activation source/security guard."
+    },
+    "tests/test_v10_timeweb_telegram_public_activation.py": {
+      "classification": "KEEP",
+      "reason": "Current P5 activation regression evidence including evidence-seal and unsafe-workflow negatives."
     }
   },
   "path_rules": [
@@ -430,14 +450,14 @@
     {
       "surface": "omnicio.ru",
       "classification": "KEEP",
-      "state": "PUBLIC_INGRESS_IMPLEMENTED_VERIFICATION_PENDING",
-      "authority": "P4 repository-side read-only ingress acceptance implementation in PR #584; DNS/domain mutation remains an independent external gate"
+      "state": "PUBLIC_INGRESS_SOURCE_CERTIFIED_BRANCH_LOCAL",
+      "authority": "P4 repository-side acceptance implementation certified GREEN on PR #584 head d2240886ba3e7484622898670ac9b37ee45a7c6c; physical DNS/TLS/public acceptance remains independently gated"
     },
     {
       "surface": "Telegram Login",
       "classification": "KEEP",
-      "state": "SOLE_SELECTED_HUMAN_LOGIN_PROVIDER_ACTIVATION_PENDING",
-      "authority": "TW-F"
+      "state": "ACTIVATION_IMPLEMENTATION_VERIFICATION_PENDING",
+      "authority": "P5 two-phase evidence-sealed activation implementation in PR #584; live activation remains external-gate protected"
     },
     {
       "surface": "Cloudflare V10 resources",
@@ -485,7 +505,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 242,
+  "expected_provider_named_file_count": 247,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
@@ -500,6 +520,6 @@
     "circleci"
   ],
   "accepted_pr": 583,
-  "current_milestone": "TW-E_TIMEWEB_PUBLIC_INGRESS_DNS",
+  "current_milestone": "P5_TELEGRAM_PUBLIC_ACTIVATION",
   "current_branch": "system/timeweb-platform-consolidation-tw-b"
 }

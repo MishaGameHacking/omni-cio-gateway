@@ -224,6 +224,10 @@ def _validate_telegram(payload: dict[str, Any]) -> None:
         "provider_credential_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
         "real_login_account_tenant_session_proof_required": True,
         "cross_tenant_negative_required": True,
+        "activation_contract": "docs/architecture/V10_TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION_CONTRACT.json",
+        "activation_controller": "scripts/timeweb_telegram_public_activation.py",
+        "activation_workflow": ".github/workflows/v10-timeweb-telegram-public-activation.yml",
+        "activation_runbook": "docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md",
     }
     for key, value in expected.items():
         if telegram.get(key) != value:
@@ -280,11 +284,11 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
         },
         {
             "id": "P4_OMNICIO_RU_DNS_TLS",
-            "state": "IMPLEMENTED_VERIFICATION_PENDING",
+            "state": "CERTIFIED_GREEN_BRANCH_LOCAL",
         },
         {
             "id": "P5_TELEGRAM_PUBLIC_ACTIVATION",
-            "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED",
+            "state": "IMPLEMENTED_VERIFICATION_PENDING",
         },
         {
             "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
