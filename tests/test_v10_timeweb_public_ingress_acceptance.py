@@ -194,6 +194,7 @@ class TimewebPublicIngressTests(unittest.TestCase):
         )
 
     def test_observe_rejects_release_sha_drift(self) -> None:
+        opener = _opener(ROLLBACK_SHA)
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_RELEASE_SHA_DRIFT",
@@ -202,12 +203,13 @@ class TimewebPublicIngressTests(unittest.TestCase):
                 operation="observe",
                 expected_sha=EXPECTED_SHA,
                 observed_main_sha=EXPECTED_SHA,
-                opener=_opener(ROLLBACK_SHA),
+                opener=opener,
             )
 
     def test_observe_rejects_retired_edge_header(self) -> None:
         headers = _security_headers(api=True)
         headers["CF-Ray"] = "synthetic"
+        opener = _opener(live_headers=headers)
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_RETIRED_EDGE_HEADER",
@@ -216,24 +218,28 @@ class TimewebPublicIngressTests(unittest.TestCase):
                 operation="observe",
                 expected_sha=EXPECTED_SHA,
                 observed_main_sha=EXPECTED_SHA,
-                opener=_opener(live_headers=headers),
+                opener=opener,
             )
 
     def test_accept_rejects_missing_canonical_domain(self) -> None:
+        api = _Api(_app(domain="technical.example.invalid"))
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_CANONICAL_DOMAIN_MISSING",
         ):
-            _accept(_Api(_app(domain="technical.example.invalid")))
+            _accept(api)
 
     def test_accept_rejects_premature_public_activation(self) -> None:
+        api = _Api(_app(public="true"))
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_ENV_DRIFT",
         ):
-            _accept(_Api(_app(public="true")))
+            _accept(api)
 
     def test_accept_requires_recovery_evidence(self) -> None:
+        api = _Api(_app())
+        opener = _opener()
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_P3_RECOVERY_EVIDENCE_INVALID",
@@ -246,8 +252,8 @@ class TimewebPublicIngressTests(unittest.TestCase):
                 russian_no_vpn_evidence_sha256=DIGEST,
                 rollback_release_sha=ROLLBACK_SHA,
                 rollback_evidence_sha256=DIGEST,
-                api=_Api(_app()),
-                opener=_opener(),
+                api=api,
+                opener=opener,
             )
 
     def test_accept_uses_read_only_provider_surface_and_proves_rollback(self) -> None:
@@ -257,6 +263,21 @@ class TimewebPublicIngressTests(unittest.TestCase):
             api.read_calls,
             ["list_apps", "get_app:17", "list_deploys:17"],
         )
+
+    def test_observe_rejects_hsts_downgrade(self) -> None:
+        headers = _security_headers(api=True)
+        headers["Strict-Transport-Security"] = "max-age=300"
+        opener = _opener(live_headers=headers)
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_HSTS_INVALID",
+        ):
+            ingress.run(
+                operation="observe",
+                expected_sha=EXPECTED_SHA,
+                observed_main_sha=EXPECTED_SHA,
+                opener=opener,
+            )
 
     def test_guard_rejects_provider_mutation_marker(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

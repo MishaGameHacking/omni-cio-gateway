@@ -415,3 +415,21 @@ history. Domain attachment/DNS changes remain a bounded OWNER/provider panel act
 because official Timeweb documentation describes that panel flow and this project does
 not invent an undocumented mutation API. P5 remains locked until P4 is exact-head GREEN
 and its independent external acceptance is satisfied.
+
+
+## 13. 2026-09-25 P4 first-head failure-learning correction
+
+Exact P4 head `a0c4e53150eb423e04086e4277d7827fa8a8b234` was intentionally
+kept DRAFT after exact-head verification. Twenty-three checks succeeded, but Fast PR and
+the authoritative Windows merge gate both failed on the same changed-file Ruff formatting
+defect in `scripts/timeweb_public_ingress_acceptance.py`. Sonar Quality Gate itself
+passed, but surfaced six new maintainability findings: one repeated MIME literal and five
+exception-test blocks with setup calls inside the exception assertion.
+
+Root cause: the new P4 controller/tests were published before a formatter-equivalent
+source pass, and the first negative-test batch coupled fixture construction to the
+assertion context. The correction is systemic rather than suppressive: MIME values become
+semantic constants, formatter-required line breaks are applied, every exception test
+prepares fixtures outside the assertion context, and HSTS downgrade receives an explicit
+negative regression. No test, threshold, security header, TLS requirement, provider
+boundary or authority gate is weakened.

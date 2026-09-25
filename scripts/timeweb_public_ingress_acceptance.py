@@ -16,6 +16,8 @@ CANONICAL_HOSTNAME = "omnicio.ru"
 CANONICAL_ORIGIN = "https://omnicio.ru"
 ACCEPT_CONFIRMATION = "ACCEPT_OMNICIO_RU_TIMEWEB_PUBLIC_INGRESS"
 MAX_RESPONSE_BYTES = 1024 * 1024
+_JSON_CONTENT_TYPE = "application/json"
+_HTML_CONTENT_TYPE = "text/html"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 _ID_RE = re.compile(r"^[A-Za-z0-9-]{1,96}$", re.ASCII)
@@ -147,7 +149,12 @@ def _normalized_headers(response: Any) -> dict[str, str]:
 def _hsts_max_age(value: str) -> int:
     for item in value.split(";"):
         name, separator, raw = item.strip().partition("=")
-        if separator and name.casefold() == "max-age" and raw.isascii() and raw.isdigit():
+        if (
+            separator
+            and name.casefold() == "max-age"
+            and raw.isascii()
+            and raw.isdigit()
+        ):
             return int(raw)
     return -1
 
@@ -171,7 +178,10 @@ def _require_security_headers(headers: dict[str, str], *, api_path: bool) -> Non
         "x-content-type-options": "nosniff",
         "referrer-policy": "same-origin",
     }
-    if any(headers.get(name, "").casefold() != value for name, value in expected.items()):
+    if any(
+        headers.get(name, "").casefold() != value
+        for name, value in expected.items()
+    ):
         _stop("TIMEWEB_PUBLIC_INGRESS_SECURITY_HEADER_INVALID")
 
     vary = {
@@ -197,7 +207,7 @@ def _read_public(
     request = Request(
         CANONICAL_ORIGIN + path,
         headers={
-            "Accept": "application/json" if path != "/" else "text/html",
+            "Accept": _JSON_CONTENT_TYPE if path != "/" else _HTML_CONTENT_TYPE,
             "User-Agent": "omni-cio-v10-timeweb-public-ingress",
         },
         method="GET",
@@ -231,7 +241,7 @@ def _json_payload(raw: bytes, code: str) -> dict[str, Any]:
 def _probe_public_runtime(expected_sha: str, *, opener: Any | None = None) -> None:
     live_headers, live_raw = _read_public("/livez", opener=opener)
     if not live_headers.get("content-type", "").casefold().startswith(
-        "application/json"
+        _JSON_CONTENT_TYPE
     ):
         _stop("TIMEWEB_PUBLIC_INGRESS_LIVEZ_CONTENT_TYPE_INVALID")
     live = _json_payload(live_raw, "TIMEWEB_PUBLIC_INGRESS_LIVEZ_INVALID")
@@ -248,7 +258,7 @@ def _probe_public_runtime(expected_sha: str, *, opener: Any | None = None) -> No
 
     health_headers, health_raw = _read_public("/healthz", opener=opener)
     if not health_headers.get("content-type", "").casefold().startswith(
-        "application/json"
+        _JSON_CONTENT_TYPE
     ):
         _stop("TIMEWEB_PUBLIC_INGRESS_HEALTHZ_CONTENT_TYPE_INVALID")
     health = _json_payload(health_raw, "TIMEWEB_PUBLIC_INGRESS_HEALTHZ_INVALID")
@@ -268,7 +278,9 @@ def _probe_public_runtime(expected_sha: str, *, opener: Any | None = None) -> No
         _stop("TIMEWEB_PUBLIC_INGRESS_RELEASE_SHA_DRIFT")
 
     root_headers, root_raw = _read_public("/", opener=opener)
-    if not root_headers.get("content-type", "").casefold().startswith("text/html"):
+    if not root_headers.get("content-type", "").casefold().startswith(
+        _HTML_CONTENT_TYPE
+    ):
         _stop("TIMEWEB_PUBLIC_INGRESS_ROOT_CONTENT_TYPE_INVALID")
     lowered = root_raw[:65_536].lower()
     if b"<html" not in lowered and b"<!doctype html" not in lowered:
