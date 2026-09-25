@@ -42,9 +42,9 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 | V9C-A | AUTHORITY_AND_INVENTORY | CERTIFIED_GREEN | Exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`; 18/18 repository workflows `success`; accepted V9 lineage, migration inventory, no-stale-branch-merge rule and machine guard proven |
 | V9C-B | DETERMINISTIC_SOURCE_RELOCATION | CERTIFIED_GREEN | Exact head `4394e3f95558f2180a294827f150b1197bdf353c`; 19/19 repository workflows `success`; Sonar 0 new issues / 0 Security Hotspots; unresolved review threads 0 |
 | V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | CERTIFIED_GREEN | Exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; 19/19 repository workflows `success`; supported Timeweb runtime/Docker graph has zero dependency on protected V9 runtime roots; unresolved review threads 0 |
-| V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | IN_PROGRESS | Current GPT authority -> Amendment 21 + Timeweb/Telegram; protected Custom GPT v9/Render docs -> explicit recovery-only; current runtime -> zero retired-provider imports; retained provider workflows -> manual-only hard-disabled history |
-| V9C-E | CI_RECOVERY_CONVERGENCE | TODO | Replace legacy entrypoint/provider checks with equal-or-stronger V10/Timeweb recovery/security gates |
-| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF | TODO | Prove no current runtime/deploy/required-CI/current-authority dependency on retired paths |
+| V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | CERTIFIED_GREEN | Exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; 19/19 observed workflows `success`; current GPT authority -> Amendment 21 + Timeweb/Telegram; protected Custom GPT v9/Render docs -> recovery-only; current runtime -> zero retired-provider imports; retained provider workflows -> manual-only hard-disabled history |
+| V9C-E | CI_RECOVERY_CONVERGENCE | IMPLEMENTED_VERIFICATION_PENDING | Provider-neutral PostgreSQL 18 recovery, accepted-release SHA matching, last-known-good rollback and exact-SHA Timeweb release authority are guarded in source; replacement-head verification required |
+| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF | IMPLEMENTED_VERIFICATION_PENDING | Whole-tree Python import/path scans plus current runtime dependency graph and retired-provider authority checks are bound into the final P1 absence proof; replacement-head verification required |
 
 Accepted V9 migration source is
 `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62`, already contained in current main
@@ -56,8 +56,9 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: V9C-D GPT/provider authority retirement and protected-history separation
-- Current logical checkpoint ID: `V9C-D-GPT-AND-RETIRED-PROVIDER-WORKTREE-RETIREMENT`
+- Current exact work item: V9C-F whole-tree legacy absence proof / P1 source-runtime convergence closeout
+- Current logical checkpoint ID: `V9C-F-WHOLE-TREE-LEGACY-ABSENCE-PROOF`
+- V9C-D is branch-local `CERTIFIED_GREEN` on exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; V9C-E and V9C-F are implemented and require fresh replacement-head GREEN before P2.
 - Accepted base: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`

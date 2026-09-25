@@ -23,11 +23,13 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 PYPROJECT = ROOT / "pyproject.toml"
 DOCKERFILE = ROOT / "Dockerfile"
+HOSTED_RECOVERY_CONTRACT = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
+TIMEWEB_DELIVERY_CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
 
 _ACCEPTED_V9 = "".join(("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62"))
 _ACCEPTED_MAIN = "".join(("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858"))
 _BRANCH = "system/timeweb-platform-consolidation-tw-b"
-_CURRENT_CHECKPOINT = "V9C-D"
+_CURRENT_CHECKPOINT = "V9C-F"
 _V9_MIGRATION_SOURCE_MARKER = "V9 migration source"
 _REQUIRED_CHECKPOINTS = (
     "V9C-A_AUTHORITY_AND_INVENTORY",
@@ -37,6 +39,14 @@ _REQUIRED_CHECKPOINTS = (
     "V9C-E_CI_RECOVERY_CONVERGENCE",
     "V9C-F_WHOLE_TREE_LEGACY_ABSENCE_PROOF",
 )
+_EXPECTED_CHECKPOINT_STATES = {
+    "V9C-A": "CERTIFIED_GREEN",
+    "V9C-B": "CERTIFIED_GREEN",
+    "V9C-C": "CERTIFIED_GREEN",
+    "V9C-D": "CERTIFIED_GREEN",
+    "V9C-E": "IMPLEMENTED_VERIFICATION_PENDING",
+    "V9C-F": "IMPLEMENTED_VERIFICATION_PENDING",
+}
 _EXPECTED_ROOT_SOURCES = (
     "portfolio_market.py",
     "portfolio_analytics.py",
@@ -188,6 +198,9 @@ def _validate_identity(contract: dict[str, Any]) -> None:
         raise RuntimeError("V9C_IDENTITY_DRIFT:accepted_main_at_authority_restore")
     if tuple(contract.get("checkpoints", ())) != _REQUIRED_CHECKPOINTS:
         raise RuntimeError("V9C_CHECKPOINT_ORDER_DRIFT")
+    states = _mapping(contract.get("checkpoint_states"), "V9C_CHECKPOINT_STATES_INVALID")
+    if states != _EXPECTED_CHECKPOINT_STATES:
+        raise RuntimeError("V9C_CHECKPOINT_STATE_DRIFT")
 
 
 def _validate_history_policy(contract: dict[str, Any]) -> None:
@@ -531,7 +544,7 @@ def _validate_gpt_authority(root: Path) -> None:
             "CURRENT AMENDMENT-21",
             "Timeweb Cloud",
             "Telegram Login",
-            "V9C-D",
+            _CURRENT_CHECKPOINT,
         ):
             if marker not in source:
                 raise RuntimeError(
@@ -802,12 +815,70 @@ def _validate_deletion_and_authority(contract: dict[str, Any]) -> None:
         raise RuntimeError("V9C_PROTECTED_AUTHORITY_WIDENED")
 
 
+def _validate_ci_recovery_convergence(root: Path) -> None:
+    recovery = _json(root / HOSTED_RECOVERY_CONTRACT.relative_to(ROOT))
+    authority = _mapping(recovery.get("authority"), "V9C_CURRENT_RECOVERY_AUTHORITY_INVALID")
+    expected_authority = {
+        "provider": "PROVIDER_NEUTRAL_POSTGRESQL_18",
+        "source_only": True,
+        "provider_apply_authorized": False,
+        "public_ingress_allowed": False,
+        "public_multi_user_enabled": False,
+        "trading_methods_enabled": False,
+        "real_trading_enabled": False,
+        "protected_v9_entrypoint": "app:app",
+        "wp23_unlocked": False,
+    }
+    for key, value in expected_authority.items():
+        if authority.get(key) != value:
+            raise RuntimeError(f"V9C_CURRENT_RECOVERY_PROVIDER_DRIFT:{key}")
+    restore = _mapping(recovery.get("restore"), "V9C_CURRENT_RECOVERY_RESTORE_INVALID")
+    for key in (
+        "replacement_runtime_required",
+        "accepted_release_sha_match_required",
+        "migration_state_match_required",
+        "schema_state_match_required",
+        "tenant_boundary_match_required",
+        "restore_catalog_recheck_required",
+        "rollback_to_last_accepted_release_required",
+        "temporary_state_cleanup_required",
+    ):
+        if restore.get(key) is not True:
+            raise RuntimeError(f"V9C_CURRENT_RECOVERY_RESTORE_DRIFT:{key}")
+    if restore.get("restore_to_original_database_in_rehearsal_allowed") is not False:
+        raise RuntimeError("V9C_CURRENT_RECOVERY_REHEARSAL_AUTHORITY_WIDENED")
+    delivery = _json(root / TIMEWEB_DELIVERY_CONTRACT.relative_to(ROOT))
+    release = _mapping(delivery.get("release"), "V9C_TIMEWEB_RELEASE_AUTHORITY_INVALID")
+    expected_release = {
+        "source_authority": "GITHUB_PROTECTED_MAIN",
+        "deployment_platform": "TIMEWEB_APP_PLATFORM",
+        "exact_commit_sha_required": True,
+        "production_autodeploy_allowed": False,
+        "deployed_sha_must_equal_accepted_main_sha": True,
+        "last_known_good_rollback_required": True,
+        "mismatch_state": "OUT_OF_SYNC/DEPLOYMENT_BLOCKED",
+    }
+    for key, value in expected_release.items():
+        if release.get(key) != value:
+            raise RuntimeError(f"V9C_TIMEWEB_RELEASE_AUTHORITY_DRIFT:{key}")
+
+
+def _validate_whole_tree_legacy_absence(root: Path) -> None:
+    _validate_no_legacy_imports(root)
+    _validate_no_stale_relocation_path_consumers(root)
+    if _validate_current_runtime_dependency_graph(root) < 2:
+        raise RuntimeError("V9C_CURRENT_RUNTIME_GRAPH_TOO_SHALLOW")
+
+
 def _validate_documentation(root: Path) -> None:
     required = {
         AMENDMENT.relative_to(ROOT): (
             "accepted V9 repository target",
             "stale",
-            f"{_CURRENT_CHECKPOINT} / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT",
+            "V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT",
+            "V9C-E / CI_RECOVERY_CONVERGENCE",
+            f"{_CURRENT_CHECKPOINT} / WHOLE_TREE_LEGACY_ABSENCE_PROOF",
+            "verification pending",
             "must not be merged",
             "protected V9 compatibility",
         ),
@@ -816,14 +887,14 @@ def _validate_documentation(root: Path) -> None:
             "OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md",
         ),
         STATUS.relative_to(ROOT): (
-            f"{_CURRENT_CHECKPOINT} / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT",
+            f"{_CURRENT_CHECKPOINT} / WHOLE_TREE_LEGACY_ABSENCE_PROOF",
             _ACCEPTED_V9,
             "PR #584",
         ),
         LEDGER.relative_to(ROOT): (
-            "| V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | CERTIFIED_GREEN |",
-            f"| {_CURRENT_CHECKPOINT} | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | IN_PROGRESS |",
-            "| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF |",
+            "| V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | CERTIFIED_GREEN |",
+            "| V9C-E | CI_RECOVERY_CONVERGENCE | IMPLEMENTED_VERIFICATION_PENDING |",
+            f"| {_CURRENT_CHECKPOINT} | WHOLE_TREE_LEGACY_ABSENCE_PROOF | IMPLEMENTED_VERIFICATION_PENDING |",
         ),
         AGENTS.relative_to(ROOT): (
             _V9_MIGRATION_SOURCE_MARKER,
@@ -861,13 +932,13 @@ def validate(root: Path = ROOT) -> None:
     _validate_history_policy(contract)
     _validate_runtime_target(contract)
     _validate_inventory(root, contract)
-    _validate_no_legacy_imports(root)
-    _validate_no_stale_relocation_path_consumers(root)
     _validate_runtime_entrypoint_convergence(root)
     _validate_provider_worktree_retirement(root, contract)
     _validate_verifier_ownership(root)
     _validate_parity_ledger(root)
     _validate_deletion_and_authority(contract)
+    _validate_ci_recovery_convergence(root)
+    _validate_whole_tree_legacy_absence(root)
     _validate_documentation(root)
     _validate_workflow(root)
 

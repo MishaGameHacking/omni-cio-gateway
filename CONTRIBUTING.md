@@ -2,7 +2,7 @@
 
 Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается в PR #584.
 
-OWNER-approved convergence выполняется внутри той же ветки #584. `V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE` уже branch-local `CERTIFIED_GREEN` на exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; текущий checkpoint — `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT`: current GPT development authority должен указывать на Amendment 21 + Timeweb/Telegram, protected V9 GPT/Render материалы остаются recovery-only, а supported V10 runtime не должен импортировать retired provider modules. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
+OWNER-approved convergence выполняется внутри той же ветки #584. `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT` уже branch-local `CERTIFIED_GREEN` на exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; текущий checkpoint — `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`. V9C-E provider-neutral CI/recovery convergence и V9C-F whole-tree absence guards реализованы, но новый exact head должен пройти полный GREEN до начала P2. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 

@@ -45,7 +45,7 @@ Current accepted/convenience state after Amendment 18 acceptance:
 - Telegram Login is the only selected human product login provider;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID receive no new feature authority;
 - Amendments 20 and 21 supply the OWNER-approved PR #584 authority: converge V9 semantics into canonical V10, retire current authority from obsolete provider surfaces, then implement the gated Timeweb production-delivery chain while preserving protected V9 recovery and Git history;
-- current branch checkpoint = `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT`; V9C-C is branch-local `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`;
+- current branch checkpoint = `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`; V9C-D is branch-local `CERTIFIED_GREEN` on exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; V9C-E/V9C-F implementation is verification-pending on the replacement head and P2 must not start before GREEN;
 - WEB-VISUAL and WP23+ remain paused/locked behind the platform-consolidation path;
 - public activation remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write, `trading_methods` and Real execution remain disabled.

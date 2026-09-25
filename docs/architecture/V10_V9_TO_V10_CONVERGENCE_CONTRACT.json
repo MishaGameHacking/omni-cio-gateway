@@ -22,7 +22,7 @@
     "protected_v9_compatibility_preserved": true,
     "v10_runtime_legacy_import_allowed": false
   },
-  "current_checkpoint": "V9C-D",
+  "current_checkpoint": "V9C-F",
   "checkpoints": [
     "V9C-A_AUTHORITY_AND_INVENTORY",
     "V9C-B_DETERMINISTIC_SOURCE_RELOCATION",
@@ -193,5 +193,13 @@
     "62f47b99",
     "9e975b1e",
     "b8651858"
-  ]
+  ],
+  "checkpoint_states": {
+    "V9C-A": "CERTIFIED_GREEN",
+    "V9C-B": "CERTIFIED_GREEN",
+    "V9C-C": "CERTIFIED_GREEN",
+    "V9C-D": "CERTIFIED_GREEN",
+    "V9C-E": "IMPLEMENTED_VERIFICATION_PENDING",
+    "V9C-F": "IMPLEMENTED_VERIFICATION_PENDING"
+  }
 }

@@ -27,6 +27,8 @@ def _copy(root: Path) -> None:
         guard.WORKFLOW,
         guard.PYPROJECT,
         guard.DOCKERFILE,
+        guard.HOSTED_RECOVERY_CONTRACT,
+        guard.TIMEWEB_DELIVERY_CONTRACT,
         ROOT / guard._CURRENT_RUNTIME_ENTRYPOINT,
         ROOT / "apps/api/hosted_app.py",
         *(ROOT / relative for relative in guard._CURRENT_GPT_AUTHORITY_PATHS),
@@ -325,6 +327,39 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError, "V9C_RUNTIME_COMPATIBILITY_STATE_DRIFT"
             ):
+                guard.validate(root)
+
+    def test_rejects_checkpoint_state_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["checkpoint_states"]["V9C-F"] = "CERTIFIED_GREEN"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "V9C_CHECKPOINT_STATE_DRIFT"):
+                guard.validate(root)
+
+    def test_rejects_current_recovery_provider_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.HOSTED_RECOVERY_CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["authority"]["provider"] = "RENDER"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "V9C_CURRENT_RECOVERY_PROVIDER_DRIFT"):
+                guard.validate(root)
+
+    def test_rejects_timeweb_production_autodeploy_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.TIMEWEB_DELIVERY_CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["release"]["production_autodeploy_allowed"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "V9C_TIMEWEB_RELEASE_AUTHORITY_DRIFT"):
                 guard.validate(root)
 
     def test_rejects_merge_without_new_owner_instruction(self) -> None:

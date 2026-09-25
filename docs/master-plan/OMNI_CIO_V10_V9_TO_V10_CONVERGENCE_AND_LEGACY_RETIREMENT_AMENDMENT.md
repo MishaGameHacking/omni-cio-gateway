@@ -65,11 +65,16 @@ contracts and authority gates.
 
 The branch uses these internal checkpoints.
 
-Current checkpoint: **V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT**.
-V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE is branch-local `CERTIFIED_GREEN` on exact
-head `ddc780b43e74797bc0adea31a741db35eeb06605`; all 19 repository workflows completed
-`success`, the supported Timeweb runtime dependency graph proved zero dependency on
-protected V9 runtime roots, and unresolved review threads were zero.
+Current checkpoint: **V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF**; implementation is complete and exact-head verification pending.
+V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT is branch-local `CERTIFIED_GREEN`
+on exact head `80fec000845f93929e204144ce6d4b22db29bcc0`: all 19 observed repository workflows
+completed `success`, retired-provider runtime imports remained absent, retired-provider
+workflows remained manual-only/hard-disabled, and unresolved review threads were zero.
+V9C-E / CI_RECOVERY_CONVERGENCE is implemented in the replacement source: current recovery
+is provider-neutral PostgreSQL 18, accepted-release SHA binding and last-known-good rollback
+remain mandatory, and Timeweb production autodeploy is not authority. V9C-F binds the final
+whole-tree legacy absence proof to the existing import/path/runtime scans. The replacement
+head remains **verification pending** until its own exact-head workflow batch is terminal GREEN.
 
 1. **V9C-A / AUTHORITY_AND_INVENTORY** — establish this amendment, exact source
    inventory, migration map and machine guard.
