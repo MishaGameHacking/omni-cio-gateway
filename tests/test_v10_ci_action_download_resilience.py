@@ -167,7 +167,9 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
 
         self.assertEqual(failures, [], "\n".join(failures))
 
-    def test_current_critical_followup_closure_retries_repository_bootstrap(self) -> None:
+    def test_current_critical_followup_closure_retries_repository_bootstrap(
+        self,
+    ) -> None:
         failures: list[str] = []
 
         for name in CURRENT_CRITICAL_FOLLOWUP_RETRY_WORKFLOWS:

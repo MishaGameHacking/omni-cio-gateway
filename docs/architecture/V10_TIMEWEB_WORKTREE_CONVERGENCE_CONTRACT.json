@@ -8,17 +8,18 @@
   "required_absent_paths": [
     ".github/workflows/v10-wp22a-clientless-access-audit.yml",
     "apps/api/wp22a_remote.py",
-    "omni_cio/web/external_access_v1.py",
     "infrastructure/windows/provision_wp22a_clientless_remote_access.ps1",
     "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1",
+    "omni_cio/web/external_access_v1.py",
     "scripts/bootstrap_wp22a_cloudflare_provider.ps1",
     "scripts/bootstrap_wp22a_terraform.ps1",
     "scripts/validate_wp22a_terraform.ps1",
+    "tests/test_v10_wp22a_bootstrap_retry_contract.py",
     "tests/test_v10_wp22a_external_access.py",
+    "tests/test_v10_wp22a_managed_cloud_origin_decision.py",
     "tests/test_v10_wp22a_mutation_rate_limit.py",
-    "tests/test_v10_wp22a_provisioning_contract.py",
     "tests/test_v10_wp22a_provider_lock_regression.py",
-    "tests/test_v10_wp22a_managed_cloud_origin_decision.py"
+    "tests/test_v10_wp22a_provisioning_contract.py"
   ],
   "required_absent_prefixes": [
     "infrastructure/cloudflare/wp22a/"

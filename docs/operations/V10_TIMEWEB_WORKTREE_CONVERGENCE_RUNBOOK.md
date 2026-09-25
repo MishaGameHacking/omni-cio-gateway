@@ -51,3 +51,16 @@ workflow while deleting the old workflow path and every retired clientless imple
 consumer. This is a merge-safety compatibility alias, not provider/runtime authority.
 It can be retired only after branch-protection configuration is independently proven not
 to require that context.
+
+
+## Orphan-consumer closure
+
+The first Phase-A exact-head Regression Shield exposed one stale test consumer after the
+OpenTofu bootstrap producer had been removed:
+`tests/test_v10_wp22a_bootstrap_retry_contract.py` still opened
+`scripts/bootstrap_wp22a_terraform.ps1`. The test protected only behavior of the retired
+bootstrap implementation and had no Timeweb consumer.
+
+The correction removes that orphan test and adds its path to the convergence contract's
+required-absence set. This closes the producer/consumer pair instead of recreating the
+retired OpenTofu bootstrap merely to satisfy historical tests.
