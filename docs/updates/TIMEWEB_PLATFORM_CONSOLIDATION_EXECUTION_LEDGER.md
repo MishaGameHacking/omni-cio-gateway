@@ -445,3 +445,17 @@ fail closed, and CSP acceptance now parses exact directive tokens instead of sub
 matching. Regression tests cover HSTS downgrade, duplicate HSTS, CSP prefix-spoofing and
 incomplete provider pagination. This is verification hardening only and adds no provider
 mutation or activation authority.
+
+
+## 15. 2026-09-25 P4 formatter convergence after exact-head CI
+
+Exact head `1b3f01b343936b0e8f9e6047efd73cb6df1bfa15` completed 23 checks
+successfully, including Sonar Quality Gate with 0 new issues and 0 Security Hotspots.
+The only two RED checks, Fast PR and the authoritative Windows merge gate, converged on
+the same Ruff formatter finding at
+`scripts/timeweb_public_ingress_acceptance.py:203`. No test, type, secret, PostgreSQL,
+tenant, security-header, provider-authority, or Sonar defect was reported on that head.
+
+The correction applies the exact formatter-compatible generator-expression layout only.
+It does not change P4 runtime behavior or authority. All prior GREEN evidence is stale
+after this source commit and must be re-certified on the replacement exact head.

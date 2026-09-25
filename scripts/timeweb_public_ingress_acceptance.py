@@ -200,8 +200,7 @@ def _require_security_headers(headers: dict[str, str], *, api_path: bool) -> Non
         "referrer-policy": "same-origin",
     }
     if any(
-        headers.get(name, "").casefold() != value
-        for name, value in expected.items()
+        headers.get(name, "").casefold() != value for name, value in expected.items()
     ):
         _stop("TIMEWEB_PUBLIC_INGRESS_SECURITY_HEADER_INVALID")
 
