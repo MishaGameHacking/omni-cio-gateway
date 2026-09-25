@@ -28,6 +28,10 @@ TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW = Path(
 TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW_RELATIVE = (
     TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW.as_posix()
 )
+TIMEWEB_PUBLIC_INGRESS_WORKFLOW = Path(
+    ".github/workflows/v10-timeweb-public-ingress-acceptance.yml"
+)
+TIMEWEB_PUBLIC_INGRESS_WORKFLOW_RELATIVE = TIMEWEB_PUBLIC_INGRESS_WORKFLOW.as_posix()
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 RETIRED_NEON_EGRESS_WORKFLOW = Path(".github/workflows/v10-neon-egress-boundary.yml")
@@ -165,6 +169,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
                 ".github/workflows/v10-timeweb-ipv4-allocation.yml",
                 ".github/workflows/v10-timeweb-app-candidate.yml",
                 TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW_RELATIVE,
+                TIMEWEB_PUBLIC_INGRESS_WORKFLOW_RELATIVE,
             ],
         )
         self.assertEqual(
@@ -174,6 +179,10 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         self.assertEqual(
             roles["timeweb_production_cutover_workflow"],
             TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW_RELATIVE,
+        )
+        self.assertEqual(
+            roles["timeweb_public_ingress_acceptance_workflow"],
+            TIMEWEB_PUBLIC_INGRESS_WORKFLOW_RELATIVE,
         )
         self.assertEqual(
             roles["timeweb_production_database_binding_environment"],
@@ -274,6 +283,13 @@ class ProviderSecretCustodyTests(unittest.TestCase):
                 "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN",
                 "OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN",
             },
+        )
+
+    def test_public_ingress_binding_is_exactly_read_only_provider_scope(self) -> None:
+        contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
+        self.assertEqual(
+            contract["active_workflows"][TIMEWEB_PUBLIC_INGRESS_WORKFLOW_RELATIVE],
+            ["TIMEWEB_CLOUD_API_TOKEN"],
         )
 
     def test_production_dsn_cannot_enter_app_candidate_workflow(self) -> None:

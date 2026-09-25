@@ -64,7 +64,28 @@
     "cloudflare_required_hop": false,
     "owner_home_network_dependency_allowed": false,
     "representative_russian_no_vpn_evidence_required": true,
-    "undocumented_provider_domain_api_allowed": false
+    "undocumented_provider_domain_api_allowed": false,
+    "controller": "scripts/timeweb_public_ingress_acceptance.py",
+    "workflow": ".github/workflows/v10-timeweb-public-ingress-acceptance.yml",
+    "runbook": "docs/operations/V10_TIMEWEB_PUBLIC_INGRESS_ACCEPTANCE_RUNBOOK.md",
+    "operations": [
+      "observe",
+      "accept"
+    ],
+    "provider_api_mode": "READ_ONLY",
+    "provider_domain_mutation_by_controller_allowed": false,
+    "owner_panel_domain_attachment_when_no_documented_api": true,
+    "automatic_lets_encrypt_expected": true,
+    "public_https_probe_required": true,
+    "exact_release_sha_required": true,
+    "database_readiness_required": true,
+    "security_headers_required": true,
+    "retired_edge_headers_forbidden": true,
+    "p3_recovery_evidence_digest_required": true,
+    "russian_no_vpn_evidence_digest_required": true,
+    "rollback_release_sha_required": true,
+    "rollback_evidence_digest_required": true,
+    "public_activation_must_remain_false": true
   },
   "telegram": {
     "provider": "TELEGRAM",
@@ -103,11 +124,11 @@
     },
     {
       "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
-      "state": "IMPLEMENTED_VERIFICATION_PENDING"
+      "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
     },
     {
       "id": "P4_OMNICIO_RU_DNS_TLS",
-      "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED"
+      "state": "IMPLEMENTED_VERIFICATION_PENDING"
     },
     {
       "id": "P5_TELEGRAM_PUBLIC_ACTIVATION",

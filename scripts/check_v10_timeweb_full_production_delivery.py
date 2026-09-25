@@ -186,10 +186,27 @@ def _validate_public_ingress(payload: dict[str, Any]) -> None:
         "owner_home_network_dependency_allowed": False,
         "representative_russian_no_vpn_evidence_required": True,
         "undocumented_provider_domain_api_allowed": False,
+        "controller": "scripts/timeweb_public_ingress_acceptance.py",
+        "workflow": ".github/workflows/v10-timeweb-public-ingress-acceptance.yml",
+        "runbook": "docs/operations/V10_TIMEWEB_PUBLIC_INGRESS_ACCEPTANCE_RUNBOOK.md",
+        "operations": ["observe", "accept"],
+        "provider_api_mode": "READ_ONLY",
+        "provider_domain_mutation_by_controller_allowed": False,
+        "owner_panel_domain_attachment_when_no_documented_api": True,
+        "automatic_lets_encrypt_expected": True,
+        "public_https_probe_required": True,
+        "exact_release_sha_required": True,
+        "database_readiness_required": True,
+        "security_headers_required": True,
+        "retired_edge_headers_forbidden": True,
+        "p3_recovery_evidence_digest_required": True,
+        "russian_no_vpn_evidence_digest_required": True,
+        "rollback_release_sha_required": True,
+        "rollback_evidence_digest_required": True,
+        "public_activation_must_remain_false": True,
     }
-    for key, value in expected.items():
-        if ingress.get(key) != value:
-            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_INGRESS_DRIFT:{key}")
+    if ingress != expected:
+        raise RuntimeError("TIMEWEB_FULL_DELIVERY_INGRESS_DRIFT")
 
 
 def _validate_telegram(payload: dict[str, Any]) -> None:
@@ -259,11 +276,11 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
         },
         {
             "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
-            "state": "IMPLEMENTED_VERIFICATION_PENDING",
+            "state": "CERTIFIED_GREEN_BRANCH_LOCAL",
         },
         {
             "id": "P4_OMNICIO_RU_DNS_TLS",
-            "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED",
+            "state": "IMPLEMENTED_VERIFICATION_PENDING",
         },
         {
             "id": "P5_TELEGRAM_PUBLIC_ACTIVATION",

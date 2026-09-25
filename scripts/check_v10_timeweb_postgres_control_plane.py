@@ -20,6 +20,7 @@ PUBLIC_IPV4_TLS_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-public-ipv4-tls.yml
 TIMEWEB_ALLOCATION_WORKFLOW = WORKFLOWS / "v10-timeweb-ipv4-allocation.yml"
 APP_CANDIDATE_WORKFLOW = WORKFLOWS / "v10-timeweb-app-candidate.yml"
 PRODUCTION_CUTOVER_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-production-cutover.yml"
+PUBLIC_INGRESS_WORKFLOW = WORKFLOWS / "v10-timeweb-public-ingress-acceptance.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
 _PRODUCTION_ENVIRONMENT_NAME = "timeweb-production"
@@ -607,6 +608,7 @@ def _validate_timeweb_secret_scope() -> None:
         TIMEWEB_ALLOCATION_WORKFLOW.resolve(),
         APP_CANDIDATE_WORKFLOW.resolve(),
         PRODUCTION_CUTOVER_WORKFLOW.resolve(),
+        PUBLIC_INGRESS_WORKFLOW.resolve(),
     }
     synthetic_environment = {
         LIVE_WORKFLOW.resolve(),
@@ -617,6 +619,7 @@ def _validate_timeweb_secret_scope() -> None:
     production_environment = {
         APP_CANDIDATE_WORKFLOW.resolve(),
         PRODUCTION_CUTOVER_WORKFLOW.resolve(),
+        PUBLIC_INGRESS_WORKFLOW.resolve(),
     }
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):

@@ -28,8 +28,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 | 1 | TW-A / INVENTORY_AND_AUTHORITY | CERTIFIED_GREEN / ACCEPTED | PR #583; post-merge Regression Shield #1647 + Governance #1909 + Timeweb Proof #14 | Inventory/authority cleanup accepted on exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4` |
 | 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; 25/25 observed checks success | P1 source/runtime convergence complete; accepted-main progress unchanged |
 | 3 | TW-C / TIMEWEB_APP_CANDIDATE | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; 19/19 observed workflows success; review threads 0 | P2 repository implementation certified; physical provider execution remains post-acceptance |
-| 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | IMPLEMENTED_VERIFICATION_PENDING | P3 contract/controller/workflow/guard/tests in current integrated batch | Production DB mutation/recovery acceptance remains an independent external gate |
-| 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | TODO |  | Mandatory DNS/public cutover split gate |
+| 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; 25/25 exact-head checks success; Sonar 0 issues/hotspots; review threads 0 | Source machinery certified; physical production DB mutation/recovery acceptance remains an independent external gate |
+| 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | IMPLEMENTED_VERIFICATION_PENDING | P4 read-only public-ingress controller/workflow/guard/runbook/tests in current batch | Mandatory DNS/domain action remains an independent external split gate |
 | 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | TODO |  | Auth/privacy/legal/capacity gate |
 | 7 | TW-G / LEGACY_PROVIDER_DECOMMISSION | TODO |  | External proof + active-authority cleanup; repository history stays archive-in-place |
 
@@ -56,13 +56,15 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: P3 Timeweb PostgreSQL 18 production cutover/recovery control
-- Current logical checkpoint ID: `P3-POSTGRES18-PRODUCTION-CUTOVER`
+- Current exact work item: P4 `omnicio.ru` DNS/TLS/public-ingress acceptance implementation
+- Current logical checkpoint ID: `P4-OMNICIO-RU-DNS-TLS-PUBLIC-INGRESS`
 - P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
 - P2 exact-SHA candidate implementation is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; all 19 observed repository workflows completed `success` and unresolved review threads were zero.
-- P3 repository implementation is `IMPLEMENTED_VERIFICATION_PENDING / RED_REPAIR_ONLY`; no production database mutation or recovery acceptance is claimed by source implementation alone.
+- P3 repository-side production-cutover/recovery implementation is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; all 25 exact-head checks completed `success`, Sonar reported 0 new issues / 0 Security Hotspots and unresolved review threads were zero. This does not claim physical production DB mutation or recovery acceptance.
+- P4 source machinery is `IMPLEMENTED_VERIFICATION_PENDING`; external DNS/domain mutation and representative no-VPN evidence remain independent gates.
 - Machine checkpoint anchor: `P2-TIMEWEB-EXACT-SHA-CANDIDATE` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER` = `IMPLEMENTED_VERIFICATION_PENDING`.
+- Machine checkpoint anchor: `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
+- Machine checkpoint anchor: `P4-TIMEWEB-OMNICIO-RU-PUBLIC-INGRESS` = `IMPLEMENTED_VERIFICATION_PENDING`.
 - Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
@@ -392,3 +394,24 @@ No production provider mutation or recovery acceptance is claimed by repository
 implementation. P4 remains blocked until a replacement P3 exact head is fully
 certified GREEN.
 
+
+
+## 12. 2026-09-25 P3 certification -> P4 source transition
+
+Exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec` completed the P3
+repository-side checkpoint with 25/25 successful checks, authoritative Windows GREEN,
+Engineering Governance GREEN, Fast PR/toolchain/WP audits GREEN, Sonar 0 new issues /
+0 Security Hotspots, zero unresolved review threads, no base drift and no merge conflict.
+
+That evidence certifies source machinery only. It does not claim physical Timeweb
+PostgreSQL cutover, backup/restore acceptance, DNS mutation, public activation, or merge
+authority.
+
+Amendment 21 therefore permits the next repository checkpoint P4. The P4 implementation
+is deliberately split into read-only source verification and external provider action:
+GitHub code can verify exact protected-main SHA, canonical public HTTPS behavior, security
+headers, release/database readiness, Timeweb application/domain state and rollback
+history. Domain attachment/DNS changes remain a bounded OWNER/provider panel action
+because official Timeweb documentation describes that panel flow and this project does
+not invent an undocumented mutation API. P5 remains locked until P4 is exact-head GREEN
+and its independent external acceptance is satisfied.

@@ -302,6 +302,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             production_cutover = (
                 workflows / "v10-timeweb-postgres-production-cutover.yml"
             )
+            public_ingress = workflows / "v10-timeweb-public-ingress-acceptance.yml"
             readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -327,6 +328,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 encoding="utf-8",
             )
             production_cutover.write_text(
+                "environment: timeweb-production\n"
+                "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                encoding="utf-8",
+            )
+            public_ingress.write_text(
                 "environment: timeweb-production\n"
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -362,6 +368,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
                     guard,
                     "PRODUCTION_CUTOVER_WORKFLOW",
                     production_cutover,
+                ),
+                mock.patch.object(
+                    guard,
+                    "PUBLIC_INGRESS_WORKFLOW",
+                    public_ingress,
                 ),
             ):
                 guard._validate_timeweb_secret_scope()

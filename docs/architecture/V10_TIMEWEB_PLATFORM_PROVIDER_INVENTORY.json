@@ -326,6 +326,10 @@
     "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOOK.md": {
       "classification": "KEEP",
       "reason": "Current P3 Timeweb PostgreSQL 18 production-cutover operating runbook under Amendment 21."
+    },
+    "docs/operations/V10_TIMEWEB_PUBLIC_INGRESS_ACCEPTANCE_RUNBOOK.md": {
+      "classification": "KEEP",
+      "reason": "Current P4 omnicio.ru Timeweb public-ingress acceptance runbook under Amendment 21."
     }
   },
   "path_rules": [
@@ -420,14 +424,14 @@
     {
       "surface": "Timeweb Cloud Managed PostgreSQL 18",
       "classification": "KEEP",
-      "state": "PRODUCTION_CUTOVER_IMPLEMENTED_VERIFICATION_PENDING",
-      "authority": "P3 repository-side cutover/recovery controller implemented in PR #584; physical cutover remains independently gated"
+      "state": "PRODUCTION_CUTOVER_CERTIFIED_BRANCH_LOCAL",
+      "authority": "P3 repository-side cutover/recovery implementation certified GREEN on PR #584 head 7a9051bf8775977b1ae1324fe6d1b460c1d21aec; physical cutover remains independently gated"
     },
     {
       "surface": "omnicio.ru",
-      "classification": "TIMEWEB_REPLACE",
-      "state": "CANONICAL_DOMAIN_CONFIRMED_DNS_CUTOVER_PENDING",
-      "authority": "TW-E"
+      "classification": "KEEP",
+      "state": "PUBLIC_INGRESS_IMPLEMENTED_VERIFICATION_PENDING",
+      "authority": "P4 repository-side read-only ingress acceptance implementation in PR #584; DNS/domain mutation remains an independent external gate"
     },
     {
       "surface": "Telegram Login",
@@ -481,7 +485,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 237,
+  "expected_provider_named_file_count": 242,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
@@ -496,6 +500,6 @@
     "circleci"
   ],
   "accepted_pr": 583,
-  "current_milestone": "TW-D_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER",
+  "current_milestone": "TW-E_TIMEWEB_PUBLIC_INGRESS_DNS",
   "current_branch": "system/timeweb-platform-consolidation-tw-b"
 }

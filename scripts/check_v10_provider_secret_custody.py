@@ -22,6 +22,9 @@ TIMEWEB_APP_CANDIDATE_WORKFLOW = ".github/workflows/v10-timeweb-app-candidate.ym
 TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW = (
     ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 )
+TIMEWEB_PUBLIC_INGRESS_WORKFLOW = (
+    ".github/workflows/v10-timeweb-public-ingress-acceptance.yml"
+)
 RETIRED_HOSTED_WORKFLOW = ".github/workflows/v10-hosted-release-alignment.yml"
 RETIRED_PREVIEW_WORKFLOW = ".github/workflows/v10-phase4-free-preview-deploy.yml"
 RETIRED_NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
@@ -81,6 +84,7 @@ _TIMEWEB_WORKFLOWS = frozenset(
         TIMEWEB_ALLOCATION_WORKFLOW,
         TIMEWEB_APP_CANDIDATE_WORKFLOW,
         TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW,
+        TIMEWEB_PUBLIC_INGRESS_WORKFLOW,
     }
 )
 _ACTIVE_WORKFLOWS = _TIMEWEB_WORKFLOWS
@@ -128,9 +132,11 @@ _EXPECTED_ROLES: dict[str, object] = {
         TIMEWEB_ALLOCATION_WORKFLOW,
         TIMEWEB_APP_CANDIDATE_WORKFLOW,
         TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW,
+        TIMEWEB_PUBLIC_INGRESS_WORKFLOW,
     ],
     "timeweb_production_deploy_binding_environment": "timeweb-production",
     "timeweb_production_cutover_workflow": TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW,
+    "timeweb_public_ingress_acceptance_workflow": TIMEWEB_PUBLIC_INGRESS_WORKFLOW,
     "timeweb_production_database_binding_environment": "timeweb-production",
     "timeweb_production_database_bindings": [
         TIMEWEB_PRODUCTION_BOOTSTRAP_DSN_BINDING,

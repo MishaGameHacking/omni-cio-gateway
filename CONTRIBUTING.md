@@ -31,6 +31,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - accepted progress: **54%**;
 - WP0–WP22A remain COMPLETE;
 - current next package: **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
+- P1 and P2 are branch-local `CERTIFIED_GREEN`; P3 PostgreSQL 18 production-cutover source machinery is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec` with 25/25 checks successful; current checkpoint is P4 `omnicio.ru` public-ingress acceptance implementation, while external DNS/domain mutation remains independently gated;
 - target active services: ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
 - Timeweb is the only selected V10 production infrastructure target;
 - Telegram is the only selected human login provider;

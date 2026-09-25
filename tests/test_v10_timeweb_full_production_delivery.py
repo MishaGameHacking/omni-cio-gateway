@@ -92,7 +92,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
-    def test_branch_milestones_track_p2_green_and_p3_implementation(self) -> None:
+    def test_branch_milestones_track_p3_green_and_p4_implementation(self) -> None:
         payload = json.loads(
             (
                 ROOT
@@ -106,6 +106,10 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         )
         self.assertEqual(
             states["P3_POSTGRES18_PRODUCTION_CUTOVER"],
+            "CERTIFIED_GREEN_BRANCH_LOCAL",
+        )
+        self.assertEqual(
+            states["P4_OMNICIO_RU_DNS_TLS"],
             "IMPLEMENTED_VERIFICATION_PENDING",
         )
 
@@ -137,6 +141,22 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         self.assertEqual(len(names), len(set(names)))
         self.assertNotIn("secret_values", payload["runtime"])
         self.assertFalse(payload["runtime"]["credential_values_in_repository_allowed"])
+
+    def test_public_ingress_is_read_only_and_evidence_bound(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        ingress = payload["public_ingress"]
+        self.assertEqual(ingress["provider_api_mode"], "READ_ONLY")
+        self.assertFalse(ingress["provider_domain_mutation_by_controller_allowed"])
+        self.assertTrue(ingress["p3_recovery_evidence_digest_required"])
+        self.assertTrue(ingress["russian_no_vpn_evidence_digest_required"])
+        self.assertTrue(ingress["rollback_release_sha_required"])
+        self.assertTrue(ingress["rollback_evidence_digest_required"])
+        self.assertTrue(ingress["public_activation_must_remain_false"])
 
     def test_contract_metadata_keys_are_detector_safe(self) -> None:
         payload = json.loads(
