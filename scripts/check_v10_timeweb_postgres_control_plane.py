@@ -612,7 +612,6 @@ def _validate_timeweb_secret_scope() -> None:
         APP_CANDIDATE_WORKFLOW.resolve(),
         PRODUCTION_CUTOVER_WORKFLOW.resolve(),
         PUBLIC_INGRESS_WORKFLOW.resolve(),
-        TELEGRAM_ACTIVATION_WORKFLOW.resolve(),
     }
     synthetic_environment = {
         LIVE_WORKFLOW.resolve(),
@@ -624,6 +623,7 @@ def _validate_timeweb_secret_scope() -> None:
         APP_CANDIDATE_WORKFLOW.resolve(),
         PRODUCTION_CUTOVER_WORKFLOW.resolve(),
         PUBLIC_INGRESS_WORKFLOW.resolve(),
+        TELEGRAM_ACTIVATION_WORKFLOW.resolve(),
     }
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):

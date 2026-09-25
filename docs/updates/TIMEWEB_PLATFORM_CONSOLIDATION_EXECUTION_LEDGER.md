@@ -496,3 +496,10 @@ Exact head `9da0698497563bebe42abe5c3c4aaaa4cd2310ce` preserved the P4 milestone
 - the authoritative Windows Ruff gate found one formatter-only drift in the new P5 observation marker.
 
 Root cause: the P4→P5 state transition updated the primary production-delivery contract before every cross-cutting environment/milestone consumer was advanced to the same state. The correction closes the producer/consumer set rather than weakening a gate: P5 becomes an explicit no-provider-secret consumer of the hardened `timeweb-production` environment, the P5 workflow verifies that GitHub Environment policy read-only before probing production, the P4 guard now requires its certified state, and the Ruff-equivalent formatting is applied. No secret scope, provider mutation, public activation, TLS exception, broker authority or Real-money authority is widened.
+
+
+### P5 correction self-review — production-environment vs provider-token scope
+
+Full-diff review of the first correction commit caught a dangerous allowlist-placement ambiguity before Governance reached the file: `TELEGRAM_ACTIVATION_WORKFLOW` had been inserted into the provider-token-bearing set instead of the production-environment consumer set. No secret was actually injected into the workflow, but leaving that classification would have silently widened future authority.
+
+The correction moves P5 exclusively into the `timeweb-production` environment allowlist and keeps it out of the `TIMEWEB_CLOUD_API_TOKEN` allowlist. A dedicated regression now mutates the P5 fixture to reference the Timeweb provider token and requires `TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD`. This preserves the intended architecture: P5 may be protected by the production Environment but may not consume provider control-plane credentials.

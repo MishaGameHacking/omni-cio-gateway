@@ -388,6 +388,22 @@ class TimewebControlPlaneTests(unittest.TestCase):
                 ),
             ):
                 guard._validate_timeweb_secret_scope()
+
+                telegram_activation.write_text(
+                    "environment: timeweb-production\n"
+                    "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD",
+                ):
+                    guard._validate_timeweb_secret_scope()
+                telegram_activation.write_text(
+                    "environment: timeweb-production\n",
+                    encoding="utf-8",
+                )
+
                 (workflows / "other.yml").write_text(
                     "# TIMEWEB_CLOUD_API_TOKEN\n",
                     encoding="utf-8",
