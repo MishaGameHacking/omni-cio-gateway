@@ -21,6 +21,7 @@ TIMEWEB_NETWORK_WORKFLOW = Path(
     ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
 )
 TIMEWEB_ALLOCATION_WORKFLOW = Path(".github/workflows/v10-timeweb-ipv4-allocation.yml")
+TIMEWEB_APP_CANDIDATE_WORKFLOW = Path(".github/workflows/v10-timeweb-app-candidate.yml")
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 RETIRED_NEON_EGRESS_WORKFLOW = Path(".github/workflows/v10-neon-egress-boundary.yml")
@@ -156,7 +157,12 @@ class ProviderSecretCustodyTests(unittest.TestCase):
                 ".github/workflows/v10-timeweb-postgres-synthetic-create.yml",
                 ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml",
                 ".github/workflows/v10-timeweb-ipv4-allocation.yml",
+                ".github/workflows/v10-timeweb-app-candidate.yml",
             ],
+        )
+        self.assertEqual(
+            roles["timeweb_production_deploy_binding_environment"],
+            "timeweb-production",
         )
         for name, value in roles.items():
             if isinstance(value, str):

@@ -36,6 +36,7 @@ _RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 _DSN_ENV = "OMNI_V10_POSTGRES_DSN"
 _RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
+_CANDIDATE_HOSTNAME_ENV = "OMNI_V10_CANDIDATE_HOSTNAME"
 _DATABASE_CONNECT_TIMEOUT_SECONDS = 15
 HOSTED_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
@@ -50,6 +51,13 @@ def _trusted_edge_tls_terminated() -> bool:
     if raw in {"1", "true"}:
         return True
     raise RuntimeError("HOSTED_RUNTIME_TRUSTED_EDGE_TLS_FLAG_INVALID")
+
+
+def _optional_candidate_hostname() -> str | None:
+    raw = os.environ.get(_CANDIDATE_HOSTNAME_ENV, "").strip()
+    if not raw:
+        return None
+    return _hostname(raw)
 
 
 def _open_runtime_database(database_dsn: str, runtime_role: str) -> ConnectionLike:
@@ -74,6 +82,8 @@ def create_app() -> FastAPI:
     release_sha = _release_sha(_required_env(_RELEASE_SHA_ENV))
     runtime_role = validate_hosted_runtime_role(_required_env(_RUNTIME_ROLE_ENV))
     database_dsn = _required_env(_DSN_ENV)
+    candidate_hostname = _optional_candidate_hostname()
+    candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
     raw_connection = _open_runtime_database(database_dsn, runtime_role)
     connection = _SerializedWebConnection(
         raw_connection,
@@ -104,7 +114,7 @@ def create_app() -> FastAPI:
             last_deploy_source="TIMEWEB_APP_PLATFORM",
             web_artifact_source="GITHUB_SOURCE_BUILD",
         ),
-        additional_hosts=("localhost",),
+        additional_hosts=("localhost", *candidate_hosts),
         trusted_edge_tls_terminated=_trusted_edge_tls_terminated(),
         allow_insecure_loopback_livez=True,
         provider_start_paths=frozenset({TELEGRAM_START_PATH}),

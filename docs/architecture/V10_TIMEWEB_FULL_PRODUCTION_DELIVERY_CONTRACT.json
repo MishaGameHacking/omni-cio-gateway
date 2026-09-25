@@ -18,7 +18,10 @@
     "database_readiness_path": "/healthz",
     "deployed_sha_must_equal_accepted_main_sha": true,
     "last_known_good_rollback_required": true,
-    "mismatch_state": "OUT_OF_SYNC/DEPLOYMENT_BLOCKED"
+    "mismatch_state": "OUT_OF_SYNC/DEPLOYMENT_BLOCKED",
+    "candidate_controller_contract": "docs/architecture/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_CONTRACT.json",
+    "candidate_controller": "scripts/timeweb_app_release.py",
+    "candidate_workflow": ".github/workflows/v10-timeweb-app-candidate.yml"
   },
   "runtime": {
     "dockerfile": "Dockerfile",
@@ -26,7 +29,9 @@
     "app_factory": "apps.api.hosted_runtime:create_app",
     "required_plain_env": {
       "OMNI_V10_HOSTED_RUNTIME": "1",
-      "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru"
+      "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru",
+      "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_hosted_api",
+      "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED": "true"
     },
     "runtime_credential_env_names": [
       "OMNI_V10_POSTGRES_DSN",
@@ -35,7 +40,8 @@
       "OMNI_V10_IDENTITY_BINDING_KEY_HEX",
       "OMNI_V10_CSRF_BINDING_KEY_HEX"
     ],
-    "credential_values_in_repository_allowed": false
+    "credential_values_in_repository_allowed": false,
+    "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME"
   },
   "postgres": {
     "engine": "PostgreSQL",
@@ -90,7 +96,7 @@
     },
     {
       "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
-      "state": "AUTHORIZED_IMPLEMENTATION"
+      "state": "IMPLEMENTED_VERIFICATION_PENDING"
     },
     {
       "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",

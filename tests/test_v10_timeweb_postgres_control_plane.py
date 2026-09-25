@@ -174,6 +174,21 @@ class TimewebControlPlaneTests(unittest.TestCase):
             )
         )
 
+    def test_environment_machine_gate_accepts_production_environment(self) -> None:
+        payload = self._environment_payload()
+        payload["name"] = environment_gate.PRODUCTION_ENVIRONMENT_NAME
+        opener = _Opener([_Response(payload), _Response(self._main_policy_payload())])
+        environment_gate.verify_environment_policy(
+            "synthetic-token",
+            "MishaGameHacking/omni-cio-gateway",
+            environment_name=environment_gate.PRODUCTION_ENVIRONMENT_NAME,
+            opener=opener,
+            sleeper=lambda _seconds: None,
+        )
+        self.assertTrue(
+            opener.requests[0].full_url.endswith("/environments/timeweb-production")
+        )
+
     def test_environment_machine_gate_accepts_documented_omitted_type(self) -> None:
         policies = self._main_policy_payload()
         policies["branch_policies"] = [{"id": 7, "name": "main"}]
@@ -283,6 +298,7 @@ class TimewebControlPlaneTests(unittest.TestCase):
             create = workflows / "v10-timeweb-postgres-synthetic-create.yml"
             public_ipv4_tls = workflows / "v10-timeweb-postgres-public-ipv4-tls.yml"
             allocation = workflows / "v10-timeweb-ipv4-allocation.yml"
+            candidate = workflows / "v10-timeweb-app-candidate.yml"
             readonly.write_text(
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
@@ -299,6 +315,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
             )
             allocation.write_text(
                 "environment: timeweb-synthetic\n"
+                "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                encoding="utf-8",
+            )
+            candidate.write_text(
+                "environment: timeweb-production\n"
                 "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
                 encoding="utf-8",
             )
@@ -323,6 +344,11 @@ class TimewebControlPlaneTests(unittest.TestCase):
                     guard,
                     "TIMEWEB_ALLOCATION_WORKFLOW",
                     allocation,
+                ),
+                mock.patch.object(
+                    guard,
+                    "APP_CANDIDATE_WORKFLOW",
+                    candidate,
                 ),
             ):
                 guard._validate_timeweb_secret_scope()

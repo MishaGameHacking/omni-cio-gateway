@@ -17,6 +17,7 @@ from apps.api.hosted_database_runtime import (
 )
 from apps.api.hosted_runtime import (
     HOSTED_SESSION_POLICY,
+    _optional_candidate_hostname,
     _trusted_edge_tls_terminated,
 )
 from apps.api.postgres_web_connection import _SerializedWebConnection
@@ -723,6 +724,20 @@ def test_telegram_activation_pair_requires_provider_configuration() -> None:
         )
 
 
+def test_candidate_hostname_is_optional_and_validated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OMNI_V10_CANDIDATE_HOSTNAME", raising=False)
+    assert _optional_candidate_hostname() is None
+
+    monkeypatch.setenv("OMNI_V10_CANDIDATE_HOSTNAME", "Candidate.Example.Invalid.")
+    assert _optional_candidate_hostname() == "candidate.example.invalid"
+
+    monkeypatch.setenv("OMNI_V10_CANDIDATE_HOSTNAME", "https://example.invalid")
+    with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_HOST_INVALID"):
+        _optional_candidate_hostname()
+
+
 def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     root = Path(__file__).resolve().parents[1]
     current_sources = (
@@ -767,7 +782,8 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "HOSTED_SESSION_POLICY" in runtime
     hosted_app = current_sources[1].read_text(encoding="utf-8")
     assert "HOSTED_SESSION_POLICY" not in hosted_app
-    assert 'additional_hosts=("localhost",)' in runtime
+    assert 'additional_hosts=("localhost", *candidate_hosts)' in runtime
+    assert "OMNI_V10_CANDIDATE_HOSTNAME" in runtime
     assert "from apps.api.app import" not in runtime
     assert "trusted_edge_tls_terminated=True" not in runtime
     assert "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED" in runtime

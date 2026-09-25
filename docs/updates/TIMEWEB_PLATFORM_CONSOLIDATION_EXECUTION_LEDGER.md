@@ -10,8 +10,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Initial TW-A branch: `system/timeweb-platform-consolidation` (squash-merged via PR #583)
 - Current TW-B continuation branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current accepted-main SHA after PR #583: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
-- OWNER authority: Amendment 18 accepted through PR #581
+- Current accepted-main SHA after focused CA repairs PR #585/#586: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
+- OWNER authority: Amendment 18 accepted through PR #581; Amendment 21 branch-local full production-delivery implementation authority
 - GitHub dashboard issue: #580
 - Accepted split-boundary PR: #582
 - Accepted TW-A certification PR: #583
@@ -26,8 +26,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 | Order | Member milestone | State | Branch-local evidence | Notes |
 |---:|---|---|---|---|
 | 1 | TW-A / INVENTORY_AND_AUTHORITY | CERTIFIED_GREEN / ACCEPTED | PR #583; post-merge Regression Shield #1647 + Governance #1909 + Timeweb Proof #14 | Inventory/authority cleanup accepted on exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4` |
-| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | IN_PROGRESS | continuation branch `system/timeweb-platform-consolidation-tw-b` | Includes OWNER-approved V9C-A→V9C-F source/runtime convergence; no production cutover |
-| 3 | TW-C / TIMEWEB_APP_CANDIDATE | TODO |  | Technical Timeweb candidate only after TW-B |
+| 2 | TW-B / SOURCE_AND_RUNTIME_CONSOLIDATION | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; 25/25 observed checks success | P1 source/runtime convergence complete; accepted-main progress unchanged |
+| 3 | TW-C / TIMEWEB_APP_CANDIDATE | IMPLEMENTED_VERIFICATION_PENDING | same integrated branch; P2 exact-SHA controller/workflow/contract implemented | No provider mutation until accepted-main + external app/environment gate |
 | 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | TODO |  | Mandatory production DB split gate |
 | 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | TODO |  | Mandatory DNS/public cutover split gate |
 | 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | TODO |  | Auth/privacy/legal/capacity gate |
@@ -43,8 +43,8 @@ Milestone state is branch-local only and does not change accepted V10 implementa
 | V9C-B | DETERMINISTIC_SOURCE_RELOCATION | CERTIFIED_GREEN | Exact head `4394e3f95558f2180a294827f150b1197bdf353c`; 19/19 repository workflows `success`; Sonar 0 new issues / 0 Security Hotspots; unresolved review threads 0 |
 | V9C-C | RUNTIME_ENTRYPOINT_CONVERGENCE | CERTIFIED_GREEN | Exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; 19/19 repository workflows `success`; supported Timeweb runtime/Docker graph has zero dependency on protected V9 runtime roots; unresolved review threads 0 |
 | V9C-D | GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT | CERTIFIED_GREEN | Exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; 19/19 observed workflows `success`; current GPT authority -> Amendment 21 + Timeweb/Telegram; protected Custom GPT v9/Render docs -> recovery-only; current runtime -> zero retired-provider imports; retained provider workflows -> manual-only hard-disabled history |
-| V9C-E | CI_RECOVERY_CONVERGENCE | IMPLEMENTED_VERIFICATION_PENDING | Provider-neutral PostgreSQL 18 recovery, accepted-release SHA matching, last-known-good rollback and exact-SHA Timeweb release authority are guarded in source; replacement-head verification required |
-| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF | IMPLEMENTED_VERIFICATION_PENDING | Whole-tree Python import/path scans plus current runtime dependency graph and retired-provider authority checks are bound into the final P1 absence proof; replacement-head verification required |
+| V9C-E | CI_RECOVERY_CONVERGENCE | CERTIFIED_GREEN | Included in exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; exact-SHA/recovery authority guard passed in the 25/25 success batch |
+| V9C-F | WHOLE_TREE_LEGACY_ABSENCE_PROOF | CERTIFIED_GREEN | Included in exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; whole-tree absence proof passed in the 25/25 success batch |
 
 Accepted V9 migration source is
 `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62`, already contained in current main
@@ -56,10 +56,11 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: V9C-F whole-tree legacy absence proof / P1 source-runtime convergence closeout
-- Current logical checkpoint ID: `V9C-F-WHOLE-TREE-LEGACY-ABSENCE-PROOF`
-- V9C-D is branch-local `CERTIFIED_GREEN` on exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; V9C-E and V9C-F are implemented and require fresh replacement-head GREEN before P2.
-- Accepted base: `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`
+- Current exact work item: P2 Timeweb App Platform exact-SHA candidate/release control
+- Current logical checkpoint ID: `P2-TIMEWEB-EXACT-SHA-CANDIDATE`
+- P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
+- P2 repository implementation is now `IMPLEMENTED_VERIFICATION_PENDING`; the next published head must receive a fresh complete exact-head DRAFT cycle before P3 begins.
+- Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
 - TW-A accepted PR: #583
@@ -79,7 +80,7 @@ without a new explicit OWNER instruction.
 - The same correction adds a process-only `/livez` Docker health check and explicitly permits `localhost` for the container-local Timeweb health probe; `/healthz` remains database readiness and is intentionally not used as the process liveness gate.
 - Non-synthetic hosted status no longer identifies the database as Neon or emits synthetic-preview broker/decision reason codes. Historical synthetic behavior remains unchanged when `synthetic_preview=true`.
 - Second-pass review also found stale handoff text later in this ledger that still described TW-A as RED and TW-B as locked after PR #583 acceptance. That stale handoff is corrected as part of the same TW-B documentation convergence.
-- No TW-C provider mutation or App Platform candidate deployment is authorized by these source changes.
+- P2 adds a manual-only exact-SHA Timeweb candidate controller and verification workflow. It does not create an app, patch settings, attach `omnicio.ru`, cut over PostgreSQL, provision Telegram credentials, or activate public users. Physical candidate execution remains post-acceptance/external-gate evidence.
 - Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
 
 

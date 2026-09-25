@@ -18,6 +18,7 @@ TIMEWEB_READONLY_WORKFLOW = ".github/workflows/v10-timeweb-postgres-readonly-pro
 TIMEWEB_CREATE_WORKFLOW = ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
 TIMEWEB_NETWORK_WORKFLOW = ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
 TIMEWEB_ALLOCATION_WORKFLOW = ".github/workflows/v10-timeweb-ipv4-allocation.yml"
+TIMEWEB_APP_CANDIDATE_WORKFLOW = ".github/workflows/v10-timeweb-app-candidate.yml"
 RETIRED_HOSTED_WORKFLOW = ".github/workflows/v10-hosted-release-alignment.yml"
 RETIRED_PREVIEW_WORKFLOW = ".github/workflows/v10-phase4-free-preview-deploy.yml"
 RETIRED_NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
@@ -71,6 +72,7 @@ _TIMEWEB_WORKFLOWS = frozenset(
         TIMEWEB_CREATE_WORKFLOW,
         TIMEWEB_NETWORK_WORKFLOW,
         TIMEWEB_ALLOCATION_WORKFLOW,
+        TIMEWEB_APP_CANDIDATE_WORKFLOW,
     }
 )
 _ACTIVE_WORKFLOWS = _TIMEWEB_WORKFLOWS
@@ -116,7 +118,9 @@ _EXPECTED_ROLES: dict[str, object] = {
         TIMEWEB_CREATE_WORKFLOW,
         TIMEWEB_NETWORK_WORKFLOW,
         TIMEWEB_ALLOCATION_WORKFLOW,
+        TIMEWEB_APP_CANDIDATE_WORKFLOW,
     ],
+    "timeweb_production_deploy_binding_environment": "timeweb-production",
 }
 _EXPECTED_INVARIANTS: dict[str, object] = {
     "gateway_entrypoint": "app:app",
