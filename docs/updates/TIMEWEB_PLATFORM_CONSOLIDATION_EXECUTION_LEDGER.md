@@ -566,3 +566,16 @@ Exact head `509ca7bcbc48402223df91914c47c733705629a7` exposed a combined source-
 The correction does not suppress Sonar or weaken any threshold. New context-manager test doubles implement the explicit `__exit__(type, value, traceback)` contract; pooled transaction cleanup no longer uses an explicit re-raise from `__exit__`; standalone pooled execution returns or discards a checked-out connection through one deterministic `finally` path; close failures remain best-effort only after that connection has left reusable authority. Regression coverage proves that a transaction-exit failure discards the connection and that a failed connection factory releases its reserved pool slot for a later bounded attempt.
 
 The exact Ruff-emitted layouts are applied to all five paths reported by Fast PR. The P5 activation test fixture dependency set is centralized rather than copied across negative tests. Public activation, provider mutation, TLS verification, tenant authority, broker write, `trading_methods` and `REAL_TRADING_ENABLED` remain unchanged and fail-closed.
+
+
+### P5 Sonar 11-finding defect-class closure — 2026-09-25
+
+Exact head `eea1ae0944ddeadfd92a0e271fc1dcdcef9e92e9` is superseded for acceptance after SonarQube Cloud returned `C Reliability Rating on New Code` with 11 annotations. The screenshot/evidence set resolves into three defect classes rather than eleven unrelated edits:
+
+1. cognitive complexity above the project threshold in PostgreSQL pool checkout and full-production runtime validation;
+2. direct floating-point equality in the P5 capacity contract guard;
+3. exception tests whose assertion scope contained more than one potentially throwing invocation.
+
+The correction is structural and keeps the Quality Gate unchanged. PostgreSQL checkout is decomposed into transaction-affinity, bounded-wait and unbound-queue helpers while preserving the same pool exhaustion/slot accounting semantics. Full-production runtime validation is split into contract and source-marker responsibilities. The timeout contract is normalized to canonical integer seconds (`5`), matching both JSON contracts. All affected exception tests move setup, evidence construction and executor orchestration outside `pytest.raises` / `assertRaisesRegex`, leaving one invocation in each expected-exception scope.
+
+No Sonar suppression, threshold increase, `NOSONAR`, Ruff exclusion, test weakening, provider mutation, TLS weakening, tenant-authority widening, broker write, `trading_methods` or `REAL_TRADING_ENABLED` change is introduced. Fresh exact-head CI and Sonar evidence is required after publication.

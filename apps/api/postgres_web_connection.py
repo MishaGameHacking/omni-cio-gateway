@@ -241,28 +241,39 @@ class _BoundedWebConnectionPool:
             raise RuntimeError("WEB_RUNTIME_POSTGRES_RECONNECT_INVALID")
         return connection
 
+    def _transaction_checkout(self) -> tuple[Any, bool] | None:
+        connection = self._transaction_connection()
+        if connection is None:
+            return None
+        if bool(getattr(connection, "closed", False)):
+            raise RuntimeError("WEB_RUNTIME_POSTGRES_TRANSACTION_CONNECTION_CLOSED")
+        return connection, False
+
+    def _wait_for_connection(self, deadline: float) -> Any:
+        if self._reserve_connection_slot():
+            return self._new_connection_for_reserved_slot()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED")
+        try:
+            return self._available.get(timeout=remaining)
+        except Empty:
+            raise RuntimeError("WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED") from None
+
+    def _acquire_unbound_connection(self, deadline: float) -> Any:
+        try:
+            return self._available.get_nowait()
+        except Empty:
+            return self._wait_for_connection(deadline)
+
     def _checkout(self) -> tuple[Any, bool]:
-        transaction_connection = self._transaction_connection()
-        if transaction_connection is not None:
-            if bool(getattr(transaction_connection, "closed", False)):
-                raise RuntimeError("WEB_RUNTIME_POSTGRES_TRANSACTION_CONNECTION_CLOSED")
-            return transaction_connection, False
+        transaction_checkout = self._transaction_checkout()
+        if transaction_checkout is not None:
+            return transaction_checkout
 
         deadline = time.monotonic() + self._acquire_timeout_seconds
         while True:
-            try:
-                connection = self._available.get_nowait()
-            except Empty:
-                if self._reserve_connection_slot():
-                    return self._new_connection_for_reserved_slot(), True
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise RuntimeError("WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED")
-                try:
-                    connection = self._available.get(timeout=remaining)
-                except Empty:
-                    raise RuntimeError("WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED") from None
-
+            connection = self._acquire_unbound_connection(deadline)
             if bool(getattr(connection, "closed", False)):
                 self._release_connection_slot()
                 continue

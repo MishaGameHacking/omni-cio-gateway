@@ -228,6 +228,8 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
         )
 
     def test_accept_rejects_readiness_seal_from_different_evidence(self) -> None:
+        opener = _opener(enabled=True)
+        prerequisites = _prerequisites()
         with self.assertRaisesRegex(
             activation.TelegramActivationStopped,
             "TIMEWEB_TELEGRAM_ACTIVATION_READINESS_SEAL_DRIFT",
@@ -239,8 +241,8 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
                 confirmation=activation.ACCEPT_CONFIRMATION,
                 readiness_sha256="e" * 64,
                 live_acceptance_evidence_sha256=LIVE_DIGEST,
-                opener=_opener(enabled=True),
-                **_prerequisites(),
+                opener=opener,
+                **prerequisites,
             )
 
     def test_ready_rejects_missing_runtime_credentials(self) -> None:
@@ -248,6 +250,7 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
         opener.responses[-1] = _Response(
             [{"provider": "telegram", "enabled": False, "reason": "NOT_CONFIGURED"}]
         )
+        prerequisites = _prerequisites()
         with self.assertRaisesRegex(
             activation.TelegramActivationStopped,
             "TIMEWEB_TELEGRAM_ACTIVATION_STATE_MISMATCH",
@@ -258,10 +261,13 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
                 observed_main_sha=EXPECTED_SHA,
                 confirmation=activation.READY_CONFIRMATION,
                 opener=opener,
-                **_prerequisites(),
+                **prerequisites,
             )
 
     def test_accept_rejects_release_sha_drift(self) -> None:
+        readiness_sha256 = _seal()
+        opener = _opener(enabled=True, sha="f" * 40)
+        prerequisites = _prerequisites()
         with self.assertRaisesRegex(
             activation.TelegramActivationStopped,
             "TIMEWEB_TELEGRAM_ACTIVATION_RELEASE_SHA_DRIFT",
@@ -271,15 +277,16 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
                 expected_sha=EXPECTED_SHA,
                 observed_main_sha=EXPECTED_SHA,
                 confirmation=activation.ACCEPT_CONFIRMATION,
-                readiness_sha256=_seal(),
+                readiness_sha256=readiness_sha256,
                 live_acceptance_evidence_sha256=LIVE_DIGEST,
-                opener=_opener(enabled=True, sha="f" * 40),
-                **_prerequisites(),
+                opener=opener,
+                **prerequisites,
             )
 
     def test_accept_rejects_rollback_collision(self) -> None:
         evidence = _prerequisites()
         evidence["rollback_release_sha"] = EXPECTED_SHA
+        opener = _opener(enabled=False)
         with self.assertRaisesRegex(
             activation.TelegramActivationStopped,
             "TIMEWEB_TELEGRAM_ACTIVATION_ROLLBACK_SHA_COLLISION",
@@ -289,7 +296,7 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
                 expected_sha=EXPECTED_SHA,
                 observed_main_sha=EXPECTED_SHA,
                 confirmation=activation.READY_CONFIRMATION,
-                opener=_opener(enabled=False),
+                opener=opener,
                 **evidence,
             )
 

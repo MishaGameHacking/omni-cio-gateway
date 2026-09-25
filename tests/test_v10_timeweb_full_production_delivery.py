@@ -145,7 +145,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         )
         runtime = payload["runtime"]
         self.assertEqual(runtime["postgres_pool_max_size"], 4)
-        self.assertEqual(runtime["postgres_pool_acquire_timeout_seconds"], 5.0)
+        self.assertEqual(runtime["postgres_pool_acquire_timeout_seconds"], 5)
         self.assertFalse(runtime["single_serialized_runtime_connection_allowed"])
         self.assertFalse(runtime["session_lookup_event_loop_blocking_allowed"])
 

@@ -410,6 +410,20 @@ class _PoolRawConnection(_ReconnectableRawConnection):
         return _Result(one=(self.name,))
 
 
+def _execute_pool_transaction(
+    pool: _BoundedWebConnectionPool,
+    query: str,
+) -> object:
+    with pool.transaction():
+        return pool.execute(query).fetchone()
+
+
+def _execute_pool_once_in_worker(pool: _BoundedWebConnectionPool) -> object:
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(pool.execute, "SELECT 1")
+        return future.result(timeout=1.0).fetchone()
+
+
 def test_serialized_web_connection_reconnects_before_next_operation() -> None:
     stale = _ReconnectableRawConnection(closed=True)
     replacement = _ReconnectableRawConnection()
@@ -495,8 +509,7 @@ def test_bounded_pool_drops_failed_connection_without_replay() -> None:
     )
 
     with pytest.raises(RuntimeError, match="simulated connection loss"):
-        with pool.transaction():
-            pool.execute("INSERT INTO example VALUES (1)")
+        _execute_pool_transaction(pool, "INSERT INTO example VALUES (1)")
     assert initial.execute_calls == 1
     assert initial.closed is True
     assert connect_calls == []
@@ -520,8 +533,7 @@ def test_bounded_pool_exhaustion_is_time_bounded() -> None:
             RuntimeError,
             match="WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED",
         ):
-            with pool.transaction():
-                raise AssertionError("pool checkout unexpectedly succeeded")
+            _execute_pool_transaction(pool, "SELECT 1")
         return "blocked"
 
     with pool.transaction():
@@ -545,14 +557,11 @@ def test_bounded_pool_discards_connection_when_transaction_exit_fails() -> None:
         acquire_timeout_seconds=1.0,
     )
 
-    initial_row: object = None
     with pytest.raises(RuntimeError, match="simulated transaction exit failure"):
-        with pool.transaction():
-            initial_row = pool.execute("SELECT 1").fetchone()
+        _execute_pool_transaction(pool, "SELECT 1")
 
-    assert initial_row == ("initial",)
-    with pool.transaction():
-        assert pool.execute("SELECT 1").fetchone() == ("replacement",)
+    assert initial.execute_calls == 1
+    assert _execute_pool_transaction(pool, "SELECT 1") == ("replacement",)
     assert connect_calls == ["connect"]
 
 
@@ -568,9 +577,6 @@ def test_bounded_pool_releases_reserved_slot_after_connect_failure() -> None:
             raise RuntimeError("simulated connect failure")
         return replacement
 
-    def execute_once(pool: _BoundedWebConnectionPool) -> object:
-        return pool.execute("SELECT 1").fetchone()
-
     pool = _BoundedWebConnectionPool(
         initial,
         connect=connect,
@@ -579,11 +585,9 @@ def test_bounded_pool_releases_reserved_slot_after_connect_failure() -> None:
     )
 
     with pool.transaction():
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            with pytest.raises(RuntimeError, match="simulated connect failure"):
-                executor.submit(execute_once, pool).result(timeout=1.0)
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            result = executor.submit(execute_once, pool).result(timeout=1.0)
+        with pytest.raises(RuntimeError, match="simulated connect failure"):
+            _execute_pool_once_in_worker(pool)
+        result = _execute_pool_once_in_worker(pool)
 
     assert result == ("replacement",)
     assert attempts == 2

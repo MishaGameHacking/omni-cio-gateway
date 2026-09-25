@@ -143,7 +143,7 @@ def _validate_contract(root: Path) -> None:
     if capacity != {
         "bounded_postgres_pool_required": True,
         "postgres_pool_max_size": 4,
-        "postgres_pool_acquire_timeout_seconds": 5.0,
+        "postgres_pool_acquire_timeout_seconds": 5,
         "session_lookup_off_event_loop_required": True,
         "horizontal_app_scaling_requires_distributed_abuse_control": True,
         "current_horizontal_app_scaling_allowed": False,
@@ -260,7 +260,7 @@ def _validate_composition(root: Path) -> None:
     )
     if (
         runtime.get("postgres_pool_max_size") != 4
-        or runtime.get("postgres_pool_acquire_timeout_seconds") != 5.0
+        or runtime.get("postgres_pool_acquire_timeout_seconds") != 5
         or runtime.get("single_serialized_runtime_connection_allowed") is not False
         or runtime.get("session_lookup_event_loop_blocking_allowed") is not False
     ):

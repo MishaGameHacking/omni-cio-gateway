@@ -122,75 +122,97 @@ def _validate_release(payload: dict[str, Any]) -> None:
             raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_RELEASE_DRIFT:{key}")
 
 
-def _validate_runtime(payload: dict[str, Any]) -> None:
-    runtime = _section(payload, "runtime")
+def _require_source_markers(
+    source: str,
+    markers: tuple[str, ...],
+    *,
+    error_prefix: str,
+) -> None:
+    for marker in markers:
+        if marker not in source:
+            raise RuntimeError(f"{error_prefix}:{marker}")
+
+
+def _validate_runtime_contract(runtime: dict[str, Any]) -> None:
     if runtime.get("dockerfile") != "Dockerfile" or runtime.get("port") != 8080:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_RUNTIME_SOURCE_DRIFT")
     if runtime.get("app_factory") != "apps.api.hosted_runtime:create_app":
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_RUNTIME_ENTRYPOINT_DRIFT")
     if runtime.get("credential_values_in_repository_allowed") is not False:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_POLICY_DRIFT")
+
     expected_capacity = {
         "postgres_pool_max_size": 4,
-        "postgres_pool_acquire_timeout_seconds": 5.0,
+        "postgres_pool_acquire_timeout_seconds": 5,
         "single_serialized_runtime_connection_allowed": False,
         "session_lookup_event_loop_blocking_allowed": False,
     }
     for key, value in expected_capacity.items():
         if runtime.get(key) != value:
             raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT:{key}")
+
     names = runtime.get("runtime_credential_env_names")
     if not isinstance(names, list) or set(names) != _SECRET_ENV_NAMES:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_ENV_DRIFT")
 
-    dockerfile = _text(DOCKERFILE)
-    for marker in (
-        "EXPOSE 8080",
-        "apps.api.hosted_runtime:create_app",
-        "http://localhost:8080/livez",
-    ):
-        if marker not in dockerfile:
-            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_DOCKER_DRIFT:{marker}")
+
+def _validate_runtime_sources() -> None:
+    _require_source_markers(
+        _text(DOCKERFILE),
+        (
+            "EXPOSE 8080",
+            "apps.api.hosted_runtime:create_app",
+            "http://localhost:8080/livez",
+        ),
+        error_prefix="TIMEWEB_FULL_DELIVERY_DOCKER_DRIFT",
+    )
 
     hosted_runtime = _text(RUNTIME)
-    for marker in (
-        "OMNI_V10_HOSTED_RUNTIME",
-        "OMNI_V10_PUBLIC_HOSTNAME",
-        "OMNI_V10_RELEASE_SHA",
-        "OMNI_V10_POSTGRES_DSN",
-        "OMNI_V10_POSTGRES_RUNTIME_ROLE",
-        'canonical_origin=f"https://{hostname}"',
-        "provider_route_installer=install_telegram_auth_routes_v1",
-        "_BoundedWebConnectionPool",
-        "_DATABASE_POOL_MAX_SIZE = 4",
-        "_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS = 5.0",
-        "connect=lambda:",
-    ):
-        if marker not in hosted_runtime:
-            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_HOSTED_RUNTIME_DRIFT:{marker}")
+    _require_source_markers(
+        hosted_runtime,
+        (
+            "OMNI_V10_HOSTED_RUNTIME",
+            "OMNI_V10_PUBLIC_HOSTNAME",
+            "OMNI_V10_RELEASE_SHA",
+            "OMNI_V10_POSTGRES_DSN",
+            "OMNI_V10_POSTGRES_RUNTIME_ROLE",
+            'canonical_origin=f"https://{hostname}"',
+            "provider_route_installer=install_telegram_auth_routes_v1",
+            "_BoundedWebConnectionPool",
+            "_DATABASE_POOL_MAX_SIZE = 4",
+            "_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS = 5.0",
+            "connect=lambda:",
+        ),
+        error_prefix="TIMEWEB_FULL_DELIVERY_HOSTED_RUNTIME_DRIFT",
+    )
     if "_SerializedWebConnection(" in hosted_runtime:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SINGLE_CONNECTION_FORBIDDEN")
 
-    hosted_app = _text(HOSTED_APP)
-    for marker in (
-        "from starlette.concurrency import run_in_threadpool",
-        "scope = await run_in_threadpool(",
-        "async def _resolve_session(",
-    ):
-        if marker not in hosted_app:
-            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_EVENT_LOOP_DRIFT:{marker}")
+    _require_source_markers(
+        _text(HOSTED_APP),
+        (
+            "from starlette.concurrency import run_in_threadpool",
+            "scope = await run_in_threadpool(",
+            "async def _resolve_session(",
+        ),
+        error_prefix="TIMEWEB_FULL_DELIVERY_EVENT_LOOP_DRIFT",
+    )
+    _require_source_markers(
+        _text(POSTGRES_CONNECTION),
+        (
+            "class _BoundedWebConnectionPool",
+            "WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED",
+            "transaction_connection",
+            "LifoQueue",
+        ),
+        error_prefix="TIMEWEB_FULL_DELIVERY_POOL_DRIFT",
+    )
 
-    postgres_connection = _text(POSTGRES_CONNECTION)
-    for marker in (
-        "class _BoundedWebConnectionPool",
-        "WEB_RUNTIME_POSTGRES_POOL_EXHAUSTED",
-        "transaction_connection",
-        "LifoQueue",
-    ):
-        if marker not in postgres_connection:
-            raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_POOL_DRIFT:{marker}")
 
-
+def _validate_runtime(payload: dict[str, Any]) -> None:
+    runtime = _section(payload, "runtime")
+    _validate_runtime_contract(runtime)
+    _validate_runtime_sources()
 def _validate_postgres(payload: dict[str, Any]) -> None:
     postgres = _section(payload, "postgres")
     expected = {
