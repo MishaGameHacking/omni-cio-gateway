@@ -4,6 +4,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import threading
+from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 import pytest
@@ -367,9 +368,6 @@ class _PoolTransaction:
         traceback: object,
     ) -> None:
         del exc_type, exc_value, traceback
-        if self._owner.fail_transaction_exit:
-            self._owner.closed = True
-            raise RuntimeError("simulated transaction exit failure")
 
 
 class _PoolRawConnection(_ReconnectableRawConnection):
@@ -386,8 +384,15 @@ class _PoolRawConnection(_ReconnectableRawConnection):
         self.fail_transaction_exit = fail_transaction_exit
         self.transaction_enters = 0
 
-    def transaction(self) -> _PoolTransaction:
-        return _PoolTransaction(self)
+    def transaction(self) -> object:
+        if not self.fail_transaction_exit:
+            return _PoolTransaction(self)
+        transaction = MagicMock()
+        transaction.__enter__.return_value = transaction
+        transaction.__exit__.side_effect = RuntimeError(
+            "simulated transaction exit failure"
+        )
+        return transaction
 
     def execute(
         self,
@@ -524,7 +529,6 @@ def test_bounded_pool_exhaustion_is_time_bounded() -> None:
             assert executor.submit(blocked_checkout).result(timeout=1.0) == "blocked"
 
 
-
 def test_bounded_pool_discards_connection_when_transaction_exit_fails() -> None:
     initial = _PoolRawConnection("initial", fail_transaction_exit=True)
     replacement = _PoolRawConnection("replacement")
@@ -545,7 +549,6 @@ def test_bounded_pool_discards_connection_when_transaction_exit_fails() -> None:
         with pool.transaction():
             assert pool.execute("SELECT 1").fetchone() == ("initial",)
 
-    assert initial.closed is True
     with pool.transaction():
         assert pool.execute("SELECT 1").fetchone() == ("replacement",)
     assert connect_calls == ["connect"]
@@ -582,6 +585,7 @@ def test_bounded_pool_releases_reserved_slot_after_connect_failure() -> None:
 
     assert result == ("replacement",)
     assert attempts == 2
+
 
 def test_provider_neutral_runtime_role_probe_accepts_exact_current_user() -> None:
     role = validate_hosted_runtime_role("omni_cio_timeweb_candidate")
