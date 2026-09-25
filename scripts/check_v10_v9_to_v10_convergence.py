@@ -355,17 +355,19 @@ def _import_from_base(relative: Path, node: ast.ImportFrom) -> str | None:
 
 
 def _runtime_import_candidates(relative: Path, node: ast.AST) -> list[str]:
+    modules: list[str] = []
     if isinstance(node, ast.Import):
-        return [alias.name for alias in node.names]
-    if not isinstance(node, ast.ImportFrom):
-        return []
-    base = _import_from_base(relative, node)
-    if not base:
-        return []
-    submodules = [
-        f"{base}.{alias.name}" for alias in node.names if alias.name != "*"
-    ]
-    return [base, *submodules]
+        modules.extend(alias.name for alias in node.names)
+    elif isinstance(node, ast.ImportFrom):
+        base = _import_from_base(relative, node)
+        if base:
+            modules.append(base)
+            modules.extend(
+                f"{base}.{alias.name}"
+                for alias in node.names
+                if alias.name != "*"
+            )
+    return modules
 
 
 def _reject_legacy_runtime_module(relative: Path, module: str) -> None:
