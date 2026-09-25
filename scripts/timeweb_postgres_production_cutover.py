@@ -27,13 +27,13 @@ from scripts import timeweb_app_release as app_release
 
 BOOTSTRAP_DSN_ENV = "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN"
 RUNTIME_DSN_ENV = "OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN"
-RECOVERY_ATTESTATION_ENV = "OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION"
 RECOVERY_ATTESTATION_VALUE = (
     "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
 )
 PREPARE_CONFIRMATION = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
 RUNTIME_ROLE = "omni_cio_hosted_api"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 _RETIRED_HOST_MARKERS = ("neon.tech", "cloudflare", "render.com", "cloud.ru")
 _CLEAN_TABLES = (
     "tenants",
@@ -76,6 +76,13 @@ def _sha(value: str, code: str) -> str:
     return normalized
 
 
+def _recovery_evidence_sha256(value: str) -> str:
+    normalized = value.strip().lower()
+    if _SHA256_RE.fullmatch(normalized) is None:
+        _stop("TIMEWEB_PG_PRODUCTION_RECOVERY_EVIDENCE_SHA256_INVALID")
+    return normalized
+
+
 def _dsn(name: str) -> tuple[str, dict[str, str]]:
     value = _required_env(name)
     try:
@@ -97,9 +104,7 @@ def _dsn(name: str) -> tuple[str, dict[str, str]]:
     return value, params
 
 
-def _validate_target_pair(
-    bootstrap: dict[str, str], runtime: dict[str, str]
-) -> None:
+def _validate_target_pair(bootstrap: dict[str, str], runtime: dict[str, str]) -> None:
     for field in ("host", "port", "dbname"):
         left = bootstrap.get(field, "").strip().lower()
         right = runtime.get(field, "").strip().lower()
@@ -113,8 +118,7 @@ def _validate_target_pair(
 
 def _verify_tls(connection: Any) -> None:
     row = connection.execute(
-        "SELECT ssl FROM pg_catalog.pg_stat_ssl "
-        "WHERE pid = pg_catalog.pg_backend_pid()"
+        "SELECT ssl FROM pg_catalog.pg_stat_ssl WHERE pid = pg_catalog.pg_backend_pid()"
     ).fetchone()
     if row != (True,):
         _stop("TIMEWEB_PG_PRODUCTION_TLS_SESSION_REQUIRED")
@@ -309,6 +313,12 @@ def _app_envs(api: app_release.TimewebAppApi) -> dict[str, str]:
     payload = api.get_app(app_id).get("app")
     if not isinstance(payload, dict):
         _stop("TIMEWEB_PG_PRODUCTION_APP_INVALID")
+    if (
+        payload.get("type") != "backend"
+        or payload.get("framework") != app_release.CANONICAL_FRAMEWORK
+        or payload.get("branch_name") != app_release.CANONICAL_BRANCH
+    ):
+        _stop("TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT")
     if payload.get("is_auto_deploy") is not False:
         _stop("TIMEWEB_PG_PRODUCTION_APP_AUTODEPLOY_FORBIDDEN")
     envs = payload.get("envs")
@@ -341,6 +351,8 @@ def run(
     expected_sha: str,
     observed_main_sha: str,
     confirmation: str = "",
+    recovery_attestation: str = "",
+    recovery_evidence_sha256: str = "",
 ) -> None:
     expected = _sha(expected_sha, "TIMEWEB_PG_PRODUCTION_SHA_INVALID")
     observed = _sha(observed_main_sha, "TIMEWEB_PG_PRODUCTION_MAIN_SHA_INVALID")
@@ -350,6 +362,11 @@ def run(
     bootstrap_dsn, bootstrap_params = _dsn(BOOTSTRAP_DSN_ENV)
     runtime_dsn, runtime_params = _dsn(RUNTIME_DSN_ENV)
     _validate_target_pair(bootstrap_params, runtime_params)
+
+    if operation != "accept" and (
+        recovery_attestation or recovery_evidence_sha256
+    ):
+        _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_RECOVERY_EVIDENCE")
 
     if operation == "prepare":
         if confirmation != PREPARE_CONFIRMATION:
@@ -374,12 +391,14 @@ def run(
     if operation != "accept":
         _stop("TIMEWEB_PG_PRODUCTION_OPERATION_INVALID")
 
-    if _required_env(RECOVERY_ATTESTATION_ENV) != RECOVERY_ATTESTATION_VALUE:
+    if recovery_attestation != RECOVERY_ATTESTATION_VALUE:
         _stop("TIMEWEB_PG_PRODUCTION_RECOVERY_NOT_ACCEPTED")
+    evidence_digest = _recovery_evidence_sha256(recovery_evidence_sha256)
     _verify_app_binding(expected, runtime_dsn)
     print(
         "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED "
-        f"sha={expected} recovery=accepted app_dsn=verified public_users=false"
+        f"sha={expected} recovery=accepted evidence_sha256={evidence_digest} "
+        "app_dsn=verified public_users=false"
     )
 
 
@@ -393,6 +412,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--observed-main-sha", required=True)
     parser.add_argument("--confirmation", default="")
+    parser.add_argument("--recovery-attestation", default="")
+    parser.add_argument("--recovery-evidence-sha256", default="")
     return parser
 
 
@@ -404,6 +425,8 @@ def main() -> int:
             expected_sha=args.expected_sha,
             observed_main_sha=args.observed_main_sha,
             confirmation=args.confirmation,
+            recovery_attestation=args.recovery_attestation,
+            recovery_evidence_sha256=args.recovery_evidence_sha256,
         )
     except CutoverStopped as exc:
         print(
@@ -413,8 +436,7 @@ def main() -> int:
         return 1
     except provider_base.ProvisioningStopped as exc:
         print(
-            "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=STOPPED "
-            f"code={exc.code}",
+            f"TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=STOPPED code={exc.code}",
             file=sys.stderr,
         )
         return 1

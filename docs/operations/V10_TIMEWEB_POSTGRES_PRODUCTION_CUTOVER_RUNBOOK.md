@@ -21,14 +21,14 @@ Both bootstrap and runtime DSNs must use `sslmode=verify-full` and an explicit `
 5. The controller verifies PostgreSQL 18/TLS, applies canonical migrations twice to prove retry idempotence, applies the canonical runtime ACL bootstrap, verifies the least-privilege runtime role, RLS/FORCE-RLS, tenant security constraints, and requires clean product identity/session/broker tables.
 6. Create a Timeweb physical backup recovery point. Physical backup is mandatory and additive to the repository logical recovery contract.
 7. Perform a separate restore rehearsal. If Timeweb exposes no documented safe API for the required recovery operation, use the bounded Timeweb panel action. Do not invent an undocumented endpoint.
-8. Record the recovery acceptance only through the protected runtime binding `OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION=TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED`; never record provider backup IDs in source.
+8. Record recovery acceptance through the manual workflow input `recovery_attestation=TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED` and provide `recovery_evidence_sha256` as the SHA-256 of sanitized external recovery evidence. The attestation and digest are not credentials and must not be stored as Actions secrets. Never record provider backup IDs, raw backup payloads, credentials, or private account identifiers in source or CI output.
 9. Promote the verified production runtime DSN to the existing Timeweb App Platform application through documented provider controls. P3 source intentionally does not patch App Platform settings because no undocumented settings endpoint is allowed.
 10. Run `operation=accept`. The controller re-verifies the production database and then read-only verifies that Timeweb App Platform holds the same runtime DSN, the exact accepted main SHA, and both public-user activation flags remain false.
 11. Only after P3 acceptance may P4 canonical `omnicio.ru` DNS/TLS cutover begin.
 
 ## Failure and recovery
 
-Any SHA mismatch, TLS downgrade, migration drift, widened runtime role, RLS/FORCE-RLS drift, non-empty clean-target tables, missing recovery attestation, App Platform DSN mismatch, or public-user flag enablement is `DEPLOYMENT_BLOCKED`.
+Any SHA mismatch, TLS downgrade, migration drift, widened runtime role, RLS/FORCE-RLS drift, non-empty clean-target tables, missing recovery attestation or evidence digest, App Platform DSN mismatch, or public-user flag enablement is `DEPLOYMENT_BLOCKED`.
 
 Do not repair a failed P3 by dropping schemas, truncating data, weakening RLS, granting broad predefined roles, bypassing certificate verification, changing CI assertions, or enabling public users.
 

@@ -57,8 +57,13 @@
     "logical_backup_contract": "infrastructure/postgres/hosted-recovery-contract.json",
     "separate_restore_rehearsal_required": true,
     "provider_panel_action_allowed_when_no_documented_safe_api_exists": true,
-    "recovery_attestation_env": "OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION",
-    "recovery_attestation_value": "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
+    "recovery_attestation_value": "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED",
+    "recovery_attestation_source": "WORKFLOW_DISPATCH_INPUT",
+    "recovery_attestation_input": "recovery_attestation",
+    "recovery_evidence_sha256_input": "recovery_evidence_sha256",
+    "recovery_evidence_sha256_required": true,
+    "recovery_evidence_digest_is_not_secret": true,
+    "actions_secret_for_recovery_attestation_allowed": false
   },
   "app_binding": {
     "application_name": "omni-cio-v10",
@@ -83,7 +88,11 @@
     "environment": "timeweb-production",
     "manual_dispatch_only": true,
     "provider_token_step_scope_only": true,
-    "database_bindings_step_scope_only": true
+    "database_bindings_step_scope_only": true,
+    "operation_specific_secret_injection_required": true,
+    "provider_token_accept_only": true,
+    "production_dsns_step_scoped": true,
+    "recovery_attestation_as_actions_secret_allowed": false
   },
   "success": {
     "sanitized_marker": "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED",

@@ -21,6 +21,16 @@ on:
         required: false
         default: ""
         type: string
+      recovery_attestation:
+        description: Required only for accept; explicit recovery rehearsal acceptance phrase
+        required: false
+        default: ""
+        type: string
+      recovery_evidence_sha256:
+        description: Required only for accept; SHA-256 of sanitized external recovery evidence
+        required: false
+        default: ""
+        type: string
 
 permissions:
   actions: read
@@ -113,6 +123,8 @@ jobs:
       EXPECTED_BRANCH: ${{ github.ref_name }}
       REQUESTED_OPERATION: ${{ inputs.operation }}
       REQUESTED_CONFIRMATION: ${{ inputs.confirmation }}
+      REQUESTED_RECOVERY_ATTESTATION: ${{ inputs.recovery_attestation }}
+      REQUESTED_RECOVERY_EVIDENCE_SHA256: ${{ inputs.recovery_evidence_sha256 }}
 
     steps:
       - name: Expose installed Git Bash
@@ -152,28 +164,63 @@ jobs:
         shell: cmd
         run: python -m scripts.check_v10_timeweb_postgres_production_cutover
 
-      - name: Execute bounded P3 controller
+      - name: Observe verified production database
+        if: ${{ inputs.operation == 'observe' }}
+        shell: bash
+        env:
+          OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
+          OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}
+        run: |
+          set -euo pipefail
+          test -z "$REQUESTED_CONFIRMATION"
+          test -z "$REQUESTED_RECOVERY_ATTESTATION"
+          test -z "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
+          OBSERVED_MAIN="$(git rev-parse refs/remotes/origin/main)"
+          python -m scripts.timeweb_postgres_production_cutover \
+            --operation observe \
+            --expected-sha "$EXPECTED_HEAD" \
+            --observed-main-sha "$OBSERVED_MAIN"
+
+      - name: Prepare verified production database
+        if: ${{ inputs.operation == 'prepare' }}
+        shell: bash
+        env:
+          OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
+          OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}
+        run: |
+          set -euo pipefail
+          test "$REQUESTED_CONFIRMATION" = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+          test -z "$REQUESTED_RECOVERY_ATTESTATION"
+          test -z "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
+          OBSERVED_MAIN="$(git rev-parse refs/remotes/origin/main)"
+          python -m scripts.timeweb_postgres_production_cutover \
+            --operation prepare \
+            --expected-sha "$EXPECTED_HEAD" \
+            --observed-main-sha "$OBSERVED_MAIN" \
+            --confirmation "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+
+      - name: Accept verified production database
+        if: ${{ inputs.operation == 'accept' }}
         shell: bash
         env:
           TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
           OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
           OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}
-          OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION: ${{ secrets.OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION }}
         run: |
           set -euo pipefail
+          test -z "$REQUESTED_CONFIRMATION"
+          test "$REQUESTED_RECOVERY_ATTESTATION" = "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
+          case "$REQUESTED_RECOVERY_EVIDENCE_SHA256" in
+            *[!0-9a-f]*|'') exit 21 ;;
+          esac
+          test "${#REQUESTED_RECOVERY_EVIDENCE_SHA256}" -eq 64
           OBSERVED_MAIN="$(git rev-parse refs/remotes/origin/main)"
-          confirmation=""
-          if [ "$REQUESTED_OPERATION" = "prepare" ]; then
-            test "$REQUESTED_CONFIRMATION" = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
-            confirmation="PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
-          else
-            test -z "$REQUESTED_CONFIRMATION"
-          fi
           python -m scripts.timeweb_postgres_production_cutover \
-            --operation "$REQUESTED_OPERATION" \
+            --operation accept \
             --expected-sha "$EXPECTED_HEAD" \
             --observed-main-sha "$OBSERVED_MAIN" \
-            --confirmation "$confirmation"
+            --recovery-attestation "$REQUESTED_RECOVERY_ATTESTATION" \
+            --recovery-evidence-sha256 "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
 
       - name: Clean self-hosted workspace
         if: always()

@@ -37,6 +37,13 @@ def _copy(root: Path) -> None:
         shutil.copy2(source, target)
 
 
+def _contract_path(root: Path) -> Path:
+    return root / (
+        "docs/architecture/"
+        "V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
+    )
+
+
 class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         guard.validate(ROOT)
@@ -45,14 +52,8 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = (
-                root
-                / (
-                    "docs/architecture/"
-                    "V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
-                )
-            )
-            payload = json.loads( path.read_text(encoding="utf-8"))
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
             payload["target"]["synthetic_fixture_promotion_allowed"] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
@@ -65,14 +66,8 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = (
-                root
-                / (
-                    "docs/architecture/"
-                    "V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
-                )
-            )
-            payload = json.loads( path.read_text(encoding="utf-8"))
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
             payload["runtime_role"]["controller_creates_login"] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
@@ -85,7 +80,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+            path = (
+                root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+            )
             source = path.read_text(encoding="utf-8")
             path.write_text(
                 source.replace(
@@ -104,13 +101,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = (
-                root
-                / (
-                    "docs/architecture/"
-                    "V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
-                )
-            )
+            path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["protected_invariants"]["PUBLIC_MULTI_USER_ENABLED"] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
@@ -120,18 +111,78 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_recovery_attestation_as_actions_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = (
+                root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+            )
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source
+                + "\n# ${{ secrets.OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION }}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_RECOVERY_ATTESTATION_SECRET_FORBIDDEN",
+            ):
+                guard.validate(root)
+
+    def test_rejects_provider_token_outside_accept_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = (
+                root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+            )
+            source = path.read_text(encoding="utf-8")
+            marker = (
+                "      - name: Observe verified production database\n"
+                "        if: ${{ inputs.operation == 'observe' }}\n"
+                "        shell: bash\n"
+                "        env:\n"
+            )
+            self.assertIn(marker, source)
+            path.write_text(
+                source.replace(
+                    marker,
+                    marker
+                    + "          TIMEWEB_CLOUD_API_TOKEN: "
+                    + "${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}\n",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_WORKFLOW_SECRET_SCOPE_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_missing_recovery_evidence_digest_requirement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["recovery"]["recovery_evidence_sha256_required"] = False
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_RECOVERY_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_contract_keeps_recovery_and_app_promotion_external(self) -> None:
-        payload = json.loads(
-            (
-                ROOT
-                / (
-                    "docs/architecture/"
-                    "V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
-                )
-            ).read_text(encoding="utf-8")
-        )
+        payload = json.loads(_contract_path(ROOT).read_text(encoding="utf-8"))
         self.assertTrue(payload["recovery"]["timeweb_physical_backup_required"])
         self.assertTrue(payload["recovery"]["separate_restore_rehearsal_required"])
+        self.assertTrue(payload["recovery"]["recovery_evidence_sha256_required"])
+        self.assertFalse(
+            payload["recovery"]["actions_secret_for_recovery_attestation_allowed"]
+        )
         self.assertFalse(
             payload["app_binding"]["runtime_dsn_promotion_by_controller_allowed"]
         )

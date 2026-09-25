@@ -253,11 +253,26 @@ def _validate_external_gates(payload: dict[str, Any]) -> None:
 def _validate_milestones(payload: dict[str, Any]) -> None:
     expected = [
         {"id": "P1_SOURCE_RUNTIME_CONVERGENCE", "state": "CERTIFIED_GREEN_SOURCE_BASE"},
-        {"id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE", "state": "CERTIFIED_GREEN_BRANCH_LOCAL"},
-        {"id": "P3_POSTGRES18_PRODUCTION_CUTOVER", "state": "IMPLEMENTED_VERIFICATION_PENDING"},
-        {"id": "P4_OMNICIO_RU_DNS_TLS", "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED"},
-        {"id": "P5_TELEGRAM_PUBLIC_ACTIVATION", "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED"},
-        {"id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE", "state": "AUTHORIZED_IMPLEMENTATION_POST_MERGE_EXECUTION"},
+        {
+            "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
+            "state": "CERTIFIED_GREEN_BRANCH_LOCAL",
+        },
+        {
+            "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
+            "state": "IMPLEMENTED_VERIFICATION_PENDING",
+        },
+        {
+            "id": "P4_OMNICIO_RU_DNS_TLS",
+            "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED",
+        },
+        {
+            "id": "P5_TELEGRAM_PUBLIC_ACTIVATION",
+            "state": "AUTHORIZED_IMPLEMENTATION_EXTERNAL_GATE_REQUIRED",
+        },
+        {
+            "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
+            "state": "AUTHORIZED_IMPLEMENTATION_POST_MERGE_EXECUTION",
+        },
     ]
     if payload.get("branch_milestones") != expected:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_MILESTONE_DRIFT")

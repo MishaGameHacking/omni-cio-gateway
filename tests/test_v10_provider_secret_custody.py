@@ -22,6 +22,9 @@ TIMEWEB_NETWORK_WORKFLOW = Path(
 )
 TIMEWEB_ALLOCATION_WORKFLOW = Path(".github/workflows/v10-timeweb-ipv4-allocation.yml")
 TIMEWEB_APP_CANDIDATE_WORKFLOW = Path(".github/workflows/v10-timeweb-app-candidate.yml")
+TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW = Path(
+    ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+)
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 RETIRED_NEON_EGRESS_WORKFLOW = Path(".github/workflows/v10-neon-egress-boundary.yml")
@@ -158,12 +161,29 @@ class ProviderSecretCustodyTests(unittest.TestCase):
                 ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml",
                 ".github/workflows/v10-timeweb-ipv4-allocation.yml",
                 ".github/workflows/v10-timeweb-app-candidate.yml",
+                ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
             ],
         )
         self.assertEqual(
             roles["timeweb_production_deploy_binding_environment"],
             "timeweb-production",
         )
+        self.assertEqual(
+            roles["timeweb_production_cutover_workflow"],
+            ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
+        )
+        self.assertEqual(
+            roles["timeweb_production_database_binding_environment"],
+            "timeweb-production",
+        )
+        self.assertEqual(
+            roles["timeweb_production_database_bindings"],
+            [
+                "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN",
+                "OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN",
+            ],
+        )
+        self.assertFalse(roles["recovery_attestation_may_use_actions_secret"])
         for name, value in roles.items():
             if isinstance(value, str):
                 self.assertNotIn("secret", name.lower())
@@ -236,6 +256,45 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         self._assert_rejected(
             root,
             "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
+        )
+
+    def test_production_cutover_bindings_are_exactly_scoped(self) -> None:
+        contract = json.loads((ROOT / CONTRACT_PATH).read_text(encoding="utf-8"))
+        self.assertEqual(
+            set(
+                contract["active_workflows"][
+                    ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+                ]
+            ),
+            {
+                "TIMEWEB_CLOUD_API_TOKEN",
+                "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN",
+                "OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN",
+            },
+        )
+
+    def test_production_dsn_cannot_enter_app_candidate_workflow(self) -> None:
+        root = self._root()
+        _append(
+            root,
+            TIMEWEB_APP_CANDIDATE_WORKFLOW,
+            "\n# ${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}\n",
+        )
+        self._assert_rejected(
+            root,
+            "PROVIDER_SECRET_CUSTODY_ACTIVE_BINDINGS_MISMATCH",
+        )
+
+    def test_recovery_attestation_cannot_become_actions_secret(self) -> None:
+        root = self._root()
+        _append(
+            root,
+            TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW,
+            "\n# ${{ secrets.OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION }}\n",
+        )
+        self._assert_rejected(
+            root,
+            "PROVIDER_SECRET_CUSTODY_UNREVIEWED_SECRET_REFERENCED",
         )
 
     def test_retired_render_secret_is_rejected(self) -> None:
