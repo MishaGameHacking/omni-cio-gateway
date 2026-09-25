@@ -335,7 +335,7 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             _copy(root)
             path = root / guard.CONTRACT.relative_to(ROOT)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["checkpoint_states"]["V9C-F"] = "CERTIFIED_GREEN"
+            payload["checkpoint_states"]["V9C-F"] = "IMPLEMENTED_VERIFICATION_PENDING"
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "V9C_CHECKPOINT_STATE_DRIFT"):
                 guard.validate(root)

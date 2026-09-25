@@ -102,6 +102,8 @@ class _Api:
 
 
 def test_observe_requires_current_main_sha() -> None:
+    api = _Api(_app(active_sha=EXPECTED_SHA))
+    livez = _Livez()
     with pytest.raises(
         release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_MAIN_SHA_DRIFT"
     ):
@@ -110,8 +112,8 @@ def test_observe_requires_current_main_sha() -> None:
             expected_sha=EXPECTED_SHA,
             observed_main_sha=LKG_SHA,
             token="token",
-            api=_Api(_app(active_sha=EXPECTED_SHA)),
-            livez_opener=_Livez(),
+            api=api,
+            livez_opener=livez,
         )
 
 
@@ -128,6 +130,8 @@ def test_observe_accepts_exact_active_sha_and_livez() -> None:
 
 
 def test_observe_rejects_release_sha_drift() -> None:
+    api = _Api(_app(active_sha=EXPECTED_SHA))
+    livez = _Livez(LKG_SHA)
     with pytest.raises(
         release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT"
     ):
@@ -136,14 +140,16 @@ def test_observe_rejects_release_sha_drift() -> None:
             expected_sha=EXPECTED_SHA,
             observed_main_sha=EXPECTED_SHA,
             token="token",
-            api=_Api(_app(active_sha=EXPECTED_SHA)),
-            livez_opener=_Livez(LKG_SHA),
+            api=api,
+            livez_opener=livez,
         )
 
 
 def test_candidate_rejects_autodeploy_and_public_activation() -> None:
     autodeploy = _app(active_sha=EXPECTED_SHA)
     autodeploy["is_auto_deploy"] = True
+    autodeploy_api = _Api(autodeploy)
+    livez = _Livez()
     with pytest.raises(
         release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_AUTODEPLOY_FORBIDDEN"
     ):
@@ -152,27 +158,30 @@ def test_candidate_rejects_autodeploy_and_public_activation() -> None:
             expected_sha=EXPECTED_SHA,
             observed_main_sha=EXPECTED_SHA,
             token="token",
-            api=_Api(autodeploy),
-            livez_opener=_Livez(),
+            api=autodeploy_api,
+            livez_opener=livez,
         )
 
     activated = _app(active_sha=EXPECTED_SHA)
     assert isinstance(activated["envs"], dict)
     activated["envs"]["PUBLIC_MULTI_USER_ENABLED"] = "true"
+    activated_api = _Api(activated)
     with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_ENV_DRIFT"):
         release.run(
             operation="observe",
             expected_sha=EXPECTED_SHA,
             observed_main_sha=EXPECTED_SHA,
             token="token",
-            api=_Api(activated),
-            livez_opener=_Livez(),
+            api=activated_api,
+            livez_opener=livez,
         )
 
 
 def test_candidate_rejects_canonical_domain_before_p4() -> None:
     app = _app(active_sha=EXPECTED_SHA)
     app["domains"] = [{"fqdn": CANDIDATE_HOST}, {"fqdn": "omnicio.ru"}]
+    api = _Api(app)
+    livez = _Livez()
     with pytest.raises(
         release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_PREMATURE_CANONICAL_DOMAIN"
     ):
@@ -181,13 +190,14 @@ def test_candidate_rejects_canonical_domain_before_p4() -> None:
             expected_sha=EXPECTED_SHA,
             observed_main_sha=EXPECTED_SHA,
             token="token",
-            api=_Api(app),
-            livez_opener=_Livez(),
+            api=api,
+            livez_opener=livez,
         )
 
 
 def test_deploy_requires_confirmation_and_mutates_only_exact_sha() -> None:
     api = _Api(_app())
+    livez = _Livez()
     with pytest.raises(
         release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_CONFIRMATION_REQUIRED"
     ):
@@ -197,7 +207,7 @@ def test_deploy_requires_confirmation_and_mutates_only_exact_sha() -> None:
             observed_main_sha=EXPECTED_SHA,
             token="token",
             api=api,
-            livez_opener=_Livez(),
+            livez_opener=livez,
         )
     assert api.calls == []
 
@@ -208,7 +218,7 @@ def test_deploy_requires_confirmation_and_mutates_only_exact_sha() -> None:
         token="token",
         confirmation=release.DEPLOY_CONFIRMATION,
         api=api,
-        livez_opener=_Livez(),
+        livez_opener=livez,
     )
     assert api.calls == [("17", EXPECTED_SHA)]
     assert last_known_good == LKG_SHA

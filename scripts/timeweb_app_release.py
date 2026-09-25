@@ -63,6 +63,7 @@ _RETIRED_ENV_MARKERS = ("CLOUDFLARE", "NEON", "RENDER", "CLOUDRU")
 _APP_ID_INVALID = "TIMEWEB_APP_RELEASE_APP_ID_INVALID"
 _DEPLOYS_INVALID = "TIMEWEB_APP_RELEASE_DEPLOYS_INVALID"
 _COMMIT_SHA_KEY = "commit_sha"
+_JSON_CONTENT_TYPE = "application/json"
 Sleep = Callable[[float], None]
 
 
@@ -187,13 +188,13 @@ class TimewebAppApi:
         if not path.startswith("/api/v1/") or ".." in path or "://" in path:
             _stop("TIMEWEB_APP_RELEASE_API_PATH_INVALID")
         headers = {
-            "Accept": "application/json",
+            "Accept": _JSON_CONTENT_TYPE,
             "Authorization": f"Bearer {self._token}",
             "User-Agent": "omni-cio-v10-timeweb-exact-sha-release",
         }
         data = None
         if body is not None:
-            headers["Content-Type"] = "application/json"
+            headers["Content-Type"] = _JSON_CONTENT_TYPE
             data = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
         return Request(API_BASE + path, headers=headers, data=data, method=method)
 
@@ -295,7 +296,7 @@ def _last_known_good(rows: list[dict[str, Any]], expected: str) -> str | None:
     return None
 
 
-def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, str]:
+def _matching_app_row(api: ApiLike) -> dict[str, Any]:
     matches = [
         row
         for row in _rows(api.list_apps(), "apps", "TIMEWEB_APP_RELEASE_APPS_INVALID")
@@ -304,22 +305,26 @@ def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, st
     ]
     if len(matches) != 1:
         _stop("TIMEWEB_APP_RELEASE_TARGET_NOT_UNIQUE")
-    app_id = _safe_id(matches[0].get("id"), _APP_ID_INVALID)
-    app = _mapping(api.get_app(app_id).get("app"), "TIMEWEB_APP_RELEASE_APP_INVALID")
+    return matches[0]
+
+
+def _validate_app_shape(app: dict[str, Any], app_id: str) -> None:
     if _safe_id(app.get("id"), _APP_ID_INVALID) != app_id:
         _stop("TIMEWEB_APP_RELEASE_APP_ID_DRIFT")
-    if (
-        app.get("type") != "backend"
-        or app.get("framework") != CANONICAL_FRAMEWORK
-        or app.get("branch_name") != CANONICAL_BRANCH
-        or _repository(app) != CANONICAL_REPOSITORY
-    ):
+    expected_shape = (
+        app.get("type") == "backend"
+        and app.get("framework") == CANONICAL_FRAMEWORK
+        and app.get("branch_name") == CANONICAL_BRANCH
+        and _repository(app) == CANONICAL_REPOSITORY
+    )
+    if not expected_shape:
         _stop("TIMEWEB_APP_RELEASE_APP_SHAPE_DRIFT")
     if app.get("is_auto_deploy") is not False:
         _stop("TIMEWEB_APP_RELEASE_AUTODEPLOY_FORBIDDEN")
 
-    envs = _mapping(app.get("envs"), "TIMEWEB_APP_RELEASE_ENV_INVALID")
-    expected_env = {
+
+def _expected_runtime_env(expected: str) -> dict[str, str]:
+    return {
         "OMNI_V10_HOSTED_RUNTIME": "1",
         "OMNI_V10_PUBLIC_HOSTNAME": CANONICAL_PUBLIC_HOSTNAME,
         RELEASE_SHA_ENV: expected,
@@ -328,43 +333,70 @@ def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, st
         PUBLIC_MULTI_USER_ENV: "false",
         TELEGRAM_LOGIN_ENV: "false",
     }
-    for name, value in expected_env.items():
+
+
+def _validate_runtime_env(app: dict[str, Any], expected: str) -> str:
+    envs = _mapping(app.get("envs"), "TIMEWEB_APP_RELEASE_ENV_INVALID")
+    for name, value in _expected_runtime_env(expected).items():
         if envs.get(name) != value:
             _stop(f"TIMEWEB_APP_RELEASE_ENV_DRIFT:{name}")
     if str(envs.get(VK_LOGIN_ENV, "")).lower() not in {"", "0", "false"}:
         _stop("TIMEWEB_APP_RELEASE_VK_ACTIVATION_FORBIDDEN")
+
     dsn = envs.get(POSTGRES_DSN_ENV)
     if not isinstance(dsn, str) or not dsn.strip():
         _stop("TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED")
     _mask(dsn)
-    for name in envs:
-        upper = str(name).upper()
-        if any(marker in upper for marker in _RETIRED_ENV_MARKERS):
-            _stop("TIMEWEB_APP_RELEASE_RETIRED_PROVIDER_ENV_PRESENT")
 
-    candidate = _host(
+    retired_names = [
+        str(name)
+        for name in envs
+        if any(marker in str(name).upper() for marker in _RETIRED_ENV_MARKERS)
+    ]
+    if retired_names:
+        _stop("TIMEWEB_APP_RELEASE_RETIRED_PROVIDER_ENV_PRESENT")
+
+    return _host(
         envs.get(CANDIDATE_HOSTNAME_ENV),
         "TIMEWEB_APP_RELEASE_CANDIDATE_HOST_INVALID",
     )
-    domains = {
+
+
+def _domain_names(app: dict[str, Any]) -> set[str]:
+    raw_domains = app.get("domains")
+    if not isinstance(raw_domains, list):
+        _stop("TIMEWEB_APP_RELEASE_DOMAINS_INVALID")
+    return {
         _host(
             _mapping(row, "TIMEWEB_APP_RELEASE_DOMAINS_INVALID").get("fqdn"),
             "TIMEWEB_APP_RELEASE_DOMAINS_INVALID",
         )
-        for row in app.get("domains", [])
+        for row in raw_domains
     }
+
+
+def _validate_candidate_domains(app: dict[str, Any], candidate: str) -> None:
+    domains = _domain_names(app)
     if candidate not in domains:
         _stop("TIMEWEB_APP_RELEASE_CANDIDATE_DOMAIN_MISSING")
     if CANONICAL_PUBLIC_HOSTNAME in domains:
         _stop("TIMEWEB_APP_RELEASE_PREMATURE_CANONICAL_DOMAIN")
-    return app, app_id, candidate
 
+
+def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, str]:
+    match = _matching_app_row(api)
+    app_id = _safe_id(match.get("id"), _APP_ID_INVALID)
+    app = _mapping(api.get_app(app_id).get("app"), "TIMEWEB_APP_RELEASE_APP_INVALID")
+    _validate_app_shape(app, app_id)
+    candidate = _validate_runtime_env(app, expected)
+    _validate_candidate_domains(app, candidate)
+    return app, app_id, candidate
 
 def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) -> None:
     request = Request(
         f"https://{hostname}/livez",
         headers={
-            "Accept": "application/json",
+            "Accept": _JSON_CONTENT_TYPE,
             "User-Agent": "omni-cio-v10-timeweb-livez",
         },
         method="GET",
@@ -407,25 +439,35 @@ def _reconcile(api: ApiLike, app_id: str, before: frozenset[str], expected: str)
     _stop("TIMEWEB_APP_RELEASE_AMBIGUOUS_UNRESOLVED")
 
 
+def _deploy_status_for_id(
+    api: ApiLike,
+    app_id: str,
+    deploy_id: str,
+    expected: str,
+) -> str | None:
+    matched: str | None = None
+    for row in _deploys(api, app_id):
+        current_id, commit, status = _deploy(row)
+        if current_id != deploy_id:
+            continue
+        if matched is not None:
+            _stop("TIMEWEB_APP_RELEASE_DEPLOY_ID_NOT_UNIQUE")
+        if commit != expected:
+            _stop("TIMEWEB_APP_RELEASE_DEPLOY_SHA_DRIFT")
+        matched = status
+    return matched
+
+
 def _wait(api: ApiLike, app_id: str, deploy_id: str, expected: str) -> None:
     for delay in _POLL_DELAYS:
         if delay:
             api.sleeper(delay)
-        matches = []
-        for row in _deploys(api, app_id):
-            current_id, commit, status = _deploy(row)
-            if current_id == deploy_id:
-                if commit != expected:
-                    _stop("TIMEWEB_APP_RELEASE_DEPLOY_SHA_DRIFT")
-                matches.append(status)
-        if len(matches) > 1:
-            _stop("TIMEWEB_APP_RELEASE_DEPLOY_ID_NOT_UNIQUE")
-        if matches == ["success"]:
+        status = _deploy_status_for_id(api, app_id, deploy_id, expected)
+        if status == "success":
             return
-        if matches and matches[0] in _TERMINAL_FAILURE:
-            _stop(f"TIMEWEB_APP_RELEASE_DEPLOY_TERMINAL_{matches[0].upper()}")
+        if status in _TERMINAL_FAILURE:
+            _stop(f"TIMEWEB_APP_RELEASE_DEPLOY_TERMINAL_{status.upper()}")
     _stop("TIMEWEB_APP_RELEASE_DEPLOY_TIMEOUT")
-
 
 def observe(
     api: ApiLike, expected: str, *, livez_opener: Any | None = None
@@ -441,21 +483,13 @@ def observe(
     return _last_known_good(_deploys(api, app_id), expected)
 
 
-def deploy(
+def _perform_exact_deploy(
     api: ApiLike,
+    app_id: str,
+    hostname: str,
     expected: str,
-    confirmation: str,
-    *,
-    livez_opener: Any | None = None,
-) -> str | None:
-    if confirmation != DEPLOY_CONFIRMATION:
-        _stop("TIMEWEB_APP_RELEASE_CONFIRMATION_REQUIRED")
-    app, app_id, hostname = _candidate_app(api, expected)
-    before_rows = _deploys(api, app_id)
-    last_known_good = _last_known_good(before_rows, expected)
-    if app.get("status") == "active" and app.get(_COMMIT_SHA_KEY) == expected:
-        _verify_livez(hostname, expected, opener=livez_opener)
-        return last_known_good
+    before_rows: list[dict[str, Any]],
+) -> None:
     before = frozenset(_deploy(row)[0] for row in before_rows)
     try:
         response = api.deploy_once(app_id, expected)
@@ -468,6 +502,7 @@ def deploy(
         deploy_id, commit, _status = _deploy(row)
         if commit != expected or deploy_id in before:
             _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
+
     _wait(api, app_id, deploy_id, expected)
     refreshed, refreshed_id, refreshed_hostname = _candidate_app(api, expected)
     if refreshed_id != app_id or refreshed_hostname != hostname:
@@ -480,9 +515,29 @@ def deploy(
         != expected
     ):
         _stop("TIMEWEB_APP_RELEASE_POSTDEPLOY_NOT_ACTIVE")
+
+
+def deploy(
+    api: ApiLike,
+    expected: str,
+    confirmation: str,
+    *,
+    livez_opener: Any | None = None,
+) -> str | None:
+    if confirmation != DEPLOY_CONFIRMATION:
+        _stop("TIMEWEB_APP_RELEASE_CONFIRMATION_REQUIRED")
+
+    app, app_id, hostname = _candidate_app(api, expected)
+    before_rows = _deploys(api, app_id)
+    last_known_good = _last_known_good(before_rows, expected)
+    already_active = (
+        app.get("status") == "active" and app.get(_COMMIT_SHA_KEY) == expected
+    )
+    if not already_active:
+        _perform_exact_deploy(api, app_id, hostname, expected, before_rows)
+
     _verify_livez(hostname, expected, opener=livez_opener)
     return last_known_good
-
 
 def run(
     *,
