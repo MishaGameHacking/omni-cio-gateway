@@ -902,6 +902,7 @@ def _validate_documentation(root: Path) -> None:
             "P1 / SOURCE_RUNTIME_CONVERGENCE",
             "V9C-A→V9C-F",
             "P2 / TIMEWEB_EXACT_SHA_CANDIDATE",
+            "P3 / POSTGRES18_PRODUCTION_CUTOVER",
             _ACCEPTED_V9,
             "PR #584",
         ),
@@ -910,6 +911,7 @@ def _validate_documentation(root: Path) -> None:
             "| V9C-E | CI_RECOVERY_CONVERGENCE | CERTIFIED_GREEN |",
             f"| {_CURRENT_CHECKPOINT} | WHOLE_TREE_LEGACY_ABSENCE_PROOF | CERTIFIED_GREEN |",
             "P2-TIMEWEB-EXACT-SHA-CANDIDATE",
+            "P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER",
         ),
         AGENTS.relative_to(ROOT): (
             _V9_MIGRATION_SOURCE_MARKER,

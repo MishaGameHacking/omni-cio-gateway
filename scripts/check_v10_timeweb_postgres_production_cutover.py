@@ -24,6 +24,7 @@ _CONTROL_PLANE_SECRET = "${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}"
 _BOOTSTRAP_DSN_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}"
 _RUNTIME_DSN_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}"
 _RECOVERY_ATTESTATION_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION }}"
+_GITHUB_INVALID = "TIMEWEB_PG_CUTOVER_GITHUB_INVALID"
 
 
 class CutoverContractError(RuntimeError):
@@ -169,7 +170,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         not isinstance(github, dict)
         or github.get("environment") != "timeweb-production"
     ):
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_GITHUB_INVALID")
+        raise CutoverContractError(_GITHUB_INVALID)
     _true_map(
         github,
         (
@@ -180,10 +181,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             "provider_token_accept_only",
             "production_dsns_step_scoped",
         ),
-        "TIMEWEB_PG_CUTOVER_GITHUB_INVALID",
+        _GITHUB_INVALID,
     )
     if github.get("recovery_attestation_as_actions_secret_allowed") is not False:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_GITHUB_INVALID")
+        raise CutoverContractError(_GITHUB_INVALID)
 
     _false_map(
         payload.get("protected_invariants"),

@@ -19,11 +19,15 @@ assert SPEC.loader is not None
 guard = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(guard)
 
+WORKFLOW_RELATIVE = Path(
+    ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+)
+
 DEPENDENCIES = (
     "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
     "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOOK.md",
     "scripts/timeweb_postgres_production_cutover.py",
-    ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
+    WORKFLOW_RELATIVE.as_posix(),
     "infrastructure/postgres/hosted-postgres-runtime-contract.json",
     "infrastructure/postgres/hosted-recovery-contract.json",
 )
@@ -80,7 +84,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             root = Path(temporary)
             _copy(root)
             path = (
-                root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+                root / WORKFLOW_RELATIVE
             )
             source = path.read_text(encoding="utf-8")
             path.write_text(
@@ -115,7 +119,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             root = Path(temporary)
             _copy(root)
             path = (
-                root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+                root / WORKFLOW_RELATIVE
             )
             source = path.read_text(encoding="utf-8")
             path.write_text(
@@ -134,7 +138,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             root = Path(temporary)
             _copy(root)
             path = (
-                root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+                root / WORKFLOW_RELATIVE
             )
             source = path.read_text(encoding="utf-8")
             marker = (

@@ -52,8 +52,18 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     assert (
         payload["mutation"]["validate_all_inputs_before_first_store_mutation"] is True
     )
-    assert payload["verification"]["tls_verification_may_be_disabled"] is False
-    assert payload["verification"]["hostname_verification_may_be_disabled"] is False
+    verification = payload["verification"]
+    assert verification["package_index_tls_probe_retries"] == 2
+    assert verification["package_index_tls_probe_timeout_seconds"] == 10
+    assert verification["package_index_tls_probe_retry_scope"] == (
+        "NEW_HTTP_CONNECTION_ONLY"
+    )
+    assert (
+        verification["package_index_tls_probe_retry_may_disable_tls_verification"]
+        is False
+    )
+    assert verification["tls_verification_may_be_disabled"] is False
+    assert verification["hostname_verification_may_be_disabled"] is False
     assert payload["verification"]["ci_pip_trust"] == {
         "mode": "ephemeral_pip_cert_bundle",
         "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
@@ -187,6 +197,17 @@ def test_tbank_ca_checker_uses_ephemeral_pinned_pip_bundle() -> None:
     assert '"t-tech-investments"' in source
     assert '"--retries"' in source
     assert '"--timeout"' in source
+    assert (
+        "$probeRetries = "
+        "[int]$contract.verification.package_index_tls_probe_retries"
+    ) in source
+    assert (
+        "$probeTimeoutSeconds = "
+        "[int]$contract.verification.package_index_tls_probe_timeout_seconds"
+    ) in source
+    assert '"TBANK_PACKAGE_INDEX_SECURE_PROBE_NOT_READY"' in source
+    assert '"--retries",\n        "0"' not in source
+    assert "TBANK_CA_TRUST_PROBE_POLICY_INVALID" in source
     assert "Start-Process" in source
     assert "RedirectStandardOutput" in source
     assert "RedirectStandardError" in source

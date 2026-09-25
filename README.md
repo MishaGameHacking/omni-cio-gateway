@@ -29,7 +29,7 @@ This box is not a second progress ledger. Exact state is only `knowledge/17_V10_
 
 ## V9→V10 convergence inside PR #584
 
-Current branch-local checkpoint is `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`. `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT` is branch-local `CERTIFIED_GREEN` on exact head `80fec000845f93929e204144ce6d4b22db29bcc0` (19/19 observed repository workflows `success`, unresolved review threads 0). V9C-E provider-neutral CI/recovery convergence and V9C-F whole-tree legacy-absence guards are implemented on the replacement source, but that new head must complete its own exact-head verification before P2 begins. Protected V9 compatibility remains isolated at `app:app`; Git history remains the historical archive.
+P1 convergence is closed through `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`; V9C-D, V9C-E and V9C-F are branch-local `CERTIFIED_GREEN`, with the complete P1 checkpoint proven on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`. P2 exact-SHA Timeweb App candidate is also branch-local `CERTIFIED_GREEN` on `ba43fa4be350340557fcf6d8532b6c089022a8ca`. The current integrated member is P3 PostgreSQL 18 production cutover/recovery control in `RED_REPAIR_ONLY / REPLACEMENT_HEAD_VERIFICATION_PENDING`; P4 remains blocked until P3 is exact-head GREEN. Protected V9 compatibility remains isolated at `app:app`; Git history remains the historical archive.
 
 A stale `v9/*` branch merge is explicitly forbidden: the accepted V9 target is already an ancestor of current main.
 

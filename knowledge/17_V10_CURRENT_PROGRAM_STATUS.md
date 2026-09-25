@@ -1,10 +1,10 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-09-24
+Updated: 2026-09-25
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A ACCEPTED VIA PR #583 WITH EXACT-MAIN POST-MERGE GREEN / P1 SOURCE-RUNTIME CONVERGENCE BRANCH-LOCAL CERTIFIED GREEN ON 738d8c623d3002fd2eb312a6bce96c35bd45f75f / P2 TIMEWEB EXACT-SHA CANDIDATE IMPLEMENTED WITH REPLACEMENT-HEAD VERIFICATION PENDING / AMENDMENT 21 FULL PRODUCTION DELIVERY IMPLEMENTATION AUTHORIZED IN PR #584 / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A ACCEPTED VIA PR #583 WITH EXACT-MAIN POST-MERGE GREEN / P1 SOURCE-RUNTIME CONVERGENCE BRANCH-LOCAL CERTIFIED GREEN ON 738d8c623d3002fd2eb312a6bce96c35bd45f75f / P2 TIMEWEB EXACT-SHA CANDIDATE BRANCH-LOCAL CERTIFIED GREEN ON ba43fa4be350340557fcf6d8532b6c089022a8ca / P3 POSTGRES18 PRODUCTION CUTOVER IMPLEMENTED / RED_REPAIR_ONLY / REPLACEMENT-HEAD VERIFICATION PENDING / AMENDMENT 21 FULL PRODUCTION DELIVERY IMPLEMENTATION AUTHORIZED IN PR #584 / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -24,7 +24,7 @@ PR #582 remains the accepted CI/provider-authority split. TW-A then completed th
 
 TW-A / INVENTORY_AND_AUTHORITY is therefore `CERTIFIED_GREEN / ACCEPTED`. Focused CA-trust repairs PR #585 and PR #586 were subsequently accepted on protected `main`; the current accepted base for PR #584 remains exact main `26bdc17c4e5d68c262f47b999e975b1eb8651858`.
 
-P1 / SOURCE_RUNTIME_CONVERGENCE is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`: all 25 observed exact-head checks completed `success`, including the authoritative Windows merge gate, Engineering Governance, Fast PR/toolchain/WP owning audits and SonarCloud with 0 new issues / 0 Security Hotspots. V9C-A→V9C-F are therefore closed as P1 evidence. The current internal checkpoint is P2 / TIMEWEB_EXACT_SHA_CANDIDATE; its controller/workflow/contract are implemented in the next replacement head and require a fresh exact-head verification batch before P3 may begin.
+P1 / SOURCE_RUNTIME_CONVERGENCE is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`: all 25 observed exact-head checks completed `success`, including the authoritative Windows merge gate, Engineering Governance, Fast PR/toolchain/WP owning audits and SonarCloud with 0 new issues / 0 Security Hotspots. V9C-A→V9C-F are therefore closed as P1 evidence. P2 / TIMEWEB_EXACT_SHA_CANDIDATE is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`: all 19 observed repository workflows completed `success`, SonarCloud reported 0 new issues / 0 Security Hotspots, and unresolved review threads were zero. The current internal checkpoint is P3 / POSTGRES18_PRODUCTION_CUTOVER; its repository implementation is in `RED_REPAIR_ONLY / REPLACEMENT_HEAD_VERIFICATION_PENDING`. No production database mutation or recovery acceptance is inferred from source implementation. P4 remains blocked until P3 is exact-head GREEN.
 
 On 2026-09-24 the OWNER explicitly widened PR #584 branch-local implementation authority through Amendment 21. The same integrated branch may now implement the complete repository-side six-milestone production-delivery chain: source/runtime convergence; exact-SHA Timeweb App Platform candidate/release control; PostgreSQL 18 production cutover/recovery control; `omnicio.ru` DNS/TLS/public-ingress acceptance; Telegram-only public activation control; and post-merge production acceptance/rollback proof. External paid/provider/network, database cutover, DNS/TLS, secret, legal/privacy, public activation, destructive cleanup and merge actions remain independent fail-closed gates and are not fabricated by source implementation.
 

@@ -2,7 +2,7 @@
 
 Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается в PR #584.
 
-OWNER-approved convergence выполняется внутри той же ветки #584. `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT` уже branch-local `CERTIFIED_GREEN` на exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; текущий checkpoint — `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`. V9C-E provider-neutral CI/recovery convergence и V9C-F whole-tree absence guards реализованы, но новый exact head должен пройти полный GREEN до начала P2. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
+OWNER-approved convergence выполняется внутри той же ветки #584. P1 закрыт через `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` и branch-local `CERTIFIED_GREEN` на exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; P2 exact-SHA Timeweb App candidate branch-local `CERTIFIED_GREEN` на `ba43fa4be350340557fcf6d8532b6c089022a8ca`. Текущий integrated checkpoint — P3 PostgreSQL 18 production cutover/recovery control в `RED_REPAIR_ONLY / REPLACEMENT_HEAD_VERIFICATION_PENDING`; P4 нельзя начинать до exact-head GREEN P3. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 

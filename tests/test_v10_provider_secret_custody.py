@@ -25,6 +25,9 @@ TIMEWEB_APP_CANDIDATE_WORKFLOW = Path(".github/workflows/v10-timeweb-app-candida
 TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW = Path(
     ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 )
+TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW_RELATIVE = (
+    TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW.as_posix()
+)
 RETIRED_HOSTED_WORKFLOW = Path(".github/workflows/v10-hosted-release-alignment.yml")
 RETIRED_PREVIEW_WORKFLOW = Path(".github/workflows/v10-phase4-free-preview-deploy.yml")
 RETIRED_NEON_EGRESS_WORKFLOW = Path(".github/workflows/v10-neon-egress-boundary.yml")
@@ -161,7 +164,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
                 ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml",
                 ".github/workflows/v10-timeweb-ipv4-allocation.yml",
                 ".github/workflows/v10-timeweb-app-candidate.yml",
-                ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
+                TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW_RELATIVE,
             ],
         )
         self.assertEqual(
@@ -170,7 +173,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         )
         self.assertEqual(
             roles["timeweb_production_cutover_workflow"],
-            ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
+            TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW_RELATIVE,
         )
         self.assertEqual(
             roles["timeweb_production_database_binding_environment"],
@@ -263,7 +266,7 @@ class ProviderSecretCustodyTests(unittest.TestCase):
         self.assertEqual(
             set(
                 contract["active_workflows"][
-                    ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+                    TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW_RELATIVE
                 ]
             ),
             {

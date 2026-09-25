@@ -19,9 +19,7 @@ SYNTHETIC_CREATE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-synthetic-create.y
 PUBLIC_IPV4_TLS_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-public-ipv4-tls.yml"
 TIMEWEB_ALLOCATION_WORKFLOW = WORKFLOWS / "v10-timeweb-ipv4-allocation.yml"
 APP_CANDIDATE_WORKFLOW = WORKFLOWS / "v10-timeweb-app-candidate.yml"
-PRODUCTION_CUTOVER_WORKFLOW = (
-    WORKFLOWS / "v10-timeweb-postgres-production-cutover.yml"
-)
+PRODUCTION_CUTOVER_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-production-cutover.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
 _PRODUCTION_ENVIRONMENT_NAME = "timeweb-production"

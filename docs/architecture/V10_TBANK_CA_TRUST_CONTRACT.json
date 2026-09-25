@@ -36,6 +36,10 @@
     "installed_certificates_must_be_current": true,
     "package_index_tls_probe_client": "pip",
     "package_index_tls_probe_read_only": true,
+    "package_index_tls_probe_retries": 2,
+    "package_index_tls_probe_timeout_seconds": 10,
+    "package_index_tls_probe_retry_scope": "NEW_HTTP_CONNECTION_ONLY",
+    "package_index_tls_probe_retry_may_disable_tls_verification": false,
     "tls_verification_may_be_disabled": false,
     "hostname_verification_may_be_disabled": false,
     "windows_dependency_consumers": [

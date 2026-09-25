@@ -60,7 +60,9 @@ without a new explicit OWNER instruction.
 - Current logical checkpoint ID: `P3-POSTGRES18-PRODUCTION-CUTOVER`
 - P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
 - P2 exact-SHA candidate implementation is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; all 19 observed repository workflows completed `success` and unresolved review threads were zero.
-- P3 repository implementation is `IMPLEMENTED_VERIFICATION_PENDING`; no production database mutation or recovery acceptance is claimed by source implementation alone.
+- P3 repository implementation is `IMPLEMENTED_VERIFICATION_PENDING / RED_REPAIR_ONLY`; no production database mutation or recovery acceptance is claimed by source implementation alone.
+- Machine checkpoint anchor: `P2-TIMEWEB-EXACT-SHA-CANDIDATE` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
+- Machine checkpoint anchor: `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER` = `IMPLEMENTED_VERIFICATION_PENDING`.
 - Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
@@ -378,9 +380,15 @@ creation/capacity, immutable network selection, production DB migration/cutover,
 mutation, production secrets, BotFather registration, legal/privacy actions, public-user
 activation, destructive decommission and PR landing remain independent fail-closed gates.
 
-Current implementation checkpoint after this ledger change:
-`P0_FULL_PRODUCTION_DELIVERY_AUTHORITY_AND_CONTRACT`.
+At Amendment-21 acceptance, the branch-local implementation checkpoint was
+`P0_FULL_PRODUCTION_DELIVERY_AUTHORITY_AND_CONTRACT`. That historical checkpoint
+has since been superseded by proven execution evidence: P1 closed through V9C-F,
+and P2 is branch-local `CERTIFIED_GREEN` on exact head
+`ba43fa4be350340557fcf6d8532b6c089022a8ca`.
 
-No production provider mutation is performed by P0. A fresh exact-head verification
-batch is mandatory before P2 implementation begins.
+The current member checkpoint is
+`P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER / IMPLEMENTED_VERIFICATION_PENDING`.
+No production provider mutation or recovery acceptance is claimed by repository
+implementation. P4 remains blocked until a replacement P3 exact head is fully
+certified GREEN.
 
