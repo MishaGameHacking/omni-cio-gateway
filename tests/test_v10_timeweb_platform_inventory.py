@@ -257,6 +257,13 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             )
         )
         self.assertTrue(inventory._should_scan_content("apps/api/hosted_preview.py"))
+        self.assertEqual(
+            inventory._classify_path(
+                ".github/workflows/v10-timeweb-worktree-convergence-audit.yml",
+                self.payload,
+            ),
+            "KEEP",
+        )
 
     def test_matcher_inputs_are_bounded(self) -> None:
         too_many_values = [

@@ -25,8 +25,7 @@ class TimewebWorktreeConvergenceTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         contract_path = (
-            root
-            / "docs/architecture/V10_TIMEWEB_WORKTREE_CONVERGENCE_CONTRACT.json"
+            root / "docs/architecture/V10_TIMEWEB_WORKTREE_CONVERGENCE_CONTRACT.json"
         )
         contract_path.parent.mkdir(parents=True, exist_ok=True)
         contract_path.write_text(json.dumps(contract), encoding="utf-8")
@@ -48,9 +47,7 @@ class TimewebWorktreeConvergenceTests(unittest.TestCase):
     def test_reintroduced_retired_path_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self._fixture_root(temporary)
-            retired = (
-                root / "omni_cio/web/external_access_v1.py"
-            )
+            retired = root / "omni_cio/web/external_access_v1.py"
             retired.parent.mkdir(parents=True, exist_ok=True)
             retired.write_text("legacy = True\n", encoding="utf-8")
             with self.assertRaisesRegex(

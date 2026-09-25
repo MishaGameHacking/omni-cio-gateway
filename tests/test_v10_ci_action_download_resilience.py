@@ -180,9 +180,13 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
                     failures.append(f"{name} missing current retry contract: {marker}")
 
             if text.count("for bootstrap_attempt in 1 2 3; do") != 1:
-                failures.append(f"{name} must have exactly one repository bootstrap retry loop")
+                failures.append(
+                    f"{name} must have exactly one repository bootstrap retry loop"
+                )
             if text.count("exit 70") != 1:
-                failures.append(f"{name} must fail closed once after bootstrap exhaustion")
+                failures.append(
+                    f"{name} must fail closed once after bootstrap exhaustion"
+                )
             if "continue-on-error: true" in text:
                 failures.append(f"{name} must not soften current critical verification")
 

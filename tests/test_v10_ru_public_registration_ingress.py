@@ -30,6 +30,9 @@ WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.
 WP22A_CLIENTLESS_WORKFLOW = (
     ROOT / ".github/workflows/v10-wp22a-clientless-access-audit.yml"
 )
+TIMEWEB_CONVERGENCE_WORKFLOW = (
+    ROOT / ".github/workflows/v10-timeweb-worktree-convergence-audit.yml"
+)
 WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW = (
     ROOT / ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
 )
@@ -288,8 +291,14 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ],
         )
 
-    def test_retired_clientless_provider_workflow_is_removed(self) -> None:
+    def test_retired_clientless_provider_workflow_is_replaced(self) -> None:
         self.assertFalse(WP22A_CLIENTLESS_WORKFLOW.exists())
+        workflow = TIMEWEB_CONVERGENCE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("name: V10 Timeweb Worktree Convergence Audit", workflow)
+        self.assertIn("check_v10_timeweb_worktree_convergence", workflow)
+        self.assertIn("WP22A clientless external-access gate", workflow)
+        self.assertNotIn("validate_wp22a_terraform.ps1", workflow)
+        self.assertNotIn("external_access_v1.py", workflow)
 
     def test_historical_phase4_render_probe_is_not_active_ci(self) -> None:
         workflow = WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW.read_text(encoding="utf-8")

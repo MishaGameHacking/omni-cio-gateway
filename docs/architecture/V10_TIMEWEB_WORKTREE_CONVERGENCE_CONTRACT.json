@@ -24,6 +24,7 @@
     "infrastructure/cloudflare/wp22a/"
   ],
   "protected_present_paths": [
+    ".github/workflows/v10-timeweb-worktree-convergence-audit.yml",
     "render.yaml",
     "Dockerfile",
     "apps/api/hosted_app.py",

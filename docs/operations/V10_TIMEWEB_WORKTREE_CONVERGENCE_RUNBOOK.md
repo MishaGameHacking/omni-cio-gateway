@@ -16,13 +16,16 @@ incident remains a separate response boundary.
 ## Phase A — clientless Cloudflare removal
 
 The first deletion phase removes the dormant Cloudflare/WP22A clientless remote stack,
-its complete `infrastructure/cloudflare/wp22a/` subtree, Windows/bootstrap code,
-dedicated workflow and tests. These surfaces
+its complete `infrastructure/cloudflare/wp22a/` subtree, Windows/bootstrap code and
+dedicated tests. The legacy workflow path is replaced by
+`.github/workflows/v10-timeweb-worktree-convergence-audit.yml`, which executes only
+Timeweb convergence/inventory guards. These surfaces
 have no current Timeweb runtime authority and no current deployed consumer.
 
 The phase is accepted only when:
 
-- every path in the convergence contract is physically absent from the current tree;
+- every retired path/prefix in the convergence contract is physically absent;
+- the Timeweb convergence workflow is present and contains no retired provider execution;
 - current Timeweb runtime sources contain no import/reference to that stack;
 - no remaining GitHub workflow invokes the retired scripts or modules;
 - protected V9 `render.yaml` still starts `app:app`;
@@ -36,3 +39,15 @@ After Phase A is source-certified, the same PR may continue with separately revi
 internal phases for retired Render/Neon/Cloudflare runtime removal, Telegram-only auth
 source convergence, and legacy documentation pruning/canonicalization. Each phase must
 close producers, consumers, tests and governance in one coherent batch.
+
+
+## Required-check compatibility
+
+The GitHub App connection used for repository automation cannot read branch-protection
+administration settings. GitHub requires a configured required status check to report on
+the latest commit before merge. P5.5 therefore preserves the historical check-run context
+`WP22A clientless external-access gate` inside the new Timeweb-named convergence
+workflow while deleting the old workflow path and every retired clientless implementation
+consumer. This is a merge-safety compatibility alias, not provider/runtime authority.
+It can be retired only after branch-protection configuration is independently proven not
+to require that context.

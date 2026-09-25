@@ -708,6 +708,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
             ".github/workflows/live-gateway-authority.yml",
             ".github/workflows/regression-shield.yml",
             ".github/workflows/self-hosted-windows-smoke.yml",
+            ".github/workflows/v10-timeweb-worktree-convergence-audit.yml",
             _RENDER_CONFIG_PATH,
         }
     )

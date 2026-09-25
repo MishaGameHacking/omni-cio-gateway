@@ -7,10 +7,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = (
-    ROOT
-    / "docs/architecture/V10_TIMEWEB_WORKTREE_CONVERGENCE_CONTRACT.json"
-)
+CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_WORKTREE_CONVERGENCE_CONTRACT.json"
 _MAX_PATHS = 128
 _MAX_MARKERS = 64
 _EXPECTED_SCHEMA = "omni-cio.v10.timeweb-worktree-convergence.v1"
@@ -22,9 +19,7 @@ def _read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
-        raise RuntimeError(
-            f"TIMEWEB_WORKTREE_SOURCE_UNREADABLE:{path.name}"
-        ) from exc
+        raise RuntimeError(f"TIMEWEB_WORKTREE_SOURCE_UNREADABLE:{path.name}") from exc
 
 
 def _load_contract(path: Path) -> dict[str, Any]:
@@ -56,8 +51,7 @@ def _string_list(
     if not isinstance(value, list) or not value or len(value) > maximum:
         raise RuntimeError(f"TIMEWEB_WORKTREE_LIST_INVALID:{key}")
     rows = tuple(
-        _safe_relative(item, f"TIMEWEB_WORKTREE_PATH_INVALID:{key}")
-        for item in value
+        _safe_relative(item, f"TIMEWEB_WORKTREE_PATH_INVALID:{key}") for item in value
     )
     if len(rows) != len(set(rows)):
         raise RuntimeError(f"TIMEWEB_WORKTREE_LIST_DUPLICATE:{key}")
@@ -125,9 +119,7 @@ def _assert_absent_prefixes(root: Path, prefixes: tuple[str, ...]) -> None:
     for prefix in prefixes:
         directory = root / prefix.rstrip("/")
         if directory.exists() or directory.is_symlink():
-            raise RuntimeError(
-                f"TIMEWEB_WORKTREE_RETIRED_PREFIX_PRESENT:{prefix}"
-            )
+            raise RuntimeError(f"TIMEWEB_WORKTREE_RETIRED_PREFIX_PRESENT:{prefix}")
 
 
 def _assert_present(root: Path, relative_paths: tuple[str, ...]) -> None:
@@ -161,8 +153,7 @@ def _workflow_paths(root: Path) -> tuple[str, ...]:
 
 def validate(root: Path = ROOT) -> None:
     contract_path = (
-        root
-        / "docs/architecture/V10_TIMEWEB_WORKTREE_CONVERGENCE_CONTRACT.json"
+        root / "docs/architecture/V10_TIMEWEB_WORKTREE_CONVERGENCE_CONTRACT.json"
     )
     payload = _load_contract(contract_path)
     _validate_contract(payload)
@@ -205,10 +196,7 @@ def main() -> int:
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print(
-        "V10_TIMEWEB_WORKTREE_CONVERGENCE=PASS "
-        "phase=CLIENTLESS_CLOUDFLARE_REMOVAL"
-    )
+    print("V10_TIMEWEB_WORKTREE_CONVERGENCE=PASS phase=CLIENTLESS_CLOUDFLARE_REMOVAL")
     return 0
 
 

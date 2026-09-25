@@ -342,6 +342,10 @@
     "docs/operations/V10_TIMEWEB_WORKTREE_CONVERGENCE_RUNBOOK.md": {
       "classification": "KEEP",
       "reason": "Current P5.5 Timeweb worktree convergence execution runbook."
+    },
+    ".github/workflows/v10-timeweb-worktree-convergence-audit.yml": {
+      "classification": "KEEP",
+      "reason": "Current P5.5 Timeweb worktree-convergence audit; preserves the prior required check context without executing retired provider tooling."
     }
   },
   "path_rules": [
@@ -497,7 +501,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 247,
+  "expected_provider_named_file_count": 248,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
