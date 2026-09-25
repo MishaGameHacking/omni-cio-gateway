@@ -4,6 +4,8 @@ from contextlib import redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
+import shutil
+import tempfile
 import unittest
 from urllib.parse import urlsplit
 
@@ -15,6 +17,22 @@ ROOT = Path(__file__).resolve().parents[1]
 SHA = "a" * 40
 ROLLBACK_SHA = "b" * 40
 DIGESTS = tuple(character * 64 for character in "123456")
+CONTRACT = (
+    "docs/architecture/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_CONTRACT.json"
+)
+DEPENDENCIES = (
+    CONTRACT,
+    "scripts/timeweb_production_acceptance.py",
+    ".github/workflows/v10-timeweb-post-merge-production-acceptance.yml",
+)
+
+
+def _copy_guard_dependencies(root: Path) -> None:
+    for relative in DEPENDENCIES:
+        source = ROOT / relative
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 class _Response:
@@ -86,6 +104,31 @@ def _accepted_kwargs() -> dict[str, str]:
 class TimewebPostMergeProductionAcceptanceTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         guard.validate(ROOT)
+
+    def test_execution_access_policy_is_fail_closed(self) -> None:
+        payload = json.loads((ROOT / CONTRACT).read_text(encoding="utf-8"))
+        execution = payload["execution"]
+        access_keys = [key for key in execution if key.endswith("_access_allowed")]
+        self.assertEqual(len(access_keys), 1)
+        self.assertFalse(execution[access_keys[0]])
+
+    def test_guard_rejects_execution_access_widening(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_guard_dependencies(root)
+            contract_path = root / CONTRACT
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            execution = payload["execution"]
+            access_keys = [key for key in execution if key.endswith("_access_allowed")]
+            self.assertEqual(len(access_keys), 1)
+            execution[access_keys[0]] = True
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_P6_EXECUTION_ACCESS_POLICY_DRIFT",
+            ):
+                guard.validate(root)
 
     def test_acceptance_seal_is_deterministic_and_source_bound(self) -> None:
         evidence = acceptance._validated_evidence(**_accepted_kwargs())
