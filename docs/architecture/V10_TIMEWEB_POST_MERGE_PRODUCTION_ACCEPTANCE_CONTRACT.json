@@ -1,0 +1,63 @@
+{
+  "schema": "omni-cio.v10.timeweb-post-merge-production-acceptance.v1",
+  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+  "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+  "owning_pr": 584,
+  "milestone": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
+  "canonical_origin": "https://omnicio.ru",
+  "canonical_redirect_uri": "https://omnicio.ru/api/v10/web/auth/telegram/callback",
+  "execution": {
+    "manual_only": true,
+    "exact_main_required": true,
+    "source_mutation_allowed": false,
+    "provider_mutation_allowed": false,
+    "secret_access_allowed": false,
+    "controller": "scripts/timeweb_production_acceptance.py",
+    "guard": "scripts/check_v10_timeweb_post_merge_production_acceptance.py",
+    "workflow": ".github/workflows/v10-timeweb-post-merge-production-acceptance.yml",
+    "runbook": "docs/operations/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_RUNBOOK.md",
+    "confirmation": "ACCEPT_TIMEWEB_PRODUCTION_RELEASE"
+  },
+  "required_evidence": {
+    "p2_candidate_evidence_sha256": true,
+    "p3_cutover_evidence_sha256": true,
+    "p4_ingress_evidence_sha256": true,
+    "p5_readiness_sha256": true,
+    "p5_live_evidence_sha256": true,
+    "rollback_release_sha": true,
+    "rollback_evidence_sha256": true,
+    "rollback_release_must_differ_from_new_release": true
+  },
+  "live_probes": {
+    "liveness_path": "/livez",
+    "readiness_path": "/healthz",
+    "provider_descriptor_path": "/api/v10/web/auth/providers",
+    "liveness_status": "ok",
+    "readiness_status": "ok",
+    "database_state": "READY",
+    "synthetic_preview": false,
+    "sole_provider": "telegram",
+    "provider_enabled": true,
+    "exact_release_sha_required": true
+  },
+  "acceptance_seal": {
+    "schema": "omni-cio.v10.timeweb-production-acceptance-seal.v1",
+    "algorithm": "SHA-256",
+    "canonical_json_sort_keys": true,
+    "binds_exact_release_sha": true,
+    "binds_all_required_evidence": true,
+    "binds_canonical_origin": true,
+    "success_marker": "TIMEWEB_PRODUCTION_ACCEPTANCE=ACCEPTED"
+  },
+  "protected_invariants": {
+    "browser_tenant_selection": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "transfer_withdrawal": false,
+    "margin_leverage": false,
+    "uncovered_short": false,
+    "web_visual_started": false,
+    "wp23_unlocked": false
+  }
+}

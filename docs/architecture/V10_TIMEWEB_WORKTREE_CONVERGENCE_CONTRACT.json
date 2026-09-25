@@ -78,5 +78,31 @@
     "broker_write": false,
     "trading_methods": false,
     "REAL_TRADING_ENABLED": false
+  },
+  "runtime_reachability": {
+    "production_entry_module": "apps.api.hosted_runtime",
+    "required_reachable_modules": [
+      "apps.api.telegram_auth",
+      "omni_cio.web.telegram_auth_routes_v1",
+      "omni_cio.web.telegram_auth_services_v1"
+    ],
+    "inventory_path": "docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json",
+    "scan_roots": [
+      "apps",
+      "omni_cio"
+    ],
+    "retired_classifications": [
+      "HISTORY",
+      "RETIRE_NOW_AFTER_AUTHORITY",
+      "RETIRE_AFTER_CUTOVER"
+    ],
+    "forbidden_module_fragments": [
+      "cloudflare",
+      "neon",
+      "render",
+      "cloudru",
+      "vk_id"
+    ],
+    "retained_history_may_exist_when_unreachable": true
   }
 }

@@ -346,6 +346,38 @@
     ".github/workflows/v10-timeweb-worktree-convergence-audit.yml": {
       "classification": "KEEP",
       "reason": "Current P5.5 Timeweb worktree-convergence audit; preserves the prior required check context without executing retired provider tooling."
+    },
+    "docs/architecture/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_CONTRACT.json": {
+      "classification": "KEEP",
+      "reason": "Current P6 exact-main production acceptance contract."
+    },
+    "scripts/timeweb_production_acceptance.py": {
+      "classification": "KEEP",
+      "reason": "Current P6 read-only live-product acceptance-seal controller."
+    },
+    "scripts/check_v10_timeweb_post_merge_production_acceptance.py": {
+      "classification": "KEEP",
+      "reason": "Current deterministic P6 source/authority guard."
+    },
+    "tests/test_v10_timeweb_post_merge_production_acceptance.py": {
+      "classification": "KEEP",
+      "reason": "Current P6 exact-main/rollback/provider regression evidence."
+    },
+    ".github/workflows/v10-timeweb-post-merge-production-acceptance.yml": {
+      "classification": "KEEP",
+      "reason": "Current manual-only P6 public-probe acceptance workflow."
+    },
+    "docs/operations/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_RUNBOOK.md": {
+      "classification": "KEEP",
+      "reason": "Current P6 exact-main production acceptance runbook."
+    },
+    "scripts/check_v10_timeweb_runtime_reachability.py": {
+      "classification": "KEEP",
+      "reason": "Current AST import-graph verifier for Timeweb production reachability."
+    },
+    "tests/test_v10_timeweb_runtime_reachability.py": {
+      "classification": "KEEP",
+      "reason": "Current reachability regression evidence."
     }
   },
   "path_rules": [
@@ -501,7 +533,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 248,
+  "expected_provider_named_file_count": 256,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
@@ -516,6 +548,6 @@
     "circleci"
   ],
   "accepted_pr": 583,
-  "current_milestone": "P5_TELEGRAM_PUBLIC_ACTIVATION",
+  "current_milestone": "P5_5_TIMEWEB_WORKTREE_CONVERGENCE",
   "current_branch": "system/timeweb-platform-consolidation-tw-b"
 }

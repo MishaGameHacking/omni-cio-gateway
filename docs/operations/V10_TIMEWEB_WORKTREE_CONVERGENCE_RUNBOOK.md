@@ -33,7 +33,24 @@ The phase is accepted only when:
 - Timeweb/Telegram/public-user and broker/Real-money authority remain fail-closed;
 - exact-head CI, Sonar and the authoritative Windows merge gate are GREEN.
 
-## Later internal phases
+## Phase B — production import-graph convergence
+
+After Phase A, current product safety is proved from the executable import graph rather
+than filename folklore. `scripts/check_v10_timeweb_runtime_reachability.py` starts at
+`apps.api.hosted_runtime`, parses repository-local Python imports with the stdlib AST,
+and walks the complete reachable module graph.
+
+Acceptance requires:
+
+- `apps.api.telegram_auth`, `omni_cio.web.telegram_auth_routes_v1` and
+  `omni_cio.web.telegram_auth_services_v1` are reachable from the production entrypoint;
+- no module classified `HISTORY`, `RETIRE_NOW_AFTER_AUTHORITY` or
+  `RETIRE_AFTER_CUTOVER` in the Timeweb provider inventory is reachable;
+- no reachable module name contains a retired provider fragment;
+- historical source may remain only when it is unreachable from the production entrypoint
+  and has no active workflow authority.
+
+## Remaining internal phases
 
 After Phase A is source-certified, the same PR may continue with separately reviewed
 internal phases for retired Render/Neon/Cloudflare runtime removal, Telegram-only auth

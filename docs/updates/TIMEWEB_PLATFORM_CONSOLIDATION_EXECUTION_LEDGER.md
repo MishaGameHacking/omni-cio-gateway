@@ -606,3 +606,20 @@ requires the accepted multi-tenant/provider-auth migrations to remain present.
 
 This is current-worktree cleanup only. Git history is not rewritten, no provider
 resource is mutated, and Telegram/public-user/broker/Real-money authority is not widened.
+
+
+### P5.5 Phase B + P6 source hardening — 2026-09-25
+
+The clean prior P5.5 checkpoint is superseded by this source hardening batch.
+
+Phase B adds an AST-based production import-graph proof rooted at
+`apps.api.hosted_runtime`: Telegram auth modules must be reachable while every provider
+module classified HISTORY/RETIRE is forbidden from the production-reachable graph.
+
+P6 adds a manual-only, secret-free exact-main production acceptance controller. It
+re-probes `/livez`, `/healthz` and the sole enabled Telegram provider, then binds
+sanitized P2/P3/P4/P5 plus rollback evidence into one deterministic SHA-256 seal.
+
+No provider mutation, DNS/DB mutation, Telegram credential value, public-user flag,
+broker-write, Real Trading, WEB-VISUAL or WP23+ authority is introduced. Fresh exact-head
+verification is required.

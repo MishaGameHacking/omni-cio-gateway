@@ -219,6 +219,25 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
 
         assert_keys_are_safe(payload)
 
+    def test_p6_source_machinery_is_implemented_fail_closed(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        states = {row["id"]: row["state"] for row in payload["branch_milestones"]}
+        self.assertEqual(
+            states["P6_POST_MERGE_PRODUCTION_ACCEPTANCE"],
+            "IMPLEMENTED_VERIFICATION_PENDING",
+        )
+        p6 = payload["post_merge_acceptance"]
+        self.assertTrue(p6["exact_main_required"])
+        self.assertTrue(p6["public_probe_only"])
+        self.assertFalse(p6["provider_mutation_allowed"])
+        self.assertFalse(p6["secret_access_allowed"])
+        self.assertEqual(p6["acceptance_seal_algorithm"], "SHA-256")
+
 
 if __name__ == "__main__":
     unittest.main()

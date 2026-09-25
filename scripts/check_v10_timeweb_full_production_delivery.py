@@ -320,6 +320,24 @@ def _validate_telegram(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_TELEGRAM_CALLBACK_DRIFT")
 
 
+def _validate_post_merge_acceptance(payload: dict[str, Any]) -> None:
+    expected = {
+        "contract": "docs/architecture/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_CONTRACT.json",
+        "controller": "scripts/timeweb_production_acceptance.py",
+        "guard": "scripts/check_v10_timeweb_post_merge_production_acceptance.py",
+        "workflow": ".github/workflows/v10-timeweb-post-merge-production-acceptance.yml",
+        "runbook": "docs/operations/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_RUNBOOK.md",
+        "exact_main_required": True,
+        "public_probe_only": True,
+        "provider_mutation_allowed": False,
+        "secret_access_allowed": False,
+        "acceptance_seal_algorithm": "SHA-256",
+        "rollback_evidence_required": True,
+    }
+    if _section(payload, "post_merge_acceptance") != expected:
+        raise RuntimeError("TIMEWEB_FULL_DELIVERY_P6_DRIFT")
+
+
 def _validate_external_gates(payload: dict[str, Any]) -> None:
     gates = _section(payload, "external_action_gates")
     required = {
@@ -360,7 +378,7 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
         },
         {
             "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
-            "state": "AUTHORIZED_IMPLEMENTATION_POST_MERGE_EXECUTION",
+            "state": "IMPLEMENTED_VERIFICATION_PENDING",
         },
     ]
     if payload.get("branch_milestones") != expected:
@@ -434,7 +452,8 @@ def validate(root: Path = ROOT) -> None:
         _validate_postgres(payload)
         _validate_public_ingress(payload)
         _validate_telegram(payload)
-        _validate_external_gates(payload)
+        _validate_post_merge_acceptance(payload)
+    _validate_external_gates(payload)
         _validate_milestones(payload)
         _validate_protected_invariants(payload)
     finally:

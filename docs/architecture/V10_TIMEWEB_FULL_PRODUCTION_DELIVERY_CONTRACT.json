@@ -150,7 +150,7 @@
     },
     {
       "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
-      "state": "AUTHORIZED_IMPLEMENTATION_POST_MERGE_EXECUTION"
+      "state": "IMPLEMENTED_VERIFICATION_PENDING"
     }
   ],
   "protected_invariants": {
@@ -164,5 +164,18 @@
     "web_visual_started": false,
     "wp23_unlocked": false,
     "merge_without_exact_head_confirmation": false
+  },
+  "post_merge_acceptance": {
+    "contract": "docs/architecture/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_CONTRACT.json",
+    "controller": "scripts/timeweb_production_acceptance.py",
+    "guard": "scripts/check_v10_timeweb_post_merge_production_acceptance.py",
+    "workflow": ".github/workflows/v10-timeweb-post-merge-production-acceptance.yml",
+    "runbook": "docs/operations/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_RUNBOOK.md",
+    "exact_main_required": true,
+    "public_probe_only": true,
+    "provider_mutation_allowed": false,
+    "secret_access_allowed": false,
+    "acceptance_seal_algorithm": "SHA-256",
+    "rollback_evidence_required": true
   }
 }
