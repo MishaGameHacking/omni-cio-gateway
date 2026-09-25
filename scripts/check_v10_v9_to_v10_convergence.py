@@ -23,13 +23,19 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 PYPROJECT = ROOT / "pyproject.toml"
 DOCKERFILE = ROOT / "Dockerfile"
-HOSTED_RECOVERY_CONTRACT = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
-TIMEWEB_DELIVERY_CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+HOSTED_RECOVERY_CONTRACT = (
+    ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
+)
+TIMEWEB_DELIVERY_CONTRACT = (
+    ROOT / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+)
 
 _ACCEPTED_V9 = "".join(("b9e4fabc", "b54f8f6e", "0ba206f0", "30c35f2f", "afa2ce62"))
 _ACCEPTED_MAIN = "".join(("26bdc17c", "4e5d68c2", "62f47b99", "9e975b1e", "b8651858"))
 _BRANCH = "system/timeweb-platform-consolidation-tw-b"
 _CURRENT_CHECKPOINT = "V9C-F"
+_PACKAGE_INIT_FILENAME = "__init__.py"
+_PROTECTED_V9_ENTRYPOINT = "app:app"
 _V9_MIGRATION_SOURCE_MARKER = "V9 migration source"
 _REQUIRED_CHECKPOINTS = (
     "V9C-A_AUTHORITY_AND_INVENTORY",
@@ -198,7 +204,9 @@ def _validate_identity(contract: dict[str, Any]) -> None:
         raise RuntimeError("V9C_IDENTITY_DRIFT:accepted_main_at_authority_restore")
     if tuple(contract.get("checkpoints", ())) != _REQUIRED_CHECKPOINTS:
         raise RuntimeError("V9C_CHECKPOINT_ORDER_DRIFT")
-    states = _mapping(contract.get("checkpoint_states"), "V9C_CHECKPOINT_STATES_INVALID")
+    states = _mapping(
+        contract.get("checkpoint_states"), "V9C_CHECKPOINT_STATES_INVALID"
+    )
     if states != _EXPECTED_CHECKPOINT_STATES:
         raise RuntimeError("V9C_CHECKPOINT_STATE_DRIFT")
 
@@ -225,7 +233,7 @@ def _validate_runtime_target(contract: dict[str, Any]) -> None:
         "application_entrypoint": "apps.api.hosted_runtime:create_app",
         "database": "TIMEWEB_POSTGRESQL_18_AFTER_TW_D",
         "human_login_provider": "TELEGRAM_LOGIN_ONLY",
-        "protected_v9_compatibility_entrypoint": "app:app",
+        "protected_v9_compatibility_entrypoint": _PROTECTED_V9_ENTRYPOINT,
         "protected_v9_compatibility_preserved": True,
         "v10_runtime_legacy_import_allowed": False,
     }
@@ -336,7 +344,7 @@ def _dynamic_import_module(node: ast.AST) -> str | None:
 
 def _module_name(relative: Path) -> str:
     module_path = (
-        relative.parent if relative.name == "__init__.py" else relative.with_suffix("")
+        relative.parent if relative.name == _PACKAGE_INIT_FILENAME else relative.with_suffix("")
     )
     return ".".join(module_path.parts)
 
@@ -345,7 +353,7 @@ def _local_module_path(root: Path, module: str) -> Path | None:
     if not module:
         return None
     relative = Path(*module.split("."))
-    candidates = (relative.with_suffix(".py"), relative / "__init__.py")
+    candidates = (relative.with_suffix(".py"), relative / _PACKAGE_INIT_FILENAME)
     return next(
         (candidate for candidate in candidates if (root / candidate).is_file()),
         None,
@@ -356,7 +364,7 @@ def _import_from_base(relative: Path, node: ast.ImportFrom) -> str | None:
     if node.level == 0:
         return node.module
     package_parts = _module_name(relative).split(".")
-    if relative.name != "__init__.py":
+    if relative.name != _PACKAGE_INIT_FILENAME:
         package_parts = package_parts[:-1]
     ascent = node.level - 1
     if ascent > len(package_parts):
@@ -465,7 +473,7 @@ def _validate_runtime_entrypoint_convergence(root: Path) -> None:
     dockerfile = _text(root / DOCKERFILE.relative_to(ROOT))
     if "apps.api.hosted_runtime:create_app" not in dockerfile:
         raise RuntimeError("V9C_TIMEWEB_ENTRYPOINT_MISSING")
-    for forbidden in ("app:app", "main:app", "app_v360", "app_v371"):
+    for forbidden in (_PROTECTED_V9_ENTRYPOINT, "main:app", "app_v360", "app_v371"):
         if forbidden in dockerfile:
             raise RuntimeError(f"V9C_TIMEWEB_LEGACY_ENTRYPOINT_CONSUMER:{forbidden}")
     if _validate_current_runtime_dependency_graph(root) < 2:
@@ -817,7 +825,9 @@ def _validate_deletion_and_authority(contract: dict[str, Any]) -> None:
 
 def _validate_ci_recovery_convergence(root: Path) -> None:
     recovery = _json(root / HOSTED_RECOVERY_CONTRACT.relative_to(ROOT))
-    authority = _mapping(recovery.get("authority"), "V9C_CURRENT_RECOVERY_AUTHORITY_INVALID")
+    authority = _mapping(
+        recovery.get("authority"), "V9C_CURRENT_RECOVERY_AUTHORITY_INVALID"
+    )
     expected_authority = {
         "provider": "PROVIDER_NEUTRAL_POSTGRESQL_18",
         "source_only": True,
@@ -826,7 +836,7 @@ def _validate_ci_recovery_convergence(root: Path) -> None:
         "public_multi_user_enabled": False,
         "trading_methods_enabled": False,
         "real_trading_enabled": False,
-        "protected_v9_entrypoint": "app:app",
+        "protected_v9_entrypoint": _PROTECTED_V9_ENTRYPOINT,
         "wp23_unlocked": False,
     }
     for key, value in expected_authority.items():

@@ -348,7 +348,9 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["authority"]["provider"] = "RENDER"
             path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "V9C_CURRENT_RECOVERY_PROVIDER_DRIFT"):
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_CURRENT_RECOVERY_PROVIDER_DRIFT"
+            ):
                 guard.validate(root)
 
     def test_rejects_timeweb_production_autodeploy_authority(self) -> None:
@@ -359,7 +361,9 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["release"]["production_autodeploy_allowed"] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "V9C_TIMEWEB_RELEASE_AUTHORITY_DRIFT"):
+            with self.assertRaisesRegex(
+                RuntimeError, "V9C_TIMEWEB_RELEASE_AUTHORITY_DRIFT"
+            ):
                 guard.validate(root)
 
     def test_rejects_merge_without_new_owner_instruction(self) -> None:
