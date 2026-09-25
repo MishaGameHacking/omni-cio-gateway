@@ -165,6 +165,43 @@ def validate_self_hosted_repository_bootstrap(
     )
 
 
+_PR_BASE_CURRENT_MARKER = (
+    'CURRENT_BASE_SHA="$(git rev-parse refs/remotes/origin/base)"'
+)
+_PR_BASE_COMPARE_MARKER = 'if [ "$CURRENT_BASE_SHA" != "$BASE_SHA" ]; then'
+_PR_BASE_STALE_MARKER = "exact-head evidence is stale"
+_PR_BASE_ANCESTRY_MARKER = (
+    'test "$(git merge-base "$BASE_SHA" "$EXPECTED_HEAD")" = "$BASE_SHA"'
+)
+
+
+def validate_pr_base_freshness(
+    path: Path,
+    text: str,
+    failures: list[str],
+    *,
+    required_occurrences: int,
+    require_ancestry: bool,
+) -> None:
+    markers = (
+        "BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+        "BASE_REF: ${{ github.event.pull_request.base.ref }}",
+        "refs/remotes/origin/base",
+        _PR_BASE_CURRENT_MARKER,
+        _PR_BASE_COMPARE_MARKER,
+        _PR_BASE_STALE_MARKER,
+    )
+    for marker in markers:
+        if text.count(marker) < required_occurrences:
+            failures.append(
+                f"{display(path)} must bind PR evidence to the current base branch: "
+                f"{marker}"
+            )
+    if require_ancestry and _PR_BASE_ANCESTRY_MARKER not in text:
+        failures.append(
+            f"{display(path)} must prove current PR base is an ancestor of exact head"
+        )
+
 def validate_common_workflow(path: Path, failures: list[str]) -> str:
     if not path.is_file():
         failures.append(f"missing mandatory workflow: {display(path)}")
@@ -190,6 +227,13 @@ def validate_fast_workflow(failures: list[str]) -> None:
         failures.append(
             "Fast PR Checks must not consume repository/environment secrets"
         )
+    validate_pr_base_freshness(
+        FAST_WORKFLOW,
+        text,
+        failures,
+        required_occurrences=1,
+        require_ancestry=True,
+    )
 
     if "python -m ruff format --check ." in text:
         failures.append(
@@ -309,6 +353,13 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
         return
     if PATH_FILTER.search(text):
         failures.append("V10 Toolchain Compatibility may not use PR path filters")
+    validate_pr_base_freshness(
+        TOOLCHAIN_WORKFLOW,
+        text,
+        failures,
+        required_occurrences=1,
+        require_ancestry=True,
+    )
 
     blocked = _hosted_capacity_blocked(failures)
     if blocked:
@@ -401,6 +452,13 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
             "Authoritative Lenovo gate must not install toolchains at job runtime; "
             "clean V10 toolchain compatibility remains a separate evidence lane"
         )
+    validate_pr_base_freshness(
+        AUTHORITATIVE_WORKFLOW,
+        text,
+        failures,
+        required_occurrences=2,
+        require_ancestry=False,
+    )
     validate_authoritative_gate_order(text, failures)
     require_tokens(
         text,

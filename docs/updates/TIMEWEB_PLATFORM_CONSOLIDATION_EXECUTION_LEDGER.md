@@ -544,3 +544,12 @@ must prove the bounded single-application topology.
 
 These changes introduce no new dependency, provider mutation, secret value, public-user
 activation, TLS exception, broker write or Real-money authority.
+
+
+### P5 merge-base freshness hardening — 2026-09-25
+
+Pre-merge review found a stale-evidence class that ordinary exact-head checks did not close: the Fast/Toolchain bootstraps fetched the current base branch but only proved that the event-time `BASE_SHA` object existed. If protected `main` advanced after the pull-request event, an otherwise GREEN exact-head cycle could therefore remain attached to an obsolete base. The authoritative Windows bootstrap also fetched only the pull-request head and did not independently compare the event base to the current protected base.
+
+The correction is fail-closed and does not weaken any CI lane. Fast PR and Toolchain Compatibility now require the current fetched base SHA to equal the event `BASE_SHA` and prove that exact base is an ancestor of the exact head. Both authoritative Windows jobs independently fetch the current base branch and reject any event/current-base mismatch before substantive verification. `check_v10_regression_shield.py` now guards those workflow invariants and focused regression tests reject stale/unbound base contracts.
+
+Result: advancing `main` invalidates old PR evidence instead of allowing it to be treated as merge-ready. A fresh exact-head/base verification cycle is required after every base movement.

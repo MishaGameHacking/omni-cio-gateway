@@ -118,6 +118,49 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
                 failures,
             )
 
+    def test_pr_base_freshness_rejects_stale_or_unbound_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workflow.yml"
+            failures: list[str] = []
+            shield.validate_pr_base_freshness(
+                path,
+                "BASE_SHA: ${{ github.event.pull_request.base.sha }}\n"
+                "BASE_REF: ${{ github.event.pull_request.base.ref }}\n",
+                failures,
+                required_occurrences=1,
+                require_ancestry=True,
+            )
+            self.assertTrue(
+                any("current base branch" in failure for failure in failures),
+                failures,
+            )
+            self.assertTrue(
+                any("ancestor of exact head" in failure for failure in failures),
+                failures,
+            )
+
+    def test_pr_base_freshness_accepts_current_base_and_ancestry_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workflow.yml"
+            failures: list[str] = []
+            source = (
+                "BASE_SHA: ${{ github.event.pull_request.base.sha }}\n"
+                "BASE_REF: ${{ github.event.pull_request.base.ref }}\n"
+                "refs/remotes/origin/base\n"
+                'CURRENT_BASE_SHA="$(git rev-parse refs/remotes/origin/base)"\n'
+                'if [ "$CURRENT_BASE_SHA" != "$BASE_SHA" ]; then\n'
+                "  echo exact-head evidence is stale\n"
+                "fi\n"
+                'test "$(git merge-base "$BASE_SHA" "$EXPECTED_HEAD")" = "$BASE_SHA"\n'
+            )
+            shield.validate_pr_base_freshness(
+                path,
+                source,
+                failures,
+                required_occurrences=1,
+                require_ancestry=True,
+            )
+            self.assertEqual(failures, [])
     def test_python_contract_requires_test_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

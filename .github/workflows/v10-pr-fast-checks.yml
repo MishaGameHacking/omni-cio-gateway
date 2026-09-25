@@ -77,10 +77,13 @@ jobs:
             exit 70
           fi
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            CURRENT_BASE_SHA="$(git rev-parse refs/remotes/origin/base)"
+            if [ "$CURRENT_BASE_SHA" != "$BASE_SHA" ]; then
+              echo "PR base moved after this workflow event; exact-head evidence is stale." >&2
+              exit 71
+            fi
             git cat-file -e "${BASE_SHA}^{commit}"
-          fi
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            git cat-file -e "${BASE_SHA}^{commit}"
+            test "$(git merge-base "$BASE_SHA" "$EXPECTED_HEAD")" = "$BASE_SHA"
           fi
           git checkout --detach "$EXPECTED_HEAD"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
