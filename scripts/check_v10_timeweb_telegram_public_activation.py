@@ -134,9 +134,7 @@ def _validate_contract(root: Path) -> None:
         "silent_key_rotation_allowed": False,
         "existing_binding_rekey_requires_reviewed_migration": True,
     }:
-        raise RuntimeError(
-            "TIMEWEB_TELEGRAM_ACTIVATION_IDENTITY_CONTINUITY_INVALID"
-        )
+        raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_IDENTITY_CONTINUITY_INVALID")
 
     capacity = _mapping(
         contract.get("capacity_safety"),
