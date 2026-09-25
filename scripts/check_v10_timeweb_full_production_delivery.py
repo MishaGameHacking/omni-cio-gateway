@@ -213,6 +213,8 @@ def _validate_runtime(payload: dict[str, Any]) -> None:
     runtime = _section(payload, "runtime")
     _validate_runtime_contract(runtime)
     _validate_runtime_sources()
+
+
 def _validate_postgres(payload: dict[str, Any]) -> None:
     postgres = _section(payload, "postgres")
     expected = {

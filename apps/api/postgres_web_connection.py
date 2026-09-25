@@ -149,6 +149,19 @@ class _PooledTransaction:
             self._owns_connection = False
             raise
 
+    def _release_owned_connection(self, connection: Any, *, reusable: bool) -> None:
+        if not self._owns_connection:
+            return
+        unbound = False
+        try:
+            self._owner._unbind_transaction_connection(connection)
+            unbound = True
+        finally:
+            if reusable and unbound:
+                self._owner._return_connection(connection)
+            else:
+                self._owner._discard_connection(connection)
+
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool | None:
         transaction = self._transaction
         connection = self._connection
@@ -161,12 +174,7 @@ class _PooledTransaction:
             return result
         finally:
             try:
-                if self._owns_connection:
-                    self._owner._unbind_transaction_connection(connection)
-                    if reusable:
-                        self._owner._return_connection(connection)
-                    else:
-                        self._owner._discard_connection(connection)
+                self._release_owned_connection(connection, reusable=reusable)
             finally:
                 self._transaction = None
                 self._connection = None

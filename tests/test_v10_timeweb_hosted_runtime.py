@@ -424,6 +424,13 @@ def _execute_pool_once_in_worker(pool: _BoundedWebConnectionPool) -> object:
         return future.result(timeout=1.0).fetchone()
 
 
+def _force_transaction_affinity_drift(pool: _BoundedWebConnectionPool) -> None:
+    with pool.transaction():
+        connection = pool._transaction_connection()
+        assert connection is not None
+        pool._unbind_transaction_connection(connection)
+
+
 def test_serialized_web_connection_reconnects_before_next_operation() -> None:
     stale = _ReconnectableRawConnection(closed=True)
     replacement = _ReconnectableRawConnection()
@@ -561,6 +568,32 @@ def test_bounded_pool_discards_connection_when_transaction_exit_fails() -> None:
         _execute_pool_transaction(pool, "SELECT 1")
 
     assert initial.execute_calls == 1
+    assert _execute_pool_transaction(pool, "SELECT 1") == ("replacement",)
+    assert connect_calls == ["connect"]
+
+
+def test_bounded_pool_discards_connection_on_affinity_cleanup_drift() -> None:
+    initial = _PoolRawConnection("initial")
+    replacement = _PoolRawConnection("replacement")
+    connect_calls: list[str] = []
+
+    def connect() -> _PoolRawConnection:
+        connect_calls.append("connect")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        initial,
+        connect=connect,
+        max_size=1,
+        acquire_timeout_seconds=1.0,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="WEB_RUNTIME_POSTGRES_TRANSACTION_AFFINITY_DRIFT",
+    ):
+        _force_transaction_affinity_drift(pool)
+
     assert _execute_pool_transaction(pool, "SELECT 1") == ("replacement",)
     assert connect_calls == ["connect"]
 
