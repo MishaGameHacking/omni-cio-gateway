@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import tempfile
 import unittest
@@ -60,6 +60,13 @@ def _copy(root: Path) -> None:
 class V9ToV10ConvergenceGuardTests(unittest.TestCase):
     def test_current_repository_passes(self) -> None:
         guard.validate()
+
+    def test_repository_contract_paths_are_runner_os_independent(self) -> None:
+        windows_path = PureWindowsPath(r"gpt\PROJECT_INSTRUCTIONS.md")
+        self.assertEqual(
+            guard._repository_contract_path(windows_path),
+            "gpt/PROJECT_INSTRUCTIONS.md",
+        )
 
     def test_rejects_invalid_segmented_sha_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

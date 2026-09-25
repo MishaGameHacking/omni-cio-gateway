@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
-from pathlib import Path
+from pathlib import Path, PurePath
 import sys
 from typing import Any
 
@@ -111,6 +111,11 @@ _RETIRED_PROVIDER_WORKFLOW_PATHS = (
     Path(".github/workflows/v10-neon-egress-boundary.yml"),
 )
 _PROTECTED_V9_GPT_MARKER = "PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHORITY"
+
+
+def _repository_contract_path(path: PurePath) -> str:
+    """Serialize repository-relative paths independently of runner OS semantics."""
+    return path.as_posix()
 _VERIFIER_WORKFLOW_RELATIVE_PATHS = (
     Path(".github/workflows/v10-pr-fast-checks.yml"),
     Path(".github/workflows/regression-shield.yml"),
@@ -539,15 +544,15 @@ def _validate_provider_worktree_retirement(
     if retirement.get(history_key) is not True:
         raise RuntimeError("V9C_PROVIDER_HISTORY_WORKTREE_POLICY_DRIFT")
     if tuple(retirement.get("current_gpt_authority", ())) != tuple(
-        str(path) for path in _CURRENT_GPT_AUTHORITY_PATHS
+        _repository_contract_path(path) for path in _CURRENT_GPT_AUTHORITY_PATHS
     ):
         raise RuntimeError("V9C_CURRENT_GPT_AUTHORITY_SET_DRIFT")
     if tuple(retirement.get("protected_v9_gpt_recovery", ())) != tuple(
-        str(path) for path in _PROTECTED_V9_GPT_RECOVERY_PATHS
+        _repository_contract_path(path) for path in _PROTECTED_V9_GPT_RECOVERY_PATHS
     ):
         raise RuntimeError("V9C_V9_GPT_RECOVERY_SET_DRIFT")
     if tuple(retirement.get("retired_provider_workflows", ())) != tuple(
-        str(path) for path in _RETIRED_PROVIDER_WORKFLOW_PATHS
+        _repository_contract_path(path) for path in _RETIRED_PROVIDER_WORKFLOW_PATHS
     ):
         raise RuntimeError("V9C_RETIRED_WORKFLOW_SET_DRIFT")
     if (
