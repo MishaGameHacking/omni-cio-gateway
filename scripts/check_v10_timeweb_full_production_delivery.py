@@ -453,7 +453,7 @@ def validate(root: Path = ROOT) -> None:
         _validate_public_ingress(payload)
         _validate_telegram(payload)
         _validate_post_merge_acceptance(payload)
-    _validate_external_gates(payload)
+        _validate_external_gates(payload)
         _validate_milestones(payload)
         _validate_protected_invariants(payload)
     finally:

@@ -623,3 +623,29 @@ sanitized P2/P3/P4/P5 plus rollback evidence into one deterministic SHA-256 seal
 No provider mutation, DNS/DB mutation, Telegram credential value, public-user flag,
 broker-write, Real Trading, WEB-VISUAL or WP23+ authority is introduced. Fresh exact-head
 verification is required.
+
+
+### P5.5/P6 first-head RED defect-class closure — 2026-09-25
+
+Exact head `78c37ef2cd19470ca5f5e0e9b7ae686e8fbe67d0` is superseded for
+acceptance. Five repository checks failed, but the failures collapse into two source
+defect classes introduced by the same P5.5/P6 publication batch.
+
+First, a mechanical insertion left one full-delivery validation call outside the
+`try` suite, producing a deterministic SyntaxError. Engineering Governance, Timeweb
+Worktree Convergence, Fast PR and the authoritative Windows merge gate all independently
+exposed the same defect through repository-integrity or compile checks.
+
+Second, newly authored P6/reachability Python was published in compressed one-line form
+without the pinned Ruff-equivalent preflight. WP15 reported 28 E701/E702 findings.
+Sonar also identified maintainability findings in complexity, exception-test scope and
+one unused parameter.
+
+Root cause: the batch was assembled programmatically and published before the mandatory
+final local syntax/style/maintainability pass. The existing guards behaved correctly.
+
+Systemic correction restores valid `try/finally` structure, expands the affected Python
+into canonical style, decomposes the two high-complexity validators, removes the unused
+parameter and leaves setup outside expected-exception scopes. No quality threshold,
+security control, provider boundary, TLS verification, public-user state or money
+authority is weakened. Fresh exact-head verification is required.
