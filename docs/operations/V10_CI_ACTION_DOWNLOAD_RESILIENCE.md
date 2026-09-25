@@ -84,12 +84,11 @@ Issue #406 therefore activates bounded transport retry only for the direct curre
 - `v10-wp20-research-dossier-audit.yml`;
 - `v10-wp21-decision-risk-plan-audit.yml`;
 - `v10-wp22-system-admin-audit.yml`;
-- `v10-wp22a-clientless-access-audit.yml`;
 - `v10-wp22a-phase2-product-auth-audit.yml`;
 - `v10-phase4-free-preview-deploy.yml`;
 - `v10-hosted-release-alignment.yml`.
 
-The first eleven workflows receive the same accepted three-attempt bootstrap transport contract and pre-`HEAD`-safe cleanup used by PR #405. Project tests, Web builds, security gates and provider mutations remain outside the retry loop.
+The first ten workflows receive the same accepted three-attempt bootstrap transport contract and pre-`HEAD`-safe cleanup used by PR #405. Project tests, Web builds, security gates and provider mutations remain outside the retry loop.
 
 `v10-hosted-release-alignment.yml` additionally owns a second, post-probe current-main fetch that protects against a TOCTOU race before runtime PASS is published. That reconfirmation now has its own bounded three-attempt read-only transport retry. It does **not** delete or recreate the already verified working repository; exhaustion fails non-zero and withholds runtime PASS. A successful reconfirmation still compares current `main` with the exact expected SHA and reports `SUPERSEDED_BY_NEWER_MAIN` rather than publishing stale PASS when main moved.
 
@@ -126,3 +125,13 @@ The resilience regression test is executed by Engineering Governance and the ful
 - product implementation remains paused; WP23+ remains locked.
 
 This maintenance package carries zero product-progress credit.
+
+
+### 2026-09-25 P5.5 worktree convergence
+
+P5.5 worktree convergence removes the dormant WP22A clientless audit and its retired
+Cloudflare/remote-access implementation from the current repository tree. The workflow
+therefore leaves the current self-hosted dependency-consumer set; historical bootstrap
+failure-learning remains in Git history and the engineering failure-learning ledgers.
+The surviving self-hosted workflows keep the same bounded repository-bootstrap and
+T-Bank CA preflight requirements.

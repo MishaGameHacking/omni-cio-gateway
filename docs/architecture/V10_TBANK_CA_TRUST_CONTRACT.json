@@ -55,7 +55,6 @@
       ".github/workflows/v10-wp20-research-dossier-audit.yml",
       ".github/workflows/v10-wp21-decision-risk-plan-audit.yml",
       ".github/workflows/v10-wp22-system-admin-audit.yml",
-      ".github/workflows/v10-wp22a-clientless-access-audit.yml",
       ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
     ],
     "every_windows_dependency_consumer_requires_preflight": true,
@@ -133,10 +132,6 @@
       {
         "workflow": ".github/workflows/v10-wp22-system-admin-audit.yml",
         "job": "system-admin"
-      },
-      {
-        "workflow": ".github/workflows/v10-wp22a-clientless-access-audit.yml",
-        "job": "wp22a-clientless"
       },
       {
         "workflow": ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml",

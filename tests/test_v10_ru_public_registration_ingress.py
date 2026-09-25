@@ -288,20 +288,8 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ],
         )
 
-    def test_active_ci_does_not_execute_retired_provider_tooling(self) -> None:
-        workflow = WP22A_CLIENTLESS_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn(
-            "Verify dormant clientless source contract without provider execution",
-            workflow,
-        )
-        self.assertNotIn(
-            "Validate Cloudflare IaC with pinned OpenTofu and provider mirror",
-            workflow,
-        )
-        self.assertNotIn(
-            "-File scripts\\validate_wp22a_terraform.ps1",
-            workflow,
-        )
+    def test_retired_clientless_provider_workflow_is_removed(self) -> None:
+        self.assertFalse(WP22A_CLIENTLESS_WORKFLOW.exists())
 
     def test_historical_phase4_render_probe_is_not_active_ci(self) -> None:
         workflow = WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW.read_text(encoding="utf-8")

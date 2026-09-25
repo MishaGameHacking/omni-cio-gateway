@@ -30,7 +30,7 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 | 3 | TW-C / TIMEWEB_APP_CANDIDATE | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; 19/19 observed workflows success; review threads 0 | P2 repository implementation certified; physical provider execution remains post-acceptance |
 | 4 | TW-D / TIMEWEB_POSTGRES_PRODUCTION_CUTOVER | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; 25/25 exact-head checks success; Sonar 0 issues/hotspots; review threads 0 | Source machinery certified; physical production DB mutation/recovery acceptance remains an independent external gate |
 | 5 | TW-E / TIMEWEB_PUBLIC_INGRESS_DNS | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c`; 19/19 applicable workflows success; review threads 0 | Source machinery certified; DNS/TLS/no-VPN acceptance remains an independent external split gate |
-| 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | IMPLEMENTED_VERIFICATION_PENDING | P5 two-phase evidence-sealed activation controller/workflow/guard/tests | Provider credential custody, legal/privacy/capacity and real-user acceptance remain fail-closed |
+| 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `ad50273642cc66f537070b4800f319857f7d0096`; 19/19 applicable workflows success; Sonar 0 issues/hotspots/annotations; review threads 0; `behind_by=0` | Source machinery certified; provider credentials, legal/privacy/capacity, public activation and real-user acceptance remain fail-closed |
 | 7 | TW-G / LEGACY_PROVIDER_DECOMMISSION | TODO |  | External proof + active-authority cleanup; repository history stays archive-in-place |
 
 Milestone state is branch-local only and does not change accepted V10 implementation progress.
@@ -56,17 +56,19 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: P5 Telegram/public-user activation implementation
-- Current logical checkpoint ID: `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION`
+- Current exact work item: P5.5 Timeweb current-worktree convergence
+- Current logical checkpoint ID: `P5.5-TIMEWEB-WORKTREE-CONVERGENCE`
 - P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
 - P2 exact-SHA candidate implementation is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; all 19 observed repository workflows completed `success` and unresolved review threads were zero.
 - P3 repository-side production-cutover/recovery implementation is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; all 25 exact-head checks completed `success`, Sonar reported 0 new issues / 0 Security Hotspots and unresolved review threads were zero. This does not claim physical production DB mutation or recovery acceptance.
 - P4 source machinery is branch-local `CERTIFIED_GREEN` on exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c`; external DNS/domain mutation and representative no-VPN evidence remain independent gates.
-- P5 source machinery is `IMPLEMENTED_VERIFICATION_PENDING`; production credential custody, legal/privacy/capacity and real-user evidence remain independent gates.
+- P5 source machinery is branch-local `CERTIFIED_GREEN` on exact head `ad50273642cc66f537070b4800f319857f7d0096`; production credential custody, legal/privacy/capacity, public activation and real-user evidence remain independent gates.
+- P5.5 current-worktree convergence is `IMPLEMENTED_VERIFICATION_PENDING`; the first internal phase removes only the dormant Cloudflare/WP22A clientless stack and installs an absence guard.
 - Machine checkpoint anchor: `P2-TIMEWEB-EXACT-SHA-CANDIDATE` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
 - Machine checkpoint anchor: `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
 - Machine checkpoint anchor: `P4-TIMEWEB-OMNICIO-RU-PUBLIC-INGRESS` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION` = `IMPLEMENTED_VERIFICATION_PENDING`.
+- Machine checkpoint anchor: `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
+- Machine checkpoint anchor: `P5.5-TIMEWEB-WORKTREE-CONVERGENCE` = `IMPLEMENTED_VERIFICATION_PENDING`.
 - Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
@@ -579,3 +581,28 @@ Exact head `eea1ae0944ddeadfd92a0e271fc1dcdcef9e92e9` is superseded for acceptan
 The correction is structural and keeps the Quality Gate unchanged. PostgreSQL checkout is decomposed into transaction-affinity, bounded-wait and unbound-queue helpers while preserving the same pool exhaustion/slot accounting semantics. Full-production runtime validation is split into contract and source-marker responsibilities. The timeout contract is normalized to canonical integer seconds (`5`), matching both JSON contracts. All affected exception tests move setup, evidence construction and executor orchestration outside `pytest.raises` / `assertRaisesRegex`, leaving one invocation in each expected-exception scope.
 
 No Sonar suppression, threshold increase, `NOSONAR`, Ruff exclusion, test weakening, provider mutation, TLS weakening, tenant-authority widening, broker write, `trading_methods` or `REAL_TRADING_ENABLED` change is introduced. Fresh exact-head CI and Sonar evidence is required after publication.
+
+
+### P5 final certification -> P5.5 worktree convergence — 2026-09-25
+
+Exact head `ad50273642cc66f537070b4800f319857f7d0096` completed all 19
+applicable repository workflows `success`. SonarQube Cloud completed `success`
+with 0 new issues, 0 Security Hotspots and 0 annotations; unresolved review threads
+were zero; the PR was mergeable, Draft, ahead-only and `behind_by=0`.
+
+The final P5 correction closed two exact-head RED classes without weakening guards:
+detector-safe non-secret test metadata removed two tracked-content secret-scan false
+positives, and the replacement test fixture represented a real SELECT cursor correctly
+while matching pinned Ruff formatting. The authoritative Windows lane then passed the
+protected Regression Shield, dependency audit and SAST.
+
+The next internal update is P5.5 / TIMEWEB_WORKTREE_CONVERGENCE. Phase A physically
+removes the dormant Cloudflare/WP22A clientless remote stack, its Terraform/Windows
+bootstrap code, dedicated workflow and dedicated tests. Active npm-audit, CI bootstrap,
+T-Bank CA and Timeweb inventory consumers are advanced in the same batch. A new
+machine guard requires the retired paths/subtree to remain absent, forbids surviving
+runtime/workflow references, preserves protected V9 `render.yaml -> app:app` and
+requires the accepted multi-tenant/provider-auth migrations to remain present.
+
+This is current-worktree cleanup only. Git history is not rewritten, no provider
+resource is mutated, and Telegram/public-user/broker/Real-money authority is not widened.

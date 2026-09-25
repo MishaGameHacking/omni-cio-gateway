@@ -91,10 +91,6 @@
       "classification": "HISTORY",
       "reason": "Historical Render/Neon Phase-4 acceptance workflow; archive-in-place and hard-disabled from automatic/live provider probing."
     },
-    ".github/workflows/v10-wp22a-clientless-access-audit.yml": {
-      "classification": "KEEP",
-      "reason": "Current GitHub-native static audit of dormant WP22A history; provider execution remains forbidden."
-    },
     ".github/workflows/live-gateway-authority.yml": {
       "classification": "KEEP",
       "reason": "Protected V9 read-only recovery/authority probe for the stable app:app baseline; not V10 provider authority."
@@ -110,18 +106,6 @@
     "scripts/check_v10_wp22a_phase4_public_acceptance.py": {
       "classification": "HISTORY",
       "reason": "Historical read-only Render/Neon Phase-4 probe retained as evidence but removed from active workflow execution."
-    },
-    "apps/api/wp22a_remote.py": {
-      "classification": "HISTORY",
-      "reason": "Dormant historical Cloudflare Access private-remote composition; no current V10 deployment authority."
-    },
-    "omni_cio/web/external_access_v1.py": {
-      "classification": "HISTORY",
-      "reason": "Dormant historical Cloudflare Access boundary retained for accepted WP22A evidence only."
-    },
-    "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1": {
-      "classification": "HISTORY",
-      "reason": "Dormant historical Cloudflare clientless launcher retained for source evidence only."
     },
     "omni_cio/web/identity_v1.py": {
       "classification": "KEEP",
@@ -350,6 +334,14 @@
     "tests/test_v10_timeweb_telegram_public_activation.py": {
       "classification": "KEEP",
       "reason": "Current P5 activation regression evidence including evidence-seal and unsafe-workflow negatives."
+    },
+    "docs/architecture/V10_TIMEWEB_WORKTREE_CONVERGENCE_CONTRACT.json": {
+      "classification": "KEEP",
+      "reason": "Current P5.5 fail-closed Timeweb worktree convergence contract."
+    },
+    "docs/operations/V10_TIMEWEB_WORKTREE_CONVERGENCE_RUNBOOK.md": {
+      "classification": "KEEP",
+      "reason": "Current P5.5 Timeweb worktree convergence execution runbook."
     }
   },
   "path_rules": [

@@ -185,8 +185,6 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
         for path in (
             ".github/workflows/v10-wp22a-phase4-public-acceptance.yml",
             ".github/workflows/v10-wp22a-phase5-technical-closeout.yml",
-            "apps/api/wp22a_remote.py",
-            "omni_cio/web/external_access_v1.py",
         ):
             with self.subTest(path=path):
                 self.assertEqual(
@@ -258,19 +256,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
                 ".github/workflows/v10-engineering-governance.yml"
             )
         )
-        self.assertFalse(
-            inventory._should_scan_content(
-                ".github/workflows/v10-wp22a-clientless-access-audit.yml"
-            )
-        )
         self.assertTrue(inventory._should_scan_content("apps/api/hosted_preview.py"))
-        self.assertEqual(
-            inventory._classify_path(
-                ".github/workflows/v10-wp22a-clientless-access-audit.yml",
-                self.payload,
-            ),
-            "KEEP",
-        )
 
     def test_matcher_inputs_are_bounded(self) -> None:
         too_many_values = [

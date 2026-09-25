@@ -23,7 +23,6 @@ CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS = (
     "v10-wp20-research-dossier-audit.yml",
     "v10-wp21-decision-risk-plan-audit.yml",
     "v10-wp22-system-admin-audit.yml",
-    "v10-wp22a-clientless-access-audit.yml",
     "v10-wp22a-phase2-product-auth-audit.yml",
 )
 
@@ -45,7 +44,6 @@ CURRENT_CRITICAL_FOLLOWUP_RETRY_WORKFLOWS = (
     "v10-wp20-research-dossier-audit.yml",
     "v10-wp21-decision-risk-plan-audit.yml",
     "v10-wp22-system-admin-audit.yml",
-    "v10-wp22a-clientless-access-audit.yml",
     "v10-wp22a-phase2-product-auth-audit.yml",
 )
 

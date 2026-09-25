@@ -135,6 +135,9 @@ jobs:
       - name: Verify TW-A Timeweb provider/dependency inventory
         run: python scripts/check_v10_timeweb_platform_inventory.py
 
+      - name: Verify Timeweb current-worktree convergence
+        run: python scripts/check_v10_timeweb_worktree_convergence.py
+
       - name: Verify V9-to-V10 convergence authority
         run: python scripts/check_v10_v9_to_v10_convergence.py
 
@@ -198,6 +201,7 @@ jobs:
           scripts/check_v10_timeweb_postgres_control_plane.py
           scripts/probe_v10_timeweb_postgres_control_plane.py
           scripts/check_v10_timeweb_platform_inventory.py
+          scripts/check_v10_timeweb_worktree_convergence.py
           scripts/check_v10_v9_to_v10_convergence.py
           scripts/check_v10_timeweb_full_production_delivery.py
           scripts/check_v10_timeweb_app_candidate.py
@@ -249,6 +253,7 @@ jobs:
           tests.test_v10_ru_postgres_timeweb_parity
           tests.test_v10_timeweb_postgres_control_plane
           tests.test_v10_timeweb_platform_inventory
+          tests.test_v10_timeweb_worktree_convergence
           tests.test_v10_v9_to_v10_convergence
           tests.test_v10_timeweb_full_production_delivery
           tests.test_v10_timeweb_app_candidate

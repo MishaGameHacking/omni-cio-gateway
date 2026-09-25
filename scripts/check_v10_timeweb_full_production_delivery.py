@@ -356,7 +356,7 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
         },
         {
             "id": "P5_TELEGRAM_PUBLIC_ACTIVATION",
-            "state": "IMPLEMENTED_VERIFICATION_PENDING",
+            "state": "CERTIFIED_GREEN_BRANCH_LOCAL",
         },
         {
             "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",

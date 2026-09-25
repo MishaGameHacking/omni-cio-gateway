@@ -94,7 +94,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
-    def test_branch_milestones_track_p4_green_and_p5_implementation(self) -> None:
+    def test_branch_milestones_track_p4_and_p5_green(self) -> None:
         payload = json.loads(
             (
                 ROOT
@@ -116,7 +116,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         )
         self.assertEqual(
             states["P5_TELEGRAM_PUBLIC_ACTIVATION"],
-            "IMPLEMENTED_VERIFICATION_PENDING",
+            "CERTIFIED_GREEN_BRANCH_LOCAL",
         )
 
     def test_rejects_broker_write_authority_widening(self) -> None:

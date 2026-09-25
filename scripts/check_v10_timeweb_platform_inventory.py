@@ -690,13 +690,10 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
             "apps/api/cf_d_database_bootstrap.py",
             "apps/api/hosted_preview.py",
             "apps/api/wp22a_phase5_auth.py",
-            "apps/api/wp22a_remote.py",
             "infrastructure/cloudru/wp22a/hosted-postgres-runtime-contract.json",
             "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql",
-            "infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1",
             "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql",
             "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql",
-            "omni_cio/web/external_access_v1.py",
             "omni_cio/web/provider_auth_routes_v1.py",
             "omni_cio/web/provider_start_adapter_v1.py",
             "scripts/check_v10_wp22a_phase4_public_acceptance.py",
@@ -711,7 +708,6 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
             ".github/workflows/live-gateway-authority.yml",
             ".github/workflows/regression-shield.yml",
             ".github/workflows/self-hosted-windows-smoke.yml",
-            ".github/workflows/v10-wp22a-clientless-access-audit.yml",
             _RENDER_CONFIG_PATH,
         }
     )
