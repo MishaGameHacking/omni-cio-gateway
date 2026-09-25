@@ -21,9 +21,7 @@ TIMEWEB_ALLOCATION_WORKFLOW = WORKFLOWS / "v10-timeweb-ipv4-allocation.yml"
 APP_CANDIDATE_WORKFLOW = WORKFLOWS / "v10-timeweb-app-candidate.yml"
 PRODUCTION_CUTOVER_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-production-cutover.yml"
 PUBLIC_INGRESS_WORKFLOW = WORKFLOWS / "v10-timeweb-public-ingress-acceptance.yml"
-TELEGRAM_ACTIVATION_WORKFLOW = (
-    WORKFLOWS / "v10-timeweb-telegram-public-activation.yml"
-)
+TELEGRAM_ACTIVATION_WORKFLOW = WORKFLOWS / "v10-timeweb-telegram-public-activation.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
 _PRODUCTION_ENVIRONMENT_NAME = "timeweb-production"

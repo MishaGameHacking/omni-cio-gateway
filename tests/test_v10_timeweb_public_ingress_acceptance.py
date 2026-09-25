@@ -176,7 +176,6 @@ class TimewebPublicIngressTests(unittest.TestCase):
     def test_repository_guard_passes(self) -> None:
         guard.validate(ROOT)
 
-
     def test_guard_requires_certified_p4_state_after_transition(self) -> None:
         payload = json.loads(
             (
