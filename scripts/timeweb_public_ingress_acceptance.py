@@ -180,6 +180,16 @@ def _csp_directives(value: str) -> set[str]:
     return set(directives.values())
 
 
+def _require_content_type(
+    headers: dict[str, str],
+    expected: str,
+    code: str,
+) -> None:
+    value = headers.get("content-type", "").casefold()
+    if not value.startswith(expected):
+        _stop(code)
+
+
 def _require_security_headers(headers: dict[str, str], *, api_path: bool) -> None:
     for name in _RETIRED_EDGE_HEADERS:
         if name in headers:
@@ -260,10 +270,11 @@ def _json_payload(raw: bytes, code: str) -> dict[str, Any]:
 
 def _probe_public_runtime(expected_sha: str, *, opener: Any | None = None) -> None:
     live_headers, live_raw = _read_public("/livez", opener=opener)
-    if not live_headers.get("content-type", "").casefold().startswith(
-        _JSON_CONTENT_TYPE
-    ):
-        _stop("TIMEWEB_PUBLIC_INGRESS_LIVEZ_CONTENT_TYPE_INVALID")
+    _require_content_type(
+        live_headers,
+        _JSON_CONTENT_TYPE,
+        "TIMEWEB_PUBLIC_INGRESS_LIVEZ_CONTENT_TYPE_INVALID",
+    )
     live = _json_payload(live_raw, "TIMEWEB_PUBLIC_INGRESS_LIVEZ_INVALID")
     if live.get("status") != "ok":
         _stop("TIMEWEB_PUBLIC_INGRESS_LIVEZ_INVALID")
@@ -277,10 +288,11 @@ def _probe_public_runtime(expected_sha: str, *, opener: Any | None = None) -> No
         _stop("TIMEWEB_PUBLIC_INGRESS_RELEASE_SHA_DRIFT")
 
     health_headers, health_raw = _read_public("/healthz", opener=opener)
-    if not health_headers.get("content-type", "").casefold().startswith(
-        _JSON_CONTENT_TYPE
-    ):
-        _stop("TIMEWEB_PUBLIC_INGRESS_HEALTHZ_CONTENT_TYPE_INVALID")
+    _require_content_type(
+        health_headers,
+        _JSON_CONTENT_TYPE,
+        "TIMEWEB_PUBLIC_INGRESS_HEALTHZ_CONTENT_TYPE_INVALID",
+    )
     health = _json_payload(health_raw, "TIMEWEB_PUBLIC_INGRESS_HEALTHZ_INVALID")
     if (
         health.get("status") != "ok"
@@ -298,10 +310,11 @@ def _probe_public_runtime(expected_sha: str, *, opener: Any | None = None) -> No
         _stop("TIMEWEB_PUBLIC_INGRESS_RELEASE_SHA_DRIFT")
 
     root_headers, root_raw = _read_public("/", opener=opener)
-    if not root_headers.get("content-type", "").casefold().startswith(
-        _HTML_CONTENT_TYPE
-    ):
-        _stop("TIMEWEB_PUBLIC_INGRESS_ROOT_CONTENT_TYPE_INVALID")
+    _require_content_type(
+        root_headers,
+        _HTML_CONTENT_TYPE,
+        "TIMEWEB_PUBLIC_INGRESS_ROOT_CONTENT_TYPE_INVALID",
+    )
     lowered = root_raw[:65_536].lower()
     if b"<html" not in lowered and b"<!doctype html" not in lowered:
         _stop("TIMEWEB_PUBLIC_INGRESS_ROOT_INVALID")

@@ -459,3 +459,17 @@ tenant, security-header, provider-authority, or Sonar defect was reported on tha
 The correction applies the exact formatter-compatible generator-expression layout only.
 It does not change P4 runtime behavior or authority. All prior GREEN evidence is stale
 after this source commit and must be re-certified on the replacement exact head.
+
+
+## 16. 2026-09-25 P4 formatter defect-class closure
+
+The first replacement on `253d184592f8a040bafe93840ec937c31f908d7a` proved that the
+formatter defect was not isolated to one generator expression: Fast PR advanced to the
+next formatter site at the repeated content-type method chain. Rather than continue
+commit-per-line repair, the three analogous live/health/root content-type checks are now
+centralized in one bounded `_require_content_type` helper. Each caller uses explicit
+multi-line arguments with trailing commas, eliminating the repeated formatter-sensitive
+chain while preserving the same fail-closed error codes and media-type semantics.
+
+This closes the formatter defect class instead of suppressing Ruff or weakening checks.
+The previous head is diagnostic evidence only; exact-head certification must restart.
