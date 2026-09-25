@@ -108,7 +108,9 @@ def _validate_evidence(payload: dict[str, Any]) -> None:
         "rollback_evidence_sha256",
         "rollback_release_must_differ_from_new_release",
     }
-    if set(evidence) != required or any(value is not True for value in evidence.values()):
+    if set(evidence) != required or any(
+        value is not True for value in evidence.values()
+    ):
         raise RuntimeError("TIMEWEB_P6_EVIDENCE_POLICY_DRIFT")
 
 
