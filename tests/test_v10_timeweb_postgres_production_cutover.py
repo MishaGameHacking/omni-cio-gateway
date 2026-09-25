@@ -83,9 +83,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = (
-                root / WORKFLOW_RELATIVE
-            )
+            path = root / WORKFLOW_RELATIVE
             source = path.read_text(encoding="utf-8")
             path.write_text(
                 source.replace(
@@ -118,9 +116,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = (
-                root / WORKFLOW_RELATIVE
-            )
+            path = root / WORKFLOW_RELATIVE
             source = path.read_text(encoding="utf-8")
             path.write_text(
                 source
@@ -137,9 +133,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = (
-                root / WORKFLOW_RELATIVE
-            )
+            path = root / WORKFLOW_RELATIVE
             source = path.read_text(encoding="utf-8")
             marker = (
                 "      - name: Observe verified production database\n"
