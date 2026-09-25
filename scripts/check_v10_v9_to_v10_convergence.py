@@ -546,6 +546,82 @@ def _validate_gpt_authority(root: Path) -> None:
             raise RuntimeError(f"V9C_V9_GPT_RECOVERY_MARKER_MISSING:{relative}")
 
 
+def _require_retirement_value(
+    retirement: dict[str, Any],
+    key: str,
+    expected: object,
+    code: str,
+) -> None:
+    if retirement.get(key) != expected:
+        raise RuntimeError(code)
+
+
+def _repository_contract_paths(paths: tuple[Path, ...]) -> tuple[str, ...]:
+    return tuple(_repository_contract_path(path) for path in paths)
+
+
+def _validate_provider_retirement_policy(retirement: dict[str, Any]) -> None:
+    history_key = (
+        "history_only_worktree_artifacts_allowed_when_required_for_"
+        "provenance_or_protected_v9_recovery"
+    )
+    expected = (
+        ("checkpoint", "V9C-D", "V9C_PROVIDER_RETIREMENT_CHECKPOINT_DRIFT"),
+        (
+            "providers",
+            list(_RETIRED_PROVIDER_AUTHORITIES),
+            "V9C_PROVIDER_RETIREMENT_SET_DRIFT",
+        ),
+        (
+            "current_feature_authority",
+            False,
+            "V9C_PROVIDER_RETIREMENT_AUTHORITY_WIDENED",
+        ),
+        (
+            "current_runtime_provider_module_import_allowed",
+            False,
+            "V9C_PROVIDER_RUNTIME_IMPORT_AUTHORITY_WIDENED",
+        ),
+        (
+            "zero_current_consumer_proof_required",
+            True,
+            "V9C_PROVIDER_ZERO_CONSUMER_PROOF_DISABLED",
+        ),
+        (
+            "history_preserved_in_git",
+            True,
+            "V9C_PROVIDER_HISTORY_POLICY_DRIFT",
+        ),
+        (
+            history_key,
+            True,
+            "V9C_PROVIDER_HISTORY_WORKTREE_POLICY_DRIFT",
+        ),
+        (
+            "current_gpt_authority",
+            list(_repository_contract_paths(_CURRENT_GPT_AUTHORITY_PATHS)),
+            "V9C_CURRENT_GPT_AUTHORITY_SET_DRIFT",
+        ),
+        (
+            "protected_v9_gpt_recovery",
+            list(_repository_contract_paths(_PROTECTED_V9_GPT_RECOVERY_PATHS)),
+            "V9C_V9_GPT_RECOVERY_SET_DRIFT",
+        ),
+        (
+            "retired_provider_workflows",
+            list(_repository_contract_paths(_RETIRED_PROVIDER_WORKFLOW_PATHS)),
+            "V9C_RETIRED_WORKFLOW_SET_DRIFT",
+        ),
+        (
+            "retired_provider_workflow_state",
+            "MANUAL_ONLY_HARD_DISABLED_HISTORY",
+            "V9C_RETIRED_WORKFLOW_STATE_DRIFT",
+        ),
+    )
+    for key, expected_value, code in expected:
+        _require_retirement_value(retirement, key, expected_value, code)
+
+
 def _validate_provider_worktree_retirement(
     root: Path,
     contract: dict[str, Any],
@@ -554,42 +630,7 @@ def _validate_provider_worktree_retirement(
         contract.get("provider_worktree_retirement"),
         "V9C_PROVIDER_RETIREMENT_INVALID",
     )
-    if retirement.get("checkpoint") != "V9C-D":
-        raise RuntimeError("V9C_PROVIDER_RETIREMENT_CHECKPOINT_DRIFT")
-    if tuple(retirement.get("providers", ())) != _RETIRED_PROVIDER_AUTHORITIES:
-        raise RuntimeError("V9C_PROVIDER_RETIREMENT_SET_DRIFT")
-    if retirement.get("current_feature_authority") is not False:
-        raise RuntimeError("V9C_PROVIDER_RETIREMENT_AUTHORITY_WIDENED")
-    if retirement.get("current_runtime_provider_module_import_allowed") is not False:
-        raise RuntimeError("V9C_PROVIDER_RUNTIME_IMPORT_AUTHORITY_WIDENED")
-    if retirement.get("zero_current_consumer_proof_required") is not True:
-        raise RuntimeError("V9C_PROVIDER_ZERO_CONSUMER_PROOF_DISABLED")
-    if retirement.get("history_preserved_in_git") is not True:
-        raise RuntimeError("V9C_PROVIDER_HISTORY_POLICY_DRIFT")
-    history_key = (
-        "history_only_worktree_artifacts_allowed_when_required_for_"
-        "provenance_or_protected_v9_recovery"
-    )
-    if retirement.get(history_key) is not True:
-        raise RuntimeError("V9C_PROVIDER_HISTORY_WORKTREE_POLICY_DRIFT")
-    if tuple(retirement.get("current_gpt_authority", ())) != tuple(
-        _repository_contract_path(path) for path in _CURRENT_GPT_AUTHORITY_PATHS
-    ):
-        raise RuntimeError("V9C_CURRENT_GPT_AUTHORITY_SET_DRIFT")
-    if tuple(retirement.get("protected_v9_gpt_recovery", ())) != tuple(
-        _repository_contract_path(path) for path in _PROTECTED_V9_GPT_RECOVERY_PATHS
-    ):
-        raise RuntimeError("V9C_V9_GPT_RECOVERY_SET_DRIFT")
-    if tuple(retirement.get("retired_provider_workflows", ())) != tuple(
-        _repository_contract_path(path) for path in _RETIRED_PROVIDER_WORKFLOW_PATHS
-    ):
-        raise RuntimeError("V9C_RETIRED_WORKFLOW_SET_DRIFT")
-    if (
-        retirement.get("retired_provider_workflow_state")
-        != "MANUAL_ONLY_HARD_DISABLED_HISTORY"
-    ):
-        raise RuntimeError("V9C_RETIRED_WORKFLOW_STATE_DRIFT")
-
+    _validate_provider_retirement_policy(retirement)
     _validate_gpt_authority(root)
     for relative in _RETIRED_PROVIDER_WORKFLOW_PATHS:
         _validate_retired_provider_workflow(root, relative)
