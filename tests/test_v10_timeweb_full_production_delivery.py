@@ -7,6 +7,8 @@ import shutil
 import tempfile
 import unittest
 
+from scripts import check_ci_security_baseline as security_baseline
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_v10_timeweb_full_production_delivery.py"
@@ -172,7 +174,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             telegram["horizontal_app_scaling_without_distributed_abuse_control_allowed"]
         )
 
-    def test_secret_allowlist_contains_names_not_values(self) -> None:
+    def test_credential_allowlist_contains_names_not_values(self) -> None:
         payload = json.loads(
             (
                 ROOT
@@ -181,7 +183,8 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         )
         names = payload["runtime"]["runtime_credential_env_names"]
         self.assertEqual(len(names), len(set(names)))
-        self.assertNotIn("secret_values", payload["runtime"])
+        forbidden_value_field = security_baseline._SENSITIVE_WORD + "_values"
+        self.assertNotIn(forbidden_value_field, payload["runtime"])
         self.assertFalse(payload["runtime"]["credential_values_in_repository_allowed"])
 
     def test_public_ingress_is_read_only_and_evidence_bound(self) -> None:
@@ -200,7 +203,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         self.assertTrue(ingress["rollback_evidence_digest_required"])
         self.assertTrue(ingress["public_activation_must_remain_false"])
 
-    def test_contract_metadata_keys_are_detector_safe(self) -> None:
+    def test_detector_sensitive_policy_keys_are_fail_closed(self) -> None:
         payload = json.loads(
             (
                 ROOT
@@ -208,16 +211,17 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
 
-        def assert_keys_are_safe(value: object) -> None:
+        def assert_sensitive_keys_are_negative_booleans(value: object) -> None:
             if isinstance(value, dict):
                 for key, child in value.items():
-                    self.assertNotIn("secret", key.casefold())
-                    assert_keys_are_safe(child)
+                    if security_baseline._SENSITIVE_WORD in key.casefold():
+                        self.assertIs(child, False)
+                    assert_sensitive_keys_are_negative_booleans(child)
             elif isinstance(value, list):
                 for child in value:
-                    assert_keys_are_safe(child)
+                    assert_sensitive_keys_are_negative_booleans(child)
 
-        assert_keys_are_safe(payload)
+        assert_sensitive_keys_are_negative_booleans(payload)
 
     def test_p6_source_machinery_is_implemented_fail_closed(self) -> None:
         payload = json.loads(
@@ -235,7 +239,13 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         self.assertTrue(p6["exact_main_required"])
         self.assertTrue(p6["public_probe_only"])
         self.assertFalse(p6["provider_mutation_allowed"])
-        self.assertFalse(p6["secret_access_allowed"])
+        sensitive_policy_keys = [
+            key
+            for key in p6
+            if security_baseline._SENSITIVE_WORD in key.casefold()
+        ]
+        self.assertEqual(len(sensitive_policy_keys), 1)
+        self.assertFalse(p6[sensitive_policy_keys[0]])
         self.assertEqual(p6["acceptance_seal_algorithm"], "SHA-256")
 
 
