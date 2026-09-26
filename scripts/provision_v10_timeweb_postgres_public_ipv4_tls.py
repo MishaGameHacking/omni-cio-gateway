@@ -501,9 +501,7 @@ def _ensure_rule(
     for attempt in range(len(delays) + 1):
         verified = _rules(api, group_id)
         if len(verified) > 1:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_FIREWALL_RULESET_WIDENED"
-            )
+            raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULESET_WIDENED")
         if len(verified) == 1:
             comparable = _rule_shape(verified[0])
             if comparable == expected:
@@ -623,9 +621,7 @@ def _ensure_resource_link(
             )
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped(
-        "TIMEWEB_FIREWALL_RESOURCE_LINK_FAILED"
-    )
+    raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RESOURCE_LINK_FAILED")
 
 
 def _verify_safe_narrow_rule(
