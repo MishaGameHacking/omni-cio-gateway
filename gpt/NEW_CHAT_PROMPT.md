@@ -47,7 +47,8 @@ Current target after Amendment 18 acceptance:
 - milestones = TW-A inventory/authority -> TW-B source/runtime -> TW-C Timeweb candidate -> TW-D PostgreSQL cutover -> TW-E DNS/no-VPN ingress -> TW-F Telegram public activation -> TW-G external-provider decommission;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are historical/retirement targets, not new feature authority;
 - Amendments 20 and 21 govern the single PR #584 integrated delivery: migrate useful V9 semantics, prove parity/zero current consumers/recovery, retire obsolete provider authority, and implement the fail-closed Timeweb production-delivery chain;
-- exact branch-local checkpoint/certification state is intentionally not duplicated here; resolve it from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions;
+- V9 convergence certification anchor = `V9C-F`; this is a fixed completed convergence invariant, not the current integrated delivery checkpoint;
+- exact branch-local integrated checkpoint/certification state is intentionally not duplicated here; resolve it from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions;
 - historical files may be touched only when a compatibility/governance check must acknowledge the new current authority;
 - retired provider resources/secrets/workflow actions are disabled/revoked only after replacement/cutover/recovery evidence;
 - GitHub-native checks are the active quality/security authority; external CI/review SaaS is historical and must not be required by current/future workflows;

@@ -35,6 +35,22 @@ def test_transient_checkpoint_guard_rejects_live_checkpoint_copy(
     ]
 
 
+def test_transient_checkpoint_guard_allows_static_v9c_certification_anchor(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _install_live_guidance(
+        tmp_path,
+        monkeypatch,
+        "V9 convergence certification anchor = V9C-F.\n",
+    )
+    failures: list[str] = []
+
+    guard._validate_transient_checkpoint_delegation(failures)
+
+    assert failures == []
+
+
 def test_transient_checkpoint_guard_allows_accepted_amendment_marker(
     tmp_path: Path,
     monkeypatch,
