@@ -185,6 +185,20 @@ class _MalformedSuccessApi(_Api):
         return {"deploy": {"unexpected": "successful-but-unprovable-response"}}
 
 
+def test_provider_ids_reject_bool_none_and_fractional_values() -> None:
+    for value in (True, False, None, 1.5, [], {}):
+        with pytest.raises(
+            release.ReleaseStopped,
+            match="TIMEWEB_APP_RELEASE_APP_ID_INVALID",
+        ):
+            release._safe_id(value, "TIMEWEB_APP_RELEASE_APP_ID_INVALID")
+    assert release._safe_id(17, "TIMEWEB_APP_RELEASE_APP_ID_INVALID") == "17"
+    assert (
+        release._safe_id("deploy-17", "TIMEWEB_APP_RELEASE_APP_ID_INVALID")
+        == "deploy-17"
+    )
+
+
 def test_observe_requires_current_main_sha() -> None:
     api = _Api(_app(active_sha=EXPECTED_SHA))
     livez = _Livez()
