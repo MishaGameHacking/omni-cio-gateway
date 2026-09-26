@@ -273,6 +273,7 @@ def _validate_observe(payload: dict[str, Any]) -> None:
         "bootstrap_authority_identity_required": True,
         "runtime_role_identity_required": True,
         "existing_product_residue_must_be_clean": True,
+        "local_ca_materialization_allowed": True,
     }
     if observe != expected:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_INVALID")

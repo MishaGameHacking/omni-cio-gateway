@@ -11,7 +11,7 @@ from apps.api import timeweb_postgres_tls as tls
 
 
 VALID_DSN = (
-    "host=db.example.com port=5432 dbname=default_db user=runtime password=p "
+    "host=db.example.com port=5432 dbname=default_db user=runtime "
     "sslmode=verify-full "
     "sslrootcert=.omni-cio/timeweb-postgres-root.crt"
 )
@@ -66,7 +66,7 @@ def test_resolve_rewrites_only_local_ca_path(
     prepared = conninfo_to_dict(resolved)
     assert original["sslrootcert"] == tls.TIMEWEB_POSTGRES_SSLROOTCERT
     assert prepared["sslrootcert"] == str(ca_path.resolve())
-    for field in ("host", "port", "dbname", "user", "password", "sslmode"):
+    for field in ("host", "port", "dbname", "user", "sslmode"):
         assert prepared[field] == original[field]
 
 

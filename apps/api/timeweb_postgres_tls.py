@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import binascii
 import os
 import re
 import ssl
@@ -155,7 +154,7 @@ def _validate_ca(raw: bytes) -> None:
     certificate = text[begin : end + len(end_marker)]
     try:
         ssl.PEM_cert_to_DER_cert(certificate)
-    except (ValueError, binascii.Error):
+    except ValueError:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_INVALID") from None
 
 
