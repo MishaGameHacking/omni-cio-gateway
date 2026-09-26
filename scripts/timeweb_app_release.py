@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from datetime import datetime
 import json
 import os
 import re
@@ -387,12 +388,34 @@ def _deploys(api: ApiLike, app_id: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _completed_deploy_time(row: dict[str, Any]) -> datetime:
+    value = row.get("ended_at")
+    if not isinstance(value, str) or not value.strip():
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_ENDED_AT_INVALID")
+    try:
+        observed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_ENDED_AT_INVALID")
+    if observed.tzinfo is None or observed.utcoffset() is None:
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_ENDED_AT_INVALID")
+    return observed
+
+
 def _last_known_good(rows: list[dict[str, Any]], expected: str) -> str | None:
+    candidates: list[tuple[datetime, str]] = []
     for row in rows:
         _id, commit, status = _deploy(row)
         if status == "success" and commit != expected:
-            return commit
-    return None
+            candidates.append((_completed_deploy_time(row), commit))
+    if not candidates:
+        return None
+    latest_time = max(observed for observed, _commit in candidates)
+    latest_commits = {
+        commit for observed, commit in candidates if observed == latest_time
+    }
+    if len(latest_commits) != 1:
+        _stop("TIMEWEB_APP_RELEASE_LKG_HISTORY_AMBIGUOUS")
+    return next(iter(latest_commits))
 
 
 def _inflight_exact_deploy_id(
