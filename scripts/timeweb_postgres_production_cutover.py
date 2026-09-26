@@ -46,6 +46,7 @@ _CLEAN_TABLES = (
     "broker_connection_accounts",
 )
 _SET_TENANT_SCOPE_SQL = "SELECT set_config('omni_cio.tenant_id', %s, true)"
+_PRODUCTION_CONNECT_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0)
 
 
 class CutoverStopped(RuntimeError):
@@ -241,6 +242,7 @@ def _connect(dsn: str, *, code: str) -> Any:
         dsn,
         retry_marker="TIMEWEB_PG_PRODUCTION_NETWORK_RETRY",
         failure_code=code,
+        retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS,
     )
 
 
