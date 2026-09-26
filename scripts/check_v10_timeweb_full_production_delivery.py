@@ -367,6 +367,7 @@ def _validate_provider_convergence_policy(payload: dict[str, Any]) -> None:
         "mutation_replay_after_timeout_or_ambiguous_result_allowed": False,
         "exact_identity_inflight_state_adoption_required_when_supported": True,
         "duplicate_inflight_exact_identity_terminal": True,
+        "provider_history_pagination_must_be_exhaustive": True,
         "asynchronous_provider_success_may_precede_readiness": True,
         "local_polling_budget_is_provider_sla": False,
         "stage_specific_sanitized_timeout_required": True,
