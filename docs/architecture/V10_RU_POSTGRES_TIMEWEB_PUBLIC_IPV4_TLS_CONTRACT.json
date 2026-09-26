@@ -225,7 +225,8 @@
       "ca_fetch_transient_retry_required": true,
       "postgres_tls_socket_transient_retry_required": true,
       "certificate_verification_failure_retry_allowed": false,
-      "rollback_get_reconciliation_extended": true
+      "rollback_get_reconciliation_extended": true,
+      "rollback_final_observation_after_last_backoff_required": true
     }
   },
   "ipv4_custody": {
