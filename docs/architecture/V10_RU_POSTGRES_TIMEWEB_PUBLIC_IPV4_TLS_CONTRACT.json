@@ -211,7 +211,21 @@
         "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT",
         "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT"
       ],
-      "blind_retry_allowed": false
+      "blind_retry_allowed": false,
+      "transient_control_plane_reads_retryable": true,
+      "transient_http_statuses": [
+        408,
+        429,
+        500,
+        502,
+        503,
+        504
+      ],
+      "nullable_domains_during_tls_transition_means_pending": true,
+      "ca_fetch_transient_retry_required": true,
+      "postgres_tls_socket_transient_retry_required": true,
+      "certificate_verification_failure_retry_allowed": false,
+      "rollback_get_reconciliation_extended": true
     }
   },
   "ipv4_custody": {
