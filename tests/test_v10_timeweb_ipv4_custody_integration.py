@@ -57,105 +57,68 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
         row["comment"] = custody.marker(91, custody.inventory([row])[0])
         api = mock.Mock()
         api.get.return_value = {"ips": [row]}
-        mutation = mock.Mock()
         actual = provisioner._resolve_transport_ipv4(
-            mutation,
             api,
             91,
             preexisting_public_network=False,
         )
-        self.assertEqual(actual, ("fixture-ip-2", "8.8.8.8", False))
+        self.assertEqual(actual, "8.8.8.8")
         self.assertEqual(api.get.call_count, 2)
-        mutation.mutate_once.assert_not_called()
 
-    def test_stamp_changes_comment_only_once_and_accepts_exact_status(self) -> None:
-        mutation = mock.Mock()
-        provisioner._stamp_created_ipv4(mutation, "fixture-ip-2", "association")
-        mutation.mutate_once.assert_called_once_with(
-            "PATCH",
-            "/api/v1/floating-ips/fixture-ip-2",
-            operation="FLOATING_IP_CUSTODY_STAMP",
-            body={"comment": "association"},
-            expected_statuses=frozenset({200}),
-            reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
-        )
-
-    def test_ambiguous_create_delta_is_not_stampable_receipt(self) -> None:
+    def test_resolver_refuses_missing_allocated_ipv4_without_create(self) -> None:
         api = mock.Mock()
-        api.get.side_effect = [{"ips": []}, {"ips": [ip_row()]}]
-        mutation = mock.Mock()
-        mutation.mutate_once.side_effect = provisioner.AmbiguousMutation(
-            "TIMEWEB_MUTATION_AMBIGUOUS",
-            operation="FLOATING_IP_CREATE",
-        )
+        api.get.return_value = {"ips": []}
         with self.assertRaisesRegex(
             provisioner._provider_base.ProvisioningStopped,
-            "CREATE_RECEIPT_UNPROVEN",
+            "TIMEWEB_ALLOCATED_IPV4_MISSING",
         ):
-            provisioner._create_floating_ip(mutation, api)
-        mutation.mutate_once.assert_called_once()
-        self.assertEqual(api.get.call_count, 2)
-
-    def test_ambiguous_stamp_has_no_blind_patch_retry(self) -> None:
-        mutation = mock.Mock()
-        mutation.mutate_once.side_effect = provisioner.AmbiguousMutation("ambiguous")
-        provisioner._stamp_created_ipv4(mutation, "fixture-ip-2", "association")
-        mutation.mutate_once.assert_called_once()
-
-    def test_cleanup_waits_for_absence_without_second_delete(self) -> None:
-        api = mock.Mock()
-        api.get.side_effect = [
-            {"ips": [ip_row()]},
-            {"ips": [ip_row()]},
-            {"ips": []},
-        ]
-        mutation = mock.Mock()
-        mutation.mutate_once.side_effect = provisioner.AmbiguousMutation("ambiguous")
-        with mock.patch.object(provisioner.time, "sleep"):
-            provisioner._delete_created_ipv4_if_unbound(mutation, api, "fixture-ip-2")
-        mutation.mutate_once.assert_called_once()
-        self.assertEqual(api.get.call_count, 3)
-
-    def test_cleanup_never_deletes_resource_bound_elsewhere(self) -> None:
-        api = mock.Mock()
-        api.get.return_value = {"ips": [ip_row(resource_type="server", resource_id=7)]}
-        mutation = mock.Mock()
-        provisioner._delete_created_ipv4_if_unbound(mutation, api, "fixture-ip-2")
-        mutation.mutate_once.assert_not_called()
-
-    def test_cleanup_without_absence_proof_stays_stopped(self) -> None:
-        api = mock.Mock()
-        api.get.return_value = {"ips": [ip_row()]}
-        mutation = mock.Mock()
-        with mock.patch.object(provisioner.time, "sleep"):
-            with self.assertRaisesRegex(
-                provisioner._provider_base.ProvisioningStopped,
-                "ABSENCE_UNPROVEN",
-            ):
-                provisioner._delete_created_ipv4_if_unbound(
-                    mutation,
-                    api,
-                    "fixture-ip-2",
-                )
-        mutation.mutate_once.assert_called_once()
-
-    def test_recovered_resource_is_not_owned_by_cleanup(self) -> None:
-        mutation = mock.Mock()
-        api = mock.Mock()
-        with mock.patch.object(
-            provisioner,
-            "_delete_created_ipv4_if_unbound",
-        ) as delete:
-            provisioner._rollback_failed_transport(
-                mutation,
+            provisioner._resolve_transport_ipv4(
                 api,
                 91,
-                public_exposure_possible=False,
-                created_this_run=False,
-                floating_id="fixture-ip-2",
+                preexisting_public_network=False,
             )
-        delete.assert_not_called()
+        self.assertEqual(api.get.call_count, 1)
+
+    def test_resolver_refuses_provider_drift_between_reads(self) -> None:
+        first = ip_row()
+        first["comment"] = custody.marker(91, custody.inventory([first])[0])
+        second = ip_row(id="fixture-ip-3", ip="8.8.4.4")
+        second["comment"] = custody.marker(91, custody.inventory([second])[0])
+        api = mock.Mock()
+        api.get.side_effect = [{"ips": [first]}, {"ips": [second]}]
+        with self.assertRaisesRegex(
+            provisioner._provider_base.ProvisioningStopped,
+            "TIMEWEB_ALLOCATED_IPV4_DRIFT",
+        ):
+            provisioner._resolve_transport_ipv4(
+                api,
+                91,
+                preexisting_public_network=False,
+            )
+        self.assertEqual(api.get.call_count, 2)
+
+    def test_rollback_without_public_exposure_is_noop(self) -> None:
+        mutation = mock.Mock()
+        api = mock.Mock()
+        provisioner._rollback_failed_transport(
+            mutation,
+            api,
+            91,
+            public_exposure_possible=False,
+        )
         mutation.mutate_once.assert_not_called()
+
+    def test_resolver_rejects_missing_binding_state(self) -> None:
+        row = ip_row()
+        del row["resource_id"]
+        api = mock.Mock()
+        api.get.return_value = {"ips": [row]}
+        with self.assertRaisesRegex(custody.CustodyStopped, "BINDING_STATE_UNKNOWN"):
+            provisioner._resolve_transport_ipv4(
+                api,
+                91,
+                preexisting_public_network=False,
+            )
 
     def test_new_custody_stop_preserves_adapter_exception_contract(self) -> None:
         failure = custody.CustodyStopped("TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED")
@@ -176,16 +139,6 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
                 row = ip_row(resource_type=kind, resource_id=identifier)
                 with self.subTest(kind=kind, identifier=identifier):
                     self.assertEqual(provisioner._bound_ip_for_cluster([row], 91), row)
-
-    def test_missing_binding_never_reaches_delete(self) -> None:
-        row = ip_row()
-        del row["resource_id"]
-        api = mock.Mock()
-        api.get.return_value = {"ips": [row]}
-        mutation = mock.Mock()
-        with self.assertRaisesRegex(custody.CustodyStopped, "BINDING_STATE_UNKNOWN"):
-            provisioner._delete_created_ipv4_if_unbound(mutation, api, "fixture-ip-2")
-        mutation.mutate_once.assert_not_called()
 
     def test_truncated_inventory_never_becomes_empty_create_opportunity(self) -> None:
         api = mock.Mock()
@@ -265,26 +218,29 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
             "code=TIMEWEB_IPV4_OBSERVATION_UNAVAILABLE",
         )
 
-    def test_guard_enforces_comment_only_patch_and_order(self) -> None:
+    def test_guard_enforces_existing_only_transport_and_order(self) -> None:
         source = Path(provisioner.__file__).read_text(encoding="utf-8")
         tree = ast.parse(source)
-        guard._validate_custody_stamp(tree)
         guard._validate_custody_order(tree)
+        guard._validate_existing_only_transport(tree)
+        guard._validate_provider_transition_order(tree)
         guard._validate_custody_probe(
             Path(observer.__file__).read_text(
                 encoding="utf-8",
             ),
         )
         changed = source.replace(
-            '{"comment": management_marker}',
-            '{"ptr": management_marker}',
+            "    return selected.ip_address\n",
+            "    _create_floating_ip(mutation, api)\n    return selected.ip_address\n",
+            1,
         )
         changed_tree = ast.parse(changed)
-        with self.assertRaisesRegex(RuntimeError, "STAMP_INVALID"):
-            guard._validate_custody_stamp(changed_tree)
+        with self.assertRaisesRegex(RuntimeError, "EXISTING_ONLY_RESOLVER_INVALID"):
+            guard._validate_existing_only_transport(changed_tree)
         changed = source.replace(
             "        _preflight_ipv4_custody(api, cluster_id, initial)\n",
             "",
+            1,
         )
         changed_tree = ast.parse(changed)
         with self.assertRaisesRegex(RuntimeError, "ORDER_INVALID"):

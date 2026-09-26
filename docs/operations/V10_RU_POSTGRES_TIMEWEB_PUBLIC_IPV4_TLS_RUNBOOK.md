@@ -82,18 +82,24 @@ state is also returned to public-network OFF before the run stops for reconcilia
 
 The workflow never silently consumes an unrelated free/unbound public IP.
 
-If a new address is required, it permits exactly one
-`POST /api/v1/floating-ips` with availability zone `msk-1` and
-`is_ddos_guard=false`. An ambiguous create response is reconciled by GET and
-set-difference; there is no blind second POST.
+The current transport no longer has authority to create, stamp or delete a
+floating IPv4. The durable allocation receipt is a mandatory predecessor and the
+transport must recover exactly that already-managed address from two consistent
+GET observations. If the allocated address is missing or the two observations
+drift, the run stops with `TIMEWEB_ALLOCATED_IPV4_MISSING` or
+`TIMEWEB_ALLOCATED_IPV4_DRIFT`; it never converts that drift into a new purchase.
 
-Only after the DROP firewall is exact does the workflow patch the database v2
-network surface with:
+Only after the DROP firewall is exact does the workflow perform the provider
+transitions in the documented order. The first database v2 PATCH contains only:
 
 - the selected floating IPv4;
 - public IPv4 enabled;
-- public IPv6 disabled;
-- provider secure connection enabled.
+- public IPv6 disabled.
+
+The workflow then GET-reconciles the database and floating-IP binding, re-verifies
+the narrow firewall/resource scope, and only after public IPv4 is proved does a
+second database v2 PATCH request provider secure connection. TLS enablement is
+therefore never combined with first-time public IPv4 attachment.
 
 ## TLS verification
 
@@ -208,6 +214,12 @@ is already ready. A fresh protected-main live run is still required after this r
 accepted. Any new RED must be diagnosed from its operation-specific sanitized marker
 before another provider mutation attempt.
 
+The create/stamp/delete mechanics described in the historical RED/recovery sections
+below explain how the original allocation defect class was discovered and repaired.
+They are no longer current Public IPv4/TLS transport authority after the accepted
+existing-IPv4 allocation receipt. Current transport is existing-only as defined
+above and in the machine contract.
+
 ## Live RED #2 - IPv4 custody and restart recovery
 
 Run `35519666168`, after PR #573, stopped before another IPv4 create with
@@ -306,6 +318,52 @@ Provider schema references checked on 2026-09-20:
 - https://github.com/timeweb-cloud/sdk-python/blob/main/docs/UpdateFloatingIp.md
 - https://github.com/timeweb-cloud/sdk-python/blob/main/docs/FloatingIp.md
 - https://github.com/timeweb-cloud/sdk-python/blob/main/timeweb_cloud_api/api/floating_ip_api.py
+
+## Live RED #5 — combined public IPv4 + TLS transition rejected
+
+Manual workflow ordinal #5 on exact protected main
+`7a87509258552db4b9ee0c2e762597e561a42fb6` passed the exact-main/source gate,
+explicit verifier `/32` validation, GitHub Environment policy, cost confirmation
+and durable allocation prerequisite. The provider inventory was already
+`managed_unbound=1 unproven_unbound=0`, so OWNER input, verifier CIDR and
+existing-IPv4 custody were not the failing boundary.
+
+The provider then rejected the database v2 mutation with:
+
+`TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code=TIMEWEB_DATABASE_PUBLIC_NETWORK_PATCH_REJECTED http_status=400`.
+
+The exact provider validation message is intentionally unavailable because the
+mutation adapter does not read/log HTTP error bodies. Do not infer a hidden
+provider message from the status alone. The bounded conclusion is that the
+repository attempted an atomic transition that combined first-time public IPv4
+attachment/enablement with `is_secure_connection_enable=true`, while current
+Timeweb documentation requires public-IP connectivity before TLS is enabled.
+
+The repair therefore splits the transition:
+
+1. PATCH only the existing floating IPv4 plus public IPv4 enabled / IPv6 disabled;
+2. GET-reconcile cluster state and exact managed-IP binding;
+3. re-prove the DROP TCP/5432 verifier-only firewall and exclusive resource link;
+4. PATCH only `is_secure_connection_enable=true`;
+5. wait for secure connection plus issued technical domain;
+6. re-prove firewall, binding and TLS `verify-full`.
+
+A failure at either provider transition remains operation-specific and enters the
+existing public-network rollback path. Blind mutation retry remains forbidden.
+The existing IPv4 is reused; this repair grants no new purchase/delete authority.
+
+Official Timeweb evidence rechecked on 2026-09-26:
+
+- the public-IP guide describes enabling public IPv4 and selecting an existing
+  account IP before adding it to the database;
+- the PostgreSQL connection guide states that public-IP connectivity must be
+  configured before enabling TLS;
+- the generated `UpdateClusterV2` schema exposes public-network/floating-IP and
+  secure-connection fields as optional partial-update fields on the same v2
+  endpoint, allowing the two state transitions to be sent separately.
+
+Do not rerun the live transport until this source repair is exact-head certified
+and accepted on protected main.
 
 ## Success marker
 
