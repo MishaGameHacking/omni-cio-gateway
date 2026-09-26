@@ -153,6 +153,16 @@ class _AmbiguousApi(_Api):
         raise release.AmbiguousDeploy
 
 
+class _MalformedSuccessApi(_Api):
+    def deploy_once(self, app_id: str, sha: str) -> dict[str, object]:
+        self.calls.append((app_id, sha))
+        row = {"id": "deploy-malformed", "commit_sha": sha, "status": "success"}
+        self.rows.insert(0, row)
+        self.app_payload["commit_sha"] = sha
+        self.app_payload["status"] = "active"
+        return {"deploy": {"unexpected": "successful-but-unprovable-response"}}
+
+
 def test_observe_requires_current_main_sha() -> None:
     api = _Api(_app(active_sha=EXPECTED_SHA))
     livez = _Livez()
@@ -386,9 +396,12 @@ def test_livez_reconciles_transport_and_stale_release_propagation(
 
 def test_deploy_wait_budget_is_multi_minute_and_workflow_bounded() -> None:
     budget = sum(release._POLL_DELAYS)
+    livez_budget = sum(release._LIVEZ_RETRY_DELAYS)
     assert budget >= 300.0
     assert budget < 15 * 60
     assert sum(release._DEPLOY_RECONCILE_DELAYS) >= 60.0
+    assert livez_budget >= 120.0
+    assert livez_budget < 5 * 60
 
 
 def test_deploy_adopts_unique_inflight_exact_sha_without_second_post() -> None:
@@ -521,6 +534,21 @@ def test_wire_deploy_history_rejects_total_drift_between_pages() -> None:
         match="TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED",
     ):
         api.list_deploys("17")
+
+
+def test_successful_but_unprovable_deploy_response_reconciles_by_get() -> None:
+    api = _MalformedSuccessApi(_app())
+    last_known_good = release.run(
+        operation="deploy",
+        expected_sha=EXPECTED_SHA,
+        observed_main_sha=EXPECTED_SHA,
+        token="token",
+        confirmation=release.DEPLOY_CONFIRMATION,
+        api=api,
+        livez_opener=_Livez(),
+    )
+    assert api.calls == [("17", EXPECTED_SHA)]
+    assert last_known_good == LKG_SHA
 
 
 def test_wire_deploy_body_is_exact_commit_only() -> None:
