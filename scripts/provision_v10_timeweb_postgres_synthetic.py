@@ -30,7 +30,7 @@ _START_DELAYS_SECONDS = (
     60.0,
     60.0,
 )
-_AMBIGUOUS_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+_AMBIGUOUS_HTTP_STATUSES = frozenset({408, 409, 423, 429, 500, 502, 503, 504})
 Sleep = Callable[[float], None]
 
 
@@ -185,6 +185,15 @@ def _create_payload(
     }
 
 
+def _is_transient_read_failure(
+    exc: _provider_base.ProvisioningStopped,
+) -> bool:
+    return exc.code == "TIMEWEB_API_NETWORK_ERROR" or (
+        exc.code == "TIMEWEB_API_HTTP_ERROR"
+        and exc.status in read_only._TRANSIENT_HTTP_STATUSES
+    )
+
+
 def _reconcile_cluster_id(
     api: read_only.TimewebReadOnlyApi,
     project_path: str,
@@ -192,16 +201,26 @@ def _reconcile_cluster_id(
     sleeper: Sleep = time.sleep,
     delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
 ) -> int:
+    observed_state = False
     attempts = len(delays) + 1
     for attempt in range(attempts):
-        cluster_id = _target_cluster_id(api.get(project_path))
-        if cluster_id is not None:
-            return cluster_id
+        try:
+            cluster_id = _target_cluster_id(api.get(project_path))
+            observed_state = True
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_read_failure(exc):
+                raise
+        else:
+            if cluster_id is not None:
+                return cluster_id
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped(
+    code = (
         "TIMEWEB_CLUSTER_CREATE_AMBIGUOUS_RECONCILIATION_REQUIRED"
+        if observed_state
+        else "TIMEWEB_CLUSTER_CREATE_CONTROL_PLANE_READ_TIMEOUT"
     )
+    raise _provider_base.ProvisioningStopped(code)
 
 
 def _create_or_reconcile(
@@ -440,19 +459,31 @@ def _wait_for_started(
     delays: tuple[float, ...] = _START_DELAYS_SECONDS,
 ) -> None:
     path = f"/api/v1/databases/{cluster_id}"
+    observed_state = False
     attempts = len(delays) + 1
     for attempt in range(attempts):
-        status = _verify_cluster_shape(
-            api.get(path),
-            expected_cluster_id=cluster_id,
-            provider_type=provider_type,
-            preset_id=preset_id,
-        )
-        if status == "started":
-            return
+        try:
+            status = _verify_cluster_shape(
+                api.get(path),
+                expected_cluster_id=cluster_id,
+                provider_type=provider_type,
+                preset_id=preset_id,
+            )
+            observed_state = True
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_read_failure(exc):
+                raise
+        else:
+            if status == "started":
+                return
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_START_TIMEOUT")
+    code = (
+        "TIMEWEB_CLUSTER_START_TIMEOUT"
+        if observed_state
+        else "TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT"
+    )
+    raise _provider_base.ProvisioningStopped(code)
 
 
 def provision() -> None:
