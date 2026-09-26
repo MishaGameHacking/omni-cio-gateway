@@ -662,9 +662,7 @@ def _resource_link_ready(
         return False
     if len(resources) == 1 and _resource_matches(resources[0], cluster_id):
         return True
-    raise _provider_base.ProvisioningStopped(
-        "TIMEWEB_FIREWALL_RESOURCE_SCOPE_WIDENED"
-    )
+    raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RESOURCE_SCOPE_WIDENED")
 
 
 def _wait_resource_link(
@@ -700,9 +698,8 @@ def _ensure_resource_link(
 ) -> None:
     if _resource_link_ready(_resources(api, group_id), cluster_id):
         return
-    path = (
-        f"/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?"
-        + urlencode({"resource_type": FIREWALL_RESOURCE_TYPE})
+    path = f"/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?" + urlencode(
+        {"resource_type": FIREWALL_RESOURCE_TYPE}
     )
     try:
         mutation.mutate_once(
