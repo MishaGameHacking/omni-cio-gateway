@@ -34,6 +34,8 @@ _PUBLIC_IPV4_GUARD_MODULE = (
 _PUBLIC_IPV4_GUARD_SCRIPT = (
     "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py"
 )
+_PROVIDER_TRANSITION_ORDER_INVALID = "TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID"
+_POST_EXPOSURE_MUTATION_FORBIDDEN = "TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN"
 
 
 def _read(path: Path) -> str:
@@ -856,6 +858,30 @@ def _validate_existing_only_transport(tree: ast.Module) -> None:
                 raise RuntimeError("TIMEWEB_IPV4_EXISTING_ONLY_RESOLVER_INVALID")
 
 
+def _validate_read_only_transport_scope(
+    tree: ast.Module,
+    function_name: str,
+) -> None:
+    forbidden_scope_calls = {
+        "_ensure_group",
+        "_ensure_rule",
+        "_ensure_resource_link",
+        "_patch_public_ipv4",
+        "_enable_secure_connection",
+    }
+    function = _function(tree, function_name)
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id in forbidden_scope_calls
+        ):
+            raise RuntimeError(_POST_EXPOSURE_MUTATION_FORBIDDEN)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "mutate_once":
+            raise RuntimeError(_POST_EXPOSURE_MUTATION_FORBIDDEN)
+
+
 def _validate_provider_transition_order(tree: ast.Module) -> None:
     public_patch = _function(tree, "_patch_public_ipv4")
     tls_patch = _function(tree, "_enable_secure_connection")
@@ -901,34 +927,17 @@ def _validate_provider_transition_order(tree: ast.Module) -> None:
     public_calls = call_lines(configure, owner=None, name="_patch_public_ipv4")
     tls_calls = call_lines(configure, owner=None, name="_enable_secure_connection")
     scope_wait_calls = call_lines(configure, owner=None, name="_wait_transport_scope")
-    if len(public_calls) != 1 or len(tls_calls) != 1 or len(scope_wait_calls) != 2:
-        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+    if (len(public_calls), len(tls_calls), len(scope_wait_calls)) != (1, 1, 2):
+        raise RuntimeError(_PROVIDER_TRANSITION_ORDER_INVALID)
     if not (public_calls[0] < scope_wait_calls[0] < tls_calls[0] < scope_wait_calls[1]):
-        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+        raise RuntimeError(_PROVIDER_TRANSITION_ORDER_INVALID)
 
     scope_wait = _function(tree, "_wait_transport_scope")
     if len(call_lines(scope_wait, owner=None, name="_verify_transport_scope")) != 1:
-        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+        raise RuntimeError(_PROVIDER_TRANSITION_ORDER_INVALID)
 
-    forbidden_scope_calls = {
-        "_ensure_group",
-        "_ensure_rule",
-        "_ensure_resource_link",
-        "_patch_public_ipv4",
-        "_enable_secure_connection",
-    }
-    for function_name in ("_wait_transport_scope", "_verify_transport_scope"):
-        function = _function(tree, function_name)
-        for node in ast.walk(function):
-            if not isinstance(node, ast.Call):
-                continue
-            if (
-                isinstance(node.func, ast.Name)
-                and node.func.id in forbidden_scope_calls
-            ):
-                raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
-            if isinstance(node.func, ast.Attribute) and node.func.attr == "mutate_once":
-                raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
+    _validate_read_only_transport_scope(tree, "_wait_transport_scope")
+    _validate_read_only_transport_scope(tree, "_verify_transport_scope")
 
 
 def _validate_custody_probe(source: str) -> None:
