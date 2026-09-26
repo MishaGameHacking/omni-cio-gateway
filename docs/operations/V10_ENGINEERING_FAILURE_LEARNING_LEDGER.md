@@ -886,3 +886,49 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** none.
 
+---
+
+## FL-038 — New provider-named runtime surfaces must update the canonical inventory atomically
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #591 exact head `0745343806719a699a4cd9ce664d1113b11fb240`
+
+**Symptom / failing gate:** the DRAFT exact-head `V10 Timeweb Worktree Convergence Audit` failed after the primary worktree-convergence guard passed. The nested platform-inventory guard stopped with `TIMEWEB_INVENTORY_PROVIDER_SURFACE_COUNT_DRIFT`.
+
+**Root cause:** PR #591 intentionally added two provider-named files — the current runtime adapter `apps/api/timeweb_postgres_tls.py` and its regression suite `tests/test_v10_timeweb_postgres_tls.py` — but the canonical Timeweb provider inventory still froze the pre-change exact count of 256. The test path was already classified by the existing Timeweb-test rule, while the new runtime adapter also required an explicit KEEP classification because no current `apps/api` path rule covers provider-named files.
+
+**Blast radius searched:** every PR #591 changed path, the provider-keyword detector, explicit-path classifications, Timeweb test path rules, the current TW-B runtime KEEP regression list, worktree-convergence consumers, and the new P3 CA helper/test pair. No retired-provider authority, product activation, database mutation, tenant boundary or broker/Real-money change is implicated.
+
+**Why preflight missed it:** the focused P3 contract/CA review validated the new runtime boundary but did not run the whole-tree provider inventory, whose exact-cardinality invariant is intentionally repository-global. The connector-only environment has no mounted repository or pinned project toolchain, so this adjacent whole-tree ownership guard was first exercised by authoritative CI.
+
+**Corrective change:** register `apps/api/timeweb_postgres_tls.py` explicitly as KEEP, raise the exact provider-named file count from 256 to 258 for the two added Timeweb paths, and freeze both the runtime helper and its test in the current TW-B KEEP regression list.
+
+**Permanent regression/guard:** `test_provider_named_inventory_uses_exact_cardinality` continues to require exact provider-surface cardinality, and `test_tw_b_current_source_runtime_surfaces_are_keep` now proves the CA adapter and its regression suite remain current Timeweb surfaces.
+
+**Future prevention rule:** every branch that adds or removes a provider-keyword path must update the canonical provider inventory and its ownership regression in the same source checkpoint before publication; provider-specific runtime adapters are inventory changes, not merely implementation details.
+
+**Dependency/tooling knowledge change:** none.
+
+
+---
+
+## FL-039 — Raw-string regex escapes must be proven by a positive contract path
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #591 exact head `78594915cfbf7474f30c86838cf0b2cfc4ca9fd1` / Self-Hosted Windows CI run `36270486914`
+
+**Symptom / failing gate:** every repository-owned exact-head workflow except the authoritative Windows merge gate completed `success`. The Windows Regression Shield reached 3,875 passing tests and 960 passing subtests, then failed four focused TLS tests. A syntactically valid hostname such as `db.example.com` was rejected as `TIMEWEB_PG_TLS_TECHNICAL_DOMAIN_REQUIRED`, so the later negative predicates for port, TLS mode and CA path could not reach their intended checks.
+
+**Root cause:** the DNS-label separator in `_DOMAIN_RE` was written as `\\\\.` inside a Python raw string. Raw strings do not require that second escape; the compiled expression therefore expected a literal backslash before the separator instead of a normal dot. The validator rejected every ordinary dotted hostname, including the Timeweb technical-domain shape required for verify-full TLS.
+
+**Blast radius searched:** `_connection_params`, `resolve_timeweb_postgres_dsn`, `prepare_timeweb_postgres_tls`, the P3 bootstrap/runtime DSN preparation path, hosted-runtime startup, the port/TLS/root-cert negative predicates, and the exact-head P3 machine guard. The defect is fail-closed: it blocks PostgreSQL connectivity but does not widen provider, tenant, public-user, broker-write or Real-money authority.
+
+**Why preflight missed it:** connector-only source review and Ruff formatting prove syntax/shape, not regular-expression semantics, and the local execution environment cannot install the repository dependency set. The first authoritative workflow that executes the complete regression suite exposed the semantic escape error.
+
+**Corrective change:** replace the over-escaped raw-string separator with the canonical `\.` form and add an explicit positive regression proving that a valid dotted PostgreSQL hostname reaches the accepted port and verify-full predicates.
+
+**Permanent regression/guard:** `test_connection_contract_accepts_valid_domain` freezes the positive hostname contract, while the existing parametrized negative suite separately proves IP-host rejection, exact port 5432, `verify-full`, and the portable root-certificate path.
+
+**Future prevention rule:** every regex used as an authority or transport validator must have at least one positive-path regression that proves representative valid input reaches downstream predicates; negative-only regex tests can pass for the wrong rejection reason.
+
+**Dependency/tooling knowledge change:** none.

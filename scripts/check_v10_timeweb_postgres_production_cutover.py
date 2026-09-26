@@ -13,6 +13,8 @@ CONTRACT = (
 )
 RUNBOOK = ROOT / "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOOK.md"
 CONTROLLER = ROOT / "scripts/timeweb_postgres_production_cutover.py"
+HOSTED_RUNTIME = ROOT / "apps/api/hosted_runtime.py"
+TIMEWEB_TLS = ROOT / "apps/api/timeweb_postgres_tls.py"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 RUNTIME = ROOT / "infrastructure/postgres/hosted-postgres-runtime-contract.json"
 RECOVERY = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
@@ -81,6 +83,31 @@ def _validate_target(payload: dict[str, Any]) -> None:
         or target.get("synthetic_fixture_promotion_allowed") is not False
     ):
         raise CutoverContractError(code)
+
+
+def _validate_transport(payload: dict[str, Any]) -> None:
+    transport = _mapping(
+        payload.get("transport"),
+        "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+    )
+    expected = {
+        "sslmode": "verify-full",
+        "sslrootcert_required": True,
+        "encrypted_session_required": True,
+        "plaintext_dsn_in_repository_allowed": False,
+        "technical_domain_required": True,
+        "port": 5432,
+        "canonical_sslrootcert": ".omni-cio/timeweb-postgres-root.crt",
+        "ca_source_url": "https://st.timeweb.com/cloud-static/ca.crt",
+        "ca_fetch_bounded_retry_required": True,
+        "ca_redirect_allowed": False,
+        "ca_materialization_before_connect_required": True,
+        "external_dsn_format": "POSTGRESQL_LIBPQ",
+        "php_pdo_dsn_allowed": False,
+        "resolved_sslrootcert_may_be_absolute_in_process_only": True,
+    }
+    if transport != expected:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID")
 
 
 def _validate_connection_retry(payload: dict[str, Any]) -> None:
@@ -246,6 +273,7 @@ def _validate_observe(payload: dict[str, Any]) -> None:
         "bootstrap_authority_identity_required": True,
         "runtime_role_identity_required": True,
         "existing_product_residue_must_be_clean": True,
+        "local_ca_materialization_allowed": True,
     }
     if observe != expected:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_INVALID")
@@ -286,6 +314,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     if any(payload.get(key) != value for key, value in expected_root.items()):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_IDENTITY_DRIFT")
     _validate_target(payload)
+    _validate_transport(payload)
     _validate_connection_retry(payload)
     _validate_runtime_role(payload)
     _validate_prepare(payload)
@@ -356,6 +385,8 @@ def _validate_sources() -> None:
             "_verify_cross_tenant_negative(runtime)",
             "_PRODUCTION_CONNECT_RETRY_DELAYS = (",
             "retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS",
+            "timeweb_postgres_tls.install_timeweb_postgres_ca()",
+            "timeweb_postgres_tls.resolve_timeweb_postgres_dsn(",
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",
@@ -388,6 +419,31 @@ def _validate_sources() -> None:
         )
     ):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONTROLLER_AUTHORITY_WIDENED")
+
+    tls_source = _text(TIMEWEB_TLS)
+    _markers(
+        tls_source,
+        (
+            'TIMEWEB_POSTGRES_CA_URL = "https://st.timeweb.com/cloud-static/ca.crt"',
+            'TIMEWEB_POSTGRES_SSLROOTCERT = ".omni-cio/timeweb-postgres-root.crt"',
+            "_NoRedirectHandler",
+            "TIMEWEB_PG_TLS_TECHNICAL_DOMAIN_REQUIRED",
+            "TIMEWEB_PG_TLS_VERIFY_FULL_REQUIRED",
+            "TIMEWEB_PG_TLS_ROOT_CERT_PATH_INVALID",
+            "os.replace(temporary, target)",
+            "make_conninfo(dsn, sslrootcert=str(absolute_ca))",
+        ),
+        "TIMEWEB_PG_CUTOVER_TLS_RUNTIME_DRIFT",
+    )
+
+    _markers(
+        _text(HOSTED_RUNTIME),
+        (
+            "from apps.api.timeweb_postgres_tls import prepare_timeweb_postgres_tls",
+            "database_dsn = prepare_timeweb_postgres_tls(_required_env(_DSN_ENV))",
+        ),
+        "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+    )
 
     workflow = _text(WORKFLOW)
     _markers(
@@ -429,6 +485,9 @@ def _validate_sources() -> None:
             "timeweb-production",
             "Selected branches and tags",
             "Branch `main`",
+            "Portable CA / DSN rule",
+            "sslrootcert=.omni-cio/timeweb-postgres-root.crt",
+            "pgsql:host=...",
             "The observe phase is SQL read-only",
             "Only after P3 acceptance may P4",
         ),
@@ -441,8 +500,19 @@ def _validate_sources() -> None:
 
 
 def validate(root: Path = ROOT) -> None:
-    global ROOT, CONTRACT, RUNBOOK, CONTROLLER, WORKFLOW, RUNTIME, RECOVERY
-    old = (ROOT, CONTRACT, RUNBOOK, CONTROLLER, WORKFLOW, RUNTIME, RECOVERY)
+    global ROOT, CONTRACT, RUNBOOK, CONTROLLER, HOSTED_RUNTIME, TIMEWEB_TLS
+    global WORKFLOW, RUNTIME, RECOVERY
+    old = (
+        ROOT,
+        CONTRACT,
+        RUNBOOK,
+        CONTROLLER,
+        HOSTED_RUNTIME,
+        TIMEWEB_TLS,
+        WORKFLOW,
+        RUNTIME,
+        RECOVERY,
+    )
     if root != ROOT:
         ROOT = root
         CONTRACT = (
@@ -453,6 +523,8 @@ def validate(root: Path = ROOT) -> None:
             root / "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOOK.md"
         )
         CONTROLLER = root / "scripts/timeweb_postgres_production_cutover.py"
+        HOSTED_RUNTIME = root / "apps/api/hosted_runtime.py"
+        TIMEWEB_TLS = root / "apps/api/timeweb_postgres_tls.py"
         WORKFLOW = (
             root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
         )
@@ -462,7 +534,17 @@ def validate(root: Path = ROOT) -> None:
         _validate_contract(_json(CONTRACT))
         _validate_sources()
     finally:
-        ROOT, CONTRACT, RUNBOOK, CONTROLLER, WORKFLOW, RUNTIME, RECOVERY = old
+        (
+            ROOT,
+            CONTRACT,
+            RUNBOOK,
+            CONTROLLER,
+            HOSTED_RUNTIME,
+            TIMEWEB_TLS,
+            WORKFLOW,
+            RUNTIME,
+            RECOVERY,
+        ) = old
 
 
 def main() -> int:

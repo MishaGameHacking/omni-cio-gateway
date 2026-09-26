@@ -23,7 +23,17 @@
     "sslmode": "verify-full",
     "sslrootcert_required": true,
     "encrypted_session_required": true,
-    "plaintext_dsn_in_repository_allowed": false
+    "plaintext_dsn_in_repository_allowed": false,
+    "technical_domain_required": true,
+    "port": 5432,
+    "canonical_sslrootcert": ".omni-cio/timeweb-postgres-root.crt",
+    "ca_source_url": "https://st.timeweb.com/cloud-static/ca.crt",
+    "ca_fetch_bounded_retry_required": true,
+    "ca_redirect_allowed": false,
+    "ca_materialization_before_connect_required": true,
+    "external_dsn_format": "POSTGRESQL_LIBPQ",
+    "php_pdo_dsn_allowed": false,
+    "resolved_sslrootcert_may_be_absolute_in_process_only": true
   },
   "connection_retry": {
     "bounded": true,
@@ -140,6 +150,7 @@
     "tls_verify_full_required": true,
     "bootstrap_authority_identity_required": true,
     "runtime_role_identity_required": true,
-    "existing_product_residue_must_be_clean": true
+    "existing_product_residue_must_be_clean": true,
+    "local_ca_materialization_allowed": true
   }
 }

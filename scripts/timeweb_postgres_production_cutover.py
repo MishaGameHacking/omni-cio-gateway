@@ -14,6 +14,7 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
+from apps.api import timeweb_postgres_tls
 from apps.api.hosted_database_runtime import probe_hosted_runtime_database
 from omni_cio.persistence.migration import (
     apply_migrations,
@@ -103,6 +104,11 @@ def _dsn(name: str) -> tuple[str, dict[str, str]]:
         _stop(f"{name}_TLS_VERIFY_FULL_REQUIRED")
     if not params.get("sslrootcert", "").strip():
         _stop(f"{name}_TLS_ROOT_CERT_REQUIRED")
+    if (
+        params.get("sslrootcert", "").strip()
+        != timeweb_postgres_tls.TIMEWEB_POSTGRES_SSLROOTCERT
+    ):
+        _stop(f"{name}_TLS_ROOT_CERT_PATH_INVALID")
     return value, params
 
 
@@ -116,6 +122,26 @@ def _validate_target_pair(bootstrap: dict[str, str], runtime: dict[str, str]) ->
         _stop("TIMEWEB_PG_PRODUCTION_RUNTIME_ROLE_INVALID")
     if bootstrap.get("user", "").strip() == RUNTIME_ROLE:
         _stop("TIMEWEB_PG_PRODUCTION_BOOTSTRAP_RUNTIME_COLLISION")
+
+
+def _prepare_connection_dsns(
+    bootstrap_dsn: str,
+    runtime_dsn: str,
+) -> tuple[str, str]:
+    try:
+        ca_path = timeweb_postgres_tls.install_timeweb_postgres_ca()
+        return (
+            timeweb_postgres_tls.resolve_timeweb_postgres_dsn(
+                bootstrap_dsn,
+                ca_path,
+            ),
+            timeweb_postgres_tls.resolve_timeweb_postgres_dsn(
+                runtime_dsn,
+                ca_path,
+            ),
+        )
+    except timeweb_postgres_tls.TimewebPostgresTlsError as exc:
+        _stop(exc.code)
 
 
 def _verify_tls(connection: Any) -> None:
@@ -338,10 +364,10 @@ def _prepare_database(bootstrap_dsn: str, runtime_dsn: str) -> None:
         runtime_sql = postgres_runtime.render_runtime_sql(RUNTIME_ROLE)
         bootstrap.execute(runtime_sql, prepare=False)
 
-    _verify_runtime_database(runtime_dsn)
+    _verify_runtime_database(runtime_dsn, bootstrap_dsn)
 
 
-def _verify_runtime_database(runtime_dsn: str) -> None:
+def _verify_runtime_database(runtime_dsn: str, bootstrap_dsn: str) -> None:
     runtime = _connect(
         runtime_dsn,
         code="TIMEWEB_PG_PRODUCTION_RUNTIME_CONNECTION_FAILED",
@@ -354,7 +380,6 @@ def _verify_runtime_database(runtime_dsn: str) -> None:
         )
         _verify_cross_tenant_negative(runtime)
 
-    bootstrap_dsn, _bootstrap_params = _dsn(BOOTSTRAP_DSN_ENV)
     bootstrap = _connect(
         bootstrap_dsn,
         code="TIMEWEB_PG_PRODUCTION_BOOTSTRAP_CONNECTION_FAILED",
@@ -444,13 +469,19 @@ def run(
     runtime_dsn, runtime_params = _dsn(RUNTIME_DSN_ENV)
     _validate_target_pair(bootstrap_params, runtime_params)
 
+    if operation not in {"observe", "prepare", "accept"}:
+        _stop("TIMEWEB_PG_PRODUCTION_OPERATION_INVALID")
     if operation != "accept" and (recovery_attestation or recovery_evidence_sha256):
         _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_RECOVERY_EVIDENCE")
 
     if operation == "observe":
         if confirmation:
             _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_CONFIRMATION")
-        _observe_database(bootstrap_dsn, runtime_dsn)
+        bootstrap_connect_dsn, runtime_connect_dsn = _prepare_connection_dsns(
+            bootstrap_dsn,
+            runtime_dsn,
+        )
+        _observe_database(bootstrap_connect_dsn, runtime_connect_dsn)
         print(
             "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=OBSERVED "
             f"sha={expected} postgres=18 tls=verify-full public_users=false"
@@ -460,7 +491,11 @@ def run(
     if operation == "prepare":
         if confirmation != PREPARE_CONFIRMATION:
             _stop("TIMEWEB_PG_PRODUCTION_PREPARE_CONFIRMATION_REQUIRED")
-        _prepare_database(bootstrap_dsn, runtime_dsn)
+        bootstrap_connect_dsn, runtime_connect_dsn = _prepare_connection_dsns(
+            bootstrap_dsn,
+            runtime_dsn,
+        )
+        _prepare_database(bootstrap_connect_dsn, runtime_connect_dsn)
         print(
             "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=PREPARED "
             f"sha={expected} postgres=18 tls=verify-full public_users=false"
@@ -469,10 +504,12 @@ def run(
 
     if confirmation:
         _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_CONFIRMATION")
-    if operation != "accept":
-        _stop("TIMEWEB_PG_PRODUCTION_OPERATION_INVALID")
 
-    _verify_runtime_database(runtime_dsn)
+    bootstrap_connect_dsn, runtime_connect_dsn = _prepare_connection_dsns(
+        bootstrap_dsn,
+        runtime_dsn,
+    )
+    _verify_runtime_database(runtime_connect_dsn, bootstrap_connect_dsn)
     if recovery_attestation != RECOVERY_ATTESTATION_VALUE:
         _stop("TIMEWEB_PG_PRODUCTION_RECOVERY_NOT_ACCEPTED")
     evidence_digest = _recovery_evidence_sha256(recovery_evidence_sha256)

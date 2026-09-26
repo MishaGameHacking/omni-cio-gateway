@@ -106,6 +106,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "apps/api/hosted_database_runtime.py",
             "apps/api/hosted_runtime.py",
             "apps/api/telegram_auth.py",
+            "apps/api/timeweb_postgres_tls.py",
             "apps/web/vite.config.ts",
             "infrastructure/postgres/hosted-postgres-runtime.sql",
             "omni_cio/persistence/hosted_postgres_runtime_v1.py",
@@ -128,6 +129,7 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             "scripts/check_v10_timeweb_postgres_production_cutover.py",
             "scripts/timeweb_postgres_production_cutover.py",
             "tests/test_v10_timeweb_postgres_production_cutover.py",
+            "tests/test_v10_timeweb_postgres_tls.py",
         ):
             with self.subTest(path=path):
                 self.assertEqual(
