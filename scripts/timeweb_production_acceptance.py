@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from typing import Any, NoReturn
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -17,6 +18,8 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 _JSON_CONTENT_TYPE = "application/json"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
+_TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+_PUBLIC_PROBE_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0)
 
 
 class ProductionAcceptanceStopped(RuntimeError):
@@ -86,16 +89,37 @@ def _read_json(path: str, *, opener: Any | None = None) -> object:
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    try:
-        with active.open(request, timeout=30.0) as response:
-            if int(response.status) != 200:
-                _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_STATUS_INVALID")
-            headers = _headers(response)
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-    except HTTPError as exc:
-        _stop(f"TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_ERROR:{int(exc.code)}")
-    except OSError:
-        _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_TRANSPORT_FAILED")
+    headers: dict[str, str] = {}
+    raw = b""
+    for attempt in range(len(_PUBLIC_PROBE_RETRY_DELAYS) + 1):
+        try:
+            with active.open(request, timeout=30.0) as response:
+                status = int(response.status)
+                if status != 200:
+                    if (
+                        status in _TRANSIENT_HTTP_STATUSES
+                        and attempt < len(_PUBLIC_PROBE_RETRY_DELAYS)
+                    ):
+                        time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+                        continue
+                    _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_STATUS_INVALID")
+                headers = _headers(response)
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                break
+        except HTTPError as exc:
+            status = int(exc.code)
+            if (
+                status in _TRANSIENT_HTTP_STATUSES
+                and attempt < len(_PUBLIC_PROBE_RETRY_DELAYS)
+            ):
+                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+                continue
+            _stop(f"TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_ERROR:{status}")
+        except OSError:
+            if attempt < len(_PUBLIC_PROBE_RETRY_DELAYS):
+                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+                continue
+            _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_TRANSPORT_FAILED")
     if len(raw) > MAX_RESPONSE_BYTES:
         _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_RESPONSE_TOO_LARGE")
     content_type = headers.get("content-type", "").partition(";")[0].strip().casefold()
