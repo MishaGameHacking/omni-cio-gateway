@@ -313,7 +313,8 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             ),
             mock.patch.object(
                 provisioner,
-                "_ensure_group",                return_value="group-1",
+                "_ensure_group",
+                return_value="group-1",
             ),
             mock.patch.object(provisioner, "_ensure_rule"),
             mock.patch.object(provisioner, "_ensure_resource_link"),
@@ -698,7 +699,8 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                         "POST",
                         "/api/v1/floating-ips",
                         operation="FLOATING_IP_CREATE",
-                        body=body,                        expected_statuses=expected_statuses,
+                        body=body,
+                        expected_statuses=expected_statuses,
                     )
                 self.assertEqual(raised.exception.code, expected_code)
                 self.assertEqual(raised.exception.status, status)
