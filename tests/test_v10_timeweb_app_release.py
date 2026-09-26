@@ -111,6 +111,34 @@ class _Api:
         return {"deploy": row}
 
 
+class _InflightApi(_Api):
+    def __init__(self, app: dict[str, object]) -> None:
+        super().__init__(app)
+        self.rows.insert(
+            0,
+            {"id": "deploy-inflight", "commit_sha": EXPECTED_SHA, "status": "created"},
+        )
+        self.deploy_reads = 0
+
+    def list_deploys(self, app_id: str) -> dict[str, object]:
+        self.deploy_reads += 1
+        if self.deploy_reads >= 2:
+            self.rows[0]["status"] = "success"
+            self.app_payload["commit_sha"] = EXPECTED_SHA
+            self.app_payload["status"] = "active"
+        return super().list_deploys(app_id)
+
+
+class _AmbiguousApi(_Api):
+    def deploy_once(self, app_id: str, sha: str) -> dict[str, object]:
+        self.calls.append((app_id, sha))
+        row = {"id": "deploy-ambiguous", "commit_sha": sha, "status": "success"}
+        self.rows.insert(0, row)
+        self.app_payload["commit_sha"] = sha
+        self.app_payload["status"] = "active"
+        raise release.AmbiguousDeploy
+
+
 def test_observe_requires_current_main_sha() -> None:
     api = _Api(_app(active_sha=EXPECTED_SHA))
     livez = _Livez()
@@ -321,6 +349,65 @@ def test_deploy_requires_confirmation_and_mutates_only_exact_sha() -> None:
         confirmation=release.DEPLOY_CONFIRMATION,
         api=api,
         livez_opener=livez,
+    )
+    assert api.calls == [("17", EXPECTED_SHA)]
+    assert last_known_good == LKG_SHA
+
+
+def test_deploy_wait_budget_is_multi_minute_and_workflow_bounded() -> None:
+    budget = sum(release._POLL_DELAYS)
+    assert budget >= 300.0
+    assert budget < 15 * 60
+    assert sum(release._DEPLOY_RECONCILE_DELAYS) >= 60.0
+
+
+def test_deploy_adopts_unique_inflight_exact_sha_without_second_post() -> None:
+    api = _InflightApi(_app())
+    last_known_good = release.run(
+        operation="deploy",
+        expected_sha=EXPECTED_SHA,
+        observed_main_sha=EXPECTED_SHA,
+        token="token",
+        confirmation=release.DEPLOY_CONFIRMATION,
+        api=api,
+        livez_opener=_Livez(),
+    )
+    assert api.calls == []
+    assert last_known_good == LKG_SHA
+
+
+def test_deploy_rejects_multiple_inflight_exact_sha_before_mutation() -> None:
+    api = _Api(_app())
+    api.rows[:0] = [
+        {"id": "deploy-a", "commit_sha": EXPECTED_SHA, "status": "created"},
+        {"id": "deploy-b", "commit_sha": EXPECTED_SHA, "status": "started"},
+    ]
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_MULTIPLE_INFLIGHT_EXACT_SHA",
+    ):
+        release.run(
+            operation="deploy",
+            expected_sha=EXPECTED_SHA,
+            observed_main_sha=EXPECTED_SHA,
+            token="token",
+            confirmation=release.DEPLOY_CONFIRMATION,
+            api=api,
+            livez_opener=_Livez(),
+        )
+    assert api.calls == []
+
+
+def test_ambiguous_deploy_reconciles_by_get_without_second_post() -> None:
+    api = _AmbiguousApi(_app())
+    last_known_good = release.run(
+        operation="deploy",
+        expected_sha=EXPECTED_SHA,
+        observed_main_sha=EXPECTED_SHA,
+        token="token",
+        confirmation=release.DEPLOY_CONFIRMATION,
+        api=api,
+        livez_opener=_Livez(),
     )
     assert api.calls == [("17", EXPECTED_SHA)]
     assert last_known_good == LKG_SHA
