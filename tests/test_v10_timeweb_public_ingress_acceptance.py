@@ -186,6 +186,16 @@ def _accept(api: _Api, *, opener: _Opener | None = None) -> None:
 
 
 class TimewebPublicIngressTests(unittest.TestCase):
+    def test_provider_app_id_rejects_non_scalar_values(self) -> None:
+        for value in (True, False, None, 1.5, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaises(
+                    ingress.PublicIngressStopped
+                ):
+                    ingress._safe_id(value)
+        self.assertEqual(ingress._safe_id(17), "17")
+        self.assertEqual(ingress._safe_id("app-17"), "app-17")
+
     def test_repository_guard_passes(self) -> None:
         guard.validate(ROOT)
 
