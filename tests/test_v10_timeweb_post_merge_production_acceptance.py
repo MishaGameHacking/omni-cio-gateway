@@ -208,9 +208,7 @@ class TimewebPostMergeProductionAcceptanceTests(unittest.TestCase):
                 **_accepted_kwargs(),
             )
         self.assertIsNotNone(seal)
-        sleeper.assert_called_once_with(
-            acceptance._PUBLIC_PROBE_RETRY_DELAYS[0]
-        )
+        sleeper.assert_called_once_with(acceptance._PUBLIC_PROBE_RETRY_DELAYS[0])
         self.assertEqual(opener.paths[:2], ["/livez", "/livez"])
 
     def test_accept_rejects_disabled_telegram(self) -> None:
