@@ -212,6 +212,8 @@
     "stage_specific_sanitized_timeout_required": true,
     "provider_response_body_logging_allowed": false,
     "rollback_requires_get_reconciliation": true,
+    "final_observation_after_last_backoff_required": true,
+    "post_exposure_validation_read_only_required": true,
     "public_probe_transient_retry_required": true,
     "postgres_connect_transient_retry_required": true,
     "tls_certificate_verification_failure_retry_allowed": false,
