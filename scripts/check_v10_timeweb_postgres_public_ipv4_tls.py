@@ -873,10 +873,7 @@ def _validate_read_only_transport_scope(
     for node in ast.walk(function):
         if not isinstance(node, ast.Call):
             continue
-        if (
-            isinstance(node.func, ast.Name)
-            and node.func.id in forbidden_scope_calls
-        ):
+        if isinstance(node.func, ast.Name) and node.func.id in forbidden_scope_calls:
             raise RuntimeError(_POST_EXPOSURE_MUTATION_FORBIDDEN)
         if isinstance(node.func, ast.Attribute) and node.func.attr == "mutate_once":
             raise RuntimeError(_POST_EXPOSURE_MUTATION_FORBIDDEN)
