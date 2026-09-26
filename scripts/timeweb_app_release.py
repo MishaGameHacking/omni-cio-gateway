@@ -220,6 +220,43 @@ def _decode(status: int, raw: bytes, expected: int, code: str) -> dict[str, Any]
     return _mapping(value, f"{code}_RESPONSE_INVALID")
 
 
+def _deploy_page(
+    payload: dict[str, Any],
+    existing_count: int,
+) -> tuple[list[dict[str, Any]], int]:
+    raw = payload.get("deploys")
+    if not isinstance(raw, list):
+        _stop(_DEPLOYS_INVALID)
+    page_rows = [_mapping(item, _DEPLOYS_INVALID) for item in raw]
+    total = _mapping(payload.get("meta"), _DEPLOYS_INVALID).get("total")
+    if (
+        type(total) is not int
+        or total < 0
+        or len(page_rows) > _PAGE_SIZE
+        or existing_count + len(page_rows) > total
+    ):
+        _stop(_DEPLOYS_INVALID)
+    return page_rows, total
+
+
+def _require_stable_total(expected_total: int | None, total: int) -> int:
+    if expected_total is not None and total != expected_total:
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED")
+    return total if expected_total is None else expected_total
+
+
+def _validate_deploy_history_ids(rows: list[dict[str, Any]]) -> None:
+    identifiers = [
+        _safe_id(
+            row.get("id"),
+            "TIMEWEB_APP_RELEASE_DEPLOY_ID_INVALID",
+        )
+        for row in rows
+    ]
+    if len(set(identifiers)) != len(identifiers):
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID")
+
+
 class TimewebAppApi:
     def __init__(
         self, token: str, *, opener: Any | None = None, sleeper: Sleep = time.sleep
@@ -289,34 +326,11 @@ class TimewebAppApi:
             payload = self._get(
                 f"/api/v1/apps/{safe}/deploys?limit={_PAGE_SIZE}&offset={offset}"
             )
-            raw = payload.get("deploys")
-            if not isinstance(raw, list):
-                _stop(_DEPLOYS_INVALID)
-            page_rows = [_mapping(item, _DEPLOYS_INVALID) for item in raw]
-            meta = _mapping(payload.get("meta"), _DEPLOYS_INVALID)
-            total = meta.get("total")
-            if (
-                type(total) is not int
-                or total < 0
-                or len(page_rows) > _PAGE_SIZE
-                or len(rows) + len(page_rows) > total
-            ):
-                _stop(_DEPLOYS_INVALID)
-            if expected_total is None:
-                expected_total = total
-            elif total != expected_total:
-                _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED")
+            page_rows, total = _deploy_page(payload, len(rows))
+            expected_total = _require_stable_total(expected_total, total)
             rows.extend(page_rows)
             if len(rows) == total:
-                identifiers = [
-                    _safe_id(
-                        row.get("id"),
-                        "TIMEWEB_APP_RELEASE_DEPLOY_ID_INVALID",
-                    )
-                    for row in rows
-                ]
-                if len(set(identifiers)) != len(identifiers):
-                    _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID")
+                _validate_deploy_history_ids(rows)
                 return {"deploys": rows, "meta": {"total": total}}
             if not page_rows or len(page_rows) < _PAGE_SIZE:
                 _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TRUNCATED")
@@ -540,6 +554,34 @@ def _candidate_app(
     return app, app_id, candidate
 
 
+def _livez_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+    except HTTPError as exc:
+        status = int(exc.code)
+        if status in _TRANSIENT:
+            return None, "http", status
+        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+    except OSError:
+        return None, "transport", None
+    if status in _TRANSIENT:
+        return None, "http", status
+    if status != 200:
+        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+    return _decode(status, raw, 200, "TIMEWEB_APP_RELEASE_LIVEZ"), None, None
+
+
+def _stop_livez_retry(failure: str | None, status: int | None) -> NoReturn:
+    if failure == "http" and status is not None:
+        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+    _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
+
+
 def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) -> None:
     request = Request(
         f"https://{hostname}/livez",
@@ -551,33 +593,12 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
     )
     active = opener or _NO_REDIRECT_OPENER
     for attempt in range(len(_LIVEZ_RETRY_DELAYS) + 1):
-        try:
-            with active.open(request, timeout=30.0) as response:
-                status = int(response.status)
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
-        except HTTPError as exc:
-            status = int(exc.code)
-            if status in _TRANSIENT and attempt < len(_LIVEZ_RETRY_DELAYS):
-                time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
-                continue
-            _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
-        except OSError:
-            if attempt < len(_LIVEZ_RETRY_DELAYS):
-                time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
-                continue
-            _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
-
-        if status != 200:
-            if status in _TRANSIENT and attempt < len(_LIVEZ_RETRY_DELAYS):
-                time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
-                continue
-            _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
-        payload = _decode(
-            status,
-            raw,
-            200,
-            "TIMEWEB_APP_RELEASE_LIVEZ",
-        )
+        payload, failure, status = _livez_attempt(active, request)
+        if payload is None:
+            if attempt >= len(_LIVEZ_RETRY_DELAYS):
+                _stop_livez_retry(failure, status)
+            time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+            continue
         if payload.get("status") != "ok":
             _stop("TIMEWEB_APP_RELEASE_LIVEZ_NOT_OK")
         observed = _sha(
@@ -586,11 +607,10 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
         )
         if observed == expected:
             return
-        if attempt < len(_LIVEZ_RETRY_DELAYS):
-            time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
-            continue
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT")
-    _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
+        if attempt >= len(_LIVEZ_RETRY_DELAYS):
+            _stop("TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT")
+        time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+    raise AssertionError("bounded liveness verification exhausted")
 
 
 def _reconcile(api: ApiLike, app_id: str, before: frozenset[str], expected: str) -> str:
