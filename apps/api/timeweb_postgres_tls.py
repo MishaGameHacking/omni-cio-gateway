@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import binascii
 import os
 import re
 import ssl
@@ -93,7 +94,7 @@ def _ca_target(base_dir: Path | None = None) -> Path:
             "TIMEWEB_PG_TLS_CA_PATH_UNAVAILABLE"
         ) from None
     target = directory / "timeweb-postgres-root.crt"
-    if target.exists() and (target.is_symlink() or not target.is_file()):
+    if target.is_symlink() or (target.exists() and not target.is_file()):
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
     return target
 
@@ -154,7 +155,7 @@ def _validate_ca(raw: bytes) -> None:
     certificate = text[begin : end + len(end_marker)]
     try:
         ssl.PEM_cert_to_DER_cert(certificate)
-    except ValueError:
+    except (ValueError, binascii.Error):
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_INVALID") from None
 
 

@@ -161,6 +161,26 @@ def test_ca_install_rejects_redirect_without_retry(tmp_path: Path) -> None:
     assert opener.calls == 1
 
 
+def test_ca_install_rejects_malformed_pem_with_sanitized_error(
+    tmp_path: Path,
+) -> None:
+    malformed = (
+        b"-----BEGIN CERTIFICATE-----\n"
+        b"not-base64\n"
+        b"-----END CERTIFICATE-----\n"
+    )
+    opener = _Opener([_Response(malformed)])
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_CA_INVALID",
+    ):
+        tls.install_timeweb_postgres_ca(
+            base_dir=tmp_path,
+            opener=opener,
+            delays=(),
+        )
+
+
 def test_ca_install_rejects_oversized_response(tmp_path: Path) -> None:
     payload = b"x" * (tls._MAX_CA_BYTES + 1)
     opener = _Opener([_Response(payload)])
