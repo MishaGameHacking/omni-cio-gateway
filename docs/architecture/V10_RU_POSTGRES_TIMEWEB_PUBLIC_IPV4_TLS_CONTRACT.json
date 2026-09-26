@@ -187,6 +187,25 @@
       "exact_provider_validation_message_unavailable": true,
       "repair_requires_separate_public_ipv4_and_tls_transitions": true,
       "get_reconciliation_between_transitions_required": true
+    },
+    "latest_live_readiness_failure": {
+      "workflow_ordinal": 6,
+      "exact_main_sha_parts": [
+        "86294ebb",
+        "0e5b6eb0",
+        "a56aa8d4",
+        "b28f1692",
+        "f483a8d8"
+      ],
+      "observed_terminal_code": "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT",
+      "prior_tls_wait_budget_seconds": 83,
+      "provider_readiness_sla_seconds_documented": false,
+      "provider_mutation_success_can_precede_resource_readiness": true,
+      "extended_get_only_reconciliation_required": true,
+      "minimum_tls_wait_budget_seconds": 300,
+      "maximum_tls_wait_budget_seconds": 900,
+      "stage_specific_timeout_classification_required": true,
+      "blind_retry_allowed": false
     }
   },
   "ipv4_custody": {
