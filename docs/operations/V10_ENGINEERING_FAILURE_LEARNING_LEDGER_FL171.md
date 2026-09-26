@@ -64,3 +64,29 @@ Never infer a provider readiness SLA from a locally convenient polling duration.
 ## Dependency / tooling knowledge change
 
 Current Timeweb DBaaS documentation states that successful resource operations can return before a resource is fully ready, and PostgreSQL TLS setup requires waiting for configuration completion. The current public documentation does not establish an 83-second TLS readiness SLA.
+
+## Cross-milestone systemic hardening discovered by blast-radius review
+
+The live timeout was not treated as an isolated `sleep()` defect. A source review of the accepted Timeweb production-delivery consumers found the same broader failure class in later gates that had not yet been executed live: deterministic CI can prove syntax and invariants while a real provider still exposes eventual consistency, transient control-plane failures, route propagation, restart windows or an already-running prior intent.
+
+The repair therefore introduces one fail-closed convergence law across the currently authorized Timeweb delivery path:
+
+1. **Retry observation, never authority.** Only bounded GET/read/probe operations may retry on explicit transient network errors or HTTP `408/429/500/502/503/504`. Authentication/authorization failures, malformed state, wrong release SHA, security-header drift, tenant/security failures and certificate-verification failures remain terminal.
+2. **Adopt exact intent instead of replaying mutation.** App Platform deployment recovery first looks for one existing non-terminal deploy of the exact accepted SHA. If found, the controller adopts and observes it. If multiple exact-SHA in-flight deploys exist, the state is ambiguous and stops. A timeout or ambiguous POST never grants a second POST.
+3. **Provider acceptance is not readiness.** Public IPv4, TLS/certificate issuance and App Platform deployment each use bounded multi-minute GET-only reconciliation budgets below their enclosing workflow deadline. A local poll budget is never treated as a provider SLA.
+4. **Separate transient transport from semantic failure.** Timeweb DB control-plane `500`, network errors, CA download transport and PostgreSQL socket propagation can recover within bounded budgets. TLS certificate verification, unsafe resource status, wrong binding, widened firewall, wrong release identity and invalid provider state never retry into GREEN.
+5. **Rollback is also eventually consistent.** A rollback request is not proof of rollback. Public-network rollback now gets its own bounded GET reconciliation and still fails closed to manual reconciliation if closure cannot be proved.
+6. **Later production gates inherit resilience, not authority.** P3 PostgreSQL connection establishment gets a longer production-only retry budget; P4 ingress, P5 Telegram activation and P6 production acceptance retry only transient read-only public probes. None of these changes authorizes DNS mutation, public-user activation, broker write, Real money or destructive provider operations.
+
+This is intentionally stronger than adding longer sleeps. The controller models **intent identity + observed provider state + bounded convergence + terminal semantic predicates**. That makes interrupted/restarted workflows restart-safe without converting uncertainty into duplicate side effects.
+
+## Permanent prevention rule added after full blast-radius review
+
+Every future provider-facing controller in the current Timeweb production path must classify each operation before implementation as one of:
+
+- **MUTATION** — single-attempt under explicit authority; ambiguous result is reconciled by reads and is never blindly replayed;
+- **OBSERVATION** — bounded retry is allowed only for explicit transient transport/status classes;
+- **SEMANTIC/SECURITY PROOF** — mismatch is terminal and cannot be healed by retries;
+- **ROLLBACK** — mutation remains bounded and the resulting safe state must be independently re-proved by observation.
+
+For asynchronous provider operations, a restart must prefer adoption of a uniquely identifiable in-flight exact intent over creating a new intent. If identity is not unique or state cannot be proved, stop rather than guess.
