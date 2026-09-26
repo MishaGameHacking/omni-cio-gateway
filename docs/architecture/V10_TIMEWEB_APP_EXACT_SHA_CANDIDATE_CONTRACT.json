@@ -39,7 +39,11 @@
     "ambiguous_mutation_reconcile_with_get_only": true,
     "existing_inflight_exact_sha_adoption_required": true,
     "multiple_inflight_exact_sha_terminal": true,
-    "ambiguous_reconcile_minimum_budget_seconds": 60
+    "ambiguous_reconcile_minimum_budget_seconds": 60,
+    "deploy_history_pagination_required": true,
+    "deploy_history_page_size": 100,
+    "deploy_history_max_pages": 100,
+    "deploy_history_total_stability_required": true
   },
   "runtime": {
     "required_plain_env": {
