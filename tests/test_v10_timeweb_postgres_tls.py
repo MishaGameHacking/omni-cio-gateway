@@ -52,6 +52,14 @@ class _Opener:
         return outcome
 
 
+def test_connection_contract_accepts_valid_domain() -> None:
+    params = tls._connection_params(VALID_DSN)
+
+    assert params["host"] == "db.example.com"
+    assert params["port"] == "5432"
+    assert params["sslmode"] == "verify-full"
+
+
 def test_resolve_rewrites_only_local_ca_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

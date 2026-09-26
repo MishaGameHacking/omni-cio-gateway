@@ -908,3 +908,27 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** every branch that adds or removes a provider-keyword path must update the canonical provider inventory and its ownership regression in the same source checkpoint before publication; provider-specific runtime adapters are inventory changes, not merely implementation details.
 
 **Dependency/tooling knowledge change:** none.
+
+
+---
+
+## FL-039 — Raw-string regex escapes must be proven by a positive contract path
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #591 exact head `78594915cfbf7474f30c86838cf0b2cfc4ca9fd1` / Self-Hosted Windows CI run `36270486914`
+
+**Symptom / failing gate:** every repository-owned exact-head workflow except the authoritative Windows merge gate completed `success`. The Windows Regression Shield reached 3,875 passing tests and 960 passing subtests, then failed four focused TLS tests. A syntactically valid hostname such as `db.example.com` was rejected as `TIMEWEB_PG_TLS_TECHNICAL_DOMAIN_REQUIRED`, so the later negative predicates for port, TLS mode and CA path could not reach their intended checks.
+
+**Root cause:** the DNS-label separator in `_DOMAIN_RE` was written as `\\\\.` inside a Python raw string. Raw strings do not require that second escape; the compiled expression therefore expected a literal backslash before the separator instead of a normal dot. The validator rejected every ordinary dotted hostname, including the Timeweb technical-domain shape required for verify-full TLS.
+
+**Blast radius searched:** `_connection_params`, `resolve_timeweb_postgres_dsn`, `prepare_timeweb_postgres_tls`, the P3 bootstrap/runtime DSN preparation path, hosted-runtime startup, the port/TLS/root-cert negative predicates, and the exact-head P3 machine guard. The defect is fail-closed: it blocks PostgreSQL connectivity but does not widen provider, tenant, public-user, broker-write or Real-money authority.
+
+**Why preflight missed it:** connector-only source review and Ruff formatting prove syntax/shape, not regular-expression semantics, and the local execution environment cannot install the repository dependency set. The first authoritative workflow that executes the complete regression suite exposed the semantic escape error.
+
+**Corrective change:** replace the over-escaped raw-string separator with the canonical `\.` form and add an explicit positive regression proving that a valid dotted PostgreSQL hostname reaches the accepted port and verify-full predicates.
+
+**Permanent regression/guard:** `test_connection_contract_accepts_valid_domain` freezes the positive hostname contract, while the existing parametrized negative suite separately proves IP-host rejection, exact port 5432, `verify-full`, and the portable root-certificate path.
+
+**Future prevention rule:** every regex used as an authority or transport validator must have at least one positive-path regression that proves representative valid input reaches downstream predicates; negative-only regex tests can pass for the wrong rejection reason.
+
+**Dependency/tooling knowledge change:** none.
