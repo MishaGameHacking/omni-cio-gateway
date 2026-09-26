@@ -286,6 +286,27 @@ class TimewebPublicIngressTests(unittest.TestCase):
         ):
             _accept(api)
 
+    def test_accept_rejects_non_string_runtime_env_values(self) -> None:
+        app = _app()
+        envs = app["envs"]
+        assert isinstance(envs, dict)
+        envs["OMNI_V10_HOSTED_RUNTIME"] = 1
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_ENV_DRIFT",
+        ):
+            _accept(_Api(app))
+
+        app = _app()
+        envs = app["envs"]
+        assert isinstance(envs, dict)
+        envs["OMNI_V10_VK_ID_LOGIN_ENABLED"] = False
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_VK_ACTIVATION_FORBIDDEN",
+        ):
+            _accept(_Api(app))
+
     def test_accept_rejects_premature_public_activation(self) -> None:
         api = _Api(_app(public="true"))
         with self.assertRaisesRegex(
