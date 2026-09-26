@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import time
 from typing import Any, NoReturn, Protocol
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -39,6 +40,8 @@ _REQUIRED_CSP_DIRECTIVES = (
     "frame-ancestors 'none'",
     "form-action 'self'",
 )
+_TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+_PUBLIC_PROBE_RETRY_DELAYS = (2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 
 
 class PublicIngressStopped(RuntimeError):
@@ -243,17 +246,38 @@ def _read_public(
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    try:
-        with active.open(request, timeout=30.0) as response:
-            status = int(response.status)
-            headers = _normalized_headers(response)
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-    except HTTPError as exc:
-        _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{int(exc.code)}")
-    except OSError:
-        _stop("TIMEWEB_PUBLIC_INGRESS_TRANSPORT_FAILED")
-    if status != 200:
-        _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}")
+    status = 0
+    headers: dict[str, str] = {}
+    raw = b""
+    for attempt in range(len(_PUBLIC_PROBE_RETRY_DELAYS) + 1):
+        try:
+            with active.open(request, timeout=30.0) as response:
+                status = int(response.status)
+                if status != 200:
+                    if (
+                        status in _TRANSIENT_HTTP_STATUSES
+                        and attempt < len(_PUBLIC_PROBE_RETRY_DELAYS)
+                    ):
+                        time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+                        continue
+                    _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}")
+                headers = _normalized_headers(response)
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                break
+        except HTTPError as exc:
+            status = int(exc.code)
+            if (
+                status in _TRANSIENT_HTTP_STATUSES
+                and attempt < len(_PUBLIC_PROBE_RETRY_DELAYS)
+            ):
+                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+                continue
+            _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{status}")
+        except OSError:
+            if attempt < len(_PUBLIC_PROBE_RETRY_DELAYS):
+                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+                continue
+            _stop("TIMEWEB_PUBLIC_INGRESS_TRANSPORT_FAILED")
     if len(raw) > MAX_RESPONSE_BYTES:
         _stop("TIMEWEB_PUBLIC_INGRESS_RESPONSE_TOO_LARGE")
     _require_security_headers(headers, api_path=path != "/")
