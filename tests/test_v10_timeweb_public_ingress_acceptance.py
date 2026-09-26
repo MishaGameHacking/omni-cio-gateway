@@ -157,6 +157,13 @@ class _Api:
         }
 
 
+class _PaginatedApi(_Api):
+    def list_apps(self) -> dict[str, object]:
+        payload = super().list_apps()
+        payload["meta"] = {"total": 101}
+        return payload
+
+
 def _accept(api: _Api, *, opener: _Opener | None = None) -> None:
     ingress.run(
         operation="accept",
@@ -331,15 +338,7 @@ class TimewebPublicIngressTests(unittest.TestCase):
             )
 
     def test_accept_rejects_truncated_provider_pagination(self) -> None:
-        api = _Api(_app())
-        original = api.list_apps
-
-        def paginated_apps() -> dict[str, object]:
-            payload = original()
-            payload["meta"] = {"total": 101}
-            return payload
-
-        api.list_apps = paginated_apps  # type: ignore[method-assign]
+        api = _PaginatedApi(_app())
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_APPS_INVALID",
