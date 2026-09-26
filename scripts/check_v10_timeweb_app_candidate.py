@@ -256,6 +256,7 @@ def _validate_controller(path: Path) -> None:
         "_inflight_exact_deploy_id",
         "_DEPLOY_RECONCILE_DELAYS",
         "_POLL_DELAYS",
+        "_LIVEZ_RETRY_DELAYS",
         "TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT",
     )
     if any(marker not in source for marker in required):
