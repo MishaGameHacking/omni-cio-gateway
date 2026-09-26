@@ -38,7 +38,7 @@ _MARKER = re.compile(
 )
 
 
-class ProviderStopped(RuntimeError):
+class ProviderStopped(allocation.AllocationStopped):
     """Static public code only; never attach provider payloads or identifiers."""
 
 
@@ -111,12 +111,18 @@ def _exact_positive_int(value: object, code: str) -> int:
     return value
 
 
-def _select_project(payload: object) -> str:
+def _select_project(payload: object) -> tuple[str, str]:
     rows = _rows(payload, "projects", "TIMEWEB_ALLOCATION_PROJECTS_INVALID")
     matches = [row for row in rows if row.get("name") == TARGET_PROJECT_NAME]
     if len(matches) != 1:
         _stop("TIMEWEB_ALLOCATION_PROJECT_NOT_UNIQUE")
-    return _provider_id(matches[0].get("id"), "TIMEWEB_ALLOCATION_PROJECT_ID_INVALID")
+    row = matches[0]
+    return (
+        _provider_id(row.get("id"), "TIMEWEB_ALLOCATION_PROJECT_ID_INVALID"),
+        _provider_id(
+            row.get("account_id"), "TIMEWEB_ALLOCATION_ACCOUNT_SCOPE_INVALID"
+        ),
+    )
 
 
 def _select_cluster(payload: object) -> int:
@@ -127,7 +133,11 @@ def _select_cluster(payload: object) -> int:
     return _numeric_id(matches[0].get("id"), "TIMEWEB_ALLOCATION_TARGET_ID_INVALID")
 
 
-def _cluster(payload: object, expected_id: int) -> tuple[str, bool, bool]:
+def _cluster(
+    payload: object,
+    expected_id: int,
+    expected_project_id: str,
+) -> tuple[bool, bool]:
     body = _mapping(payload, "TIMEWEB_ALLOCATION_CLUSTER_INVALID")
     row = _mapping(body.get("db"), "TIMEWEB_ALLOCATION_CLUSTER_INVALID")
     if (
@@ -145,6 +155,11 @@ def _cluster(payload: object, expected_id: int) -> tuple[str, bool, bool]:
         or row.get("is_backup_schedule_enabled") is not False
     ):
         _stop("TIMEWEB_ALLOCATION_CLUSTER_SHAPE_DRIFT")
+    cluster_project_id = _provider_id(
+        row.get("project_id"), "TIMEWEB_ALLOCATION_CLUSTER_PROJECT_ID_INVALID"
+    )
+    if cluster_project_id != expected_project_id:
+        _stop("TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT")
     if (
         _numeric_id(row.get("port"), "TIMEWEB_ALLOCATION_CLUSTER_PORT_INVALID")
         != POSTGRES_PORT
@@ -178,10 +193,7 @@ def _cluster(payload: object, expected_id: int) -> tuple[str, bool, bool]:
     ipv6 = row.get("is_enabled_public_ipv6")
     if type(public) is not bool or type(ipv6) is not bool:
         _stop("TIMEWEB_ALLOCATION_CLUSTER_NETWORK_STATE_INVALID")
-    account_scope = _provider_id(
-        row.get("account_id"), "TIMEWEB_ALLOCATION_ACCOUNT_SCOPE_INVALID"
-    )
-    return account_scope, public, ipv6
+    return public, ipv6
 
 
 def _raw_inventory(payload: object) -> list[dict[str, object]]:
@@ -238,13 +250,16 @@ class TimewebAllocationProvider:
 
     def transport_snapshot(self) -> allocation.TransportSnapshot:
         try:
-            project_id = _select_project(self._read_api.get("/api/v1/projects"))
+            project_id, account_scope = _select_project(
+                self._read_api.get("/api/v1/projects")
+            )
             cluster_id = _select_cluster(
                 self._read_api.get(f"/api/v1/projects/{project_id}/resources/databases")
             )
-            account_scope, public_enabled, ipv6_enabled = _cluster(
+            public_enabled, ipv6_enabled = _cluster(
                 self._read_api.get(f"/api/v1/databases/{cluster_id}"),
                 cluster_id,
+                project_id,
             )
             list_row = _raw_inventory(self._read_api.get("/api/v1/floating-ips"))[0]
             parsed = _address(list_row)

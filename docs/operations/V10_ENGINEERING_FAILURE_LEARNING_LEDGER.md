@@ -747,3 +747,27 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** every source relocation into a stricter package boundary must pass the destination lint/type/format baseline as part of the relocation preflight, even when runtime behavior is intentionally unchanged.
 
 **Dependency/tooling knowledge change:** Python Decimal tuple exponents are typed as an integer or special-value marker; runtime finite checks do not necessarily narrow that union for static type checkers.
+
+---
+
+## FL-032 — Provider adapters must bind authority to fields that the live API actually owns
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / existing-IPv4 custody gate / live PLAN run `36230181006`
+
+**Symptom / failing gate:** the protected-main `V10 RU-PG-B Timeweb Existing IPv4 Allocation` PLAN passed exact-main, source-contract and GitHub-environment gates, then stopped before any provider mutation with `TIMEWEB_ALLOCATION_OBSERVATION_UNAVAILABLE`.
+
+**Root cause:** the allocation provider adapter tried to derive private account scope from `DatabaseCluster.account_id`. Current Timeweb API schema exposes `Project.account_id` and `DatabaseCluster.project_id`; the database cluster does not own an `account_id` field. The adapter therefore rejected a valid live cluster response. A second producer/consumer defect hid that safe diagnosis: `ProviderStopped` inherited directly from `RuntimeError`, so the protocol's read boundary converted its fixed provider code into the generic observation-unavailable code.
+
+**Blast radius searched:** Timeweb project/cluster/floating-IP provider schema, allocation snapshot construction, transport prerequisite identity, closed-journal serialization, PLAN/APPLY/RECONCILE consumers, live adapter fixtures, provider-error sanitization and the machine allocation guard. The closed snapshot schema can remain stable because account scope is still available from the selected Project object.
+
+**Why preflight missed it:** the live adapter fixture invented `account_id` on the DatabaseCluster payload and omitted `account_id` from the Project payload, so the synthetic contract encoded the same false assumption as production code. Unit tests therefore certified the fixture rather than the provider schema.
+
+**Corrective change:** source account scope from the exact selected `Project.account_id`; require the live `DatabaseCluster.project_id` to equal that selected project; remove the non-existent cluster-account dependency; make sanitized `ProviderStopped` a protocol `AllocationStopped` subtype so fixed fail-closed provider diagnostics cross the read boundary without exposing raw payloads.
+
+**Permanent regression/guard:** live adapter fixtures now mirror the current provider ownership split, tests prove no cluster `account_id` is required, project drift is rejected, and provider-stop inheritance is machine-guarded. Unknown raw provider exceptions remain sanitized by the existing generic read-failure regression.
+
+**Future prevention rule:** provider fixtures must be derived from current provider schemas for every authority-bearing field. Never infer identity/authority from a convenient adjacent resource when the provider schema assigns it to another object, and never let a sanitization boundary erase already-sanitized fixed error codes.
+
+**Dependency/tooling knowledge change:** current Timeweb schema places account identity on Project (`account_id`) and project identity on DatabaseCluster (`project_id`).
+

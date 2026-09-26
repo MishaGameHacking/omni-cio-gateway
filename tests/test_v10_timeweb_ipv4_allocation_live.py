@@ -73,7 +73,13 @@ def _provider_payloads(comment: str = "") -> dict[str, object]:
     row = _floating_row(comment)
     return {
         "/api/v1/projects": {
-            "projects": [{"id": "project-1", "name": provider.TARGET_PROJECT_NAME}],
+            "projects": [
+                {
+                    "id": "project-1",
+                    "account_id": "account-1",
+                    "name": provider.TARGET_PROJECT_NAME,
+                }
+            ],
             "meta": {"total": 1},
         },
         "/api/v1/projects/project-1/resources/databases": {
@@ -97,7 +103,7 @@ def _provider_payloads(comment: str = "") -> dict[str, object]:
                 "replica_list": [{"db_id": 123}],
                 "is_enabled_public_network": False,
                 "is_enabled_public_ipv6": False,
-                "account_id": "account-1",
+                "project_id": "project-1",
             }
         },
         "/api/v1/floating-ips": {"ips": [row], "meta": {"total": 1}},
@@ -213,6 +219,38 @@ class TimewebAllocationProviderTests(unittest.TestCase):
                 "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID",
             ):
                 adapter.snapshot()
+
+    def test_snapshot_uses_project_account_scope_not_cluster_account_field(self) -> None:
+        payloads = _provider_payloads()
+        cluster = payloads["/api/v1/databases/123"]
+        assert isinstance(cluster, dict)
+        row = cluster["db"]
+        assert isinstance(row, dict)
+        self.assertNotIn("account_id", row)
+
+        observed = provider.TimewebAllocationProvider(_ReadApi(payloads)).snapshot()
+
+        self.assertEqual(observed.account_scope, "account-1")
+        self.assertEqual(observed.project_id, "project-1")
+
+    def test_snapshot_rejects_cluster_project_drift(self) -> None:
+        payloads = _provider_payloads()
+        cluster = payloads["/api/v1/databases/123"]
+        assert isinstance(cluster, dict)
+        row = cluster["db"]
+        assert isinstance(row, dict)
+        row["project_id"] = "project-2"
+
+        with self.assertRaisesRegex(
+            provider.ProviderStopped,
+            "TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT",
+        ):
+            provider.TimewebAllocationProvider(_ReadApi(payloads)).snapshot()
+
+    def test_provider_stop_is_a_sanitized_protocol_stop(self) -> None:
+        self.assertTrue(
+            issubclass(provider.ProviderStopped, allocation.AllocationStopped)
+        )
 
     def test_comment_writer_is_one_exact_patch(self) -> None:
         mutation = _MutationApi()

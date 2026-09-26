@@ -80,6 +80,7 @@ def validate_contract(data: dict[str, object]) -> None:
     )
     adapters = _mapping(data.get("source_adapters"))
     _require(adapters.get("sqlite_synchronous") == "EXTRA")
+    _require(adapters.get("provider_account_scope_source") == "PROJECT.account_id")
     _flags(
         adapters,
         (
@@ -90,6 +91,8 @@ def validate_contract(data: dict[str, object]) -> None:
             "timeweb_snapshot_comment_only_adapter",
             "operational_workflow_source_present",
             "native_windows_evidence_required_before_live_apply",
+            "cluster_project_binding_required",
+            "sanitized_provider_stop_passthrough",
         ),
         True,
     )
@@ -364,6 +367,15 @@ def _validate_provider() -> None:
     tree = ast.parse(source)
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     _require("TimewebAllocationProvider" in classes)
+    _require("ProviderStopped" in classes)
+    provider_stopped = classes["ProviderStopped"]
+    _require(
+        len(provider_stopped.bases) == 1
+        and isinstance(provider_stopped.bases[0], ast.Attribute)
+        and isinstance(provider_stopped.bases[0].value, ast.Name)
+        and provider_stopped.bases[0].value.id == "allocation"
+        and provider_stopped.bases[0].attr == "AllocationStopped"
+    )
     methods = {
         node.name: node
         for node in classes["TimewebAllocationProvider"].body
@@ -398,6 +410,10 @@ def _validate_provider() -> None:
     ):
         _require(forbidden not in source)
     _require('body={"comment": marker}' in source)
+    _require("def _select_project(payload: object) -> tuple[str, str]:" in source)
+    _require('row.get("account_id")' in source)
+    _require('row.get("project_id")' in source)
+    _require("TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT" in source)
     _require("def transport_snapshot(" in source)
     _require("allocation.TransportSnapshot(" in source)
     _require('self._read_api.get("/api/v1/floating-ips")' in source)
