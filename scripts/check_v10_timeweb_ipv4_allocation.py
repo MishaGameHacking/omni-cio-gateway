@@ -369,13 +369,25 @@ def _validate_provider() -> None:
     _require("TimewebAllocationProvider" in classes)
     _require("ProviderStopped" in classes)
     provider_stopped = classes["ProviderStopped"]
-    _require(
-        len(provider_stopped.bases) == 1
-        and isinstance(provider_stopped.bases[0], ast.Attribute)
-        and isinstance(provider_stopped.bases[0].value, ast.Name)
-        and provider_stopped.bases[0].value.id == "allocation"
-        and provider_stopped.bases[0].attr == "AllocationStopped"
-    )
+    _require(len(provider_stopped.bases) == 1)
+    _require(ast.unparse(provider_stopped.bases[0]) == "allocation.AllocationStopped")
+    functions = {
+        node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
+    _require({"_select_project", "_cluster"} <= functions.keys())
+    project_literals = {
+        node.value
+        for node in ast.walk(functions["_select_project"])
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    cluster_literals = {
+        node.value
+        for node in ast.walk(functions["_cluster"])
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    _require("account_id" in project_literals)
+    _require("account_id" not in cluster_literals)
+    _require("project_id" in cluster_literals)
     methods = {
         node.name: node
         for node in classes["TimewebAllocationProvider"].body
@@ -400,7 +412,6 @@ def _validate_provider() -> None:
         '"POST"',
         '"PUT"',
         '"DELETE"',
-        '"POST"',
         '"/bind"',
         '"/unbind"',
         "/firewall/",
@@ -411,8 +422,6 @@ def _validate_provider() -> None:
         _require(forbidden not in source)
     _require('body={"comment": marker}' in source)
     _require("def _select_project(payload: object) -> tuple[str, str]:" in source)
-    _require('row.get("account_id")' in source)
-    _require('row.get("project_id")' in source)
     _require("TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT" in source)
     _require("def transport_snapshot(" in source)
     _require("allocation.TransportSnapshot(" in source)

@@ -119,9 +119,7 @@ def _select_project(payload: object) -> tuple[str, str]:
     row = matches[0]
     return (
         _provider_id(row.get("id"), "TIMEWEB_ALLOCATION_PROJECT_ID_INVALID"),
-        _provider_id(
-            row.get("account_id"), "TIMEWEB_ALLOCATION_ACCOUNT_SCOPE_INVALID"
-        ),
+        _provider_id(row.get("account_id"), "TIMEWEB_ALLOCATION_ACCOUNT_SCOPE_INVALID"),
     )
 
 

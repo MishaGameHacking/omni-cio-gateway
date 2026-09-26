@@ -214,13 +214,18 @@ class TimewebAllocationProviderTests(unittest.TestCase):
             row["cpu"] = value
             adapter = provider.TimewebAllocationProvider(_ReadApi(payloads))
 
-            with self.subTest(value=value), self.assertRaisesRegex(
-                provider.ProviderStopped,
-                "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID",
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(
+                    provider.ProviderStopped,
+                    "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID",
+                ),
             ):
                 adapter.snapshot()
 
-    def test_snapshot_uses_project_account_scope_not_cluster_account_field(self) -> None:
+    def test_snapshot_uses_project_account_scope_not_cluster_account_field(
+        self,
+    ) -> None:
         payloads = _provider_payloads()
         cluster = payloads["/api/v1/databases/123"]
         assert isinstance(cluster, dict)
@@ -248,8 +253,9 @@ class TimewebAllocationProviderTests(unittest.TestCase):
             provider.TimewebAllocationProvider(_ReadApi(payloads)).snapshot()
 
     def test_provider_stop_is_a_sanitized_protocol_stop(self) -> None:
-        self.assertTrue(
-            issubclass(provider.ProviderStopped, allocation.AllocationStopped)
+        self.assertIn(
+            allocation.AllocationStopped,
+            provider.ProviderStopped.__mro__,
         )
 
     def test_comment_writer_is_one_exact_patch(self) -> None:
@@ -300,7 +306,6 @@ class TimewebAllocationProviderTests(unittest.TestCase):
         ) as raised:
             adapter.snapshot()
         self.assertNotIn("provider-private-payload", str(raised.exception))
-
 
     def test_write_capable_live_provider_preserves_safe_auth_rejection(self) -> None:
         cases = (
@@ -417,9 +422,7 @@ class AllocationRunnerTests(unittest.TestCase):
         timeweb = mock.Mock()
         with (
             mock.patch.object(runner, "_expected_head", return_value=source),
-            mock.patch.object(
-                runner, "_required_env", return_value="synthetic-token"
-            ),
+            mock.patch.object(runner, "_required_env", return_value="synthetic-token"),
             mock.patch.object(runner, "_verifier", return_value=github),
             mock.patch.object(runner, "_context", return_value=context),
             mock.patch.object(runner, "_open_journal", return_value=journal),
@@ -436,8 +439,7 @@ class AllocationRunnerTests(unittest.TestCase):
                 runner.allocation,
                 "safe_summary",
                 return_value=(
-                    "TIMEWEB_IPV4_ALLOCATION_PLAN=handle "
-                    "state=OWNER_APPROVAL_REQUIRED"
+                    "TIMEWEB_IPV4_ALLOCATION_PLAN=handle state=OWNER_APPROVAL_REQUIRED"
                 ),
             ),
             mock.patch.object(runner, "_emit"),
@@ -454,9 +456,7 @@ class AllocationRunnerTests(unittest.TestCase):
         timeweb = mock.Mock()
         with (
             mock.patch.object(runner, "_expected_head", return_value=source),
-            mock.patch.object(
-                runner, "_required_env", return_value="synthetic-token"
-            ),
+            mock.patch.object(runner, "_required_env", return_value="synthetic-token"),
             mock.patch.object(runner, "_verifier", return_value=github),
             mock.patch.object(runner, "_context", return_value=context),
             mock.patch.object(runner, "_open_journal", return_value=mock.Mock()),
@@ -487,9 +487,7 @@ class AllocationRunnerTests(unittest.TestCase):
         timeweb = mock.Mock()
         with (
             mock.patch.object(runner, "_expected_head", return_value=source),
-            mock.patch.object(
-                runner, "_required_env", return_value="synthetic-token"
-            ),
+            mock.patch.object(runner, "_required_env", return_value="synthetic-token"),
             mock.patch.object(runner, "_verifier", return_value=github),
             mock.patch.object(runner, "_context", return_value=context),
             mock.patch.object(runner, "_open_journal", return_value=mock.Mock()),

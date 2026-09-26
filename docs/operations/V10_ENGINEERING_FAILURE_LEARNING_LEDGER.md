@@ -771,3 +771,26 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** current Timeweb schema places account identity on Project (`account_id`) and project identity on DatabaseCluster (`project_id`).
 
+---
+
+## FL-033 — Published repair checkpoints must reproduce the pinned formatter before CI
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / PR #587 / exact head `3da2dc6e8a7a97e5e5eb61d46d7a8f114eb8b5e9`
+
+**Symptom / failing gate:** twelve repository workflows completed successfully, but both `V10 Fast PR Checks` and the authoritative Windows merge gate rejected the same repair head before tests because Ruff 0.16.1 would reformat `scripts/timeweb_ipv4_allocation_provider.py` and `tests/test_v10_timeweb_ipv4_allocation_live.py`. Sonar also reported one new maintainability issue on the repair diff.
+
+**Root cause:** the source correction was published from a connector-only environment where a local repository checkout and the pinned Ruff runtime were unavailable. Manual formatting review did not exactly reproduce Ruff 0.16.1, and the new regression used a generic `unittest.assertTrue` shape instead of a more specific assertion.
+
+**Blast radius searched:** every changed Python file in PR #587, Fast PR changed-file formatting, authoritative repository-wide formatting, the live allocation regression tests, the allocation machine guard and Sonar's new-code maintainability surface. No runtime, tenant, broker, provider-mutation or schema behavior failure was found in this CI batch.
+
+**Why preflight missed it:** formatter equivalence was assumed from visual review after local tool bootstrap failed. Existing FL-026/FL-031 already require exact formatter reproduction, but the fallback path for a connector-only repair checkpoint did not enforce that rule before publication.
+
+**Corrective change:** apply the exact Ruff diff emitted by CI, replace the generic subclass `assertTrue` with a specific membership assertion, and strengthen the provider guard to inspect field ownership inside the exact AST functions instead of relying on file-wide string presence. Remove the duplicate forbidden-method literal while touching that guard.
+
+**Permanent regression/guard:** Fast PR and the authoritative merge gate remain unchanged and fail closed on formatter drift; the allocation guard now proves `account_id` belongs to `_select_project`, is absent from `_cluster`, and `project_id` is required by `_cluster`.
+
+**Future prevention rule:** inability to run the pinned formatter locally is not a formatting waiver. Before treating a connector-only checkpoint as final, reproduce the exact formatter output from the first available targeted verifier and fold all formatting/static-analysis findings into the same RED-repair batch before recertification.
+
+**Dependency/tooling knowledge change:** none.
+
