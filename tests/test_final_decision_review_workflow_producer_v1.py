@@ -283,7 +283,10 @@ def test_ready_buy_workflow_publishes_and_route_returns_200() -> None:
     result = _produce()
 
     assert result.status is FinalDecisionReviewWorkflowProducerStatus.PUBLISHED
-    assert result.completed_stage is FinalDecisionReviewWorkflowProducerStage.WORKFLOW_BRIDGE
+    assert (
+        result.completed_stage
+        is FinalDecisionReviewWorkflowProducerStage.WORKFLOW_BRIDGE
+    )
     assert result.published is True
     assert result.primary_blocker is None
     assert result.directional_review is not None
@@ -361,7 +364,10 @@ def test_stale_risk_and_account_mismatch_publish_safe_no_action() -> None:
 def test_zero_or_two_directional_inputs_block_before_explanation() -> None:
     zero = _produce(purchase_gate=None, sell_gate=None)
     assert zero.status is FinalDecisionReviewWorkflowProducerStatus.BLOCKED
-    assert zero.completed_stage is FinalDecisionReviewWorkflowProducerStage.DIRECTIONAL_REVIEW
+    assert (
+        zero.completed_stage
+        is FinalDecisionReviewWorkflowProducerStage.DIRECTIONAL_REVIEW
+    )
     assert zero.input_direction_count == 0
     assert zero.directional_review is None
     assert zero.risk_explanation is None
@@ -369,7 +375,10 @@ def test_zero_or_two_directional_inputs_block_before_explanation() -> None:
 
     two = _produce(sell_gate=_sell_gate())
     assert two.status is FinalDecisionReviewWorkflowProducerStatus.BLOCKED
-    assert two.completed_stage is FinalDecisionReviewWorkflowProducerStage.DIRECTIONAL_REVIEW
+    assert (
+        two.completed_stage
+        is FinalDecisionReviewWorkflowProducerStage.DIRECTIONAL_REVIEW
+    )
     assert two.input_direction_count == 2
     assert gateway_module.final_decision_review_registry.active_source_count() == 0
 
@@ -378,7 +387,10 @@ def test_invalid_trace_blocks_at_bridge_without_registry_mutation() -> None:
     result = _produce(correlation_id="bad")
 
     assert result.status is FinalDecisionReviewWorkflowProducerStatus.BLOCKED
-    assert result.completed_stage is FinalDecisionReviewWorkflowProducerStage.WORKFLOW_BRIDGE
+    assert (
+        result.completed_stage
+        is FinalDecisionReviewWorkflowProducerStage.WORKFLOW_BRIDGE
+    )
     assert result.workflow_bridge is not None
     assert "CORRELATION_ID_INVALID" in result.primary_blocker
     assert result.registry_active_sources == 0
@@ -402,9 +414,12 @@ def test_concurrent_exact_workflows_publish_then_replace() -> None:
         results = tuple(executor.map(run, range(4)))
 
     assert all(result.published for result in results)
-    assert gateway_module.final_decision_review_registry.active_source_count(
-        checked_at=NOW
-    ) == 1
+    assert (
+        gateway_module.final_decision_review_registry.active_source_count(
+            checked_at=NOW
+        )
+        == 1
+    )
     dispositions = [
         result.workflow_bridge.orchestration.publication.disposition
         for result in results

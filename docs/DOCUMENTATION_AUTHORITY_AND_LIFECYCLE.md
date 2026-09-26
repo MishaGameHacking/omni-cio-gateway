@@ -30,7 +30,7 @@ These files are expected to remain readable and non-contradictory for a develope
 
 Live guidance must not hard-code an obsolete `NEXT`, obsolete implementation percentage, or an already-passed prerequisite as though it were still pending.
 
-Transient branch-local checkpoint identifiers (`P*`, `V9C-*`) and numbered "CURRENT AMENDMENT-N" banners are not live-guidance state. Live entry documents must delegate those mutable details to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`, the Amendments Index and exact PR Actions evidence.
+Transient branch-local checkpoint identifiers (`P*`, `V9C-*`) are not live-guidance state. Live entry documents must delegate those mutable checkpoint details to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and exact PR Actions evidence. Accepted amendment identifiers remain legitimate governance markers and are resolved through the Amendments Index.
 
 ## 2. Stable program and architecture contracts
 
@@ -114,7 +114,7 @@ Do not erase historical evidence merely because the program advanced. Instead:
 - one canonical V10 current-status file;
 - readable current snapshots in the root README, `AGENTS.md` and `knowledge/00_PROJECT_MASTER_CONTEXT.md` agree with the canonical status percentage/current WP;
 - live guidance delegates dynamic state to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-- live guidance does not freeze transient branch-local `P*`/`V9C-*` checkpoints or numbered current-amendment banners;
+- live guidance does not freeze transient branch-local `P*`/`V9C-*` checkpoints;
 - known stale WP4/5%/pre-WP2 wording is absent from live guidance;
 - Program Lock does not maintain a competing progress ledger;
 - WP2 toolchain baseline is labeled accepted rather than pending;

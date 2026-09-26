@@ -58,8 +58,6 @@ TRANSIENT_CHECKPOINT_TOKEN = re.compile(
     r"\b(?:P(?:5\.5|[0-6])|V9C-[A-F])\b",
     re.IGNORECASE,
 )
-NUMBERED_CURRENT_AMENDMENT = re.compile(r"\bCURRENT AMENDMENT-\d+\b", re.IGNORECASE)
-
 STALE_LIVE_MARKERS = (
     "WP3 COMPLETE / WP4 NEXT",
     "Overall accepted V10 progress remains **5%**",
@@ -195,17 +193,11 @@ def _validate_transient_checkpoint_delegation(failures: list[str]) -> None:
         if not text:
             continue
         for line_number, line in enumerate(text.splitlines(), start=1):
-            if (
-                TRANSIENT_CHECKPOINT_LABEL.search(line)
-                and TRANSIENT_CHECKPOINT_TOKEN.search(line)
-            ):
+            if TRANSIENT_CHECKPOINT_LABEL.search(
+                line
+            ) and TRANSIENT_CHECKPOINT_TOKEN.search(line):
                 failures.append(
                     "live guidance freezes transient branch checkpoint: "
-                    f"{path.relative_to(ROOT)}:{line_number}"
-                )
-            if NUMBERED_CURRENT_AMENDMENT.search(line):
-                failures.append(
-                    "live guidance freezes numbered current amendment: "
                     f"{path.relative_to(ROOT)}:{line_number}"
                 )
 

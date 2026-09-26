@@ -195,7 +195,9 @@ def test_missing_authentication_maps_to_401_without_response() -> None:
 
     assert result.status is FinalDecisionReviewHandlerShadowStatus.REJECTED
     assert result.http_status is FinalDecisionReviewHandlerHttpStatus.UNAUTHORIZED
-    assert result.error_code is FinalDecisionReviewHandlerErrorCode.AUTHENTICATION_REQUIRED
+    assert (
+        result.error_code is FinalDecisionReviewHandlerErrorCode.AUTHENTICATION_REQUIRED
+    )
     assert result.response is None
 
 
