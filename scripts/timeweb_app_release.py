@@ -35,7 +35,7 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 _PAGE_SIZE = 100
 _MAX_DEPLOY_HISTORY_PAGES = 100
 _GET_DELAYS = (1.0, 2.0)
-_LIVEZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0)
+_LIVEZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 _DEPLOY_RECONCILE_DELAYS = (0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 _POLL_DELAYS = (
     0.0,
@@ -656,12 +656,16 @@ def _perform_exact_deploy(
     except AmbiguousDeploy:
         deploy_id = _reconcile(api, app_id, before, expected)
     else:
-        row = _mapping(
-            response.get("deploy"), "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID"
-        )
-        deploy_id, commit, _status = _deploy(row)
-        if commit != expected or deploy_id in before:
-            _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
+        try:
+            row = _mapping(
+                response.get("deploy"),
+                "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID",
+            )
+            deploy_id, commit, _status = _deploy(row)
+            if commit != expected or deploy_id in before:
+                _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
+        except ReleaseStopped:
+            deploy_id = _reconcile(api, app_id, before, expected)
 
     _verify_completed_deploy(
         api,
