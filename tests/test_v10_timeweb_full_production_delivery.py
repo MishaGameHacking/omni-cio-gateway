@@ -254,6 +254,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             policy["exact_identity_inflight_state_adoption_required_when_supported"]
         )
         self.assertTrue(policy["duplicate_inflight_exact_identity_terminal"])
+        self.assertTrue(policy["provider_history_pagination_must_be_exhaustive"])
         self.assertFalse(policy["local_polling_budget_is_provider_sla"])
         self.assertFalse(policy["tls_certificate_verification_failure_retry_allowed"])
         self.assertFalse(policy["authority_expansion_on_recovery_allowed"])
