@@ -80,6 +80,15 @@ The repair therefore introduces one fail-closed convergence law across the curre
 
 This is intentionally stronger than adding longer sleeps. The controller models **intent identity + observed provider state + bounded convergence + terminal semantic predicates**. That makes interrupted/restarted workflows restart-safe without converting uncertainty into duplicate side effects.
 
+## Additional latent defects closed by the same review
+
+The provider-state audit found three failure modes that ordinary unit/state checks could leave dormant until repeated live use:
+
+- App Platform deploy history was read from only the first `limit=100` page. Once history exceeded 100 rows, exact-SHA adoption and last-known-good proof could fail despite valid provider state. The controller now exhausts `limit`/`offset` pages, requires a stable provider `meta.total`, rejects truncated/changing history and caps traversal.
+- rollback polling previously slept after its last observation and then stopped. A provider transition completing during that final backoff could therefore be falsely classified as unresolved. Rollback now always performs one final GET after the last bounded sleep.
+- post-exposure firewall verification reused convergence helpers that could mutate a rule or resource link. Under eventual consistency, a stale empty GET after public exposure could therefore trigger a duplicate POST/PATCH. Firewall mutation/reconciliation is now confined to the pre-exposure phase; post-exposure checks are structurally read-only and machine-guarded.
+
+These defects share the same root cause: **an observation surface was allowed to carry hidden mutation or incomplete-state assumptions**. The durable correction is to make observation complete, state-stable and side-effect free.
 ## Permanent prevention rule added after full blast-radius review
 
 Every future provider-facing controller in the current Timeweb production path must classify each operation before implementation as one of:
