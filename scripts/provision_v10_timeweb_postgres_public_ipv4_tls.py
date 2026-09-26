@@ -843,6 +843,7 @@ def _close_public_network(
     cluster_id: int,
     *,
     sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _ROLLBACK_STATE_DELAYS_SECONDS,
 ) -> None:
     body = {
         "is_enabled_public_network": False,
@@ -859,7 +860,7 @@ def _close_public_network(
         )
     except AmbiguousMutation:
         pass
-    for delay in _ROLLBACK_STATE_DELAYS_SECONDS:
+    for attempt in range(len(delays) + 1):
         try:
             cluster = _wait_cluster_read(api, cluster_id)
         except _provider_base.ProvisioningStopped as exc:
@@ -871,7 +872,8 @@ def _close_public_network(
                 and cluster.get("is_enabled_public_ipv6") is False
             ):
                 return
-        sleeper(delay)
+        if attempt < len(delays):
+            sleeper(delays[attempt])
     raise _provider_base.ProvisioningStopped(
         "TIMEWEB_PUBLIC_NETWORK_ROLLBACK_MANUAL_RECONCILIATION_REQUIRED"
     )
