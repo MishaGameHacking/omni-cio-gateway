@@ -365,6 +365,41 @@ Official Timeweb evidence rechecked on 2026-09-26:
 Do not rerun the live transport until this source repair is exact-head certified
 and accepted on protected main.
 
+## Live RED #6 — TLS/domain readiness outlived the fixed 83-second waiter
+
+After PR #588 was accepted as protected main
+`86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8`, manual workflow ordinal #6
+passed the exact-main/source gate, verifier `/32`, GitHub Environment, cost
+confirmation and existing-IPv4 allocation prerequisite. The prior deterministic
+HTTP 400 did not recur.
+
+The run then stopped with:
+
+`TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code=TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT`.
+
+This marker can only be emitted by the GET-only network/TLS readiness waiter after
+the public-IPv4 transition path has been entered. The source allowed only
+`2+3+5+8+15+20+30 = 83` seconds before declaring timeout. Timeweb's API contract
+explicitly permits a successful mutation response while the resource remains in a
+startup/transition state, and the PostgreSQL TLS guide requires waiting for setup
+completion without documenting an 83-second readiness SLA.
+
+The repair therefore preserves exactly one mutation per transition and changes only
+reconciliation behavior:
+
+1. keep the public IPv4 and TLS PATCH operations separate;
+2. keep post-mutation waiting GET-only with no blind mutation retry;
+3. give TLS/domain/certificate readiness a bounded multi-minute budget that remains
+   below the workflow timeout;
+4. on timeout, emit a sanitized predicate-specific code distinguishing public-network
+   drift, secure-connection enablement still pending and certificate/domain issuance
+   still pending;
+5. retain unsafe-status immediate stops, exact managed-IP/firewall verification and
+   fail-closed public-network rollback.
+
+No second IPv4 purchase, IPv4 delete/stamp, wildcard firewall, DNS mutation,
+production DB cutover or Telegram/public-user activation is added by this repair.
+
 ## Success marker
 
 Only this sanitized marker is accepted:
