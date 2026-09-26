@@ -48,6 +48,7 @@ When that bounded window is exhausted, classify the last sanitized readiness pre
 - `TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS`;
 - `TIMEWEB_TLS_ENABLE_READY_TIMEOUT`;
 - `TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT`;
+- `TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT`;
 - generic `TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT` only when no more specific safe class applies.
 
 Unsafe provider status remains an immediate hard stop. Rollback remains mandatory when public exposure may exist.
