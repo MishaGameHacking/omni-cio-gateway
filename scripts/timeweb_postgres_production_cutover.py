@@ -11,6 +11,7 @@ import sys
 from typing import Any, NoReturn
 
 import psycopg
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
 from apps.api.hosted_database_runtime import probe_hosted_runtime_database
@@ -171,6 +172,77 @@ def _record_sha256(payload: dict[str, object]) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def _verify_runtime_role_identity(connection: Any) -> None:
+    row = connection.execute(
+        "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
+        "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
+        "WHERE rolname = current_user"
+    ).fetchone()
+    if row != (
+        RUNTIME_ROLE,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ):
+        _stop("TIMEWEB_PG_PRODUCTION_RUNTIME_ROLE_DRIFT")
+    memberships = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_auth_members memberships "
+        "JOIN pg_catalog.pg_roles member_role "
+        "ON member_role.oid = memberships.member "
+        "WHERE member_role.rolname = current_user"
+    ).fetchone()
+    if memberships is None or int(memberships[0]) != 0:
+        _stop("TIMEWEB_PG_PRODUCTION_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
+
+
+def _observed_product_tables(connection: Any) -> tuple[str, ...]:
+    rows = connection.execute(
+        "SELECT tablename FROM pg_catalog.pg_tables "
+        "WHERE schemaname = 'omni_cio_v10' AND tablename = ANY(%s) "
+        "ORDER BY tablename",
+        (list(_CLEAN_TABLES),),
+    ).fetchall()
+    return tuple(str(row[0]) for row in rows)
+
+
+def _require_observed_clean_product_state(connection: Any) -> None:
+    tables = _observed_product_tables(connection)
+    for table in tables:
+        query = sql.SQL("SELECT count(*) FROM {}.{}").format(
+            sql.Identifier("omni_cio_v10"),
+            sql.Identifier(table),
+        )
+        row = connection.execute(query).fetchone()
+        if row is None or len(row) != 1:
+            _stop("TIMEWEB_PG_PRODUCTION_CLEAN_STATE_UNREADABLE")
+        if int(row[0]) != 0:
+            _stop("TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN")
+
+
+def _observe_database(bootstrap_dsn: str, runtime_dsn: str) -> None:
+    bootstrap = _connect(
+        bootstrap_dsn,
+        code="TIMEWEB_PG_PRODUCTION_BOOTSTRAP_CONNECTION_FAILED",
+    )
+    with bootstrap:
+        _verify_tls(bootstrap)
+        require_postgres_18(bootstrap)
+        _verify_bootstrap_role(bootstrap)
+        _require_observed_clean_product_state(bootstrap)
+
+    runtime = _connect(
+        runtime_dsn,
+        code="TIMEWEB_PG_PRODUCTION_RUNTIME_CONNECTION_FAILED",
+    )
+    with runtime:
+        _verify_tls(runtime)
+        require_postgres_18(runtime)
+        _verify_runtime_role_identity(runtime)
 
 
 def _verify_cross_tenant_negative(connection: Any) -> None:
@@ -375,6 +447,16 @@ def run(
     if operation != "accept" and (recovery_attestation or recovery_evidence_sha256):
         _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_RECOVERY_EVIDENCE")
 
+    if operation == "observe":
+        if confirmation:
+            _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_CONFIRMATION")
+        _observe_database(bootstrap_dsn, runtime_dsn)
+        print(
+            "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=OBSERVED "
+            f"sha={expected} postgres=18 tls=verify-full public_users=false"
+        )
+        return
+
     if operation == "prepare":
         if confirmation != PREPARE_CONFIRMATION:
             _stop("TIMEWEB_PG_PRODUCTION_PREPARE_CONFIRMATION_REQUIRED")
@@ -387,17 +469,10 @@ def run(
 
     if confirmation:
         _stop("TIMEWEB_PG_PRODUCTION_UNEXPECTED_CONFIRMATION")
-
-    _verify_runtime_database(runtime_dsn)
-    if operation == "observe":
-        print(
-            "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=OBSERVED "
-            f"sha={expected} postgres=18 public_users=false"
-        )
-        return
     if operation != "accept":
         _stop("TIMEWEB_PG_PRODUCTION_OPERATION_INVALID")
 
+    _verify_runtime_database(runtime_dsn)
     if recovery_attestation != RECOVERY_ATTESTATION_VALUE:
         _stop("TIMEWEB_PG_PRODUCTION_RECOVERY_NOT_ACCEPTED")
     evidence_digest = _recovery_evidence_sha256(recovery_evidence_sha256)

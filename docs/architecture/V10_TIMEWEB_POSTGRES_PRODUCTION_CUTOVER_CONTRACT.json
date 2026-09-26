@@ -96,7 +96,7 @@
     "telegram_login_must_remain_false": true
   },
   "operations": {
-    "observe": "READ_ONLY_DATABASE_AND_APP_BINDING_VERIFICATION",
+    "observe": "READ_ONLY_PREPARE_PREREQUISITE_VERIFICATION",
     "prepare": "DATABASE_SCHEMA_AND_RUNTIME_ACL_MUTATION_ONLY",
     "accept": "READ_ONLY_FINAL_ACCEPTANCE_AFTER_EXTERNAL_RECOVERY_AND_DSN_PROMOTION"
   },
@@ -109,7 +109,12 @@
     "operation_specific_secret_injection_required": true,
     "provider_token_accept_only": true,
     "production_dsns_step_scoped": true,
-    "recovery_attestation_as_actions_secret_allowed": false
+    "recovery_attestation_as_actions_secret_allowed": false,
+    "environment_preexisting_required": true,
+    "environment_branch_policy_pattern": "main",
+    "environment_branch_policy_type": "branch",
+    "environment_policy_reverified_before_secret_access": true,
+    "environment_administration_by_workflow_allowed": false
   },
   "success": {
     "sanitized_marker": "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED",
@@ -125,5 +130,16 @@
     "canonical_domain_mutation": false,
     "web_visual_started": false,
     "wp23_unlocked": false
+  },
+  "observe": {
+    "sql_mutation_allowed": false,
+    "migrations_required_before_observe": false,
+    "prepared_schema_required_before_observe": false,
+    "cross_tenant_write_probe_allowed": false,
+    "postgres18_required": true,
+    "tls_verify_full_required": true,
+    "bootstrap_authority_identity_required": true,
+    "runtime_role_identity_required": true,
+    "existing_product_residue_must_be_clean": true
   }
 }

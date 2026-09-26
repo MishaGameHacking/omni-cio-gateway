@@ -840,3 +840,26 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** current Timeweb documentation says PostgreSQL TLS setup requires public-IP connectivity first; the generated v2 update model exposes public network, floating IP and secure connection as independent optional fields.
 
+---
+
+## FL-036 — Pre-secret environment gates and observe phases must expose the real failure boundary
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / live workflow run `36259985639`
+
+**Symptom / failing gate:** exact-main bootstrap and the P3 source contract passed, then the pre-secret GitHub production-environment verifier stopped with `TIMEWEB_GITHUB_ENVIRONMENT_GATE_UNAVAILABLE`; the production-cutover job was skipped.
+
+**Root cause:** two producer/consumer assumptions overlapped. The shared environment verifier collapsed GitHub HTTP 401, 403 and 404 into one code, so missing `timeweb-production` configuration could not be distinguished from authentication/authorization failure. Separately, P3 documentation treated `observe` as the first read-only discovery step while the controller routed it through the prepared-schema runtime verifier and cross-tenant write probe, making observation depend on preparation it was meant to precede.
+
+**Blast radius searched:** the shared GitHub Environment verifier, every Timeweb production-environment workflow consumer, P3 contract/runbook/workflow/controller/tests, production DSN secret scope, PostgreSQL 18/TLS/runtime-role checks, migration/RLS preparation, P4/P5 downstream gates and provider/broker authority boundaries. The failed run never consumed production DSNs or the Timeweb provider token.
+
+**Why preflight missed it:** production-environment tests used synthetic successful payloads and did not freeze fixed 401/403/404 classification. Repository tests also validated P3 source shape but did not assert that `observe` bypasses migration/schema/cross-tenant mutation paths. No prior `timeweb-production` workflow had executed live.
+
+**Corrective change:** classify 401, 403 and 404 with separate sanitized codes; make `timeweb-production` existence, exact Branch `main` policy and production DSN custody explicit pre-dispatch prerequisites; re-verify the environment immediately before secret-bearing P3 steps; and route `observe` through a preparation-independent SQL-read-only PostgreSQL 18/TLS/authority/residue probe.
+
+**Permanent regression/guard:** environment-gate tests freeze fixed HTTP classifications; the P3 controller test proves `observe` calls only the read-only observation path; the P3 machine contract requires mutation-free observation and two environment-policy verifications in the workflow.
+
+**Future prevention rule:** a pre-secret gate must preserve enough sanitized classification to identify whether configuration is absent, credentials are invalid, or authority is denied. An operation named `observe` must never perform schema/data mutation or require the state created by a later `prepare` phase.
+
+**Dependency/tooling knowledge change:** GitHub Environment read/policy inspection uses Actions-read authority; environment creation/update and deployment-policy mutation are repository-administration actions and are not granted to the P3 workflow token.
+

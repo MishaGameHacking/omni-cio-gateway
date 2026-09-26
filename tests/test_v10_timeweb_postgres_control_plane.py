@@ -189,6 +189,34 @@ class TimewebControlPlaneTests(unittest.TestCase):
             opener.requests[0].full_url.endswith("/environments/timeweb-production")
         )
 
+    def test_environment_machine_gate_classifies_fixed_http_failures(self) -> None:
+        cases = (
+            (401, "TIMEWEB_GITHUB_ENVIRONMENT_GATE_AUTHENTICATION_FAILED"),
+            (403, "TIMEWEB_GITHUB_ENVIRONMENT_GATE_PERMISSION_DENIED"),
+            (404, "TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND"),
+        )
+        for status, code in cases:
+            with self.subTest(status=status):
+                failure = HTTPError(
+                    "https://api.github.com/environment",
+                    status,
+                    "sanitized",
+                    {},
+                    io.BytesIO(b"provider detail must not surface"),
+                )
+                opener = _Opener([failure])
+                with self.assertRaisesRegex(
+                    environment_gate.EnvironmentGateError,
+                    code,
+                ):
+                    environment_gate.verify_environment_policy(
+                        "synthetic-token",
+                        "MishaGameHacking/omni-cio-gateway",
+                        environment_name=environment_gate.PRODUCTION_ENVIRONMENT_NAME,
+                        opener=opener,
+                        sleeper=lambda _seconds: None,
+                    )
+
     def test_environment_machine_gate_accepts_documented_omitted_type(self) -> None:
         policies = self._main_policy_payload()
         policies["branch_policies"] = [{"id": 7, "name": "main"}]
