@@ -956,3 +956,27 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** every external service readiness gate must separate configuration validity from live transport readiness and authentication. Before a credential-bearing protocol operation, prove the non-secret network/TLS layers independently when the protocol allows it. Never treat “no SQLSTATE” as synonymous with “transient network failure,” never emit raw connection exceptions containing endpoints/users, and never turn an unknown failure into availability by blind replay.
 
 **Dependency/tooling knowledge change:** Psycopg connection errors can have `sqlstate=None` for client-side failures, while `ConnectionTimeout` is a specific `OperationalError` and failed connection objects can expose password-use metadata. Those facts support precise sanitized classification without logging the raw exception.
+
+
+---
+
+## FL-041 — Live transport repairs must certify reconnect lifecycle and scanner/formatter shape before replay
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 exact head `b64565dfaa7ca384efba98636512fbe6db79cbe6`
+
+**Symptom / failing gate:** the first hardened connectivity head produced three coupled DRAFT RED surfaces before executable certification could finish. Fast PR and WP17 stopped on the pinned Ruff 0.16.1 formatter projection; authoritative Windows CI stopped its tracked-content secret scan on a test-helper identifier containing a secret-keyword token. Sonar passed its Quality Gate but still reported two new issues. No real credential was present and the failing source had not been merged or replayed against production.
+
+**Root cause:** the connectivity repair correctly separated configuration, transport and authentication, but publication preflight still had two source-shape gaps already known from earlier connector-only work: formatter output was reviewed conceptually rather than projected exactly, and a synthetic conninfo fixture encoded its field-name helper with a scanner-sensitive identifier. Adjacent producer/consumer review also found a deeper lifecycle defect not visible in the one-shot P3 flow: hosted-runtime startup pinned the verified DNS result once and reused that same `hostaddr` for every future pool reconnect.
+
+**Blast radius searched:** P3 observe/prepare/accept, the shared Timeweb TLS adapter, hosted-runtime startup, pool replacement connections, external versus prepared DSN shape, ambient libpq override channels, CA custody, DNS/TCP/SSLRequest/TLS ordering, test fixtures, formatter/security gates, source guard, machine contract and operator runbook. Timeweb-managed PostgreSQL failover is in scope because the provider documents Patroni/Etcd leader-replica failover. Public-user, Telegram, broker-write, tenant, Real-money and provider-mutation authority remain unchanged.
+
+**Why prior guards missed it:** one-shot tests proved that a verified address was pinned before authentication, but did not assert the lifetime of that pin across later pool reconnects. The connector-only environment also cannot execute the repository-pinned Ruff/detect-secrets stack, so those exact source-shape failures first appeared in authoritative CI.
+
+**Corrective change:** apply the exact Ruff projection; rename the synthetic test helper rather than suppress the secret scanner; make the prepared connector validate its own pinned/verify-full shape; materialize the CA once per hosted-runtime process while re-running public DNS/TCP/PostgreSQL SSLRequest/hostname-verified TLS for every new pooled connection; and refactor PostgreSQL failure classification into table-driven helpers so the connection boundary remains reviewable and bounded.
+
+**Permanent regression/guard:** focused tests require raw external DSNs to be rejected by the prepared connector, private/reserved `hostaddr` to fail closed, and two successive hosted-runtime database opens to invoke two separate target preparations. The P3 machine contract freezes prepared-shape validation plus reconnect re-probing, while unchanged Ruff and tracked-content secret gates remain authoritative.
+
+**Future prevention rule:** a live-connectivity fix is incomplete until it proves both the first connection and the reconnect/failover path. Test fixtures must be designed to pass the real secret scanner without exclusions, and connector-authored Python must be projected through the pinned formatter before an exact head is called certifiable.
+
+**Dependency/tooling knowledge change:** Timeweb documents PostgreSQL HA through Patroni/Etcd with automatic leader failover; runtime reconnect logic must therefore follow the verified provider hostname on each new connection instead of treating one process-start backend address as permanent.

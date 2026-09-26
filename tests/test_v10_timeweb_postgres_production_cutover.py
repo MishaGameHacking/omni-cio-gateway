@@ -278,16 +278,13 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"][
-                "credential_free_transport_preflight_required"
-            ] = False
+            payload["transport"]["credential_free_transport_preflight_required"] = False
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
                 "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
             ):
                 guard.validate(root)
-
 
     def test_rejects_hosted_runtime_without_tls_preparation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

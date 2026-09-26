@@ -20,7 +20,7 @@ The external bootstrap/runtime DSNs and the later Timeweb App Platform `OMNI_V10
 
 `sslrootcert=.omni-cio/timeweb-postgres-root.crt`
 
-The connection host must be the Timeweb technical **domain** on explicit port `5432`, not the public IPv4. Immediately before the first PostgreSQL connection, both the P3 verifier and the hosted runtime fetch the public Timeweb CA only from `https://st.timeweb.com/cloud-static/ca.crt`, reject redirects/non-certificate content, write it atomically to a permission-hardened local file, and rewrite only the in-process connection copy to the absolute local CA path. The stored external DSN remains unchanged, so P3 can later require exact equality with the App Platform binding while Windows CI and the Linux runtime use their own local filesystem paths.
+The connection host must be the Timeweb technical **domain** on explicit port `5432`, not the public IPv4. P3 materializes the public Timeweb CA from `https://st.timeweb.com/cloud-static/ca.crt` before the production connection. The hosted runtime materializes that public CA once per process. Both reject redirects/non-certificate content and write the CA atomically to a permission-hardened local file. Only in-process connection copies use the absolute local CA path; the stored external DSN remains unchanged, so P3 can later require exact equality with the App Platform binding while Windows CI and the Linux runtime use their own local filesystem paths.
 
 The CA is public trust material, not a credential. Never weaken this boundary by omitting `sslrootcert`, switching to `sslmode=require`/disabled verification, using the public IP as the verified host, or storing a machine-specific absolute CA path in the shared DSN.
 
@@ -33,6 +33,10 @@ Before any database password is presented, P3 and the Timeweb hosted runtime pro
 The accepted provider technical-domain suffix set is `.tw1.ru`, `.tw1.su`, `.twc1.net`, and `.webtm.ru`. Arbitrary domains and any private/reserved DNS resolution are rejected before database authentication. External DSNs are also strict allowlist inputs: only `host`, `port`, `dbname`, `user`, explicit `password`, `sslmode`, and `sslrootcert` are accepted. `hostaddr`, libpq service/passfile indirection, client-certificate overrides, and other target/credential overrides are rejected instead of bypassing the verified host/CA path. P3/runtime also rejects ambient libpq connection variables such as `PGHOSTADDR`, `PGSERVICE`, `PGPASSFILE`, `PGSSL*`, authentication/GSS variables and target-session controls. After the credential-free TLS probe succeeds, the authenticated in-process conninfo is pinned to the exact public `hostaddr` that passed TCP/SSLRequest/verify-full while retaining the original hostname for certificate identity. This removes the second DNS lookup/TOCTOU window without changing the portable stored DSN. The probe never prints the technical hostname, resolved IP, DSN, user, password, certificate body, or raw exception text.
 
 Transport retries are bounded and only explicit transient DNS/TCP failures are replayed. Certificate, protocol, provider-domain, private-resolution and PostgreSQL authentication failures stop immediately. Database connection retries likewise require a classified transient failure; an unclassified client-side `OperationalError` is not replayed blindly.
+
+The hosted runtime keeps the CA file stable for the process lifetime but **re-proves the current provider address before every new pooled connection**, including replacement connections after a dropped/failed session. Each new connection therefore performs the credential-free DNS/TCP/SSLRequest/verify-full ladder again and receives a fresh in-process public `hostaddr` pin. The pool never reuses a process-start `hostaddr` merely because it was valid earlier. This is required for managed-cluster recovery: Timeweb documents PostgreSQL leader/replica operation through Patroni/Etcd with automatic leader failover, so reconnect correctness must follow the provider hostname rather than assume one backend address is permanent.
+
+`connect_prepared_timeweb_postgres()` independently validates that callers present the prepared shape: the original Timeweb hostname remains present for certificate identity, `hostaddr` is an explicit public address, `sslmode=verify-full` remains intact, and `sslrootcert` is an absolute process-local path. A raw external DSN cannot bypass the readiness ladder by calling the prepared connector directly.
 
 A successful credential-free boundary emits only:
 
@@ -86,3 +90,8 @@ Any SHA mismatch, TLS downgrade, migration drift, widened runtime role, RLS/FORC
 Do not repair a failed P3 by dropping schemas, truncating data, weakening RLS, granting broad predefined roles, bypassing certificate verification, changing CI assertions, or enabling public users.
 
 The last-known-good application release remains the application rollback target. Database recovery uses the accepted Timeweb physical backup plus the provider-neutral logical recovery contract. P3 acceptance does not authorize destructive removal of older recovery points.
+
+Provider references for this boundary:
+- https://timeweb.cloud/docs/dbaas/postgresql — managed PostgreSQL uses Patroni/Etcd leader-replica failover;
+- https://timeweb.cloud/docs/dbaas/postgresql/connect-to-database — domain connections use protected TLS;
+- https://timeweb.cloud/docs/dbaas/dbaas-manage/public-ip-access — external access requires enabled public IP access.

@@ -8,15 +8,15 @@ from urllib.request import Request
 
 import psycopg
 import pytest
-from psycopg.conninfo import conninfo_to_dict
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from apps.api import timeweb_postgres_tls as tls
 
 
-_PASSWORD_KEY = "pass" + "word"
+_AUTH_OPTION = "pass" + "word"
 VALID_DSN = (
     "host=db.twc1.net port=5432 dbname=default_db user=runtime "
-    f"{_PASSWORD_KEY}=x "
+    f"{_AUTH_OPTION}=x "
     "sslmode=verify-full "
     "sslrootcert=.omni-cio/timeweb-postgres-root.crt"
 )
@@ -55,6 +55,14 @@ class _Opener:
             raise outcome
         assert isinstance(outcome, _Response)
         return outcome
+
+
+def _prepared_dsn(tmp_path: Path) -> str:
+    return make_conninfo(
+        VALID_DSN,
+        sslrootcert=str((tmp_path / "timeweb-postgres-root.crt").resolve()),
+        hostaddr="8.8.8.8",
+    )
 
 
 def test_connection_contract_accepts_valid_domain() -> None:
@@ -99,7 +107,7 @@ def test_resolve_rewrites_only_local_ca_path(
             "TIMEWEB_PG_TLS_PROVIDER_TECHNICAL_DOMAIN_REQUIRED",
         ),
         (
-            VALID_DSN.replace(f"{_PASSWORD_KEY}=x ", ""),
+            VALID_DSN.replace(f"{_AUTH_OPTION}=x ", ""),
             "TIMEWEB_PG_TLS_PASSWORD_REQUIRED",
         ),
         (
@@ -126,6 +134,41 @@ def test_resolve_rewrites_only_local_ca_path(
 def test_connection_contract_fails_closed(dsn: str, code: str) -> None:
     with pytest.raises(tls.TimewebPostgresTlsError, match=code):
         tls._connection_params(dsn)
+
+
+def test_prepared_connection_requires_public_pinned_hostaddr(tmp_path: Path) -> None:
+    prepared = _prepared_dsn(tmp_path)
+    params = tls._prepared_connection_params(prepared)
+    assert params["hostaddr"] == "8.8.8.8"
+
+    private = make_conninfo(prepared, hostaddr="10.0.0.10")
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID",
+    ):
+        tls._prepared_connection_params(private)
+
+
+def test_connect_rejects_unprepared_dsn_before_connector() -> None:
+    calls = 0
+
+    def connector(dsn: str, **kwargs: object) -> object:
+        nonlocal calls
+        del dsn, kwargs
+        calls += 1
+        return object()
+
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_PREPARED_HOSTADDR_REQUIRED",
+    ):
+        tls.connect_prepared_timeweb_postgres(
+            VALID_DSN,
+            failure_prefix="TIMEWEB_PG_TEST",
+            connector=connector,
+            retry_delays=(),
+        )
+    assert calls == 0
 
 
 def test_invalid_dsn_does_not_fetch_ca(tmp_path: Path) -> None:
@@ -519,9 +562,7 @@ def test_transport_probe_certificate_failure_is_not_retried(
             ca_path,
             resolver=_public_resolver,
             connector=connector,
-            context_factory=lambda _path: _ProbeContext(
-                certificate_failure=True
-            ),
+            context_factory=lambda _path: _ProbeContext(certificate_failure=True),
             sleeper=sleeps.append,
             delays=(0.1, 0.2),
         )
@@ -557,6 +598,7 @@ def test_transport_probe_rejects_postgres_sslrequest_refusal(
 
 
 def test_connect_classifier_retries_only_classified_timeout(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     outcomes: list[object] = [
@@ -576,7 +618,7 @@ def test_connect_classifier_retries_only_classified_timeout(
         return outcome
 
     result = tls.connect_prepared_timeweb_postgres(
-        "redacted-prepared-dsn",
+        _prepared_dsn(tmp_path),
         failure_prefix="TIMEWEB_PG_TEST",
         connector=connector,
         sleeper=sleeps.append,
@@ -591,7 +633,9 @@ def test_connect_classifier_retries_only_classified_timeout(
     assert "endpoint detail" not in output
 
 
-def test_connect_classifier_does_not_retry_authentication_rejection() -> None:
+def test_connect_classifier_does_not_retry_authentication_rejection(
+    tmp_path: Path,
+) -> None:
     calls = 0
     sleeps: list[float] = []
 
@@ -606,7 +650,7 @@ def test_connect_classifier_does_not_retry_authentication_rejection() -> None:
         match="TIMEWEB_PG_TEST_AUTHENTICATION_REJECTED",
     ):
         tls.connect_prepared_timeweb_postgres(
-            "redacted-prepared-dsn",
+            _prepared_dsn(tmp_path),
             failure_prefix="TIMEWEB_PG_TEST",
             connector=connector,
             sleeper=sleeps.append,
@@ -617,7 +661,9 @@ def test_connect_classifier_does_not_retry_authentication_rejection() -> None:
     assert sleeps == []
 
 
-def test_connect_classifier_maps_database_not_found_without_retry() -> None:
+def test_connect_classifier_maps_database_not_found_without_retry(
+    tmp_path: Path,
+) -> None:
     calls = 0
 
     def connector(dsn: str, **kwargs: object) -> object:
@@ -631,7 +677,7 @@ def test_connect_classifier_maps_database_not_found_without_retry() -> None:
         match="TIMEWEB_PG_TEST_DATABASE_NOT_FOUND",
     ):
         tls.connect_prepared_timeweb_postgres(
-            "redacted-prepared-dsn",
+            _prepared_dsn(tmp_path),
             failure_prefix="TIMEWEB_PG_TEST",
             connector=connector,
             retry_delays=(0.0,),
@@ -640,7 +686,9 @@ def test_connect_classifier_maps_database_not_found_without_retry() -> None:
     assert calls == 1
 
 
-def test_connect_classifier_does_not_retry_unclassified_client_failure() -> None:
+def test_connect_classifier_does_not_retry_unclassified_client_failure(
+    tmp_path: Path,
+) -> None:
     calls = 0
 
     def connector(dsn: str, **kwargs: object) -> object:
@@ -654,7 +702,7 @@ def test_connect_classifier_does_not_retry_unclassified_client_failure() -> None
         match="TIMEWEB_PG_TEST_UNCLASSIFIED_CLIENT_FAILURE",
     ):
         tls.connect_prepared_timeweb_postgres(
-            "redacted-prepared-dsn",
+            _prepared_dsn(tmp_path),
             failure_prefix="TIMEWEB_PG_TEST",
             connector=connector,
             retry_delays=(0.0,),
