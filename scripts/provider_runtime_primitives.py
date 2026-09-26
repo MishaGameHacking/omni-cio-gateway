@@ -88,8 +88,9 @@ def _connect_postgres_with_retry(
     *,
     retry_marker: str,
     failure_code: str,
+    retry_delays: tuple[float, ...] = _TRANSIENT_RETRY_DELAYS_SECONDS,
 ) -> Any:
-    attempts = len(_TRANSIENT_RETRY_DELAYS_SECONDS) + 1
+    attempts = len(retry_delays) + 1
     for attempt in range(attempts):
         try:
             return psycopg_module.connect(
@@ -101,5 +102,5 @@ def _connect_postgres_with_retry(
             if attempt + 1 >= attempts:
                 raise ProvisioningStopped(failure_code) from None
             _emit(f"{retry_marker} attempt={attempt + 2}/{attempts}")
-            time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+            time.sleep(retry_delays[attempt])
     raise AssertionError("bounded PostgreSQL connection retry exhausted")
