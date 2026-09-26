@@ -48,6 +48,20 @@ class _Livez:
         return _Response({"status": "ok", "release_sha": self.sha})
 
 
+class _SequenceLivez:
+    def __init__(self, responses: list[object]) -> None:
+        self.responses = list(responses)
+
+    def open(self, request: Request, *, timeout: float) -> _Response:
+        del request, timeout
+        value = self.responses.pop(0)
+        if isinstance(value, BaseException):
+            raise value
+        if not isinstance(value, _Response):
+            raise AssertionError("unexpected livez fixture")
+        return value
+
+
 def _app(
     *,
     active_sha: str = LKG_SHA,
@@ -352,6 +366,22 @@ def test_deploy_requires_confirmation_and_mutates_only_exact_sha() -> None:
     )
     assert api.calls == [("17", EXPECTED_SHA)]
     assert last_known_good == LKG_SHA
+
+
+def test_livez_reconciles_transport_and_stale_release_propagation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opener = _SequenceLivez(
+        [
+            OSError("transient route propagation"),
+            _Response({"status": "ok", "release_sha": LKG_SHA}),
+            _Response({"status": "ok", "release_sha": EXPECTED_SHA}),
+        ]
+    )
+    sleeps: list[float] = []
+    monkeypatch.setattr(release.time, "sleep", sleeps.append)
+    release._verify_livez(CANDIDATE_HOST, EXPECTED_SHA, opener=opener)
+    assert sleeps == list(release._LIVEZ_RETRY_DELAYS[:2])
 
 
 def test_deploy_wait_budget_is_multi_minute_and_workflow_bounded() -> None:
