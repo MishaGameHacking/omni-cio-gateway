@@ -273,6 +273,7 @@ def _validate_controller(path: Path) -> None:
         "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED",
         "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TRUNCATED",
         "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TOO_LARGE",
+        "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID",
         "TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT",
     )
     if any(marker not in source for marker in required):
