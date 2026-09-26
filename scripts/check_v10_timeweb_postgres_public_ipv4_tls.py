@@ -201,22 +201,32 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         False,
         "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
     )
-    _require(
-        ipv4.get("ambiguous_create_requires_get_reconciliation"),
-        True,
-        "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
-    )
-    _require(
-        ipv4.get("blind_mutation_retry_allowed"),
-        False,
-        "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
-    )
-
-    _require(
-        ipv4.get("enable_transition_requires_tls_fields_absent"),
-        True,
-        "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
-    )
+    for key in (
+        "new_ipv4_create_authorized",
+        "ipv4_delete_authorized",
+        "metadata_stamp_authorized",
+        "blind_mutation_retry_allowed",
+    ):
+        _require(
+            ipv4.get(key),
+            False,
+            "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
+        )
+    for key in (
+        "existing_allocated_ipv4_required",
+        "enable_transition_requires_tls_fields_absent",
+    ):
+        _require(
+            ipv4.get(key),
+            True,
+            "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
+        )
+    for forbidden_key in ("create_endpoint", "ambiguous_create_requires_get_reconciliation"):
+        _require(
+            forbidden_key in ipv4,
+            False,
+            "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
+        )
 
     tls = _mapping(payload.get("tls"), "TIMEWEB_PUBLIC_IPV4_TLS_INVALID")
     _require(
@@ -323,7 +333,6 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             "/api/v1/firewall/groups?policy=DROP",
             "/api/v1/firewall/groups/{group_id}/rules",
             "/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?resource_type=dbaas",
-            "/api/v1/floating-ips",
         },
         "TIMEWEB_PUBLIC_IPV4_API_BOUNDARY_INVALID",
     )
@@ -332,13 +341,12 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         {
             "/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
             "/api/v2/databases/{cluster_id}",
-            "/api/v1/floating-ips/{floating_ip_id}",
         },
         "TIMEWEB_PUBLIC_IPV4_API_BOUNDARY_INVALID",
     )
     _require(
-        provider_api.get("delete_endpoint_for_created_ipv4_cleanup_only"),
-        "/api/v1/floating-ips/{floating_ip_id}",
+        "delete_endpoint_for_created_ipv4_cleanup_only" in provider_api,
+        False,
         "TIMEWEB_PUBLIC_IPV4_API_BOUNDARY_INVALID",
     )
     for key in (
@@ -583,7 +591,6 @@ def _validate_sources() -> None:
             '"/api/v1/firewall/groups?policy=DROP"',
             '"direction": "ingress"',
             '"protocol": "tcp"',
-            '"is_ddos_guard": False',
             '"is_enabled_public_network": True',
             '"is_enabled_public_ipv6": False',
             '"is_secure_connection_enable": True',
@@ -598,7 +605,6 @@ def _validate_sources() -> None:
             'operation="FIREWALL_GROUP_CREATE"',
             'operation="FIREWALL_RULE_CREATE"',
             'operation="FIREWALL_RESOURCE_LINK"',
-            'operation="FLOATING_IP_CREATE"',
             'operation="DATABASE_PUBLIC_IPV4_PATCH"',
             'operation="DATABASE_TLS_ENABLE_PATCH"',
             "_wait_public_ipv4_ready(api, cluster_id, address)",
@@ -700,6 +706,12 @@ def _validate_ipv4_custody_contract(payload: dict[str, Any]) -> None:
         "diagnostic_proves_network_readiness": False,
         "diagnostic_proves_sql_parity": False,
         "ambiguous_create_delta_is_ownership_proof": False,
+        "transport_existing_only_after_allocation_receipt": True,
+        "transport_create_allowed": False,
+        "transport_delete_allowed": False,
+        "transport_stamp_allowed": False,
+        "transport_missing_allocated_ipv4_terminal_code": "TIMEWEB_ALLOCATED_IPV4_MISSING",
+        "transport_two_read_drift_terminal_code": "TIMEWEB_ALLOCATED_IPV4_DRIFT",
     }
     _require(
         payload.get("ipv4_custody"),
@@ -727,33 +739,6 @@ def _string_literals(function: ast.FunctionDef) -> set[str]:
     }
 
 
-def _validate_custody_stamp(tree: ast.Module) -> None:
-    function = _function(tree, "_stamp_created_ipv4")
-    calls = [
-        node
-        for node in ast.walk(function)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "mutate_once"
-    ]
-    if len(calls) != 1:
-        raise RuntimeError("TIMEWEB_IPV4_CUSTODY_STAMP_INVALID")
-    expected = ast.parse(
-        'mutation.mutate_once("PATCH", '
-        'f"/api/v1/floating-ips/{floating_id}", '
-        'operation="FLOATING_IP_CUSTODY_STAMP", '
-        'body={"comment": management_marker}, '
-        "expected_statuses=frozenset({200}), "
-        "reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES)",
-        mode="eval",
-    ).body
-    _require(
-        ast.dump(calls[0]),
-        ast.dump(expected),
-        "TIMEWEB_IPV4_CUSTODY_STAMP_INVALID",
-    )
-
-
 def _validate_custody_order(tree: ast.Module) -> None:
     function = _function(tree, "_configure_transport")
     blocks = [node for node in function.body if isinstance(node, ast.Try)]
@@ -776,6 +761,39 @@ def _validate_custody_order(tree: ast.Module) -> None:
         ),
         "TIMEWEB_IPV4_CUSTODY_ORDER_INVALID",
     )
+
+
+def _validate_existing_only_transport(tree: ast.Module) -> None:
+    function = _function(tree, "_resolve_transport_ipv4")
+    select_calls = call_lines(function, owner="custody", name="select")
+    if len(select_calls) != 2:
+        raise RuntimeError("TIMEWEB_IPV4_EXISTING_ONLY_RESOLVER_INVALID")
+    literals = _string_literals(function)
+    for required in (
+        "TIMEWEB_ALLOCATED_IPV4_MISSING",
+        "TIMEWEB_ALLOCATED_IPV4_DRIFT",
+    ):
+        _require(
+            required in literals,
+            True,
+            "TIMEWEB_IPV4_EXISTING_ONLY_RESOLVER_INVALID",
+        )
+    forbidden_calls = {
+        "_create_floating_ip",
+        "_stamp_created_ipv4",
+        "_delete_created_ipv4_if_unbound",
+    }
+    for node in ast.walk(function):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in forbidden_calls:
+                raise RuntimeError("TIMEWEB_IPV4_EXISTING_ONLY_RESOLVER_INVALID")
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "custody"
+                and node.func.attr == "resolve"
+            ):
+                raise RuntimeError("TIMEWEB_IPV4_EXISTING_ONLY_RESOLVER_INVALID")
 
 
 def _validate_provider_transition_order(tree: ast.Module) -> None:
@@ -865,21 +883,28 @@ def _validate_custody_probe(source: str) -> None:
 def _validate_ipv4_custody_sources() -> None:
     source = _read(PROVISIONER)
     tree = ast.parse(source)
-    _validate_custody_stamp(tree)
     _validate_custody_order(tree)
+    _validate_existing_only_transport(tree)
     _validate_provider_transition_order(tree)
     _markers(
         source,
         (
-            "custody.resolve(",
+            "custody.select(",
             "custody.raw_inventory(",
-            "custody.is_unbound(",
             "except custody.CustodyStopped as exc:",
-            "TIMEWEB_FLOATING_IP_CREATE_RECEIPT_UNPROVEN",
-            "TIMEWEB_IPV4_CLEANUP_ABSENCE_UNPROVEN",
+            "TIMEWEB_ALLOCATED_IPV4_MISSING",
+            "TIMEWEB_ALLOCATED_IPV4_DRIFT",
         ),
         "TIMEWEB_IPV4_CUSTODY_SOURCE_INVALID",
     )
+    for forbidden in (
+        "custody.resolve(",
+        'operation="FLOATING_IP_CREATE"',
+        'operation="FLOATING_IP_CUSTODY_STAMP"',
+        'operation="FLOATING_IP_CLEANUP_DELETE"',
+    ):
+        if forbidden in source:
+            raise RuntimeError("TIMEWEB_IPV4_CURRENT_TRANSPORT_WRITE_AUTHORITY_WIDENED")
     helper = _read(ROOT / "scripts/timeweb_ipv4_custody.py")
     _markers(
         helper,
