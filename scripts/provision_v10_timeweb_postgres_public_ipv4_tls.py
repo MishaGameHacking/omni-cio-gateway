@@ -62,6 +62,10 @@ _TLS_STATE_DELAYS_SECONDS = (
 _TRANSITIONAL_STATUSES = frozenset(
     {"starting", "rebooting", "lan_transfer", "transfer", "turning_on"}
 )
+_WAIT_API_TIMEOUT_SECONDS = 8.0
+_ROLLBACK_STATE_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 30.0)
+_CA_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
+_TLS_SOCKET_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0, 10.0)
 Sleep = Callable[[float], None]
 
 
@@ -258,9 +262,11 @@ def _target_cluster_id(api: read_only.TimewebReadOnlyApi) -> int:
 def _cluster(
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
+    *,
+    timeout: float = 30.0,
 ) -> dict[str, Any]:
     payload = _provider_base._json_object(
-        api.get(f"/api/v1/databases/{cluster_id}"),
+        api.get(f"/api/v1/databases/{cluster_id}", timeout=timeout),
         "TIMEWEB_CLUSTER_RESPONSE_INVALID",
     )
     cluster = _provider_base._json_object(
@@ -651,8 +657,11 @@ def _bound_ip_for_cluster(
 
 
 def _issued_domain(cluster: dict[str, Any]) -> str | None:
+    raw_domains = cluster.get("domains")
+    if raw_domains is None:
+        return None
     domains = _provider_base._json_list(
-        cluster.get("domains"),
+        raw_domains,
         "TIMEWEB_CLUSTER_DOMAINS_INVALID",
     )
     issued: list[str] = []
@@ -688,6 +697,22 @@ def _network_ready(cluster: dict[str, Any]) -> bool:
     )
 
 
+def _is_transient_control_plane_failure(
+    exc: _provider_base.ProvisioningStopped,
+) -> bool:
+    return exc.code == "TIMEWEB_API_NETWORK_ERROR" or (
+        exc.code == "TIMEWEB_API_HTTP_ERROR"
+        and exc.status in read_only._TRANSIENT_HTTP_STATUSES
+    )
+
+
+def _wait_cluster_read(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+) -> dict[str, Any]:
+    return _cluster(api, cluster_id, timeout=_WAIT_API_TIMEOUT_SECONDS)
+
+
 def _wait_public_ipv4_ready(
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
@@ -696,17 +721,30 @@ def _wait_public_ipv4_ready(
     sleeper: Sleep = time.sleep,
     delays: tuple[float, ...] = _PUBLIC_IPV4_STATE_DELAYS_SECONDS,
 ) -> dict[str, Any]:
+    observed_state = False
     for attempt in range(len(delays) + 1):
-        cluster = _cluster(api, cluster_id)
-        if _public_ipv4_ready(cluster):
-            _verify_bound_ipv4(api, cluster_id, expected_address)
-            return cluster
-        status = str(cluster.get("status", ""))
-        if status not in _TRANSITIONAL_STATUSES and status != "started":
-            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
+        try:
+            cluster = _wait_cluster_read(api, cluster_id)
+            observed_state = True
+            if _public_ipv4_ready(cluster):
+                _verify_bound_ipv4(api, cluster_id, expected_address)
+                return cluster
+            status = str(cluster.get("status", ""))
+            if status not in _TRANSITIONAL_STATUSES and status != "started":
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_CLUSTER_UNSAFE_STATUS"
+                )
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT")
+    code = (
+        "TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT"
+        if observed_state
+        else "TIMEWEB_PUBLIC_IPV4_CONTROL_PLANE_READ_TIMEOUT"
+    )
+    raise _provider_base.ProvisioningStopped(code)
 
 
 def _tls_readiness_timeout_code(cluster: dict[str, Any]) -> str:
@@ -733,18 +771,24 @@ def _wait_network_ready(
 ) -> dict[str, Any]:
     last_cluster: dict[str, Any] | None = None
     for attempt in range(len(delays) + 1):
-        cluster = _cluster(api, cluster_id)
-        last_cluster = cluster
-        if _network_ready(cluster):
-            return cluster
-        status = str(cluster.get("status", ""))
-        if status not in _TRANSITIONAL_STATUSES and status != "started":
-            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
+        try:
+            cluster = _wait_cluster_read(api, cluster_id)
+            last_cluster = cluster
+            if _network_ready(cluster):
+                return cluster
+            status = str(cluster.get("status", ""))
+            if status not in _TRANSITIONAL_STATUSES and status != "started":
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_CLUSTER_UNSAFE_STATUS"
+                )
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
         if attempt < len(delays):
             sleeper(delays[attempt])
     if last_cluster is None:
         raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
+            "TIMEWEB_TLS_CONTROL_PLANE_READ_TIMEOUT"
         )
     raise _provider_base.ProvisioningStopped(_tls_readiness_timeout_code(last_cluster))
 
@@ -815,13 +859,18 @@ def _close_public_network(
         )
     except AmbiguousMutation:
         pass
-    for delay in (1.0, 2.0, 4.0, 8.0, 15.0):
-        cluster = _cluster(api, cluster_id)
-        if (
-            cluster.get("is_enabled_public_network") is False
-            and cluster.get("is_enabled_public_ipv6") is False
-        ):
-            return
+    for delay in _ROLLBACK_STATE_DELAYS_SECONDS:
+        try:
+            cluster = _wait_cluster_read(api, cluster_id)
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        else:
+            if (
+                cluster.get("is_enabled_public_network") is False
+                and cluster.get("is_enabled_public_ipv6") is False
+            ):
+                return
         sleeper(delay)
     raise _provider_base.ProvisioningStopped(
         "TIMEWEB_PUBLIC_NETWORK_ROLLBACK_MANUAL_RECONCILIATION_REQUIRED"
@@ -831,6 +880,8 @@ def _close_public_network(
 def _fetch_ca_file(
     *,
     opener: OpenerDirector | Any | None = None,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _CA_RETRY_DELAYS_SECONDS,
 ) -> Path:
     client = opener or _provider_base._NO_REDIRECT_OPENER
     request = Request(
@@ -841,12 +892,28 @@ def _fetch_ca_file(
         },
         method="GET",
     )
-    try:
-        with client.open(request, timeout=20.0) as response:
-            status = int(response.status)
-            raw = response.read(MAX_CA_BYTES + 1)
-    except OSError:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_CA_FETCH_FAILED") from None
+    status = 0
+    raw = b""
+    for attempt in range(len(delays) + 1):
+        try:
+            with client.open(request, timeout=20.0) as response:
+                status = int(response.status)
+                raw = response.read(MAX_CA_BYTES + 1)
+            break
+        except HTTPError as exc:
+            if (
+                int(exc.code) not in read_only._TRANSIENT_HTTP_STATUSES
+                or attempt >= len(delays)
+            ):
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_CA_FETCH_FAILED"
+                ) from None
+        except OSError:
+            if attempt >= len(delays):
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_CA_FETCH_FAILED"
+                ) from None
+        sleeper(delays[attempt])
     if status != 200 or len(raw) > MAX_CA_BYTES:
         raise _provider_base.ProvisioningStopped("TIMEWEB_CA_FETCH_FAILED")
     if (
@@ -885,8 +952,7 @@ def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
     return context
 
 
-def _probe_postgres_tls(hostname: str, ca_path: Path) -> None:
-    context = _tls_client_context(ca_path)
+def _probe_postgres_tls_once(hostname: str, context: ssl.SSLContext) -> None:
     raw_socket: socket.socket | None = None
     try:
         raw_socket = socket.create_connection(
@@ -902,13 +968,38 @@ def _probe_postgres_tls(hostname: str, ca_path: Path) -> None:
                 raise _provider_base.ProvisioningStopped(
                     "TIMEWEB_POSTGRES_TLS_CERT_MISSING"
                 )
-    except OSError:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
-        ) from None
     finally:
         if raw_socket is not None:
             raw_socket.close()
+
+
+def _probe_postgres_tls(
+    hostname: str,
+    ca_path: Path,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _TLS_SOCKET_RETRY_DELAYS_SECONDS,
+) -> None:
+    context = _tls_client_context(ca_path)
+    for attempt in range(len(delays) + 1):
+        try:
+            _probe_postgres_tls_once(hostname, context)
+            return
+        except ssl.SSLCertVerificationError:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
+            ) from None
+        except _provider_base.ProvisioningStopped:
+            raise
+        except OSError:
+            if attempt >= len(delays):
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
+                ) from None
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
+    )
 
 
 def _verify_bound_ipv4(
