@@ -612,6 +612,110 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         verify_exclusive.assert_called_once_with(api, "group-1", 91)
         verify_ipv4.assert_called_once_with(api, 91, "8.8.4.4")
 
+    def test_firewall_reconciliation_budget_is_bounded_but_not_eager(self) -> None:
+        budget = sum(provisioner._RECONCILE_DELAYS_SECONDS)
+        self.assertGreaterEqual(budget, 60.0)
+        self.assertLess(budget, 5 * 60)
+
+    def test_group_create_reconciles_unprovable_success_response_by_get(self) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        mutation.mutate_once.return_value = {"group": {"unexpected": "shape"}}
+        with (
+            mock.patch.object(
+                provisioner,
+                "_group_id_by_name",
+                side_effect=[None, "group-1"],
+            ),
+            mock.patch.object(provisioner, "_verify_group") as verify,
+        ):
+            actual = provisioner._ensure_group(
+                mutation,
+                api,
+                delays=(),
+            )
+        self.assertEqual(actual, "group-1")
+        mutation.mutate_once.assert_called_once()
+        verify.assert_called_once_with(api, "group-1")
+
+    def test_group_create_reconcile_survives_transient_read(self) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        mutation.mutate_once.return_value = {"group": {"id": "group-1"}}
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        sleeps: list[float] = []
+        with (
+            mock.patch.object(
+                provisioner,
+                "_group_id_by_name",
+                side_effect=[None, transient, "group-1"],
+            ),
+            mock.patch.object(provisioner, "_verify_group"),
+        ):
+            actual = provisioner._ensure_group(
+                mutation,
+                api,
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        self.assertEqual(actual, "group-1")
+        self.assertEqual(sleeps, [0.0])
+
+    def test_rule_reconcile_survives_transient_read_without_second_mutation(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        expected = provisioner._rule_body("8.8.8.8/32")
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_HTTP_ERROR",
+            status=500,
+        )
+        sleeps: list[float] = []
+        with mock.patch.object(
+            provisioner,
+            "_rules",
+            side_effect=[[], transient, [expected]],
+        ):
+            provisioner._ensure_rule(
+                mutation,
+                api,
+                "group-1",
+                "8.8.8.8/32",
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        mutation.mutate_once.assert_called_once()
+        self.assertEqual(sleeps, [0.0])
+
+    def test_resource_link_reconcile_survives_transient_read_without_second_mutation(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        linked = [{"id": 91, "type": "dbaas"}]
+        sleeps: list[float] = []
+        with mock.patch.object(
+            provisioner,
+            "_resources",
+            side_effect=[[], transient, linked],
+        ):
+            provisioner._ensure_resource_link(
+                mutation,
+                api,
+                "group-1",
+                91,
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        mutation.mutate_once.assert_called_once()
+        self.assertEqual(sleeps, [0.0])
+
     def test_multiple_firewall_groups_are_rejected(self) -> None:
         api = mock.Mock()
         with mock.patch.object(
@@ -847,10 +951,14 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         with (
             mock.patch.object(
                 provisioner,
-                "_cluster",
+                "_wait_cluster_read",
                 return_value=public_ready,
             ),
-            mock.patch.object(provisioner, "_verify_bound_ipv4") as verify,
+            mock.patch.object(
+                provisioner,
+                "_bound_ipv4_matches",
+                return_value=True,
+            ) as binding,
         ):
             actual = provisioner._wait_public_ipv4_ready(
                 api,
@@ -859,7 +967,73 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 delays=(),
             )
         self.assertIs(actual, public_ready)
-        verify.assert_called_once_with(api, 91, "8.8.4.4")
+        binding.assert_called_once_with(api, 91, "8.8.4.4")
+
+    def test_public_ipv4_wait_treats_delayed_binding_visibility_as_pending(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        public_ready = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "status": "started",
+        }
+        sleeps: list[float] = []
+        with (
+            mock.patch.object(
+                provisioner,
+                "_wait_cluster_read",
+                side_effect=[public_ready, public_ready],
+            ),
+            mock.patch.object(
+                provisioner,
+                "_bound_ipv4_matches",
+                side_effect=[False, True],
+            ) as binding,
+        ):
+            actual = provisioner._wait_public_ipv4_ready(
+                api,
+                91,
+                "8.8.4.4",
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        self.assertIs(actual, public_ready)
+        self.assertEqual(binding.call_count, 2)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_public_ipv4_wait_classifies_binding_visibility_timeout(self) -> None:
+        api = mock.Mock()
+        public_ready = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "status": "started",
+        }
+        with (
+            mock.patch.object(
+                provisioner,
+                "_wait_cluster_read",
+                return_value=public_ready,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_bound_ipv4_matches",
+                return_value=False,
+            ),
+        ):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._wait_public_ipv4_ready(
+                    api,
+                    91,
+                    "8.8.4.4",
+                    delays=(),
+                )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_PUBLIC_IPV4_BINDING_READY_TIMEOUT",
+        )
 
     def test_preexisting_public_network_without_managed_ipv4_is_closed(self) -> None:
         initial = {
