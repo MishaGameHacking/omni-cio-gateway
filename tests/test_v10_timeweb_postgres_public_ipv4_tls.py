@@ -179,6 +179,79 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         )
         wait.assert_called_once_with(api, 91)
 
+    def test_tls_readiness_budget_exceeds_live_run_six_window(self) -> None:
+        budget = sum(provisioner._TLS_STATE_DELAYS_SECONDS)
+        self.assertGreaterEqual(budget, 300.0)
+        self.assertLess(budget, 15 * 60)
+
+    def test_tls_wait_reconciles_delayed_certificate_without_second_mutation(self) -> None:
+        api = mock.Mock()
+        pending = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": True,
+            "status": "started",
+            "domains": [{"fqdn": "example.twc1.net", "cert_status": "pending"}],
+        }
+        ready = {
+            **pending,
+            "domains": [{"fqdn": "example.twc1.net", "cert_status": "issued"}],
+        }
+        sleeper = mock.Mock()
+        with mock.patch.object(
+            provisioner,
+            "_cluster",
+            side_effect=[pending, ready],
+        ) as cluster:
+            actual = provisioner._wait_network_ready(
+                api,
+                91,
+                sleeper=sleeper,
+                delays=(0.0,),
+            )
+        self.assertIs(actual, ready)
+        self.assertEqual(cluster.call_count, 2)
+        sleeper.assert_called_once_with(0.0)
+
+    def test_tls_wait_classifies_certificate_timeout_without_hostname_output(self) -> None:
+        api = mock.Mock()
+        pending = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": True,
+            "status": "started",
+            "domains": [{"fqdn": "private.example", "cert_status": "pending"}],
+        }
+        with mock.patch.object(provisioner, "_cluster", return_value=pending):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._wait_network_ready(api, 91, delays=())
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT",
+        )
+        self.assertNotIn("private.example", str(raised.exception))
+
+    def test_tls_wait_classifies_secure_enable_timeout(self) -> None:
+        api = mock.Mock()
+        pending = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": False,
+            "status": "started",
+            "domains": [],
+        }
+        with mock.patch.object(provisioner, "_cluster", return_value=pending):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._wait_network_ready(api, 91, delays=())
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_TLS_ENABLE_READY_TIMEOUT",
+        )
+
     def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
         context = mock.Mock()
         with mock.patch.object(
