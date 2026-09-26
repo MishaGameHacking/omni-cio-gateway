@@ -307,7 +307,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         {
             "/api/v1/projects",
             "/api/v1/projects/{project_id}/resources/databases",
-            "/api/v1/databases/{cluster_id}",            "/api/v1/firewall/groups",
+            "/api/v1/databases/{cluster_id}",
+            "/api/v1/firewall/groups",
             "/api/v1/firewall/groups/{group_id}",
             "/api/v1/firewall/groups/{group_id}/rules",
             "/api/v1/firewall/groups/{group_id}/resources",
@@ -353,7 +354,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
 
     recovery = _mapping(
         payload.get("mutation_recovery"),
-        "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",    )
+        "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",
+    )
     _require(
         recovery,
         {
@@ -623,7 +625,8 @@ def _validate_sources() -> None:
         workflow,
         (
             "workflow_dispatch:",
-            _CONFIRMATION,            "verifier_cidr:",
+            _CONFIRMATION,
+            "verifier_cidr:",
             "allocation_plan_id:",
             "actions: read",
             "contents: read",
@@ -703,6 +706,7 @@ def _validate_ipv4_custody_contract(payload: dict[str, Any]) -> None:
         expected,
         "TIMEWEB_IPV4_CUSTODY_CONTRACT_INVALID",
     )
+
 
 def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
     matches = [
