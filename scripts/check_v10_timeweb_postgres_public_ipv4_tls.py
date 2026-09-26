@@ -900,25 +900,41 @@ def _validate_provider_transition_order(tree: ast.Module) -> None:
     configure = _function(tree, "_configure_transport")
     public_calls = call_lines(configure, owner=None, name="_patch_public_ipv4")
     tls_calls = call_lines(configure, owner=None, name="_enable_secure_connection")
-    scope_calls = call_lines(configure, owner=None, name="_verify_transport_scope")
-    if len(public_calls) != 1 or len(tls_calls) != 1 or len(scope_calls) != 2:
+    scope_wait_calls = call_lines(configure, owner=None, name="_wait_transport_scope")
+    if (
+        len(public_calls) != 1
+        or len(tls_calls) != 1
+        or len(scope_wait_calls) != 2
+    ):
         raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
-    if not public_calls[0] < scope_calls[0] < tls_calls[0] < scope_calls[1]:
+    if not (
+        public_calls[0]
+        < scope_wait_calls[0]
+        < tls_calls[0]
+        < scope_wait_calls[1]
+    ):
         raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
 
-    scope = _function(tree, "_verify_transport_scope")
+    scope_wait = _function(tree, "_wait_transport_scope")
+    if len(call_lines(scope_wait, owner=None, name="_verify_transport_scope")) != 1:
+        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+
     forbidden_scope_calls = {
         "_ensure_group",
         "_ensure_rule",
         "_ensure_resource_link",
+        "_patch_public_ipv4",
+        "_enable_secure_connection",
     }
-    for node in ast.walk(scope):
-        if not isinstance(node, ast.Call):
-            continue
-        if isinstance(node.func, ast.Name) and node.func.id in forbidden_scope_calls:
-            raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
-        if isinstance(node.func, ast.Attribute) and node.func.attr == "mutate_once":
-            raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
+    for function_name in ("_wait_transport_scope", "_verify_transport_scope"):
+        function = _function(tree, function_name)
+        for node in ast.walk(function):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name) and node.func.id in forbidden_scope_calls:
+                raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "mutate_once":
+                raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
 
 
 def _validate_custody_probe(source: str) -> None:
