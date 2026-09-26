@@ -963,18 +963,14 @@ def _resolve_transport_ipv4(
         public_enabled=preexisting_public_network,
     )
     if selected is None:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_ALLOCATED_IPV4_MISSING"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_ALLOCATED_IPV4_MISSING")
     fresh = custody.select(
         custody.inventory(_floating_ips(api)),
         cluster_id,
         public_enabled=preexisting_public_network,
     )
     if fresh != selected:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_ALLOCATED_IPV4_DRIFT"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_ALLOCATED_IPV4_DRIFT")
     return selected.ip_address
 
 
