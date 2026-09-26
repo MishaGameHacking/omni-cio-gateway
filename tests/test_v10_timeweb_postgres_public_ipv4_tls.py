@@ -117,24 +117,48 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         ):
             provisioner._cluster(api, 91)
 
-    def test_public_patch_keeps_ipv6_off_and_tls_on(self) -> None:
+    def test_public_ipv4_patch_excludes_tls_and_waits_for_binding(self) -> None:
+        mutation = mock.Mock()
+        api = mock.Mock()
+        public_ready = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": False,
+            "status": "started",
+        }
+        with mock.patch.object(
+            provisioner,
+            "_wait_public_ipv4_ready",
+            return_value=public_ready,
+        ) as wait:
+            actual = provisioner._patch_public_ipv4(
+                mutation,
+                api,
+                91,
+                "8.8.4.4",
+            )
+        self.assertIs(actual, public_ready)
+        mutation.mutate_once.assert_called_once_with(
+            "PATCH",
+            "/api/v2/databases/91",
+            operation="DATABASE_PUBLIC_IPV4_PATCH",
+            body={
+                "floating_ip": "8.8.4.4",
+                "is_enabled_public_network": True,
+                "is_enabled_public_ipv6": False,
+            },
+            expected_statuses=frozenset({200}),
+            reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
+        )
+        wait.assert_called_once_with(api, 91, "8.8.4.4")
+
+    def test_tls_enable_patch_is_separate_after_public_ipv4(self) -> None:
         mutation = mock.Mock()
         api = mock.Mock()
         ready = {
-            "name": "omni-cio-v10-ru-pg-synthetic",
-            "location": "ru-3",
-            "availability_zone": "msk-1",
-            "cpu": 1,
-            "ram": 2048,
-            "port": 5432,
-            "disk": {"size": 20_971_520},
             "is_enabled_public_network": True,
             "is_enabled_public_ipv6": False,
             "is_secure_connection_enabled": True,
-            "is_autobackups_enabled": False,
-            "is_backup_schedule_enabled": False,
-            "replica_list": [{"id": 501, "db_id": 91}],
-            "disk_autoscaling": {"is_enabled": False},
             "status": "started",
             "domains": [{"fqdn": "example.twc1.net", "cert_status": "issued"}],
         }
@@ -142,26 +166,18 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             provisioner,
             "_wait_network_ready",
             return_value=ready,
-        ):
-            provisioner._patch_public_network(
-                mutation,
-                api,
-                91,
-                "8.8.4.4",
-            )
+        ) as wait:
+            actual = provisioner._enable_secure_connection(mutation, api, 91)
+        self.assertIs(actual, ready)
         mutation.mutate_once.assert_called_once_with(
             "PATCH",
             "/api/v2/databases/91",
-            operation="DATABASE_PUBLIC_NETWORK_PATCH",
-            body={
-                "floating_ip": "8.8.4.4",
-                "is_enabled_public_network": True,
-                "is_enabled_public_ipv6": False,
-                "is_secure_connection_enable": True,
-            },
+            operation="DATABASE_TLS_ENABLE_PATCH",
+            body={"is_secure_connection_enable": True},
             expected_statuses=frozenset({200}),
             reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
+        wait.assert_called_once_with(api, 91)
 
     def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
         context = mock.Mock()
@@ -297,8 +313,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             ),
             mock.patch.object(
                 provisioner,
-                "_ensure_group",
-                return_value="group-1",
+                "_ensure_group",                return_value="group-1",
             ),
             mock.patch.object(provisioner, "_ensure_rule"),
             mock.patch.object(provisioner, "_ensure_resource_link"),
@@ -321,7 +336,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             ),
             mock.patch.object(
                 provisioner,
-                "_patch_public_network",
+                "_patch_public_ipv4",
                 side_effect=provisioner._provider_base.ProvisioningStopped(
                     "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
                 ),
@@ -344,6 +359,92 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT",
             ):
                 provisioner.provision()
+        close.assert_called_once_with(mutation, api, 91)
+
+    def test_tls_enable_failure_rolls_back_public_network(self) -> None:
+        initial = {"is_enabled_public_network": False}
+        public_ready = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": False,
+            "status": "started",
+        }
+        api = mock.Mock()
+        mutation = mock.Mock()
+        with (
+            self._healthy_credential_preflight(),
+            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
+            mock.patch.object(provisioner, "_required_confirmation"),
+            mock.patch.object(
+                provisioner,
+                "_required_verifier_cidr",
+                return_value="8.8.8.8/32",
+            ),
+            mock.patch.object(
+                provisioner._provider_base,
+                "_required_env",
+                return_value="synthetic-token",
+            ),
+            mock.patch.object(
+                provisioner,
+                "_target_cluster_id",
+                return_value=91,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_cluster",
+                return_value=initial,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_converge_firewall",
+                return_value="group-1",
+            ),
+            mock.patch.object(
+                provisioner,
+                "_resolve_transport_ipv4",
+                return_value=("ip-1", "8.8.4.4", False),
+            ),
+            mock.patch.object(
+                provisioner,
+                "_network_ready",
+                return_value=False,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_patch_public_ipv4",
+                return_value=public_ready,
+            ),
+            mock.patch.object(provisioner, "_verify_transport_scope"),
+            mock.patch.object(
+                provisioner,
+                "_enable_secure_connection",
+                side_effect=provisioner._provider_base.ProvisioningStopped(
+                    "TIMEWEB_DATABASE_TLS_ENABLE_PATCH_REJECTED",
+                    status=400,
+                ),
+            ),
+            mock.patch.object(provisioner, "_close_public_network") as close,
+            mock.patch.object(
+                provisioner.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(
+                provisioner,
+                "TimewebMutationApi",
+                return_value=mutation,
+            ),
+        ):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner.provision()
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_DATABASE_TLS_ENABLE_PATCH_REJECTED",
+        )
+        self.assertEqual(raised.exception.status, 400)
         close.assert_called_once_with(mutation, api, 91)
 
     def test_preexisting_public_network_without_managed_ipv4_is_closed(self) -> None:
@@ -597,8 +698,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                         "POST",
                         "/api/v1/floating-ips",
                         operation="FLOATING_IP_CREATE",
-                        body=body,
-                        expected_statuses=expected_statuses,
+                        body=body,                        expected_statuses=expected_statuses,
                     )
                 self.assertEqual(raised.exception.code, expected_code)
                 self.assertEqual(raised.exception.status, status)
