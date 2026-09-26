@@ -244,6 +244,9 @@ def test_live_operable_release_rejects_partial_activation() -> None:
     )
     assert isinstance(app["envs"], dict)
     app["envs"]["OMNI_V10_TELEGRAM_LOGIN_ENABLED"] = "false"
+    api = _Api(app)
+    livez = _Livez()
+
     with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_ENV_DRIFT"):
         release.run(
             operation="observe",
@@ -252,12 +255,15 @@ def test_live_operable_release_rejects_partial_activation() -> None:
             token="token",
             runtime_mode=release.RUNTIME_MODE_LIVE_OPERABLE,
             p5_live_evidence_sha256="c" * 64,
-            api=_Api(app),
-            livez_opener=_Livez(),
+            api=api,
+            livez_opener=livez,
         )
 
 
 def test_preactivation_release_rejects_live_evidence() -> None:
+    api = _Api(_app(active_sha=EXPECTED_SHA))
+    livez = _Livez()
+
     with pytest.raises(
         release.ReleaseStopped,
         match="TIMEWEB_APP_RELEASE_UNEXPECTED_P5_LIVE_EVIDENCE",
@@ -268,8 +274,8 @@ def test_preactivation_release_rejects_live_evidence() -> None:
             observed_main_sha=EXPECTED_SHA,
             token="token",
             p5_live_evidence_sha256="c" * 64,
-            api=_Api(_app(active_sha=EXPECTED_SHA)),
-            livez_opener=_Livez(),
+            api=api,
+            livez_opener=livez,
         )
 
 

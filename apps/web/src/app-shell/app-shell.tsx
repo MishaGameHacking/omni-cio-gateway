@@ -96,16 +96,20 @@ function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
   );
 }
 
-export function ApplicationShell() {
+type AuthenticationState = Readonly<{
+  session: WebSessionView | null;
+  providers: ProviderView[];
+  previewMode: PreviewModeView | null;
+  sessionUnavailable: boolean;
+  markSessionClosed: () => void;
+  markSessionUnavailable: () => void;
+}>;
+
+function useAuthenticationState(skipRemoteAuth: boolean): AuthenticationState {
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [previewMode, setPreviewMode] = useState<PreviewModeView | null>(null);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
-  const [path, setPath] = useState<ShellRoutePath>(currentPath);
-  const isPublicPrivacy = path === "/privacy";
-  const [health, setHealth] = useState<HealthView | null>(null);
-  const [healthUnavailable, setHealthUnavailable] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -119,14 +123,43 @@ export function ApplicationShell() {
   }, []);
 
   useEffect(() => {
-    if (isPublicPrivacy) return;
+    if (skipRemoteAuth) return;
     void refreshSession();
     void readProviders().then(setProviders).catch(() => setProviders([]));
     void readPreviewMode().then(setPreviewMode).catch(() => setPreviewMode(null));
-  }, [isPublicPrivacy, refreshSession]);
+  }, [refreshSession, skipRemoteAuth]);
+
+  const markSessionClosed = useCallback(() => {
+    setSession({ authenticated: false });
+    setSessionUnavailable(false);
+  }, []);
+
+  const markSessionUnavailable = useCallback(() => {
+    setSessionUnavailable(true);
+  }, []);
+
+  return {
+    session,
+    providers,
+    previewMode,
+    sessionUnavailable,
+    markSessionClosed,
+    markSessionUnavailable,
+  };
+}
+
+type HealthState = Readonly<{
+  health: HealthView | null;
+  healthUnavailable: boolean;
+  operationalState: OperationalState;
+}>;
+
+function useHealthState(authenticated: boolean): HealthState {
+  const [health, setHealth] = useState<HealthView | null>(null);
+  const [healthUnavailable, setHealthUnavailable] = useState(false);
 
   useEffect(() => {
-    if (!session?.authenticated) return;
+    if (!authenticated) return;
     void readHealth()
       .then((value) => {
         setHealth(value);
@@ -136,7 +169,26 @@ export function ApplicationShell() {
         setHealth(null);
         setHealthUnavailable(true);
       });
-  }, [session?.authenticated]);
+  }, [authenticated]);
+
+  const operationalState = useMemo<OperationalState>(() => {
+    if (healthUnavailable) return "DEGRADED";
+    return health ? healthToOperational(health.state) : "RECOVERING";
+  }, [health, healthUnavailable]);
+
+  return { health, healthUnavailable, operationalState };
+}
+
+type NavigationState = Readonly<{
+  path: ShellRoutePath;
+  menuOpen: boolean;
+  navigate: (nextPath: AppRoutePath) => void;
+  toggleMenu: () => void;
+}>;
+
+function useShellNavigation(): NavigationState {
+  const [path, setPath] = useState<ShellRoutePath>(currentPath);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const onPopState = () => setPath(currentPath());
@@ -151,83 +203,203 @@ export function ApplicationShell() {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
-  const healthState = useMemo<OperationalState>(() => {
-    if (healthUnavailable) return "DEGRADED";
-    return health ? healthToOperational(health.state) : "RECOVERING";
-  }, [health, healthUnavailable]);
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((value) => !value);
+  }, []);
 
-  if (isPublicPrivacy) {
-    return <PrivacyPolicyPage />;
+  return { path, menuOpen, navigate, toggleMenu };
+}
+
+function PrimaryNavigation({
+  path,
+  navigate,
+}: Readonly<{ path: AppRoutePath; navigate: (nextPath: AppRoutePath) => void }>) {
+  return (
+    <nav id="primary-navigation" aria-label="Основная навигация">
+      <ul className="shell-nav">
+        {appRoutes.map((route) => (
+          <li key={route.path}>
+            <button
+              type="button"
+              className="shell-nav__item"
+              aria-current={path === route.path ? "page" : undefined}
+              onClick={() => navigate(route.path)}
+            >
+              {route.label}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+function ShellNotices({
+  sessionUnavailable,
+  previewMode,
+  healthUnavailable,
+}: Readonly<{
+  sessionUnavailable: boolean;
+  previewMode: PreviewModeView | null;
+  healthUnavailable: boolean;
+}>) {
+  return (
+    <>
+      {sessionUnavailable ? (
+        <div className="shell-degraded" role="alert">
+          Выход не подтверждён сервером. Текущая сессия остаётся активной.
+        </div>
+      ) : null}
+      {previewMode?.synthetic ? (
+        <div className="shell-degraded" role="status">
+          SYNTHETIC PREVIEW · real registration, broker credentials and private portfolio data are disabled. Не вводи реальные токены на этом стенде.
+        </div>
+      ) : null}
+      {healthUnavailable ? (
+        <div className="shell-degraded" role="status">
+          Downstream API недоступен — shell работает в DEGRADED режиме.
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function ActiveRoutePage({
+  path,
+  healthState,
+  freshness,
+  onSessionsRevoked,
+}: Readonly<{
+  path: AppRoutePath;
+  healthState: OperationalState;
+  freshness: string;
+  onSessionsRevoked: () => void;
+}>) {
+  switch (path) {
+    case "/portfolio":
+      return <PortfolioDashboardPage assetsMode={false} />;
+    case "/assets":
+      return <PortfolioDashboardPage assetsMode />;
+    case "/watchtower":
+      return <WatchtowerIncidentsPage />;
+    case "/research":
+      return <ResearchDossiersPage />;
+    case "/risks":
+      return <DecisionPlanPage focus="risks" />;
+    case "/decisions":
+      return <DecisionPlanPage focus="decisions" />;
+    case "/plans":
+      return <DecisionPlanPage focus="plans" />;
+    case "/system":
+      return <SystemAdminPage healthState={healthState} freshness={freshness} />;
+    default:
+      return (
+        <RoutePage
+          path={path}
+          healthState={healthState}
+          freshness={freshness}
+          onSessionsRevoked={onSessionsRevoked}
+        />
+      );
   }
-  if (session === null) {
-    return <main className="shell-loading" role="main"><span role="status">Проверка server-side session…</span></main>;
-  }
-  if (!session.authenticated) {
-    return <LoginScreen providers={providers} apiUnavailable={sessionUnavailable} />;
-  }
+}
+
+type AuthenticatedShellProps = Readonly<{
+  path: AppRoutePath;
+  navigation: NavigationState;
+  authentication: AuthenticationState;
+  health: HealthState;
+}>;
+
+function AuthenticatedShell({
+  path,
+  navigation,
+  authentication,
+  health,
+}: AuthenticatedShellProps) {
+  const freshness = health.health?.freshness ?? "UNKNOWN";
+
+  const logout = useCallback(() => {
+    void logoutCurrentSession()
+      .then(authentication.markSessionClosed)
+      .catch(authentication.markSessionUnavailable);
+  }, [authentication.markSessionClosed, authentication.markSessionUnavailable]);
 
   return (
     <div className="app-shell">
       <header className="shell-topbar">
-        <div className="shell-brand"><span className="shell-brand__mark" aria-hidden="true">O</span><span>OMNI-CIO</span></div>
-        <div className="shell-topbar__status" aria-label="Глобальное состояние">
-          <StatusBadge state={healthState} />
-          <span className="shell-freshness">{health?.freshness ?? "UNKNOWN"}</span>
+        <div className="shell-brand">
+          <span className="shell-brand__mark" aria-hidden="true">O</span>
+          <span>OMNI-CIO</span>
         </div>
-        <button className="shell-menu-button" type="button" aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={() => setMenuOpen((value) => !value)}>Меню</button>
+        <div className="shell-topbar__status" aria-label="Глобальное состояние">
+          <StatusBadge state={health.operationalState} />
+          <span className="shell-freshness">{freshness}</span>
+        </div>
+        <button
+          className="shell-menu-button"
+          type="button"
+          aria-expanded={navigation.menuOpen}
+          aria-controls="primary-navigation"
+          onClick={navigation.toggleMenu}
+        >
+          Меню
+        </button>
       </header>
-      <aside className={`shell-sidebar${menuOpen ? " shell-sidebar--open" : ""}`}>
-        <nav id="primary-navigation" aria-label="Основная навигация">
-          <ul className="shell-nav">
-            {appRoutes.map((route) => (
-              <li key={route.path}><button type="button" className="shell-nav__item" aria-current={path === route.path ? "page" : undefined} onClick={() => navigate(route.path)}>{route.label}</button></li>
-            ))}
-          </ul>
-        </nav>
+      <aside className={`shell-sidebar${navigation.menuOpen ? " shell-sidebar--open" : ""}`}>
+        <PrimaryNavigation path={path} navigate={navigation.navigate} />
         <div className="shell-account">
           <span>USER</span>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void logoutCurrentSession()
-                .then(() => {
-                  setSession({ authenticated: false });
-                  setSessionUnavailable(false);
-                })
-                .catch(() => setSessionUnavailable(true));
-            }}
-          >
-            Выйти
-          </Button>
+          <Button variant="secondary" onClick={logout}>Выйти</Button>
         </div>
       </aside>
       <main className="shell-content" id="main-content">
-        {sessionUnavailable ? <div className="shell-degraded" role="alert">Выход не подтверждён сервером. Текущая сессия остаётся активной.</div> : null}
-        {previewMode?.synthetic ? (
-          <div className="shell-degraded" role="status">
-            SYNTHETIC PREVIEW · real registration, broker credentials and private portfolio data are disabled. Не вводи реальные токены на этом стенде.
-          </div>
-        ) : null}
-        {healthUnavailable ? <div className="shell-degraded" role="status">Downstream API недоступен — shell работает в DEGRADED режиме.</div> : null}
-        {path === "/portfolio" || path === "/assets" ? (
-          <PortfolioDashboardPage assetsMode={path === "/assets"} />
-        ) : path === "/watchtower" ? (
-          <WatchtowerIncidentsPage />
-        ) : path === "/research" ? (
-          <ResearchDossiersPage />
-        ) : path === "/risks" || path === "/decisions" || path === "/plans" ? (
-          <DecisionPlanPage focus={path === "/risks" ? "risks" : path === "/decisions" ? "decisions" : "plans"} />
-        ) : path === "/system" ? (
-          <SystemAdminPage healthState={healthState} freshness={health?.freshness ?? "UNKNOWN"} />
-        ) : (
-          <RoutePage
-            path={path}
-            healthState={healthState}
-            freshness={health?.freshness ?? "UNKNOWN"}
-            onSessionsRevoked={() => setSession({ authenticated: false })}
-          />
-        )}
+        <ShellNotices
+          sessionUnavailable={authentication.sessionUnavailable}
+          previewMode={authentication.previewMode}
+          healthUnavailable={health.healthUnavailable}
+        />
+        <ActiveRoutePage
+          path={path}
+          healthState={health.operationalState}
+          freshness={freshness}
+          onSessionsRevoked={authentication.markSessionClosed}
+        />
       </main>
     </div>
+  );
+}
+
+export function ApplicationShell() {
+  const navigation = useShellNavigation();
+  const authentication = useAuthenticationState(navigation.path === "/privacy");
+  const health = useHealthState(authentication.session?.authenticated === true);
+
+  if (navigation.path === "/privacy") {
+    return <PrivacyPolicyPage />;
+  }
+  if (authentication.session === null) {
+    return (
+      <main className="shell-loading" role="main">
+        <span role="status">Проверка server-side session…</span>
+      </main>
+    );
+  }
+  if (!authentication.session.authenticated) {
+    return (
+      <LoginScreen
+        providers={authentication.providers}
+        apiUnavailable={authentication.sessionUnavailable}
+      />
+    );
+  }
+
+  return (
+    <AuthenticatedShell
+      path={navigation.path}
+      navigation={navigation}
+      authentication={authentication}
+      health={health}
+    />
   );
 }
