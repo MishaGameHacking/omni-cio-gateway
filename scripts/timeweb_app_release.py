@@ -329,12 +329,8 @@ class TimewebAppApi:
         )
         try:
             with self._opener.open(request, timeout=30.0) as response:
-                return _decode(
-                    int(response.status),
-                    response.read(MAX_RESPONSE_BYTES + 1),
-                    201,
-                    "TIMEWEB_APP_RELEASE_DEPLOY",
-                )
+                status = int(response.status)
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
             status = int(exc.code)
             if status in _TRANSIENT or status in {409, 423}:
@@ -344,6 +340,25 @@ class TimewebAppApi:
             _stop("TIMEWEB_APP_RELEASE_DEPLOY_REJECTED", status=status)
         except OSError:
             raise AmbiguousDeploy from None
+
+        if status != 201:
+            if 200 <= status < 300:
+                raise AmbiguousDeploy from None
+            _stop("TIMEWEB_APP_RELEASE_DEPLOY_REJECTED", status=status)
+        try:
+            return _decode(
+                status,
+                raw,
+                201,
+                "TIMEWEB_APP_RELEASE_DEPLOY",
+            )
+        except ReleaseStopped as exc:
+            if exc.code in {
+                "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_TOO_LARGE",
+                "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID",
+            }:
+                raise AmbiguousDeploy from None
+            raise
 
 
 def _repository(app: dict[str, Any]) -> str:
