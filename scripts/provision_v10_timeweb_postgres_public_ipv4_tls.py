@@ -956,7 +956,7 @@ def _resolve_transport_ipv4(
     cluster_id: int,
     *,
     preexisting_public_network: bool,
-) -> tuple[str, str, bool]:
+) -> str:
     """Resolve only the exact already-allocated managed IPv4; never create/delete."""
 
     before = custody.inventory(_floating_ips(api))
@@ -979,7 +979,7 @@ def _resolve_transport_ipv4(
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_ALLOCATED_IPV4_DRIFT"
         )
-    return selected.identifier, selected.ip_address, False
+    return selected.ip_address
 
 
 def _verify_tls_transport(cluster: dict[str, Any]) -> None:
@@ -1032,7 +1032,7 @@ def _configure_transport(
     try:
         _preflight_ipv4_custody(api, cluster_id, initial)
         group_id = _converge_firewall(mutation, api, cluster_id, cidr)
-        _floating_id, address, _created_this_run = _resolve_transport_ipv4(
+        address = _resolve_transport_ipv4(
             api,
             cluster_id,
             preexisting_public_network=preexisting_public_network,
