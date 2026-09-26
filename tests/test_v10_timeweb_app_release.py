@@ -116,7 +116,14 @@ def _app(
 class _Api:
     def __init__(self, app: dict[str, object]) -> None:
         self.app_payload = app
-        self.rows = [{"id": "deploy-lkg", "commit_sha": LKG_SHA, "status": "success"}]
+        self.rows = [
+            {
+                "id": "deploy-lkg",
+                "commit_sha": LKG_SHA,
+                "status": "success",
+                "ended_at": "2026-09-25T12:00:00Z",
+            }
+        ]
         self.calls: list[tuple[str, str]] = []
         self.sleeper = lambda _seconds: None
 
@@ -417,6 +424,67 @@ def test_deploy_wait_budget_is_multi_minute_and_workflow_bounded() -> None:
     assert sum(release._DEPLOY_RECONCILE_DELAYS) >= 60.0
     assert livez_budget >= 120.0
     assert livez_budget < 5 * 60
+
+
+def test_last_known_good_uses_provider_completion_time_not_list_order() -> None:
+    older = "c" * 40
+    newer = "d" * 40
+    rows = [
+        {
+            "id": "deploy-older",
+            "commit_sha": older,
+            "status": "success",
+            "ended_at": "2026-09-24T12:00:00Z",
+        },
+        {
+            "id": "deploy-newer",
+            "commit_sha": newer,
+            "status": "success",
+            "ended_at": "2026-09-25T12:00:00+00:00",
+        },
+    ]
+    assert release._last_known_good(rows, EXPECTED_SHA) == newer
+    rows.reverse()
+    assert release._last_known_good(rows, EXPECTED_SHA) == newer
+
+
+def test_last_known_good_rejects_ambiguous_latest_completion() -> None:
+    rows = [
+        {
+            "id": "deploy-a",
+            "commit_sha": "c" * 40,
+            "status": "success",
+            "ended_at": "2026-09-25T12:00:00Z",
+        },
+        {
+            "id": "deploy-b",
+            "commit_sha": "d" * 40,
+            "status": "success",
+            "ended_at": "2026-09-25T12:00:00+00:00",
+        },
+    ]
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_LKG_HISTORY_AMBIGUOUS",
+    ):
+        release._last_known_good(rows, EXPECTED_SHA)
+
+
+def test_last_known_good_requires_completed_provider_timestamp() -> None:
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_DEPLOY_ENDED_AT_INVALID",
+    ):
+        release._last_known_good(
+            [
+                {
+                    "id": "deploy-lkg",
+                    "commit_sha": LKG_SHA,
+                    "status": "success",
+                }
+            ],
+            EXPECTED_SHA,
+        )
 
 
 def test_deploy_adopts_unique_inflight_exact_sha_without_second_post() -> None:
