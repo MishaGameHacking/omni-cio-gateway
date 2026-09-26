@@ -13,8 +13,44 @@ export const appRoutes = [
   { path: "/settings", label: "Настройки" },
 ] as const;
 
+export const publicRoutes = [
+  { path: "/privacy", label: "Политика обработки персональных данных" },
+] as const;
+
 export type AppRoutePath = (typeof appRoutes)[number]["path"];
-export type IdentityProvider = "telegram" | "vk_id";
+export type PublicRoutePath = (typeof publicRoutes)[number]["path"];
+export type ShellRoutePath = AppRoutePath | PublicRoutePath;
+
+export type AppRouteFeature =
+  | "generic"
+  | "portfolio-dashboard"
+  | "portfolio-assets"
+  | "watchtower-incidents"
+  | "research-dossiers"
+  | "decision-risks"
+  | "decision-decisions"
+  | "decision-plans"
+  | "system-admin";
+
+export const appRouteFeatureByPath = {
+  "/": "generic",
+  "/portfolio": "portfolio-dashboard",
+  "/assets": "portfolio-assets",
+  "/watchtower": "watchtower-incidents",
+  "/research": "research-dossiers",
+  "/risks": "decision-risks",
+  "/decisions": "decision-decisions",
+  "/plans": "decision-plans",
+  "/execution": "generic",
+  "/journal": "generic",
+  "/system": "system-admin",
+  "/settings": "generic",
+} as const satisfies Record<AppRoutePath, AppRouteFeature>;
+
+export function featureForAppRoute(path: AppRoutePath): AppRouteFeature {
+  return appRouteFeatureByPath[path];
+}
+export type IdentityProvider = "telegram";
 
 export interface WebSessionView {
   authenticated: boolean;
@@ -191,4 +227,8 @@ export interface PortfolioDashboardView {
 
 export function isKnownRoute(pathname: string): pathname is AppRoutePath {
   return appRoutes.some((route) => route.path === pathname);
+}
+
+export function isPublicRoute(pathname: string): pathname is PublicRoutePath {
+  return publicRoutes.some((route) => route.path === pathname);
 }

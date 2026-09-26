@@ -34,7 +34,7 @@ The following is the exact source-level inventory used for WP11. `app.py`, `app_
 | WP13 | Watchtower | `omni_cio/watchtower/engine_v1.py` + `omni_cio/contracts/v1/watchtower.py`; route/runtime/journal adapters remain under `omni_cio/watchtower/` | REUSE_AS_IS; later Block H owns V10 durable monitoring | `omni_cio/watchtower/routes_v1.py` is an adapter layer; deterministic Watchtower engine remains separate |
 | WP14 | Decision Journal / evaluation | `omni_cio/decision_journal/journal_v1.py`, `recorder_v1.py`, `evaluation_v1.py`, `replay_v1.py` + `omni_cio/contracts/v1/decision_journal.py` | REUSE_AS_IS; later Core/data WPs own persistence migration | persistence adapters are separate from deterministic journal/evaluation logic |
 
-Legacy top-level portfolio/accounting modules including `portfolio_market.py`, `portfolio_analytics.py`, `cash_liquidity.py`, `purchase_capacity.py`, `purchase_capacity_integrity.py`, `operations_analytics.py`, and `broker_report_reconciliation/` remain protected source inputs for their owning later Block D parity work. WP11 does not silently replace those contracts.
+Historical WP11 note: at WP11 acceptance, the remaining top-level portfolio/accounting modules were still protected migration inputs. Amendment 20 now owns their later convergence. V9C-B relocates those accepted implementations to `omni_cio/portfolio/`, `omni_cio/analytics/`, `omni_cio/pretrade/`, `omni_cio/adapters/` and `omni_cio/reconciliation/` without changing financial semantics; this does not retroactively change what WP11 accepted.
 
 ## 3. Stable WP11 Core interface
 

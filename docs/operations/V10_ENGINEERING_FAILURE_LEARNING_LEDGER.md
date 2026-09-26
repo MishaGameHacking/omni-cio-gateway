@@ -450,6 +450,175 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-020 — Authority replacement must close every producer and consumer contract
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / Amendment 19
+
+**Symptom / failing gate:** the new GitHub-hosted Timeweb WP17 source-security check
+passed, but WP17 Application Shell and WP15 Live Web Support both failed the same
+historical READ-vault test. Fast and authoritative gates also found formatter drift in
+the newly added Amendment-19 guard/test. WP17 later confirmed a third formatting drift
+in `scripts/check_v10_wp17_web_security.py` after all preceding Web, browser and npm-audit
+steps had passed.
+
+**Root cause:** the active workflow producer was correctly replaced, but directly coupled
+consumers were not closed in the same coherent batch. The WP17 contract, Web-security
+guard and local-vault regression still encoded OWNER/Admin exact-head Windows ACL proof
+as a current Timeweb acceptance dependency. A second-order false RED also showed that
+the Timeweb current-guidance validator had coupled the required meaning to the literal
+`Amendment 18 CURRENT-AUTHORITY OVERRIDE` heading instead of the durable authority
+semantics.
+
+**Blast radius searched:** active/historical WP17 workflows, local DPAPI provisioner/
+finalizer/auditor, WP17 machine contract and security guard, WP15 live-support consumer,
+Timeweb hosted runtime, no-OWNER-laptop guard, broker credential mutation endpoints,
+Timeweb provider inventory and current operator runbooks.
+
+**Why preflight missed it:** the first Amendment-19 correction proved the new workflow
+and runtime negative dependency but did not enumerate every test/contract/runbook that
+consumed the old workflow semantics. CI therefore became the first place the stale
+consumer assertion was executed.
+
+**Corrective change:** explicitly separate current Timeweb hosted custody from historical
+local DPAPI custody in the WP17 contract; keep hosted broker mutation disabled; move
+Windows ACL workflow assertions to the manual historical workflow; update the WP17
+security guard and runbooks; strengthen the no-OWNER-laptop regression; normalize the
+new Python files and the WP17 security guard to the pinned Ruff format.
+
+**Permanent regression/guard:** the Timeweb no-OWNER-laptop guard now verifies the active
+WP17 contract, active WP17 security guard, hosted runtime, GitHub-hosted required workflow
+and manual historical workflow as one graph. Historical DPAPI/ACL unit/security coverage
+remains intact rather than being deleted or suppressed.
+
+**Future prevention rule:** when replacing an authority producer, enumerate and update
+all consumers, validators, tests, runbooks and status contracts before publishing the
+replacement checkpoint. Document guards must validate durable semantic markers rather
+than amendment-number-specific prose when later accepted amendments may extend the same
+authority. A passing new producer does not prove the old authority has
+ceased to be a hidden prerequisite.
+
+**Dependency/tooling knowledge change:** a required-check name may be preserved for
+branch-protection continuity while its implementation authority changes, but every
+consumer must bind to the new semantics rather than infer them from the legacy check
+name.
+
+---
+
+## FL-021 — Metadata references must not impersonate credential values
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / authoritative Windows gate #3188
+
+**Symptom / failing gate:** compile, Ruff, formatting and mypy passed on the exact PR head, but the tracked-content secret scan rejected two new Timeweb no-OWNER-laptop metadata lines as `Secret Keyword` findings.
+
+**Root cause:** a machine contract field that stores only the repository path of the hosted custody contract used a credential-shaped field name. The deterministic verifier duplicated the same field name. The secret scanner correctly classifies representation rather than business meaning, so both non-secret path references looked like credential assignments.
+
+**Blast radius searched:** the Timeweb no-OWNER-laptop contract, its deterministic verifier and regression tests, the fail-closed secret-scan validator, all current PR patches for suppression/bypass patterns, current Timeweb runtime/auth/PostgreSQL authority and retired-provider archive references.
+
+**Why preflight missed it:** the new contract/verifier pair was semantically reviewed and passed focused logic checks, but the exact tracked-content secret-scan policy was not applied to the final metadata vocabulary before publication.
+
+**Corrective change:** rename the path-reference field to custody-oriented vocabulary in both producer and consumer, keep the referenced custody source unchanged, and add a regression test that freezes the exact runtime metadata key set. Do not add a scanner allowlist, exclusion or threshold change.
+
+**Permanent regression/guard:** the existing fail-closed tracked-content secret scan remains unchanged. The Timeweb regression now requires the custody-reference metadata shape, so a future credential-shaped alias becomes an unexpected contract key and fails focused validation before merge.
+
+**Future prevention rule:** use credential-sensitive words for actual secret values, secret bindings or deliberately protected boundaries; use `*_custody_*`, `*_reference` or `*_path` vocabulary for non-secret source/document references. Run the exact tracked-content secret scan on every final changed-text batch before external certification.
+
+**Dependency/tooling knowledge change:** secret scanners intentionally reason from lexical representation and entropy rather than project semantics. The preferred repair for a legitimate non-secret finding is to make the representation unambiguous when possible, not to weaken the detector.
+
+---
+
+## FL-022 — Auth cookie policy changes must close every session-minting producer
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / exact-head RED repair
+
+**Symptom / failing gate:** the Telegram-only Timeweb route emitted authenticated session and CSRF cookies with the accepted `SameSite=Strict` policy, but the shared provider-auth compatibility route still emitted those authenticated cookies as `SameSite=Lax`. The authoritative Regression Shield failed the provider-auth regression while the focused Telegram path looked correct. Fast PR also exposed formatter drift in the same regression file.
+
+**Root cause:** the previous repair reviewed the current Timeweb Telegram composition but did not close every session-minting producer that remained executable/tested in the repository. The browser-proof cookie and authenticated product cookies have intentionally different cross-site requirements, so treating all OAuth-related cookies as one policy class allowed the weaker `Lax` value to survive in the generic producer.
+
+**Blast radius searched:** current Telegram-only auth routes, the generic Telegram/VK compatibility route, browser cookie/CSRF policy, provider callback identity binding, hosted session bootstrap, frontend CSRF transport, WP17 application-shell contract and all changed tests that create or inspect authenticated cookies.
+
+**Corrective change:** keep the short-lived OIDC browser-proof cookie `SameSite=Lax` for the provider redirect/callback flow; require `SameSite=Strict` for post-authenticated session and CSRF cookies in every product-session producer; reject a provider runtime that returns a verified identity for a provider different from the fixed callback route; normalize the regression file to pinned Ruff formatting.
+
+**Permanent regression/guard:** provider-auth tests distinguish proof-cookie `Lax` from authenticated-cookie `Strict`, verify cryptographic CSRF binding and reject provider-identity mix-up before account/session binding. The accepted WP17 machine contract remains `browser_cookie_same_site=strict`.
+
+**Future prevention rule:** any authentication/session policy change must search by authority operation, not only by current deployment imports: enumerate every `bind_session`, session-cookie emission, CSRF-cookie emission, provider callback and logout/revoke producer/consumer before publishing the checkpoint.
+
+---
+
+## FL-023 — Provider TLS termination is deployment evidence, not a source default
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 pre-merge security audit
+
+**Symptom / failing gate:** the new Timeweb source runtime unconditionally passed `trusted_edge_tls_terminated=True` before TW-C had selected and proven the network/private-ingress topology. That source assertion would make every internal HTTP request trusted as an HTTPS-terminated request once deployed.
+
+**Root cause:** a provider-specific trust assertion from the historical hosted topology survived conceptually during provider-neutral extraction. Timeweb provides a managed application edge, but the accepted TW-B source stage does not yet prove that the application port has no alternate public ingress.
+
+**Corrective change:** edge-TLS trust is now an explicit fail-closed runtime flag, false by default and invalid on unknown values. Plain HTTP is permitted only for `/livez` from a loopback peer so process liveness does not require weakening browser/API transport. TW-C may supply the trust flag only after provider-network evidence establishes the proxy boundary.
+
+**Permanent regression/guard:** Timeweb tests prove default edge trust is false, malformed values fail closed, non-loopback HTTP `/livez` is rejected and current source no longer contains an unconditional trusted-edge assertion.
+
+**Future prevention rule:** never infer trusted proxy/edge authority from a provider name. Bind it to explicit provider/network evidence and keep client-controlled forwarded headers outside the trust decision.
+
+---
+
+## FL-024 — Current hosted runtime must not import legacy broker stacks transitively
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 pre-merge dependency audit
+
+**Symptom / failing gate:** `apps/api/hosted_runtime.py` imported two generic PostgreSQL connection helpers from `apps/api/app.py`. Importing that module also imports gRPC, the T-Invest SDK and broker/live-acceptance modules even though the current Timeweb runtime exposes no broker authority.
+
+**Root cause:** implementation reuse crossed an authority/dependency boundary. The reused behavior was provider-neutral PostgreSQL serialization, but its definition lived inside the legacy local/broker application composition.
+
+**Corrective change:** extract the PostgreSQL serialization/autocommit adapter into `apps/api/postgres_web_connection.py`; re-export it from the legacy app for compatibility; make the Timeweb runtime import the neutral module directly.
+
+**Permanent regression/guard:** Timeweb source tests forbid importing `apps.api.app` from the current runtime and verify the neutral adapter contains neither `grpc` nor `t_tech`. The platform inventory classifies the new adapter as current `KEEP`.
+
+**Future prevention rule:** reuse behavior from the lowest authority-neutral layer. A current runtime must not import a higher-authority composition module merely to obtain a utility.
+
+---
+
+## FL-025 — Runtime readiness must detect privilege and RLS-policy drift
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 pre-merge PostgreSQL security audit
+
+**Symptom / failing gate:** the provider-neutral runtime probe verified PostgreSQL 18, role attributes, zero memberships, relation presence and FORCE RLS flags, but it did not prove the exact runtime grants, ownership boundary, PUBLIC grants, tenant-scope function or RLS policy expressions required by the hosted runtime contract.
+
+**Root cause:** bootstrap-time least-privilege validation was stronger than runtime-start readiness. A later ACL or policy drift could therefore leave the process reporting READY with authority wider than the accepted contract.
+
+**Corrective change:** startup readiness now compares exact table/routine grants including grantability, rejects PUBLIC table/routine/schema grants, verifies effective database/schema privileges, rejects database/schema/object ownership, verifies the tenant-scope function semantics and verifies the exact forced RLS policy set and expressions. SQL canonicalization preserves function-call and Boolean-grouping parentheses; only whitespace and one deparser-added outer policy wrapper are normalized. Sequence objects may exist in later migrations, but the runtime must have no effective USAGE/SELECT/UPDATE privilege on them.
+
+**Permanent regression/guard:** focused runtime tests reject an extra table privilege and a modified tenant policy in addition to existing role/schema/FORCE-RLS negatives.
+
+**Future prevention rule:** when a contract states `runtime_acl_match_required` or `tenant_boundary_match_required`, the live probe must verify the authority itself, not only the existence of objects that are supposed to enforce it.
+
+---
+
+## FL-026 — SQL test doubles must dispatch on the most specific query signature
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / exact head `f5a69c0fd34fc58ed9b79c0d13840a25c17a5c66`
+
+**Symptom / failing gate:** the authoritative Regression Shield reported four failures in the new hosted PostgreSQL readiness tests. The production probe called the ownership query, but the fake connection returned the runtime-role tuple instead; converting the role name to `int` then raised `ValueError`. WP17/Fast PR also rejected two newly edited files on Ruff formatting.
+
+**Root cause:** the fake SQL dispatcher matched the broad substring `FROM pg_catalog.pg_roles` before the ownership query's more specific `AS database_owned` signature. The ownership query legitimately contains nested `pg_roles` subqueries, so the broad branch shadowed the intended fake response. The same correction batch had also been published without reproducing the exact formatter scope.
+
+**Blast radius searched:** every branch in `_RuntimeProbeConnection.execute`, every SQL statement emitted by `probe_hosted_runtime_database`, the authoritative PostgreSQL readiness tests, WP17 static-quality scope and Fast PR changed-file formatter scope.
+
+**Why preflight missed it:** source review treated SQL substring dispatch branches as independent predicates and did not test overlap/precedence among them. Formatting was checked conceptually rather than by the exact pinned Ruff formatter before publishing the commit.
+
+**Corrective change:** dispatch the specific ownership-query marker before the broad role-catalog marker, preserve the production probe unchanged, and apply the exact formatter output reported by CI to both affected Python files.
+
+**Permanent regression/guard:** the positive readiness test now traverses the ownership branch successfully, while the existing negative ACL/RLS cases continue through the same fake. Future fake SQL dispatchers must order predicates from most specific to least specific or use exact normalized statement keys.
+
+**Future prevention rule:** when a test double routes by substring, perform an overlap audit of all predicates before publication; when CI has an exact formatter gate, reproduce that formatter scope before creating the next exact-head checkpoint.
+
+---
+
 ## Entry template
 
 ```text
@@ -466,3 +635,115 @@ Permanent regression/guard:
 Future prevention rule:
 Dependency/tooling knowledge change:
 ```
+---
+
+## FL-027 — Runtime readiness must cover secondary PostgreSQL authority and schema invariants
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / pre-merge whole-branch audit
+
+**Symptom / failing gate:** the exact-head CI and hosted readiness tests were GREEN while the runtime probe still had three blind spots: it rejected memberships held by the runtime role but did not inspect roles that were members of the runtime role; it compared table-level grants but did not inspect explicit column ACLs; and it checked auth/session relation existence without proving the security-critical FK/UNIQUE/CHECK constraints used for identity-to-tenant binding and one-time browser authorization.
+
+**Root cause:** bootstrap-time PostgreSQL hardening and runtime-start readiness evolved independently. The canonical bootstrap SQL had stronger PostgreSQL 18 creator-membership semantics than the runtime probe, while the runtime probe treated exact table/routine grants and table existence as a sufficient proxy for the full authority/schema contract.
+
+**Blast radius searched:** provider-neutral hosted PostgreSQL bootstrap SQL and contract, PostgreSQL 18 creator-edge rehearsal, product identity repository, session registry, durable provider-auth transaction store, current Timeweb runtime composition, tenant RLS policies, all runtime-role grants and the focused Timeweb hosted-runtime regression surface.
+
+**Why preflight missed it:** current guards proved direct role grants, ownership, PUBLIC table/routine privileges and FORCE-RLS policy shape, but no regression mutated pg_auth_members on the granted-role side, created a column-specific ACL, or removed a critical account-plane constraint while leaving the relation present.
+
+**Corrective change:** runtime readiness now permits at most the PostgreSQL 18 safe creator-admin membership shape (ADMIN=true, INHERIT=false, SET=false), rejects any wider/member drift, rejects explicit runtime/PUBLIC column ACLs, and verifies the named validated PK/UNIQUE/FK/CHECK constraints required for session scope, external identity scope and browser-auth replay protection.
+
+**Permanent regression/guard:** focused tests cover the safe PostgreSQL 18 creator edge and fail closed on inherited member authority, column-level privilege drift and missing identity-scope constraints. The SQL test double is also dispatched through specific query handlers instead of one long overlapping conditional chain.
+
+**Future prevention rule:** when bootstrap authority is strengthened, enumerate every catalog surface that can carry equivalent authority (pg_auth_members, object ACLs, column ACLs, ownership, constraints, policies) and make runtime readiness verify the same security class rather than only the most common representation.
+
+**Dependency/tooling knowledge change:** PostgreSQL 18 records role-membership ADMIN, INHERIT and SET options in pg_auth_members; column-specific privileges live in pg_attribute.attacl, separately from ordinary table ACLs.
+
+---
+
+## FL-028 — Fake SQL dispatch must prefer specific catalog queries over nested broad markers
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / exact head `edd78c6f9f31f7b849c45b8d913fdcb72f186f47`
+
+**Symptom / failing gate:** the column-ACL readiness query was correct, but Regression Shield produced seven focused failures because the test double interpreted a nested `FROM pg_catalog.pg_roles` subquery as the top-level role query.
+
+**Root cause:** the dispatcher retained a broad role marker before more specific catalog-query markers. The representation changed while the prior substring-shadowing defect class survived.
+
+**Blast radius searched:** every query emitted by `apps/api/hosted_database_runtime.py`, the focused Timeweb runtime fake and the prior FL-026 failure class. No production SQL defect was found from this failure.
+
+**Why preflight missed it:** the new focused tests were not executed before the published verification head.
+
+**Corrective change:** specific catalog markers precede the broad role fallback, and exact Ruff output from the completed verification batch is applied in the same correction.
+
+**Permanent regression/guard:** the positive runtime probe traverses the column-ACL query and fails if broad role matching shadows it.
+
+**Future prevention rule:** test SQL dispatchers are parsers; use the most specific match first and any broad fallback last.
+
+---
+
+## FL-029 — Process-only liveness requires database-session recovery
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION TW-B / PR #584 / pre-merge recovery audit
+
+**Symptom / failing gate:** no CI gate found this first. Timeweb correctly uses process-only `/livez`, but the runtime held one PostgreSQL session for the process lifetime. A broken session could leave liveness healthy while readiness, login and private API remained unavailable until restart.
+
+**Root cause:** liveness/readiness separation was corrected for Timeweb, but the old hosted runtime single-session lifecycle was carried forward without an independent reconnect path.
+
+**Blast radius searched:** hosted runtime startup, serialized request transactions, session registry, product identity repository, durable provider-auth transactions, health/readiness behavior and Timeweb localhost health semantics.
+
+**Why preflight missed it:** tests covered startup, serialization and degraded readiness but never transitioned the underlying PostgreSQL session from healthy to closed while the process remained alive.
+
+**Corrective change:** the serialized connection replaces only an already-closed session before a later operation. The reconnect factory reapplies autocommit and the full PostgreSQL 18 authority/schema/RLS probe. The failed operation itself is never replayed. Startup/reconnect attempts use a bounded connection timeout.
+
+**Permanent regression/guard:** focused tests prove closed-session replacement and prove that a failed operation is surfaced once and is not automatically replayed before the next request.
+
+**Future prevention rule:** when liveness excludes an external dependency, that dependency needs its own bounded recovery path. Never retry a write whose commit outcome may be unknown.
+
+
+---
+
+## FL-030 — Guard fixtures must mirror the guard's complete repository dependency set
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B / PR #584 / superseded exact head `8aef5013439bb69d8feca846426fba5513f1feaf`
+
+**Symptom / failing gate:** V10 Engineering Governance passed the real V9C-B convergence guard against the full repository but two negative unit tests errored with `FileNotFoundError` for `.github/workflows/v10-pr-fast-checks.yml` instead of reaching their intended fail-closed assertions.
+
+**Root cause:** V9C-B expanded `_validate_verifier_ownership()` to read three current verifier workflows, while the temporary-repository test fixture copied only the original governance workflow and canonical documents. The guard dependency graph and its fixture dependency graph had diverged.
+
+**Blast radius searched:** every V9C-B guard input, all negative tests using `_copy()`, the three verifier workflows, parity-ledger fixture data, the whole-tree legacy import scan and the current repository execution path. The real repository guard itself passed; no product/runtime semantic defect was found from this RED.
+
+**Why preflight missed it:** the current-repository positive guard path had all files available, so it could not expose an incomplete isolated fixture. The dependency set was duplicated implicitly between production guard code and tests instead of being represented once.
+
+**Corrective change:** define one canonical `_VERIFIER_WORKFLOW_RELATIVE_PATHS` tuple in the guard, derive verifier reads from it, and make the isolated fixture copy the same tuple.
+
+**Permanent regression/guard:** the existing negative tests now traverse verifier ownership before reaching their intended parity/merge-authority failures. Any future verifier workflow dependency added to the canonical tuple is automatically included in the fixture.
+
+**Future prevention rule:** a repository guard that reads additional files must expose its dependency set as data and test fixtures must consume that same data; never maintain a second manually duplicated dependency list.
+
+**Dependency/tooling knowledge change:** none.
+
+
+---
+
+## FL-031 — Relocated legacy modules must satisfy the destination static-quality baseline
+
+**Date:** 2026-09-24  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B / PR #584 / exact head `ce09e9149b261a1f9549aa98efadcc42e22aa9f9`
+
+**Symptom / failing gate:** multiple otherwise unrelated WP workflows failed at the same repository-wide mypy invocation in `omni_cio/pretrade/purchase_capacity_v1.py`, while Fast PR and the authoritative merge gate independently reported Ruff-format drift across 20 relocated/current Python files.
+
+**Root cause:** V9C-B moved behavior-preserving legacy modules into canonical typed/formatted V10 package paths, but the relocation checkpoint did not fully apply the destination package's static-quality contract. In `select_price()`, one local name represented both an always-present manual `Decimal` and a market-derived `Decimal | None`, causing incompatible mypy inference. Separately, `Decimal.as_tuple().exponent` retains a special-value union in its type even after the runtime finite-value check. The relocated files also preserved historical layout that differs from the pinned Ruff 0.16.1 formatter.
+
+**Blast radius searched:** all exact-head failed workflow logs, every file reported by the changed-file Ruff formatter, all relocated V9C-B deterministic source targets, the purchase-capacity tests, and the whole-repository mypy consumers. The profile-specific WP tests reached static quality and converged on the same four mypy diagnostics rather than independent product failures.
+
+**Why preflight missed it:** relocation parity focused on behavior/import convergence and whole-tree structural integrity. Those checks proved source presence, syntax and parity contracts, but did not certify the exact destination mypy/formatter baseline before publication.
+
+**Corrective change:** apply the exact pinned Ruff formatter output to all 20 reported files; give the manual-price branch a distinct local; explicitly fail closed if a Decimal exponent is not an integer before scale comparison; and add regression coverage for non-finite manual Decimal input.
+
+**Permanent regression/guard:** existing global mypy plus changed-file Ruff formatting remain mandatory; the purchase-capacity regression now freezes fail-closed non-finite input behavior. No ignore, cast, formatter exclusion, coverage weakening or security-gate suppression is introduced.
+
+**Future prevention rule:** every source relocation into a stricter package boundary must pass the destination lint/type/format baseline as part of the relocation preflight, even when runtime behavior is intentionally unchanged.
+
+**Dependency/tooling knowledge change:** Python Decimal tuple exponents are typed as an integer or special-value marker; runtime finite checks do not necessarily narrow that union for static type checkers.

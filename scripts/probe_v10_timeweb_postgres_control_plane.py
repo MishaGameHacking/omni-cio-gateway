@@ -9,7 +9,7 @@ from typing import Any, NoReturn
 from urllib.error import HTTPError
 from urllib.request import OpenerDirector, Request
 
-from scripts import provision_v10_render_neon_preview as _provider_base
+from scripts import provider_runtime_primitives as _provider_base
 
 
 API_BASE = "https://api.timeweb.cloud"

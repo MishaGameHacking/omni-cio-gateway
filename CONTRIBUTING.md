@@ -1,8 +1,8 @@
 # Вклад в Omni-CIO
 
-Omni-CIO — один продукт. Protected V9 production/recovery baseline остаётся `existing Custom GPT v9.0.0 + production Gateway app:app`; V10 — единственная active feature program в этом же репозитории.
+Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается в PR #584.
 
-Protected V9 v9.0.0 remains in controlled maintenance; V10 changes must not reinterpret that historical recovery state.
+OWNER-approved convergence выполняется внутри той же ветки #584. P1 закрыт через `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` и branch-local `CERTIFIED_GREEN` на exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; P2 exact-SHA Timeweb App candidate branch-local `CERTIFIED_GREEN` на `ba43fa4be350340557fcf6d8532b6c089022a8ca`. Exact branch-local checkpoint/certification state здесь намеренно не дублируется: читай `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` и PR #584 exact-head Actions. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -17,7 +17,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` для V9;
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–18;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–21;
 9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, current Timeweb/Telegram owning contracts и остальные applicable current contracts; historical Cloudflare contracts read only when recovery/provenance/compatibility review requires them;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
@@ -31,13 +31,15 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - accepted progress: **54%**;
 - WP0–WP22A remain COMPLETE;
 - current next package: **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
+- exact branch-local P1–P6 checkpoint/certification state is intentionally not duplicated here; read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions, while external DNS/domain mutation remains independently gated;
 - target active services: ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
 - Timeweb is the only selected V10 production infrastructure target;
 - Telegram is the only selected human login provider;
 - Cloudflare/Neon/Render/Cloud.ru/VK ID are retirement targets;
 - WEB-VISUAL and WP23+ remain paused during consolidation;
 - public multi-user remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
-- broker-write and Real-money remain disabled.
+- broker-write and Real-money remain disabled;
+- V9C-A→V9C-F convergence runs inside PR #584; merging PR #584 to `main` still requires a new explicit OWNER instruction.
 
 Exact dynamic state still comes only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -196,7 +198,7 @@ Existing React/Vite Web and Python/FastAPI product API remain canonical/provider
 
 Timeweb Managed PostgreSQL 18 is the final relational target after the owning production cutover. Preserve migrations, exact numeric semantics, least-privilege runtime role, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery evidence.
 
-Cloudflare/Neon/Render/Cloud.ru/VK files stay archive-in-place by default. Do not add new dependencies on them and do not mass-delete them merely to simplify the tree. Their live provider resources/secrets/actions are decommissioned only after replacement acceptance.
+Cloudflare/Neon/Render/Cloud.ru/VK files are Amendment-20 retirement inputs. Do not add new dependencies and do not delete them blindly. At V9C-D/V9C-E, migrate useful invariants, prove zero current consumers and recovery, then remove obsolete working-tree artifacts while Git history preserves provenance. Live provider resources/secrets/actions remain separately gated.
 
 GitHub/self-hosted verification remains authoritative until a stronger GitHub-executed replacement is accepted. External CI/review SaaS may not be removed by weakening quality gates.
 

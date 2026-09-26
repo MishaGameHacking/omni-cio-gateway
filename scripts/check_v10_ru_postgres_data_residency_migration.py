@@ -5,11 +5,6 @@ from pathlib import Path
 import sys
 from typing import Any
 
-if __package__:
-    from .v10_jsonc import loads_jsonc
-else:
-    from v10_jsonc import loads_jsonc
-
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
@@ -20,14 +15,12 @@ AMENDMENT = (
     / "docs/master-plan/OMNI_CIO_V10_RU_POSTGRES_DATA_RESIDENCY_MIGRATION_AMENDMENT.md"
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
-PLATFORM_CONTRACT = (
-    ROOT / "docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json"
+CURRENT_PLATFORM_CONTRACT = (
+    ROOT / "docs/architecture/V10_RU_PUBLIC_REGISTRATION_INGRESS_CONTRACT.json"
 )
 LEGAL_GATES = ROOT / "docs/legal/V10_RU_COMMERCIAL_LEGAL_GATES.md"
-WRANGLER = ROOT / "wrangler.jsonc"
-RUNTIME_SQL = ROOT / "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql"
+RUNTIME_SQL = ROOT / "infrastructure/postgres/hosted-postgres-runtime.sql"
 MIGRATIONS = ROOT / "omni_cio/persistence/migrations"
-NEON_RUNTIME = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
 
 EXPECTED_SEQUENCE = [
     "RU-PG-A_AUTHORITY_SOURCE_COMPATIBILITY",
@@ -293,31 +286,44 @@ def _validate_runtime_sql(root: Path) -> None:
     )
 
 
+def _current_platform(root: Path) -> dict[str, Any]:
+    return _load_json(root / CURRENT_PLATFORM_CONTRACT.relative_to(ROOT))
+
+
 def _validate_current_authority(root: Path) -> None:
-    platform = _load_json(root / PLATFORM_CONTRACT.relative_to(ROOT))
+    platform = _current_platform(root)
+    _require(
+        platform.get("active_general_service_set"),
+        ["ChatGPT", "GitHub", "Timeweb Cloud", "Telegram Login"],
+        "RU_POSTGRES_CURRENT_SERVICE_SET_INVALID",
+    )
+    timeweb = _mapping(
+        platform.get("timeweb"),
+        "RU_POSTGRES_TIMEWEB_AUTHORITY_INVALID",
+    )
+    _require(
+        timeweb.get("managed_postgresql_major"),
+        18,
+        "RU_POSTGRES_MAJOR_DRIFT",
+    )
     database = _mapping(
         platform.get("database"),
         "RU_POSTGRES_PLATFORM_DATABASE_INVALID",
     )
     _require(
-        database.get("neon_postgresql_authority_preserved"),
-        True,
-        "RU_POSTGRES_PREMATURE_NEON_RETIREMENT",
+        database.get("final_provider"),
+        "Timeweb Cloud Managed PostgreSQL 18",
+        "RU_POSTGRES_CURRENT_DATABASE_PROVIDER_INVALID",
     )
     _require(
-        database.get("accepted_postgresql_major"),
-        18,
-        "RU_POSTGRES_MAJOR_DRIFT",
+        database.get("neon_new_feature_work_allowed"),
+        False,
+        "RU_POSTGRES_RETIRED_PROVIDER_REENTRY",
     )
-
-    neon_runtime = _read(root / NEON_RUNTIME.relative_to(ROOT))
-    _require_markers(
-        neon_runtime,
-        (
-            "NEON_FRANKFURT_REGION_REQUIRED",
-            "CLOUDFLARE_NEON_POSTGRES18=VERIFIED",
-        ),
-        "RU_POSTGRES_PREMATURE_NEON_RUNTIME_REMOVAL",
+    _require(
+        database.get("neon_delete_before_timeweb_cutover_allowed"),
+        False,
+        "RU_POSTGRES_DATABASE_CUTOVER_ORDER_INVALID",
     )
 
     legal = _read(root / LEGAL_GATES.relative_to(ROOT))
@@ -332,44 +338,37 @@ def _validate_current_authority(root: Path) -> None:
 
 
 def _validate_fail_closed_flags(root: Path) -> None:
-    try:
-        wrangler = loads_jsonc(_read(root / WRANGLER.relative_to(ROOT)))
-    except (ValueError, TypeError) as exc:
-        raise RuntimeError("RU_POSTGRES_WRANGLER_INVALID") from exc
-    if not isinstance(wrangler, dict):
-        raise RuntimeError("RU_POSTGRES_WRANGLER_INVALID")
-    expected = {
-        "PUBLIC_MULTI_USER_ENABLED": "false",
-        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
-        "OMNI_V10_VK_ID_LOGIN_ENABLED": "false",
-    }
-    production = _mapping(
-        wrangler.get("vars"),
-        "RU_POSTGRES_PRODUCTION_FLAGS_INVALID",
+    platform = _current_platform(root)
+    invariants = _mapping(
+        platform.get("protected_invariants"),
+        "RU_POSTGRES_CURRENT_INVARIANTS_INVALID",
     )
-    environments = _mapping(
-        wrangler.get("env"),
-        "RU_POSTGRES_STAGING_FLAGS_INVALID",
-    )
-    staging = _mapping(
-        environments.get("staging"),
-        "RU_POSTGRES_STAGING_FLAGS_INVALID",
-    )
-    staging_vars = _mapping(
-        staging.get("vars"),
-        "RU_POSTGRES_STAGING_FLAGS_INVALID",
-    )
-    for key, value in expected.items():
+    for key in (
+        "PUBLIC_MULTI_USER_ENABLED",
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+        "broker_write",
+        "trading_methods",
+        "REAL_TRADING_ENABLED",
+    ):
         _require(
-            production.get(key),
-            value,
-            "RU_POSTGRES_PRODUCTION_FLAGS_INVALID",
+            invariants.get(key),
+            False,
+            "RU_POSTGRES_CURRENT_INVARIANTS_INVALID",
         )
-        _require(
-            staging_vars.get(key),
-            value,
-            "RU_POSTGRES_STAGING_FLAGS_INVALID",
-        )
+    auth = _mapping(
+        platform.get("auth"),
+        "RU_POSTGRES_CURRENT_AUTH_INVALID",
+    )
+    _require(
+        auth.get("human_identity_providers"),
+        ["telegram"],
+        "RU_POSTGRES_CURRENT_AUTH_INVALID",
+    )
+    _require(
+        auth.get("vk_id_active_allowed"),
+        False,
+        "RU_POSTGRES_CURRENT_AUTH_INVALID",
+    )
 
 
 def _validate_docs(root: Path) -> None:

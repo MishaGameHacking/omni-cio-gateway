@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from scripts import probe_v10_timeweb_postgres_control_plane as read_only
-from scripts import provision_v10_render_neon_preview as provider_base
+from scripts import provider_runtime_primitives as provider_base
 from scripts import timeweb_ipv4_custody as custody
 
 

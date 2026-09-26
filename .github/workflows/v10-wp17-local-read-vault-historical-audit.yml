@@ -1,0 +1,65 @@
+name: V10 WP17 Historical Local Read Vault Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp17-historical-local-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-read-vault:
+    name: Historical local OWNER read-vault evidence
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact checked-out head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 10
+          echo WP17 OWNER audit exact head: %ACTUAL_HEAD%
+
+      - name: Prove OWNER evidence binding and non-admin runner isolation
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          @echo off
+          set "OUT=%RUNNER_TEMP%\wp17-owner-read-vault-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%.json"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\audit_wp17_read_vault_runner.ps1 -ExpectedImplementationSha "%EXPECTED_HEAD%" -AsJson > "%OUT%"
+          set "AUDIT_RC=%ERRORLEVEL%"
+          type "%OUT%"
+          echo WP17_OWNER_AUDIT_OUTPUT=%OUT%>>"%GITHUB_ENV%"
+          exit /b %AUDIT_RC%
+
+      - name: Upload sanitized OWNER/runner evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: v10-wp17-owner-read-vault-sanitized-evidence
+          path: ${{ runner.temp }}\wp17-owner-read-vault-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Clean runner-temporary evidence and workspace
+        if: always()
+        run: |
+          @echo off
+          if defined WP17_OWNER_AUDIT_OUTPUT if exist "%WP17_OWNER_AUDIT_OUTPUT%" del /f /q "%WP17_OWNER_AUDIT_OUTPUT%"
+          git reset --hard HEAD
+          git clean -ffdx

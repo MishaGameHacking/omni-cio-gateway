@@ -1,5 +1,7 @@
 # Omni-CIO bot-only manifest
 
+> **PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHORITY.** This file preserves the accepted Custom GPT v9.0.0 / `app:app` recovery surface. Current V10 implementation authority is the Timeweb + Telegram path defined by Amendments 18–21 and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
 Этот manifest определяет **единственный** поддерживаемый Omni-CIO Custom GPT и связанные production/recovery assets.
 
 ## 1. Единственный продукт
@@ -75,7 +77,7 @@ Internal v9 routing/policy/universe/research/credit/fund/risk/strategy/optimizer
 ## 7. Runtime files that must remain
 
 - `app.py` and current compatibility/runtime dependencies;
-- `broker_report_reconciliation/` gateway extension hook;
+- `omni_cio/reconciliation/` canonical broker-report reconciliation/gateway extension hook;
 - `omni_cio/` domain/runtime packages including v9 modules;
 - `render.yaml` and non-secret environment templates;
 - canonical dependency inputs/lock files;

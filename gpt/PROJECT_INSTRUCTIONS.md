@@ -1,6 +1,6 @@
 # Инструкции проекта ChatGPT — Omni-CIO
 
-> **CURRENT AMENDMENT-18 OVERRIDE (2026-09-21):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+> **CURRENT AMENDMENT-21 TIMEWEB DELIVERY OVERRIDE (2026-09-24):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
 
 
 Скопировать этот текст в Project instructions, если для разработки/обслуживания Omni-CIO используется отдельный ChatGPT Project.
@@ -21,7 +21,7 @@
 5. knowledge/16_CURRENT_PROGRAM_STATUS.md — protected V9 runtime baseline.
 6. docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md.
 7. docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md.
-8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Amendment 18 Timeweb-Only Platform Consolidation & Telegram-Only Login Authority, Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law and Green Checkpoint & Targeted CI Repair Law.
+8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, especially Amendment 18 Timeweb-Only Platform Consolidation & Telegram-Only Login Authority, Amendment 20 V9-to-V10 Convergence, Amendment 21 Timeweb Full Production Delivery, Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law and Green Checkpoint & Targeted CI Repair Law.
 9. docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json.
 10. docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json and docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md when Amendment 16 is accepted.
 11. docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json.
@@ -44,7 +44,8 @@ Current accepted/convenience state after Amendment 18 acceptance:
 - Timeweb Cloud is the selected production runtime/database/domain/network/backup/monitoring platform;
 - Telegram Login is the only selected human product login provider;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID receive no new feature authority;
-- their repository artifacts stay archive-in-place unless separate OWNER authority later approves cleanup;
+- Amendments 20 and 21 supply the OWNER-approved PR #584 authority: converge V9 semantics into canonical V10, retire current authority from obsolete provider surfaces, then implement the gated Timeweb production-delivery chain while preserving protected V9 recovery and Git history;
+- exact branch-local integrated checkpoint/certification state is intentionally not duplicated here; resolve it from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions;
 - WEB-VISUAL and WP23+ remain paused/locked behind the platform-consolidation path;
 - public activation remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write, `trading_methods` and Real execution remain disabled.
@@ -63,7 +64,7 @@ Current product/platform direction:
 - Telegram OIDC is the only human login path: `Telegram -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`;
 - VK ID is historical/retired and must not be composed into the deployed product;
 - Cloudflare/Neon/Render/Cloud.ru code and docs may remain as historical project memory but must not be used for new implementation;
-- no mass repository deletion is required; archive-in-place is the default;
+- no blind mass deletion is allowed; Amendment-20 V9C-D/V9C-E retirement is evidence-driven and Git history remains the archive;
 - retired provider workflows/secrets/resources are disabled/revoked only after the replacement cutover/recovery gate;
 - GitHub-native checks are the active quality/security authority; external CI/review SaaS is historical and must not be required by current/future workflows;
 - production Timeweb autodeploy must not bypass accepted GitHub exact-SHA release gates;
@@ -75,7 +76,7 @@ Current product/platform direction:
 - protected V9 `app:app` compatibility remains until its own decommission gate; Amendment 18 does not grant broker/Real authority.
 
 Timeweb consolidation execution:
-- default source branch after authority acceptance: `system/timeweb-platform-consolidation`;
+- initial TW-A source branch `system/timeweb-platform-consolidation` is merged via PR #583; current TW-B continuation branch is `system/timeweb-platform-consolidation-tw-b`;
 - ordered milestones TW-A -> TW-B -> TW-C -> TW-D -> TW-E -> TW-F -> TW-G;
 - use one integrated source branch by default;
 - production DB cutover, canonical DNS/public cutover, destructive external-provider decommission, security/authority changes, OWNER/legal/payment actions and recovery boundaries still force independent acceptance gates;

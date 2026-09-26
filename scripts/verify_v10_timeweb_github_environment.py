@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from collections.abc import Callable
 import json
 import os
@@ -15,6 +16,8 @@ from urllib.request import HTTPRedirectHandler, OpenerDirector, Request, build_o
 API_BASE = "https://api.github.com"
 API_VERSION = "2026-03-10"
 ENVIRONMENT_NAME = "timeweb-synthetic"
+PRODUCTION_ENVIRONMENT_NAME = "timeweb-production"
+_ALLOWED_ENVIRONMENT_NAMES = frozenset({ENVIRONMENT_NAME, PRODUCTION_ENVIRONMENT_NAME})
 EXPECTED_BRANCH_PATTERN = "main"
 MAX_RESPONSE_BYTES = 1024 * 1024
 _RETRY_DELAYS_SECONDS = (1.0, 2.0)
@@ -155,8 +158,8 @@ def _request_json(
     return _decode_response(status, raw)
 
 
-def _validate_environment(payload: dict[str, Any]) -> None:
-    if payload.get("name") != ENVIRONMENT_NAME:
+def _validate_environment(payload: dict[str, Any], *, environment_name: str) -> None:
+    if payload.get("name") != environment_name:
         raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_NAME_MISMATCH")
 
     policy = _mapping(
@@ -218,11 +221,14 @@ def verify_environment_policy(
     token: str,
     repository: str,
     *,
+    environment_name: str = ENVIRONMENT_NAME,
     opener: OpenerDirector | Any | None = None,
     sleeper: Sleep = time.sleep,
 ) -> None:
+    if environment_name not in _ALLOWED_ENVIRONMENT_NAMES:
+        raise EnvironmentGateError("TIMEWEB_GITHUB_ENVIRONMENT_GATE_NAME_INVALID")
     slug = _repository_slug(repository)
-    encoded_environment = quote(ENVIRONMENT_NAME, safe="")
+    encoded_environment = quote(environment_name, safe="")
     base = f"/repos/{slug}/environments/{encoded_environment}"
     active_opener = opener or _NO_REDIRECT_OPENER
 
@@ -232,7 +238,7 @@ def verify_environment_policy(
         opener=active_opener,
         sleeper=sleeper,
     )
-    _validate_environment(environment)
+    _validate_environment(environment, environment_name=environment_name)
 
     policies = _request_json(
         base + "/deployment-branch-policies?per_page=100&page=1",
@@ -244,10 +250,21 @@ def verify_environment_policy(
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--environment-name",
+        choices=tuple(sorted(_ALLOWED_ENVIRONMENT_NAMES)),
+        default=ENVIRONMENT_NAME,
+    )
+    args = parser.parse_args()
     try:
         repository = _required_environment("GITHUB_REPOSITORY")
         token = _required_environment(_GITHUB_BINDING)
-        verify_environment_policy(token, repository)
+        verify_environment_policy(
+            token,
+            repository,
+            environment_name=args.environment_name,
+        )
     except EnvironmentGateError as exc:
         print(str(exc), file=sys.stderr)
         return 1

@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-phase4-free-preview-deploy.yml"
 SCRIPT = ROOT / "scripts" / "provision_v10_render_neon_preview.py"
+PROVIDER_RUNTIME_PRIMITIVES = ROOT / "scripts" / "provider_runtime_primitives.py"
 HOSTED_APP = ROOT / "apps" / "api" / "hosted_preview.py"
 
 
@@ -121,20 +122,21 @@ def test_neon_organization_requires_one_free_plan() -> None:
             assert path == "/users/me/organizations"
             return {"organizations": self.organizations}
 
-    assert module._neon_organization(
-        Api([{"id": "org-free-preview", "plan": "free"}])
-    ) == "org-free-preview"
+    assert (
+        module._neon_organization(Api([{"id": "org-free-preview", "plan": "free"}]))
+        == "org-free-preview"
+    )
 
+    empty_organization_api = Api([])
     with pytest.raises(
         module.ProvisioningStopped,
         match="NEON_ORGANIZATION_NOT_UNIQUE",
     ):
-        module._neon_organization(Api([]))
+        module._neon_organization(empty_organization_api)
 
+    paid_organization_api = Api([{"id": "org-paid-preview", "plan": "launch"}])
     with pytest.raises(module.ProvisioningStopped, match="NEON_FREE_PLAN_REQUIRED"):
-        module._neon_organization(
-            Api([{"id": "org-paid-preview", "plan": "launch"}])
-        )
+        module._neon_organization(paid_organization_api)
 
 
 def test_existing_neon_project_lookup_is_explicitly_org_scoped() -> None:
@@ -296,12 +298,14 @@ def test_synthetic_record_hashes_are_real_and_stable() -> None:
 
 def test_http_failures_never_include_provider_response_body() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
+    primitives = PROVIDER_RUNTIME_PRIMITIVES.read_text(encoding="utf-8")
 
     assert "exc.read" not in source
     assert "response body" not in source.casefold()
     assert "PAYMENT_OR_CARD_REQUIRED" in source
     assert "API_KEY_INVALID_OR_INSUFFICIENT" in source
-    assert "::add-mask::" in source
+    assert "_mask = _provider_runtime._mask" in source
+    assert "::add-mask::" in primitives
 
 
 def test_provider_identifiers_reject_path_traversal() -> None:
@@ -421,12 +425,12 @@ def test_database_bootstrap_stage_evidence_is_fixed_sanitized_and_ordered() -> N
         source.index("def _bootstrap_database(") : source.index("def _render_env(")
     ]
     markers = (
-        'DATABASE_BOOTSTRAP_STAGE=CONNECT',
-        'DATABASE_BOOTSTRAP_STAGE=MIGRATIONS',
-        'DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE',
-        'DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS',
-        'DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED',
-        'DATABASE_BOOTSTRAP_STAGE=COMPLETE',
+        "DATABASE_BOOTSTRAP_STAGE=CONNECT",
+        "DATABASE_BOOTSTRAP_STAGE=MIGRATIONS",
+        "DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE",
+        "DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS",
+        "DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED",
+        "DATABASE_BOOTSTRAP_STAGE=COMPLETE",
     )
     positions: list[int] = []
     for marker in markers:
@@ -435,6 +439,8 @@ def test_database_bootstrap_stage_evidence_is_fixed_sanitized_and_ordered() -> N
         positions.append(bootstrap.index(literal))
 
     assert positions == sorted(positions)
-    assert '_emit(str(' not in bootstrap
-    assert '_emit(repr(' not in bootstrap
-    assert 'raise ProvisioningStopped("DATABASE_BOOTSTRAP_FAILED") from None' in bootstrap
+    assert "_emit(str(" not in bootstrap
+    assert "_emit(repr(" not in bootstrap
+    assert (
+        'raise ProvisioningStopped("DATABASE_BOOTSTRAP_FAILED") from None' in bootstrap
+    )

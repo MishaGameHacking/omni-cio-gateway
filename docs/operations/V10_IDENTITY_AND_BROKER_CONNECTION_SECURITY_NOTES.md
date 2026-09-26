@@ -1,14 +1,15 @@
 # V10 Identity and Broker Connection Security Notes
 
-Status: planning companion to the OWNER-approved identity/multi-tenant amendment. Implementation occurs only in the owning work packages.
+Status: current security companion under Amendment 18; historical multi-provider design below is superseded where it conflicts with Telegram-only authority.
 
 ## Authentication
 
-- Ordinary login providers: Telegram and VK ID only.
-- Internal `user_id` is authoritative; provider identity is a unique binding.
-- Validate provider result server-side; reject stale/replayed/state/nonce/PKCE mismatches.
+- Ordinary human product login provider: Telegram Login only.
+- VK ID is retired from current/future deployed composition and receives no new feature authority.
+- Internal `user_id` is authoritative; Telegram identity is a unique external binding, never tenant authority by itself.
+- Validate Telegram result server-side; reject stale/replayed/state/nonce/PKCE mismatches.
 - Do not trust provider display name, username, avatar, phone or e-mail for authorization or account merge.
-- Link a second provider only from an authenticated account plus successful proof of the new provider identity.
+- No second ordinary human-login provider or provider-linking flow may be introduced without a new accepted authority change.
 
 ## Sessions
 

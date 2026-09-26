@@ -21,18 +21,14 @@ ignore_missing_imports = true
 no_incremental = true
 pretty = true
 files = [
-  "portfolio_analytics.py",
-  "portfolio_market.py",
-  "cash_liquidity.py",
-  "purchase_capacity_integrity.py",
-  "operations_analytics.py",
-  "sdk_order_compat.py",
+  "omni_cio/reconciliation",
   "apps/api",
   "omni_cio/tbank_tls.py",
   "omni_cio/contracts",
   "omni_cio/adapters",
   "omni_cio/quality",
   "omni_cio/analytics",
+  "omni_cio/portfolio",
   "omni_cio/core",
   "omni_cio/persistence",
   "omni_cio/jobs",
@@ -101,14 +97,16 @@ branch = true
 source = [
   "app",
   "main",
-  "portfolio_market",
-  "portfolio_analytics",
-  "cash_liquidity",
-  "purchase_capacity",
-  "purchase_capacity_integrity",
-  "operations_analytics",
-  "sdk_order_compat",
-  "broker_report_reconciliation",
+  "omni_cio.portfolio.market_source_v1",
+  "omni_cio.analytics.portfolio_source_v1",
+  "omni_cio.analytics.cash_liquidity_v1",
+  "omni_cio.pretrade.purchase_capacity_v1",
+  "omni_cio.pretrade.purchase_capacity_integrity_v1",
+  "omni_cio.pretrade.sale_capacity_v1",
+  "omni_cio.pretrade.sale_capacity_normalization_v1",
+  "omni_cio.analytics.operations_source_v1",
+  "omni_cio.adapters.tinvest_order_compat_v1",
+  "omni_cio.reconciliation",
 ]
 
 [tool.coverage.report]

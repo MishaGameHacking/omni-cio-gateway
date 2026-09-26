@@ -1,0 +1,51 @@
+{
+  "schema": "omni-cio.v10.timeweb-no-owner-laptop-dependency.v1",
+  "status": "OWNER_APPROVED_ACTIVE",
+  "decision_date": "2026-09-23",
+  "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+  "owner_manual_boundary": {
+    "owner_laptop_manual_shell_required_for_timeweb_pr": false,
+    "owner_admin_acl_evidence_required_for_timeweb_pr": false,
+    "secrets_sent_to_chat_or_github_allowed": false,
+    "physical_owner_action_may_be_required_only_when_no_safe_remote_equivalent_exists": true
+  },
+  "current_timeweb_runtime": {
+    "provider": "TIMEWEB_APP_PLATFORM",
+    "local_windows_vault_dependency_allowed": false,
+    "windows_dpapi_dependency_allowed": false,
+    "broker_mutation_enabled": false,
+    "global_shared_broker_token_allowed": false,
+    "hosted_custody_contract": "omni_cio/web/hosted_secret_custody_v1.py"
+  },
+  "hosted_secret_boundary": {
+    "tenant_scoped": true,
+    "encrypted_at_rest_required": true,
+    "browser_readback_allowed": false,
+    "ordinary_ci_plaintext_access_allowed": false,
+    "cross_tenant_access_allowed": false,
+    "broker_write_authority_added": false,
+    "real_money_authority_added": false,
+    "activation_state": "FAIL_CLOSED_UNTIL_HOSTED_BACKEND_AND_BROKER_GATES"
+  },
+  "wp17_transition": {
+    "required_check_name": "OWNER read-vault and runner-isolation evidence",
+    "required_check_mode": "TIMEWEB_SOURCE_SECURITY_AUDIT",
+    "required_check_runner": "ubuntu-latest",
+    "historical_local_audit_mode": "MANUAL_ONLY",
+    "historical_local_workflow": ".github/workflows/v10-wp17-local-read-vault-historical-audit.yml",
+    "old_owner_evidence_blocks_timeweb_pr": false,
+    "active_wp17_contract_owner_acl_required": false,
+    "active_wp17_security_guard_local_vault_required": false,
+    "historical_local_vault_tests_preserved": true,
+    "historical_local_evidence_blocks_timeweb_pr": false
+  },
+  "protected_invariants": {
+    "gateway_entrypoint": "app:app",
+    "public_multi_user_enabled": false,
+    "telegram_login_enabled": false,
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "broker_write_authority_added": false,
+    "wp23_unlocked": false
+  }
+}

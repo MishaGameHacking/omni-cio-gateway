@@ -191,9 +191,12 @@ def test_api_transport_has_no_public_bind_or_broker_write_surface() -> None:
 def test_local_private_app_uses_explicit_postgres_transactions() -> None:
     root = Path(__file__).resolve().parents[3]
     api_source = (root / "apps" / "api" / "app.py").read_text(encoding="utf-8")
+    connection_source = (
+        root / "apps" / "api" / "postgres_web_connection.py"
+    ).read_text(encoding="utf-8")
 
-    assert "WEB_RUNTIME_POSTGRES_AUTOCOMMIT_REQUIRED" in api_source
-    assert "connection.autocommit = True" in api_source
+    assert "WEB_RUNTIME_POSTGRES_AUTOCOMMIT_REQUIRED" in connection_source
+    assert "connection.autocommit = True" in connection_source
 
     raw_open = api_source.index('raw_connection = connect_postgres("")')
     configure = api_source.index("_configure_long_lived_web_connection(raw_connection)")
@@ -203,8 +206,8 @@ def test_local_private_app_uses_explicit_postgres_transactions() -> None:
     brokers = api_source.index("PostgresBrokerConnectionRepositoryV1(connection)")
 
     assert raw_open < configure < verify < serialize < sessions < brokers
-    assert "threading.RLock()" in api_source
-    assert "WEB_RUNTIME_POSTGRES_TRANSACTION_UNAVAILABLE" in api_source
+    assert "threading.RLock()" in connection_source
+    assert "WEB_RUNTIME_POSTGRES_TRANSACTION_UNAVAILABLE" in connection_source
 
 
 def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
@@ -351,13 +354,15 @@ def test_reconnect_rejects_immutable_broker_account_version_drift(
     )
     connection_ref = "broker-ref:v1:" + "e" * 64
 
+    bindings = (_reconnect_binding(existing_account),)
+    now = datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc)
     with pytest.raises(ValueError, match="BROKER_ACCOUNT_IMMUTABLE_CONFLICT"):
         repository.create_read_connection(
             tenant_id=OWNER_TENANT_ID,
             connection_id="broker-connection:v1:" + "d" * 64,
             secret_ref=connection_ref,
-            bindings=(_reconnect_binding(existing_account),),
-            now=datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc),
+            bindings=bindings,
+            now=now,
         )
 
     assert not any(

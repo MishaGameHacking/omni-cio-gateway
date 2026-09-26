@@ -1,10 +1,10 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-09-21
+Updated: 2026-09-26
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A CI-AUTHORITY REPAIR ACCEPTED VIA PR #582 / TW-A PROVIDER-CONSUMER INVENTORY PR #583 RED_REPAIR_ONLY / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / TW-A ACCEPTED VIA PR #583 WITH EXACT-MAIN POST-MERGE GREEN / P1 SOURCE-RUNTIME CONVERGENCE BRANCH-LOCAL CERTIFIED GREEN ON 738d8c623d3002fd2eb312a6bce96c35bd45f75f / P2 TIMEWEB EXACT-SHA CANDIDATE BRANCH-LOCAL CERTIFIED GREEN ON ba43fa4be350340557fcf6d8532b6c089022a8ca / P3 POSTGRES18 PRODUCTION CUTOVER SOURCE MACHINERY BRANCH-LOCAL CERTIFIED GREEN ON 7a9051bf8775977b1ae1324fe6d1b460c1d21aec / P4 OMNICIO.RU PUBLIC-INGRESS SOURCE MACHINERY BRANCH-LOCAL CERTIFIED GREEN ON d2240886ba3e7484622898670ac9b37ee45a7c6c / P5 TELEGRAM PUBLIC-ACTIVATION SOURCE MACHINERY BRANCH-LOCAL CERTIFIED GREEN ON ad50273642cc66f537070b4800f319857f7d0096 / P5.5 TIMEWEB WORKTREE CONVERGENCE IMPLEMENTATION COMPLETE — FINAL EXACT-HEAD VERIFICATION REQUIRED / P6 POST-MERGE PRODUCTION ACCEPTANCE SOURCE IMPLEMENTATION COMPLETE — EXECUTION AFTER MERGE REQUIRED / AMENDMENT 21 FULL PRODUCTION DELIVERY IMPLEMENTATION AUTHORIZED IN PR #584 / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**.
 
@@ -20,9 +20,27 @@ Neither Amendment 14 nor Amendment 15 by itself deploys Cloudflare, mutates DNS/
 
 Amendment 18 is accepted on protected `main` through PR #581 and retires Cloudflare/Neon/Render/Cloud.ru/VK from current/future V10 provider authority. `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` is the current authorized System Update. WEB-VISUAL and WP23+ remain paused until the consolidation/public-activation path reaches its owning exit gate.
 
-The mandatory PR #582 CI/provider-authority split is accepted on exact main `82e3a45c7016f2956c9b3761d10d15e433375f3c`: Regression Shield #1646 and Engineering Governance #1893 completed `success`; automatic Timeweb Read-Only Proof #13 completed `success` with `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed unbound IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED` and grants no ingress mutation authority. TW-A remains open only for the complete provider/dependency producer-consumer inventory; TW-B is forbidden until that branch checkpoint is `CERTIFIED_GREEN`.
+PR #582 remains the accepted CI/provider-authority split. TW-A then completed through PR #583. Its exact reviewed head `2c4cf7915c02d05e42b269544bc0336c31fa9a87` passed DRAFT and READY certification, and PR #583 was squash-merged to exact main `c7ea5ba549e1bf8e627d61117a15ace8da6387a4`. Post-merge Regression Shield #1647, Engineering Governance #1909, all owning WP audits and Timeweb Read-Only Proof #14 completed `success`. The sanitized provider proof remains `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`. The observed Timeweb IPv4 remains fail-closed as `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`; it grants no ingress mutation authority.
 
-Current TW-A inventory PR #583 remains in `RED_REPAIR_ONLY` on exact head `5ea5a8399b3f9c5b8d47e19051463a3f6ee143f6`. All observed GitHub-native PR workflow batches except authoritative Windows CI #3114 completed `success`; Engineering Governance #1906 and Fast PR Checks #3022 are GREEN, secret scanning passed, and Sonar Quality Gate passed with 0 Security Hotspots. Windows CI reached the full Regression Shield and failed only two stale assertions in `tests/test_v10_wp22a_phase5_transition.py`: they still required the historical Phase-4/Phase-5 Render acceptance workflows to perform live exact-base probes even though Amendment 18 correctly archives and hard-disables those workflows. Sonar also reports one non-security S3776 maintainability finding in `scripts/check_v10_timeweb_platform_inventory.py`: `_rule_matches` cognitive complexity is 18 while the configured threshold is 15. The corrective checkpoint must update every remaining stale workflow consumer to archive-only semantics and refactor matcher responsibilities into bounded helpers, then undergo fresh exact-head certification before TW-B.
+TW-A / INVENTORY_AND_AUTHORITY is therefore `CERTIFIED_GREEN / ACCEPTED`. Focused CA-trust repairs PR #585 and PR #586 were subsequently accepted on protected `main`; the current accepted base for PR #584 remains exact main `26bdc17c4e5d68c262f47b999e975b1eb8651858`.
+
+P1 / SOURCE_RUNTIME_CONVERGENCE is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`: all 25 observed exact-head checks completed `success`, including the authoritative Windows merge gate, Engineering Governance, Fast PR/toolchain/WP owning audits and SonarCloud with 0 new issues / 0 Security Hotspots. V9C-A→V9C-F are therefore closed as P1 evidence. P2 / TIMEWEB_EXACT_SHA_CANDIDATE is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`: all 19 observed repository workflows completed `success`, SonarCloud reported 0 new issues / 0 Security Hotspots, and unresolved review threads were zero. P3 / POSTGRES18_PRODUCTION_CUTOVER repository-side implementation is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`: all 25 exact-head checks completed `success`, including authoritative Windows, Governance, Fast PR/toolchain/WP audits and SonarCloud with 0 new issues / 0 Security Hotspots; unresolved review threads were zero and the branch was ahead-only with no conflicts. This certifies the P3 source checkpoint only and does not fabricate physical production database cutover or recovery acceptance. P4 / OMNICIO_RU_DNS_TLS repository-side public-ingress machinery is branch-local `CERTIFIED_GREEN` on exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c`: all 19 applicable repository workflows completed `success` and unresolved review threads were zero. This does not fabricate physical DNS/TLS, Russian no-VPN or public-user acceptance. P5 / TELEGRAM_PUBLIC_ACTIVATION repository-side source machinery is branch-local `CERTIFIED_GREEN` on exact head `ad50273642cc66f537070b4800f319857f7d0096`: all 19 applicable repository workflows completed `success`, SonarCloud reported 0 new issues / 0 Security Hotspots / 0 annotations, unresolved review threads were zero, and the branch was ahead-only with `behind_by=0`. This certifies source machinery only; provider credentials, legal/privacy/regulatory acceptance, capacity/monitoring, public-user activation and real-user evidence remain independently fail-closed. P5.5 / TIMEWEB_WORKTREE_CONVERGENCE repository implementation is complete: dormant clientless Cloudflare/WP22A paths are removed, current Timeweb runtime reachability rejects retired-provider modules, Telegram-only auth is the current product identity path, and live documentation delegates mutable checkpoint state to this canonical ledger. Exact head `46ae2e447692de0f72b03ef001ad887e835083d2` established the pre-closing baseline with every repository-owned GitHub check successful, zero unresolved review threads, and only the non-final external Sonar Automatic Analysis check provider-cancelled with zero annotations. This closing state commit intentionally invalidates that SHA as final merge evidence; its replacement head must rerun exact-head verification. P6 source machinery is complete and adds a deterministic, secret-free exact-main production acceptance seal binding P2/P3/P4/P5 and rollback evidence; production acceptance can execute only after squash merge on exact protected main and does not fabricate external acceptance.
+
+On 2026-09-24 the OWNER explicitly widened PR #584 branch-local implementation authority through Amendment 21. The same integrated branch may now implement the complete repository-side six-milestone production-delivery chain: source/runtime convergence; exact-SHA Timeweb App Platform candidate/release control; PostgreSQL 18 production cutover/recovery control; `omnicio.ru` DNS/TLS/public-ingress acceptance; Telegram-only public activation control; and post-merge production acceptance/rollback proof. External paid/provider/network, database cutover, DNS/TLS, secret, legal/privacy, public activation, destructive cleanup and merge actions remain independent fail-closed gates and are not fabricated by source implementation.
+
+The branch is therefore no longer limited to TW-B source composition, but accepted-main progress remains 54% until the final integrated PR is accepted. No broker-write or Real-money authority is introduced.
+
+Exact head `e9ac1475ed64d99454544478ac4cbd5dcdf7db71` completed all 19 applicable repository workflows `success` with zero unresolved review threads and no accepted-main divergence, establishing the P5 pre-hardening GREEN baseline. New preventive hardening intentionally invalidates that SHA as final merge evidence and requires a fresh exact-head cycle. P5 preventive hardening now closes two production-only classes before public activation. Telegram identity continuity is bound to public SHA-256 fingerprint metadata in `OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256`; silent identity-key rotation remains forbidden and a future intentional rekey requires reviewed migration/recovery. The Timeweb runtime also replaces its single serialized PostgreSQL connection with a bounded four-connection pool with five-second acquisition, transaction-local affinity and validated reconnect; authenticated session lookup is offloaded from the ASGI event loop. Because provider-auth abuse limits remain process-local, horizontal App Platform fan-out/Load Balancer topology remains forbidden until distributed abuse control is separately accepted. External provider, legal/privacy, capacity/load and real-user acceptance remain fail-closed.
+
+P2 implementation is intentionally bounded. It may observe the exact existing Timeweb application and issue only one explicit exact-commit deploy after protected-main equality, application identity, autodeploy-off, fail-closed runtime flags and candidate liveness/release-SHA checks pass. It does not create/resize/delete an App Platform resource, patch provider settings, attach `omnicio.ru`, mutate production PostgreSQL, provision Telegram credentials or enable public users. Ambiguous deploy POST outcomes are reconciled by GET-only provider state rather than blind mutation retry. The GitHub workflow is manual-only and provider binding access is environment-scoped.
+
+Earlier TW-B RED evidence is retained below as failure-learning history. The latest exact-head evidence before that correction showed: Fast PR failed only two changed-file Ruff formatting checks; the authoritative Windows suite reached 3695 passing tests, 912 subtests and 62.20% coverage with one Timeweb synthetic-create runbook marker failure; Sonar Quality Gate passed with zero Security Hotspots but reported one maintainability issue in the Timeweb inventory transitive-consumer validator; and the WP17 OWNER Read Vault audit remained fail-closed on `WP17_OWNER_EVIDENCE_HEAD_DRIFT` with `owner_evidence_ready=true` and direct permission probes intentionally not executed. The repository-side correction must fix those source defects, make the Timeweb inventory governance run read and structurally validate the complete discovered repository tree, and then freeze the replacement head before OWNER evidence is rebound. No Timeweb provider mutation, production DB/DNS cutover, public Telegram activation, broker write or Real-money authority is introduced.
+
+Pre-correction exact-head evidence on `89fb19cf131c509bd2ef49c1eaaa8d7e0ccf868b` proves the whole-repository integrity pass is operational: Engineering Governance read all 1,723 discovered repository files, classified 1,693 as text and 30 as binary, structurally parsed 919 Python and 80 JSON files, and completed `V10_TIMEWEB_PLATFORM_INVENTORY=PASS`. Fast PR and authoritative Windows then independently stopped only on Ruff formatting of that verifier; functional frontend/WP lanes and Engineering Governance itself were successful. The same head's WP17 audit remained correctly blocked by `WP17_OWNER_EVIDENCE_HEAD_DRIFT`. A replacement source head must rerun all exact-head evidence; prior GREEN is not carried forward.
+
+Official Timeweb App Platform documentation was rechecked on 2026-09-23. The existing TW-B source already matches the applicable source constraints: root Dockerfile deployment with `EXPOSE 8080`; process-only `/livez` for platform liveness and DB-aware `/healthz`; external PostgreSQL persistence rather than container-local state; runtime variables/secrets outside Git/image metadata; and an explicit deferred decision for App Platform private-network selection because Timeweb documents that this choice is made at application creation and cannot be changed in place. These are source/planning constraints only; TW-C/TW-D remain the provider-mutation/cutover gates.
+
+The same official-doc review exposed one material TW-C-preventive build defect in TW-B: the canonical runtime lock contacts the official T-Bank Python package index, but the Timeweb Docker image previously ran pip without the reviewed Russian Trusted Root CA augmentation. TW-B now reuses the accepted pinned ephemeral `PIP_CERT` builder for the Docker dependency-install step only and enables `SSL_TBANK_VERIFY=True` for the locked T-Invest SDK runtime. TLS/hostname verification remains enabled, no dependency version/source is changed, and no broker/Telegram/PostgreSQL secret is baked into the image. This is source/runtime hardening only, not Timeweb deployment or broker activation authority.
 
 Correction head `7ec4a8bf9bb3b02cb8d4571389938def6f17be61` removed the first stale probe and strengthened inventory discovery, then Engineering Governance #1895 correctly failed with `TIMEWEB_CONSOLIDATION_ACTIVE_WORKFLOW_RETIRED_PROVIDER_EXECUTION`: the historical WP22A Phase-5 technical-closeout workflow was a second neutral-name consumer that still compiled and live-ran the same Render Phase-4 probe. Repository search shows these Phase-4 and Phase-5 workflows are the complete Actions consumer set for that retired probe. Both must be archive-in-place/manual hard-disabled before the TW-A checkpoint can be certified.
 
@@ -39,6 +57,54 @@ Exact head `770b42c80f395d15ab483b20c05831e386bfb510` removed the prior Sonar Qu
 Exact head `3acb0490893dc4aed81667e5f8145ba2da645501` confirmed that workflow/source separation but exposed one final self-reference of the same class: the current Russia-ingress security guard itself contains retired provider script names as detection data. Whole-source marker enumeration found no other unclassified strong-marker consumer. The correction therefore exempts exactly the two security-verifier source files from consumer scanning while keeping the Russia-ingress execution-aware workflow guard authoritative for provider commands; this avoids broad suppression and keeps any new ordinary `KEEP` source fail-closed.
 
 Exact head `f6ec32b10d6cf2ca39072cd89d14110ca474c140` then passed the new TW-A inventory guard and compiled governance source, but its stdlib regression found a fail-closed ordering defect in `_rule_matches`: unknown matcher keys were checked only after selector evaluation, so a non-matching valid prefix could return `False` before an injected unknown key was rejected. The correction validates the complete matcher shape before any matching operation, preserving bounded non-regex evaluation while making malformed contract input deterministically fatal.
+
+## Amendment 20 — V9-to-V10 convergence / legacy working-tree retirement (branch-local)
+
+OWNER decision on 2026-09-24 extends the current `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
+update inside PR #584. This is branch-local implementation authority until an
+OWNER-authorized merge; accepted-main progress remains 54%.
+
+The accepted V9 repository target
+`b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` is already an ancestor of current
+accepted main. Therefore stale `v9/*` branch heads are not merged into PR #584.
+V9 is now the migration source for the one forward V10/Timeweb runtime.
+
+`V9C-A / AUTHORITY_AND_INVENTORY` is branch-local **CERTIFIED_GREEN** on exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`: all 18 repository workflows completed `success`, including Fast PR, authoritative Windows CI, Engineering Governance, Toolchain and the owning WP audits. V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE is branch-local **CERTIFIED_GREEN** on exact
+head `ddc780b43e74797bc0adea31a741db35eeb06605`. At that historical stage, the next internal checkpoint was
+**V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT**; later P1 evidence closed V9C-D/V9C-E/V9C-F. Current GPT development
+authority is Timeweb/Telegram under Amendments 18–21; protected V9 GPT/Render recovery
+material remains explicitly non-current; the supported V10 runtime must have zero
+retired-provider module imports.
+Ordered convergence is V9C-A authority/inventory -> V9C-B deterministic source relocation -> V9C-C runtime
+entrypoint convergence -> V9C-D GPT/retired-provider working-tree retirement -> V9C-E
+CI/recovery convergence -> V9C-F whole-tree legacy absence proof.
+
+Legacy files may be deleted only after replacement, producer/consumer migration,
+parity/contract regression, zero required current consumers, and recovery/security
+proof. Git history is retained. PR #584 must not be merged to `main` without a new
+explicit OWNER instruction.
+
+This Amendment-20 authority by itself did not deploy TW-C, cut over production
+PostgreSQL, mutate DNS/TLS or activate public Telegram users. Amendment 21 now supersedes
+that **branch-local implementation-scope limit only**, allowing those later delivery
+controls to be implemented in PR #584 while their external mutations remain independently
+gated. Broker write, Real money, WEB-VISUAL and WP23+ remain locked.
+
+## Amendment 21 — full Timeweb production-delivery implementation in PR #584
+
+OWNER decision on 2026-09-24 authorizes one integrated branch/PR to contain all
+repository-side implementation required for the six delivery milestones. This is
+branch-local authority, not accepted-main progress and not permission to synthesize
+provider/legal/secret evidence.
+
+Production identity remains exact-SHA and fail-closed:
+`accepted main SHA -> exact Timeweb deploy -> /livez exact SHA -> owning acceptance`.
+Autodeploy is not production authority. Production mismatch is
+`OUT_OF_SYNC/DEPLOYMENT_BLOCKED`, with last-known-good rollback preserved.
+
+The canonical public origin remains `https://omnicio.ru`; Telegram callback remains
+`https://omnicio.ru/api/v10/web/auth/telegram/callback`. Public flags remain false until
+the Telegram capability's real runtime/database/DNS/privacy/legal/capacity gates pass.
 
 ## Amendment 18 — Timeweb-only platform consolidation / Telegram-only login
 
@@ -422,7 +488,7 @@ Future monetization remains `DEFERRED_OPTIONAL`.
 - Cloudflare Public Product System Update — **HISTORICAL ACCEPTED COMPLETE / ARCHIVE-IN-PLACE**;
 - Amendment 18 — **ACCEPTED ON `main` VIA PR #581**;
 - current authorized System Update — **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
-- current source branch — **`system/timeweb-platform-consolidation`**;
+- current source branch — **`system/timeweb-platform-consolidation-tw-b`**; the original TW-A branch was squash-merged through PR #583;
 - WEB-VISUAL — **PAUSED**;
 - Block F / WP23+ — **LOCKED**;
 - current user-facing activation transitions — **BLOCKED_EXTERNAL where listed above**;
@@ -515,13 +581,69 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots,
 - exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
 - OWNER physical/secret/legal/provider evidence is never synthesized.
 
+Current TW-B exact-head RED evidence on `c74e0ad8394076b866119c642e63bbe81b1bc680`: all observed functional/governance lanes passed except Fast PR, authoritative Windows and WP17 OWNER evidence. Fast PR reported only Ruff quoting format in the two new Docker CA regression tests. Authoritative Windows passed the functional suite and failed later at Bandit B314/CWE-20 because the whole-repository audit parsed arbitrary XML with stdlib ElementTree. The first replacement attempted to use defusedxml, but Engineering Governance runs this inventory guard before dependency installation and correctly failed with `ModuleNotFoundError`. The next correction uses the repository's accepted dependency-free stdlib Expat hardening pattern with DTD/entity/external-entity rejection plus the malicious-DTD/entity regression; scanner suppression is forbidden. WP17 remains separately fail-closed on exact-head OWNER evidence binding.
+
+## Telegram identity / bot separation
+
+Canonical product authentication is `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`. Registration/login does not require a bot chat, `/start`, a bot-link record or `telegram:bot_access`; the source scope remains exactly `openid`. Telegram's BotFather-managed login application registration is provider client metadata, not product bot linkage. The optional Omni-CIO Telegram bot is a distinct future WP23+ companion capability and may be linked only after an Omni-CIO account and authenticated server-side session already exist. It cannot create accounts, mint/select tenants or replace Telegram Login.
+
+## Amendment 19 — no manual OWNER-laptop dependency for the Timeweb PR path
+
+OWNER explicitly directed on 2026-09-23 that Timeweb consolidation continue without requiring manual commands on the personal laptop. The prior WP17 `WP17_OWNER_EVIDENCE_HEAD_DRIFT` result remains valid historical evidence about the local Windows vault, but that local vault is not part of the deployed Timeweb runtime. Amendment 19 therefore supersedes the machine-local ACL proof as a blocking Timeweb PR prerequisite. The required check name is retained for branch-protection continuity and now proves, on a GitHub-hosted runner, that current Timeweb source has no Windows-vault dependency and that hosted broker credential mutation remains fail-closed until a tenant-scoped encrypted hosted backend passes its own gate. The old Windows audit is preserved as manual historical evidence only. No broker secret, provider secret or private payload is moved into GitHub by this transition.
+
+A new commit implementing Amendment 19 invalidates all earlier exact-head GREEN evidence by design. The branch returns to `PENDING` for a complete fresh exact-head verification batch; TW-C remains blocked until that replacement head is fully GREEN and accepted.
+
+## TW-B exact-head repair — Amendment 19 producer/consumer closure
+
+Exact head `01cb544e87e71827aec6b22e0ada3292d96233e1` completed Engineering Governance,
+Sonar, the new GitHub-hosted WP17 Timeweb source-security audit and the observed
+functional WP13/WP15/WP16/WP18-WP22A lanes successfully. It exposed two remaining
+repository defects: Ruff formatting drift in the newly added Amendment-19 guard/test,
+and a stale WP17 local-vault regression that still required the **active** Timeweb
+workflow to execute the historical Windows ACL auditor. The latter caused both WP17
+Application Shell and WP15 Live Web Support to fail the same test.
+
+The repair class is producer/consumer closure, not an OWNER action. The first
+replacement also exposed a current-guidance guard coupled to the literal Amendment-18
+heading; that validator must bind to durable Timeweb/Telegram/no-laptop semantics rather
+than an amendment-number string. The active Timeweb
+contract/guard/test path must state that OWNER/Admin ACL evidence does not block the
+Timeweb PR, while the old DPAPI/ACL scripts and direct negative permission proof remain
+preserved behind the manual historical workflow. Hosted broker credential mutation
+continues fail-closed until an accepted tenant-scoped encrypted hosted custody backend
+exists. WP17 exact-head then reached all Web/browser checks successfully and stopped only at Ruff formatting of three long `failures.append(...)` lines in the new security guard. The correction is formatter-only and preserves every assertion. A replacement commit invalidates all prior exact-head evidence and must receive
+a fresh complete certification batch before TW-B can leave `RED_REPAIR_ONLY`.
+
 ## Current next action
 
-1. remain in `TW-A-PROVIDER-CONSUMER-INVENTORY / RED_REPAIR_ONLY` on PR #583; do not start TW-B;
-2. correct both Ruff-format defects and strengthen the inventory guard so it uses no spawned Git process, requires exact provider-surface cardinality, and catches neutral-name retired-provider consumers by content;
-3. archive-in-place and hard-disable the historical WP22A Phase-4 Render/Neon public-acceptance workflow so no current PR can live-probe retired V10 Render;
-4. update inventory/authority regression tests and full branch handoff, then publish one coherent replacement head;
-5. require every applicable exact-head GitHub check to finish `completed/success`; investigate any remaining security finding as a real signal even though external Sonar is no longer required merge authority;
-6. after DRAFT GREEN, mark READY and require a fresh exact-head READY certification with zero blocking review threads;
-7. only after TW-A is squash-merged and exact-new-main Regression Shield + Engineering Governance + Timeweb proof are GREEN may TW-B provider-neutral Timeweb runtime work begin;
-8. keep `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`.
+1. treat exact head `2d16dbe20e558c33fed6f8b130847f71149e2ade` as the completed V9C-B branch-local GREEN checkpoint only; every new commit invalidates it for final acceptance;
+2. implement Amendment 21 production-delivery contracts/guards first, then continue the six ordered milestones in the same PR #584 branch without creating a competing Web/runtime stack;
+3. keep every provider/payment/network/database/DNS/secret/legal/public-activation mutation behind its explicit evidence gate; repository implementation may advance, external state may not be invented;
+4. require exact accepted-main SHA binding for Timeweb deployment and runtime `/livez`; production autodeploy is not authority;
+5. keep `PUBLIC_MULTI_USER_ENABLED=false` and `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false` until the final Telegram activation gate; VK stays absent;
+6. keep broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, tenant/RLS/FORCE-RLS protections intact;
+7. after each material checkpoint, require a fresh exact-head verification batch before advancing; final PR landing still requires the normal explicit exact-head merge confirmation.
+
+
+### P5 source certification / P5.5 worktree-convergence transition — 2026-09-25
+
+Exact head `ad50273642cc66f537070b4800f319857f7d0096` completed all 19
+applicable repository workflows with `success`. The authoritative Windows merge gate
+completed its Regression Shield, dependency audit and SAST successfully; SonarQube
+Cloud completed `success` with 0 new issues, 0 Security Hotspots and 0 annotations;
+unresolved review threads were zero and the branch remained `behind_by=0`.
+
+This certifies P5 repository-side Telegram/public-user activation machinery only.
+`PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`,
+`OMNI_V10_VK_ID_LOGIN_ENABLED=false`, broker write, `trading_methods=false` and
+`REAL_TRADING_ENABLED=false` remain unchanged. No production Telegram credential,
+public-user activation, legal/privacy acceptance or real-user evidence is fabricated.
+
+OWNER-authorized destructive repository cleanup therefore advances to the internal
+P5.5 Timeweb worktree-convergence phase in the same PR #584. The first coherent
+subsystem removes the dormant Cloudflare/WP22A clientless remote implementation and
+its dedicated workflow/tests from the current worktree, preserves protected V9
+`app:app` recovery and accepted immutable PostgreSQL migrations, and installs a
+fail-closed guard that rejects reintroduction of the retired subtree or workflow/runtime
+references. Ordinary non-sensitive history remains available in Git history rather than
+being kept executable in the current tree.

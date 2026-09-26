@@ -17,7 +17,7 @@ from collections.abc import Callable
 import re
 from typing import Any, NoReturn, Protocol
 
-from scripts import provision_v10_render_neon_preview as _provider_base
+from scripts import provider_runtime_primitives as _provider_base
 from scripts import timeweb_ipv4_allocation as allocation
 from scripts import timeweb_ipv4_custody as custody
 

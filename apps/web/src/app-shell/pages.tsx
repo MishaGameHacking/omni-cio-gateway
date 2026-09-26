@@ -58,7 +58,6 @@ function PlaceholderPage({ path }: { path: AppRoutePath }) {
 }
 
 export function SystemPage({ healthState, freshness }: { healthState: OperationalState; freshness: string }) {
-  const gitSha = __OMNI_WEB_BUILD_SHA__;
   const version = __OMNI_WEB_VERSION__;
   return (
     <section className="shell-page" aria-labelledby="page-title">
@@ -70,7 +69,6 @@ export function SystemPage({ healthState, freshness }: { healthState: Operationa
         <Card title="Web build">
           <dl className="shell-definition-list">
             <div><dt>Version</dt><dd>{version}</dd></div>
-            <div><dt>Git SHA</dt><dd><code>{gitSha}</code></dd></div>
           </dl>
         </Card>
         <Card title="Runtime state">

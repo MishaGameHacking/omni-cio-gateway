@@ -9,13 +9,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONTRACT_PATH = (
-    ROOT
-    / "infrastructure"
-    / "cloudru"
-    / "wp22a"
-    / "hosted-recovery-contract.json"
-)
+CONTRACT_PATH = ROOT / "infrastructure" / "postgres" / "hosted-recovery-contract.json"
 
 _EXPECTED_CONTRACT_FIELDS = (
     "schema_version",
@@ -28,7 +22,7 @@ _EXPECTED_CONTRACT_FIELDS = (
     "off_runtime",
 )
 _EXPECTED_AUTHORITY = {
-    "provider": "Cloud.ru Evolution",
+    "provider": "PROVIDER_NEUTRAL_POSTGRESQL_18",
     "source_only": True,
     "provider_apply_authorized": False,
     "public_ingress_allowed": False,
@@ -66,20 +60,20 @@ _EXPECTED_MANIFEST_FIELDS = (
     "forced_rls_relations",
     "encryption_state",
 )
-_ARCHIVE_NAME_PATTERN = (
-    r"wp22a-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}\.dump"
-)
-_ARCHIVE_NAME_RE = re.compile(_ARCHIVE_NAME_PATTERN)
+_ARCHIVE_NAME_PATTERN = r"wp22a-\d{8}T\d{6}Z-[a-f\d]{12}\.dump"
+_ARCHIVE_NAME_RE = re.compile(_ARCHIVE_NAME_PATTERN, flags=re.ASCII)
 _ARCHIVE_METADATA_RE = re.compile(
-    r"^wp22a-([0-9]{8}T[0-9]{6}Z)-([a-f0-9]{12})\.dump$"
+    r"^wp22a-(\d{8}T\d{6}Z)-([a-f\d]{12})\.dump$",
+    flags=re.ASCII,
 )
-_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
-_RELEASE_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
+_SHA256_RE = re.compile(r"^[a-f\d]{64}$", flags=re.ASCII)
+_RELEASE_SHA_RE = re.compile(r"^[a-f\d]{40}$", flags=re.ASCII)
 _CREATED_AT_RE = re.compile(
-    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T"
-    r"[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    r"^\d{4}-\d{2}-\d{2}T"
+    r"\d{2}:\d{2}:\d{2}Z$",
+    flags=re.ASCII,
 )
-_DATABASE_RE = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+_DATABASE_RE = re.compile(r"^[a-z][a-z\d_]{0,62}$", flags=re.ASCII)
 
 
 class HostedRecoveryContractError(RuntimeError):
@@ -147,14 +141,10 @@ def load_hosted_recovery_contract(
     path: Path = CONTRACT_PATH,
 ) -> dict[str, Any]:
     if path.resolve(strict=False) != CONTRACT_PATH.resolve(strict=False):
-        raise HostedRecoveryContractError(
-            "HOSTED_RECOVERY_CONTRACT_PATH_INVALID"
-        )
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_PATH_INVALID")
     payload = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise HostedRecoveryContractError(
-            "HOSTED_RECOVERY_CONTRACT_NOT_OBJECT"
-        )
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_NOT_OBJECT")
     return payload
 
 
@@ -162,16 +152,9 @@ def validate_hosted_recovery_contract(
     payload: Mapping[str, Any],
 ) -> None:
     if set(payload) != set(_EXPECTED_CONTRACT_FIELDS):
-        raise HostedRecoveryContractError(
-            "HOSTED_RECOVERY_CONTRACT_FIELDS_INVALID"
-        )
-    if (
-        payload.get("schema_version")
-        != "v10.wp22a.phase3.hosted-recovery.v1"
-    ):
-        raise HostedRecoveryContractError(
-            "HOSTED_RECOVERY_CONTRACT_VERSION_INVALID"
-        )
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_FIELDS_INVALID")
+    if payload.get("schema_version") != "v10.hosted-recovery.v2":
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_VERSION_INVALID")
 
     authority = _as_mapping(
         payload.get("authority"),
@@ -233,9 +216,7 @@ def validate_hosted_recovery_contract(
         {
             "backup_class": "POSTGRES_LOGICAL_PRIVATE_STATE",
             "archive_name_pattern": _ARCHIVE_NAME_PATTERN,
-            "manifest_schema_version": (
-                "v10.wp22a.phase3.hosted-recovery-manifest.v1"
-            ),
+            "manifest_schema_version": ("v10.wp22a.phase3.hosted-recovery-manifest.v1"),
             "allowed_manifest_fields": list(_EXPECTED_MANIFEST_FIELDS),
             "encryption_state": "EXTERNAL_ENVELOPE_REQUIRED",
         },

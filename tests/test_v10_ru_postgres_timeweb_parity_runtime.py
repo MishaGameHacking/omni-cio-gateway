@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -44,8 +45,7 @@ def test_proof_rejects_neon_target() -> None:
 def test_proof_rejects_tls_without_hostname_verification() -> None:
     env = {
         proof.DSN_ENV: (
-            "host=db.test dbname=default_db user=bootstrap "
-            "sslmode=require"
+            "host=db.test dbname=default_db user=bootstrap sslmode=require"
         ),
         proof.ACK_ENV: proof.ACK_VALUE,
         proof.LOCATION_ENV: proof.LOCATION_VALUE,
@@ -76,13 +76,17 @@ def test_runtime_dsn_preserves_transport_and_replaces_identity() -> None:
     assert params["sslmode"] == "verify-full"
     assert params["sslrootcert"] == "/synthetic/ca.pem"
 
-def test_proof_reuses_accepted_neon_postgres_runtime_primitives() -> None:
-    assert proof.RUNTIME_ROLE == "omni_cio_cloudflare_staging"
-    assert proof.neon_runtime._runtime_role("production") == (
-        "omni_cio_cloudflare_prod"
-    )
-    source = proof.Path(proof.__file__).read_text(encoding="utf-8")
-    assert "neon_runtime._runtime_sql(RUNTIME_ROLE)" in source
-    assert "neon_runtime._converge_runtime_role(" in source
-    assert "neon_runtime._verify_runtime(runtime, RUNTIME_ROLE)" in source
-    assert "postgres_base._connect_postgres_with_retry(" in source
+
+def test_proof_uses_provider_neutral_postgres_runtime_primitives() -> None:
+    assert proof.RUNTIME_ROLE == "omni_cio_timeweb_synthetic"
+    source = Path(proof.__file__).read_text(encoding="utf-8")
+    assert "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)" in source
+    assert "postgres_runtime.converge_runtime_role(" in source
+    assert "postgres_runtime.verify_runtime(runtime, RUNTIME_ROLE)" in source
+    assert "provider_base._connect_postgres_with_retry(" in source
+    assert "RUNTIME_SQL = postgres_runtime.RUNTIME_SQL" in source
+    assert proof.RUNTIME_SQL == proof.postgres_runtime.RUNTIME_SQL
+    assert "infrastructure/postgres" in proof.RUNTIME_SQL.as_posix()
+    assert "infrastructure/cloudru" not in source
+    assert "provision_v10_cloudflare_neon_runtime" not in source
+    assert "provision_v10_render_neon_preview" not in source

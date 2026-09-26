@@ -18,7 +18,6 @@ REQUIRED_AUDIT_WORKFLOWS = (
     WORKFLOWS / "v10-wp20-research-dossier-audit.yml",
     WORKFLOWS / "v10-wp21-decision-risk-plan-audit.yml",
     WORKFLOWS / "v10-wp22-system-admin-audit.yml",
-    WORKFLOWS / "v10-wp22a-clientless-access-audit.yml",
 )
 _WRAPPER_TOKEN = "run_v10_npm_audit.py"
 _RAW_NPM_AUDIT = re.compile(

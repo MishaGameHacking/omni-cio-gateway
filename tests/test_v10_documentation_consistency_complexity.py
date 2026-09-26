@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_v10_documentation_consistency.py"
 EXPECTED_LIVE_GUIDANCE_HELPERS = (
     "_validate_live_guidance_delegation",
+    "_validate_transient_checkpoint_delegation",
     "_validate_readme_snapshot",
     "_validate_agents_snapshot",
     "_validate_master_context_snapshot",

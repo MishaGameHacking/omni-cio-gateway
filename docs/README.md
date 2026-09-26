@@ -1,10 +1,10 @@
 # Документация Omni-CIO
 
-Документация поддерживает **один продукт**: текущий owner-accepted Custom GPT/Gateway V9 runtime и последовательно развиваемую V10 platform в том же репозитории.
+Документация поддерживает **один продукт** и одну forward V10 line. V9 теперь является migration/recovery source внутри текущего lineage, а не отдельно развиваемым будущим runtime.
 
 Current applied GPT: **v9.0.0**, owner-accepted in place on 2026-08-05.  
 Protected rollback: **v8.6.1**.  
-Current V9 runtime mode: **controlled maintenance**.  
+Dynamic convergence/checkpoint state: **delegated to `../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and exact PR #584 Actions evidence**.  
 Active feature program: **Omni-CIO V10**, started by owner command `START V10` on 2026-08-05.
 
 ## Быстрый вход
@@ -46,13 +46,13 @@ Canonical artifacts:
 
 Exact accepted progress and next WP: `../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-### V9 — completed protected runtime program
+### V9 — completed migration/recovery source
 
 - `master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` — completed V9 specification/audit trail;
 - V9 WP0–WP15 are implemented and owner-accepted;
 - current applied/runtime state is `../knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-V9 remains the production/recovery baseline in **controlled maintenance** while V10 is built. A V10 package does not replace a V9 boundary until its responsible Exit Gate passes.
+V9 remains historical capability/recovery evidence while Amendment 20 migrates its remaining working-tree dependencies into V10. A V9 boundary is removed only after its responsible parity, zero-consumer and recovery gate passes.
 
 ## Architecture
 
@@ -70,7 +70,7 @@ V10 authorities include:
 - `architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
 - `architecture/DECISIONS.md`.
 
-Current V9 runtime architecture remains documented by `architecture/SYSTEM_OVERVIEW.md` and `architecture/V9_*` files until later V10 migration packages explicitly replace those boundaries.
+`architecture/SYSTEM_OVERVIEW.md` now describes the current V10/Timeweb source composition and Amendment-20 migration boundary. `architecture/V9_*` files remain historical/recovery evidence unless a later current contract explicitly references them.
 
 ## Repository boundaries
 
@@ -84,7 +84,7 @@ Current accepted physical V10 roots include:
 
 Later roots remain lifecycle-gated: `../apps/telegram/` and `../ai/` are not authorized merely because the architecture reserves their ownership locations.
 
-The protected V9 root wrappers and `gpt/` recovery/configuration remain until their responsible V10 parity/decommission gates.
+The branch-local V9C-A through V9C-F convergence pass is retained as P1 evidence. Protected V9 compatibility/recovery roots remain only until separate accepted decommission authority; obsolete provider/GPT working-tree artifacts proven safe to retire stay absent while Git history remains the archive.
 
 Permanent structural guard:
 

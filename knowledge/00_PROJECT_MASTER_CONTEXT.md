@@ -12,7 +12,7 @@ Omni-CIO — один investment platform/product line. Защищённый V9 
 
 Нельзя создавать competing Gateway, competing Web product, parallel product-auth stack, competing AI/scheduler/broker/execution stack или второй пользовательский staging-продукт без отдельного OWNER-approved amendment/execution unit.
 
-Stable protected V9 Gateway entrypoint: `app:app`.
+Temporary V9 compatibility/recovery entrypoint during Amendment-20 convergence: `app:app`; forward V10 source entrypoint: `apps.api.hosted_runtime:create_app`.
 
 Protected V9 WP0–WP15 delivery is complete and remains in controlled maintenance.
 
@@ -71,7 +71,7 @@ GitHub is authority rank 1 for engineering:
 - accepted status/provenance;
 - release source identity.
 
-Cloudflare Workers Paid is platform rank 2 for **new V10** work after Amendment 14 acceptance:
+At Amendment 14 acceptance, Cloudflare Workers Paid was the historical platform rank 2 for new V10 work:
 
 - application/edge hosting target;
 - Workers/Static Assets;
@@ -97,7 +97,7 @@ At Amendment 14 acceptance, the historical new-V10 deployment/release selection 
 - Render was no longer the active new-V10 deployment, zero-charge-attestation, hosted-release-alignment or recovery target;
 - no new Render attestation refresh/provider mutation was required;
 - accepted WP22A Render + Neon evidence remains historical evidence and must not be rewritten;
-- protected V9 Render production/recovery remains protected.
+- protected V9 Render/app:app remains a recovery/compatibility boundary after branch-local P1 convergence and is retained until separate accepted decommission authority.
 
 Historically, Amendment 14 selected the Cloudflare platform and Amendment 15 grouped its four stages into one `INTEGRATED_SYSTEM_UPDATE`. Amendment 18 supersedes that provider model for all current/future V10 work.
 
@@ -113,7 +113,7 @@ Neither governance amendment by itself:
 
 ## 6. Historical Cloudflare integrated implementation sequence — superseded by Amendment 18
 
-After Amendment 15 acceptance, execute one integrated update:
+After Amendment 15 acceptance, the historical delivery model executed one integrated update:
 
 `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`
 
@@ -156,13 +156,13 @@ PROJECT OWNER is an ordinary product USER, not a product superuser.
 
 Canonical human product identity remains:
 
-`Telegram Login | VK ID -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
+`Telegram Login -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
 
 `WP22A — External Web Access / Product Authentication Security Gate` is technically COMPLETE, but real provider/public runtime activation remains capability-specific.
 
-Tenant scope must be server-derived. PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory even when Cloudflare protects the outer edge.
+Tenant scope must be server-derived. PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory regardless of the outer infrastructure provider.
 
-Cloudflare Access/WAF/Turnstile can protect infrastructure/browser surfaces but cannot mint/select an Omni-CIO tenant.
+Historical Cloudflare Access/WAF/Turnstile could protect infrastructure/browser surfaces but never minted or selected an Omni-CIO tenant; current Timeweb ingress must preserve the same product-authority boundary.
 
 ## 9. Progressive capability activation
 
@@ -175,11 +175,11 @@ A completed capability may become `LIVE_OPERABLE` when all its own technical/sec
 Current public-facing activation remains fail-closed where evidence is missing:
 
 - Telegram Login — `BLOCKED_EXTERNAL`;
-- VK ID — `BLOCKED_EXTERNAL`;
 - public multi-user tenant access — `BLOCKED_EXTERNAL`;
+- VK ID — retired from current/future deployed product composition under Amendment 18;
 - T-Invest READ — `BLOCKED_EXTERNAL` / `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
 
-`PUBLIC_MULTI_USER_ENABLED=false` is current runtime state, not a permanent V10-wide release lock. It may change only in CF-D after all owning live gates are actually satisfied.
+`PUBLIC_MULTI_USER_ENABLED=false` is current runtime state, not a permanent V10-wide release lock. It may change only at the owning Timeweb/Telegram public-activation gate after all required live security/privacy/legal/capacity evidence is accepted.
 
 ## 10. Web/runtime migration discipline
 
@@ -195,7 +195,7 @@ Timeweb App Platform is the selected runtime target. Timeweb Managed PostgreSQL 
 
 Do not create a second Gateway, second Web product, competing DB authority or competing scheduler merely to fit provider products.
 
-Cloudflare/Neon/Render/Cloud.ru/VK files remain archive-in-place by default. They are historical evidence, not templates for new implementation. Do not mass-delete them merely to simplify keyword searches.
+Cloudflare/Neon/Render/Cloud.ru/VK files are historical/retirement evidence under Amendment 20, not implementation templates. The branch-local P1 convergence pass already retired proven zero-current-consumer working-tree artifacts; remaining protected compatibility/recovery surfaces stay until separate accepted decommission authority. Git history remains the archive.
 
 ## 11. Timeweb-first dependency / capacity / cost boundary
 
@@ -232,14 +232,14 @@ Never place real secrets/private payloads in GitHub, chat, commits, PR comments,
 Never disclose/request when avoidable:
 
 - broker tokens;
-- Telegram/VK secrets;
+- Telegram secrets and any historical VK secrets;
 - provider API secrets;
 - DB passwords;
 - encryption/recovery keys;
 - full account IDs;
 - private portfolio payloads.
 
-Cloudflare API tokens/secrets belong in approved secret custody at the owning provider-action milestone, never repository source.
+Historical Cloudflare API tokens/secrets are not current credential targets under Amendment 18; do not create or request new ones. Any retained historical secret reference remains outside repository source.
 
 ## 14. Broker / Real-money boundary
 
@@ -255,23 +255,21 @@ READ and optional TRADE credentials are tenant-scoped. `TRADE credential connect
 
 Real broker submit requires `REAL_MONEY_AUTHORIZED` through the owning later execution gate after representative Sandbox/Shadow, immutable plan, authenticated USER approval, drift/preflight, reconciliation, kill switches and actual broker permission.
 
-A GitHub merge, Cloudflare deployment, public release, AI output, START command or user registration is never broker-submit authorization.
+A GitHub merge, Timeweb deployment, public release, AI output, START command or user registration is never broker-submit authorization.
 
 ## 15. WEB VISUAL lock
 
-`WEB-VISUAL-INTEGRATED` remains prepared but excluded from `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`.
+`WEB-VISUAL-INTEGRATED` remains prepared but paused behind the current `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED` path.
 
-Do not create its implementation branch or perform visual-refresh source changes until the exact OWNER command is issued:
-
-`START V10 WEB VISUAL SYSTEM UPDATE`
+Do not create its implementation branch or perform visual-refresh source changes until the Timeweb consolidation/public-activation path reaches its owning gate and current accepted authority explicitly starts WEB-VISUAL.
 
 ## 16. V9 protection / recovery
 
 Protected V9 production/recovery remains available until an explicit accepted decommission/parity gate.
 
-Stable entrypoint remains `app:app`.
+`app:app` remains the protected V9 compatibility/recovery entrypoint until separate accepted decommission authority; the forward Timeweb source entrypoint is `apps.api.hosted_runtime:create_app`.
 
-Render retirement in **new V10** authority does not authorize mutation/deletion of the protected V9 Render baseline.
+Render retirement in forward V10 authority has completed the repository-side P1 convergence/zero-consumer proof where applicable; external/provider decommission remains a separate accepted gate.
 
 ## 17. Continuity
 

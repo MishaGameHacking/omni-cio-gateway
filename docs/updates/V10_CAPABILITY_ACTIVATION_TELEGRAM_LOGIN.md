@@ -17,6 +17,14 @@ This ledger tracks the material `telegram_login` activation transition under Ame
 - Current accepted capability state: `BLOCKED_EXTERNAL`
 - Proposed capability state: `LIVE_OPERABLE`
 
+## Identity boundary — Telegram USER login is not Telegram Bot linking
+
+The public Omni-CIO registration/login path authenticates the human **Telegram user account** through Telegram OIDC. The user does not need to open a bot chat, press `/start`, or grant `telegram:bot_access` to create or enter an Omni-CIO account. The accepted login scope is exactly `openid`.
+
+The future Omni-CIO Telegram bot is a separate optional companion capability. It may be linked only **after** an Omni-CIO account already exists and the browser has an authenticated server-side session. A bot link may attach messaging/chat delivery to that existing USER/Tenant, but it may never create an Omni-CIO account, mint/select a Tenant, replace Telegram Login, or become a login prerequisite. Its implementation remains WP23+ and is not started by this TW-B clarification.
+
+Telegram currently requires a BotFather-managed application representation to issue Telegram Login OIDC Client ID/Secret metadata. That provider registration artifact is not the same authority as connecting the optional Omni-CIO companion bot to a user's account.
+
 ## Implementation / technical evidence
 
 - [x] Telegram OIDC Authorization Code + PKCE implementation is accepted.

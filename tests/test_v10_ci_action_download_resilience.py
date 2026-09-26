@@ -23,7 +23,7 @@ CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS = (
     "v10-wp20-research-dossier-audit.yml",
     "v10-wp21-decision-risk-plan-audit.yml",
     "v10-wp22-system-admin-audit.yml",
-    "v10-wp22a-clientless-access-audit.yml",
+    "v10-timeweb-worktree-convergence-audit.yml",
     "v10-wp22a-phase2-product-auth-audit.yml",
 )
 
@@ -45,7 +45,7 @@ CURRENT_CRITICAL_FOLLOWUP_RETRY_WORKFLOWS = (
     "v10-wp20-research-dossier-audit.yml",
     "v10-wp21-decision-risk-plan-audit.yml",
     "v10-wp22-system-admin-audit.yml",
-    "v10-wp22a-clientless-access-audit.yml",
+    "v10-timeweb-worktree-convergence-audit.yml",
     "v10-wp22a-phase2-product-auth-audit.yml",
 )
 
@@ -167,7 +167,9 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
 
         self.assertEqual(failures, [], "\n".join(failures))
 
-    def test_current_critical_followup_closure_retries_repository_bootstrap(self) -> None:
+    def test_current_critical_followup_closure_retries_repository_bootstrap(
+        self,
+    ) -> None:
         failures: list[str] = []
 
         for name in CURRENT_CRITICAL_FOLLOWUP_RETRY_WORKFLOWS:
@@ -182,9 +184,13 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
                     failures.append(f"{name} missing current retry contract: {marker}")
 
             if text.count("for bootstrap_attempt in 1 2 3; do") != 1:
-                failures.append(f"{name} must have exactly one repository bootstrap retry loop")
+                failures.append(
+                    f"{name} must have exactly one repository bootstrap retry loop"
+                )
             if text.count("exit 70") != 1:
-                failures.append(f"{name} must fail closed once after bootstrap exhaustion")
+                failures.append(
+                    f"{name} must fail closed once after bootstrap exhaustion"
+                )
             if "continue-on-error: true" in text:
                 failures.append(f"{name} must not soften current critical verification")
 
@@ -222,7 +228,9 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
         self.assertNotIn("git reset --hard HEAD || true", cleanup)
         self.assertNotIn("git clean -ffdx || true", cleanup)
 
-    def test_retired_render_workflows_are_manual_only_and_do_not_bootstrap(self) -> None:
+    def test_retired_render_workflows_are_manual_only_and_do_not_bootstrap(
+        self,
+    ) -> None:
         expected = {
             "v10-phase4-free-preview-deploy.yml": (
                 "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14",

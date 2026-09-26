@@ -123,9 +123,7 @@ jobs:
       - name: Compile gateway sources
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
-          portfolio_market.py portfolio_analytics.py cash_liquidity.py
-          purchase_capacity.py purchase_capacity_integrity.py
-          operations_analytics.py broker_report_reconciliation tests scripts
+          omni_cio apps tests scripts
 
       - name: Lint
         run: python -m ruff check .
@@ -182,14 +180,16 @@ jobs:
           --junitxml=pytest-results.xml
           --cov=app
           --cov=main
-          --cov=portfolio_market
-          --cov=portfolio_analytics
-          --cov=cash_liquidity
-          --cov=purchase_capacity
-          --cov=purchase_capacity_integrity
-          --cov=operations_analytics
-          --cov=sdk_order_compat
-          --cov=broker_report_reconciliation
+          --cov=omni_cio.portfolio.market_source_v1
+          --cov=omni_cio.analytics.portfolio_source_v1
+          --cov=omni_cio.analytics.cash_liquidity_v1
+          --cov=omni_cio.pretrade.purchase_capacity_v1
+          --cov=omni_cio.pretrade.purchase_capacity_integrity_v1
+          --cov=omni_cio.pretrade.sale_capacity_v1
+          --cov=omni_cio.pretrade.sale_capacity_normalization_v1
+          --cov=omni_cio.analytics.operations_source_v1
+          --cov=omni_cio.adapters.tinvest_order_compat_v1
+          --cov=omni_cio.reconciliation
           --cov-branch
           --cov-report=term-missing
           --cov-report=xml:coverage.xml

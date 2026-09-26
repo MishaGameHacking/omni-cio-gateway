@@ -523,10 +523,9 @@ def test_wp21_route_requires_session_and_returns_no_store() -> None:
         service=DecisionPlanReadServiceV1(connection, clock=lambda: NOW),
         now=lambda: NOW,
     )
-    response = TestClient(allowed).get(
-        "/api/v10/web/decision-plan",
-        cookies={SESSION_COOKIE: "test"},
-    )
+    client = TestClient(allowed)
+    client.cookies.set(SESSION_COOKIE, "test")
+    response = client.get("/api/v10/web/decision-plan")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["pragma"] == "no-cache"

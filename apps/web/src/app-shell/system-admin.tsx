@@ -41,7 +41,6 @@ export function SystemAdminPage({
     };
   }, []);
 
-  const gitSha = __OMNI_WEB_BUILD_SHA__;
   const version = __OMNI_WEB_VERSION__;
 
   return (
@@ -76,15 +75,11 @@ export function SystemAdminPage({
               <dd>{version}</dd>
             </div>
             <div>
-              <dt>Git SHA</dt>
-              <dd><code>{gitSha}</code></dd>
-            </div>
-            <div>
               <dt>Runtime release</dt>
               <dd><Value value={status?.release.release} /></dd>
             </div>
             <div>
-              <dt>Runtime Git SHA</dt>
+              <dt>Git SHA</dt>
               <dd><code><Value value={status?.release.git_sha} /></code></dd>
             </div>
             <div>

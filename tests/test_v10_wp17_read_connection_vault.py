@@ -26,6 +26,9 @@ RUNNER_AUDITOR = (
 OWNER_AUDIT_WORKFLOW = (
     ROOT / ".github" / "workflows" / "v10-wp17-owner-read-vault-audit.yml"
 )
+HISTORICAL_OWNER_AUDIT_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "v10-wp17-local-read-vault-historical-audit.yml"
+)
 
 
 def fake_protect(payload: bytes) -> bytes:
@@ -79,8 +82,9 @@ def test_vault_rejects_path_traversal_and_unprovisioned_root(tmp_path: Path) -> 
         protect=fake_protect,
         unprotect=fake_unprotect,
     )
+    secret_ref = new_read_connection_secret_ref()
     with pytest.raises(ReadConnectionVaultError, match="NOT_PROVISIONED"):
-        missing.store(secret_ref=new_read_connection_secret_ref(), token="read-token")
+        missing.store(secret_ref=secret_ref, token="read-token")
 
     root = ready_root(tmp_path)
     vault = ReadBrokerConnectionVaultV1(
@@ -101,12 +105,14 @@ def test_vault_requires_exact_owner_marker(tmp_path: Path) -> None:
         protect=fake_protect,
         unprotect=fake_unprotect,
     )
+    secret_ref = new_read_connection_secret_ref()
     with pytest.raises(ReadConnectionVaultError, match="MARKER_MISSING"):
-        vault.store(secret_ref=new_read_connection_secret_ref(), token="read-token")
+        vault.store(secret_ref=secret_ref, token="read-token")
 
     (root / READ_CONNECTION_MARKER).write_text("wrong", encoding="ascii")
+    invalid_marker_secret_ref = new_read_connection_secret_ref()
     with pytest.raises(ReadConnectionVaultError, match="MARKER_INVALID"):
-        vault.store(secret_ref=new_read_connection_secret_ref(), token="read-token")
+        vault.store(secret_ref=invalid_marker_secret_ref, token="read-token")
 
 
 def test_acl_verifier_normalizes_identity_references_to_sid() -> None:
@@ -125,10 +131,11 @@ def test_acl_verifier_normalizes_identity_references_to_sid() -> None:
         assert broad_sid in source
 
 
-def test_owner_acl_evidence_is_exact_head_bound_and_runner_verified() -> None:
+def test_owner_acl_evidence_is_preserved_as_historical_manual_gate() -> None:
     finalizer = OWNER_EVIDENCE_FINALIZER.read_text(encoding="utf-8")
     auditor = RUNNER_AUDITOR.read_text(encoding="utf-8")
-    workflow = OWNER_AUDIT_WORKFLOW.read_text(encoding="utf-8")
+    active_workflow = OWNER_AUDIT_WORKFLOW.read_text(encoding="utf-8")
+    historical_workflow = HISTORICAL_OWNER_AUDIT_WORKFLOW.read_text(encoding="utf-8")
 
     for marker in (
         "owner-read-vault-evidence.sanitized.local.json",
@@ -152,12 +159,39 @@ def test_owner_acl_evidence_is_exact_head_bound_and_runner_verified() -> None:
         "Test-ReadDataDenied",
         "Test-CreateDenied",
         "runner_is_administrator",
+        "permission_probes_executed",
     ):
         assert marker in auditor
 
-    assert "audit_wp17_read_vault_runner.ps1" in workflow
-    assert "-ExpectedImplementationSha" in workflow
-    assert "github.event.pull_request.head.sha || github.sha" in workflow
-    assert (
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
-    )
+    for reason in (
+        "WP17_OWNER_EVIDENCE_HEAD_DRIFT",
+        "WP17_OWNER_EVIDENCE_SCRIPT_DRIFT",
+        "WP17_RUNNER_SECRET_READ_NOT_DENIED",
+        "WP17_RUNNER_SECRET_WRITE_NOT_DENIED",
+        "WP17_RUNNER_EVIDENCE_WRITE_NOT_DENIED",
+    ):
+        assert reason in auditor
+
+    for marker in (
+        "workflow_dispatch:",
+        "audit_wp17_read_vault_runner.ps1",
+        "-ExpectedImplementationSha",
+        "github.event.pull_request.head.sha || github.sha",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    ):
+        assert marker in historical_workflow
+    assert "pull_request:" not in historical_workflow
+    assert "push:" not in historical_workflow
+
+    for marker in (
+        "runs-on: ubuntu-latest",
+        "python scripts/check_v10_timeweb_no_owner_laptop_dependency.py",
+        "python -m unittest tests.test_v10_timeweb_no_owner_laptop_dependency",
+    ):
+        assert marker in active_workflow
+    for forbidden in (
+        "audit_wp17_read_vault_runner.ps1",
+        "owner-read-vault-evidence.sanitized.local.json",
+        "runs-on: [self-hosted",
+    ):
+        assert forbidden not in active_workflow

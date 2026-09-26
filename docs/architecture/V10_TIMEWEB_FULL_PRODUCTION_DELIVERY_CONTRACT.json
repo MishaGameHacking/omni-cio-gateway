@@ -1,0 +1,193 @@
+{
+  "schema": "omni-cio.v10.timeweb-full-production-delivery.v1",
+  "status": "BRANCH_LOCAL_IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED",
+  "decision_date": "2026-09-24",
+  "owning_issue": 580,
+  "owning_pr": 584,
+  "branch": "system/timeweb-platform-consolidation-tw-b",
+  "canonical_domain": "omnicio.ru",
+  "canonical_origin": "https://omnicio.ru",
+  "telegram_redirect_uri": "https://omnicio.ru/api/v10/web/auth/telegram/callback",
+  "release": {
+    "source_authority": "GITHUB_PROTECTED_MAIN",
+    "deployment_platform": "TIMEWEB_APP_PLATFORM",
+    "exact_commit_sha_required": true,
+    "production_autodeploy_allowed": false,
+    "runtime_release_env": "OMNI_V10_RELEASE_SHA",
+    "liveness_path": "/livez",
+    "database_readiness_path": "/healthz",
+    "deployed_sha_must_equal_accepted_main_sha": true,
+    "last_known_good_rollback_required": true,
+    "mismatch_state": "OUT_OF_SYNC/DEPLOYMENT_BLOCKED",
+    "candidate_controller_contract": "docs/architecture/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_CONTRACT.json",
+    "candidate_controller": "scripts/timeweb_app_release.py",
+    "candidate_workflow": ".github/workflows/v10-timeweb-app-candidate.yml"
+  },
+  "runtime": {
+    "dockerfile": "Dockerfile",
+    "port": 8080,
+    "app_factory": "apps.api.hosted_runtime:create_app",
+    "required_plain_env": {
+      "OMNI_V10_HOSTED_RUNTIME": "1",
+      "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru",
+      "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_hosted_api",
+      "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED": "true"
+    },
+    "runtime_credential_env_names": [
+      "OMNI_V10_POSTGRES_DSN",
+      "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
+      "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET",
+      "OMNI_V10_IDENTITY_BINDING_KEY_HEX",
+      "OMNI_V10_CSRF_BINDING_KEY_HEX"
+    ],
+    "credential_values_in_repository_allowed": false,
+    "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME",
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5,
+    "single_serialized_runtime_connection_allowed": false,
+    "session_lookup_event_loop_blocking_allowed": false
+  },
+  "postgres": {
+    "engine": "PostgreSQL",
+    "major_version": 18,
+    "canonical_runtime_contract": "infrastructure/postgres/hosted-postgres-runtime-contract.json",
+    "migrations_required": true,
+    "least_privilege_required": true,
+    "rls_required": true,
+    "force_rls_required": true,
+    "cross_tenant_negative_required": true,
+    "backup_restore_required": true,
+    "production_cutover_requires_independent_acceptance": true,
+    "production_cutover_contract": "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
+    "production_cutover_controller": "scripts/timeweb_postgres_production_cutover.py",
+    "production_cutover_workflow": ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+  },
+  "public_ingress": {
+    "custom_domain": "omnicio.ru",
+    "tls_required": true,
+    "cloudflare_required_hop": false,
+    "owner_home_network_dependency_allowed": false,
+    "representative_russian_no_vpn_evidence_required": true,
+    "undocumented_provider_domain_api_allowed": false,
+    "controller": "scripts/timeweb_public_ingress_acceptance.py",
+    "workflow": ".github/workflows/v10-timeweb-public-ingress-acceptance.yml",
+    "runbook": "docs/operations/V10_TIMEWEB_PUBLIC_INGRESS_ACCEPTANCE_RUNBOOK.md",
+    "operations": [
+      "observe",
+      "accept"
+    ],
+    "provider_api_mode": "READ_ONLY",
+    "provider_domain_mutation_by_controller_allowed": false,
+    "owner_panel_domain_attachment_when_no_documented_api": true,
+    "automatic_lets_encrypt_expected": true,
+    "public_https_probe_required": true,
+    "exact_release_sha_required": true,
+    "database_readiness_required": true,
+    "security_headers_required": true,
+    "retired_edge_headers_forbidden": true,
+    "p3_recovery_evidence_digest_required": true,
+    "russian_no_vpn_evidence_digest_required": true,
+    "rollback_release_sha_required": true,
+    "rollback_evidence_digest_required": true,
+    "public_activation_must_remain_false": true
+  },
+  "telegram": {
+    "provider": "TELEGRAM",
+    "oidc_authorization_code_pkce_required": true,
+    "allowed_scope": [
+      "openid"
+    ],
+    "bot_access_scope_allowed": false,
+    "public_multi_user_flag": "PUBLIC_MULTI_USER_ENABLED",
+    "provider_activation_flag": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+    "flags_must_transition_together": true,
+    "current_public_multi_user_enabled": false,
+    "current_telegram_login_enabled": false,
+    "provider_credential_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+    "real_login_account_tenant_session_proof_required": true,
+    "cross_tenant_negative_required": true,
+    "activation_contract": "docs/architecture/V10_TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION_CONTRACT.json",
+    "activation_controller": "scripts/timeweb_telegram_public_activation.py",
+    "activation_workflow": ".github/workflows/v10-timeweb-telegram-public-activation.yml",
+    "activation_runbook": "docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md",
+    "identity_binding_fingerprint_env": "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+    "identity_binding_fingerprint_algorithm": "SHA-256",
+    "identity_binding_fingerprint_match_required": true,
+    "silent_identity_binding_key_rotation_allowed": false,
+    "identity_binding_rekey_requires_reviewed_migration": true,
+    "horizontal_app_scaling_without_distributed_abuse_control_allowed": false
+  },
+  "external_action_gates": {
+    "app_creation_or_paid_capacity": "OWNER_OR_PROVIDER_CONFIRMATION_REQUIRED",
+    "immutable_network_selection": "OWNER_OR_PROVIDER_CONFIRMATION_REQUIRED",
+    "production_database_cutover": "INDEPENDENT_ACCEPTANCE_REQUIRED",
+    "dns_tls_cutover": "INDEPENDENT_ACCEPTANCE_REQUIRED",
+    "telegram_registration_and_credentials": "OWNER_SECRET_PROVIDER_ACTION_REQUIRED",
+    "legal_privacy_regulatory": "OWNER_LEGAL_ACTION_REQUIRED",
+    "public_activation": "CAPABILITY_ACCEPTANCE_REQUIRED",
+    "destructive_decommission": "POST_ACCEPTANCE_ONLY"
+  },
+  "branch_milestones": [
+    {
+      "id": "P1_SOURCE_RUNTIME_CONVERGENCE",
+      "state": "CERTIFIED_GREEN_SOURCE_BASE"
+    },
+    {
+      "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
+      "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
+    },
+    {
+      "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
+      "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
+    },
+    {
+      "id": "P4_OMNICIO_RU_DNS_TLS",
+      "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
+    },
+    {
+      "id": "P5_TELEGRAM_PUBLIC_ACTIVATION",
+      "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
+    },
+    {
+      "id": "P5_5_TIMEWEB_WORKTREE_CONVERGENCE",
+      "state": "IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED"
+    },
+    {
+      "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
+      "state": "SOURCE_IMPLEMENTATION_COMPLETE_POST_MERGE_EXECUTION_REQUIRED"
+    }
+  ],
+  "protected_invariants": {
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "transfer_withdrawal": false,
+    "margin_leverage": false,
+    "uncovered_short": false,
+    "browser_tenant_selection": false,
+    "web_visual_started": false,
+    "wp23_unlocked": false,
+    "merge_without_exact_head_confirmation": false
+  },
+  "post_merge_acceptance": {
+    "contract": "docs/architecture/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_CONTRACT.json",
+    "controller": "scripts/timeweb_production_acceptance.py",
+    "guard": "scripts/check_v10_timeweb_post_merge_production_acceptance.py",
+    "workflow": ".github/workflows/v10-timeweb-post-merge-production-acceptance.yml",
+    "runbook": "docs/operations/V10_TIMEWEB_POST_MERGE_PRODUCTION_ACCEPTANCE_RUNBOOK.md",
+    "exact_main_required": true,
+    "public_probe_only": true,
+    "provider_mutation_allowed": false,
+    "secret_access_allowed": false,
+    "acceptance_seal_algorithm": "SHA-256",
+    "rollback_evidence_required": true
+  },
+  "merge_readiness": {
+    "repository_implementation_complete": true,
+    "exact_head_ci_required": true,
+    "unresolved_blocking_threads_required_zero": true,
+    "squash_merge_required": true,
+    "post_merge_acceptance_required": true,
+    "production_accepted_before_merge": false
+  }
+}

@@ -11,7 +11,7 @@ RU-PG-B proves that a real Timeweb Cloud Managed PostgreSQL 18 cluster in Moscow
 
 This stage is synthetic only. It must not receive real personal data, Telegram identities, real sessions, real portfolio data, broker credentials or production secrets.
 
-Reuse rule: RU-PG-B does not implement a second PostgreSQL stack. It imports the already accepted Neon/Cloudflare PostgreSQL runtime primitives for SQL rendering, runtime-role convergence, runtime verification and bounded connection retry. The Timeweb-specific boundary supplies only the target DSN/provider evidence. Synthetic proof uses the existing Cloudflare staging runtime role `omni_cio_cloudflare_staging`; the production role is not mutated in RU-PG-B.
+Reuse rule: RU-PG-B does not implement a second PostgreSQL stack. Under the current TW-B source consolidation, SQL rendering, runtime-role convergence and runtime verification are provided by provider-neutral PostgreSQL primitives, while bounded connection retry comes from the provider-neutral runtime transport helper. The Timeweb-specific boundary supplies only the target DSN/provider evidence. Synthetic proof uses the dedicated non-production role `omni_cio_timeweb_synthetic`; production runtime authority is not mutated by this proof.
 
 Official Timeweb facts revalidated on 2026-09-19:
 
@@ -84,8 +84,8 @@ The harness fails closed unless all of these pass:
 6. bootstrap identity is distinct from `omni_cio_hosted_api`;
 7. current migrations apply, then a second migration pass is a no-op with identical exact state;
 8. a temporary synthetic schema proves `ALTER DEFAULT PRIVILEGES` grants future-table SELECT to the runtime role and is cleaned up;
-9. the accepted Neon/Cloudflare runtime-role convergence path creates or safely rotates `omni_cio_cloudflare_staging`;
-10. that staging runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
+9. the provider-neutral runtime-role convergence path creates or safely rotates `omni_cio_timeweb_synthetic`;
+10. that synthetic runtime role remains LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS;
 11. runtime role inherits from no broader role;
 12. the accepted hosted runtime ACL SQL is reused unchanged;
 13. broker tenant relations are ENABLE + FORCE ROW LEVEL SECURITY;
@@ -121,4 +121,4 @@ Required real evidence:
 - exact-head CI/Sonar/review is GREEN;
 - merge + exact-new-main Regression Shield/Governance are GREEN.
 
-Only then may RU-PG-C Cloudflare TLS/runtime + recovery parity begin.
+This historical RU-PG-B exit gate no longer opens a Cloudflare stage. Under Amendment 18, the next database cutover authority remains the integrated Timeweb TW-D gate, which stays blocked until TW-B and TW-C are accepted.

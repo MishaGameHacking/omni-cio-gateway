@@ -363,6 +363,67 @@ Locks the 2026-09-21 OWNER final simplification direction:
 
 Amendment 18 supersedes Amendments 14/15 only for current/future provider selection and release target. Their accepted Cloudflare evidence remains historical. It also narrows human product login from Telegram/VK to Telegram only. It does not activate users, mutate providers or authorize Real money.
 
+### 19. Timeweb No-OWNER-Laptop Manual Dependency
+
+`OMNI_CIO_V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_CONTRACT.json`;
+- `../../scripts/check_v10_timeweb_no_owner_laptop_dependency.py`;
+- `../../tests/test_v10_timeweb_no_owner_laptop_dependency.py`;
+- `.github/workflows/v10-wp17-owner-read-vault-audit.yml`;
+- `.github/workflows/v10-wp17-local-read-vault-historical-audit.yml`.
+
+Locks the 2026-09-23 OWNER direction that Timeweb consolidation must not require manual Administrator-shell work on the OWNER laptop merely to advance a PR. The Windows WP17 READ-vault/ACL evidence remains historical/local-only. Current Timeweb source must not depend on that vault, live broker credential mutation remains fail-closed until hosted tenant secret custody is accepted, and the required WP17 check becomes a deterministic hosted source-security audit rather than a machine-local ACL proof. This amendment does not activate public users, broker write, Real money, WEB-VISUAL or WP23+.
+
+### 20. V9-to-V10 Convergence and Legacy Working-Tree Retirement
+
+`OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_V9_TO_V10_CONVERGENCE_CONTRACT.json`;
+- `../../scripts/check_v10_v9_to_v10_convergence.py`;
+- `../../tests/test_v10_v9_to_v10_convergence.py`;
+- `.github/workflows/v10-engineering-governance.yml`;
+- `../updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md`.
+
+Locks the 2026-09-24 OWNER direction that accepted V9 behavior is migrated into the
+single forward V10/Timeweb runtime inside PR #584. The accepted V9 target is already in
+the main lineage, so stale `v9/*` branches are not merged. Remaining useful
+root-level source is reused/extracted into canonical V10 packages before obsolete
+working-tree paths are deleted; Git history remains the archive. The protected V9
+`app:app` compatibility/recovery chain is retained until separate accepted
+decommission authority, while the supported V10 runtime is forbidden from depending
+on it. The internal sequence is V9C-A through V9C-F, and PR #584 still requires the
+normal exact-head OWNER landing confirmation before merge to `main`. Amendment 21
+supersedes Amendment 20 only by allowing later Timeweb production-delivery controls
+to be implemented in the same branch; external provider/database/DNS/public-activation
+gates remain fail-closed. Neither amendment authorizes broker write/Real money,
+WEB-VISUAL or WP23+.
+
+### 21. Timeweb Full Production Delivery in PR #584
+
+`OMNI_CIO_V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json`;
+- `../../scripts/check_v10_timeweb_full_production_delivery.py`;
+- `../../tests/test_v10_timeweb_full_production_delivery.py`;
+- `../updates/TIMEWEB_PLATFORM_CONSOLIDATION_EXECUTION_LEDGER.md`.
+
+Records the 2026-09-24 OWNER decision to implement the complete repository-side
+production-delivery chain in the existing PR #584 instead of creating competing source
+branches. The branch may implement source/runtime convergence, exact-SHA Timeweb App
+Platform release control, PostgreSQL 18 production-cutover/recovery control,
+`omnicio.ru` DNS/TLS acceptance, Telegram-only public activation control and
+post-merge production acceptance. Provider/payment/network, production DB, DNS/TLS,
+secret, legal/privacy, public-activation, destructive-decommission and merge boundaries
+remain independently fail-closed and require their owning evidence. This amendment
+does not authorize broker write, Real money, WEB-VISUAL or WP23+.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -376,7 +437,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13/14/15/16/17/18 for current product/public-hosting/delivery/activation/platform/engineering/data-residency/Russia-ingress semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14/15/16/17/18/19/20/21 for current product/public-hosting/delivery/activation/platform/engineering/data-residency/Russia-ingress/convergence/production-delivery semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;

@@ -179,9 +179,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         )
         self.assertTrue(context.check_hostname)
         self.assertEqual(context.verify_mode, provisioner.ssl.CERT_REQUIRED)
-        context.load_verify_locations.assert_called_once_with(
-            cafile="provider-ca.crt"
-        )
+        context.load_verify_locations.assert_called_once_with(cafile="provider-ca.crt")
 
     def test_multiple_firewall_groups_are_rejected(self) -> None:
         api = mock.Mock()
@@ -683,20 +681,22 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "code=TIMEWEB_FIREWALL_RESOURCE_LINK_REJECTED http_status=400",
         )
 
-    def test_discoverer_requires_two_equal_samples_and_masks_value(self) -> None:
+    def test_discoverer_validates_explicit_cidr_and_masks_value(self) -> None:
         with tempfile.NamedTemporaryFile(delete=False) as handle:
             env_path = handle.name
         self.addCleanup(lambda: Path(env_path).unlink(missing_ok=True))
         with (
-            mock.patch.dict(os.environ, {"GITHUB_ENV": env_path}, clear=True),
-            mock.patch.object(
-                discoverer,
-                "_fetch_public_ipv4",
-                side_effect=["8.8.8.8", "8.8.8.8"],
+            mock.patch.dict(
+                os.environ,
+                {
+                    "GITHUB_ENV": env_path,
+                    discoverer.CIDR_ENV: "8.8.8.8/32",
+                },
+                clear=True,
             ),
             mock.patch("builtins.print") as output,
         ):
-            cidr = discoverer.discover(sleeper=lambda _seconds: None)
+            cidr = discoverer.discover()
         self.assertEqual(cidr, "8.8.8.8/32")
         self.assertEqual(
             Path(env_path).read_text(encoding="utf-8"),
@@ -704,28 +704,30 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         )
         rendered = " ".join(str(call) for call in output.call_args_list)
         self.assertIn("::add-mask::8.8.8.8", rendered)
+        self.assertIn("::add-mask::8.8.8.8/32", rendered)
         self.assertIn(
             "RU_PG_VERIFIER_EGRESS=READY source=/32",
             rendered,
         )
 
-    def test_discoverer_rejects_unstable_egress(self) -> None:
-        with tempfile.NamedTemporaryFile(delete=False) as handle:
-            env_path = handle.name
-        self.addCleanup(lambda: Path(env_path).unlink(missing_ok=True))
-        with (
-            mock.patch.dict(os.environ, {"GITHUB_ENV": env_path}, clear=True),
-            mock.patch.object(
-                discoverer,
-                "_fetch_public_ipv4",
-                side_effect=["8.8.8.8", "1.1.1.1"],
-            ),
+    def test_discoverer_rejects_missing_non_global_or_non_32_input(self) -> None:
+        for env, reason in (
+            ({}, "RU_PG_VERIFIER_CIDR_REQUIRED"),
+            ({discoverer.CIDR_ENV: "203.0.113.7/32"}, "RU_PG_VERIFIER_CIDR_INVALID"),
+            ({discoverer.CIDR_ENV: "8.8.8.0/24"}, "RU_PG_VERIFIER_CIDR_INVALID"),
+            ({discoverer.CIDR_ENV: "8.8.8.8"}, "RU_PG_VERIFIER_CIDR_INVALID"),
         ):
-            with self.assertRaisesRegex(
-                discoverer.EgressStopped,
-                "RU_PG_VERIFIER_EGRESS_NOT_STABLE",
-            ):
-                discoverer.discover(sleeper=lambda _seconds: None)
+            with self.subTest(env=env, reason=reason):
+                with mock.patch.dict(os.environ, env, clear=True):
+                    with self.assertRaisesRegex(discoverer.EgressStopped, reason):
+                        discoverer.discover()
+
+    def test_discoverer_has_no_retired_provider_network_dependency(self) -> None:
+        source = Path(discoverer.__file__).read_text(encoding="utf-8").casefold()
+        self.assertNotIn("cloudflare.com", source)
+        self.assertNotIn("urllib.request", source)
+        self.assertNotIn("http://", source)
+        self.assertNotIn("https://", source)
 
     def test_contract_does_not_record_full_base_sha_literal(self) -> None:
         source = Path(guard.CONTRACT).read_text(encoding="utf-8")

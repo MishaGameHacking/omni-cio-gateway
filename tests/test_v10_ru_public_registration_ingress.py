@@ -18,11 +18,20 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
+WP17_RUNBOOK = ROOT / "docs/operations/V10_WP17_APPLICATION_SHELL_RUNBOOK.md"
+IDENTITY_SECURITY_NOTES = (
+    ROOT / "docs/operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md"
+)
+WP15_LIVE_RUNBOOK = ROOT / "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+SECURITY_BOUNDARIES = ROOT / "docs/architecture/V10_SECURITY_BOUNDARIES.md"
 WP22A_EXECUTION_CONTRACT = ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
 WP22A_SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
 WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
 WP22A_CLIENTLESS_WORKFLOW = (
     ROOT / ".github/workflows/v10-wp22a-clientless-access-audit.yml"
+)
+TIMEWEB_CONVERGENCE_WORKFLOW = (
+    ROOT / ".github/workflows/v10-timeweb-worktree-convergence-audit.yml"
 )
 WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW = (
     ROOT / ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
@@ -52,6 +61,15 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             completed.stdout,
         )
 
+    def test_document_guard_does_not_require_transient_checkpoint_state(self) -> None:
+        source = GUARD.read_text(encoding="utf-8")
+        document_guard = source.split("def _validate_documents()", 1)[1].split(
+            "def main()", 1
+        )[0]
+        self.assertNotIn('"RED_REPAIR_ONLY"', document_guard)
+        self.assertIn('"TW-A / INVENTORY_AND_AUTHORITY"', document_guard)
+        self.assertIn('"PR #583"', document_guard)
+
     def test_active_service_set_is_exact(self) -> None:
         payload = _contract()
         self.assertEqual(
@@ -62,6 +80,44 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             payload["retired_active_services"],
             ["Cloudflare", "Neon", "Render", "Cloud.ru", "VK ID"],
         )
+
+    def test_current_security_guidance_is_telegram_only(self) -> None:
+        wp17 = WP17_RUNBOOK.read_text(encoding="utf-8")
+        identity = IDENTITY_SECURITY_NOTES.read_text(encoding="utf-8")
+        wp15 = WP15_LIVE_RUNBOOK.read_text(encoding="utf-8")
+        boundaries = SECURITY_BOUNDARIES.read_text(encoding="utf-8")
+
+        self.assertIn("CURRENT-AUTHORITY OVERRIDE", wp17)
+        self.assertIn(
+            "Current ordinary product login is exactly **Telegram Login**",
+            wp17,
+        )
+        self.assertIn(
+            "No OWNER laptop command is required to certify TW-B source/runtime work.",
+            wp17,
+        )
+        self.assertNotIn("still an exact-head acceptance boundary", wp17)
+        self.assertIn(
+            "Ordinary human product login provider: Telegram Login only",
+            identity,
+        )
+        self.assertIn(
+            "current/future ordinary product login is Telegram Login only",
+            wp15,
+        )
+        self.assertIn(
+            "Timeweb managed ingress is the selected current public-production boundary",
+            boundaries,
+        )
+        for source in (wp17, identity, wp15, boundaries):
+            self.assertNotIn(
+                "ordinary product login remains Telegram/VK ID",
+                source,
+            )
+            self.assertNotIn(
+                "Telegram/VK -> internal Omni-CIO account",
+                source,
+            )
 
     def test_timeweb_is_only_production_platform_and_pg18(self) -> None:
         payload = _contract()
@@ -235,20 +291,14 @@ class TimewebPlatformConsolidationTests(unittest.TestCase):
             ],
         )
 
-    def test_active_ci_does_not_execute_retired_provider_tooling(self) -> None:
-        workflow = WP22A_CLIENTLESS_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn(
-            "Verify dormant clientless source contract without provider execution",
-            workflow,
-        )
-        self.assertNotIn(
-            "Validate Cloudflare IaC with pinned OpenTofu and provider mirror",
-            workflow,
-        )
-        self.assertNotIn(
-            "-File scripts\\validate_wp22a_terraform.ps1",
-            workflow,
-        )
+    def test_retired_clientless_provider_workflow_is_replaced(self) -> None:
+        self.assertFalse(WP22A_CLIENTLESS_WORKFLOW.exists())
+        workflow = TIMEWEB_CONVERGENCE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("name: V10 Timeweb Worktree Convergence Audit", workflow)
+        self.assertIn("check_v10_timeweb_worktree_convergence", workflow)
+        self.assertIn("WP22A clientless external-access gate", workflow)
+        self.assertNotIn("validate_wp22a_terraform.ps1", workflow)
+        self.assertNotIn("external_access_v1.py", workflow)
 
     def test_historical_phase4_render_probe_is_not_active_ci(self) -> None:
         workflow = WP22A_PHASE4_PUBLIC_ACCEPTANCE_WORKFLOW.read_text(encoding="utf-8")

@@ -19,7 +19,11 @@
     "historical_redirect_uri_attested": true,
     "timeweb_canonical_origin_reconfirmation_required": true,
     "timeweb_canonical_origin_reconfirmation_accepted": false,
-    "provider_secret_values_recorded": false
+    "provider_secret_values_recorded": false,
+    "login_uses_telegram_user_account": true,
+    "login_requires_bot_chat": false,
+    "login_requires_bot_start": false,
+    "botfather_registration_is_oidc_client_metadata_only": true
   },
   "provider_secret_readiness": {
     "accepted": false,
@@ -42,7 +46,8 @@
     "raw_oauth_state_persisted": false,
     "raw_browser_proof_persisted": false,
     "provider_auth_transaction_max_minutes": 15,
-    "session_authority": "SERVER_SIDE_OPAQUE_TOKEN_SHA256"
+    "session_authority": "SERVER_SIDE_OPAQUE_TOKEN_SHA256",
+    "bot_access_scope_requested": false
   },
   "capacity_and_abuse": {
     "window_seconds": 60,
@@ -57,7 +62,13 @@
     "retry_after_seconds": 1,
     "timeweb_runtime_capacity_accepted": false,
     "automatic_capacity_expansion_authorized": false,
-    "real_user_capacity_claim": false
+    "real_user_capacity_claim": false,
+    "bounded_postgres_pool_required": true,
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5,
+    "session_lookup_off_event_loop_required": true,
+    "horizontal_app_scaling_requires_distributed_abuse_control": true,
+    "current_horizontal_app_scaling_allowed": false
   },
   "operations": {
     "current_timeweb_release_accepted": false,
@@ -109,5 +120,31 @@
     "REAL_TRADING_ENABLED": false,
     "broker_write": false,
     "gateway_entrypoint": "app:app"
+  },
+  "identity_and_bot_separation": {
+    "login_capability": "TELEGRAM_USER_ACCOUNT_OIDC",
+    "product_bot_capability": "OPTIONAL_POST_AUTH_ACCOUNT_LINK",
+    "login_creates_or_resolves_omni_account": true,
+    "bot_link_requires_existing_authenticated_omni_account": true,
+    "bot_link_requires_existing_server_side_session": true,
+    "bot_link_can_create_omni_account": false,
+    "bot_link_can_mint_or_select_tenant": false,
+    "bot_chat_required_for_login": false,
+    "bot_start_required_for_login": false,
+    "telegram_bot_access_scope_requested_during_login": false,
+    "bot_linking_implementation_owner": "WP23_PLUS_SEPARATE_CAPABILITY"
+  },
+  "activation_switch": {
+    "current_public_multi_user_enabled": false,
+    "current_telegram_login_enabled": false,
+    "target_after_tw_f_acceptance": {
+      "PUBLIC_MULTI_USER_ENABLED": true,
+      "OMNI_V10_TELEGRAM_LOGIN_ENABLED": true
+    },
+    "must_transition_together": true,
+    "partial_activation_allowed": false,
+    "runtime_source": "apps/api/telegram_auth.py",
+    "runtime_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+    "source_hardcoded_true_allowed": false
   }
 }

@@ -21,6 +21,12 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 GPT_NEW_CHAT = ROOT / "gpt/NEW_CHAT_PROMPT.md"
 GPT_PROJECT = ROOT / "gpt/PROJECT_INSTRUCTIONS.md"
 DATA_INVENTORY = ROOT / "docs/legal/V10_TELEGRAM_PUBLIC_USER_DATA_INVENTORY.md"
+WP17_RUNBOOK = ROOT / "docs/operations/V10_WP17_APPLICATION_SHELL_RUNBOOK.md"
+IDENTITY_SECURITY_NOTES = (
+    ROOT / "docs/operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md"
+)
+WP15_LIVE_RUNBOOK = ROOT / "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+SECURITY_BOUNDARIES = ROOT / "docs/architecture/V10_SECURITY_BOUNDARIES.md"
 WP22A_EXECUTION_CONTRACT = ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md"
 WP22A_SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
 WP22A_IAC_DECISION = ROOT / "docs/architecture/V10_WP22A_IAC_TOOLCHAIN_DECISION.md"
@@ -557,7 +563,7 @@ def _validate_active_workflow_graph() -> None:
         )
 
 
-def _validate_current_guidance() -> None:
+def _validate_historical_guidance() -> None:
     for historical_path in (
         WP22A_EXECUTION_CONTRACT,
         WP22A_SERVICE_SELECTION,
@@ -569,6 +575,8 @@ def _validate_current_guidance() -> None:
             "TIMEWEB_CONSOLIDATION_STALE_WP22A_PROVIDER_GUIDANCE",
         )
 
+
+def _validate_status_and_release_guidance() -> None:
     status = _read(STATUS)
     for marker in STALE_CURRENT_AUTHORITY_MARKERS:
         _require(
@@ -588,12 +596,13 @@ def _validate_current_guidance() -> None:
     )
 
     for path in (MASTER_CONTEXT, AGENTS, CONTRIBUTING):
-        source = _read(path)
         _require(
-            CURRENT_RELEASE_MARKER in source,
+            CURRENT_RELEASE_MARKER in _read(path),
             "TIMEWEB_CONSOLIDATION_RELEASE_GUIDANCE_DRIFT",
         )
 
+
+def _validate_retired_provider_guidance() -> None:
     for path in (README, MASTER_CONTEXT, AGENTS, CONTRIBUTING):
         source = _read(path)
         for marker in STALE_PROVIDER_GUIDANCE_MARKERS:
@@ -614,6 +623,53 @@ def _validate_current_guidance() -> None:
                 "TIMEWEB_CONSOLIDATION_RECOVERY_GUIDANCE_DRIFT",
             )
 
+
+def _validate_current_security_guidance() -> None:
+    guidance = {
+        WP17_RUNBOOK: (
+            "CURRENT-AUTHORITY OVERRIDE",
+            "Current ordinary product login is exactly **Telegram Login**",
+            "No OWNER laptop command is required to certify TW-B source/runtime work.",
+        ),
+        IDENTITY_SECURITY_NOTES: (
+            "Ordinary human product login provider: Telegram Login only",
+            "VK ID is retired from current/future deployed composition",
+        ),
+        WP15_LIVE_RUNBOOK: (
+            "current/future ordinary product login is Telegram Login only",
+            "VK ID is retired",
+        ),
+        SECURITY_BOUNDARIES: (
+            "AMENDMENT 18 TIMEWEB + TELEGRAM AUTHORITY",
+            "Telegram Login -> verified identity -> internal Omni-CIO account",
+            "Timeweb managed ingress is the selected current public-production boundary",
+        ),
+    }
+    stale_markers = (
+        "Ordinary login providers: Telegram and VK ID only.",
+        "ordinary product login remains Telegram/VK ID",
+        "Telegram/VK -> internal Omni-CIO account",
+        "Cloudflare may be edge/origin-protection infrastructure.",
+    )
+    for guidance_path, required_markers in guidance.items():
+        source = _read(guidance_path)
+        for marker in required_markers:
+            _require(
+                marker in source,
+                "TIMEWEB_CONSOLIDATION_CURRENT_SECURITY_GUIDANCE_DRIFT",
+            )
+        for marker in stale_markers:
+            _require(
+                marker not in source,
+                "TIMEWEB_CONSOLIDATION_CURRENT_SECURITY_GUIDANCE_DRIFT",
+            )
+
+
+def _validate_current_guidance() -> None:
+    _validate_historical_guidance()
+    _validate_status_and_release_guidance()
+    _validate_retired_provider_guidance()
+
     inventory = _read(DATA_INVENTORY)
     _require(
         "Exact accepted-main/current-next authority is always resolved from GitHub"
@@ -624,6 +680,7 @@ def _validate_current_guidance() -> None:
         "current accepted source behavior on exact base" not in inventory,
         "TIMEWEB_CONSOLIDATION_DATA_INVENTORY_AUTHORITY_DRIFT",
     )
+    _validate_current_security_guidance()
 
 
 def _validate_documents() -> None:
@@ -635,9 +692,8 @@ def _validate_documents() -> None:
         "system/timeweb-platform-consolidation",
         "TW-A-CI-AUTHORITY-GRAPH-REPAIR",
         "PR #582",
-        "TW-A-PROVIDER-CONSUMER-INVENTORY",
+        "TW-A / INVENTORY_AND_AUTHORITY",
         "PR #583",
-        "RED_REPAIR_ONLY",
         "PUBLIC_MULTI_USER_ENABLED=false",
         "trading_methods=false",
         "REAL_TRADING_ENABLED=false",

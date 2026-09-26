@@ -135,8 +135,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PUBLIC_IPV4_VERIFIER_INVALID",
     )
     expected_verifier = {
-        "discovery_url": "https://cloudflare.com/cdn-cgi/trace",
-        "two_sample_consensus_required": True,
+        "source": "GITHUB_WORKFLOW_DISPATCH_INPUT",
+        "input_name": "verifier_cidr",
+        "external_discovery_allowed": False,
+        "exact_ipv4_32_required": True,
         "ipv4_global_unicast_required": True,
         "source_prefix_length": 32,
         "value_may_be_logged": False,
@@ -387,7 +389,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _require(
         invariants.get("current_neon_production_authority_preserved"),
-        True,
+        False,
         "TIMEWEB_PUBLIC_IPV4_INVARIANTS_INVALID",
     )
     _require(
@@ -509,16 +511,26 @@ def _validate_sources() -> None:
     _markers(
         discoverer,
         (
-            'TRACE_URL = "https://cloudflare.com/cdn-cgi/trace"',
             'CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"',
-            "address.is_global",
-            'cidr = f"{first}/32"',
+            "def _required_verifier_cidr() -> str:",
+            "ipaddress.ip_network(raw, strict=True)",
+            "network.prefixlen != 32",
+            "raw != str(network)",
+            "network.network_address.is_global",
             "::add-mask::",
             "RU_PG_VERIFIER_EGRESS=READY source=/32",
         ),
         "TIMEWEB_PUBLIC_IPV4_DISCOVERER_DRIFT",
     )
-    if "print(cidr)" in discoverer or "print(first)" in discoverer:
+    for retired_endpoint in (
+        "cloudflare.com/cdn-cgi/trace",
+        "TRACE_URL",
+        "urllib.request",
+        "_NO_REDIRECT_OPENER",
+    ):
+        if retired_endpoint in discoverer:
+            raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RETIRED_DISCOVERY_FORBIDDEN")
+    if "print(cidr)" in discoverer or "print(address)" in discoverer:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_VERIFIER_LOGGING_FORBIDDEN")
 
     _markers(
@@ -586,12 +598,14 @@ def _validate_sources() -> None:
         (
             "workflow_dispatch:",
             _CONFIRMATION,
+            "verifier_cidr:",
             "allocation_plan_id:",
             "actions: read",
             "contents: read",
             "if: github.ref == 'refs/heads/main'",
             "environment: timeweb-synthetic",
             _PUBLIC_IPV4_GUARD_MODULE,
+            "OMNI_V10_RU_PG_VERIFIER_CIDR: ${{ inputs.verifier_cidr }}",
             "python -m scripts.discover_v10_ru_pg_verifier_ipv4",
             "python -m scripts.provision_v10_timeweb_postgres_public_ipv4_tls",
             "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",

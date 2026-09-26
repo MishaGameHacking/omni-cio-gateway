@@ -26,6 +26,7 @@ TELEGRAM_OIDC_ISSUER = "https://oauth.telegram.org"
 TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/auth"
 TELEGRAM_OIDC_TOKEN_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/token"
 TELEGRAM_OIDC_JWKS_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/.well-known/jwks.json"
+TELEGRAM_OIDC_LOGIN_SCOPE = "openid"
 
 _JSON_MEDIA_TYPE = "application/json"
 _MAX_TOKEN_RESPONSE_BYTES = 32_768
@@ -500,7 +501,7 @@ class TelegramIdTokenVerifierV1:
 
 
 class TelegramOidcRuntimeV1:
-    """Dormant Telegram Authorization Code + PKCE adapter for WP22A Phase 5."""
+    """Telegram-only Authorization Code + PKCE adapter for the hosted V10 runtime."""
 
     def __init__(
         self,
@@ -536,7 +537,7 @@ class TelegramOidcRuntimeV1:
                 "client_id": self._config.client_id,
                 "redirect_uri": transaction.redirect_uri,
                 "response_type": "code",
-                "scope": "openid",
+                "scope": TELEGRAM_OIDC_LOGIN_SCOPE,
                 "state": transaction.state,
                 "code_challenge": transaction.code_challenge,
                 "code_challenge_method": "S256",

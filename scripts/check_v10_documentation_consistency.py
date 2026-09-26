@@ -49,6 +49,15 @@ LIVE_GUIDANCE = (
 STATUS_REFERENCE = "17_V10_CURRENT_PROGRAM_STATUS.md"
 CANONICAL_STATUS_RELATIVE = Path("knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
 
+TRANSIENT_CHECKPOINT_LABEL = re.compile(
+    r"(?:\bcurrent\b|текущ\w*)[^\n]{0,80}"
+    r"(?:checkpoint|internal member|member milestone|convergence mode)",
+    re.IGNORECASE,
+)
+TRANSIENT_CHECKPOINT_TOKEN = re.compile(
+    r"\b(?:P(?:5\.5|[0-6])|V9C-[A-F])\b",
+    re.IGNORECASE,
+)
 STALE_LIVE_MARKERS = (
     "WP3 COMPLETE / WP4 NEXT",
     "Overall accepted V10 progress remains **5%**",
@@ -178,6 +187,21 @@ def _validate_live_guidance_delegation(failures: list[str]) -> None:
                 )
 
 
+def _validate_transient_checkpoint_delegation(failures: list[str]) -> None:
+    for path in LIVE_GUIDANCE:
+        text = read_text(path, failures)
+        if not text:
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if TRANSIENT_CHECKPOINT_LABEL.search(
+                line
+            ) and TRANSIENT_CHECKPOINT_TOKEN.search(line):
+                failures.append(
+                    "live guidance freezes transient branch checkpoint: "
+                    f"{path.relative_to(ROOT)}:{line_number}"
+                )
+
+
 def _validate_readme_snapshot(
     progress: str,
     package: str,
@@ -238,6 +262,7 @@ def _validate_master_context_snapshot(
 
 def validate_live_guidance(progress: str, package: str, failures: list[str]) -> None:
     _validate_live_guidance_delegation(failures)
+    _validate_transient_checkpoint_delegation(failures)
     _validate_readme_snapshot(progress, package, failures)
     _validate_agents_snapshot(progress, package, failures)
     _validate_master_context_snapshot(progress, package, failures)

@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-import broker_report_reconciliation as broker
+import omni_cio.reconciliation as broker
 
 
 class FakeBase:
@@ -64,8 +64,7 @@ class FakeBase:
             return value.isoformat()
         if isinstance(value, dict):
             return {
-                str(key): FakeBase.json_safe_value(item)
-                for key, item in value.items()
+                str(key): FakeBase.json_safe_value(item) for key, item in value.items()
             }
         if isinstance(value, (list, tuple, set)):
             return [FakeBase.json_safe_value(item) for item in value]

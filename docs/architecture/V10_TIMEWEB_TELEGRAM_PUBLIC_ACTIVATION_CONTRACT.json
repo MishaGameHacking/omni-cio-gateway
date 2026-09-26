@@ -1,0 +1,130 @@
+{
+  "schema": "omni-cio.v10.timeweb-telegram-public-activation.v1",
+  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+  "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+  "owning_pr": 584,
+  "milestone": "P5_TELEGRAM_PUBLIC_ACTIVATION",
+  "canonical_origin": "https://omnicio.ru",
+  "canonical_redirect_uri": "https://omnicio.ru/api/v10/web/auth/telegram/callback",
+  "source_authority": {
+    "repository": "MishaGameHacking/omni-cio-gateway",
+    "branch": "main",
+    "exact_main_sha_required": true,
+    "accepted_main_sha_must_equal_observed_main": true
+  },
+  "activation": {
+    "public_multi_user_flag": "PUBLIC_MULTI_USER_ENABLED",
+    "telegram_login_flag": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+    "vk_login_flag": "OMNI_V10_VK_ID_LOGIN_ENABLED",
+    "preactivation_public_multi_user": false,
+    "preactivation_telegram_login": false,
+    "accepted_public_multi_user": true,
+    "accepted_telegram_login": true,
+    "vk_login_must_remain_false": true,
+    "pair_transition_required": true,
+    "provider_side_mutation_by_controller_allowed": false,
+    "source_hardcoded_true_allowed": false
+  },
+  "runtime_credentials": {
+    "required_names": [
+      "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
+      "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET",
+      "OMNI_V10_IDENTITY_BINDING_KEY_HEX",
+      "OMNI_V10_CSRF_BINDING_KEY_HEX"
+    ],
+    "values_in_repository_allowed": false,
+    "sanitized_runtime_probe_required": true,
+    "preactivation_success_signal": "telegram disabled reason PUBLIC_MULTI_USER_DISABLED",
+    "live_success_signal": "telegram enabled true"
+  },
+  "operations": [
+    "observe",
+    "ready",
+    "accept"
+  ],
+  "readiness_evidence_seal_required": true,
+  "provider_api_required": false,
+  "public_runtime_probes": [
+    "/livez",
+    "/healthz",
+    "/api/v10/web/auth/providers"
+  ],
+  "ready_prerequisites": {
+    "p3_acceptance_evidence_sha256_required": true,
+    "p4_acceptance_evidence_sha256_required": true,
+    "external_readiness_evidence_sha256_required": true,
+    "rollback_release_sha_required": true,
+    "rollback_evidence_sha256_required": true,
+    "external_readiness_bundle_must_cover": [
+      "telegram_allowed_origin_and_redirect_registration",
+      "timeweb_runtime_credential_custody",
+      "identity_binding_key_fingerprint_continuity",
+      "legal_privacy_and_regulatory_acceptance",
+      "capacity_monitoring_and_incident_readiness",
+      "public_privacy_policy_and_data_subject_request_channel"
+    ]
+  },
+  "accept_prerequisites": {
+    "readiness_sha256_required": true,
+    "live_acceptance_evidence_sha256_required": true,
+    "live_acceptance_bundle_must_cover": [
+      "real_telegram_login_callback_account_tenant_session",
+      "logout_revoke_and_relogin",
+      "provider_availability_and_fail_closed_error_state",
+      "user_a_user_b_cross_tenant_negative"
+    ]
+  },
+  "workflow": ".github/workflows/v10-timeweb-telegram-public-activation.yml",
+  "controller": "scripts/timeweb_telegram_public_activation.py",
+  "guard": "scripts/check_v10_timeweb_telegram_public_activation.py",
+  "runbook": "docs/operations/V10_TELEGRAM_LOGIN_PRODUCTION_ACTIVATION_RUNBOOK.md",
+  "success": {
+    "ready_marker": "TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION=READY_TO_ACTIVATE",
+    "accepted_marker": "TIMEWEB_TELEGRAM_PUBLIC_ACTIVATION=LIVE_OPERABLE",
+    "repository_implementation_does_not_equal_external_acceptance": true
+  },
+  "protected_invariants": {
+    "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "transfer_withdrawal": false,
+    "margin_leverage": false,
+    "uncovered_short": false,
+    "web_visual_started": false,
+    "wp23_unlocked": false
+  },
+  "github": {
+    "environment": "timeweb-production",
+    "manual_dispatch_only": true,
+    "environment_policy_verification_required": true,
+    "permissions": {
+      "actions": "read",
+      "contents": "read"
+    },
+    "provider_credential_values_in_workflow_allowed": false
+  },
+  "identity_binding_continuity": {
+    "fingerprint_env": "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+    "fingerprint_algorithm": "SHA-256",
+    "fingerprint_value_is_secret": false,
+    "runtime_match_required_when_provider_configured": true,
+    "silent_key_rotation_allowed": false,
+    "existing_binding_rekey_requires_reviewed_migration": true
+  },
+  "capacity_safety": {
+    "bounded_postgres_pool_required": true,
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5,
+    "session_lookup_off_event_loop_required": true,
+    "horizontal_app_scaling_requires_distributed_abuse_control": true,
+    "current_horizontal_app_scaling_allowed": false
+  },
+  "public_privacy_surface": {
+    "path": "/privacy",
+    "unauthenticated": true,
+    "login_surface_link_required": true,
+    "final_operator_identity_and_contact_before_activation_required": true,
+    "legal_basis_retention_cross_border_and_data_subject_channel_before_activation_required": true
+  }
+}

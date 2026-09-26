@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { appRouteFeatureByPath } from "../src/app-shell/contracts.ts";
+
 const page = readFileSync(new URL("../src/app-shell/decision-plan.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
 const backend = readFileSync(new URL("../../../omni_cio/web/decision_plan_v1.py", import.meta.url), "utf8");
@@ -10,9 +12,9 @@ const browserStores = [["local", "Storage"].join(""), ["session", "Storage"].joi
 
 test("WP21 replaces Risk Decision Plan placeholders in one accepted shell", () => {
   assert.match(shell, /DecisionPlanPage/);
-  assert.match(shell, /path === "\/risks"/);
-  assert.match(shell, /path === "\/decisions"/);
-  assert.match(shell, /path === "\/plans"/);
+  assert.equal(appRouteFeatureByPath["/risks"], "decision-risks");
+  assert.equal(appRouteFeatureByPath["/decisions"], "decision-decisions");
+  assert.equal(appRouteFeatureByPath["/plans"], "decision-plans");
 });
 
 test("WP21 exposes deterministic main decision and exact immutable plan math", () => {

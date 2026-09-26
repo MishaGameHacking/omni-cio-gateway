@@ -15,6 +15,20 @@ $contractPath = Join-Path $repoRoot "docs\architecture\V10_TBANK_CA_TRUST_CONTRA
 $contract = Get-Content -LiteralPath $contractPath -Raw -ErrorAction Stop |
     ConvertFrom-Json -ErrorAction Stop
 $expectedRootSha256 = ([string]$contract.certificates.root.sha256_der).ToUpperInvariant()
+$probeRetries = [int]$contract.verification.package_index_tls_probe_retries
+$probeTimeoutSeconds = [int]$contract.verification.package_index_tls_probe_timeout_seconds
+$probeRetryScope = [string]$contract.verification.package_index_tls_probe_retry_scope
+$probeRetryMayDisableTls = [bool]$contract.verification.package_index_tls_probe_retry_may_disable_tls_verification
+if (
+    $probeRetries -lt 1 -or
+    $probeRetries -gt 3 -or
+    $probeTimeoutSeconds -lt 5 -or
+    $probeTimeoutSeconds -gt 30 -or
+    $probeRetryScope -ne "NEW_HTTP_CONNECTION_ONLY" -or
+    $probeRetryMayDisableTls
+) {
+    throw "TBANK_CA_TRUST_PROBE_POLICY_INVALID"
+}
 
 function Invoke-CapturedProcess {
     param(
@@ -249,9 +263,9 @@ if ($bundleReady -and -not $envPublishFailed) {
         "--index-url",
         [string]$contract.package_index,
         "--retries",
-        "0",
+        [string]$probeRetries,
         "--timeout",
-        "10"
+        [string]$probeTimeoutSeconds
     )
     $pipCapture = @{
         FilePath = $python.Source
@@ -277,7 +291,7 @@ elseif ($indexProbeFailed) {
     "TBANK_PACKAGE_INDEX_PROBE_FAILED"
 }
 elseif (-not $indexReady) {
-    "TBANK_PACKAGE_INDEX_TLS_NOT_READY"
+    "TBANK_PACKAGE_INDEX_SECURE_PROBE_NOT_READY"
 }
 else {
     "TBANK_PACKAGE_INDEX_TLS_READY"
@@ -302,6 +316,8 @@ $result = [ordered]@{
     pip_ca_bundle_ready = [bool]$bundleReady
     env_published = [bool]$envPublished
     package_index_tls_ready = [bool]$indexReady
+    package_index_probe_retries = [int]$probeRetries
+    package_index_probe_timeout_seconds = [int]$probeTimeoutSeconds
     machine_trust_store_required = $false
     mutations_attempted = $false
     ready = [bool]$ready

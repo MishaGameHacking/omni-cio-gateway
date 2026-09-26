@@ -26,7 +26,9 @@ The product contract below intentionally uses stable capabilities rather than de
 
 # 1. Product role — Telegram is a companion interface, not a second product
 
-Telegram V10 is a **fast OWNER companion interface** to the same Omni-CIO V10 platform.
+**Current identity overlay (Amendments 9/18 + OWNER clarification):** Telegram Login and the Telegram Bot are separate capabilities. Human registration/login is `Telegram user account OIDC -> OmniCIOUserAccount -> Tenant -> server-side Session`. The bot never registers users. The optional bot may be linked only after an Omni-CIO account already exists and an authenticated Web session proves control of that account. This planning clarification does not start WP23+ implementation.
+
+Telegram V10 is a **fast USER companion interface** to the same Omni-CIO V10 platform.
 
 Its three primary jobs are:
 
@@ -53,15 +55,17 @@ No financial formula, sizing logic, risk policy or broker-write authority is own
 
 # 2. Access and scope lock
 
-## 2.1 V10 Personal scope
+## 2.1 Account-linked companion scope
 
-Initial accepted scope:
+Current accepted direction:
 
-- one OWNER;
-- private chat with the bot only;
-- one canonical production bot identity for V10 Personal;
-- Telegram Mini App/Web handoff to the same V10 frontend;
-- no public onboarding or multi-user registration.
+- bot access is optional and user-scoped, never a prerequisite for Web registration/login;
+- a USER must first exist through the canonical Telegram OIDC Web login path;
+- bot connection is an explicit post-auth account-link operation bound server-side to that existing OmniCIOUserAccount/Tenant;
+- private chat with the bot only unless a later amendment expands chat types;
+- one canonical production bot identity may serve multiple isolated USER/Tenant bindings without becoming a tenant selector;
+- Telegram Mini App/Web handoff uses the same V10 frontend and authenticated account authority;
+- bot `/start`, chat identity, deep-link possession or bot-token possession can never create an Omni-CIO account, mint/select a Tenant, or replace Telegram Login.
 
 ## 2.2 Explicit non-goals without a later OWNER amendment
 

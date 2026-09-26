@@ -20,7 +20,7 @@ def _bootstrap() -> str:
     return BOOTSTRAP_PATH.read_text(encoding="utf-8")
 
 
-def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
+def test_hosted_postgres_contract_is_provider_neutral_and_fail_closed() -> None:
     payload = _contract()
     validate_hosted_postgres_runtime_contract(payload)
 
@@ -30,6 +30,7 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
     assert isinstance(authority, dict)
     assert isinstance(provider_user, dict)
     assert isinstance(bootstrap, dict)
+    assert authority["provider"] == "PROVIDER_NEUTRAL_POSTGRESQL_18"
     assert authority["provider_apply_authorized"] is False
     assert authority["public_database_ingress_allowed"] is False
     assert authority["authorized_recurring_rub"] == 0
@@ -39,8 +40,8 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
     assert authority["protected_v9_entrypoint"] == "app:app"
     assert authority["wp23_unlocked"] is False
     assert provider_user["name"] == "omni_cio_hosted_api"
-    assert provider_user["resource_type"] == "cloudru_evolution_postgresql_user"
-    assert provider_user["provisioning_phase"] == "WP22A_PHASE4"
+    assert provider_user["resource_type"] == "postgresql_runtime_login"
+    assert provider_user["provisioning_phase"] == "PROVIDER_ADAPTER"
     assert provider_user["source_bootstrap_creates_user"] is False
     assert provider_user["login_required"] is True
     assert provider_user["credential_delivery"] == "external_non_source"
@@ -53,6 +54,13 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
     assert bootstrap["provider_user_must_preexist"] is True
     assert bootstrap["run_after_migrations"] is True
     assert bootstrap["reapply_after_every_migration"] is True
+
+
+def test_hosted_postgres_contract_paths_are_provider_neutral() -> None:
+    assert "infrastructure/postgres" in CONTRACT_PATH.as_posix()
+    assert "infrastructure/postgres" in BOOTSTRAP_PATH.as_posix()
+    assert "cloudru" not in CONTRACT_PATH.as_posix().lower()
+    assert "cloudru" not in BOOTSTRAP_PATH.as_posix().lower()
 
 
 def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
@@ -75,9 +83,7 @@ def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
     }
     assert set(privileges).isdisjoint(forbidden)
     assert payload["database_privileges"] == ["CONNECT"]
-    assert payload["function_privileges"] == {
-        "current_tenant_scope()": ["EXECUTE"]
-    }
+    assert payload["function_privileges"] == {"current_tenant_scope()": ["EXECUTE"]}
 
 
 def test_hosted_postgres_bootstrap_forces_tenant_broker_rls() -> None:
@@ -139,6 +145,7 @@ def test_hosted_postgres_bootstrap_removes_public_privilege_paths() -> None:
         "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA omni_cio_v10 FROM PUBLIC",
     ):
         assert required in source
+    assert source.count("'GRANT CONNECT ON DATABASE %I TO %I'") == 1
     assert "GRANT EXECUTE ON FUNCTION" in source
 
 
@@ -174,8 +181,7 @@ def test_hosted_postgres_validator_rejects_provider_or_broad_role_mutation() -> 
             "HOSTED_POSTGRES_SQL_PROVIDER_USER_MANAGEMENT_FORBIDDEN",
         ),
         (
-            _bootstrap()
-            + "\nGRANT pg_read_all_data TO omni_cio_hosted_api;\n",
+            _bootstrap() + "\nGRANT pg_read_all_data TO omni_cio_hosted_api;\n",
             "HOSTED_POSTGRES_SQL_BROAD_ROLE_GRANT",
         ),
         (
@@ -184,6 +190,7 @@ def test_hosted_postgres_validator_rejects_provider_or_broad_role_mutation() -> 
             "HOSTED_POSTGRES_SQL_GRANT_UNEXPECTED",
         ),
     )
+    contract = _contract()
     for unsafe, expected in unsafe_inputs:
         with pytest.raises(HostedPostgresRuntimeContractError, match=expected):
-            validate_hosted_postgres_runtime_sql(unsafe, _contract())
+            validate_hosted_postgres_runtime_sql(unsafe, contract)

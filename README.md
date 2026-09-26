@@ -1,6 +1,6 @@
-# Omni-CIO — V9 protected runtime + V10 active development program
+# Omni-CIO — V10 active development program / V9 migration source
 
-Omni-CIO is one investment platform. The protected owner-accepted Custom GPT v9.0.0 + one production Gateway remains the current production/recovery baseline while V10 is developed sequentially in this same repository.
+Omni-CIO is one investment platform. V10 is the single forward product/runtime line. The accepted V9 repository target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` is a **V9 migration source** already contained in the current main lineage, not a stale branch that should be merged again.
 
 Current V10 progress and current/next execution authority are defined only by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -22,9 +22,16 @@ Repository-front-door snapshot of accepted/current program authority:
 - public multi-user and capability activation remain fail-closed until their Timeweb/Telegram/privacy/legal/capacity gates pass;
 - WEB-VISUAL remains paused during platform consolidation; WP23+ remains locked;
 - broker-write / Real-execution authority remains unchanged;
-- `trading_methods=false`, `REAL_TRADING_ENABLED=false` and tenant/RLS protections remain intact.
+- `trading_methods=false`, `REAL_TRADING_ENABLED=false` and tenant/RLS protections remain intact;
+- PR #584 now contains the OWNER-approved V9→V10 convergence sequence `V9C-A` through `V9C-F`; no merge to `main` is authorized without a new explicit OWNER instruction.
 
 This box is not a second progress ledger. Exact state is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+## V9→V10 convergence inside PR #584
+
+P1 convergence is closed through `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`; V9C-D, V9C-E and V9C-F are branch-local `CERTIFIED_GREEN`, with the complete P1 checkpoint proven on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`. P2 exact-SHA Timeweb App candidate is branch-local `CERTIFIED_GREEN` on `ba43fa4be350340557fcf6d8532b6c089022a8ca`. P3 PostgreSQL 18 production-cutover source machinery is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec` with 25/25 checks successful, Sonar 0 new issues / 0 Security Hotspots and zero unresolved review threads. P4 `omnicio.ru` DNS/TLS/public-ingress source machinery is branch-local `CERTIFIED_GREEN` on exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c` with all 19 applicable workflows successful and zero unresolved review threads. P5 Telegram/public-user activation source machinery is branch-local `CERTIFIED_GREEN` on exact head `ad50273642cc66f537070b4800f319857f7d0096`: all 19 applicable workflows completed successfully, Sonar reported 0 new issues / 0 Security Hotspots / 0 annotations, unresolved review threads were zero and the branch was not behind `main`. Exact branch-local checkpoint/certification state is intentionally not duplicated here; read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions. External DNS, provider, legal/privacy, capacity, live-user and destructive provider actions remain independently fail-closed. Protected V9 compatibility remains isolated at `app:app`; Git history remains the historical archive.
+
+A stale `v9/*` branch merge is explicitly forbidden: the accepted V9 target is already an ancestor of current main.
 
 ## Current platform authority — GitHub + Timeweb + Telegram
 
@@ -114,7 +121,7 @@ One account owns one isolated tenant in the baseline. Tenant scope is derived fr
 Public broker credentials remain tenant-owned `BrokerConnection` credentials. There is no shared/global user broker token: no shared/global user broker token is allowed.
 
 
-Cloudflare/Neon/Render/Cloud.ru/VK files remain archive-in-place project history. They are not current implementation authority and new code must not depend on them.
+Cloudflare/Neon/Render/Cloud.ru/VK working-tree artifacts are migration/retirement inputs under Amendment 20, not current implementation authority. New code must not depend on them; artifacts with zero current consumers may be removed at their owning V9C-D/V9C-E gates while Git history remains the archive.
 
 Public activation still requires Timeweb runtime/database/DNS acceptance plus Telegram, privacy/personal-data, capacity, monitoring and production-security gates.
 

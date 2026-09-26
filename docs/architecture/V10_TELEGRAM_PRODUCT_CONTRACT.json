@@ -1,27 +1,38 @@
 {
   "contract": "V10_TELEGRAM_PRODUCT_CONTRACT",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "status": "OWNER_APPROVED_PLANNING_ONLY",
   "runtime_effect": "NONE_UNTIL_OWNING_WP",
-  "owned_by": ["WP23", "WP24", "WP25", "WP26", "WP32C"],
-  "product_role": "OWNER companion interface to the same V10 Core, Web and Cortex",
+  "owned_by": [
+    "WP23",
+    "WP24",
+    "WP25",
+    "WP26",
+    "WP32C"
+  ],
+  "product_role": "optional USER companion interface to the same V10 Core, Web and Cortex, linked only after Omni-CIO account authentication",
   "principles": {
     "one_core": true,
     "one_cortex": true,
     "telegram_business_logic": false,
     "telegram_broker_write": false,
     "telegram_is_full_web_duplicate": false,
-    "private_owner_only": true,
-    "no_required_paid_bot_saas": true
+    "private_owner_only": false,
+    "no_required_paid_bot_saas": true,
+    "bot_required_for_web_login": false,
+    "bot_can_create_account": false,
+    "bot_can_mint_or_select_tenant": false
   },
   "access": {
-    "allowed_chat_types": ["private"],
-    "allowed_identity": "configured_owner_telegram_user_id",
+    "allowed_chat_types": [
+      "private"
+    ],
+    "allowed_identity": "existing_authenticated_omni_cio_user_with_explicit_server_side_bot_link",
     "groups": "DENY",
     "supergroups": "DENY",
     "channels": "DENY",
     "inline_mode": "OUT_OF_SCOPE",
-    "public_onboarding": "OUT_OF_SCOPE",
+    "public_onboarding": "FORBIDDEN_VIA_BOT",
     "unauthorized_response": "TG_AUTH_DENIED_V1_NO_PRIVATE_DATA"
   },
   "transport": {
@@ -34,13 +45,41 @@
     "retry_policy": "BOUNDED_BACKOFF_RESPECT_TELEGRAM_RETRY_AFTER"
   },
   "commands": [
-    {"name": "start", "purpose": "owner entry and concise introduction", "broker_write": false},
-    {"name": "help", "purpose": "capabilities and safety boundaries", "broker_write": false},
-    {"name": "status", "purpose": "compact V10/data status", "broker_write": false},
-    {"name": "portfolio", "purpose": "canonical portfolio summary", "broker_write": false},
-    {"name": "alerts", "purpose": "active material incidents", "broker_write": false},
-    {"name": "system", "purpose": "owner operational status", "broker_write": false},
-    {"name": "app", "purpose": "open canonical Web/Mini App", "broker_write": false}
+    {
+      "name": "start",
+      "purpose": "owner entry and concise introduction",
+      "broker_write": false
+    },
+    {
+      "name": "help",
+      "purpose": "capabilities and safety boundaries",
+      "broker_write": false
+    },
+    {
+      "name": "status",
+      "purpose": "compact V10/data status",
+      "broker_write": false
+    },
+    {
+      "name": "portfolio",
+      "purpose": "canonical portfolio summary",
+      "broker_write": false
+    },
+    {
+      "name": "alerts",
+      "purpose": "active material incidents",
+      "broker_write": false
+    },
+    {
+      "name": "system",
+      "purpose": "owner operational status",
+      "broker_write": false
+    },
+    {
+      "name": "app",
+      "purpose": "open canonical Web/Mini App",
+      "broker_write": false
+    }
   ],
   "navigation": {
     "preferred_menu_button": "OPEN_CANONICAL_V10_WEB_MINI_APP_WHEN_SAFE",
@@ -52,21 +91,54 @@
     "source": "V10_CORE_VERSIONED_DTOS",
     "telegram_may_recalculate_financial_values": false,
     "show_as_of_when_material": true,
-    "explicit_states": ["READY", "PARTIAL", "STALE", "DEGRADED", "BLOCKED", "ERROR", "OFFLINE", "RECOVERING", "OWNER_ACTION_REQUIRED"],
-    "distinguish": ["broker_fact", "core_calculation", "external_evidence", "ai_inference", "unknown"]
+    "explicit_states": [
+      "READY",
+      "PARTIAL",
+      "STALE",
+      "DEGRADED",
+      "BLOCKED",
+      "ERROR",
+      "OFFLINE",
+      "RECOVERING",
+      "OWNER_ACTION_REQUIRED"
+    ],
+    "distinguish": [
+      "broker_fact",
+      "core_calculation",
+      "external_evidence",
+      "ai_inference",
+      "unknown"
+    ]
   },
   "alerts": {
-    "severities": ["CRITICAL", "IMPORTANT", "INFO", "SILENT"],
+    "severities": [
+      "CRITICAL",
+      "IMPORTANT",
+      "INFO",
+      "SILENT"
+    ],
     "clean_watchtower_run_sends_message": false,
     "critical_bypasses_quiet_hours": true,
     "semantic_dedup": true,
     "delivery_idempotency": true,
     "edit_existing_incident_message_when_practical": true,
-    "new_message_on": ["material_severity_escalation", "new_owner_action_required", "defined_reopen"]
+    "new_message_on": [
+      "material_severity_escalation",
+      "new_owner_action_required",
+      "defined_reopen"
+    ]
   },
   "delivery": {
     "durable_job": true,
-    "states": ["PENDING", "SENDING", "DELIVERED", "RETRY_SCHEDULED", "RATE_LIMITED", "UNKNOWN_DELIVERY", "FAILED_PERMANENT"],
+    "states": [
+      "PENDING",
+      "SENDING",
+      "DELIVERED",
+      "RETRY_SCHEDULED",
+      "RATE_LIMITED",
+      "UNKNOWN_DELIVERY",
+      "FAILED_PERMANENT"
+    ],
     "persist_message_id": true,
     "persist_idempotency_key": true,
     "blind_retry_after_ambiguous_send": false,
@@ -80,14 +152,24 @@
     "server_state_revalidation_required": true,
     "stale_callback_fail_closed": true,
     "prompt_acknowledgement_required": true,
-    "allowed_classes_block_f": ["refresh_summary", "show_incident", "show_status", "show_help", "open_web"],
+    "allowed_classes_block_f": [
+      "refresh_summary",
+      "show_incident",
+      "show_status",
+      "show_help",
+      "open_web"
+    ],
     "real_money_submit": "FORBIDDEN"
   },
   "identity": {
     "bot_chat": {
-      "owner_user_id_required": true,
+      "existing_omni_cio_account_required": true,
+      "explicit_post_login_link_required": true,
       "private_chat_required": true,
-      "server_side": true
+      "server_side_binding": true,
+      "can_create_omni_account": false,
+      "can_mint_or_select_tenant": false,
+      "can_replace_telegram_login": false
     },
     "mini_app": {
       "trusted_input": "server_validated_Telegram.WebApp.initData",
@@ -95,18 +177,30 @@
       "signature_hash_validation": true,
       "auth_date_freshness": true,
       "replay_rejection": true,
-      "owner_mapping": true,
       "short_lived_v10_session": true,
-      "ordinary_browser_auth_preserved": true
+      "ordinary_browser_auth_preserved": true,
+      "omni_cio_account_mapping": true
     }
   },
   "deep_links": {
-    "allowed_route_families": ["/portfolio", "/incidents/{opaque_ref}", "/research/{opaque_ref}", "/decisions/{opaque_ref}", "/system"],
+    "allowed_route_families": [
+      "/portfolio",
+      "/incidents/{opaque_ref}",
+      "/research/{opaque_ref}",
+      "/decisions/{opaque_ref}",
+      "/system"
+    ],
     "opaque_reference": true,
     "server_validated": true,
     "short_lived_or_signed_when_required": true,
     "url_possession_grants_authority": false,
-    "forbidden_in_url": ["broker_token", "telegram_token", "full_account_id", "private_payload", "portfolio_value_as_authority"]
+    "forbidden_in_url": [
+      "broker_token",
+      "telegram_token",
+      "full_account_id",
+      "private_payload",
+      "portfolio_value_as_authority"
+    ]
   },
   "mini_app": {
     "frontend": "SAME_V10_WEB_CODEBASE",
@@ -176,5 +270,16 @@
     "https://core.telegram.org/bots/features",
     "https://core.telegram.org/bots/webapps",
     "https://core.telegram.org/bots/api-changelog"
-  ]
+  ],
+  "login_separation": {
+    "primary_human_login": "TELEGRAM_USER_ACCOUNT_OIDC",
+    "login_scope": [
+      "openid"
+    ],
+    "bot_access_scope_requested": false,
+    "bot_chat_required": false,
+    "bot_start_required": false,
+    "bot_linking_stage": "POST_AUTH_ONLY",
+    "bot_linking_owner": "WP23_PLUS"
+  }
 }

@@ -19,7 +19,7 @@ TRANSACTION_MIGRATION = Path(
     "omni_cio/persistence/migrations/0005_browser_bound_provider_auth.sql"
 )
 LIMITS = Path("omni_cio/web/request_limits_v1.py")
-AUTH_RUNTIME = Path("apps/api/wp22a_phase5_auth.py")
+AUTH_RUNTIME = Path("apps/api/telegram_auth.py")
 
 _EXPECTED_BASE_MAIN_SHA_SEGMENTS = (
     "e8e583f3",
@@ -49,12 +49,17 @@ _EXPECTED_REGISTRATION = {
     "timeweb_canonical_origin_reconfirmation_required": True,
     "timeweb_canonical_origin_reconfirmation_accepted": False,
     "provider_secret_values_recorded": False,
+    "login_uses_telegram_user_account": True,
+    "login_requires_bot_chat": False,
+    "login_requires_bot_start": False,
+    "botfather_registration_is_oidc_client_metadata_only": True,
 }
 
 _EXPECTED_MINIMIZATION = {
     "telegram_oidc_scopes": ["openid"],
     "profile_scope_requested": False,
     "phone_scope_requested": False,
+    "bot_access_scope_requested": False,
     "raw_telegram_subject_persisted": False,
     "external_identity_binding": "HMAC_SHA256_KEYED",
     "raw_oauth_state_persisted": False,
@@ -63,11 +68,45 @@ _EXPECTED_MINIMIZATION = {
     "session_authority": "SERVER_SIDE_OPAQUE_TOKEN_SHA256",
 }
 
+_EXPECTED_IDENTITY_BOT_SEPARATION = {
+    "login_capability": "TELEGRAM_USER_ACCOUNT_OIDC",
+    "product_bot_capability": "OPTIONAL_POST_AUTH_ACCOUNT_LINK",
+    "login_creates_or_resolves_omni_account": True,
+    "bot_link_requires_existing_authenticated_omni_account": True,
+    "bot_link_requires_existing_server_side_session": True,
+    "bot_link_can_create_omni_account": False,
+    "bot_link_can_mint_or_select_tenant": False,
+    "bot_chat_required_for_login": False,
+    "bot_start_required_for_login": False,
+    "telegram_bot_access_scope_requested_during_login": False,
+    "bot_linking_implementation_owner": "WP23_PLUS_SEPARATE_CAPABILITY",
+}
+
+_EXPECTED_ACTIVATION_SWITCH = {
+    "current_public_multi_user_enabled": False,
+    "current_telegram_login_enabled": False,
+    "target_after_tw_f_acceptance": {
+        "PUBLIC_MULTI_USER_ENABLED": True,
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": True,
+    },
+    "must_transition_together": True,
+    "partial_activation_allowed": False,
+    "runtime_source": "apps/api/telegram_auth.py",
+    "runtime_custody": "TIMEWEB_APP_PLATFORM_ENVIRONMENT",
+    "source_hardcoded_true_allowed": False,
+}
+
 _EXPECTED_CAPACITY = {
     **EXPECTED_LIMITS,
     "timeweb_runtime_capacity_accepted": False,
     "automatic_capacity_expansion_authorized": False,
     "real_user_capacity_claim": False,
+    "bounded_postgres_pool_required": True,
+    "postgres_pool_max_size": 4,
+    "postgres_pool_acquire_timeout_seconds": 5.0,
+    "session_lookup_off_event_loop_required": True,
+    "horizontal_app_scaling_requires_distributed_abuse_control": True,
+    "current_horizontal_app_scaling_allowed": False,
 }
 
 _EXPECTED_HISTORICAL_CLOUDFLARE_RELEASE = {
@@ -265,6 +304,30 @@ def _validate_data_minimization(contract: dict[str, Any]) -> None:
     )
 
 
+def _validate_identity_bot_separation(contract: dict[str, Any]) -> None:
+    separation = _mapping(
+        contract.get("identity_and_bot_separation"),
+        "TELEGRAM_PUBLIC_USER_READINESS_IDENTITY_BOT_SEPARATION_INVALID",
+    )
+    _require_equal(
+        separation,
+        _EXPECTED_IDENTITY_BOT_SEPARATION,
+        "TELEGRAM_PUBLIC_USER_READINESS_IDENTITY_BOT_SEPARATION_INVALID",
+    )
+
+
+def _validate_activation_switch(contract: dict[str, Any]) -> None:
+    activation = _mapping(
+        contract.get("activation_switch"),
+        "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_SWITCH_INVALID",
+    )
+    _require_equal(
+        activation,
+        _EXPECTED_ACTIVATION_SWITCH,
+        "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_SWITCH_INVALID",
+    )
+
+
 def _validate_capacity(contract: dict[str, Any]) -> None:
     capacity = _mapping(
         contract.get("capacity_and_abuse"),
@@ -363,6 +426,8 @@ def _validate_contract(contract: dict[str, Any]) -> None:
     _validate_provider_registration(contract)
     _validate_provider_secret_readiness(contract)
     _validate_data_minimization(contract)
+    _validate_identity_bot_separation(contract)
+    _validate_activation_switch(contract)
     _validate_capacity(contract)
     _validate_operations(contract)
     _validate_legal_gate(contract)
@@ -415,12 +480,16 @@ def _class_defaults(source: str, class_name: str) -> dict[str, int]:
 
 def _validate_telegram_source(root: Path) -> None:
     telegram = _read(root, TELEGRAM)
-    scopes = re.findall(r'"scope"\s*:\s*"([^"]+)"', telegram)
-    _require_equal(
-        scopes,
-        ["openid"],
+    _require_text_markers(
+        telegram,
+        (
+            'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"',
+            '"scope": TELEGRAM_OIDC_LOGIN_SCOPE',
+        ),
         "TELEGRAM_PUBLIC_USER_READINESS_SCOPE_DRIFT",
     )
+    if "telegram:bot_access" in telegram:
+        raise RuntimeError("TELEGRAM_PUBLIC_USER_READINESS_BOT_ACCESS_SCOPE_FORBIDDEN")
 
 
 def _validate_identity_source(root: Path) -> None:
@@ -467,11 +536,14 @@ def _validate_provider_neutral_activation_defaults(root: Path) -> None:
         (
             '_PUBLIC_MULTI_USER_ENABLED = "PUBLIC_MULTI_USER_ENABLED"',
             '_TELEGRAM_LOGIN_ENABLED = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"',
-            '_VK_ID_LOGIN_ENABLED = "OMNI_V10_VK_ID_LOGIN_ENABLED"',
-            "def _flag(env: Mapping[str, str], name: str) -> bool:",
-            "if not value:\n        return False",
-            'if value == "true":\n        return True',
-            'if value == "false":\n        return False',
+            "def _flag(environment: Mapping[str, str], name: str) -> bool:",
+            'if raw in {"", "0", "false"}:\n        return False',
+            'if raw in {"1", "true"}:\n        return True',
+            "def _require_activation_pair(",
+            "if public_enabled != login_enabled:",
+            "TELEGRAM_AUTH_ACTIVATION_FLAGS_MISMATCH",
+            '_IDENTITY_BINDING_FINGERPRINT = "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256"',
+            "TELEGRAM_AUTH_IDENTITY_BINDING_FINGERPRINT_MISMATCH",
         ),
         "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_DEFAULT_DRIFT",
     )
@@ -499,8 +571,16 @@ def _validate_runbook_source(root: Path) -> None:
         runbook,
         (
             "# V10 Telegram Login Production Activation Runbook",
+            "## Login identity vs optional Telegram bot",
+            "Telegram USER account",
+            "`telegram:bot_access`",
+            "already authenticated Omni-CIO account/session",
             "## Public activation flags",
             "## Acceptance sequence",
+            "## Identity-binding continuity and rotation",
+            "OMNI_V10_IDENTITY_BINDING_FINGERPRINT_SHA256",
+            "## P5 capacity and concurrency boundary",
+            "horizontal App Platform fan-out",
         ),
         "TELEGRAM_PUBLIC_USER_READINESS_RUNBOOK_DRIFT",
     )

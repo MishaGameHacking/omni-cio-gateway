@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { appRouteFeatureByPath } from "../src/app-shell/contracts.ts";
+
 const page = readFileSync(new URL("../src/app-shell/research-dossiers.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
 const backend = readFileSync(new URL("../../../omni_cio/web/research_dossiers_v1.py", import.meta.url), "utf8");
@@ -13,6 +15,7 @@ const browserStores = [
 ];
 
 test("WP20 replaces Research placeholder inside the accepted shell", () => {
+  assert.equal(appRouteFeatureByPath["/research"], "research-dossiers");
   assert.match(shell, /ResearchDossiersPage/);
   assert.match(page, /RESEARCH \/ DOSSIERS/);
 });

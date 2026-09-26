@@ -36,7 +36,10 @@ Accepted amendment discovery:
 - `../operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md` — operational checkpoint/targeted-repair runbook;
 - `../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json` — machine-readable public launch direction;
 - `../architecture/V10_AI_CORTEX_CONTRACT.json` and other machine-readable companions — executable/validated policy where defined;
-- `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance.
+- `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance;
+- `OMNI_CIO_V10_RU_PUBLIC_REGISTRATION_AND_RUSSIAN_INGRESS_AMENDMENT.md` — Amendment 18, current Timeweb-only infrastructure / Telegram-only human login authority;
+- `OMNI_CIO_V10_TIMEWEB_NO_OWNER_LAPTOP_DEPENDENCY_AMENDMENT.md` — Amendment 19, current hosted-source boundary without OWNER-laptop runtime dependency;
+- `OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md` — Amendment 20, V9 migration-source convergence and proven legacy working-tree retirement inside PR #584.
 
 Current V10 progress authority:
 
@@ -98,21 +101,21 @@ Acceptance of Amendment 12 itself keeps **PRODUCT IMPLEMENTATION PAUSED**. Exact
 
 `START V10 WEB VISUAL SYSTEM UPDATE`
 
-## Omni-CIO v9 Portfolio Autopilot — completed protected runtime program
+## Omni-CIO v9 Portfolio Autopilot — completed historical program / V9 migration source
 
-The accepted applied runtime is **Omni-CIO v9.0.0**.
+The accepted V9 program is completed historical evidence and a **V9 migration source** for the single forward V10/Timeweb runtime.
 
 Canonical completed program:
 
 `OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
 
-V9 WP0–WP15 repository delivery and owner external acceptance are complete. Current runtime mode remains **controlled maintenance** while V10 is developed. Protected v8.6.1 remains a recovery rollback baseline.
+V9 WP0–WP15 repository delivery and owner external acceptance are complete. Amendment 20 supersedes the old parallel controlled-maintenance framing for forward development: useful behavior is migrated/reused in V10, obsolete working-tree paths retire after proof, and Git history retains the historical record.
 
 Current V9 applied/runtime status:
 
 `../../knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-V9 remains the protected production/recovery baseline until a responsible later V10 gate explicitly replaces a boundary and passes its Exit Gate.
+`app:app` and other remaining compatibility paths persist only until their owning V9C replacement/parity/recovery gate passes; they are not permanent forward-runtime authority.
 
 ## Source-of-truth hierarchy
 
@@ -139,7 +142,7 @@ V10 development does not silently remove V9 safety boundaries:
 - Real execution remains exact-USER-confirmed for that USER's own tenant, immutable, idempotent, fail-closed and broker-reconciled;
 - AI has no direct broker-write authority;
 - GitHub engineering access is never trading authorization;
-- current `app:app` / GPT recovery behavior stays protected until an accepted V10 migration replaces it;
+- current `app:app` / GPT recovery behavior remains only until the owning V9C migration/recovery gate proves replacement and retirement;
 - `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain fail-closed until their own accepted gates;
 - no competing GPT/Gateway/Web/Telegram/AI/execution source of truth.
 

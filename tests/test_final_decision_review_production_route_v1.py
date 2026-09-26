@@ -35,6 +35,7 @@ from omni_cio.contracts.v1.final_decision_review_input import (
 )
 from omni_cio.contracts.v1.final_decision_review_route_plan import (
     FinalDecisionReviewProposedRouteV1,
+    FinalDecisionReviewAcceptanceCheckCode,
     FinalDecisionReviewRouteImplementationPlanV1,
     FinalDecisionReviewRoutePlanStatus,
 )
@@ -183,10 +184,7 @@ def _replace_param(
     name: str,
     value: str,
 ) -> list[tuple[str, str]]:
-    return [
-        (key, value if key == name else current)
-        for key, current in params
-    ]
+    return [(key, value if key == name else current) for key, current in params]
 
 
 def test_empty_registry_returns_503_after_authentication() -> None:
@@ -333,7 +331,7 @@ def test_registry_rejects_unready_plan() -> None:
         update={
             "status": FinalDecisionReviewRoutePlanStatus.BLOCKED,
             "ready_for_implementation_review": False,
-            "blockers": ("source_dossier",),
+            "blockers": (FinalDecisionReviewAcceptanceCheckCode.SOURCE_DOSSIER,),
         }
     )
 

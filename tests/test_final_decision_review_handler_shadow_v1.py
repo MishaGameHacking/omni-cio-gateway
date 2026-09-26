@@ -32,6 +32,7 @@ from omni_cio.contracts.v1.final_decision_review_input import (
     FinalDecisionReviewReadOnlyQueryV1,
 )
 from omni_cio.contracts.v1.final_decision_review_route_plan import (
+    FinalDecisionReviewAcceptanceCheckCode,
     FinalDecisionReviewRouteImplementationPlanV1,
     FinalDecisionReviewRoutePlanStatus,
 )
@@ -168,8 +169,7 @@ def test_exact_shadow_handler_returns_compact_response_and_safe_event() -> None:
     assert result.observability_event.trading_methods is False
     assert result.observability_event.external_call is not None
     assert (
-        result.observability_event.external_call.status
-        is ExternalCallStatus.NOT_CALLED
+        result.observability_event.external_call.status is ExternalCallStatus.NOT_CALLED
     )
     assert result.shadow_only is True
     assert result.route_registered is False
@@ -196,8 +196,7 @@ def test_missing_authentication_maps_to_401_without_response() -> None:
     assert result.status is FinalDecisionReviewHandlerShadowStatus.REJECTED
     assert result.http_status is FinalDecisionReviewHandlerHttpStatus.UNAUTHORIZED
     assert (
-        result.error_code
-        is FinalDecisionReviewHandlerErrorCode.AUTHENTICATION_REQUIRED
+        result.error_code is FinalDecisionReviewHandlerErrorCode.AUTHENTICATION_REQUIRED
     )
     assert result.response is None
 
@@ -256,12 +255,9 @@ def test_unavailable_source_maps_to_503() -> None:
 
     assert result.status is FinalDecisionReviewHandlerShadowStatus.UNAVAILABLE
     assert (
-        result.http_status
-        is FinalDecisionReviewHandlerHttpStatus.SERVICE_UNAVAILABLE
+        result.http_status is FinalDecisionReviewHandlerHttpStatus.SERVICE_UNAVAILABLE
     )
-    assert (
-        result.error_code is FinalDecisionReviewHandlerErrorCode.SOURCE_UNAVAILABLE
-    )
+    assert result.error_code is FinalDecisionReviewHandlerErrorCode.SOURCE_UNAVAILABLE
 
 
 def test_blocked_route_plan_maps_to_503() -> None:
@@ -270,7 +266,7 @@ def test_blocked_route_plan_maps_to_503() -> None:
         update={
             "status": FinalDecisionReviewRoutePlanStatus.BLOCKED,
             "ready_for_implementation_review": False,
-            "blockers": ("source_dossier",),
+            "blockers": (FinalDecisionReviewAcceptanceCheckCode.SOURCE_DOSSIER,),
         }
     )
 
@@ -283,8 +279,7 @@ def test_blocked_route_plan_maps_to_503() -> None:
     )
 
     assert (
-        result.http_status
-        is FinalDecisionReviewHandlerHttpStatus.SERVICE_UNAVAILABLE
+        result.http_status is FinalDecisionReviewHandlerHttpStatus.SERVICE_UNAVAILABLE
     )
 
 

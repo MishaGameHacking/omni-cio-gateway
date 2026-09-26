@@ -84,7 +84,7 @@ Issue #406 therefore activates bounded transport retry only for the direct curre
 - `v10-wp20-research-dossier-audit.yml`;
 - `v10-wp21-decision-risk-plan-audit.yml`;
 - `v10-wp22-system-admin-audit.yml`;
-- `v10-wp22a-clientless-access-audit.yml`;
+- `v10-timeweb-worktree-convergence-audit.yml`;
 - `v10-wp22a-phase2-product-auth-audit.yml`;
 - `v10-phase4-free-preview-deploy.yml`;
 - `v10-hosted-release-alignment.yml`.
@@ -126,3 +126,16 @@ The resilience regression test is executed by Engineering Governance and the ful
 - product implementation remains paused; WP23+ remains locked.
 
 This maintenance package carries zero product-progress credit.
+
+
+### 2026-09-25 P5.5 worktree convergence
+
+P5.5 worktree convergence replaces the dormant WP22A clientless audit workflow with the
+Timeweb current-worktree convergence audit. The replacement keeps the same bounded
+self-hosted repository-bootstrap transport behavior but installs no WP22A/Cloudflare
+dependency stack and executes only stdlib-based Timeweb inventory/convergence guards.
+
+The historical check-run context is retained temporarily as a compatibility boundary
+because the GitHub App connection cannot read branch-protection administration settings.
+This avoids silently removing a potentially required status context while the workflow
+path and executable implementation are fully Timeweb-converged.

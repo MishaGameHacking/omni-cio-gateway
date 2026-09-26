@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-import operations_analytics
+from omni_cio.analytics import operations_source_v1 as operations_analytics
 
 
 class FakeBase:
@@ -13,7 +13,9 @@ class FakeBase:
     OPERATION_STATE_NUMBER_TO_NAME: dict[int, str] = {}
 
     @staticmethod
-    def normalized_operation_enum(value: Any, mapping: dict[int, str], default: str) -> str:
+    def normalized_operation_enum(
+        value: Any, mapping: dict[int, str], default: str
+    ) -> str:
         del mapping
         if value is None:
             return default
@@ -60,7 +62,9 @@ class FakeBase:
         if isinstance(value, datetime):
             return value.isoformat()
         if isinstance(value, dict):
-            return {str(key): FakeBase.json_safe_value(item) for key, item in value.items()}
+            return {
+                str(key): FakeBase.json_safe_value(item) for key, item in value.items()
+            }
         if isinstance(value, (list, tuple, set)):
             return [FakeBase.json_safe_value(item) for item in value]
         return value
@@ -112,7 +116,11 @@ def build(raw: list[dict[str, Any]], *, truncated: bool = False) -> dict[str, An
 
 
 def cash_row(payload: dict[str, Any], currency: str) -> dict[str, Any]:
-    return next(row for row in payload["cash_summary_by_currency"] if row["currency"] == currency)
+    return next(
+        row
+        for row in payload["cash_summary_by_currency"]
+        if row["currency"] == currency
+    )
 
 
 def test_executed_only_deduplication_and_double_count_protection() -> None:
@@ -187,12 +195,18 @@ def test_executed_only_deduplication_and_double_count_protection() -> None:
         "parent_type_updates_collapsed": 1,
         "passed": True,
     }
-    assert reconciliation["parent_child_double_count_protection"][
-        "embedded_child_operations_excluded"
-    ] == 1
-    assert reconciliation["parent_child_double_count_protection"][
-        "embedded_trades_excluded"
-    ] == 1
+    assert (
+        reconciliation["parent_child_double_count_protection"][
+            "embedded_child_operations_excluded"
+        ]
+        == 1
+    )
+    assert (
+        reconciliation["parent_child_double_count_protection"][
+            "embedded_trades_excluded"
+        ]
+        == 1
+    )
     assert payload["complete"] is True
     assert payload["trading_methods"] is False
 

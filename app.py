@@ -7,9 +7,9 @@ from fastapi import Depends, Query
 import app_v360 as legacy
 import app_v371 as archived
 from app_v371 import *  # noqa: F401,F403
-import broker_report_reconciliation as broker_report_reconciliation_engine
-import operations_analytics as operations_analytics_engine
-import portfolio_market as portfolio_market_engine
+import omni_cio.reconciliation as broker_report_reconciliation_engine
+from omni_cio.analytics import operations_source_v1 as operations_analytics_engine
+from omni_cio.portfolio import market_source_v1 as portfolio_market_engine
 from omni_cio.quality import wrap_portfolio_market_snapshot_with_shadow_validation
 from omni_cio.release.final_decision_review_production_registration_v1 import (
     register_final_decision_review_production_sources,
@@ -343,9 +343,7 @@ _base_openapi = app.openapi
 _GPT_ACTIONS_HTTP_METHODS = frozenset(
     {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 )
-_GPT_ACTIONS_IGNORED_TRACE_HEADERS = frozenset(
-    {"X-Correlation-ID", "X-Request-ID"}
-)
+_GPT_ACTIONS_IGNORED_TRACE_HEADERS = frozenset({"X-Correlation-ID", "X-Request-ID"})
 
 
 def _patch_gpt_actions_openapi_compat(schema: dict[str, Any]) -> dict[str, Any]:

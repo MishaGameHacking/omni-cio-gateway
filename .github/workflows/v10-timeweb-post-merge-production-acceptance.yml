@@ -1,0 +1,74 @@
+name: V10 Timeweb Post-Merge Production Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        required: true
+        default: observe
+        type: choice
+        options: [observe, accept]
+      confirmation:
+        required: false
+        default: ""
+        type: string
+      p2_candidate_evidence_sha256: {required: false, default: "", type: string}
+      p3_cutover_evidence_sha256: {required: false, default: "", type: string}
+      p4_ingress_evidence_sha256: {required: false, default: "", type: string}
+      p5_readiness_sha256: {required: false, default: "", type: string}
+      p5_live_evidence_sha256: {required: false, default: "", type: string}
+      rollback_release_sha: {required: false, default: "", type: string}
+      rollback_evidence_sha256: {required: false, default: "", type: string}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-timeweb-post-merge-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  production-acceptance:
+    name: Exact-main Timeweb production acceptance
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      REQUESTED_OPERATION: ${{ inputs.operation }}
+      REQUESTED_CONFIRMATION: ${{ inputs.confirmation }}
+      P2_EVIDENCE: ${{ inputs.p2_candidate_evidence_sha256 }}
+      P3_EVIDENCE: ${{ inputs.p3_cutover_evidence_sha256 }}
+      P4_EVIDENCE: ${{ inputs.p4_ingress_evidence_sha256 }}
+      P5_READINESS: ${{ inputs.p5_readiness_sha256 }}
+      P5_LIVE_EVIDENCE: ${{ inputs.p5_live_evidence_sha256 }}
+      ROLLBACK_RELEASE_SHA: ${{ inputs.rollback_release_sha }}
+      ROLLBACK_EVIDENCE: ${{ inputs.rollback_evidence_sha256 }}
+    steps:
+      - name: Check out exact dispatched main
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prove dispatch SHA is still exact protected main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          OBSERVED_MAIN="$(git rev-parse FETCH_HEAD)"
+          test "$GITHUB_SHA" = "$OBSERVED_MAIN"
+          test "$(git rev-parse HEAD)" = "$OBSERVED_MAIN"
+          echo "OBSERVED_MAIN=$OBSERVED_MAIN" >> "$GITHUB_ENV"
+      - name: Verify P6 source contract
+        run: python -m scripts.check_v10_timeweb_post_merge_production_acceptance
+      - name: Observe or accept exact-main production
+        shell: bash
+        run: |
+          set -euo pipefail
+          TIMEWEB_PRODUCTION_ACCEPTANCE_EVIDENCE="$RUNNER_TEMP/timeweb-production-acceptance.txt"
+          python -m scripts.timeweb_production_acceptance             --operation "$REQUESTED_OPERATION" --expected-sha "$GITHUB_SHA" --observed-main-sha "$OBSERVED_MAIN"             --confirmation "$REQUESTED_CONFIRMATION" --p2-candidate-evidence-sha256 "$P2_EVIDENCE"             --p3-cutover-evidence-sha256 "$P3_EVIDENCE" --p4-ingress-evidence-sha256 "$P4_EVIDENCE"             --p5-readiness-sha256 "$P5_READINESS" --p5-live-evidence-sha256 "$P5_LIVE_EVIDENCE"             --rollback-release-sha "$ROLLBACK_RELEASE_SHA" --rollback-evidence-sha256 "$ROLLBACK_EVIDENCE"             | tee "$TIMEWEB_PRODUCTION_ACCEPTANCE_EVIDENCE"
+          echo "TIMEWEB_PRODUCTION_ACCEPTANCE_EVIDENCE=$TIMEWEB_PRODUCTION_ACCEPTANCE_EVIDENCE" >> "$GITHUB_ENV"
+      - name: Upload sanitized production acceptance evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: timeweb-production-acceptance-${{ github.sha }}
+          path: ${{ env.TIMEWEB_PRODUCTION_ACCEPTANCE_EVIDENCE }}
+          if-no-files-found: error

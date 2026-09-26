@@ -18,8 +18,13 @@ LIVE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-readonly-proof.yml"
 SYNTHETIC_CREATE_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-synthetic-create.yml"
 PUBLIC_IPV4_TLS_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-public-ipv4-tls.yml"
 TIMEWEB_ALLOCATION_WORKFLOW = WORKFLOWS / "v10-timeweb-ipv4-allocation.yml"
+APP_CANDIDATE_WORKFLOW = WORKFLOWS / "v10-timeweb-app-candidate.yml"
+PRODUCTION_CUTOVER_WORKFLOW = WORKFLOWS / "v10-timeweb-postgres-production-cutover.yml"
+PUBLIC_INGRESS_WORKFLOW = WORKFLOWS / "v10-timeweb-public-ingress-acceptance.yml"
+TELEGRAM_ACTIVATION_WORKFLOW = WORKFLOWS / "v10-timeweb-telegram-public-activation.yml"
 _TIMEWEB_BINDING = "TIMEWEB_CLOUD_API_" + "TOKEN"
 _ENVIRONMENT_NAME = "timeweb-synthetic"
+_PRODUCTION_ENVIRONMENT_NAME = "timeweb-production"
 _ENVIRONMENT_GATE_MARKER = "TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY"
 _CLUSTER_DETAIL_ENDPOINT = "/api/v1/databases/{cluster_id}"
 _REPLICA_TOPOLOGY_MARKER = "TIMEWEB_RU_PG_REPLICA_TOPOLOGY=OBSERVED"
@@ -502,6 +507,8 @@ def _validate_environment_verifier_source() -> None:
             'API_BASE = "https://api.github.com"',
             'API_VERSION = "2026-03-10"',
             'ENVIRONMENT_NAME = "timeweb-synthetic"',
+            'PRODUCTION_ENVIRONMENT_NAME = "timeweb-production"',
+            "--environment-name",
             'EXPECTED_BRANCH_PATTERN = "main"',
             'method="GET"',
             "_NO_REDIRECT_OPENER",
@@ -595,22 +602,45 @@ def _validate_live_workflow() -> None:
 
 
 def _validate_timeweb_secret_scope() -> None:
-    allowed = {
+    secret_bearing = {
+        LIVE_WORKFLOW.resolve(),
+        SYNTHETIC_CREATE_WORKFLOW.resolve(),
+        PUBLIC_IPV4_TLS_WORKFLOW.resolve(),
+        TIMEWEB_ALLOCATION_WORKFLOW.resolve(),
+        APP_CANDIDATE_WORKFLOW.resolve(),
+        PRODUCTION_CUTOVER_WORKFLOW.resolve(),
+        PUBLIC_INGRESS_WORKFLOW.resolve(),
+    }
+    synthetic_environment = {
         LIVE_WORKFLOW.resolve(),
         SYNTHETIC_CREATE_WORKFLOW.resolve(),
         PUBLIC_IPV4_TLS_WORKFLOW.resolve(),
         TIMEWEB_ALLOCATION_WORKFLOW.resolve(),
     }
+    production_environment = {
+        APP_CANDIDATE_WORKFLOW.resolve(),
+        PRODUCTION_CUTOVER_WORKFLOW.resolve(),
+        PUBLIC_INGRESS_WORKFLOW.resolve(),
+        TELEGRAM_ACTIVATION_WORKFLOW.resolve(),
+    }
     for pattern in ("*.yml", "*.yaml"):
         for path in WORKFLOWS.glob(pattern):
             source = _read(path)
-            if _TIMEWEB_BINDING in source and path.resolve() not in allowed:
+            resolved = path.resolve()
+            if _TIMEWEB_BINDING in source and resolved not in secret_bearing:
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_SECRET_SCOPE_TOO_BROAD")
             if (
                 f"environment: {_ENVIRONMENT_NAME}" in source
-                and path.resolve() not in allowed
+                and resolved not in synthetic_environment
             ):
                 raise RuntimeError("TIMEWEB_CONTROL_PLANE_ENVIRONMENT_SCOPE_TOO_BROAD")
+            if (
+                f"environment: {_PRODUCTION_ENVIRONMENT_NAME}" in source
+                and resolved not in production_environment
+            ):
+                raise RuntimeError(
+                    "TIMEWEB_CONTROL_PLANE_PRODUCTION_ENVIRONMENT_SCOPE_TOO_BROAD"
+                )
 
 
 def _validate_runbook() -> None:

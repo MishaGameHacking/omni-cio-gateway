@@ -30,6 +30,7 @@ class BrowserCookiePolicyV1:
     csrf_cookie: str = BROWSER_CSRF_COOKIE
     secure: bool = True
     session_max_age_seconds: int = 24 * 60 * 60
+    allowed_providers: tuple[IdentityProviderV1, ...] = (IdentityProviderV1.TELEGRAM,)
 
     def __post_init__(self) -> None:
         if (
@@ -37,7 +38,14 @@ class BrowserCookiePolicyV1:
             or len(self.csrf_binding_key) < 32
         ):
             raise ValueError("BROWSER_CSRF_BINDING_KEY_INVALID")
-        for name in (self.session_cookie, self.csrf_cookie, *_PROOF_COOKIES.values()):
+        if len(self.allowed_providers) != len(set(self.allowed_providers)):
+            raise ValueError("BROWSER_PROVIDER_DUPLICATE")
+        if any(provider not in _PROOF_COOKIES for provider in self.allowed_providers):
+            raise ValueError("BROWSER_PROVIDER_INVALID")
+        proof_cookie_names = tuple(
+            _PROOF_COOKIES[provider] for provider in self.allowed_providers
+        )
+        for name in (self.session_cookie, self.csrf_cookie, *proof_cookie_names):
             if _COOKIE_NAME_PATTERN.fullmatch(name) is None:
                 raise ValueError("BROWSER_COOKIE_NAME_INVALID")
             if name.startswith("__Host-") and not self.secure:
@@ -46,6 +54,8 @@ class BrowserCookiePolicyV1:
             raise ValueError("BROWSER_SESSION_MAX_AGE_INVALID")
 
     def proof_cookie(self, provider: IdentityProviderV1) -> str:
+        if provider not in self.allowed_providers:
+            raise ValueError("BROWSER_PROVIDER_INVALID")
         try:
             return _PROOF_COOKIES[provider]
         except KeyError:

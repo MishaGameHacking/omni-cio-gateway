@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+import time
+
+from collections import defaultdict
+
+from datetime import datetime, timedelta, timezone
+
+from decimal import Decimal
+
+from typing import Any, Callable
+
+import grpc
+
+from fastapi import Depends, Query
+
+from omni_cio.analytics import operations_source_v1 as operations_analytics
+
+try:
+    from t_tech.invest import (
+        BrokerReportRequest,
+        GenerateBrokerReportRequest,
+        GetBrokerReportRequest,
+    )
+except ImportError:  # pragma: no cover - SDK compatibility fallback
+    BrokerReportRequest = None  # type: ignore[assignment]
+    GenerateBrokerReportRequest = None  # type: ignore[assignment]
+    GetBrokerReportRequest = None  # type: ignore[assignment]
+
+REPORT_MAX_PAGES = 100
+
+MONEY_TOLERANCE = Decimal("0.01")
+
+PATH = "/operations/broker-report-reconciliation"
+
+OPERATION_ID = "getBrokerReportReconciliation"
+
+def _decimal(base: Any, value: Any) -> Decimal | None:
+    result = base.decimal_from_any(value)
+    return result if isinstance(result, Decimal) else (
+        Decimal(str(result)) if result is not None else None
+    )
+
+def _currency(value: Any) -> str:
+    if isinstance(value, dict):
+        return str(value.get("currency", "") or "").strip().upper()
+    return ""
+
+def _money(base: Any, value: Any) -> tuple[Decimal | None, str]:
+    return _decimal(base, value), _currency(value)
+
+def _report_direction(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    if text in {"B", "BUY", "PURCHASE", "PURCHASES"} or text.startswith("ПОКУП"):
+        return "purchases"
+    if text in {"S", "SELL", "SALE", "SALES"} or text.startswith("ПРОДАЖ"):
+        return "sales"
+    return "other"
+
+def _date_key(base: Any, value: Any) -> str:
+    parsed = base.parse_datetime(value)
+    if parsed is None:
+        return ""
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+
+def _row_identity(base: Any, row: dict[str, Any]) -> tuple[str, str]:
+    trade_id = str(row.get("trade_id", "") or "").strip()
+    if trade_id:
+        return "trade_id", trade_id
+    fallback = "|".join(
+        (
+            str(row.get("figi", "") or "").strip(),
+            _report_direction(row.get("direction")),
+            _date_key(base, row.get("trade_datetime")),
+            str(row.get("quantity", "") or "").strip(),
+        )
+    )
+    return "fallback", fallback
+
+def _operation_trades(
+    *,
+    base: Any,
+    operations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for operation in operations:
+        if operations_analytics._operation_state(base, operation) != (
+            "OPERATION_STATE_EXECUTED"
+        ):
+            continue
+        category = operations_analytics.classify_operation(
+            operations_analytics._operation_type(base, operation)
+        )
+        if category not in {"purchases", "sales"}:
+            continue
+
+        trades: list[dict[str, Any]] = []
+        direct = operation.get("trades")
+        if isinstance(direct, list):
+            trades.extend(item for item in direct if isinstance(item, dict))
+        trades_info = operation.get("trades_info")
+        if isinstance(trades_info, dict):
+            nested = trades_info.get("trades")
+            if isinstance(nested, list):
+                trades.extend(item for item in nested if isinstance(item, dict))
+
+        if not trades:
+            result.append(
+                {
+                    "trade_id": "",
+                    "figi": str(operation.get("figi", "") or ""),
+                    "direction": category,
+                    "trade_datetime": operation.get("date"),
+                    "quantity": operation.get("quantity_done")
+                    or operation.get("quantity"),
+                    "price": operation.get("price"),
+                    "payment": operation.get("payment"),
+                    "source": "operation",
+                }
+            )
+            continue
+
+        for trade in trades:
+            result.append(
+                {
+                    "trade_id": str(
+                        trade.get("trade_id")
+                        or trade.get("id")
+                        or ""
+                    ),
+                    "figi": str(operation.get("figi", "") or ""),
+                    "direction": category,
+                    "trade_datetime": (
+                        trade.get("date_time")
+                        or trade.get("date")
+                        or operation.get("date")
+                    ),
+                    "quantity": trade.get("quantity"),
+                    "price": trade.get("price"),
+                    "payment": operation.get("payment"),
+                    "source": "embedded_trade",
+                }
+            )
+    return result
+

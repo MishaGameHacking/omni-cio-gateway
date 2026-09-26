@@ -18,6 +18,13 @@ TIMEWEB_READONLY_WORKFLOW = ".github/workflows/v10-timeweb-postgres-readonly-pro
 TIMEWEB_CREATE_WORKFLOW = ".github/workflows/v10-timeweb-postgres-synthetic-create.yml"
 TIMEWEB_NETWORK_WORKFLOW = ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
 TIMEWEB_ALLOCATION_WORKFLOW = ".github/workflows/v10-timeweb-ipv4-allocation.yml"
+TIMEWEB_APP_CANDIDATE_WORKFLOW = ".github/workflows/v10-timeweb-app-candidate.yml"
+TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW = (
+    ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
+)
+TIMEWEB_PUBLIC_INGRESS_WORKFLOW = (
+    ".github/workflows/v10-timeweb-public-ingress-acceptance.yml"
+)
 RETIRED_HOSTED_WORKFLOW = ".github/workflows/v10-hosted-release-alignment.yml"
 RETIRED_PREVIEW_WORKFLOW = ".github/workflows/v10-phase4-free-preview-deploy.yml"
 RETIRED_NEON_EGRESS_WORKFLOW = ".github/workflows/v10-neon-egress-boundary.yml"
@@ -32,6 +39,8 @@ NEON_ORG_ID = "NEON_ORG_ID"
 NEON_PROJECT_ID = "NEON_PROJECT_ID"
 CUSTOM_HOST = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
 TIMEWEB_CONTROL_PLANE_BINDING = "TIMEWEB_CLOUD_API_TOKEN"
+TIMEWEB_PRODUCTION_BOOTSTRAP_DSN_BINDING = "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN"
+TIMEWEB_PRODUCTION_RUNTIME_DSN_BINDING = "OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN"
 REMOVED_FUNCTION_INVOKE_TOKEN = "NEON_FUNCTION_INVOKE_API_TOKEN"
 RETIRED_RENDER_BINDING = "RENDER_API_KEY"
 
@@ -60,6 +69,8 @@ _EXPECTED_INVENTORY = frozenset(
         NEON_PROJECT_ID,
         CUSTOM_HOST,
         TIMEWEB_CONTROL_PLANE_BINDING,
+        TIMEWEB_PRODUCTION_BOOTSTRAP_DSN_BINDING,
+        TIMEWEB_PRODUCTION_RUNTIME_DSN_BINDING,
     }
 )
 _CLOUDFLARE_WORKFLOWS = frozenset(
@@ -71,6 +82,9 @@ _TIMEWEB_WORKFLOWS = frozenset(
         TIMEWEB_CREATE_WORKFLOW,
         TIMEWEB_NETWORK_WORKFLOW,
         TIMEWEB_ALLOCATION_WORKFLOW,
+        TIMEWEB_APP_CANDIDATE_WORKFLOW,
+        TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW,
+        TIMEWEB_PUBLIC_INGRESS_WORKFLOW,
     }
 )
 _ACTIVE_WORKFLOWS = _TIMEWEB_WORKFLOWS
@@ -116,7 +130,19 @@ _EXPECTED_ROLES: dict[str, object] = {
         TIMEWEB_CREATE_WORKFLOW,
         TIMEWEB_NETWORK_WORKFLOW,
         TIMEWEB_ALLOCATION_WORKFLOW,
+        TIMEWEB_APP_CANDIDATE_WORKFLOW,
+        TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW,
+        TIMEWEB_PUBLIC_INGRESS_WORKFLOW,
     ],
+    "timeweb_production_deploy_binding_environment": "timeweb-production",
+    "timeweb_production_cutover_workflow": TIMEWEB_PRODUCTION_CUTOVER_WORKFLOW,
+    "timeweb_public_ingress_acceptance_workflow": TIMEWEB_PUBLIC_INGRESS_WORKFLOW,
+    "timeweb_production_database_binding_environment": "timeweb-production",
+    "timeweb_production_database_bindings": [
+        TIMEWEB_PRODUCTION_BOOTSTRAP_DSN_BINDING,
+        TIMEWEB_PRODUCTION_RUNTIME_DSN_BINDING,
+    ],
+    "recovery_attestation_may_use_actions_secret": False,
 }
 _EXPECTED_INVARIANTS: dict[str, object] = {
     "gateway_entrypoint": "app:app",
@@ -244,6 +270,16 @@ _EXPECTED_INVENTORY_METADATA: dict[str, tuple[str, str, str]] = {
         "TIMEWEB",
         "CREDENTIAL",
         "RU_PG_B_ENVIRONMENT_SCOPED_CONTROL_PLANE",
+    ),
+    TIMEWEB_PRODUCTION_BOOTSTRAP_DSN_BINDING: (
+        "TIMEWEB",
+        "CREDENTIAL",
+        "PRODUCTION_ENVIRONMENT_SCOPED_DATABASE_BOOTSTRAP_DSN",
+    ),
+    TIMEWEB_PRODUCTION_RUNTIME_DSN_BINDING: (
+        "TIMEWEB",
+        "CREDENTIAL",
+        "PRODUCTION_ENVIRONMENT_SCOPED_DATABASE_RUNTIME_DSN",
     ),
 }
 
@@ -435,7 +471,10 @@ def _validate_retired_secret_bearing_bindings(
         _validate_archived_provider_workflow(path, workflows[path])
 
 
-def _validate_role_consumers(all_refs: dict[str, set[str]]) -> None:
+def _validate_role_consumers(
+    all_refs: dict[str, set[str]],
+    expected_by_workflow: dict[str, set[str]],
+) -> None:
     if any(NEON_FUNCTION_DEPLOY_BINDING in refs for refs in all_refs.values()):
         raise RuntimeError("PROVIDER_SECRET_CUSTODY_DORMANT_FUNCTION_KEY_EXPOSED")
     retired_provider_bindings = (
@@ -452,7 +491,7 @@ def _validate_role_consumers(all_refs: dict[str, set[str]]) -> None:
                 "PROVIDER_SECRET_CUSTODY_RETIRED_PROVIDER_BINDING_OUTSIDE_ARCHIVE"
             )
     for path in _TIMEWEB_WORKFLOWS:
-        if all_refs[path] != {TIMEWEB_CONTROL_PLANE_BINDING}:
+        if all_refs[path] != expected_by_workflow[path]:
             raise RuntimeError("PROVIDER_SECRET_CUSTODY_TIMEWEB_SCOPE_INVALID")
 
 
@@ -472,7 +511,7 @@ def validate(root: Path = ROOT) -> None:
         workflows, all_refs, retired_secret_bearing
     )
     _validate_retired_workflows(all_refs, retired)
-    _validate_role_consumers(all_refs)
+    _validate_role_consumers(all_refs, expected_by_workflow)
 
 
 def main() -> int:

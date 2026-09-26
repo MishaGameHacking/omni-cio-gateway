@@ -1,5 +1,7 @@
 # Omni-CIO v9.0.0 — setup / recovery runbook
 
+> **PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHORITY.** This file preserves the accepted Custom GPT v9.0.0 / `app:app` recovery surface. Current V10 implementation authority is the Timeweb + Telegram path defined by Amendments 18–21 and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
 Для обычной настройки и восстановления сначала читать `gpt/SETUP_INDEX.md`. Этот документ — полный воспроизводимый checklist для **существующего** Omni-CIO GPT.
 
 Repository target = **v9.0.0**. Applied external GPT = **v9.0.0**, owner-accepted in place on 2026-08-05. Protected rollback remains v8.6.1.

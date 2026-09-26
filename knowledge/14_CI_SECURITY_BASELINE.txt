@@ -76,7 +76,7 @@ Money/data integrity
 
 Accepted narrow code-loading exception
 --------------------------------------
-`broker_report_reconciliation/__init__.py` loads only checked-in `.pyfrag` files from a fixed package directory. Bandit B102 is narrowly documented on that fixed loader. External request/document/environment values must never control loader path or source text.
+`omni_cio/reconciliation/__init__.py` loads only checked-in `.pyfrag` files from the fixed canonical `omni_cio/reconciliation/_parts/` package directory. Bandit B102 is narrowly documented on that fixed loader. External request/document/environment values must never control loader path or source text.
 
 Treat changes in `_parts/*.pyfrag` as runtime-code changes. A future refactor may remove the dynamic loader, but until then it remains part of the tested production runtime.
 

@@ -1,7 +1,12 @@
 # Omni-CIO V10 — Security Boundaries
 
-Status: **ACTIVE ARCHITECTURE / UPDATED FOR PUBLIC-HOSTED MULTI-USER TARGET**  
+Status: **ACTIVE ARCHITECTURE / AMENDMENT 18 TIMEWEB + TELEGRAM AUTHORITY**  
 Runtime effect: **none until owning Exit Gates**
+
+Current provider boundary: GitHub is engineering/provenance authority, Timeweb Cloud
+is the selected V10 production infrastructure, and Telegram Login is the only
+human product login provider. Cloudflare, Neon, Render, Cloud.ru and VK ID are
+historical/retirement contours and receive no new feature authority.
 
 ## 1. Objective
 
@@ -15,7 +20,7 @@ Security model: **least privilege + tenant isolation + explicit authority + fail
 
 May contain code, tests, schemas, migrations, safe defaults, policies/prompts/tool contracts/evals, CI/deployment/recovery logic and non-secret release metadata.
 
-Must not contain real broker/Telegram/VK/provider/recovery secrets, full account IDs, private tenant portfolio/database payloads, private encryption keys or raw backups.
+Must not contain real broker/Telegram/provider/recovery secrets, any retained legacy VK secret, full account IDs, private tenant portfolio/database payloads, private encryption keys or raw backups.
 
 GitHub access is engineering authority only. It never grants a product USER session, tenant authority or trading authority.
 
@@ -105,8 +110,8 @@ Final public ingress requires:
 
 - reviewed public TLS/certificate lifecycle;
 - trusted edge/reverse-proxy/protocol chain;
-- Telegram/VK -> internal Omni-CIO account -> server-side USER session;
-- Cloudflare/provider identity kept outside product identity;
+- Telegram Login -> verified identity -> internal Omni-CIO account -> server-side USER session;
+- GitHub/Timeweb engineering or provider identity kept outside product identity;
 - Secure/HttpOnly/SameSite session controls, rotation/revocation/expiry;
 - CSRF + Origin/Referer/Host/CORS controls;
 - login/API abuse/rate limiting;
@@ -115,7 +120,7 @@ Final public ingress requires:
 - cross-tenant IDOR/cache/job/backup/RAG negatives;
 - production recovery independent of OWNER home access.
 
-Cloudflare may be edge/origin-protection infrastructure. A Tunnel whose sole production origin is OWNER home Lenovo is not a valid final public-production boundary.
+Timeweb managed ingress is the selected current public-production boundary. Cloudflare is not an authorized current/future V10 hop, and OWNER home Lenovo must never become the public-production origin.
 
 ## 3. Data classifications
 
@@ -135,7 +140,7 @@ Such data is not repository configuration and is inaccessible across tenants.
 
 ### Secret
 
-Broker credentials, Telegram/VK/provider secrets, private encryption/recovery material, session secrets and authorization headers.
+Broker credentials, Telegram/provider secrets, any retained legacy VK secret, private encryption/recovery material, session secrets and authorization headers.
 
 Secrets are never committed. Hosted secrets require approved encryption/access/rotation/recovery boundaries.
 
@@ -147,7 +152,7 @@ PROJECT OWNER               != special product superuser
 USER A session              != Tenant B authority
 Object ID                   != authorization
 Web session                 != raw secret access
-Cloudflare Access identity  != Omni-CIO USER session
+GitHub/Timeweb identity     != Omni-CIO USER session
 Read token                  != trading token
 USER A broker token         != shared/global token
 AI output                   != plan approval

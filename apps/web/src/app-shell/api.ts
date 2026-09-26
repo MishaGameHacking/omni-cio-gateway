@@ -148,6 +148,6 @@ export async function revokeAllSessions(): Promise<void> {
   csrfHeaderToken = null;
 }
 
-export function providerLoginPath(provider: "telegram" | "vk_id"): string {
-  return `/api/v10/web/auth/${provider}/start`;
+export function providerLoginPath(): string {
+  return "/api/v10/web/auth/telegram/start";
 }

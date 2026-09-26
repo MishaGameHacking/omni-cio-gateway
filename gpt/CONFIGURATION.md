@@ -1,5 +1,7 @@
 # Custom GPT configuration registry — Omni-CIO
 
+> **PROTECTED V9 RECOVERY ONLY — NOT CURRENT V10 AUTHORITY.** This file preserves the accepted Custom GPT v9.0.0 / `app:app` recovery surface. Current V10 implementation authority is the Timeweb + Telegram path defined by Amendments 18–21 and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
 > Канонический реестр **единственного** поддерживаемого Omni-CIO GPT. Не вставлять этот файл целиком в Instructions.
 
 ## Release state

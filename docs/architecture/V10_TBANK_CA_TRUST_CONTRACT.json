@@ -36,6 +36,10 @@
     "installed_certificates_must_be_current": true,
     "package_index_tls_probe_client": "pip",
     "package_index_tls_probe_read_only": true,
+    "package_index_tls_probe_retries": 2,
+    "package_index_tls_probe_timeout_seconds": 10,
+    "package_index_tls_probe_retry_scope": "NEW_HTTP_CONNECTION_ONLY",
+    "package_index_tls_probe_retry_may_disable_tls_verification": false,
     "tls_verification_may_be_disabled": false,
     "hostname_verification_may_be_disabled": false,
     "windows_dependency_consumers": [
@@ -51,7 +55,6 @@
       ".github/workflows/v10-wp20-research-dossier-audit.yml",
       ".github/workflows/v10-wp21-decision-risk-plan-audit.yml",
       ".github/workflows/v10-wp22-system-admin-audit.yml",
-      ".github/workflows/v10-wp22a-clientless-access-audit.yml",
       ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
     ],
     "every_windows_dependency_consumer_requires_preflight": true,
@@ -131,15 +134,26 @@
         "job": "system-admin"
       },
       {
-        "workflow": ".github/workflows/v10-wp22a-clientless-access-audit.yml",
-        "job": "wp22a-clientless"
-      },
-      {
         "workflow": ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml",
         "job": "phase2-product-auth-tenant"
       }
     ],
-    "every_windows_dependency_install_job_requires_preflight": true
+    "every_windows_dependency_install_job_requires_preflight": true,
+    "timeweb_docker_pip_trust": {
+      "dockerfile": "Dockerfile",
+      "requirements_lock": "requirements.txt",
+      "bundle_preparer": "scripts/prepare_v10_tbank_pip_ca_bundle.py",
+      "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
+      "base_bundle": "pip_vendored_certifi",
+      "environment_variable": "PIP_CERT",
+      "bundle_scope": "DOCKER_BUILD_TEMP_ONLY",
+      "persistent_bundle": false,
+      "machine_trust_store_required": false,
+      "certificate_verification_enabled": true,
+      "hostname_verification_enabled": true,
+      "runtime_tinvest_sdk_verify_env": "SSL_TBANK_VERIFY",
+      "runtime_tinvest_sdk_verify_value": "True"
+    }
   },
   "protected_invariants": {
     "gateway_entrypoint": "app:app",

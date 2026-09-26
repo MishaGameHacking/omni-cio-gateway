@@ -16,6 +16,8 @@ ROOT_CA = ROOT / "infrastructure/certificates/russian_trusted_root_ca_2022.der"
 SYNTAX_CHECKER = ROOT / "scripts/check_v10_tbank_ca_trust_syntax.ps1"
 AUTHORITATIVE = ROOT / ".github/workflows/self-hosted-windows-smoke.yml"
 FAST_PR = ROOT / ".github/workflows/v10-pr-fast-checks.yml"
+TIMEWEB_DOCKERFILE = ROOT / "Dockerfile"
+DOCKERIGNORE = ROOT / ".dockerignore"
 
 
 def test_tbank_ca_trust_contract_is_fail_closed() -> None:
@@ -50,8 +52,18 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     assert (
         payload["mutation"]["validate_all_inputs_before_first_store_mutation"] is True
     )
-    assert payload["verification"]["tls_verification_may_be_disabled"] is False
-    assert payload["verification"]["hostname_verification_may_be_disabled"] is False
+    verification = payload["verification"]
+    assert verification["package_index_tls_probe_retries"] == 2
+    assert verification["package_index_tls_probe_timeout_seconds"] == 10
+    assert verification["package_index_tls_probe_retry_scope"] == (
+        "NEW_HTTP_CONNECTION_ONLY"
+    )
+    assert (
+        verification["package_index_tls_probe_retry_may_disable_tls_verification"]
+        is False
+    )
+    assert verification["tls_verification_may_be_disabled"] is False
+    assert verification["hostname_verification_may_be_disabled"] is False
     assert payload["verification"]["ci_pip_trust"] == {
         "mode": "ephemeral_pip_cert_bundle",
         "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
@@ -71,6 +83,44 @@ def test_tbank_ca_trust_contract_is_fail_closed() -> None:
     assert payload["protected_invariants"]["broker_write"] is False
     assert payload["protected_invariants"]["trading_methods"] is False
     assert payload["protected_invariants"]["REAL_TRADING_ENABLED"] is False
+
+
+def test_timeweb_docker_build_reuses_scoped_pinned_pip_ca_bundle() -> None:
+    payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    trust = payload["verification"]["timeweb_docker_pip_trust"]
+    dockerfile = TIMEWEB_DOCKERFILE.read_text(encoding="utf-8")
+    dockerignore = DOCKERIGNORE.read_text(encoding="utf-8")
+
+    assert trust == {
+        "dockerfile": "Dockerfile",
+        "requirements_lock": "requirements.txt",
+        "bundle_preparer": "scripts/prepare_v10_tbank_pip_ca_bundle.py",
+        "root_der": "infrastructure/certificates/russian_trusted_root_ca_2022.der",
+        "base_bundle": "pip_vendored_certifi",
+        "environment_variable": "PIP_CERT",
+        "bundle_scope": "DOCKER_BUILD_TEMP_ONLY",
+        "persistent_bundle": False,
+        "machine_trust_store_required": False,
+        "certificate_verification_enabled": True,
+        "hostname_verification_enabled": True,
+        "runtime_tinvest_sdk_verify_env": "SSL_TBANK_VERIFY",
+        "runtime_tinvest_sdk_verify_value": "True",
+    }
+    assert "prepare_v10_tbank_pip_ca_bundle.py" in dockerfile
+    assert "V10_TBANK_CA_TRUST_CONTRACT.json" in dockerfile
+    assert "russian_trusted_root_ca_2022.der" in dockerfile
+    assert 'PIP_CERT="$PIP_CERT_PATH" python -m pip install' in dockerfile
+    assert 'rm -f "$PIP_CERT_PATH" /tmp/tbank-pip-ca.json' in dockerfile
+    assert "SSL_TBANK_VERIFY=True" in dockerfile
+    assert "!docs/architecture/V10_TBANK_CA_TRUST_CONTRACT.json" in dockerignore
+    for marker in (
+        "--trusted-host",
+        "PIP_TRUSTED_HOST",
+        "verify=False",
+        "CERT_NONE",
+        "--insecure",
+    ):
+        assert marker not in dockerfile
 
 
 def test_tbank_ca_provisioner_requires_explicit_admin_apply_and_local_files() -> None:
@@ -147,6 +197,16 @@ def test_tbank_ca_checker_uses_ephemeral_pinned_pip_bundle() -> None:
     assert '"t-tech-investments"' in source
     assert '"--retries"' in source
     assert '"--timeout"' in source
+    assert (
+        "$probeRetries = [int]$contract.verification.package_index_tls_probe_retries"
+    ) in source
+    assert (
+        "$probeTimeoutSeconds = "
+        "[int]$contract.verification.package_index_tls_probe_timeout_seconds"
+    ) in source
+    assert '"TBANK_PACKAGE_INDEX_SECURE_PROBE_NOT_READY"' in source
+    assert '"--retries",\n        "0"' not in source
+    assert "TBANK_CA_TRUST_PROBE_POLICY_INVALID" in source
     assert "Start-Process" in source
     assert "RedirectStandardOutput" in source
     assert "RedirectStandardError" in source

@@ -25,10 +25,10 @@
     "real_broker_data_allowed": false,
     "synthetic_cluster_required": true,
     "encrypted_postgres_session_required": true,
-    "cloudflare_connectivity_proved_by_this_stage": false,
     "sslmode_required": "verify-full",
     "sslrootcert_required": true,
-    "provider_location_env_is_expectation_only": true
+    "provider_location_env_is_expectation_only": true,
+    "application_runtime_connectivity_proved_by_this_stage": false
   },
   "parity": {
     "exact_postgres_major": 18,
@@ -37,7 +37,7 @@
     "separate_bootstrap_and_runtime_identities_required": true,
     "bootstrap_superuser_allowed": false,
     "bootstrap_createrole_required": true,
-    "runtime_role": "omni_cio_cloudflare_staging",
+    "runtime_role": "omni_cio_timeweb_synthetic",
     "runtime_superuser_allowed": false,
     "runtime_createdb_allowed": false,
     "runtime_createrole_allowed": false,
@@ -49,12 +49,12 @@
     "unscoped_default_deny_required": true,
     "cross_tenant_select_denied_required": true,
     "cross_tenant_write_denied_required": true,
-    "reuse_neon_runtime_sql_renderer": true,
-    "reuse_neon_runtime_role_convergence": true,
-    "reuse_neon_runtime_verification": true,
-    "reuse_existing_postgres_retry": true,
     "production_runtime_role_mutated_in_ru_pg_b": false,
-    "alter_default_privileges_probe_required": true
+    "alter_default_privileges_probe_required": true,
+    "reuse_provider_neutral_runtime_sql_renderer": true,
+    "reuse_provider_neutral_runtime_role_convergence": true,
+    "reuse_provider_neutral_runtime_verification": true,
+    "reuse_provider_neutral_postgres_retry": true
   },
   "minimum_tier": {
     "configuration": "1 CPU / 1 GB RAM / 8 GB NVMe",
@@ -79,15 +79,15 @@
     "provider_location_evidence_required": true
   },
   "next_stage": {
-    "stage": "RU-PG-C_CLOUDFLARE_TLS_RECOVERY_PARITY",
+    "stage": "TIMEWEB-PLATFORM-CONSOLIDATION/TW-D_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER",
     "allowed": false,
-    "requires_ru_pg_b_certified_green": true
+    "requires_tw_b_and_tw_c_acceptance": true
   },
   "protected_invariants": {
     "PUBLIC_MULTI_USER_ENABLED": false,
     "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
     "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
-    "current_neon_production_authority_preserved": true,
+    "current_neon_production_authority_preserved": false,
     "production_database_cutover_allowed": false,
     "broker_write": false,
     "trading_methods": false,

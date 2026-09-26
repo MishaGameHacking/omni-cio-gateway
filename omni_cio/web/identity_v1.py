@@ -48,7 +48,6 @@ class VerifiedExternalIdentityV1:
 
 ORDINARY_LOGIN_PROVIDERS: Final[tuple[IdentityProviderV1, ...]] = (
     IdentityProviderV1.TELEGRAM,
-    IdentityProviderV1.VK_ID,
 )
 
 

@@ -256,6 +256,5 @@ Required final parity marker:
 
 `RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS`
 
-Until that parity checkpoint is accepted, current Neon production authority remains
-unchanged, production `OMNI_V10_POSTGRES_DSN` remains untouched and RU-PG-C remains
-locked.
+Until that parity checkpoint is accepted, no production database cutover is authorized.
+Production `OMNI_V10_POSTGRES_DSN` remains untouched and RU-PG-C remains locked.

@@ -2,6 +2,14 @@
 
 Status: **SUPPORT PATH ACCEPTED — REAL OWNER LIVE ACTION REQUIRED / WP18 LOCKED**
 
+> **Amendments 18/19 CURRENT TIMEWEB OVERRIDE:** the OWNER/Lenovo procedure below
+> is preserved as historical local live-read acceptance evidence. It is not a TW-B
+> merge prerequisite and no OWNER laptop command is required for current Timeweb
+> source/runtime certification. The Timeweb hosted runtime keeps broker credential
+> mutation disabled until a separate tenant-scoped encrypted hosted custody gate is
+> accepted. Do not move a real broker credential into GitHub, CI, chat or a Timeweb
+> variable merely to satisfy this historical procedure.
+
 Current canonical live-evidence marker remains:
 
 `LIVE_EVIDENCE_STATUS=DEFERRED_TO_WEB_PROVISIONING`
@@ -152,7 +160,7 @@ On the Lenovo itself, open:
 
 `http://127.0.0.1:8765/settings`
 
-The local acceptance login surface is visible only on loopback. Click **Локальный OWNER acceptance**. This is an acceptance-only local identity switch and is not a third production login provider; ordinary product login remains Telegram/VK ID.
+The local acceptance login surface is visible only on loopback. Click **Локальный OWNER acceptance**. This is an accepted historical acceptance-only identity switch, not a production login provider and not part of the Timeweb runtime. Under Amendment 18, current/future ordinary product login is Telegram Login only; VK ID is retired.
 
 In **Settings -> Broker Connections**:
 

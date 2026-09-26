@@ -1,7 +1,8 @@
 # Структура репозитория Omni-CIO
 
-Статус: **V10 WP1 repository architecture authority / current physical-tree model refreshed 2026-08-16**  
-Current production/recovery runtime: **Omni-CIO v9.0.0**  
+Статус: **V10 current physical-tree model / Amendment 20 V9C-B branch-local migration state**  
+Forward V10 source runtime: **Timeweb-targeted `apps.api.hosted_runtime:create_app`**  
+Compatibility/recovery migration input until V9C-C: **V9 `app:app`**  
 Active feature program: **Omni-CIO V10**  
 Dynamic progress/current WP: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
@@ -9,30 +10,27 @@ Dynamic progress/current WP: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
 Репозиторий организован вокруг **одного продукта и одного финансового Core**.
 
-V10 не создаёт второй независимый бот/сайт/Gateway. Текущий V9 runtime сохраняется как compatibility/recovery layer, а V10 API/Web/infrastructure и позже Telegram/AI подключаются к одному Core только по мере прохождения owning Work Packages.
+V10 не создаёт второй независимый бот/сайт/Gateway. Amendment 20 определяет V9 как migration source: полезная логика переносится в canonical V10 packages, а один forward application runtime собирается через `apps.api.hosted_runtime:create_app` для Timeweb. V9 wrappers сохраняются только до своего V9C-C parity/zero-consumer/recovery gate.
 
 Инженерный source of truth — private GitHub repository. Ни ChatGPT-аккаунт, ни Lenovo, ни hosting dashboard, ни IDE не являются владельцем проекта.
 
 ## 2. Current accepted physical tree
 
-Текущая accepted структура содержит одновременно защищённые V9 compatibility paths и уже принятые V10 roots. Упрощённое дерево:
+Текущая branch-local V9C-B структура содержит временные V9 runtime wrappers и уже relocated deterministic V10 sources. Упрощённое дерево:
 
 ```text
 omni-cio-gateway/
-├── app.py                         # protected production wrapper / app:app
-├── app_v371.py                    # protected V9 compatibility dependency
-├── app_v360.py                    # protected V9 compatibility dependency
-├── main.py                        # protected V9 Gateway/auth dependency
-├── portfolio_market.py
-├── portfolio_analytics.py
-├── cash_liquidity.py
-├── purchase_capacity.py
-├── purchase_capacity_integrity.py
-├── operations_analytics.py
-├── sdk_order_compat.py
-├── broker_report_reconciliation/
+├── app.py                         # V9C-C migration/recovery input
+├── app_v371.py                    # V9C-C compatibility input
+├── app_v360.py                    # V9C-C compatibility input
+├── main.py                        # V9C-C Gateway/auth migration input
 │
 ├── omni_cio/                      # ONE deterministic financial Core/domain packages
+│   ├── portfolio/                 # relocated market/portfolio source
+│   ├── analytics/                 # relocated portfolio/cash/operations analytics
+│   ├── pretrade/                  # relocated purchase/sale capacity logic
+│   ├── adapters/                  # relocated T-Invest SDK compatibility adapter
+│   └── reconciliation/            # relocated broker-report reconciliation
 │
 ├── apps/                          # accepted/active V10 adapter roots
 │   ├── api/                       # accepted V10 API/application adapter
@@ -54,7 +52,7 @@ omni-cio-gateway/
 ├── tests/
 ├── scripts/
 ├── .github/
-├── render.yaml                    # protected V9 production deployment contract
+├── render.yaml                    # V9/provider retirement input; not forward V10 deployment authority
 ├── requirements.in
 ├── requirements.txt
 ├── requirements-dev.in
@@ -68,9 +66,9 @@ omni-cio-gateway/
 
 `ai/` remains a later lifecycle-gated V10 root and is not present/authorized merely because the target ownership model reserves it.
 
-Root wrappers are **not legacy merely because they have versioned names**. `app.py` still depends on current compatibility paths; moving/removing them requires the responsible later V10 migration package and full regression proof.
+`app.py`, `app_v360.py`, `app_v371.py` and `main.py` remain present only because V9C-C has not yet completed runtime parity/zero-consumer/recovery proof. Their versioned names are not themselves deletion evidence, but Amendment 20 explicitly classifies them as migration inputs rather than permanent architecture.
 
-Stable V9 entrypoint remains `app:app` until explicitly retired by an accepted V10 deployment/parity migration.
+The V9 `app:app` entrypoint remains a compatibility/recovery boundary until V9C-C; the forward Timeweb source entrypoint is `apps.api.hosted_runtime:create_app`.
 
 ## 3. Canonical V10 ownership model
 
@@ -89,6 +87,8 @@ omni-cio-gateway/
 │   ├── adapters/
 │   ├── quality/
 │   ├── analytics/
+│   ├── portfolio/
+│   ├── reconciliation/
 │   ├── market/
 │   ├── router/
 │   ├── policy/
@@ -250,16 +250,15 @@ Secret values remain a separate runtime provisioning process and are never impli
 
 ## 11. Current V9 compatibility ownership
 
-Until later V10 migration packages explicitly replace them:
+Amendment 20 makes the compatibility boundary explicitly temporary:
 
-- current Render production service remains the protected V9 runtime;
-- `app:app` remains stable;
-- root wrappers remain dependencies;
-- existing GPT v9.0.0 remains applied;
-- `gpt/` remains a protected migration/recovery source;
-- V9 broker execution invariants remain binding.
+- deterministic root engines have moved to canonical `omni_cio/` ownership in V9C-B;
+- `app.py`, `app_v360.py`, `app_v371.py` and `main.py` remain only until V9C-C proves replacement, zero current consumers and recovery;
+- `render.yaml`, retired-provider artifacts and V9-specific GPT working-tree assets remain migration inputs until their V9C-D/V9C-E gates;
+- existing GPT v9.0.0 and historical provider evidence remain provenance/recovery inputs, not forward V10 provider authority;
+- V9 broker execution invariants remain binding throughout migration.
 
-Accepted V10 Web/API/infrastructure does not silently decommission these V9 recovery paths.
+No compatibility artifact may be removed merely by name; no compatibility artifact may remain indefinitely after its owning zero-consumer/recovery gate passes.
 
 ## 12. Development/test reproducibility boundary
 

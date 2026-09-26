@@ -13,7 +13,6 @@
 # Deterministic financial Core and current domain engines
 /omni_cio/ @MishaGameHacking
 /*.py @MishaGameHacking
-/broker_report_reconciliation/ @MishaGameHacking
 
 # Reserved V10 application/adaptor roots
 /apps/ @MishaGameHacking

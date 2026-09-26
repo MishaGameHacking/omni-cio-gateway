@@ -230,7 +230,7 @@ def validate_contract(data: dict[str, object]) -> None:
     )
     invariants = _mapping(data.get("protected_invariants"))
     _require(invariants.get("protected_v9_entrypoint") == "app:app")
-    _require(invariants.get("neon_production_authority_preserved") is True)
+    _require(invariants.get("neon_production_authority_preserved") is False)
     _flags(
         invariants,
         (

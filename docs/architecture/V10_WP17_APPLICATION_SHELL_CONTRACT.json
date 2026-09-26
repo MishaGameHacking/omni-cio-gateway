@@ -18,7 +18,9 @@
     "/system",
     "/settings"
   ],
-  "ordinary_login_providers": ["telegram", "vk_id"],
+  "ordinary_login_providers": [
+    "telegram"
+  ],
   "local_password_allowed": false,
   "google_login_allowed": false,
   "session": {
@@ -47,7 +49,8 @@
     "multiple_read_accounts_per_credential_allowed": true,
     "replace_requires_same_verified_account_set": true,
     "trade_credential_allowed": false,
-    "transfer_or_withdrawal_allowed": false
+    "transfer_or_withdrawal_allowed": false,
+    "local_vault_authority": "HISTORICAL_LOCAL_ONLY"
   },
   "read_vault_acceptance": {
     "owner_admin_verify_required": true,
@@ -56,7 +59,9 @@
     "non_admin_runner_negative_probe_required": true,
     "runner_payload_read_allowed": false,
     "runner_payload_write_allowed": false,
-    "runner_evidence_write_allowed": false
+    "runner_evidence_write_allowed": false,
+    "authority": "HISTORICAL_LOCAL_ONLY",
+    "blocks_timeweb_pr": false
   },
   "public_activation": {
     "public_registration": false,
@@ -75,5 +80,13 @@
     "REAL_TRADING_ENABLED": false,
     "broker_write_authority_added": false,
     "protected_v9_rollback": true
+  },
+  "timeweb_broker_custody": {
+    "mode": "FAIL_CLOSED_PENDING_HOSTED_BACKEND",
+    "local_windows_vault_dependency_allowed": false,
+    "owner_admin_acl_evidence_required_for_timeweb_pr": false,
+    "broker_mutation_enabled": false,
+    "global_shared_credential_allowed": false,
+    "required_pr_gate": "TIMEWEB_SOURCE_SECURITY_AUDIT"
   }
 }

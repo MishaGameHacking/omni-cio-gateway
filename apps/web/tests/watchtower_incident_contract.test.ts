@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { appRouteFeatureByPath } from "../src/app-shell/contracts.ts";
+
 const page = readFileSync(new URL("../src/app-shell/watchtower-incidents.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
 const backend = readFileSync(new URL("../../../omni_cio/web/watchtower_incidents_v1.py", import.meta.url), "utf8");
 
 test("WP19 replaces Watchtower placeholder inside the accepted application shell", () => {
-  assert.match(shell, /path === ["']\/watchtower["']/);
+  assert.equal(appRouteFeatureByPath["/watchtower"], "watchtower-incidents");
   assert.match(shell, /WatchtowerIncidentsPage/);
   assert.match(page, /WATCHTOWER \/ INCIDENTS/);
 });

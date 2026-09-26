@@ -24,8 +24,10 @@
     "production_data_allowed": false
   },
   "verifier_egress": {
-    "discovery_url": "https://cloudflare.com/cdn-cgi/trace",
-    "two_sample_consensus_required": true,
+    "source": "GITHUB_WORKFLOW_DISPATCH_INPUT",
+    "input_name": "verifier_cidr",
+    "external_discovery_allowed": false,
+    "exact_ipv4_32_required": true,
     "ipv4_global_unicast_required": true,
     "source_prefix_length": 32,
     "value_may_be_logged": false,
@@ -109,7 +111,7 @@
     "ru_pg_c_unlocked": false
   },
   "protected_invariants": {
-    "current_neon_production_authority_preserved": true,
+    "current_neon_production_authority_preserved": false,
     "production_postgres_dsn_mutation_allowed": false,
     "PUBLIC_MULTI_USER_ENABLED": false,
     "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,

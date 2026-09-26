@@ -157,14 +157,45 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_guard_rejects_bot_linking_as_login_prerequisite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["identity_and_bot_separation"]["bot_chat_required_for_login"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_IDENTITY_BOT_SEPARATION_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_telegram_bot_access_scope_in_login(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.TELEGRAM
+            source = path.read_text(encoding="utf-8").replace(
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"',
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"\nTELEGRAM_BOT_SCOPE = "telegram:bot_access"',
+                1,
+            )
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_BOT_ACCESS_SCOPE_FORBIDDEN",
+            ):
+                guard.validate(root)
+
     def test_guard_rejects_extra_telegram_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
             path = root / guard.TELEGRAM
             source = path.read_text(encoding="utf-8").replace(
-                '"scope": "openid"',
-                '"scope": "openid profile"',
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid"',
+                'TELEGRAM_OIDC_LOGIN_SCOPE = "openid profile"',
                 1,
             )
             path.write_text(source, encoding="utf-8")
@@ -174,14 +205,31 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_guard_is_bound_to_current_timeweb_telegram_runtime(self) -> None:
+        self.assertEqual(guard.AUTH_RUNTIME, Path("apps/api/telegram_auth.py"))
+
+    def test_guard_rejects_partial_activation_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["activation_switch"]["partial_activation_allowed"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_ACTIVATION_SWITCH_INVALID",
+            ):
+                guard.validate(root)
+
     def test_guard_rejects_provider_neutral_activation_default_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_fixture(root)
             path = root / guard.AUTH_RUNTIME
             source = path.read_text(encoding="utf-8").replace(
-                "if not value:\n        return False",
-                "if not value:\n        return True",
+                'if raw in {"", "0", "false"}:\n        return False',
+                'if raw in {"", "0", "false"}:\n        return True',
                 1,
             )
             path.write_text(source, encoding="utf-8")
@@ -198,6 +246,22 @@ class TelegramPublicUserReadinessTests(unittest.TestCase):
             path = root / guard.CONTRACT
             payload = json.loads(path.read_text(encoding="utf-8"))
             payload["capacity_and_abuse"]["timeweb_runtime_capacity_accepted"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TELEGRAM_PUBLIC_USER_READINESS_CAPACITY_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_horizontal_scaling_before_distributed_limits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_fixture(root)
+            path = root / guard.CONTRACT
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["capacity_and_abuse"]["current_horizontal_app_scaling_allowed"] = (
+                True
+            )
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,

@@ -280,6 +280,38 @@ The public root trust anchor is scoped to pip processes that receive
 machine. Dependency versions, hashes and the official T-Bank package source are
 unchanged.
 
+## Timeweb App Platform Docker dependency consumer
+
+TW-B repository-wide source review found a second platform-specific consumer of the
+same T-Bank CA trust prerequisite. The root `Dockerfile` installs the canonical
+`requirements.txt`, and that lock contains the official T-Bank package index as an
+extra resolver source. A stock `python:3.14.6-slim-bookworm` image does not inherit
+the protected Windows runner's job-local `PIP_CERT` bundle.
+
+This is a build-supply-chain defect class, not a reason to weaken TLS or remove the
+locked SDK. If left unfixed, the first Timeweb App Platform Docker build can fail
+during dependency resolution before Omni-CIO starts, reproducing the same
+certificate-verification class already proven on Windows.
+
+Systemic correction in TW-B:
+
+- reuse the accepted source-controlled Russian Trusted Root CA and reviewed DER
+  fingerprint contract;
+- reuse `prepare_v10_tbank_pip_ca_bundle.py` to merge that root with pip's own
+  vendored certifi bundle;
+- scope `PIP_CERT` to the single Docker build dependency-install command;
+- delete the temporary bundle immediately after the install step;
+- keep certificate and hostname verification enabled and forbid
+  `--trusted-host`/TLS bypasses;
+- set `SSL_TBANK_VERIFY=True` in the runtime image so the locked
+  `t-tech-investments==1.49.3` SDK uses its supported embedded Russian CA path;
+- do not bake broker, Telegram or PostgreSQL credentials into Docker build args or
+  image environment.
+
+This extends the existing reviewed trust primitive to a new consumer. It does not
+change dependency versions, package-source authority, broker permissions, or the
+OWNER/Admin machine-trust boundary.
+
 ## Acceptance
 
 This repair is not GREEN merely because the source exists. The exact repair head
@@ -384,3 +416,35 @@ Systemic correction:
 
 No quality threshold is changed or suppressed. Fresh exact-head verification
 must prove Sonar duplication returns within the existing gate.
+
+## Zero-retry secure-probe availability defect — PR #584 P3
+
+P3 replacement head `46dd9f3f76ef02ac2b19ebdee091c08836b2ad0e`
+exposed a different failure mode inside the already-reviewed ephemeral bundle
+boundary. WP19 failed the package-index preflight twice on two attempts while
+the same exact head's WP18/WP20 and authoritative jobs proved the pinned bundle
+and dependency path on the same physical self-hosted machine.
+
+The checker had explicitly set pip `--retries 0`. A single short-lived
+connection/provider failure therefore became a hard CI RED even when
+`root_pin_verified=true` and `pip_ca_bundle_ready=true`. The checker also
+classified every launched nonzero pip probe as
+`TBANK_PACKAGE_INDEX_TLS_NOT_READY`, which overstated the evidence because raw
+child stderr is intentionally not emitted.
+
+Systemic correction:
+
+- keep the exact official package index and explicit pinned `--cert` bundle;
+- encode a bounded secure-probe policy in the machine-readable CA contract;
+- allow exactly two new-HTTP-connection attempts with a 10-second socket
+  timeout, matching pip's supported retry/timeout controls while remaining
+  stricter than pip defaults;
+- reject retry policy drift outside the reviewed bounds before the probe;
+- rename a nonzero verified probe to
+  `TBANK_PACKAGE_INDEX_SECURE_PROBE_NOT_READY`, avoiding an unsupported claim
+  that every transport failure is a certificate failure;
+- retain all TLS/hostname verification and all `--trusted-host` / insecure
+  negatives.
+
+This is availability hardening of a read-only verifier, not a dependency,
+package-source, certificate-pin, broker or product-authority change.

@@ -109,25 +109,28 @@ def test_current_operational_docs_do_not_reintroduce_pre_v9_status() -> None:
     for relative in CURRENT_STATE_DOCS:
         text = _read(relative)
         for marker in STALE_CURRENT_STATE_MARKERS:
-            assert marker not in text, f"{relative}: stale current-state marker {marker!r}"
+            assert marker not in text, (
+                f"{relative}: stale current-state marker {marker!r}"
+            )
 
 
-def test_current_navigation_describes_completed_v9_maintenance_state() -> None:
+def test_current_navigation_describes_v9_as_migration_source() -> None:
     changelog = _read("CHANGELOG.md")
     contributing = _read("CONTRIBUTING.md")
     copilot = _read(".github/copilot-instructions.md")
     master_plan_index = _read("docs/master-plan/README.md")
 
-    for text, relative in (
-        (changelog, "CHANGELOG.md"),
-        (contributing, "CONTRIBUTING.md"),
-        (copilot, ".github/copilot-instructions.md"),
-        (master_plan_index, "docs/master-plan/README.md"),
-    ):
-        assert "v9.0.0" in text, relative
-        assert "controlled maintenance" in text, relative
+    assert "V9 migration source" in changelog
+    assert "V9 migration source" in contributing
+    assert "V9 migration source" in copilot
+    assert "V9 migration source" in master_plan_index
 
-    assert "WP0–WP15" in changelog
+    assert "Amendment 20" in changelog
+    assert "PR #584" in contributing
+    assert "PR #584" in copilot
+    assert "Amendment 20" in master_plan_index
+
+    assert "protected effective production/recovery V9 baseline" not in copilot
+    assert "Do not mass-delete historical provider files" not in copilot
     assert "historical" in changelog.casefold()
     assert "completed" in master_plan_index.casefold()
-    assert "effective production" in copilot

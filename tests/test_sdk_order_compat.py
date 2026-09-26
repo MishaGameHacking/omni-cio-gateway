@@ -5,7 +5,7 @@ import pytest
 os.environ.setdefault("TINVEST_TOKEN", "regression-test-tinvest-token")
 os.environ.setdefault("GATEWAY_API_KEY", "regression-test-gateway-key")
 
-import sdk_order_compat
+from omni_cio.adapters import tinvest_order_compat_v1 as sdk_order_compat
 
 
 class RequestObjectOrders:
@@ -92,9 +92,7 @@ def test_sale_adapters_build_only_read_only_request_objects() -> None:
         direction=direction,
         quantity=1,
     ) == {"status": "ok"}
-    assert order_adapter.get_orders(account_id="test-account-3118") == {
-        "status": "ok"
-    }
+    assert order_adapter.get_orders(account_id="test-account-3118") == {"status": "ok"}
     assert operations_adapter.get_positions(account_id="test-account-3118") == {
         "status": "ok"
     }
@@ -154,9 +152,7 @@ class OperationsWithForbiddenMethods(KeywordOperations):
 
 
 def test_purchase_orders_adapter_remains_narrow() -> None:
-    adapter = sdk_order_compat.OrdersServiceRequestAdapter(
-        OrdersWithForbiddenMethods()
-    )
+    adapter = sdk_order_compat.OrdersServiceRequestAdapter(OrdersWithForbiddenMethods())
 
     assert sdk_order_compat.ALLOWED_ORDERS_METHODS == frozenset(
         {"get_max_lots", "get_order_price"}

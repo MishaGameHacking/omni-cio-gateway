@@ -1,8 +1,8 @@
 {
   "ledger": "V10_V9_TO_V10_PARITY_LEDGER",
-  "version": 1,
-  "status": "OWNER_APPROVED_SEED_LEDGER",
-  "effective_date": "2026-08-07",
+  "version": 2,
+  "status": "OWNER_APPROVED_V9_CONVERGENCE_LEDGER",
+  "effective_date": "2026-09-24",
   "allowed_statuses": [
     "BASELINE_IDENTIFIED",
     "CONTRACT_DEFINED",
@@ -11,35 +11,107 @@
     "INTENTIONALLY_RETIRED",
     "BLOCKED"
   ],
-  "final_gate": "Every material V9 capability in V10 scope must be PARITY_PROVEN or OWNER-approved INTENTIONALLY_RETIRED before V10.0.0 acceptance unless the Master Plan explicitly assigns it to a later version.",
-  "source_inventory_rule": "Exact V9 modules/functions/routes/tests are inspected from accepted main by the owning WP; this seed must not guess missing identifiers.",
+  "final_gate": "Every material V9 capability required by the forward V10 product must be PARITY_PROVEN or explicitly INTENTIONALLY_RETIRED before its legacy working-tree producer is removed; runtime/GPT/provider legacy retirement additionally requires zero current consumers and current V10 recovery proof.",
+  "source_inventory_rule": "Use the accepted V9 target already present in current main ancestry; do not merge stale v9 branch heads. V9C-A inventories exact source, then V9C-B/C/D migrate and retire only after parity/consumer/recovery gates.",
   "capabilities": [
     {
       "id": "PARITY-PORTFOLIO-CORE",
       "v9_capability": "portfolio state and deterministic portfolio analytics",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
+      "v9_source_refs": [
+        "portfolio_market.py",
+        "portfolio_analytics.py",
+        "cash_liquidity.py"
+      ],
+      "v9_tests_refs": [
+        "tests/test_portfolio_market_snapshot.py",
+        "tests/test_portfolio_analytics.py",
+        "tests/test_cash_liquidity.py"
+      ],
       "inventory_required": true,
-      "v10_owner": "Deterministic Core / portfolio contracts",
+      "v10_owner": "omni_cio/portfolio + omni_cio/analytics",
       "v10_truth_rule": "verified broker HTML report is canonical for broker-period accounting; current-market enrichment is separate",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "EXTRACT_TO_CORE",
       "parity_oracle": "same canonical normalized input -> same reviewed Decimal-safe portfolio/accounting result unless an explicitly versioned semantic change is approved",
-      "owning_wp": "Block D owning portfolio/data WPs",
-      "status": "CONTRACT_DEFINED",
-      "evidence": []
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
+      "status": "IMPLEMENTED",
+      "evidence": [
+        "Git blob identity preserved: portfolio_market -> omni_cio/portfolio/market_source_v1.py",
+        "Git blob identity preserved: portfolio_analytics -> omni_cio/analytics/portfolio_source_v1.py",
+        "Git blob identity preserved: cash_liquidity -> omni_cio/analytics/cash_liquidity_v1.py",
+        "Existing behavior tests now import canonical package paths; exact-head CI certification is required before V9C-B is GREEN."
+      ]
     },
     {
       "id": "PARITY-BROKER-REPORT-RECON",
       "v9_capability": "broker report reconciliation and financial consistency checks",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
+      "v9_source_refs": [
+        "broker_report_reconciliation/"
+      ],
+      "v9_tests_refs": [
+        "tests/test_broker_report_reconciliation.py",
+        "tests/test_broker_report_async_integrity.py"
+      ],
       "inventory_required": true,
-      "v10_owner": "Broker HTML parser + normalization + reconciliation",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "v10_owner": "omni_cio/reconciliation",
+      "migration_method": "EXTRACT_TO_CORE",
       "parity_oracle": "approved broker report fixtures reconcile exact balances/positions/operations/fees/income with explicit discrepancy evidence",
-      "owning_wp": "Block D broker report WPs",
-      "status": "CONTRACT_DEFINED",
-      "evidence": []
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
+      "status": "IMPLEMENTED",
+      "evidence": [
+        "Canonical omni_cio/reconciliation/__init__.py and fragments 01-07 preserve Git blob identity.",
+        "Fragment 00 changes only the operations-analytics import to its canonical package path.",
+        "Existing broker reconciliation tests now import omni_cio.reconciliation; exact-head CI certification is required before V9C-B is GREEN."
+      ]
+    },
+    {
+      "id": "PARITY-PRETRADE-CAPACITY",
+      "v9_capability": "read-only purchase/sale capacity, integrity and T-Invest request-object compatibility",
+      "v9_source_refs": [
+        "purchase_capacity.py",
+        "purchase_capacity_integrity.py",
+        "sale_capacity.py",
+        "sale_capacity_normalization.py",
+        "sdk_order_compat.py"
+      ],
+      "v9_tests_refs": [
+        "tests/test_purchase_capacity.py",
+        "tests/test_purchase_capacity_integrity.py",
+        "tests/test_sale_capacity.py",
+        "tests/test_sdk_order_compat.py",
+        "tests/test_pretrade_preview_v1.py"
+      ],
+      "inventory_required": true,
+      "v10_owner": "omni_cio/pretrade + omni_cio/adapters",
+      "migration_method": "EXTRACT_TO_CORE",
+      "parity_oracle": "same reviewed request/evidence -> same read-only Decimal-safe purchase/sale preview and integrity result; no order submit authority",
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
+      "status": "IMPLEMENTED",
+      "evidence": [
+        "purchase_capacity.py, purchase_capacity_integrity.py and sdk_order_compat.py retain exact Git blob identity at canonical paths.",
+        "sale_capacity.py and sale_capacity_normalization.py change only imports to canonical package paths.",
+        "Existing pre-trade tests now consume canonical paths; exact-head CI certification is required before V9C-B is GREEN."
+      ]
+    },
+    {
+      "id": "PARITY-OPERATIONS-ANALYTICS",
+      "v9_capability": "read-only operations/cash-flow analytics",
+      "v9_source_refs": [
+        "operations_analytics.py"
+      ],
+      "v9_tests_refs": [
+        "tests/test_operations_analytics.py",
+        "tests/test_operations_contracts_v1.py"
+      ],
+      "inventory_required": true,
+      "v10_owner": "omni_cio/analytics/operations_source_v1.py",
+      "migration_method": "EXTRACT_TO_CORE",
+      "parity_oracle": "same operation payloads and enum mappings -> same Decimal-safe categorization, cash-flow and reconciliation output",
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-B",
+      "status": "IMPLEMENTED",
+      "evidence": [
+        "operations_analytics.py retains exact Git blob identity at omni_cio/analytics/operations_source_v1.py.",
+        "Existing operations tests now import the canonical package path; exact-head CI certification is required before V9C-B is GREEN."
+      ]
     },
     {
       "id": "PARITY-RISK",
@@ -135,13 +207,18 @@
     {
       "id": "PARITY-GATEWAY-API",
       "v9_capability": "existing Gateway/OpenAPI integration contracts required by accepted V9",
-      "v9_source_refs": [],
+      "v9_source_refs": [
+        "app.py",
+        "app_v360.py",
+        "app_v371.py",
+        "main.py"
+      ],
       "v9_tests_refs": [],
       "inventory_required": true,
       "v10_owner": "V10 Core/Internal API adapters during migration",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
-      "parity_oracle": "required consuming behavior remains available until V10 replacement surface passes its gate; app:app V9 baseline remains protected until replacement acceptance",
-      "owning_wp": "API/Web migration WPs",
+      "migration_method": "RETIRE_AFTER_V10_TIMEWEB_REPLACEMENT",
+      "parity_oracle": "required supported product behavior is provided by the canonical V10 Timeweb Web/API composition before app:app and compatibility wrappers are removed from the working tree",
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-C",
       "status": "BASELINE_IDENTIFIED",
       "evidence": []
     },
@@ -191,11 +268,27 @@
       "v9_tests_refs": [],
       "inventory_required": true,
       "v10_owner": "V10 Release/Recovery contracts",
-      "migration_method": "WRAP_ADAPTER",
-      "parity_oracle": "V9 remains recoverable until V10 final acceptance; V10 proves clean-room restore on a replacement node before 100% acceptance",
-      "owning_wp": "WP4 + Block C + Block J",
+      "migration_method": "REPLACE_WITH_V10_TIMEWEB_RECOVERY",
+      "parity_oracle": "current V10 Timeweb source, PostgreSQL backup/restore and Git provenance provide recovery without requiring the V9 runtime working tree",
+      "owning_wp": "TIMEWEB-PLATFORM-CONSOLIDATION / V9C-E",
       "status": "CONTRACT_DEFINED",
       "evidence": []
     }
-  ]
+  ],
+  "convergence_authority": {
+    "amendment": "OMNI_CIO_V10_V9_TO_V10_CONVERGENCE_AND_LEGACY_RETIREMENT_AMENDMENT.md",
+    "system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
+    "branch": "system/timeweb-platform-consolidation-tw-b",
+    "pull_request": 584,
+    "stale_v9_branch_direct_merge_allowed": false,
+    "working_tree_retirement_requires_parity_and_zero_current_consumers": true,
+    "git_history_preserved": true,
+    "accepted_v9_repository_target_segments": [
+      "b9e4fabc",
+      "b54f8f6e",
+      "0ba206f0",
+      "30c35f2f",
+      "afa2ce62"
+    ]
+  }
 }

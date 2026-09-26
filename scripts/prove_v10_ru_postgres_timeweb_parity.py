@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import secrets
 import sys
 from typing import Any
@@ -13,8 +12,8 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from scripts import provision_v10_cloudflare_neon_runtime as neon_runtime
-from scripts import provision_v10_render_neon_preview as postgres_base
+from scripts import postgres_runtime_primitives as postgres_runtime
+from scripts import provider_runtime_primitives as provider_base
 
 from omni_cio.persistence.hosted_postgres_runtime_v1 import (
     load_hosted_postgres_runtime_contract,
@@ -28,14 +27,13 @@ from omni_cio.persistence.migration import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_SQL = ROOT / "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql"
+RUNTIME_SQL = postgres_runtime.RUNTIME_SQL
 DSN_ENV = "OMNI_V10_RU_PG_BOOTSTRAP_DSN"
 ACK_ENV = "OMNI_V10_RU_PG_SYNTHETIC_ACK"
 ACK_VALUE = "TIMEWEB_SYNTHETIC_ONLY"
 LOCATION_ENV = "OMNI_V10_RU_PG_PROVIDER_LOCATION"
 LOCATION_VALUE = "ru-3"
-RUNTIME_ROLE = neon_runtime._runtime_role("staging")
+RUNTIME_ROLE = "omni_cio_timeweb_synthetic"
 _BROKER_CONNECTION_PREFIX = "broker-connection:v1:"
 _READ_CONNECTION_PREFIX = "read-connection:v1:"
 _SET_TENANT_SCOPE_SQL = "SELECT set_config('omni_cio.tenant_id', %s, true)"
@@ -280,14 +278,14 @@ def _verify_default_privileges(
 
 def prove() -> None:
     bootstrap_dsn = _required_dsn()
-    runtime_sql = neon_runtime._runtime_sql(RUNTIME_ROLE)
+    runtime_sql = postgres_runtime.render_runtime_sql(RUNTIME_ROLE)
     validate_hosted_postgres_runtime_sql(
         RUNTIME_SQL.read_text(encoding="utf-8"),
         load_hosted_postgres_runtime_contract(),
     )
     runtime_password = secrets.token_urlsafe(32)
 
-    bootstrap = postgres_base._connect_postgres_with_retry(
+    bootstrap = provider_base._connect_postgres_with_retry(
         psycopg,
         bootstrap_dsn,
         retry_marker="RU_PG_BOOTSTRAP_NETWORK_RETRY",
@@ -304,7 +302,7 @@ def prove() -> None:
         apply_migrations(bootstrap)
         if current_migration_state(bootstrap) != first_state:
             raise ParityStopped("RU_PG_MIGRATION_RETRY_DRIFT")
-        neon_runtime._converge_runtime_role(
+        postgres_runtime.converge_runtime_role(
             bootstrap,
             RUNTIME_ROLE,
             runtime_password,
@@ -318,7 +316,7 @@ def prove() -> None:
         RUNTIME_ROLE,
         runtime_password,
     )
-    runtime = postgres_base._connect_postgres_with_retry(
+    runtime = provider_base._connect_postgres_with_retry(
         psycopg,
         runtime_dsn,
         retry_marker="RU_PG_RUNTIME_NETWORK_RETRY",
@@ -326,7 +324,7 @@ def prove() -> None:
     )
     with runtime:
         _verify_tls(runtime)
-        neon_runtime._verify_runtime(runtime, RUNTIME_ROLE)
+        postgres_runtime.verify_runtime(runtime, RUNTIME_ROLE)
         _verify_runtime_privilege_floor(runtime)
         _verify_rls_negatives(runtime)
 
@@ -343,8 +341,8 @@ def main() -> int:
     except ParityStopped as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    except postgres_base.ProvisioningStopped as exc:
-        print(f"RU_PG_REUSED_PROVISIONER_STOPPED code={exc.code}", file=sys.stderr)
+    except provider_base.ProvisioningStopped as exc:
+        print(f"RU_PG_RUNTIME_PRIMITIVE_STOPPED code={exc.code}", file=sys.stderr)
         return 1
     except psycopg.Error as exc:
         code = exc.sqlstate or "UNKNOWN"

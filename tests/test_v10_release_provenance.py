@@ -123,6 +123,16 @@ class V10CiRouterTests(unittest.TestCase):
         self.assertTrue(result["fast_frontend"])
         self.assertFalse(result["hosted_windows_python"])
 
+    def test_reconciliation_routes_broker_parser_data(self) -> None:
+        for path in (
+            "omni_cio/reconciliation/__init__.py",
+            "omni_cio/reconciliation/_parts/01.pyfrag",
+        ):
+            with self.subTest(path=path):
+                result = v10_ci_router.classify([path])
+                self.assertIn("broker_parser_data", result["categories"])
+                self.assertTrue(result["hosted_windows_python"])
+
     def test_release_authority_routes_full_clean_room(self) -> None:
         result = v10_ci_router.classify(
             [".github/workflows/v10-release-provenance.yml"]
@@ -135,6 +145,26 @@ class V10CiRouterTests(unittest.TestCase):
         result = v10_ci_router.classify(["new-root/unknown.bin"])
         self.assertIn("release_security_authority", result["categories"])
         self.assertTrue(result["hosted_windows_python"])
+
+    def test_path_classifier_preserves_exact_overlap_contracts(self) -> None:
+        cases = {
+            "knowledge/example.md": {"docs_program"},
+            "omni_cio/reconciliation/_parts/01.pyfrag": {
+                "backend_core_contracts",
+                "broker_parser_data",
+            },
+            "tests/toolchain/frontend/test_build.py": {"frontend"},
+            "scripts/bootstrap_timeweb.py": {"infrastructure_bootstrap"},
+            "ai/evals/example.py": {"ai_cortex_evals"},
+            "requirements-dev.txt": {"dependency_toolchain"},
+            "scripts/v10_ci_router.py": {"release_security_authority"},
+        }
+        for changed_path, expected in cases.items():
+            with self.subTest(changed_path=changed_path):
+                self.assertEqual(
+                    v10_ci_router.classify_path(changed_path),
+                    expected,
+                )
 
 
 class V10ReleaseManifestTests(unittest.TestCase):

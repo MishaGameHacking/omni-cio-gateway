@@ -1,6 +1,6 @@
 # Стартовый запрос для нового рабочего чата Omni-CIO
 
-> **CURRENT AMENDMENT-18 OVERRIDE (2026-09-21):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+> **CURRENT AMENDMENT-21 TIMEWEB DELIVERY OVERRIDE (2026-09-24):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
 
 
 Использовать, когда нужно продолжить разработку/обслуживание проекта в новом чате после подключения GitHub.
@@ -18,7 +18,7 @@
 5. knowledge/16_CURRENT_PROGRAM_STATUS.md — protected V9 runtime baseline only
 6. docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md
 7. docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md
-8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, особенно Amendment 18 Timeweb-Only Platform Consolidation & Telegram-Only Login Authority, Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law и Green Checkpoint & Targeted CI Repair Law
+8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, особенно Amendment 18 Timeweb-Only Platform Consolidation & Telegram-Only Login Authority, Amendment 20 V9-to-V10 Convergence, Amendment 21 Timeweb Full Production Delivery, Product User / Engineering Authority, Public Free Multi-User Hosted Runtime, WP22A Technical Closeout, Integrated System Update Execution Law и Green Checkpoint & Targeted CI Repair Law
 9. docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json
 10. docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json and docs/operations/V10_GREEN_CHECKPOINT_CI_RUNBOOK.md when Amendment 16 is accepted
 11. docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json
@@ -43,10 +43,11 @@ Current target after Amendment 18 acceptance:
 - Timeweb Cloud = selected application/runtime/PostgreSQL/domain/DNS/TLS/network/backup/monitoring platform;
 - Telegram Login = only human product login provider;
 - current System Update = `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`;
-- default integrated source branch = `system/timeweb-platform-consolidation`;
+- initial TW-A branch `system/timeweb-platform-consolidation` is merged via PR #583; current TW-B continuation branch = `system/timeweb-platform-consolidation-tw-b`;
 - milestones = TW-A inventory/authority -> TW-B source/runtime -> TW-C Timeweb candidate -> TW-D PostgreSQL cutover -> TW-E DNS/no-VPN ingress -> TW-F Telegram public activation -> TW-G external-provider decommission;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are historical/retirement targets, not new feature authority;
-- legacy files remain archive-in-place by default and must not be mass-deleted;
+- Amendments 20 and 21 govern the single PR #584 integrated delivery: migrate useful V9 semantics, prove parity/zero current consumers/recovery, retire obsolete provider authority, and implement the fail-closed Timeweb production-delivery chain;
+- exact branch-local integrated checkpoint/certification state is intentionally not duplicated here; resolve it from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions;
 - historical files may be touched only when a compatibility/governance check must acknowledge the new current authority;
 - retired provider resources/secrets/workflow actions are disabled/revoked only after replacement/cutover/recovery evidence;
 - GitHub-native checks are the active quality/security authority; external CI/review SaaS is historical and must not be required by current/future workflows;

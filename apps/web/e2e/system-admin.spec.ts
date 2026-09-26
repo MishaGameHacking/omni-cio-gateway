@@ -14,7 +14,6 @@ async function mockShell(page: import("@playwright/test").Page, systemStatus?: o
       contentType: "application/json",
       body: JSON.stringify([
         { provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" },
-        { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
       ]),
     });
   });
@@ -131,6 +130,8 @@ test("WP22 system view explains ordinary operational state without mutation cont
   await expect(page.getByText("240 min")).toBeVisible();
   await expect(page.getByText("2026-08-14T09:20:00+00:00")).toBeVisible();
   await expect(page.getByText("2026-08-14T09:18:00+00:00")).toBeVisible();
+  await expect(page.getByText("a".repeat(40))).toBeVisible();
+  await expect(page.getByText("Git SHA", { exact: true })).toBeVisible();
 
   await expect(page.getByRole("button", { name: /enable|disable|kill|trading/i })).toHaveCount(0);
   await expect(page.getByText(/broker-account|authorization bearer|secret-token/i)).toHaveCount(0);

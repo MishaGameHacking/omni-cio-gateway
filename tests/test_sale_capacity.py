@@ -9,8 +9,10 @@ os.environ.setdefault("TINVEST_TOKEN", "regression-test-tinvest-token")
 os.environ.setdefault("GATEWAY_API_KEY", "regression-test-gateway-key")
 
 import app as gateway_module
-import sale_capacity
-from sdk_order_compat import with_sale_request_object_services
+from omni_cio.pretrade import sale_capacity_v1 as sale_capacity
+from omni_cio.adapters.tinvest_order_compat_v1 import (
+    with_sale_request_object_services,
+)
 
 
 INSTRUMENT_UID = "e6123145-9665-43e0-8413-cd61b8aa9b13"
@@ -182,9 +184,7 @@ def test_builder_collects_read_only_sale_evidence_but_leaves_tax_blocked() -> No
         "amount": "100",
         "currency": "RUB",
     }
-    assert payload["commission_summary"]["canonical_source"] == (
-        "executed_commission"
-    )
+    assert payload["commission_summary"]["canonical_source"] == ("executed_commission")
     assert payload["tax_basis"]["confirmed"] is False
     assert payload["calculation_checks"]["integrity_confirmed"] is False
     assert payload["quality"]["complete"] is True

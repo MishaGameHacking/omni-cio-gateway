@@ -4,9 +4,9 @@
 
 ## 1. Product boundary
 
-Поддерживается **один Omni-CIO product line**. Protected owner-accepted V9 production/recovery baseline остаётся `existing Omni-CIO Custom GPT v9.0.0 -> Omni-CIO Gateway (app:app) -> protected broker contours`. V10 productize/migrate этот же продукт; не создавать второй Gateway/Web/product-auth/AI/scheduler/broker/execution stack.
+Поддерживается **один Omni-CIO product line**. V9 теперь является **V9 migration source** внутри текущего V10 lineage: accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` уже является предком current main, поэтому stale `v9/*` branch-head нельзя вливать в PR #584. Полезная V9-логика переносится/переиспользуется в canonical V10/Timeweb surfaces. После parity + zero-consumer + recovery proof obsolete working-tree paths могут удаляться, но protected V9 compatibility entrypoint `app:app` и его compatibility chain сохраняются до отдельного accepted decommission authority; Git history остаётся архивом.
 
-For public V10, broker credentials are tenant-scoped `BrokerConnection` credentials, never global application credentials. GitHub/Cloudflare engineering access never means broker/trading authority.
+For public V10, broker credentials are tenant-scoped `BrokerConnection` credentials, never global application credentials. GitHub/Timeweb engineering access never means broker/trading authority.
 
 ## 2. Current program state
 
@@ -21,13 +21,14 @@ Current synchronized snapshot:
 - **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED — Timeweb-only runtime/database/DNS/Telegram consolidation** is the current next package after Amendment 18 acceptance;
 - target active service model is ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
 - Timeweb is the only selected V10 production infrastructure target;
-- Telegram is the only selected human product login provider;
+- Telegram Login is the only selected human product login provider and authenticates the human Telegram USER account via OIDC; bot chat/`/start`/`telegram:bot_access` are not login prerequisites;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets;
 - WEB-VISUAL and WP23+ are paused;
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
-- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
+- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
+- OWNER-approved V9→V10 convergence is closed through `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` as branch-local P1 evidence on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`. P2 exact-SHA Timeweb App candidate is branch-local `CERTIFIED_GREEN` on `ba43fa4be350340557fcf6d8532b6c089022a8ca`. P3 PostgreSQL 18 production-cutover source machinery is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec` with all 25 exact-head checks successful and Sonar 0 new issues / 0 Security Hotspots. Exact branch-local checkpoint/certification state is intentionally not duplicated here; read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions. Physical DNS/domain mutation remains a separate fail-closed external gate. PR #584 must not merge to `main` without the required exact-head OWNER landing confirmation.
 
-PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session.
+PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session. The optional Omni-CIO Telegram bot may only be linked after that account/session exists; bot chat, `/start`, Bot API identity or bot-token possession can never create an account, mint/select a tenant or replace product login.
 
 The WP22A technical gate is complete only through its accepted evidence chain. Amendments 14/15 remain historical evidence; Amendment 18 does not fabricate public activation, expand broker-write authority or start WP23.
 
@@ -43,7 +44,7 @@ Before material work restore from current GitHub `main`, not chat memory:
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-9. all applicable active amendments, especially Amendments 8–18;
+9. all applicable active amendments, especially Amendments 8–21;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. owning execution-unit contracts/runbooks/ledgers;
@@ -112,9 +113,13 @@ Amendment 18 authorizes the current integrated update:
 
 `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 
-Default source branch:
+Initial TW-A source branch (squash-merged through PR #583):
 
 `system/timeweb-platform-consolidation`
+
+Current continuation branch for TW-B:
+
+`system/timeweb-platform-consolidation-tw-b`
 
 Ordered internal milestones are TW-A inventory/authority, TW-B source/runtime consolidation, TW-C Timeweb App candidate, TW-D Timeweb PostgreSQL cutover, TW-E public ingress/DNS, TW-F Telegram public activation, and TW-G legacy-provider decommission.
 
@@ -232,7 +237,7 @@ Existing React/Vite Web remains canonical source. Python/FastAPI product code st
 
 Timeweb App Platform is the selected runtime target and Timeweb Managed PostgreSQL 18 is the final relational target after the owning cutover. Preserve PostgreSQL migrations, exact numeric financial semantics, least-privilege roles, RLS/FORCE-RLS, cross-tenant negatives, backup/restore and recovery.
 
-Cloudflare/Neon/Render/Cloud.ru/VK historical files remain archive-in-place by default. Do not add new dependencies on them and do not mass-delete them merely for cleanup. Disable/revoke their live provider actions only after replacement acceptance.
+Cloudflare/Neon/Render/Cloud.ru/VK historical files are Amendment-20 retirement inputs. Do not add new dependencies on them and do not delete them blindly: migrate any still-required security/recovery semantics first, prove zero current consumers and current recovery, then remove obsolete working-tree artifacts at V9C-D/V9C-E while Git history remains the archive.
 
 GitHub/self-hosted Windows checks remain authoritative until an equivalent GitHub-executed replacement is accepted. Retiring external CI/review SaaS may not weaken lint/type/test/security/coverage/review requirements.
 
@@ -266,7 +271,7 @@ Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow
 
 ## 14. V9 / V10 boundary
 
-Protected V9 remains production/recovery until an explicit parity/decommission gate. Stable entrypoint remains `app:app`. Do not mutate/delete protected V9 Render merely because Render is retired from **new V10** authority. V10 is controlled migration/productization, not greenfield rewrite.
+Amendment 20 changed the forward architecture: V9 is a migration source, not a permanent parallel runtime. The branch-local V9C-A through V9C-F convergence pass is preserved as P1 evidence; protected `app.py`, `app_v360.py`, `app_v371.py`, `main.py` compatibility/recovery surfaces remain only until separate accepted decommission authority. Git history is preserved.
 
 ## 15. OWNER participation / handoff law
 

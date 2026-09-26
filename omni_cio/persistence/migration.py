@@ -219,9 +219,15 @@ def migration_series_digest(migrations: Iterable[Migration] | None = None) -> st
     return hashlib.sha256(payload).hexdigest()
 
 
-def connect_postgres(dsn: str) -> ConnectionLike:
+def connect_postgres(
+    dsn: str,
+    *,
+    connect_timeout: int | None = None,
+) -> ConnectionLike:
     """Open PostgreSQL without putting credentials in source or diagnostics."""
 
     import psycopg  # type: ignore[import-not-found]
 
-    return psycopg.connect(dsn)
+    if connect_timeout is None:
+        return psycopg.connect(dsn)
+    return psycopg.connect(dsn, connect_timeout=connect_timeout)

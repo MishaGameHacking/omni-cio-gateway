@@ -1,169 +1,111 @@
 # Архитектура Omni-CIO
 
-## 1. Поддерживаемая система
+Status: **Amendment 20 / PR #584 branch-local convergence authority**  
+Current checkpoint: **V9C-B / DETERMINISTIC_SOURCE_RELOCATION**  
+Accepted-main progress and deployment state: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
-Репозиторий содержит один пользовательский продукт и один production runtime:
+## 1. One product / one forward runtime
 
-```text
-Пользователь в ChatGPT
-        ↓
-Existing Custom GPT Omni-CIO v9.0.0
-        ↓ Bearer GATEWAY_API_KEY
-Omni-CIO Gateway (`app:app`) on Render
-        ├─ read-only T-Invest contour
-        ├─ optional virtual Sandbox contour
-        ├─ exact-owner-confirmed Real execution contour
-        ├─ durable state
-        └─ hidden Watchtower/QStash routes
-```
+Omni-CIO has one forward V10 product line. The repository no longer treats V9, Render, Cloudflare, Neon, Cloud.ru or VK ID as competing future platforms.
 
-Applied external GPT: **v9.0.0**, owner-accepted in place on 2026-08-05. Protected rollback remains v8.6.1.
-
-## 2. GitHub ↔ Render ↔ GPT Editor
-
-GitHub:
-
-- хранит backend code;
-- хранит tests/CI;
-- хранит эталон applied/recovery GPT configuration/Knowledge;
-- хранит reviewed Action/recovery contracts;
-- не хранит secret values.
-
-Render:
-
-- запускает production Gateway из `main` согласно deploy-настройке service;
-- хранит broker/Gateway/durable-state/scheduler secrets как environment values;
-- сохраняет стабильный entrypoint `app:app`.
-
-GPT Editor:
-
-- хранит фактически применённые Instructions/Knowledge/model/capabilities;
-- хранит Bearer secret для Action;
-- не синхронизируется с GitHub автоматически.
-
-Custom GPT при обычной работе обращается к Render Gateway, а не к GitHub.
-
-## 3. Gateway runtime
-
-- `app.py` — production wrapper, release/OpenAPI surface, entrypoint `app:app`.
-- `app_v371.py` — current runtime compatibility dependency.
-- `app_v360.py` — current runtime compatibility dependency.
-- `main.py` — base FastAPI/auth/read-only core dependency.
-- `portfolio_market.py` — portfolio market snapshot.
-- `portfolio_analytics.py` — structure/concentration analytics.
-- `cash_liquidity.py` — cash/liquidity diagnostics.
-- `purchase_capacity.py` / `purchase_capacity_integrity.py` — technical affordability.
-- `operations_analytics.py` — operations/cash-flow analytics.
-- `broker_report_reconciliation/` — official broker-report reconciliation and extension hook.
-- `omni_cio/` — versioned v9 contracts and deterministic engines for routing, policy, universe, candidates, research, credit, funds, risk, strategy, optimization, plans, safe execution, Watchtower, journal/evaluation and release checks.
-
-Wrappers/core нельзя удалять только из-за исторического имени: текущий `app.py` импортирует их. Их консолидация — отдельный compatibility refactor.
-
-## 4. Custom GPT configuration
-
-Applied configuration lives in `gpt/`:
-
-- `SETUP_INDEX.md` — single setup/update/recovery entrypoint;
-- `CONFIGURATION.md` — applied UI/capability registry;
-- `CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt` — applied Instructions;
-- `KNOWLEDGE_MANIFEST_V9_0_0.md` — exact 10-file Knowledge registry;
-- `knowledge/` — exactly 10 applied production Knowledge files;
-- `ACTIONS_CATALOG.md` — reviewed baseline/Sandbox/Real Action authority;
-- `SECRETS_AND_RENDER.md` — external secret/deployment boundary;
-- `MY_GPT_SETUP_RUNBOOK.md` — Preview/Update/recovery procedure;
-- `CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` — protected rollback Instructions.
-
-The existing GPT was upgraded rather than duplicated. Acceptance evidence is recorded in completed #216/#176.
-
-## 5. Production endpoints
-
-- Base: `https://omni-cio-gateway.onrender.com`
-- Health: `/health`
-- OpenAPI: `/openapi.json`
-- API version: `3.10.0`
-- Entrypoint: `app:app`
-
-The effective deployed `/openapi.json` is the runtime GPT Action authority.
-
-## 6. Security boundary
-
-- production read-only broker credential remains read-only and never becomes a Real fallback;
-- Sandbox remains virtual and separately credentialed;
-- Real execution uses a separate credential and server readiness gates;
-- real submit requires exact owner confirmation in a new turn plus immutable/idempotent server state;
-- ambiguous possible-submit is reconciled, never automatically retried;
-- submitted is not treated as filled without broker proof;
-- transfer/withdrawal, margin/short, MARKET/BESTPRICE, stop/replace/async and autonomous recurring real execution remain outside the reviewed surface;
-- account IDs stay masked in user-facing output;
-- secrets remain in external secret storage, not GitHub/Knowledge;
-- money uses exact decimal logic and currencies remain separate without verified FX.
-
-Master real kill switch: `REAL_TRADING_ENABLED=false`.
-
-Watchtower kill switch: `WATCHTOWER_ENABLED=false`.
-
-## 7. Portfolio decision flow
-
-For portfolio-management requests:
+The selected forward application composition is:
 
 ```text
-getPortfolioSnapshot
-        ↓ success
-getCashLiquiditySnapshot
-        ↓
-getPortfolioAnalytics
-        ↓
-quality / structure / risk analysis
-        ↓ if needed
-instrument identity + fresh market checks
-        ↓
-recommendation / NO_ACTION / reviewed plan
+ChatGPT
+   ↓ engineering / analysis
+GitHub
+   ↓ source / review / CI / exact-SHA provenance
+Timeweb App Platform
+   ↓ apps.api.hosted_runtime:create_app
+Omni-CIO V10 Web + API
+   ↓ verified identity
+Telegram Login only
+   ↓ server-side account/session
+OmniCIOUserAccount -> Tenant
+   ↓ tenant-scoped persistence
+Timeweb PostgreSQL 18 after TW-D cutover
 ```
 
-A recommendation or portfolio-management prompt is not real-execution authorization. Web Search may add public context after broker facts but never replaces broker Actions.
+This diagram is the target/source authority. TW-B does not itself deploy Timeweb, perform the production PostgreSQL cutover, mutate DNS/TLS or activate public users.
 
-## 8. Internal v9 engines versus Actions
+## 2. Current source composition
 
-Internal v9 modules are not automatically GPT Actions. The GPT may call only operationIds present in the effective imported production OpenAPI and may claim server execution only when returned Action/evidence proves it.
+The Timeweb-targeted container is built by the repository-root `Dockerfile`.
 
-Reviewed Real operationIds are:
+Its backend entrypoint is `apps.api.hosted_runtime:create_app`.
 
-- `getRealTradingStatus`;
-- `prepareRealTrade`;
-- `executeRealTrade`;
-- `getRealOrderState`.
+The Docker runtime exposes port `8080`. Process liveness uses `/livez`; database readiness remains a separate `/healthz` concern. Runtime variables and secrets are provided outside the image.
 
-Sandbox operationIds remain explicitly virtual. Hidden Watchtower scheduler/callback routes are excluded from GPT OpenAPI.
+The canonical Web source remains `apps/web/`; the Docker build produces its static assets and copies them into the final Python runtime image.
 
-## 9. Market/sizing boundary
+## 3. Canonical financial/domain ownership after V9C-B
 
-- last price is not an executable guarantee;
-- fresh market/trading status is required for current market-sensitive sizing;
-- technical purchase capacity does not automatically equal personal sizing;
-- free cash alone is not a reason to buy;
-- `withdraw_limits` does not automatically equal buying budget;
-- stale/incomplete/contradictory data blocks unjustified precision.
+V9C-B relocates the remaining deterministic V9 root implementations without changing their reviewed financial semantics:
 
-## 10. Deploy and CI
+| Capability | Canonical V10 source |
+|---|---|
+| Portfolio market snapshot | `omni_cio/portfolio/market_source_v1.py` |
+| Portfolio structure analytics | `omni_cio/analytics/portfolio_source_v1.py` |
+| Cash/liquidity diagnostics | `omni_cio/analytics/cash_liquidity_v1.py` |
+| Operations analytics | `omni_cio/analytics/operations_source_v1.py` |
+| Purchase capacity | `omni_cio/pretrade/purchase_capacity_v1.py` |
+| Purchase-capacity integrity | `omni_cio/pretrade/purchase_capacity_integrity_v1.py` |
+| Sale capacity | `omni_cio/pretrade/sale_capacity_v1.py` |
+| Sale-capacity normalization | `omni_cio/pretrade/sale_capacity_normalization_v1.py` |
+| T-Invest read-only request compatibility | `omni_cio/adapters/tinvest_order_compat_v1.py` |
+| Broker-report reconciliation | `omni_cio/reconciliation/` |
 
-`render.yaml` is the production deployment contract:
+The migration preference remains `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-```text
-pip install --require-hashes -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port $PORT
-```
+Relocation does not grant broker-write authority and does not change money formulas.
 
-Regression Shield verifies repository structure, locks, contracts, type/lint/format, tests/coverage, dependency audit, SAST and secret scanning.
+## 4. Temporary V9 compatibility boundary
 
-A separate **Live Gateway Authority Acceptance** checks only public `/health` + `/openapi.json` against the reviewed v9 allowlist. It does not send credentials or call protected broker Actions.
+The following root files still exist only because V9C-C has not completed: `app.py`, `app_v360.py`, `app_v371.py`, and `main.py`.
 
-Green repository CI does not itself prove GPT Editor state; applied-state claims require owner evidence. Current v9 owner acceptance is already complete.
+They are migration/recovery inputs, not permanent parallel architecture. V9C-C must move every still-supported runtime/API behavior into the Timeweb V10 composition, prove parity, prove zero current consumers and preserve recovery before retiring them.
 
-## 11. Maintenance mode
+Historical Render deployment/configuration and V9 GPT/provider artifacts are handled by the later V9C-D/V9C-E retirement gates. Git history is the immutable historical archive.
 
-WP0–WP15 is complete. Current work is controlled maintenance only:
+## 5. Identity, tenant and session boundary
 
-- dependency PRs remain proposals until current-main exact-head Regression Shield/security succeeds;
-- known-incompatible toolchain versions are held narrowly and documented;
-- obsolete one-time bootstrap/generated artifacts are removed through reviewed cleanup PRs;
-- no maintenance change may silently broaden broker or GPT authority.
+Ordinary browser access is `Telegram USER OIDC Login -> verified identity -> internal user -> isolated Tenant -> server-side Session`.
+
+Telegram is login identity only. Bot chat, `/start`, Bot API identity or possession of a bot token cannot select a tenant or mint a product session.
+
+Tenant authority is derived server-side. Browser payloads, query parameters and frontend filtering are never tenant security boundaries. PostgreSQL RLS/FORCE-RLS and cross-tenant negative tests remain mandatory.
+
+## 6. Data and persistence boundary
+
+Timeweb PostgreSQL 18 is the selected relational target. Production DB cutover belongs to TW-D and remains fail-closed until migration, backup/restore, least-privilege, schema/RLS and cross-tenant evidence pass.
+
+Container-local filesystem state is not authoritative persistence. Durable product state must remain in the reviewed external persistence boundary.
+
+## 7. Broker and money authority
+
+Broker READ and broker WRITE remain separate capabilities. Protected invariants during V9C-A through V9C-F: broker write OFF; `trading_methods=false`; `REAL_TRADING_ENABLED=false`; no transfer/withdrawal, margin/leverage or uncovered-short authority; no shared/global USER broker credential; raw credentials never enter GitHub, CI artifacts, browser storage or logs.
+
+A GitHub merge, Timeweb deployment, Telegram login or AI output never grants broker submit authority.
+
+## 8. CI and release provenance
+
+GitHub is source/review/CI/provenance authority. Every material checkpoint follows the exact-head rule: `fresh base -> focused implementation -> focused preflight -> exact-head CI -> only success is GREEN`.
+
+Any content-changing commit invalidates earlier final check evidence. The forward release chain after its owning gates is `accepted main SHA -> GitHub checks -> immutable Timeweb candidate -> production verification`.
+
+## 9. V9-to-V10 convergence sequence in PR #584
+
+1. V9C-A — authority and inventory — `CERTIFIED_GREEN`.
+2. V9C-B — deterministic source relocation — current.
+3. V9C-C — runtime entrypoint convergence.
+4. V9C-D — GPT and retired-provider working-tree retirement.
+5. V9C-E — CI/recovery convergence.
+6. V9C-F — whole-tree legacy absence proof.
+
+A later functional checkpoint does not begin until the current published checkpoint is `CERTIFIED_GREEN`.
+
+## 10. Current non-goals
+
+TW-B / V9C-B does not deploy/promote Timeweb production, cut over production PostgreSQL, change DNS/TLS, activate public Telegram login, start WEB-VISUAL/WP23+, or enable broker writes/Real-money execution.
+
+PR #584 must not merge to `main` without a new explicit OWNER instruction.

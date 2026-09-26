@@ -74,6 +74,8 @@ The checker:
   the pinned Russian root only if it is not already present;
 - publishes only `PIP_CERT=<temporary bundle>` through `GITHUB_ENV`;
 - probes the exact T-Bank package index with pip and explicit `--cert`;
+- uses the contract-bounded two-attempt new-HTTP-connection retry policy with a
+  10-second socket timeout; retries never disable certificate or hostname verification;
 - never uses `--trusted-host`, disables hostname checks, disables certificate
   verification or changes the package source;
 - never modifies the Windows certificate store;
@@ -93,8 +95,11 @@ Healthy CI output requires:
 vendored certifi source or environment publication is unhealthy and must be
 repaired as source/toolchain state.
 
-`TBANK_PACKAGE_INDEX_TLS_NOT_READY` means the verified bundle was built but
-the exact package-index TLS probe still failed. Do not bypass TLS.
+`TBANK_PACKAGE_INDEX_SECURE_PROBE_NOT_READY` means the verified bundle was
+built but the bounded verified package-index probe still could not complete. This
+classification intentionally does not claim that every nonzero pip probe is a
+certificate-chain failure: a temporary connection/provider failure can produce the
+same nonzero process result. Do not bypass TLS.
 
 ## Why this is not a TLS bypass
 

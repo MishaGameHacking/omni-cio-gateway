@@ -30,6 +30,8 @@ jobs:
       - name: Bootstrap exact reviewed repository without external Actions
         shell: bash
         env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -50,7 +52,7 @@ jobs:
             git config --local http.lowSpeedTime 60
             fetch_status=0
             if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-              git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
+              git fetch --no-tags --prune --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/base" "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
             else
               git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event" || fetch_status=$?
             fi
@@ -68,6 +70,13 @@ jobs:
           if [ "$bootstrap_succeeded" -ne 1 ]; then
             echo "Repository bootstrap transport failed after 3 attempts." >&2
             exit 70
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            CURRENT_BASE_SHA="$(git rev-parse refs/remotes/origin/base)"
+            if [ "$CURRENT_BASE_SHA" != "$BASE_SHA" ]; then
+              echo "PR base moved after this workflow event; exact-head evidence is stale." >&2
+              exit 71
+            fi
           fi
           git checkout --detach "$EXPECTED_HEAD"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
@@ -131,6 +140,8 @@ jobs:
 
       - name: Bootstrap exact reviewed repository without external Actions
         env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -151,7 +162,7 @@ jobs:
             git config --local http.lowSpeedTime 60
             fetch_status=0
             if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-              git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
+              git fetch --no-tags --prune --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/base" "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
             else
               git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event" || fetch_status=$?
             fi
@@ -169,6 +180,13 @@ jobs:
           if [ "$bootstrap_succeeded" -ne 1 ]; then
             echo "Repository bootstrap transport failed after 3 attempts." >&2
             exit 70
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            CURRENT_BASE_SHA="$(git rev-parse refs/remotes/origin/base)"
+            if [ "$CURRENT_BASE_SHA" != "$BASE_SHA" ]; then
+              echo "PR base moved after this workflow event; exact-head evidence is stale." >&2
+              exit 71
+            fi
           fi
           git checkout --detach "$EXPECTED_HEAD"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
@@ -266,9 +284,7 @@ jobs:
       - name: Compile protected runtime and Core
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
-          portfolio_market.py portfolio_analytics.py cash_liquidity.py
-          purchase_capacity.py purchase_capacity_integrity.py
-          operations_analytics.py broker_report_reconciliation omni_cio tests scripts
+          omni_cio apps tests scripts
 
       - name: Run protected runtime static quality
         run: |
@@ -312,14 +328,16 @@ jobs:
           --junitxml=pytest-results.xml
           --cov=app
           --cov=main
-          --cov=portfolio_market
-          --cov=portfolio_analytics
-          --cov=cash_liquidity
-          --cov=purchase_capacity
-          --cov=purchase_capacity_integrity
-          --cov=operations_analytics
-          --cov=sdk_order_compat
-          --cov=broker_report_reconciliation
+          --cov=omni_cio.portfolio.market_source_v1
+          --cov=omni_cio.analytics.portfolio_source_v1
+          --cov=omni_cio.analytics.cash_liquidity_v1
+          --cov=omni_cio.pretrade.purchase_capacity_v1
+          --cov=omni_cio.pretrade.purchase_capacity_integrity_v1
+          --cov=omni_cio.pretrade.sale_capacity_v1
+          --cov=omni_cio.pretrade.sale_capacity_normalization_v1
+          --cov=omni_cio.analytics.operations_source_v1
+          --cov=omni_cio.adapters.tinvest_order_compat_v1
+          --cov=omni_cio.reconciliation
           --cov-branch
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
