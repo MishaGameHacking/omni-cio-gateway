@@ -594,7 +594,9 @@ def _password_metadata_connect_failure(
     if pgconn is None:
         return None
     try:
-        needs_credential = bool(pgconn.needs_password) and not bool(pgconn.used_password)
+        needs_credential = bool(pgconn.needs_password) and not bool(
+            pgconn.used_password
+        )
     except (AttributeError, RuntimeError, psycopg.Error):
         return None
     if needs_credential:

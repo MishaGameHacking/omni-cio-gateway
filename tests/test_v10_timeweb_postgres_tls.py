@@ -152,7 +152,7 @@ def test_prepared_connection_requires_public_pinned_hostaddr(tmp_path: Path) -> 
         tls._prepared_connection_params(private)
 
 
-def test_prepared_connection_rejects_relative_ca_path(tmp_path: Path) -> None:
+def test_prepared_connection_rejects_relative_ca_path() -> None:
     prepared = make_conninfo(
         VALID_DSN,
         sslrootcert=tls.TIMEWEB_POSTGRES_SSLROOTCERT,
