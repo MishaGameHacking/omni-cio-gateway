@@ -127,6 +127,15 @@ def _validate_provider_api(payload: dict[str, Any]) -> None:
     reconcile_budget = api.get("ambiguous_reconcile_minimum_budget_seconds")
     if type(reconcile_budget) is not int or reconcile_budget < 60:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
+    pagination_expected = {
+        "deploy_history_pagination_required": True,
+        "deploy_history_page_size": 100,
+        "deploy_history_max_pages": 100,
+        "deploy_history_total_stability_required": True,
+    }
+    for key, expected in pagination_expected.items():
+        if api.get(key) != expected:
+            raise RuntimeError("TIMEWEB_APP_CANDIDATE_PAGINATION_INVALID")
 
 
 def _validate_runtime_contract(payload: dict[str, Any]) -> None:
@@ -258,6 +267,11 @@ def _validate_controller(path: Path) -> None:
         "_DEPLOY_RECONCILE_DELAYS",
         "_POLL_DELAYS",
         "_LIVEZ_RETRY_DELAYS",
+        "_MAX_DEPLOY_HISTORY_PAGES = 100",
+        "offset={offset}",
+        "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED",
+        "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TRUNCATED",
+        "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TOO_LARGE",
         "TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT",
     )
     if any(marker not in source for marker in required):
