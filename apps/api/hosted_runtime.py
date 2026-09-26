@@ -21,8 +21,11 @@ from apps.api.hosted_database_runtime import (
     validate_hosted_runtime_role,
 )
 from apps.api.telegram_auth import build_telegram_provider_auth
-from apps.api.timeweb_postgres_tls import prepare_timeweb_postgres_tls
-from omni_cio.persistence.migration import ConnectionLike, connect_postgres
+from apps.api.timeweb_postgres_tls import (
+    connect_prepared_timeweb_postgres,
+    prepare_timeweb_postgres_tls,
+)
+from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 from omni_cio.web.session_v1 import SessionPolicyV1
 from omni_cio.web.telegram_auth_routes_v1 import (
@@ -64,8 +67,9 @@ def _optional_candidate_hostname() -> str | None:
 
 
 def _open_runtime_database(database_dsn: str, runtime_role: str) -> ConnectionLike:
-    raw_connection = connect_postgres(
+    raw_connection = connect_prepared_timeweb_postgres(
         database_dsn,
+        failure_prefix="HOSTED_RUNTIME_DATABASE",
         connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
     )
     _configure_long_lived_web_connection(raw_connection)

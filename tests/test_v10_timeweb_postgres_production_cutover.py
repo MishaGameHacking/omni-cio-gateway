@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-from scripts import provider_runtime_primitives as provider_runtime
 from scripts import timeweb_postgres_production_cutover as cutover
 
 
@@ -53,102 +52,68 @@ def _contract_path(root: Path) -> Path:
     )
 
 
-class _ConnectOperationalError(Exception):
-    def __init__(self, sqlstate: str | None) -> None:
-        super().__init__("sanitized-connect-failure")
-        self.sqlstate = sqlstate
-
-
-class _FakePsycopg:
-    OperationalError = _ConnectOperationalError
-
-    def __init__(self, outcomes: list[object]) -> None:
-        self.outcomes = list(outcomes)
-        self.calls = 0
-
-    def connect(
-        self,
-        uri: str,
-        *,
-        autocommit: bool,
-        connect_timeout: int,
-    ) -> object:
-        del uri
-        self.calls += 1
-        self.assertions = (autocommit, connect_timeout)
-        outcome = self.outcomes.pop(0)
-        if isinstance(outcome, BaseException):
-            raise outcome
-        return outcome
-
-
 class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         guard.validate(ROOT)
 
-    def test_connect_retry_retries_only_transient_sqlstate(self) -> None:
-        connection = object()
-        client = _FakePsycopg(
-            [
-                _ConnectOperationalError("08006"),
-                connection,
-            ]
-        )
-        with mock.patch.object(provider_runtime.time, "sleep") as sleeper:
-            actual = provider_runtime._connect_postgres_with_retry(
-                client,
-                "postgresql://redacted",
-                retry_marker="TIMEWEB_PG_TEST_RETRY",
-                failure_code="TIMEWEB_PG_TEST_FAILED",
-                retry_delays=(0.0,),
+    def test_prepare_connection_dsns_probes_transport_before_auth(self) -> None:
+        ca_path = Path("ca.crt")
+        with (
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "install_timeweb_postgres_ca",
+                return_value=ca_path,
+            ),
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "probe_timeweb_postgres_transport",
+            ) as probe,
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "resolve_timeweb_postgres_dsn",
+                side_effect=["bootstrap-prepared", "runtime-prepared"],
+            ) as resolve,
+        ):
+            actual = cutover._prepare_connection_dsns(
+                "bootstrap-dsn",
+                "runtime-dsn",
             )
-        self.assertIs(actual, connection)
-        self.assertEqual(client.calls, 2)
-        sleeper.assert_called_once_with(0.0)
 
-    def test_connect_retry_does_not_retry_authentication_sqlstate(self) -> None:
-        client = _FakePsycopg(
+        self.assertEqual(actual, ("bootstrap-prepared", "runtime-prepared"))
+        probe.assert_called_once_with("bootstrap-dsn", ca_path)
+        self.assertEqual(
+            resolve.call_args_list,
             [
-                _ConnectOperationalError("28P01"),
-                object(),
-            ]
+                mock.call("bootstrap-dsn", ca_path),
+                mock.call("runtime-dsn", ca_path),
+            ],
         )
-        with mock.patch.object(provider_runtime.time, "sleep") as sleeper:
-            with self.assertRaisesRegex(
-                provider_runtime.ProvisioningStopped,
-                "TIMEWEB_PG_TEST_FAILED",
-            ):
-                provider_runtime._connect_postgres_with_retry(
-                    client,
-                    "postgresql://redacted",
-                    retry_marker="TIMEWEB_PG_TEST_RETRY",
-                    failure_code="TIMEWEB_PG_TEST_FAILED",
-                    retry_delays=(0.0,),
-                )
-        self.assertEqual(client.calls, 1)
-        sleeper.assert_not_called()
 
-    def test_connect_retry_allows_client_side_network_error_without_sqlstate(
-        self,
-    ) -> None:
-        connection = object()
-        client = _FakePsycopg(
-            [
-                _ConnectOperationalError(None),
-                connection,
-            ]
-        )
-        with mock.patch.object(provider_runtime.time, "sleep") as sleeper:
-            actual = provider_runtime._connect_postgres_with_retry(
-                client,
-                "postgresql://redacted",
-                retry_marker="TIMEWEB_PG_TEST_RETRY",
-                failure_code="TIMEWEB_PG_TEST_FAILED",
-                retry_delays=(0.0,),
+    def test_connect_maps_adapter_failure_to_cutover_stop(self) -> None:
+        with (
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "connect_prepared_timeweb_postgres",
+                side_effect=cutover.timeweb_postgres_tls.TimewebPostgresTlsError(
+                    "TIMEWEB_PG_PRODUCTION_BOOTSTRAP_TIMEOUT"
+                ),
+            ) as connect,
+            self.assertRaisesRegex(
+                cutover.CutoverStopped,
+                "TIMEWEB_PG_PRODUCTION_BOOTSTRAP_TIMEOUT",
+            ),
+        ):
+            cutover._connect(
+                "prepared-dsn",
+                code="TIMEWEB_PG_PRODUCTION_BOOTSTRAP_CONNECTION_FAILED",
             )
-        self.assertIs(actual, connection)
-        self.assertEqual(client.calls, 2)
-        sleeper.assert_called_once_with(0.0)
+
+        connect.assert_called_once_with(
+            "prepared-dsn",
+            failure_prefix="TIMEWEB_PG_PRODUCTION_BOOTSTRAP",
+            autocommit=True,
+            retry_delays=cutover._PRODUCTION_CONNECT_RETRY_DELAYS,
+        )
 
     def test_observe_is_read_only_and_does_not_require_prepared_schema(self) -> None:
         expected_sha = "a" * 40
@@ -297,6 +262,23 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
             ):
                 guard.validate(root)
+
+    def test_rejects_disabled_transport_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["transport"][
+                "credential_free_transport_preflight_required"
+            ] = False
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+            ):
+                guard.validate(root)
+
 
     def test_rejects_hosted_runtime_without_tls_preparation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -932,3 +932,27 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** every regex used as an authority or transport validator must have at least one positive-path regression that proves representative valid input reaches downstream predicates; negative-only regex tests can pass for the wrong rejection reason.
 
 **Dependency/tooling knowledge change:** none.
+
+
+---
+
+## FL-040 — A successful source/TLS contract is not a live database transport proof
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / manual run `36276384123` / accepted main `2a7c7104e4e0d5bd2e6eee2f9b87fd71ed7b822d`
+
+**Symptom / failing gate:** P3 exact-main/source/environment policy passed and the portable Timeweb CA was materialized, but the first production bootstrap connection exhausted seven attempts. Each attempt consumed approximately the configured 15-second connection timeout. The only terminal evidence was `TIMEWEB_PG_PRODUCTION_BOOTSTRAP_CONNECTION_FAILED`.
+
+**Root cause:** the source boundary proved DSN syntax, provider CA custody and verify-full configuration, but it did not independently prove the credential-free live path from the execution environment through provider DNS, public routing/firewall, TCP/5432 and PostgreSQL SSLRequest/TLS before presenting a database password. The old connection boundary also treated every client-side `OperationalError` without SQLSTATE as transient and collapsed the final result into one generic code.
+
+**Blast radius searched:** P3 observe/prepare/accept connection setup, the portable Timeweb CA adapter, future Timeweb hosted-runtime startup/reconnect, PostgreSQL technical-domain provenance, public/private DNS resolution, TCP/5432, PostgreSQL SSLRequest, verify-full certificate identity, authentication/database/role failure classification, retry policy, runbook/operator response and provider-neutral legacy retry callers. Run #2 contains no evidence of SQL mutation, tenant/RLS drift, credential leakage, Telegram/public-user activation, broker-write or Real-money authority expansion.
+
+**Why preflight missed it:** deterministic tests mocked PostgreSQL connection outcomes and CA handling but never required a real transport-state ladder between valid source configuration and authenticated connection. The old no-SQLSTATE regression explicitly accepted blanket retry, so CI correctly certified the behavior that later made the live failure non-actionable.
+
+**Corrective change:** the Timeweb adapter now owns a credential-free readiness ladder: provider-owned technical-domain suffix, public-only DNS resolution, TCP/5432, PostgreSQL SSLRequest and TLS 1.2+ CA/hostname verification. Only explicit transient DNS/TCP failures are retried and only sanitized stage codes are emitted. Authenticated connections use a separate classifier for timeout, DNS, TCP, TLS, password/authentication, role, database, host-policy, server-rejection and transient SQLSTATE classes; an unclassified client failure is fail-closed and not replayed. The same adapter is used by P3 and Timeweb hosted-runtime startup.
+
+**Permanent regression/guard:** focused tests cover the positive DNS/TCP/SSLRequest/verify-full path, private-only DNS rejection, bounded timeout retry, non-retryable certificate and SSLRequest failures, classified authentication behavior, unclassified-client fail-closed behavior, and P3 transport-before-auth ordering. The P3 machine guard freezes these transport/retry invariants and the runbook maps each sanitized failure class to a bounded operator response.
+
+**Future prevention rule:** every external service readiness gate must separate configuration validity from live transport readiness and authentication. Before a credential-bearing protocol operation, prove the non-secret network/TLS layers independently when the protocol allows it. Never treat “no SQLSTATE” as synonymous with “transient network failure,” never emit raw connection exceptions containing endpoints/users, and never turn an unknown failure into availability by blind replay.
+
+**Dependency/tooling knowledge change:** Psycopg connection errors can have `sqlstate=None` for client-side failures, while `ConnectionTimeout` is a specific `OperationalError` and failed connection objects can expose password-use metadata. Those facts support precise sanitized classification without logging the raw exception.

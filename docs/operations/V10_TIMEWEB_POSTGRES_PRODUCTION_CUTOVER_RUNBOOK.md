@@ -24,6 +24,32 @@ The connection host must be the Timeweb technical **domain** on explicit port `5
 
 The CA is public trust material, not a credential. Never weaken this boundary by omitting `sslrootcert`, switching to `sslmode=require`/disabled verification, using the public IP as the verified host, or storing a machine-specific absolute CA path in the shared DSN.
 
+### Credential-free connection-readiness ladder
+
+Before any database password is presented, P3 and the Timeweb hosted runtime prove the live boundary in ordered stages:
+
+`Timeweb technical-domain provenance -> public DNS resolution -> TCP/5432 -> PostgreSQL SSLRequest -> TLS >= 1.2 + CA/hostname verification -> authenticated PostgreSQL connect`.
+
+The accepted provider technical-domain suffix set is `.tw1.ru`, `.tw1.su`, `.twc1.net`, and `.webtm.ru`. Arbitrary domains and any private/reserved DNS resolution are rejected before database authentication. The probe never prints the technical hostname, resolved IP, DSN, user, password, certificate body, or raw exception text.
+
+Transport retries are bounded and only explicit transient DNS/TCP failures are replayed. Certificate, protocol, provider-domain, private-resolution and PostgreSQL authentication failures stop immediately. Database connection retries likewise require a classified transient failure; an unclassified client-side `OperationalError` is not replayed blindly.
+
+A successful credential-free boundary emits only:
+
+`TIMEWEB_PG_TLS_TRANSPORT=READY dns=public tcp=5432 tls=verify-full`
+
+A RED emits a sanitized stage code. Treat these codes as operator routing, not as permission to weaken TLS or broaden ingress:
+
+- `TIMEWEB_PG_TLS_DNS_RESOLUTION_FAILED`: provider technical DNS is not currently resolvable from the verifier/runtime;
+- `TIMEWEB_PG_TLS_RESOLUTION_NOT_PUBLIC`: the external-production DSN does not resolve to an acceptable public target;
+- `TIMEWEB_PG_TLS_TCP_TIMEOUT` / `...ROUTE_UNREACHABLE`: inspect Timeweb cluster/node health, the DB `Сеть` public-IPv4 `Разрешить доступ` state, and any attached firewall/source restriction; do not rotate credentials or downgrade TLS;
+- `TIMEWEB_PG_TLS_TCP_REFUSED`: the endpoint is reachable but PostgreSQL/TCP is not accepting the connection yet;
+- `TIMEWEB_PG_TLS_SSLREQUEST_REFUSED` / `...PROTOCOL_INVALID`: port 5432 did not present the expected PostgreSQL SSL negotiation;
+- `TIMEWEB_PG_TLS_CERT_VERIFY_FAILED` / `...HANDSHAKE_FAILED`: stop and reconcile provider TLS/domain/CA state; never switch away from `verify-full`;
+- `*_PASSWORD_REQUIRED`, `*_AUTHENTICATION_REJECTED`, `*_ROLE_NOT_FOUND`, `*_DATABASE_NOT_FOUND`, `*_HOST_POLICY_REJECTED`: deterministic database/authentication configuration failure; do not retry it as a network incident.
+
+Timeweb documents that external PostgreSQL access requires public-IP access and that domain-based PostgreSQL connection uses protected TLS. A provider-side node incident or firewall drop can therefore coexist with valid source configuration and a valid CA while the live TCP connection still times out; source correctness alone is not transport readiness.
+
 ## GitHub production-environment prerequisite
 
 Before the first P3 dispatch, the repository GitHub Environment `timeweb-production` must already exist. Its deployment policy must be **Selected branches and tags** with exactly one rule: **Branch `main`**. The workflow only has read authority over this policy and must never create or relax the environment itself.
@@ -48,6 +74,12 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 12. Only after P3 acceptance may P4 canonical `omnicio.ru` DNS/TLS cutover begin.
 
 ## Failure and recovery
+
+### Live P3 observe RED #2 — bootstrap transport collapse
+
+Manual run `36276384123` on exact accepted main `2a7c7104e4e0d5bd2e6eee2f9b87fd71ed7b822d` passed exact-main/source/environment policy, then exhausted seven 15-second bootstrap connection attempts and stopped with the old generic `TIMEWEB_PG_PRODUCTION_BOOTSTRAP_CONNECTION_FAILED` marker. No `prepare` or `accept` step ran, so no production SQL mutation occurred.
+
+That marker proves a live connection failure but cannot distinguish DNS, public-IP/firewall/routing, SSLRequest/TLS, provider-node readiness, or authentication because the old no-SQLSTATE path treated every client-side `OperationalError` as retryable. Do not rerun that source blindly. The connectivity-diagnostic repair replaces this collapsed boundary with the credential-free readiness ladder and classified authenticated-connect failures above.
 
 Any SHA mismatch, TLS downgrade, migration drift, widened runtime role, RLS/FORCE-RLS drift, non-empty clean-target tables, missing recovery attestation or evidence digest, App Platform DSN mismatch, or public-user flag enablement is `DEPLOYMENT_BLOCKED`.
 
