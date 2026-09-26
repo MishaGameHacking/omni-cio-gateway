@@ -90,6 +90,8 @@ def _validate_controller(path: Path) -> None:
         f'ACCEPT_CONFIRMATION = "{_CONFIRMATION}"',
         "class TimewebIngressReadApi",
         "def _probe_public_runtime",
+        "_TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})",
+        "_PUBLIC_PROBE_RETRY_DELAYS = (",
         "TIMEWEB_PUBLIC_INGRESS_RELEASE_SHA_DRIFT",
         "TIMEWEB_PUBLIC_INGRESS_CANONICAL_DOMAIN_MISSING",
         "TIMEWEB_PUBLIC_INGRESS_RETIRED_EDGE_HEADER",
