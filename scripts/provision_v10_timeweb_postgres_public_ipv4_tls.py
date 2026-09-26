@@ -66,6 +66,7 @@ _WAIT_API_TIMEOUT_SECONDS = 8.0
 _ROLLBACK_STATE_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 30.0)
 _CA_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
 _TLS_SOCKET_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0, 10.0)
+_POST_EXPOSURE_SCOPE_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 Sleep = Callable[[float], None]
 
 
@@ -1234,6 +1235,36 @@ def _verify_transport_scope(
     _verify_bound_ipv4(api, cluster_id, address)
 
 
+def _wait_transport_scope(
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    cluster_id: int,
+    cidr: str,
+    address: str,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _POST_EXPOSURE_SCOPE_DELAYS_SECONDS,
+) -> None:
+    for attempt in range(len(delays) + 1):
+        try:
+            _verify_transport_scope(
+                api,
+                group_id,
+                cluster_id,
+                cidr,
+                address,
+            )
+            return
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_POST_EXPOSURE_SCOPE_CONTROL_PLANE_TIMEOUT"
+    )
+
+
 def _configure_transport(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
@@ -1265,7 +1296,7 @@ def _configure_transport(
                     cluster_id,
                     address,
                 )
-            _verify_transport_scope(
+            _wait_transport_scope(
                 api,
                 group_id,
                 cluster_id,
@@ -1279,7 +1310,7 @@ def _configure_transport(
             else:
                 cluster = _enable_secure_connection(mutation, api, cluster_id)
 
-        _verify_transport_scope(
+        _wait_transport_scope(
             api,
             group_id,
             cluster_id,
