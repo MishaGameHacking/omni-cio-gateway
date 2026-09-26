@@ -234,9 +234,7 @@ class TimewebPublicIngressTests(unittest.TestCase):
                 observed_main_sha=EXPECTED_SHA,
                 opener=opener,
             )
-        sleeper.assert_called_once_with(
-            ingress._PUBLIC_PROBE_RETRY_DELAYS[0]
-        )
+        sleeper.assert_called_once_with(ingress._PUBLIC_PROBE_RETRY_DELAYS[0])
         self.assertEqual(
             [request.full_url for request in opener.requests[:2]],
             ["https://omnicio.ru/livez", "https://omnicio.ru/livez"],
