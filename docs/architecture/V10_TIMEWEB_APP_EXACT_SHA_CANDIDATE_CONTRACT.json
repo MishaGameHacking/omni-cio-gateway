@@ -43,7 +43,8 @@
     "deploy_history_pagination_required": true,
     "deploy_history_page_size": 100,
     "deploy_history_max_pages": 100,
-    "deploy_history_total_stability_required": true
+    "deploy_history_total_stability_required": true,
+    "deploy_history_identity_uniqueness_required": true
   },
   "runtime": {
     "required_plain_env": {
