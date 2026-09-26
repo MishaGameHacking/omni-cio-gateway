@@ -886,3 +886,25 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** none.
 
+---
+
+## FL-038 — New provider-named runtime surfaces must update the canonical inventory atomically
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #591 exact head `0745343806719a699a4cd9ce664d1113b11fb240`
+
+**Symptom / failing gate:** the DRAFT exact-head `V10 Timeweb Worktree Convergence Audit` failed after the primary worktree-convergence guard passed. The nested platform-inventory guard stopped with `TIMEWEB_INVENTORY_PROVIDER_SURFACE_COUNT_DRIFT`.
+
+**Root cause:** PR #591 intentionally added two provider-named files — the current runtime adapter `apps/api/timeweb_postgres_tls.py` and its regression suite `tests/test_v10_timeweb_postgres_tls.py` — but the canonical Timeweb provider inventory still froze the pre-change exact count of 256. The test path was already classified by the existing Timeweb-test rule, while the new runtime adapter also required an explicit KEEP classification because no current `apps/api` path rule covers provider-named files.
+
+**Blast radius searched:** every PR #591 changed path, the provider-keyword detector, explicit-path classifications, Timeweb test path rules, the current TW-B runtime KEEP regression list, worktree-convergence consumers, and the new P3 CA helper/test pair. No retired-provider authority, product activation, database mutation, tenant boundary or broker/Real-money change is implicated.
+
+**Why preflight missed it:** the focused P3 contract/CA review validated the new runtime boundary but did not run the whole-tree provider inventory, whose exact-cardinality invariant is intentionally repository-global. The connector-only environment has no mounted repository or pinned project toolchain, so this adjacent whole-tree ownership guard was first exercised by authoritative CI.
+
+**Corrective change:** register `apps/api/timeweb_postgres_tls.py` explicitly as KEEP, raise the exact provider-named file count from 256 to 258 for the two added Timeweb paths, and freeze both the runtime helper and its test in the current TW-B KEEP regression list.
+
+**Permanent regression/guard:** `test_provider_named_inventory_uses_exact_cardinality` continues to require exact provider-surface cardinality, and `test_tw_b_current_source_runtime_surfaces_are_keep` now proves the CA adapter and its regression suite remain current Timeweb surfaces.
+
+**Future prevention rule:** every branch that adds or removes a provider-keyword path must update the canonical provider inventory and its ownership regression in the same source checkpoint before publication; provider-specific runtime adapters are inventory changes, not merely implementation details.
+
+**Dependency/tooling knowledge change:** none.

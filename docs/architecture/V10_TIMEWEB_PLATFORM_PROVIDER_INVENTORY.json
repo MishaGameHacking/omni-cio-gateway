@@ -223,6 +223,10 @@
       "classification": "KEEP",
       "reason": "Current Timeweb-targeted provider-neutral Web/API runtime entrypoint."
     },
+    "apps/api/timeweb_postgres_tls.py": {
+      "classification": "KEEP",
+      "reason": "Current Timeweb PostgreSQL TLS adapter materializes the provider CA locally while preserving the portable external DSN contract."
+    },
     "apps/api/postgres_web_connection.py": {
       "classification": "KEEP",
       "reason": "Provider-neutral serialized PostgreSQL request-transaction adapter shared without importing legacy broker/T-Invest runtime modules."
@@ -533,7 +537,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 256,
+  "expected_provider_named_file_count": 258,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
