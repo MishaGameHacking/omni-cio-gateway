@@ -213,6 +213,8 @@ def _validate_controller(root: Path) -> None:
         "/api/v10/web/auth/providers",
         "PUBLIC_MULTI_USER_DISABLED",
         "LIVE_OPERABLE",
+        "_TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})",
+        "_PUBLIC_PROBE_RETRY_DELAYS = (",
         "hashlib.sha256",
     )
     for marker in required:
