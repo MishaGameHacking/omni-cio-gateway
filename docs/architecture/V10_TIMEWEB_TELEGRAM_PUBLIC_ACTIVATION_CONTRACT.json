@@ -119,5 +119,12 @@
     "session_lookup_off_event_loop_required": true,
     "horizontal_app_scaling_requires_distributed_abuse_control": true,
     "current_horizontal_app_scaling_allowed": false
+  },
+  "public_privacy_surface": {
+    "path": "/privacy",
+    "unauthenticated": true,
+    "login_surface_link_required": true,
+    "final_operator_identity_and_contact_before_activation_required": true,
+    "legal_basis_retention_cross_border_and_data_subject_channel_before_activation_required": true
   }
 }

@@ -1,6 +1,6 @@
 {
   "schema": "omni-cio.v10.timeweb-app-exact-sha-candidate.v1",
-  "status": "CERTIFIED_GREEN_BRANCH_LOCAL",
+  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
   "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
   "owning_pr": 584,
   "milestone": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
@@ -43,9 +43,7 @@
       "OMNI_V10_HOSTED_RUNTIME": "1",
       "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru",
       "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_hosted_api",
-      "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED": "true",
-      "PUBLIC_MULTI_USER_ENABLED": "false",
-      "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false"
+      "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED": "true"
     },
     "release_sha_env": "OMNI_V10_RELEASE_SHA",
     "release_sha_must_equal_expected_sha": true,
@@ -53,7 +51,21 @@
     "postgres_dsn_required": true,
     "telegram_runtime_credential_custody_accepted_by_p2": false,
     "vk_login_must_be_false_or_absent": true,
-    "retired_provider_env_forbidden": true
+    "retired_provider_env_forbidden": true,
+    "activation_modes": {
+      "preactivation": {
+        "PUBLIC_MULTI_USER_ENABLED": "false",
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
+        "canonical_domain_state": "FORBIDDEN",
+        "p5_live_evidence_sha256_required": false
+      },
+      "live-operable": {
+        "PUBLIC_MULTI_USER_ENABLED": "true",
+        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true",
+        "canonical_domain_state": "REQUIRED",
+        "p5_live_evidence_sha256_required": true
+      }
+    }
   },
   "acceptance": {
     "liveness_path": "/livez",
@@ -62,7 +74,8 @@
     "liveness_status": "ok",
     "liveness_release_sha_must_equal_expected_sha": true,
     "last_known_good_sha_must_come_from_successful_provider_history": true,
-    "automatic_rollback_authorized": false
+    "automatic_rollback_authorized": false,
+    "live_operable_release_requires_p5_live_evidence_sha256": true
   },
   "github": {
     "workflow": ".github/workflows/v10-timeweb-app-candidate.yml",
@@ -72,8 +85,9 @@
     "provider_binding_step_scope_only": true
   },
   "protected_invariants": {
-    "PUBLIC_MULTI_USER_ENABLED": false,
-    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": false,
+    "preactivation_is_default": true,
+    "public_activation_without_p5_live_evidence_allowed": false,
+    "partial_public_telegram_activation_allowed": false,
     "OMNI_V10_VK_ID_LOGIN_ENABLED": false,
     "broker_write": false,
     "trading_methods": false,

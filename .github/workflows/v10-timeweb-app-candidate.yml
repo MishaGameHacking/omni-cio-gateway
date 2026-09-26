@@ -15,6 +15,19 @@ on:
         options:
           - observe
           - deploy
+      runtime_mode:
+        description: Preactivation candidate or post-P5 live-operable continuous release
+        required: true
+        default: preactivation
+        type: choice
+        options:
+          - preactivation
+          - live-operable
+      p5_live_evidence_sha256:
+        description: Required only for live-operable mode; SHA-256 of accepted P5 live evidence
+        required: false
+        default: ""
+        type: string
       confirmation:
         description: Required only for deploy; use DEPLOY_EXACT_TIMEWEB_APP_COMMIT
         required: false
@@ -127,6 +140,8 @@ jobs:
       EXPECTED_HEAD: ${{ inputs.expected_main_sha }}
       EXPECTED_BRANCH: ${{ github.ref_name }}
       REQUESTED_OPERATION: ${{ inputs.operation }}
+      REQUESTED_RUNTIME_MODE: ${{ inputs.runtime_mode }}
+      P5_LIVE_EVIDENCE: ${{ inputs.p5_live_evidence_sha256 }}
       REQUESTED_CONFIRMATION: ${{ inputs.confirmation }}
 
     steps:
@@ -212,7 +227,19 @@ jobs:
             test "$REQUESTED_OPERATION" = "observe"
             test -z "$REQUESTED_CONFIRMATION"
           fi
-          python -m scripts.timeweb_app_release             --operation "$REQUESTED_OPERATION"             --expected-sha "$EXPECTED_HEAD"             --observed-main-sha "$OBSERVED_MAIN"             --confirmation "$confirmation"
+          case "$REQUESTED_RUNTIME_MODE" in
+            preactivation)
+              test -z "$P5_LIVE_EVIDENCE"
+              ;;
+            live-operable)
+              case "$P5_LIVE_EVIDENCE" in
+                *[!0-9a-f]*|'') exit 16 ;;
+              esac
+              test "${#P5_LIVE_EVIDENCE}" -eq 64
+              ;;
+            *) exit 17 ;;
+          esac
+          python -m scripts.timeweb_app_release             --operation "$REQUESTED_OPERATION"             --expected-sha "$EXPECTED_HEAD"             --observed-main-sha "$OBSERVED_MAIN"             --runtime-mode "$REQUESTED_RUNTIME_MODE"             --p5-live-evidence-sha256 "$P5_LIVE_EVIDENCE"             --confirmation "$confirmation"
 
       - name: Clean self-hosted workspace
         if: always()

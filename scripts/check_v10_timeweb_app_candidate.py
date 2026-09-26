@@ -18,8 +18,6 @@ _EXPECTED_PLAIN_ENV = {
     "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru",
     "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_hosted_api",
     "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED": "true",
-    "PUBLIC_MULTI_USER_ENABLED": "false",
-    "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
 }
 _API_INVALID = "TIMEWEB_APP_CANDIDATE_API_INVALID"
 _RUNTIME_ENV_INVALID = "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID"
@@ -59,7 +57,7 @@ def _string_set(value: object, code: str) -> set[str]:
 def _validate_root(payload: dict[str, Any]) -> None:
     expected_root = {
         "schema": "omni-cio.v10.timeweb-app-exact-sha-candidate.v1",
-        "status": "CERTIFIED_GREEN_BRANCH_LOCAL",
+        "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
         "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "owning_pr": 584,
         "milestone": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
@@ -128,6 +126,22 @@ def _validate_runtime_contract(payload: dict[str, Any]) -> None:
     runtime = _dict(payload.get("runtime"), _RUNTIME_ENV_INVALID)
     if runtime.get("required_plain_env") != _EXPECTED_PLAIN_ENV:
         raise RuntimeError(_RUNTIME_ENV_INVALID)
+    expected_modes = {
+        "preactivation": {
+            "PUBLIC_MULTI_USER_ENABLED": "false",
+            "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
+            "canonical_domain_state": "FORBIDDEN",
+            "p5_live_evidence_sha256_required": False,
+        },
+        "live-operable": {
+            "PUBLIC_MULTI_USER_ENABLED": "true",
+            "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "true",
+            "canonical_domain_state": "REQUIRED",
+            "p5_live_evidence_sha256_required": True,
+        },
+    }
+    if runtime.get("activation_modes") != expected_modes:
+        raise RuntimeError(_RUNTIME_ENV_INVALID)
     if runtime.get("release_sha_env") != "OMNI_V10_RELEASE_SHA":
         raise RuntimeError(_RUNTIME_ENV_INVALID)
     if runtime.get("release_sha_must_equal_expected_sha") is not True:
@@ -158,6 +172,7 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "liveness_release_sha_must_equal_expected_sha": True,
         "last_known_good_sha_must_come_from_successful_provider_history": True,
         "automatic_rollback_authorized": False,
+        "live_operable_release_requires_p5_live_evidence_sha256": True,
     }
     if acceptance != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID")
@@ -182,8 +197,9 @@ def _validate_invariants(payload: dict[str, Any]) -> None:
         "TIMEWEB_APP_CANDIDATE_INVARIANTS_INVALID",
     )
     expected = {
-        "PUBLIC_MULTI_USER_ENABLED": False,
-        "OMNI_V10_TELEGRAM_LOGIN_ENABLED": False,
+        "preactivation_is_default": True,
+        "public_activation_without_p5_live_evidence_allowed": False,
+        "partial_public_telegram_activation_allowed": False,
         "OMNI_V10_VK_ID_LOGIN_ENABLED": False,
         "broker_write": False,
         "trading_methods": False,
@@ -221,6 +237,9 @@ def _validate_controller(path: Path) -> None:
         "TIMEWEB_APP_RELEASE_MAIN_SHA_DRIFT",
         "TIMEWEB_APP_RELEASE_AUTODEPLOY_FORBIDDEN",
         "TIMEWEB_APP_RELEASE_PREMATURE_CANONICAL_DOMAIN",
+        "TIMEWEB_APP_RELEASE_CANONICAL_DOMAIN_REQUIRED",
+        "RUNTIME_MODE_LIVE_OPERABLE",
+        "TIMEWEB_APP_RELEASE_P5_LIVE_EVIDENCE_REQUIRED",
         "TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED",
         "TIMEWEB_APP_RELEASE_RETIRED_PROVIDER_ENV_PRESENT",
         "TIMEWEB_APP_RELEASE_AMBIGUOUS_UNRESOLVED",
@@ -235,8 +254,6 @@ def _validate_controller(path: Path) -> None:
         '"/api/v1/apps",\n            operation=',
         "/logs",
         "/stop",
-        'PUBLIC_MULTI_USER_ENABLED", "true"',
-        'OMNI_V10_TELEGRAM_LOGIN_ENABLED", "true"',
     )
     if any(marker in source for marker in forbidden):
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_CONTROLLER_AUTHORITY_WIDENED")
@@ -256,6 +273,10 @@ def _validate_workflow(path: Path) -> None:
         "python -m scripts.timeweb_app_release",
         '--observed-main-sha "$OBSERVED_MAIN"',
         "DEPLOY_EXACT_TIMEWEB_APP_COMMIT",
+        "runtime_mode",
+        "p5_live_evidence_sha256",
+        '--runtime-mode "$REQUESTED_RUNTIME_MODE"',
+        '--p5-live-evidence-sha256 "$P5_LIVE_EVIDENCE"',
     )
     if any(marker not in source for marker in required):
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_WORKFLOW_DRIFT")

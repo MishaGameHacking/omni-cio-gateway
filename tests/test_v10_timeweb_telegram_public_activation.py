@@ -135,6 +135,7 @@ _GUARD_FIXTURE_PATHS = (
     guard.RUNBOOK_RELATIVE,
     guard.READINESS_RELATIVE,
     guard.AUTH_RUNTIME_RELATIVE,
+    guard.PUBLIC_PRIVACY_RELATIVE,
     guard.FULL_DELIVERY_RELATIVE,
 )
 
@@ -327,6 +328,23 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "TIMEWEB_TELEGRAM_ACTIVATION_CAPACITY_POLICY_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_guard_rejects_missing_public_privacy_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_guard_fixture(root)
+            privacy = root / guard.PUBLIC_PRIVACY_RELATIVE
+            privacy.write_text(
+                privacy.read_text(encoding="utf-8").replace(
+                    'href="/privacy"', 'href="/policy-missing"'
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_TELEGRAM_ACTIVATION_PRIVACY_SURFACE_MISSING",
             ):
                 guard.validate(root)
 

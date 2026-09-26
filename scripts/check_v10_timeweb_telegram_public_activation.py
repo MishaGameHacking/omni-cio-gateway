@@ -19,6 +19,7 @@ READINESS_RELATIVE = Path(
     "docs/architecture/V10_TELEGRAM_PUBLIC_USER_ACTIVATION_READINESS_CONTRACT.json"
 )
 AUTH_RUNTIME_RELATIVE = Path("apps/api/telegram_auth.py")
+PUBLIC_PRIVACY_RELATIVE = Path("apps/web/src/app-shell/app-shell.tsx")
 FULL_DELIVERY_RELATIVE = Path(
     "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
 )
@@ -172,6 +173,35 @@ def _validate_contract(root: Path) -> None:
         raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_PROVIDER_API_POLICY_INVALID")
 
 
+def _validate_public_privacy_surface(root: Path) -> None:
+    contract = _json(root, CONTRACT_RELATIVE)
+    privacy = _mapping(
+        contract.get("public_privacy_surface"),
+        "TIMEWEB_TELEGRAM_ACTIVATION_PRIVACY_SURFACE_INVALID",
+    )
+    expected = {
+        "path": "/privacy",
+        "unauthenticated": True,
+        "login_surface_link_required": True,
+        "final_operator_identity_and_contact_before_activation_required": True,
+        "legal_basis_retention_cross_border_and_data_subject_channel_before_activation_required": True,
+    }
+    if privacy != expected:
+        raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_PRIVACY_SURFACE_INVALID")
+
+    source = _read(root, PUBLIC_PRIVACY_RELATIVE)
+    required = (
+        'href="/privacy"',
+        "Политика обработки персональных данных",
+        "Telegram Login запрашивает только scope openid",
+        "telegram:bot_access не запрашиваются",
+        "сведения об операторе",
+        "канале обращений субъектов персональных данных",
+    )
+    if any(marker not in source for marker in required):
+        raise RuntimeError("TIMEWEB_TELEGRAM_ACTIVATION_PRIVACY_SURFACE_MISSING")
+
+
 def _validate_controller(root: Path) -> None:
     source = _read(root, CONTROLLER_RELATIVE)
     required = (
@@ -306,6 +336,7 @@ def _validate_runbook(root: Path) -> None:
 
 def validate(root: Path = ROOT) -> None:
     _validate_contract(root)
+    _validate_public_privacy_surface(root)
     _validate_controller(root)
     _validate_workflow(root)
     _validate_composition(root)

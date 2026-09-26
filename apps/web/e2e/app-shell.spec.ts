@@ -42,6 +42,19 @@ async function mockUnauthenticatedApi(page: import("@playwright/test").Page, pro
   });
 }
 
+test("privacy policy surface is public without a product session", async ({ page }) => {
+  let sessionRequests = 0;
+  await page.route("**/api/v10/web/session", async (route) => {
+    sessionRequests += 1;
+    await route.abort("blockedbyclient");
+  });
+  await page.goto("/privacy");
+  await expect(page.getByRole("heading", { name: "Политика обработки персональных данных" })).toBeVisible();
+  await expect(page.getByText(/scope openid/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Вернуться к входу" })).toHaveAttribute("href", "/");
+  expect(sessionRequests).toBe(0);
+});
+
 test("unauthenticated route is guarded and exposes only Telegram login", async ({ page }) => {
   await mockUnauthenticatedApi(page, [
     { provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" },
@@ -52,6 +65,7 @@ test("unauthenticated route is guarded and exposes only Telegram login", async (
   await expect(page.getByRole("button", { name: /VK ID/i })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Портфель" })).toHaveCount(0);
   await expect(page.getByText(/OWNER acceptance|публичная демонстрация/i)).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Политика обработки персональных данных" })).toHaveAttribute("href", "/privacy");
 });
 
 test("configured but activation-blocked provider stays disabled truthfully", async ({ page }) => {

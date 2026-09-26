@@ -25,8 +25,7 @@ Required runtime configuration for P2:
 - `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`
 - `OMNI_V10_POSTGRES_DSN` present in Timeweb runtime custody.
 
-P2 does not accept Telegram credential custody. Public-user and Telegram activation flags
-must remain false even if credentials were pre-provisioned outside this gate.
+In `preactivation` mode, P2 does not accept Telegram credential custody and both public-user activation flags must remain false even if credentials were pre-provisioned outside this gate. A later `live-operable` continuous release preserves an already accepted P5 activation and requires its live-evidence digest; it does not create or rotate Telegram credentials.
 
 ## Observe mode
 
@@ -37,6 +36,15 @@ runtime configuration, exact active commit, and HTTPS `/livez` release identity.
 
 The Timeweb technical domain is allowed only as an additional trusted Host for candidate
 verification. Browser Origin/CSRF authority remains canonical `https://omnicio.ru`.
+
+## Runtime release modes
+
+The controller has one fail-closed release implementation with two explicit states:
+
+- `preactivation` is the default and requires `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, no P5 live-evidence digest, and no attached canonical `omnicio.ru` domain. This preserves the original P2 candidate gate.
+- `live-operable` is allowed only after P5 is already accepted. It requires the two public/Telegram flags to be `true` together, requires `omnicio.ru` to remain attached, and requires the SHA-256 digest of the accepted P5 live evidence. Partial activation is rejected.
+
+The evidence digest binds the release request to previously accepted P5 evidence; it does not create provider, legal, privacy or real-user acceptance. This controller still cannot patch application settings, credentials, DNS or provider registration. Those states must already exist through their owning gates.
 
 ## Deploy mode
 

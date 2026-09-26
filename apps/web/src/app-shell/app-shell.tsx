@@ -12,10 +12,12 @@ import {
 import {
   appRoutes,
   isKnownRoute,
+  isPublicRoute,
   type AppRoutePath,
   type HealthView,
   type PreviewModeView,
   type ProviderView,
+  type ShellRoutePath,
   type WebSessionView,
 } from "./contracts";
 import { DecisionPlanPage } from "./decision-plan";
@@ -25,8 +27,9 @@ import { ResearchDossiersPage } from "./research-dossiers";
 import { SystemAdminPage } from "./system-admin";
 import { WatchtowerIncidentsPage } from "./watchtower-incidents";
 
-function currentPath(): AppRoutePath {
+function currentPath(): ShellRoutePath {
   const path = window.location.pathname;
+  if (isPublicRoute(path)) return path;
   return isKnownRoute(path) ? path : "/";
 }
 
@@ -53,6 +56,25 @@ function providerStatusCaption(provider: ProviderView | undefined): string {
   return "Telegram Login остаётся fail-closed до reviewed provider configuration.";
 }
 
+function PrivacyPolicyPage() {
+  return (
+    <main className="login-shell" role="main">
+      <section className="login-card" aria-labelledby="privacy-title">
+        <p className="shell-eyebrow">OMNI-CIO V10</p>
+        <h1 id="privacy-title">Политика обработки персональных данных</h1>
+        <p className="shell-muted">Публичная регистрация остаётся отключённой до завершения отдельного legal/privacy gate.</p>
+        <h2>Данные для входа</h2>
+        <p>Telegram Login запрашивает только scope openid: идентификатор пользователя у провайдера и технические данные аутентификации из подписанного ID token. Профиль, телефон и telegram:bot_access не запрашиваются.</p>
+        <h2>Использование внутри Omni-CIO</h2>
+        <p>После успешной проверки Telegram identity сервер связывает её с внутренним аккаунтом, изолированным Tenant и server-side Session. Tenant не выбирается браузером.</p>
+        <h2>До публичной активации</h2>
+        <p>До включения регистрации должны быть утверждены и опубликованы сведения об операторе, правовых основаниях и целях обработки, сроках хранения, трансграничной обработке и канале обращений субъектов персональных данных. До этого момента Telegram Login остаётся fail-closed.</p>
+        <p className="shell-caption"><a href="/">Вернуться к входу</a></p>
+      </section>
+    </main>
+  );
+}
+
 function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
   const telegram = providers.find((item) => item.provider === "telegram");
   return (
@@ -68,6 +90,7 @@ function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
           </form>
         </div>
         <p className="shell-caption">{providerStatusCaption(telegram)}</p>
+        <p className="shell-caption"><a href="/privacy">Политика обработки персональных данных</a></p>
       </section>
     </main>
   );
@@ -78,7 +101,8 @@ export function ApplicationShell() {
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [previewMode, setPreviewMode] = useState<PreviewModeView | null>(null);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
-  const [path, setPath] = useState<AppRoutePath>(currentPath);
+  const [path, setPath] = useState<ShellRoutePath>(currentPath);
+  const isPublicPrivacy = path === "/privacy";
   const [health, setHealth] = useState<HealthView | null>(null);
   const [healthUnavailable, setHealthUnavailable] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -95,10 +119,11 @@ export function ApplicationShell() {
   }, []);
 
   useEffect(() => {
+    if (isPublicPrivacy) return;
     void refreshSession();
     void readProviders().then(setProviders).catch(() => setProviders([]));
     void readPreviewMode().then(setPreviewMode).catch(() => setPreviewMode(null));
-  }, [refreshSession]);
+  }, [isPublicPrivacy, refreshSession]);
 
   useEffect(() => {
     if (!session?.authenticated) return;
@@ -131,6 +156,9 @@ export function ApplicationShell() {
     return health ? healthToOperational(health.state) : "RECOVERING";
   }, [health, healthUnavailable]);
 
+  if (isPublicPrivacy) {
+    return <PrivacyPolicyPage />;
+  }
   if (session === null) {
     return <main className="shell-loading" role="main"><span role="status">Проверка server-side session…</span></main>;
   }

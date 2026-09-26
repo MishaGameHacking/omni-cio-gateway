@@ -75,11 +75,27 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         ):
             guard.validate(root)
 
+    def test_rejects_live_mode_without_p5_evidence_contract(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["runtime"]["activation_modes"]["live-operable"][
+            "p5_live_evidence_sha256_required"
+        ] = False
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID",
+        ):
+            guard.validate(root)
+
     def test_rejects_public_activation_contract_drift(self) -> None:
         root = self._fixture()
         path = root / CONTRACT_RELATIVE
         payload = json.loads(path.read_text(encoding="utf-8"))
-        payload["protected_invariants"]["PUBLIC_MULTI_USER_ENABLED"] = True
+        payload["protected_invariants"][
+            "public_activation_without_p5_live_evidence_allowed"
+        ] = True
         path.write_text(json.dumps(payload), encoding="utf-8")
         with self.assertRaisesRegex(
             RuntimeError,

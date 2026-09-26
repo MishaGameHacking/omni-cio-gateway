@@ -48,7 +48,17 @@ class _Livez:
         return _Response({"status": "ok", "release_sha": self.sha})
 
 
-def _app(*, active_sha: str = LKG_SHA, status: str = "active") -> dict[str, object]:
+def _app(
+    *,
+    active_sha: str = LKG_SHA,
+    status: str = "active",
+    runtime_mode: str = release.RUNTIME_MODE_PREACTIVATION,
+) -> dict[str, object]:
+    live = runtime_mode == release.RUNTIME_MODE_LIVE_OPERABLE
+    domains = [{"fqdn": CANDIDATE_HOST}]
+    if live:
+        domains.append({"fqdn": "omnicio.ru"})
+    activation = "true" if live else "false"
     return {
         "id": 17,
         "type": "backend",
@@ -59,7 +69,7 @@ def _app(*, active_sha: str = LKG_SHA, status: str = "active") -> dict[str, obje
         "is_auto_deploy": False,
         "commit_sha": active_sha,
         "repository": {"full_name": release.CANONICAL_REPOSITORY},
-        "domains": [{"fqdn": CANDIDATE_HOST}],
+        "domains": domains,
         "envs": {
             "OMNI_V10_HOSTED_RUNTIME": "1",
             "OMNI_V10_PUBLIC_HOSTNAME": "omnicio.ru",
@@ -67,8 +77,8 @@ def _app(*, active_sha: str = LKG_SHA, status: str = "active") -> dict[str, obje
             "OMNI_V10_RELEASE_SHA": EXPECTED_SHA,
             "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_hosted_api",
             "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED": "true",
-            "PUBLIC_MULTI_USER_ENABLED": "false",
-            "OMNI_V10_TELEGRAM_LOGIN_ENABLED": "false",
+            "PUBLIC_MULTI_USER_ENABLED": activation,
+            "OMNI_V10_TELEGRAM_LOGIN_ENABLED": activation,
             "OMNI_V10_POSTGRES_DSN": "postgresql://opaque",
         },
     }
@@ -174,6 +184,92 @@ def test_candidate_rejects_autodeploy_and_public_activation() -> None:
             token="token",
             api=activated_api,
             livez_opener=livez,
+        )
+
+
+def test_live_operable_release_requires_p5_evidence_and_canonical_domain() -> None:
+    app = _app(
+        active_sha=EXPECTED_SHA,
+        runtime_mode=release.RUNTIME_MODE_LIVE_OPERABLE,
+    )
+    api = _Api(app)
+    livez = _Livez()
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_P5_LIVE_EVIDENCE_REQUIRED",
+    ):
+        release.run(
+            operation="observe",
+            expected_sha=EXPECTED_SHA,
+            observed_main_sha=EXPECTED_SHA,
+            token="token",
+            runtime_mode=release.RUNTIME_MODE_LIVE_OPERABLE,
+            api=api,
+            livez_opener=livez,
+        )
+
+    last_known_good = release.run(
+        operation="observe",
+        expected_sha=EXPECTED_SHA,
+        observed_main_sha=EXPECTED_SHA,
+        token="token",
+        runtime_mode=release.RUNTIME_MODE_LIVE_OPERABLE,
+        p5_live_evidence_sha256="c" * 64,
+        api=api,
+        livez_opener=livez,
+    )
+    assert last_known_good == LKG_SHA
+
+    app["domains"] = [{"fqdn": CANDIDATE_HOST}]
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_CANONICAL_DOMAIN_REQUIRED",
+    ):
+        release.run(
+            operation="observe",
+            expected_sha=EXPECTED_SHA,
+            observed_main_sha=EXPECTED_SHA,
+            token="token",
+            runtime_mode=release.RUNTIME_MODE_LIVE_OPERABLE,
+            p5_live_evidence_sha256="c" * 64,
+            api=api,
+            livez_opener=livez,
+        )
+
+
+def test_live_operable_release_rejects_partial_activation() -> None:
+    app = _app(
+        active_sha=EXPECTED_SHA,
+        runtime_mode=release.RUNTIME_MODE_LIVE_OPERABLE,
+    )
+    assert isinstance(app["envs"], dict)
+    app["envs"]["OMNI_V10_TELEGRAM_LOGIN_ENABLED"] = "false"
+    with pytest.raises(release.ReleaseStopped, match="TIMEWEB_APP_RELEASE_ENV_DRIFT"):
+        release.run(
+            operation="observe",
+            expected_sha=EXPECTED_SHA,
+            observed_main_sha=EXPECTED_SHA,
+            token="token",
+            runtime_mode=release.RUNTIME_MODE_LIVE_OPERABLE,
+            p5_live_evidence_sha256="c" * 64,
+            api=_Api(app),
+            livez_opener=_Livez(),
+        )
+
+
+def test_preactivation_release_rejects_live_evidence() -> None:
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_UNEXPECTED_P5_LIVE_EVIDENCE",
+    ):
+        release.run(
+            operation="observe",
+            expected_sha=EXPECTED_SHA,
+            observed_main_sha=EXPECTED_SHA,
+            token="token",
+            p5_live_evidence_sha256="c" * 64,
+            api=_Api(_app(active_sha=EXPECTED_SHA)),
+            livez_opener=_Livez(),
         )
 
 

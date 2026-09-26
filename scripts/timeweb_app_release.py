@@ -28,6 +28,9 @@ PUBLIC_MULTI_USER_ENV = "PUBLIC_MULTI_USER_ENABLED"
 TELEGRAM_LOGIN_ENV = "OMNI_V10_TELEGRAM_LOGIN_ENABLED"
 VK_LOGIN_ENV = "OMNI_V10_VK_ID_LOGIN_ENABLED"
 DEPLOY_CONFIRMATION = "DEPLOY_EXACT_TIMEWEB_APP_COMMIT"
+RUNTIME_MODE_PREACTIVATION = "preactivation"
+RUNTIME_MODE_LIVE_OPERABLE = "live-operable"
+_RUNTIME_MODES = frozenset({RUNTIME_MODE_PREACTIVATION, RUNTIME_MODE_LIVE_OPERABLE})
 MAX_RESPONSE_BYTES = 1024 * 1024
 _PAGE_SIZE = 100
 _GET_DELAYS = (1.0, 2.0)
@@ -53,6 +56,7 @@ _VALID_DEPLOY_STATUS = frozenset(
     }
 )
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 _ID_RE = re.compile(r"^[A-Za-z0-9-]{1,96}$", re.ASCII)
 _HOST_RE = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
@@ -120,6 +124,32 @@ def _sha(value: object, code: str) -> str:
     if _SHA_RE.fullmatch(normalized) is None:
         _stop(code)
     return normalized
+
+
+def _digest(value: object, code: str) -> str:
+    if not isinstance(value, str):
+        _stop(code)
+    normalized = value.strip().lower()
+    if _DIGEST_RE.fullmatch(normalized) is None:
+        _stop(code)
+    return normalized
+
+
+def _runtime_mode(value: object) -> str:
+    if not isinstance(value, str):
+        _stop("TIMEWEB_APP_RELEASE_RUNTIME_MODE_INVALID")
+    normalized = value.strip().lower()
+    if normalized not in _RUNTIME_MODES:
+        _stop("TIMEWEB_APP_RELEASE_RUNTIME_MODE_INVALID")
+    return normalized
+
+
+def _validate_runtime_mode_evidence(runtime_mode: str, evidence_sha256: str) -> None:
+    if runtime_mode == RUNTIME_MODE_PREACTIVATION:
+        if evidence_sha256.strip():
+            _stop("TIMEWEB_APP_RELEASE_UNEXPECTED_P5_LIVE_EVIDENCE")
+        return
+    _digest(evidence_sha256, "TIMEWEB_APP_RELEASE_P5_LIVE_EVIDENCE_REQUIRED")
 
 
 def _safe_id(value: object, code: str) -> str:
@@ -323,21 +353,24 @@ def _validate_app_shape(app: dict[str, Any], app_id: str) -> None:
         _stop("TIMEWEB_APP_RELEASE_AUTODEPLOY_FORBIDDEN")
 
 
-def _expected_runtime_env(expected: str) -> dict[str, str]:
+def _expected_runtime_env(expected: str, runtime_mode: str) -> dict[str, str]:
+    activation = "true" if runtime_mode == RUNTIME_MODE_LIVE_OPERABLE else "false"
     return {
         "OMNI_V10_HOSTED_RUNTIME": "1",
         "OMNI_V10_PUBLIC_HOSTNAME": CANONICAL_PUBLIC_HOSTNAME,
         RELEASE_SHA_ENV: expected,
         POSTGRES_RUNTIME_ROLE_ENV: "omni_cio_hosted_api",
         TRUSTED_EDGE_TLS_ENV: "true",
-        PUBLIC_MULTI_USER_ENV: "false",
-        TELEGRAM_LOGIN_ENV: "false",
+        PUBLIC_MULTI_USER_ENV: activation,
+        TELEGRAM_LOGIN_ENV: activation,
     }
 
 
-def _validate_runtime_env(app: dict[str, Any], expected: str) -> str:
+def _validate_runtime_env(
+    app: dict[str, Any], expected: str, runtime_mode: str
+) -> str:
     envs = _mapping(app.get("envs"), "TIMEWEB_APP_RELEASE_ENV_INVALID")
-    for name, value in _expected_runtime_env(expected).items():
+    for name, value in _expected_runtime_env(expected, runtime_mode).items():
         if envs.get(name) != value:
             _stop(f"TIMEWEB_APP_RELEASE_ENV_DRIFT:{name}")
     if str(envs.get(VK_LOGIN_ENV, "")).lower() not in {"", "0", "false"}:
@@ -375,21 +408,28 @@ def _domain_names(app: dict[str, Any]) -> set[str]:
     }
 
 
-def _validate_candidate_domains(app: dict[str, Any], candidate: str) -> None:
+def _validate_candidate_domains(
+    app: dict[str, Any], candidate: str, runtime_mode: str
+) -> None:
     domains = _domain_names(app)
     if candidate not in domains:
         _stop("TIMEWEB_APP_RELEASE_CANDIDATE_DOMAIN_MISSING")
-    if CANONICAL_PUBLIC_HOSTNAME in domains:
+    has_canonical = CANONICAL_PUBLIC_HOSTNAME in domains
+    if runtime_mode == RUNTIME_MODE_PREACTIVATION and has_canonical:
         _stop("TIMEWEB_APP_RELEASE_PREMATURE_CANONICAL_DOMAIN")
+    if runtime_mode == RUNTIME_MODE_LIVE_OPERABLE and not has_canonical:
+        _stop("TIMEWEB_APP_RELEASE_CANONICAL_DOMAIN_REQUIRED")
 
 
-def _candidate_app(api: ApiLike, expected: str) -> tuple[dict[str, Any], str, str]:
+def _candidate_app(
+    api: ApiLike, expected: str, runtime_mode: str
+) -> tuple[dict[str, Any], str, str]:
     match = _matching_app_row(api)
     app_id = _safe_id(match.get("id"), _APP_ID_INVALID)
     app = _mapping(api.get_app(app_id).get("app"), "TIMEWEB_APP_RELEASE_APP_INVALID")
     _validate_app_shape(app, app_id)
-    candidate = _validate_runtime_env(app, expected)
-    _validate_candidate_domains(app, candidate)
+    candidate = _validate_runtime_env(app, expected, runtime_mode)
+    _validate_candidate_domains(app, candidate, runtime_mode)
     return app, app_id, candidate
 
 
@@ -472,9 +512,13 @@ def _wait(api: ApiLike, app_id: str, deploy_id: str, expected: str) -> None:
 
 
 def observe(
-    api: ApiLike, expected: str, *, livez_opener: Any | None = None
+    api: ApiLike,
+    expected: str,
+    *,
+    runtime_mode: str = RUNTIME_MODE_PREACTIVATION,
+    livez_opener: Any | None = None,
 ) -> str | None:
-    app, app_id, hostname = _candidate_app(api, expected)
+    app, app_id, hostname = _candidate_app(api, expected, runtime_mode)
     if (
         app.get("status") != "active"
         or _sha(app.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_ACTIVE_SHA_INVALID")
@@ -490,6 +534,7 @@ def _perform_exact_deploy(
     app_id: str,
     hostname: str,
     expected: str,
+    runtime_mode: str,
     before_rows: list[dict[str, Any]],
 ) -> None:
     before = frozenset(_deploy(row)[0] for row in before_rows)
@@ -506,7 +551,9 @@ def _perform_exact_deploy(
             _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
 
     _wait(api, app_id, deploy_id, expected)
-    refreshed, refreshed_id, refreshed_hostname = _candidate_app(api, expected)
+    refreshed, refreshed_id, refreshed_hostname = _candidate_app(
+        api, expected, runtime_mode
+    )
     if refreshed_id != app_id or refreshed_hostname != hostname:
         _stop("TIMEWEB_APP_RELEASE_APP_POSTDEPLOY_DRIFT")
     if (
@@ -524,19 +571,22 @@ def deploy(
     expected: str,
     confirmation: str,
     *,
+    runtime_mode: str = RUNTIME_MODE_PREACTIVATION,
     livez_opener: Any | None = None,
 ) -> str | None:
     if confirmation != DEPLOY_CONFIRMATION:
         _stop("TIMEWEB_APP_RELEASE_CONFIRMATION_REQUIRED")
 
-    app, app_id, hostname = _candidate_app(api, expected)
+    app, app_id, hostname = _candidate_app(api, expected, runtime_mode)
     before_rows = _deploys(api, app_id)
     last_known_good = _last_known_good(before_rows, expected)
     already_active = (
         app.get("status") == "active" and app.get(_COMMIT_SHA_KEY) == expected
     )
     if not already_active:
-        _perform_exact_deploy(api, app_id, hostname, expected, before_rows)
+        _perform_exact_deploy(
+            api, app_id, hostname, expected, runtime_mode, before_rows
+        )
 
     _verify_livez(hostname, expected, opener=livez_opener)
     return last_known_good
@@ -549,20 +599,30 @@ def run(
     observed_main_sha: str,
     token: str,
     confirmation: str = "",
+    runtime_mode: str = RUNTIME_MODE_PREACTIVATION,
+    p5_live_evidence_sha256: str = "",
     api: ApiLike | None = None,
     livez_opener: Any | None = None,
 ) -> str | None:
     expected = _sha(expected_sha, "TIMEWEB_APP_RELEASE_EXPECTED_SHA_INVALID")
     if expected != _sha(observed_main_sha, "TIMEWEB_APP_RELEASE_MAIN_SHA_INVALID"):
         _stop("TIMEWEB_APP_RELEASE_MAIN_SHA_DRIFT")
+    mode = _runtime_mode(runtime_mode)
+    _validate_runtime_mode_evidence(mode, p5_live_evidence_sha256)
     client = api or TimewebAppApi(token)
     if operation == "observe":
-        return observe(client, expected, livez_opener=livez_opener)
+        return observe(
+            client,
+            expected,
+            runtime_mode=mode,
+            livez_opener=livez_opener,
+        )
     if operation == "deploy":
         return deploy(
             client,
             expected,
             confirmation,
+            runtime_mode=mode,
             livez_opener=livez_opener,
         )
     _stop("TIMEWEB_APP_RELEASE_OPERATION_INVALID")
@@ -574,6 +634,12 @@ def main() -> int:
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--observed-main-sha", required=True)
     parser.add_argument("--confirmation", default="")
+    parser.add_argument(
+        "--runtime-mode",
+        choices=(RUNTIME_MODE_PREACTIVATION, RUNTIME_MODE_LIVE_OPERABLE),
+        default=RUNTIME_MODE_PREACTIVATION,
+    )
+    parser.add_argument("--p5-live-evidence-sha256", default="")
     args = parser.parse_args()
     token = os.environ.get(TOKEN_ENV, "").strip()
     if not token:
@@ -586,11 +652,16 @@ def main() -> int:
             observed_main_sha=args.observed_main_sha,
             token=token,
             confirmation=args.confirmation,
+            runtime_mode=args.runtime_mode,
+            p5_live_evidence_sha256=args.p5_live_evidence_sha256,
         )
     except ReleaseStopped as exc:
         print(exc.code, file=sys.stderr)
         return 1
-    marker = f"TIMEWEB_APP_EXACT_SHA_CANDIDATE=PASS release_sha={args.expected_sha}"
+    marker = (
+        "TIMEWEB_APP_EXACT_SHA_CANDIDATE=PASS "
+        f"release_sha={args.expected_sha} runtime_mode={args.runtime_mode}"
+    )
     if last_known_good is not None:
         marker += f" last_known_good_sha={last_known_good}"
     print(marker)

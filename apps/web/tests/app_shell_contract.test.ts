@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { appRoutes, isKnownRoute } from "../src/app-shell/contracts.ts";
+import { appRoutes, isKnownRoute, isPublicRoute, publicRoutes } from "../src/app-shell/contracts.ts";
 
 const expectedRoutes = [
   "/",
@@ -17,6 +17,7 @@ const expectedRoutes = [
   "/system",
   "/settings",
 ];
+const expectedPublicRoutes = ["/privacy"];
 const forbiddenStorageIdentifiers = [
   ["local", "Storage"].join(""),
   ["session", "Storage"].join(""),
@@ -33,6 +34,12 @@ test("WP17 exposes the exact Master Plan navigation routes", () => {
   assert.equal(isKnownRoute("/private-other-tenant"), false);
 });
 
+test("privacy policy is a separate public route and not private navigation", () => {
+  assert.deepEqual(publicRoutes.map((route) => route.path), expectedPublicRoutes);
+  assert.equal(isPublicRoute("/privacy"), true);
+  assert.equal(isKnownRoute("/privacy"), false);
+});
+
 test("ordinary login surface is exactly Telegram without local password", () => {
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.match(shell, /Продолжить через Telegram/);
@@ -40,6 +47,15 @@ test("ordinary login surface is exactly Telegram without local password", () => 
   assert.doesNotMatch(shell, /vk_id/);
   assert.doesNotMatch(shell, /type=["']password["']/i);
   assert.doesNotMatch(shell, /Google/i);
+});
+
+test("login surface links to the fail-closed public privacy surface", () => {
+  const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /href="\/privacy"/);
+  assert.match(shell, /Политика обработки персональных данных/);
+  assert.match(shell, /Telegram Login запрашивает только scope openid/);
+  assert.match(shell, /telegram:bot_access не запрашиваются/);
+  assert.match(shell, /канале обращений субъектов персональных данных/);
 });
 
 test("provider login starts with POST forms instead of state-changing GET navigation", () => {

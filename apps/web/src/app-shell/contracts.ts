@@ -13,7 +13,13 @@ export const appRoutes = [
   { path: "/settings", label: "Настройки" },
 ] as const;
 
+export const publicRoutes = [
+  { path: "/privacy", label: "Политика обработки персональных данных" },
+] as const;
+
 export type AppRoutePath = (typeof appRoutes)[number]["path"];
+export type PublicRoutePath = (typeof publicRoutes)[number]["path"];
+export type ShellRoutePath = AppRoutePath | PublicRoutePath;
 export type IdentityProvider = "telegram";
 
 export interface WebSessionView {
@@ -191,4 +197,8 @@ export interface PortfolioDashboardView {
 
 export function isKnownRoute(pathname: string): pathname is AppRoutePath {
   return appRoutes.some((route) => route.path === pathname);
+}
+
+export function isPublicRoute(pathname: string): pathname is PublicRoutePath {
+  return publicRoutes.some((route) => route.path === pathname);
 }

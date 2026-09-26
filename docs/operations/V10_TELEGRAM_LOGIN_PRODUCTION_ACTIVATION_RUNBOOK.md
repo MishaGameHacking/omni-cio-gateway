@@ -88,6 +88,12 @@ printing their values, and that no staging/synthetic path receives production au
 secrets. The proof must bind to the exact accepted GitHub main SHA and accepted Timeweb
 release.
 
+## Public privacy surface
+
+The unauthenticated Web must expose `/privacy` and link it from the Telegram Login surface before any public activation. The repository surface is intentionally fail-closed: it describes the minimal Telegram `openid` identity path and states that operator identity/contact, legal basis/purposes, retention, cross-border assessment and the data-subject request channel must be accepted and published before public registration can be enabled. A source route is not legal acceptance; the P5 external readiness evidence must bind the final approved publication.
+
+This keeps the privacy document reachable on the same collection surface while preventing repository code from fabricating OWNER/legal facts.
+
 ## Acceptance sequence
 
 1. source-preparation PR exact-head DRAFT/READY GREEN and squash merge;
