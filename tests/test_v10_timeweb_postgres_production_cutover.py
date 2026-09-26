@@ -31,6 +31,8 @@ DEPENDENCIES = (
     "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
     "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOOK.md",
     "scripts/timeweb_postgres_production_cutover.py",
+    "apps/api/hosted_runtime.py",
+    "apps/api/timeweb_postgres_tls.py",
     WORKFLOW_RELATIVE.as_posix(),
     "infrastructure/postgres/hosted-postgres-runtime-contract.json",
     "infrastructure/postgres/hosted-recovery-contract.json",
@@ -171,6 +173,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                     ("runtime-dsn", runtime),
                 ],
             ),
+            mock.patch.object(
+                cutover,
+                "_prepare_connection_dsns",
+                return_value=("bootstrap-connect", "runtime-connect"),
+            ) as prepare_dsns,
             mock.patch.object(cutover, "_observe_database") as observe,
             mock.patch.object(cutover, "_prepare_database") as prepare,
             mock.patch.object(cutover, "_verify_runtime_database") as verify_runtime,
@@ -180,9 +187,82 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 expected_sha=expected_sha,
                 observed_main_sha=expected_sha,
             )
-        observe.assert_called_once_with("bootstrap-dsn", "runtime-dsn")
+        prepare_dsns.assert_called_once_with("bootstrap-dsn", "runtime-dsn")
+        observe.assert_called_once_with("bootstrap-connect", "runtime-connect")
         prepare.assert_not_called()
         verify_runtime.assert_not_called()
+
+    def test_invalid_operation_stops_before_ca_materialization(self) -> None:
+        expected_sha = "a" * 40
+        bootstrap = {
+            "host": "db.example",
+            "port": "5432",
+            "dbname": "omni",
+            "user": "bootstrap",
+        }
+        runtime = {
+            "host": "db.example",
+            "port": "5432",
+            "dbname": "omni",
+            "user": cutover.RUNTIME_ROLE,
+        }
+        with (
+            mock.patch.object(
+                cutover,
+                "_dsn",
+                side_effect=[
+                    ("bootstrap-dsn", bootstrap),
+                    ("runtime-dsn", runtime),
+                ],
+            ),
+            mock.patch.object(cutover, "_prepare_connection_dsns") as prepare_dsns,
+            self.assertRaisesRegex(
+                cutover.CutoverStopped,
+                "TIMEWEB_PG_PRODUCTION_OPERATION_INVALID",
+            ),
+        ):
+            cutover.run(
+                operation="invalid",
+                expected_sha=expected_sha,
+                observed_main_sha=expected_sha,
+            )
+        prepare_dsns.assert_not_called()
+
+    def test_prepare_confirmation_stops_before_ca_materialization(self) -> None:
+        expected_sha = "a" * 40
+        bootstrap = {
+            "host": "db.example",
+            "port": "5432",
+            "dbname": "omni",
+            "user": "bootstrap",
+        }
+        runtime = {
+            "host": "db.example",
+            "port": "5432",
+            "dbname": "omni",
+            "user": cutover.RUNTIME_ROLE,
+        }
+        with (
+            mock.patch.object(
+                cutover,
+                "_dsn",
+                side_effect=[
+                    ("bootstrap-dsn", bootstrap),
+                    ("runtime-dsn", runtime),
+                ],
+            ),
+            mock.patch.object(cutover, "_prepare_connection_dsns") as prepare_dsns,
+            self.assertRaisesRegex(
+                cutover.CutoverStopped,
+                "TIMEWEB_PG_PRODUCTION_PREPARE_CONFIRMATION_REQUIRED",
+            ),
+        ):
+            cutover.run(
+                operation="prepare",
+                expected_sha=expected_sha,
+                observed_main_sha=expected_sha,
+            )
+        prepare_dsns.assert_not_called()
 
     def test_guard_rejects_mutation_in_observe_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -201,6 +281,41 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
                 "TIMEWEB_PG_CUTOVER_OBSERVE_MUTATION_PATH",
+            ):
+                guard.validate(root)
+
+    def test_rejects_nonportable_ca_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["transport"]["canonical_sslrootcert"] = "C:/runner/root.crt"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_hosted_runtime_without_tls_preparation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / "apps/api/hosted_runtime.py"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace(
+                    "database_dsn = prepare_timeweb_postgres_tls("
+                    "_required_env(_DSN_ENV))",
+                    "database_dsn = _required_env(_DSN_ENV)",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
             ):
                 guard.validate(root)
 

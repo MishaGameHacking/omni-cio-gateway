@@ -12,6 +12,18 @@ The runtime login is `omni_cio_hosted_api`. It must already exist through the ac
 
 Both bootstrap and runtime DSNs must use `sslmode=verify-full` and an explicit `sslrootcert`. Retired-provider database hosts are rejected.
 
+### Portable CA / DSN rule
+
+P3 accepts PostgreSQL/libpq connection strings only. Do not copy the Timeweb panel's `pgsql:host=...` DSN form into GitHub: that is the PHP/PDO presentation and is not valid psycopg/libpq conninfo.
+
+The external bootstrap/runtime DSNs and the later Timeweb App Platform `OMNI_V10_POSTGRES_DSN` must use the same portable root-certificate value:
+
+`sslrootcert=.omni-cio/timeweb-postgres-root.crt`
+
+The connection host must be the Timeweb technical **domain** on explicit port `5432`, not the public IPv4. Immediately before the first PostgreSQL connection, both the P3 verifier and the hosted runtime fetch the public Timeweb CA only from `https://st.timeweb.com/cloud-static/ca.crt`, reject redirects/non-certificate content, write it atomically to a permission-hardened local file, and rewrite only the in-process connection copy to the absolute local CA path. The stored external DSN remains unchanged, so P3 can later require exact equality with the App Platform binding while Windows CI and the Linux runtime use their own local filesystem paths.
+
+The CA is public trust material, not a credential. Never weaken this boundary by omitting `sslrootcert`, switching to `sslmode=require`/disabled verification, using the public IP as the verified host, or storing a machine-specific absolute CA path in the shared DSN.
+
 ## GitHub production-environment prerequisite
 
 Before the first P3 dispatch, the repository GitHub Environment `timeweb-production` must already exist. Its deployment policy must be **Selected branches and tags** with exactly one rule: **Branch `main`**. The workflow only has read authority over this policy and must never create or relax the environment itself.

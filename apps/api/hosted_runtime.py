@@ -21,6 +21,7 @@ from apps.api.hosted_database_runtime import (
     validate_hosted_runtime_role,
 )
 from apps.api.telegram_auth import build_telegram_provider_auth
+from apps.api.timeweb_postgres_tls import prepare_timeweb_postgres_tls
 from omni_cio.persistence.migration import ConnectionLike, connect_postgres
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 from omni_cio.web.session_v1 import SessionPolicyV1
@@ -83,7 +84,7 @@ def create_app() -> FastAPI:
     hostname = _hostname(_required_env(_HOSTNAME_ENV))
     release_sha = _release_sha(_required_env(_RELEASE_SHA_ENV))
     runtime_role = validate_hosted_runtime_role(_required_env(_RUNTIME_ROLE_ENV))
-    database_dsn = _required_env(_DSN_ENV)
+    database_dsn = prepare_timeweb_postgres_tls(_required_env(_DSN_ENV))
     candidate_hostname = _optional_candidate_hostname()
     candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
     raw_connection = _open_runtime_database(database_dsn, runtime_role)
