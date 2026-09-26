@@ -1,6 +1,6 @@
 {
   "schema": "omni-cio.v10.timeweb-app-exact-sha-candidate.v1",
-  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+  "status": "CERTIFIED_GREEN_BRANCH_LOCAL",
   "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
   "owning_pr": 584,
   "milestone": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
