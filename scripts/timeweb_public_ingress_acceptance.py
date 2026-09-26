@@ -232,6 +232,31 @@ def _require_security_headers(headers: dict[str, str], *, api_path: bool) -> Non
         _stop("TIMEWEB_PUBLIC_INGRESS_CACHE_POLICY_INVALID")
 
 
+def _read_public_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, str] | None, bytes | None, str | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            if status in _TRANSIENT_HTTP_STATUSES:
+                return None, None, f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}"
+            if status != 200:
+                _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}")
+            return (
+                _normalized_headers(response),
+                response.read(MAX_RESPONSE_BYTES + 1),
+                None,
+            )
+    except HTTPError as exc:
+        status = int(exc.code)
+        if status in _TRANSIENT_HTTP_STATUSES:
+            return None, None, f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{status}"
+        _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{status}")
+    except OSError:
+        return None, None, "TIMEWEB_PUBLIC_INGRESS_TRANSPORT_FAILED"
+
+
 def _read_public(
     path: str,
     *,
@@ -248,36 +273,17 @@ def _read_public(
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    status = 0
-    headers: dict[str, str] = {}
-    raw = b""
+    headers: dict[str, str] | None = None
+    raw: bytes | None = None
     for attempt in range(len(_PUBLIC_PROBE_RETRY_DELAYS) + 1):
-        try:
-            with active.open(request, timeout=30.0) as response:
-                status = int(response.status)
-                if status != 200:
-                    if status in _TRANSIENT_HTTP_STATUSES and attempt < len(
-                        _PUBLIC_PROBE_RETRY_DELAYS
-                    ):
-                        time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
-                        continue
-                    _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}")
-                headers = _normalized_headers(response)
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
-                break
-        except HTTPError as exc:
-            status = int(exc.code)
-            if status in _TRANSIENT_HTTP_STATUSES and attempt < len(
-                _PUBLIC_PROBE_RETRY_DELAYS
-            ):
-                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
-                continue
-            _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{status}")
-        except OSError:
-            if attempt < len(_PUBLIC_PROBE_RETRY_DELAYS):
-                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
-                continue
-            _stop("TIMEWEB_PUBLIC_INGRESS_TRANSPORT_FAILED")
+        headers, raw, failure = _read_public_attempt(active, request)
+        if failure is None:
+            break
+        if attempt >= len(_PUBLIC_PROBE_RETRY_DELAYS):
+            _stop(failure)
+        time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+    if headers is None or raw is None:
+        raise AssertionError("bounded public probe exhausted")
     if len(raw) > MAX_RESPONSE_BYTES:
         _stop("TIMEWEB_PUBLIC_INGRESS_RESPONSE_TOO_LARGE")
     _require_security_headers(headers, api_path=path != "/")
