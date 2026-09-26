@@ -108,7 +108,9 @@ def _sha256(value: str, code: str) -> str:
 
 
 def _safe_id(value: object) -> str:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        _stop("TIMEWEB_PUBLIC_INGRESS_APP_ID_INVALID")
+    if isinstance(value, int) and value <= 0:
         _stop("TIMEWEB_PUBLIC_INGRESS_APP_ID_INVALID")
     text = str(value).strip()
     if _ID_RE.fullmatch(text) is None:
