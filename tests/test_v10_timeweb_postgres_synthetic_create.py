@@ -319,6 +319,77 @@ def _verify_terminal_shape():
             )
         self.assertEqual(mutation_opener.open.call_count, 1)
 
+    def test_conflict_and_locked_create_enter_get_only_reconciliation(self) -> None:
+        payload = provisioner._create_payload(
+            provider_type="postgres18",
+            preset_id=777,
+            project_id="42",
+        )
+        for status in (409, 423):
+            with self.subTest(status=status):
+                failure = HTTPError(
+                    "https://api.timeweb.cloud/api/v1/databases",
+                    status,
+                    "provider state conflict",
+                    {},
+                    io.BytesIO(b"provider-private-body"),
+                )
+                opener = _sequence_opener(failure)
+                api = provisioner.TimewebCreateApi(
+                    "synthetic-token",
+                    opener=opener,
+                )
+                with self.assertRaises(provisioner.AmbiguousCreate):
+                    api.post_once(payload)
+                self.assertEqual(opener.open.call_count, 1)
+
+    def test_ambiguous_reconcile_survives_transient_control_plane_read(self) -> None:
+        api = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        api.get.side_effect = [
+            transient,
+            {
+                "databases": [
+                    {
+                        "id": 91,
+                        "name": read_only.TARGET_CLUSTER_NAME,
+                    }
+                ]
+            },
+        ]
+        sleeps: list[float] = []
+        cluster_id = provisioner._reconcile_cluster_id(
+            api,
+            "/api/v1/projects/42/resources/databases",
+            sleeper=sleeps.append,
+            delays=(0.0,),
+        )
+        self.assertEqual(cluster_id, 91)
+        self.assertEqual(api.get.call_count, 2)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_ambiguous_reconcile_classifies_control_plane_only_timeout(self) -> None:
+        api = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        api.get.side_effect = [transient, transient]
+        with self.assertRaises(
+            provisioner._provider_base.ProvisioningStopped
+        ) as raised:
+            provisioner._reconcile_cluster_id(
+                api,
+                "/api/v1/projects/42/resources/databases",
+                sleeper=lambda _seconds: None,
+                delays=(0.0,),
+            )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_CLUSTER_CREATE_CONTROL_PLANE_READ_TIMEOUT",
+        )
+
     def test_create_post_distinguishes_authentication_and_authorization(self) -> None:
         cases = (
             (401, read_only.AUTHENTICATION_REJECTED_CODE),
@@ -407,6 +478,66 @@ def _verify_terminal_shape():
         ):
             api.post_once(payload)
         self.assertEqual(opener.open.call_count, 1)
+
+    def test_start_wait_survives_transient_control_plane_read(self) -> None:
+        api = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        started = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "availability_zone": "msk-1",
+                "cpu": 1,
+                "ram": 2048,
+                "preset_id": 777,
+                "disk": {"size": 20_971_520, "used": 0},
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+                "is_autobackups_enabled": False,
+                "is_backup_schedule_enabled": False,
+                "replica_list": [{"id": 501, "db_id": 91}],
+                "disk_autoscaling": {"is_enabled": False},
+                "status": "started",
+            }
+        }
+        api.get.side_effect = [transient, started]
+        sleeps: list[float] = []
+        provisioner._wait_for_started(
+            api,
+            91,
+            provider_type="postgres18",
+            preset_id=777,
+            sleeper=sleeps.append,
+            delays=(0.0,),
+        )
+        self.assertEqual(api.get.call_count, 2)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_start_wait_classifies_control_plane_only_timeout(self) -> None:
+        api = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        api.get.side_effect = [transient, transient]
+        with self.assertRaises(
+            provisioner._provider_base.ProvisioningStopped
+        ) as raised:
+            provisioner._wait_for_started(
+                api,
+                91,
+                provider_type="postgres18",
+                preset_id=777,
+                sleeper=lambda _seconds: None,
+                delays=(0.0,),
+            )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT",
+        )
 
     def test_post_create_shape_requires_no_paid_addons(self) -> None:
         payload = {
