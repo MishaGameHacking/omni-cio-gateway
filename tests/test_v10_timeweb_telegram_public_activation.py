@@ -236,9 +236,7 @@ class TimewebTelegramPublicActivationTests(unittest.TestCase):
                 opener=opener,
                 **_prerequisites(),
             )
-        sleeper.assert_called_once_with(
-            activation._PUBLIC_PROBE_RETRY_DELAYS[0]
-        )
+        sleeper.assert_called_once_with(activation._PUBLIC_PROBE_RETRY_DELAYS[0])
         self.assertEqual(
             [request.full_url for request in opener.requests[:2]],
             ["https://omnicio.ru/livez", "https://omnicio.ru/livez"],
