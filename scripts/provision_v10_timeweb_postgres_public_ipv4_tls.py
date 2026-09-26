@@ -397,8 +397,7 @@ def _rule_body(cidr: str) -> dict[str, object]:
 
 def _rules(
     api: read_only.TimewebReadOnlyApi,
-    group_id: str,
-) -> list[dict[str, Any]]:
+    group_id: str,) -> list[dict[str, Any]]:
     return _rows(api, f"/api/v1/firewall/groups/{group_id}/rules", "rules")
 
 
@@ -728,14 +727,41 @@ def _issued_domain(cluster: dict[str, Any]) -> str | None:
     return issued[0] if issued else None
 
 
-def _network_ready(cluster: dict[str, Any]) -> bool:
+def _public_ipv4_ready(cluster: dict[str, Any]) -> bool:
     return (
         cluster.get("is_enabled_public_network") is True
         and cluster.get("is_enabled_public_ipv6") is False
-        and cluster.get("is_secure_connection_enabled") is True
         and cluster.get("status") == "started"
+    )
+
+
+def _network_ready(cluster: dict[str, Any]) -> bool:
+    return (
+        _public_ipv4_ready(cluster)
+        and cluster.get("is_secure_connection_enabled") is True
         and _issued_domain(cluster) is not None
     )
+
+
+def _wait_public_ipv4_ready(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    expected_address: str,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _STATE_DELAYS_SECONDS,
+) -> dict[str, Any]:
+    for attempt in range(len(delays) + 1):
+        cluster = _cluster(api, cluster_id)
+        if _public_ipv4_ready(cluster):
+            _verify_bound_ipv4(api, cluster_id, expected_address)
+            return cluster
+        status = str(cluster.get("status", ""))
+        if status not in _TRANSITIONAL_STATUSES and status != "started":
+            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT")
 
 
 def _wait_network_ready(
@@ -757,7 +783,7 @@ def _wait_network_ready(
     raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT")
 
 
-def _patch_public_network(
+def _patch_public_ipv4(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
@@ -767,14 +793,32 @@ def _patch_public_network(
         "floating_ip": address,
         "is_enabled_public_network": True,
         "is_enabled_public_ipv6": False,
-        "is_secure_connection_enable": True,
     }
     try:
         mutation.mutate_once(
             "PATCH",
             f"/api/v2/databases/{cluster_id}",
-            operation="DATABASE_PUBLIC_NETWORK_PATCH",
+            operation="DATABASE_PUBLIC_IPV4_PATCH",
             body=body,
+            expected_statuses=frozenset({200}),
+            reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
+        )
+    except AmbiguousMutation:
+        pass
+    return _wait_public_ipv4_ready(api, cluster_id, address)
+
+
+def _enable_secure_connection(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+) -> dict[str, Any]:
+    try:
+        mutation.mutate_once(
+            "PATCH",
+            f"/api/v2/databases/{cluster_id}",
+            operation="DATABASE_TLS_ENABLE_PATCH",
+            body={"is_secure_connection_enable": True},
             expected_statuses=frozenset({200}),
             reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
@@ -797,8 +841,7 @@ def _close_public_network(
     try:
         mutation.mutate_once(
             "PATCH",
-            f"/api/v2/databases/{cluster_id}",
-            operation="DATABASE_PUBLIC_NETWORK_ROLLBACK",
+            f"/api/v2/databases/{cluster_id}",            operation="DATABASE_PUBLIC_NETWORK_ROLLBACK",
             body=body,
             expected_statuses=frozenset({200}),
             reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
@@ -1074,6 +1117,21 @@ def _rollback_failed_transport(
         _delete_created_ipv4_if_unbound(mutation, api, floating_id)
 
 
+def _verify_transport_scope(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    cluster_id: int,
+    cidr: str,
+    address: str,
+) -> None:
+    _verify_group(api, group_id)
+    _ensure_rule(mutation, api, group_id, cidr)
+    _ensure_resource_link(mutation, api, group_id, cluster_id)
+    _verify_exclusive_firewall(api, group_id, cluster_id)
+    _verify_bound_ipv4(api, cluster_id, address)
+
+
 def _configure_transport(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
@@ -1099,18 +1157,38 @@ def _configure_transport(
             cluster = initial
         else:
             public_exposure_possible = True
-            cluster = _patch_public_network(
+            if _public_ipv4_ready(initial):
+                public_cluster = initial
+            else:
+                public_cluster = _patch_public_ipv4(
+                    mutation,
+                    api,
+                    cluster_id,
+                    address,
+                )
+            _verify_transport_scope(
                 mutation,
                 api,
+                group_id,
                 cluster_id,
+                cidr,
                 address,
             )
+            if _network_ready(public_cluster):
+                cluster = public_cluster
+            elif public_cluster.get("is_secure_connection_enabled") is True:
+                cluster = _wait_network_ready(api, cluster_id)
+            else:
+                cluster = _enable_secure_connection(mutation, api, cluster_id)
 
-        _verify_group(api, group_id)
-        _ensure_rule(mutation, api, group_id, cidr)
-        _ensure_resource_link(mutation, api, group_id, cluster_id)
-        _verify_exclusive_firewall(api, group_id, cluster_id)
-        _verify_bound_ipv4(api, cluster_id, address)
+        _verify_transport_scope(
+            mutation,
+            api,
+            group_id,
+            cluster_id,
+            cidr,
+            address,
+        )
         _verify_tls_transport(cluster)
     except Exception:
         _rollback_failed_transport(
@@ -1196,7 +1274,6 @@ def _stopped_marker(exc: _provider_base.ProvisioningStopped) -> str:
     if exc.status is not None:
         marker += f" http_status={exc.status}"
     return marker
-
 
 def main() -> int:
     try:
