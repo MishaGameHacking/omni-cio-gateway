@@ -131,13 +131,11 @@ def _select_cluster(payload: object) -> int:
     return _numeric_id(matches[0].get("id"), "TIMEWEB_ALLOCATION_TARGET_ID_INVALID")
 
 
-def _cluster(
-    payload: object,
+def _cluster_identity(
+    row: dict[str, Any],
     expected_id: int,
     expected_project_id: str,
-) -> tuple[bool, bool]:
-    body = _mapping(payload, "TIMEWEB_ALLOCATION_CLUSTER_INVALID")
-    row = _mapping(body.get("db"), "TIMEWEB_ALLOCATION_CLUSTER_INVALID")
+) -> None:
     if (
         _numeric_id(row.get("id"), "TIMEWEB_ALLOCATION_TARGET_ID_INVALID")
         != expected_id
@@ -153,11 +151,14 @@ def _cluster(
         or row.get("is_backup_schedule_enabled") is not False
     ):
         _stop("TIMEWEB_ALLOCATION_CLUSTER_SHAPE_DRIFT")
-    cluster_project_id = _provider_id(
+    project_id = _provider_id(
         row.get("project_id"), "TIMEWEB_ALLOCATION_CLUSTER_PROJECT_ID_INVALID"
     )
-    if cluster_project_id != expected_project_id:
+    if project_id != expected_project_id:
         _stop("TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT")
+
+
+def _cluster_storage(row: dict[str, Any], expected_id: int) -> None:
     if (
         _numeric_id(row.get("port"), "TIMEWEB_ALLOCATION_CLUSTER_PORT_INVALID")
         != POSTGRES_PORT
@@ -187,12 +188,22 @@ def _cluster(
         != expected_id
     ):
         _stop("TIMEWEB_ALLOCATION_CLUSTER_REPLICA_DRIFT")
+
+
+def _cluster(
+    payload: object,
+    expected_id: int,
+    expected_project_id: str,
+) -> tuple[bool, bool]:
+    body = _mapping(payload, "TIMEWEB_ALLOCATION_CLUSTER_INVALID")
+    row = _mapping(body.get("db"), "TIMEWEB_ALLOCATION_CLUSTER_INVALID")
+    _cluster_identity(row, expected_id, expected_project_id)
+    _cluster_storage(row, expected_id)
     public = row.get("is_enabled_public_network")
     ipv6 = row.get("is_enabled_public_ipv6")
     if type(public) is not bool or type(ipv6) is not bool:
         _stop("TIMEWEB_ALLOCATION_CLUSTER_NETWORK_STATE_INVALID")
     return public, ipv6
-
 
 def _raw_inventory(payload: object) -> list[dict[str, object]]:
     try:
