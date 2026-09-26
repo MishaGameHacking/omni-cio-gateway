@@ -34,7 +34,20 @@ _RUNTIME_MODES = frozenset({RUNTIME_MODE_PREACTIVATION, RUNTIME_MODE_LIVE_OPERAB
 MAX_RESPONSE_BYTES = 1024 * 1024
 _PAGE_SIZE = 100
 _GET_DELAYS = (1.0, 2.0)
-_POLL_DELAYS = (0.0, 5.0, 10.0, 20.0, 30.0, 60.0, 60.0)
+_DEPLOY_RECONCILE_DELAYS = (0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
+_POLL_DELAYS = (
+    0.0,
+    5.0,
+    10.0,
+    20.0,
+    30.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+)
 _TRANSIENT = frozenset({408, 429, 500, 502, 503, 504})
 _TERMINAL_FAILURE = frozenset({"failure", "access_error", "stopped"})
 _VALID_DEPLOY_STATUS = frozenset(
@@ -55,6 +68,7 @@ _VALID_DEPLOY_STATUS = frozenset(
         "access_error",
     }
 )
+_INFLIGHT_DEPLOY_STATUS = _VALID_DEPLOY_STATUS - _TERMINAL_FAILURE - {"success"}
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 _ID_RE = re.compile(r"^[A-Za-z0-9-]{1,96}$", re.ASCII)
@@ -326,6 +340,21 @@ def _last_known_good(rows: list[dict[str, Any]], expected: str) -> str | None:
     return None
 
 
+def _inflight_exact_deploy_id(
+    rows: list[dict[str, Any]],
+    expected: str,
+) -> str | None:
+    candidates = [
+        deploy_id
+        for row in rows
+        for deploy_id, commit, status in (_deploy(row),)
+        if commit == expected and status in _INFLIGHT_DEPLOY_STATUS
+    ]
+    if len(candidates) > 1:
+        _stop("TIMEWEB_APP_RELEASE_MULTIPLE_INFLIGHT_EXACT_SHA")
+    return candidates[0] if candidates else None
+
+
 def _matching_app_row(api: ApiLike) -> dict[str, Any]:
     matches = [
         row
@@ -463,7 +492,7 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
 
 
 def _reconcile(api: ApiLike, app_id: str, before: frozenset[str], expected: str) -> str:
-    for delay in (0.0, 2.0, 5.0, 10.0):
+    for delay in _DEPLOY_RECONCILE_DELAYS:
         if delay:
             api.sleeper(delay)
         candidates = []
@@ -527,6 +556,30 @@ def observe(
     return _last_known_good(_deploys(api, app_id), expected)
 
 
+def _verify_completed_deploy(
+    api: ApiLike,
+    app_id: str,
+    deploy_id: str,
+    hostname: str,
+    expected: str,
+    runtime_mode: str,
+) -> None:
+    _wait(api, app_id, deploy_id, expected)
+    refreshed, refreshed_id, refreshed_hostname = _candidate_app(
+        api, expected, runtime_mode
+    )
+    if refreshed_id != app_id or refreshed_hostname != hostname:
+        _stop("TIMEWEB_APP_RELEASE_APP_POSTDEPLOY_DRIFT")
+    if (
+        refreshed.get("status") != "active"
+        or _sha(
+            refreshed.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_ACTIVE_SHA_INVALID"
+        )
+        != expected
+    ):
+        _stop("TIMEWEB_APP_RELEASE_POSTDEPLOY_NOT_ACTIVE")
+
+
 def _perform_exact_deploy(
     api: ApiLike,
     app_id: str,
@@ -548,20 +601,14 @@ def _perform_exact_deploy(
         if commit != expected or deploy_id in before:
             _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
 
-    _wait(api, app_id, deploy_id, expected)
-    refreshed, refreshed_id, refreshed_hostname = _candidate_app(
-        api, expected, runtime_mode
+    _verify_completed_deploy(
+        api,
+        app_id,
+        deploy_id,
+        hostname,
+        expected,
+        runtime_mode,
     )
-    if refreshed_id != app_id or refreshed_hostname != hostname:
-        _stop("TIMEWEB_APP_RELEASE_APP_POSTDEPLOY_DRIFT")
-    if (
-        refreshed.get("status") != "active"
-        or _sha(
-            refreshed.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_ACTIVE_SHA_INVALID"
-        )
-        != expected
-    ):
-        _stop("TIMEWEB_APP_RELEASE_POSTDEPLOY_NOT_ACTIVE")
 
 
 def deploy(
@@ -578,13 +625,24 @@ def deploy(
     app, app_id, hostname = _candidate_app(api, expected, runtime_mode)
     before_rows = _deploys(api, app_id)
     last_known_good = _last_known_good(before_rows, expected)
+    inflight = _inflight_exact_deploy_id(before_rows, expected)
     already_active = (
         app.get("status") == "active" and app.get(_COMMIT_SHA_KEY) == expected
     )
     if not already_active:
-        _perform_exact_deploy(
-            api, app_id, hostname, expected, runtime_mode, before_rows
-        )
+        if inflight is not None:
+            _verify_completed_deploy(
+                api,
+                app_id,
+                inflight,
+                hostname,
+                expected,
+                runtime_mode,
+            )
+        else:
+            _perform_exact_deploy(
+                api, app_id, hostname, expected, runtime_mode, before_rows
+            )
 
     _verify_livez(hostname, expected, opener=livez_opener)
     return last_known_good
