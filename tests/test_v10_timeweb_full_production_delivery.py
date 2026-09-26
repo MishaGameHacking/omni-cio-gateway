@@ -241,9 +241,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             [408, 429, 500, 502, 503, 504],
         )
         self.assertTrue(
-            policy[
-                "transient_network_failures_may_retry_bounded_read_only_observation"
-            ]
+            policy["transient_network_failures_may_retry_bounded_read_only_observation"]
         )
         self.assertFalse(
             policy["authentication_or_authorization_failure_retry_allowed"]
@@ -257,9 +255,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         )
         self.assertTrue(policy["duplicate_inflight_exact_identity_terminal"])
         self.assertFalse(policy["local_polling_budget_is_provider_sla"])
-        self.assertFalse(
-            policy["tls_certificate_verification_failure_retry_allowed"]
-        )
+        self.assertFalse(policy["tls_certificate_verification_failure_retry_allowed"])
         self.assertFalse(policy["authority_expansion_on_recovery_allowed"])
 
     def test_provider_convergence_policy_fails_closed_on_mutation_replay(self) -> None:
