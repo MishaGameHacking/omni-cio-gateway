@@ -235,6 +235,16 @@ def _verify_terminal_shape():
         rendered = " ".join(str(call) for call in output.call_args_list)
         self.assertNotIn("synthetic-token", rendered)
 
+    def test_provider_convergence_budgets_are_multi_minute_and_workflow_bounded(
+        self,
+    ) -> None:
+        reconcile_budget = sum(provisioner._RECONCILE_DELAYS_SECONDS)
+        start_budget = sum(provisioner._START_DELAYS_SECONDS)
+        self.assertGreaterEqual(reconcile_budget, 180.0)
+        self.assertLess(reconcile_budget, 10 * 60)
+        self.assertGreaterEqual(start_budget, 240.0)
+        self.assertLess(start_budget, 10 * 60)
+
     def test_ambiguous_post_reconciles_by_get_without_second_post(self) -> None:
         mutation_opener = _sequence_opener(OSError("lost response"))
         read_opener = _sequence_opener(
