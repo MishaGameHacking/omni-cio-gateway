@@ -82,10 +82,12 @@ state is also returned to public-network OFF before the run stops for reconcilia
 
 The workflow never silently consumes an unrelated free/unbound public IP.
 
-If a new address is required, it permits exactly one
-`POST /api/v1/floating-ips` with availability zone `msk-1` and
-`is_ddos_guard=false`. An ambiguous create response is reconciled by GET and
-set-difference; there is no blind second POST.
+The current transport no longer has authority to create, stamp or delete a
+floating IPv4. The durable allocation receipt is a mandatory predecessor and the
+transport must recover exactly that already-managed address from two consistent
+GET observations. If the allocated address is missing or the two observations
+drift, the run stops with `TIMEWEB_ALLOCATED_IPV4_MISSING` or
+`TIMEWEB_ALLOCATED_IPV4_DRIFT`; it never converts that drift into a new purchase.
 
 Only after the DROP firewall is exact does the workflow perform the provider
 transitions in the documented order. The first database v2 PATCH contains only:
@@ -211,6 +213,12 @@ This is a recovery/diagnostic hardening checkpoint, not evidence that public IPv
 is already ready. A fresh protected-main live run is still required after this repair is
 accepted. Any new RED must be diagnosed from its operation-specific sanitized marker
 before another provider mutation attempt.
+
+The create/stamp/delete mechanics described in the historical RED/recovery sections
+below explain how the original allocation defect class was discovered and repaired.
+They are no longer current Public IPv4/TLS transport authority after the accepted
+existing-IPv4 allocation receipt. Current transport is existing-only as defined
+above and in the machine contract.
 
 ## Live RED #2 - IPv4 custody and restart recovery
 
