@@ -366,9 +366,7 @@ def _expected_runtime_env(expected: str, runtime_mode: str) -> dict[str, str]:
     }
 
 
-def _validate_runtime_env(
-    app: dict[str, Any], expected: str, runtime_mode: str
-) -> str:
+def _validate_runtime_env(app: dict[str, Any], expected: str, runtime_mode: str) -> str:
     envs = _mapping(app.get("envs"), "TIMEWEB_APP_RELEASE_ENV_INVALID")
     for name, value in _expected_runtime_env(expected, runtime_mode).items():
         if envs.get(name) != value:
