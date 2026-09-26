@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import ssl
 import tempfile
 from typing import Any
 import unittest
@@ -274,6 +275,161 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             raised.exception.code,
             "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT",
         )
+
+    def test_tls_wait_survives_transient_control_plane_read(self) -> None:
+        api = mock.Mock()
+        ready = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": True,
+            "status": "started",
+            "domains": [{"fqdn": "example.twc1.net", "cert_status": "issued"}],
+        }
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_HTTP_ERROR",
+            status=500,
+        )
+        sleeper = mock.Mock()
+        with mock.patch.object(
+            provisioner,
+            "_wait_cluster_read",
+            side_effect=[transient, ready],
+        ):
+            actual = provisioner._wait_network_ready(
+                api,
+                91,
+                sleeper=sleeper,
+                delays=(0.0,),
+            )
+        self.assertIs(actual, ready)
+        sleeper.assert_called_once_with(0.0)
+
+    def test_tls_wait_classifies_control_plane_only_timeout(self) -> None:
+        api = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        with mock.patch.object(
+            provisioner,
+            "_wait_cluster_read",
+            side_effect=transient,
+        ):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._wait_network_ready(api, 91, delays=())
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_TLS_CONTROL_PLANE_READ_TIMEOUT",
+        )
+
+    def test_nullable_provider_domains_are_pending_not_shape_failure(self) -> None:
+        self.assertIsNone(provisioner._issued_domain({"domains": None}))
+
+    def test_ca_fetch_retries_transient_provider_error(self) -> None:
+        transient = HTTPError(
+            provisioner.CA_URL,
+            500,
+            "provider incident",
+            hdrs=None,
+            fp=io.BytesIO(b"private-provider-body"),
+        )
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.read.return_value = (
+            b"-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n"
+        )
+        opener = mock.Mock()
+        opener.open.side_effect = [transient, response]
+        sleeps: list[float] = []
+        path = provisioner._fetch_ca_file(
+            opener=opener,
+            sleeper=sleeps.append,
+            delays=(0.0,),
+        )
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        self.assertTrue(path.exists())
+        self.assertEqual(sleeps, [0.0])
+        self.assertEqual(opener.open.call_count, 2)
+
+    def test_tls_socket_probe_retries_transport_but_not_certificate_failure(
+        self,
+    ) -> None:
+        context = mock.Mock(spec=ssl.SSLContext)
+        sleeps: list[float] = []
+        with (
+            mock.patch.object(
+                provisioner,
+                "_tls_client_context",
+                return_value=context,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_probe_postgres_tls_once",
+                side_effect=[OSError("transient"), None],
+            ) as probe,
+        ):
+            provisioner._probe_postgres_tls(
+                "example.twc1.net",
+                Path("provider-ca.crt"),
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        self.assertEqual(probe.call_count, 2)
+        self.assertEqual(sleeps, [0.0])
+
+        with (
+            mock.patch.object(
+                provisioner,
+                "_tls_client_context",
+                return_value=context,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_probe_postgres_tls_once",
+                side_effect=ssl.SSLCertVerificationError(1, "certificate drift"),
+            ) as probe,
+        ):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._probe_postgres_tls(
+                    "example.twc1.net",
+                    Path("provider-ca.crt"),
+                    sleeper=sleeps.append,
+                    delays=(0.0,),
+                )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED",
+        )
+        probe.assert_called_once()
+
+    def test_rollback_reconciles_through_transient_control_plane_read(self) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_NETWORK_ERROR"
+        )
+        closed = {
+            "is_enabled_public_network": False,
+            "is_enabled_public_ipv6": False,
+        }
+        sleeps: list[float] = []
+        with mock.patch.object(
+            provisioner,
+            "_wait_cluster_read",
+            side_effect=[transient, closed],
+        ):
+            provisioner._close_public_network(
+                mutation,
+                api,
+                91,
+                sleeper=sleeps.append,
+            )
+        mutation.mutate_once.assert_called_once()
+        self.assertEqual(sleeps, [provisioner._ROLLBACK_STATE_DELAYS_SECONDS[0]])
 
     def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
         context = mock.Mock()
