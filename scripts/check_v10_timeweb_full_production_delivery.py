@@ -377,6 +377,8 @@ def _validate_provider_convergence_policy(payload: dict[str, Any]) -> None:
         "post_exposure_validation_read_only_required": True,
         "public_probe_transient_retry_required": True,
         "postgres_connect_transient_retry_required": True,
+        "tls_listener_not_ready_may_retry_bounded_readiness": True,
+        "tls_transport_timeout_distinct_from_certificate_failure": True,
         "tls_certificate_verification_failure_retry_allowed": False,
         "authority_expansion_on_recovery_allowed": False,
     }
