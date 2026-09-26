@@ -65,6 +65,7 @@ PR #584 is accepted on protected `main`; its former integrated branch is histori
 - Current focused repair branch: `fix/timeweb-public-ipv4-tls-sequencing`.
 - Current execution state: `RED_REPAIR_ONLY`; no rerun of the live transport is permitted until the replacement source is exact-head certified, merged and post-merge accepted.
 - Repair scope: separate public IPv4 PATCH from TLS PATCH, GET-reconcile exact managed-IP binding between transitions, re-prove DROP TCP/5432 verifier-only firewall/resource scope before TLS, preserve rollback, and add regression/machine guards.
+- Adjacent authority hardening from the same producer/consumer review removes the legacy floating-IP create/stamp/delete path from current transport after the `ALLOCATED` receipt. Missing or two-read-drifting allocated IPv4 state is terminal; it cannot become a second-purchase opportunity.
 - No second IPv4 purchase/delete, production PostgreSQL cutover, `omnicio.ru` DNS/TLS mutation, Telegram public activation, broker write or Real-money authority is introduced.
 - Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
 
