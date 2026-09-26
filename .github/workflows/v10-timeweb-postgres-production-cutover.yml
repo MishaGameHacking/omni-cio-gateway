@@ -164,6 +164,14 @@ jobs:
         shell: cmd
         run: python -m scripts.check_v10_timeweb_postgres_production_cutover
 
+      - name: Re-verify GitHub production environment policy before production bindings
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python -m scripts.verify_v10_timeweb_github_environment
+          --environment-name timeweb-production
+
       - name: Observe verified production database
         if: ${{ inputs.operation == 'observe' }}
         shell: bash

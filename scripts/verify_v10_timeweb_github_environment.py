@@ -80,10 +80,13 @@ def _retry_available(attempt: int) -> bool:
 
 
 def _raise_http_failure(status: int) -> NoReturn:
-    if status in {401, 403, 404}:
-        raise EnvironmentGateError(
-            "TIMEWEB_GITHUB_ENVIRONMENT_GATE_UNAVAILABLE"
-        ) from None
+    fixed_codes = {
+        401: "TIMEWEB_GITHUB_ENVIRONMENT_GATE_AUTHENTICATION_FAILED",
+        403: "TIMEWEB_GITHUB_ENVIRONMENT_GATE_PERMISSION_DENIED",
+        404: "TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND",
+    }
+    if status in fixed_codes:
+        raise EnvironmentGateError(fixed_codes[status]) from None
     if status in _TRANSIENT_HTTP_STATUSES:
         raise EnvironmentGateError(
             "TIMEWEB_GITHUB_ENVIRONMENT_GATE_TRANSIENT_EXHAUSTED"

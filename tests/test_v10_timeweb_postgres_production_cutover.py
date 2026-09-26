@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from scripts import provider_runtime_primitives as provider_runtime
+from scripts import timeweb_postgres_production_cutover as cutover
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -146,6 +147,62 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         self.assertIs(actual, connection)
         self.assertEqual(client.calls, 2)
         sleeper.assert_called_once_with(0.0)
+
+    def test_observe_is_read_only_and_does_not_require_prepared_schema(self) -> None:
+        expected_sha = "a" * 40
+        bootstrap = {
+            "host": "db.example",
+            "port": "5432",
+            "dbname": "omni",
+            "user": "bootstrap",
+        }
+        runtime = {
+            "host": "db.example",
+            "port": "5432",
+            "dbname": "omni",
+            "user": cutover.RUNTIME_ROLE,
+        }
+        with (
+            mock.patch.object(
+                cutover,
+                "_dsn",
+                side_effect=[
+                    ("bootstrap-dsn", bootstrap),
+                    ("runtime-dsn", runtime),
+                ],
+            ),
+            mock.patch.object(cutover, "_observe_database") as observe,
+            mock.patch.object(cutover, "_prepare_database") as prepare,
+            mock.patch.object(cutover, "_verify_runtime_database") as verify_runtime,
+        ):
+            cutover.run(
+                operation="observe",
+                expected_sha=expected_sha,
+                observed_main_sha=expected_sha,
+            )
+        observe.assert_called_once_with("bootstrap-dsn", "runtime-dsn")
+        prepare.assert_not_called()
+        verify_runtime.assert_not_called()
+
+    def test_guard_rejects_mutation_in_observe_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding="utf-8")
+            controller.write_text(
+                source.replace(
+                    "_verify_runtime_role_identity(runtime)",
+                    "apply_migrations(runtime)",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_OBSERVE_MUTATION_PATH",
+            ):
+                guard.validate(root)
 
     def test_rejects_synthetic_fixture_promotion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

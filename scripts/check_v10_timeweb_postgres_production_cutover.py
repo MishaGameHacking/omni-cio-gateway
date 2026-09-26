@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import sys
@@ -202,7 +203,13 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
 
 def _validate_github(payload: dict[str, Any]) -> None:
     github = _mapping(payload.get("github"), _GITHUB_INVALID)
-    if github.get("environment") != "timeweb-production":
+    expected = {
+        "environment": "timeweb-production",
+        "environment_preexisting_required": True,
+        "environment_branch_policy_pattern": "main",
+        "environment_branch_policy_type": "branch",
+    }
+    if any(github.get(key) != value for key, value in expected.items()):
         raise CutoverContractError(_GITHUB_INVALID)
     _true_map(
         github,
@@ -213,11 +220,41 @@ def _validate_github(payload: dict[str, Any]) -> None:
             "operation_specific_secret_injection_required",
             "provider_token_accept_only",
             "production_dsns_step_scoped",
+            "environment_policy_reverified_before_secret_access",
         ),
         _GITHUB_INVALID,
     )
-    if github.get("recovery_attestation_as_actions_secret_allowed") is not False:
-        raise CutoverContractError(_GITHUB_INVALID)
+    _false_map(
+        github,
+        (
+            "recovery_attestation_as_actions_secret_allowed",
+            "environment_administration_by_workflow_allowed",
+        ),
+        _GITHUB_INVALID,
+    )
+
+
+def _validate_observe(payload: dict[str, Any]) -> None:
+    observe = _mapping(payload.get("observe"), "TIMEWEB_PG_CUTOVER_OBSERVE_INVALID")
+    expected = {
+        "sql_mutation_allowed": False,
+        "migrations_required_before_observe": False,
+        "prepared_schema_required_before_observe": False,
+        "cross_tenant_write_probe_allowed": False,
+        "postgres18_required": True,
+        "tls_verify_full_required": True,
+        "bootstrap_authority_identity_required": True,
+        "runtime_role_identity_required": True,
+        "existing_product_residue_must_be_clean": True,
+    }
+    if observe != expected:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_INVALID")
+    operations = _mapping(
+        payload.get("operations"),
+        "TIMEWEB_PG_CUTOVER_OPERATIONS_INVALID",
+    )
+    if operations.get("observe") != "READ_ONLY_PREPARE_PREREQUISITE_VERIFICATION":
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_OPERATIONS_INVALID")
 
 
 def _validate_protected_invariants(payload: dict[str, Any]) -> None:
@@ -255,6 +292,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _validate_recovery(payload)
     _validate_app_binding(payload)
     _validate_github(payload)
+    _validate_observe(payload)
     _validate_protected_invariants(payload)
 
 
@@ -273,6 +311,31 @@ def _validate_workflow_secret_scope(workflow: str) -> None:
         )
 
 
+def _direct_call_names(source: str, function_name: str) -> set[str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID"
+        ) from exc
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    ]
+    if len(functions) != 1:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID")
+    calls: set[str] = set()
+    for node in ast.walk(functions[0]):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            calls.add(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            calls.add(node.func.attr)
+    return calls
+
+
 def _validate_sources() -> None:
     controller = _text(CONTROLLER)
     _markers(
@@ -287,6 +350,9 @@ def _validate_sources() -> None:
             "apply_migrations(bootstrap)",
             "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)",
             "probe_hosted_runtime_database",
+            "_verify_runtime_role_identity",
+            "_require_observed_clean_product_state",
+            "_observe_database",
             "_verify_cross_tenant_negative(runtime)",
             "_PRODUCTION_CONNECT_RETRY_DELAYS = (",
             "retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS",
@@ -299,6 +365,17 @@ def _validate_sources() -> None:
         ),
         "TIMEWEB_PG_CUTOVER_CONTROLLER_DRIFT",
     )
+    observe_calls = _direct_call_names(controller, "_observe_database")
+    forbidden_observe_calls = {
+        "apply_migrations",
+        "_prepare_database",
+        "_verify_runtime_database",
+        "_verify_cross_tenant_negative",
+        "render_runtime_sql",
+    }
+    if observe_calls & forbidden_observe_calls:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_MUTATION_PATH")
+
     if any(
         item in controller
         for item in (
@@ -333,6 +410,8 @@ def _validate_sources() -> None:
         "TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT",
     )
     _validate_workflow_secret_scope(workflow)
+    if workflow.count("python -m scripts.verify_v10_timeweb_github_environment") != 2:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_ENVIRONMENT_REVERIFY_MISSING")
     if any(
         item in workflow for item in ("\n  push:", "\n  pull_request:", "schedule:")
     ):
@@ -347,6 +426,10 @@ def _validate_sources() -> None:
             "recovery_evidence_sha256",
             "not credentials",
             "Do not invent an undocumented endpoint",
+            "timeweb-production",
+            "Selected branches and tags",
+            "Branch `main`",
+            "The observe phase is SQL read-only",
             "Only after P3 acceptance may P4",
         ),
         "TIMEWEB_PG_CUTOVER_RUNBOOK_DRIFT",
