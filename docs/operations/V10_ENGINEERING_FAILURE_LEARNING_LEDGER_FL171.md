@@ -101,3 +101,29 @@ Every future provider-facing controller in the current Timeweb production path m
 - **ROLLBACK** — mutation remains bounded and the resulting safe state must be independently re-proved by observation.
 
 For asynchronous provider operations, a restart must prefer adoption of a uniquely identifiable in-flight exact intent over creating a new intent. If identity is not unique or state cannot be proved, stop rather than guess.
+
+## Exact-head guard convergence after post-exposure refactor
+
+Authoritative Windows exact-head verification on `726409cc7a38fba7e4077a164623fe5233d3cf79`
+reached 3,859 passing tests and 955 passing subtests, then reported two failures with
+the same deterministic code: `TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID`.
+
+The runtime source was not reordering provider mutations. The failure came from the
+AST guard still requiring two direct `_verify_transport_scope()` calls inside
+`_configure_transport()` after the safer implementation had moved those read-only
+checks behind bounded `_wait_transport_scope()` convergence.
+
+The correction keeps the ordering invariant stronger rather than relaxing it:
+
+- exactly one public-IPv4 mutation call;
+- exactly two post-exposure `_wait_transport_scope()` calls;
+- exactly one TLS-enable mutation call;
+- required order `public IPv4 -> scope wait -> TLS -> scope wait`;
+- the wait helper must contain exactly one direct `_verify_transport_scope()` call;
+- both the wait helper and direct scope verifier are machine-checked to contain no
+  firewall/public-network/TLS mutation helper and no `mutate_once` call.
+
+A negative regression injects a firewall mutation into the wait helper and requires
+the guard to fail. This closes source-shape coupling without weakening the security
+property the guard was intended to protect.
+
