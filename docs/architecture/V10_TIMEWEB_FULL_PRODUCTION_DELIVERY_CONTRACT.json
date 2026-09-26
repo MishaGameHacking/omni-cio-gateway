@@ -1,6 +1,6 @@
 {
   "schema": "omni-cio.v10.timeweb-full-production-delivery.v1",
-  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_ACCEPTANCE_PENDING",
+  "status": "BRANCH_LOCAL_IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED",
   "decision_date": "2026-09-24",
   "owning_issue": 580,
   "owning_pr": 584,
@@ -149,8 +149,12 @@
       "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
     },
     {
+      "id": "P5_5_TIMEWEB_WORKTREE_CONVERGENCE",
+      "state": "IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED"
+    },
+    {
       "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
-      "state": "IMPLEMENTED_VERIFICATION_PENDING"
+      "state": "SOURCE_IMPLEMENTATION_COMPLETE_POST_MERGE_EXECUTION_REQUIRED"
     }
   ],
   "protected_invariants": {
@@ -177,5 +181,13 @@
     "secret_access_allowed": false,
     "acceptance_seal_algorithm": "SHA-256",
     "rollback_evidence_required": true
+  },
+  "merge_readiness": {
+    "repository_implementation_complete": true,
+    "exact_head_ci_required": true,
+    "unresolved_blocking_threads_required_zero": true,
+    "squash_merge_required": true,
+    "post_merge_acceptance_required": true,
+    "production_accepted_before_merge": false
   }
 }

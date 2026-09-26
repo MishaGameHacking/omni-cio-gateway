@@ -96,7 +96,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
-    def test_branch_milestones_track_p4_and_p5_green(self) -> None:
+    def test_branch_milestones_track_source_completion(self) -> None:
         payload = json.loads(
             (
                 ROOT
@@ -119,6 +119,10 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         self.assertEqual(
             states["P5_TELEGRAM_PUBLIC_ACTIVATION"],
             "CERTIFIED_GREEN_BRANCH_LOCAL",
+        )
+        self.assertEqual(
+            states["P5_5_TIMEWEB_WORKTREE_CONVERGENCE"],
+            "IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED",
         )
 
     def test_rejects_broker_write_authority_widening(self) -> None:
@@ -223,6 +227,21 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
 
         assert_sensitive_keys_are_negative_booleans(payload)
 
+    def test_merge_readiness_keeps_production_acceptance_post_merge(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        readiness = payload["merge_readiness"]
+        self.assertTrue(readiness["repository_implementation_complete"])
+        self.assertTrue(readiness["exact_head_ci_required"])
+        self.assertTrue(readiness["unresolved_blocking_threads_required_zero"])
+        self.assertTrue(readiness["squash_merge_required"])
+        self.assertTrue(readiness["post_merge_acceptance_required"])
+        self.assertFalse(readiness["production_accepted_before_merge"])
+
     def test_p6_source_machinery_is_implemented_fail_closed(self) -> None:
         payload = json.loads(
             (
@@ -233,7 +252,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         states = {row["id"]: row["state"] for row in payload["branch_milestones"]}
         self.assertEqual(
             states["P6_POST_MERGE_PRODUCTION_ACCEPTANCE"],
-            "IMPLEMENTED_VERIFICATION_PENDING",
+            "SOURCE_IMPLEMENTATION_COMPLETE_POST_MERGE_EXECUTION_REQUIRED",
         )
         p6 = payload["post_merge_acceptance"]
         self.assertTrue(p6["exact_main_required"])

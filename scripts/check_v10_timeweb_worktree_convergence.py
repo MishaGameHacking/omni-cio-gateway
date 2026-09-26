@@ -12,7 +12,22 @@ _MAX_PATHS = 128
 _MAX_MARKERS = 64
 _EXPECTED_SCHEMA = "omni-cio.v10.timeweb-worktree-convergence.v1"
 _EXPECTED_CHECKPOINT = "P5_5_TIMEWEB_WORKTREE_CONVERGENCE"
-_EXPECTED_PHASE = "CLIENTLESS_CLOUDFLARE_REMOVAL"
+_EXPECTED_PHASE = "ALL_INTERNAL_PHASES_COMPLETE"
+_EXPECTED_STATUS = (
+    "BRANCH_LOCAL_IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED"
+)
+_EXPECTED_INTERNAL_PHASES = (
+    "CLIENTLESS_CLOUDFLARE_REMOVAL",
+    "RENDER_NEON_CLOUDFLARE_RUNTIME_REMOVAL",
+    "WP22A_AUTH_TELEGRAM_ONLY_CONVERGENCE",
+    "LEGACY_DOCUMENTATION_PRUNE_AND_CANONICALIZATION",
+)
+_EXPECTED_COMPLETION_GUARDS = {
+    "provider_inventory": "scripts/check_v10_timeweb_platform_inventory.py",
+    "runtime_reachability": "scripts/check_v10_timeweb_runtime_reachability.py",
+    "documentation_consistency": "scripts/check_v10_documentation_consistency.py",
+    "telegram_only_runtime": "apps/api/telegram_auth.py",
+}
 
 
 def _read(path: Path) -> str:
@@ -71,7 +86,7 @@ def _marker_list(payload: dict[str, Any], key: str) -> tuple[str, ...]:
 def _validate_contract(payload: dict[str, Any]) -> None:
     expected = {
         "schema": _EXPECTED_SCHEMA,
-        "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+        "status": _EXPECTED_STATUS,
         "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "owning_pr": 584,
         "checkpoint": _EXPECTED_CHECKPOINT,
@@ -80,6 +95,14 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     for key, value in expected.items():
         if payload.get(key) != value:
             raise RuntimeError(f"TIMEWEB_WORKTREE_CONTRACT_DRIFT:{key}")
+
+    completed = payload.get("completed_internal_phases")
+    if completed != list(_EXPECTED_INTERNAL_PHASES):
+        raise RuntimeError("TIMEWEB_WORKTREE_COMPLETED_PHASES_DRIFT")
+
+    guards = payload.get("completion_guards")
+    if guards != _EXPECTED_COMPLETION_GUARDS:
+        raise RuntimeError("TIMEWEB_WORKTREE_COMPLETION_GUARDS_DRIFT")
 
     policy = payload.get("history_policy")
     if policy != {
@@ -196,7 +219,7 @@ def main() -> int:
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print("V10_TIMEWEB_WORKTREE_CONVERGENCE=PASS phase=CLIENTLESS_CLOUDFLARE_REMOVAL")
+    print("V10_TIMEWEB_WORKTREE_CONVERGENCE=PASS phase=ALL_INTERNAL_PHASES_COMPLETE")
     return 0
 
 

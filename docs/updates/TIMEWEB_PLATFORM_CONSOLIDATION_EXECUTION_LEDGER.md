@@ -56,19 +56,21 @@ without a new explicit OWNER instruction.
 
 ## 3. Current execution state
 
-- Current exact work item: P5.5 Timeweb current-worktree convergence
-- Current logical checkpoint ID: `P5.5-TIMEWEB-WORKTREE-CONVERGENCE`
+- Current exact work item: PR #584 final exact-head merge-readiness verification
+- Current logical checkpoint ID: `PR584-FINAL-EXACT-HEAD-MERGE-READINESS`
 - P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
 - P2 exact-SHA candidate implementation is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; all 19 observed repository workflows completed `success` and unresolved review threads were zero.
 - P3 repository-side production-cutover/recovery implementation is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; all 25 exact-head checks completed `success`, Sonar reported 0 new issues / 0 Security Hotspots and unresolved review threads were zero. This does not claim physical production DB mutation or recovery acceptance.
 - P4 source machinery is branch-local `CERTIFIED_GREEN` on exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c`; external DNS/domain mutation and representative no-VPN evidence remain independent gates.
 - P5 source machinery is branch-local `CERTIFIED_GREEN` on exact head `ad50273642cc66f537070b4800f319857f7d0096`; production credential custody, legal/privacy/capacity, public activation and real-user evidence remain independent gates.
-- P5.5 current-worktree convergence is `IMPLEMENTED_VERIFICATION_PENDING`; the first internal phase removes only the dormant Cloudflare/WP22A clientless stack and installs an absence guard.
+- P5.5 current-worktree convergence repository implementation is complete across all four internal phases: clientless Cloudflare/WP22A removal, retired Render/Neon/Cloudflare runtime detachment, Telegram-only auth convergence, and live-documentation canonicalization. Final exact-head verification remains required because the closing state commit changes the reviewed head.
+- P6 post-merge production-acceptance source machinery is complete and remains intentionally non-executable as acceptance before merge; exact-main execution with real evidence remains a post-merge gate.
 - Machine checkpoint anchor: `P2-TIMEWEB-EXACT-SHA-CANDIDATE` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
 - Machine checkpoint anchor: `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
 - Machine checkpoint anchor: `P4-TIMEWEB-OMNICIO-RU-PUBLIC-INGRESS` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
 - Machine checkpoint anchor: `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P5.5-TIMEWEB-WORKTREE-CONVERGENCE` = `IMPLEMENTED_VERIFICATION_PENDING`.
+- Machine checkpoint anchor: `P5.5-TIMEWEB-WORKTREE-CONVERGENCE` = `IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED`.
+- Machine checkpoint anchor: `P6-POST-MERGE-PRODUCTION-ACCEPTANCE` = `SOURCE_IMPLEMENTATION_COMPLETE_POST_MERGE_EXECUTION_REQUIRED`.
 - Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`

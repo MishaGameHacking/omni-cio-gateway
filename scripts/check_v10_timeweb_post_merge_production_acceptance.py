@@ -53,7 +53,7 @@ def _require_markers(source: str, markers: tuple[str, ...], code: str) -> None:
 def _validate_metadata(payload: dict[str, Any]) -> None:
     expected = {
         "schema": "omni-cio.v10.timeweb-post-merge-production-acceptance.v1",
-        "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+        "status": "SOURCE_IMPLEMENTATION_COMPLETE_POST_MERGE_EXECUTION_REQUIRED",
         "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "owning_pr": 584,
         "milestone": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
@@ -90,6 +90,23 @@ def _validate_execution(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_P6_EXECUTION_ACCESS_POLICY_DRIFT")
     if set(execution) != set(expected) | set(access_keys):
         raise RuntimeError("TIMEWEB_P6_EXECUTION_KEYSET_DRIFT")
+
+
+def _validate_premerge_readiness(payload: dict[str, Any]) -> None:
+    readiness = _section(
+        payload,
+        "premerge_readiness",
+        "TIMEWEB_P6_PREMERGE_READINESS_INVALID",
+    )
+    expected = {
+        "source_contract_complete": True,
+        "exact_head_ci_required_before_merge": True,
+        "production_accepted": False,
+        "post_merge_execution_required": True,
+        "merge_does_not_imply_live": True,
+    }
+    if readiness != expected:
+        raise RuntimeError("TIMEWEB_P6_PREMERGE_READINESS_DRIFT")
 
 
 def _validate_evidence(payload: dict[str, Any]) -> None:
@@ -206,6 +223,7 @@ def validate(root: Path = ROOT) -> None:
     payload = _json(root / _CONTRACT)
     _validate_metadata(payload)
     _validate_execution(payload)
+    _validate_premerge_readiness(payload)
     _validate_evidence(payload)
     _validate_live_probes(payload)
     _validate_acceptance_seal(payload)

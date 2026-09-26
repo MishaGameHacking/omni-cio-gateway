@@ -1,10 +1,10 @@
 {
   "schema": "omni-cio.v10.timeweb-worktree-convergence.v1",
-  "status": "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_VERIFICATION_PENDING",
+  "status": "BRANCH_LOCAL_IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED",
   "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
   "owning_pr": 584,
   "checkpoint": "P5_5_TIMEWEB_WORKTREE_CONVERGENCE",
-  "phase": "CLIENTLESS_CLOUDFLARE_REMOVAL",
+  "phase": "ALL_INTERNAL_PHASES_COMPLETE",
   "required_absent_paths": [
     ".github/workflows/v10-wp22a-clientless-access-audit.yml",
     "apps/api/wp22a_remote.py",
@@ -64,11 +64,6 @@
     "non_sensitive_legacy_history_rewrite_required": false,
     "sensitive_data_history_rewrite_requires_separate_incident_response": true
   },
-  "future_internal_phases": [
-    "RENDER_NEON_CLOUDFLARE_RUNTIME_REMOVAL",
-    "WP22A_AUTH_TELEGRAM_ONLY_CONVERGENCE",
-    "LEGACY_DOCUMENTATION_PRUNE_AND_CANONICALIZATION"
-  ],
   "protected_invariants": {
     "protected_v9_entrypoint": "app:app",
     "immutable_accepted_migrations": true,
@@ -104,5 +99,17 @@
       "vk_id"
     ],
     "retained_history_may_exist_when_unreachable": true
+  },
+  "completed_internal_phases": [
+    "CLIENTLESS_CLOUDFLARE_REMOVAL",
+    "RENDER_NEON_CLOUDFLARE_RUNTIME_REMOVAL",
+    "WP22A_AUTH_TELEGRAM_ONLY_CONVERGENCE",
+    "LEGACY_DOCUMENTATION_PRUNE_AND_CANONICALIZATION"
+  ],
+  "completion_guards": {
+    "provider_inventory": "scripts/check_v10_timeweb_platform_inventory.py",
+    "runtime_reachability": "scripts/check_v10_timeweb_runtime_reachability.py",
+    "documentation_consistency": "scripts/check_v10_documentation_consistency.py",
+    "telegram_only_runtime": "apps/api/telegram_auth.py"
   }
 }

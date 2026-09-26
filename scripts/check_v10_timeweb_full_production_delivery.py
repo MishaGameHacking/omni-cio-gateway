@@ -75,7 +75,7 @@ def _validate_authority(payload: dict[str, Any]) -> None:
     _require_equal(
         payload,
         "status",
-        "OWNER_APPROVED_BRANCH_LOCAL_IMPLEMENTATION_ACCEPTANCE_PENDING",
+        "BRANCH_LOCAL_IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED",
     )
     _require_equal(payload, "owning_issue", 580)
     _require_equal(payload, "owning_pr", 584)
@@ -377,12 +377,29 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
             "state": "CERTIFIED_GREEN_BRANCH_LOCAL",
         },
         {
+            "id": "P5_5_TIMEWEB_WORKTREE_CONVERGENCE",
+            "state": "IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED",
+        },
+        {
             "id": "P6_POST_MERGE_PRODUCTION_ACCEPTANCE",
-            "state": "IMPLEMENTED_VERIFICATION_PENDING",
+            "state": "SOURCE_IMPLEMENTATION_COMPLETE_POST_MERGE_EXECUTION_REQUIRED",
         },
     ]
     if payload.get("branch_milestones") != expected:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_MILESTONE_DRIFT")
+
+
+def _validate_merge_readiness(payload: dict[str, Any]) -> None:
+    expected = {
+        "repository_implementation_complete": True,
+        "exact_head_ci_required": True,
+        "unresolved_blocking_threads_required_zero": True,
+        "squash_merge_required": True,
+        "post_merge_acceptance_required": True,
+        "production_accepted_before_merge": False,
+    }
+    if _section(payload, "merge_readiness") != expected:
+        raise RuntimeError("TIMEWEB_FULL_DELIVERY_MERGE_READINESS_DRIFT")
 
 
 def _validate_protected_invariants(payload: dict[str, Any]) -> None:
@@ -455,6 +472,7 @@ def validate(root: Path = ROOT) -> None:
         _validate_post_merge_acceptance(payload)
         _validate_external_gates(payload)
         _validate_milestones(payload)
+        _validate_merge_readiness(payload)
         _validate_protected_invariants(payload)
     finally:
         (

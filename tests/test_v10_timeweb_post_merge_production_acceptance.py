@@ -105,6 +105,29 @@ class TimewebPostMergeProductionAcceptanceTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         guard.validate(ROOT)
 
+    def test_premerge_readiness_cannot_claim_production_acceptance(self) -> None:
+        payload = json.loads((ROOT / CONTRACT).read_text(encoding="utf-8"))
+        readiness = payload["premerge_readiness"]
+        self.assertTrue(readiness["source_contract_complete"])
+        self.assertTrue(readiness["exact_head_ci_required_before_merge"])
+        self.assertFalse(readiness["production_accepted"])
+        self.assertTrue(readiness["post_merge_execution_required"])
+        self.assertTrue(readiness["merge_does_not_imply_live"])
+
+    def test_guard_rejects_premature_production_acceptance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_guard_dependencies(root)
+            contract_path = root / CONTRACT
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["premerge_readiness"]["production_accepted"] = True
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_P6_PREMERGE_READINESS_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_execution_access_policy_is_fail_closed(self) -> None:
         payload = json.loads((ROOT / CONTRACT).read_text(encoding="utf-8"))
         execution = payload["execution"]
