@@ -357,6 +357,35 @@ def _validate_external_gates(payload: dict[str, Any]) -> None:
             raise RuntimeError(f"TIMEWEB_FULL_DELIVERY_EXTERNAL_GATE_INVALID:{key}")
 
 
+def _validate_provider_convergence_policy(payload: dict[str, Any]) -> None:
+    expected = {
+        "retry_observation_not_authority": True,
+        "transient_http_statuses": [408, 429, 500, 502, 503, 504],
+        "transient_network_failures_may_retry_bounded_read_only_observation": True,
+        "authentication_or_authorization_failure_retry_allowed": False,
+        "semantic_or_security_mismatch_retry_allowed": False,
+        "mutation_replay_after_timeout_or_ambiguous_result_allowed": False,
+        "exact_identity_inflight_state_adoption_required_when_supported": True,
+        "duplicate_inflight_exact_identity_terminal": True,
+        "provider_history_pagination_must_be_exhaustive": True,
+        "asynchronous_provider_success_may_precede_readiness": True,
+        "local_polling_budget_is_provider_sla": False,
+        "stage_specific_sanitized_timeout_required": True,
+        "provider_response_body_logging_allowed": False,
+        "rollback_requires_get_reconciliation": True,
+        "final_observation_after_last_backoff_required": True,
+        "post_exposure_validation_read_only_required": True,
+        "public_probe_transient_retry_required": True,
+        "postgres_connect_transient_retry_required": True,
+        "tls_listener_not_ready_may_retry_bounded_readiness": True,
+        "tls_transport_timeout_distinct_from_certificate_failure": True,
+        "tls_certificate_verification_failure_retry_allowed": False,
+        "authority_expansion_on_recovery_allowed": False,
+    }
+    if _section(payload, "provider_convergence_policy") != expected:
+        raise RuntimeError("TIMEWEB_FULL_DELIVERY_PROVIDER_CONVERGENCE_DRIFT")
+
+
 def _validate_milestones(payload: dict[str, Any]) -> None:
     expected = [
         {"id": "P1_SOURCE_RUNTIME_CONVERGENCE", "state": "CERTIFIED_GREEN_SOURCE_BASE"},
@@ -471,6 +500,7 @@ def validate(root: Path = ROOT) -> None:
         _validate_telegram(payload)
         _validate_post_merge_acceptance(payload)
         _validate_external_gates(payload)
+        _validate_provider_convergence_policy(payload)
         _validate_milestones(payload)
         _validate_merge_readiness(payload)
         _validate_protected_invariants(payload)

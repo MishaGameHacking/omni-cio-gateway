@@ -227,6 +227,63 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
 
         assert_sensitive_keys_are_negative_booleans(payload)
 
+    def test_provider_convergence_retries_observation_not_authority(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        policy = payload["provider_convergence_policy"]
+        self.assertTrue(policy["retry_observation_not_authority"])
+        self.assertEqual(
+            policy["transient_http_statuses"],
+            [408, 429, 500, 502, 503, 504],
+        )
+        self.assertTrue(
+            policy["transient_network_failures_may_retry_bounded_read_only_observation"]
+        )
+        self.assertFalse(
+            policy["authentication_or_authorization_failure_retry_allowed"]
+        )
+        self.assertFalse(policy["semantic_or_security_mismatch_retry_allowed"])
+        self.assertFalse(
+            policy["mutation_replay_after_timeout_or_ambiguous_result_allowed"]
+        )
+        self.assertTrue(
+            policy["exact_identity_inflight_state_adoption_required_when_supported"]
+        )
+        self.assertTrue(policy["duplicate_inflight_exact_identity_terminal"])
+        self.assertTrue(policy["provider_history_pagination_must_be_exhaustive"])
+        self.assertFalse(policy["local_polling_budget_is_provider_sla"])
+        self.assertTrue(policy["final_observation_after_last_backoff_required"])
+        self.assertTrue(policy["post_exposure_validation_read_only_required"])
+        self.assertTrue(policy["tls_listener_not_ready_may_retry_bounded_readiness"])
+        self.assertTrue(
+            policy["tls_transport_timeout_distinct_from_certificate_failure"]
+        )
+        self.assertFalse(policy["tls_certificate_verification_failure_retry_allowed"])
+        self.assertFalse(policy["authority_expansion_on_recovery_allowed"])
+
+    def test_provider_convergence_policy_fails_closed_on_mutation_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["provider_convergence_policy"][
+                "mutation_replay_after_timeout_or_ambiguous_result_allowed"
+            ] = True
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_PROVIDER_CONVERGENCE_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_merge_readiness_keeps_production_acceptance_post_merge(self) -> None:
         payload = json.loads(
             (

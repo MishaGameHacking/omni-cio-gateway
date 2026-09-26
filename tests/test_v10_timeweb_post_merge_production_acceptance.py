@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from urllib.parse import urlsplit
 
 from scripts import check_v10_timeweb_post_merge_production_acceptance as guard
@@ -87,6 +88,21 @@ class _Opener:
                 ]
             )
         raise AssertionError(path)
+
+
+class _TransientOpener(_Opener):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed_once = False
+        self.paths: list[str] = []
+
+    def open(self, request: object, timeout: float) -> _Response:
+        path = urlsplit(str(request.full_url)).path
+        self.paths.append(path)
+        if path == "/livez" and not self.failed_once:
+            self.failed_once = True
+            raise OSError("transient route propagation")
+        return super().open(request, timeout)
 
 
 def _accepted_kwargs() -> dict[str, str]:
@@ -175,6 +191,25 @@ class TimewebPostMergeProductionAcceptanceTests(unittest.TestCase):
             )
         self.assertIsNotNone(seal)
         self.assertIn("TIMEWEB_PRODUCTION_ACCEPTANCE=ACCEPTED", output.getvalue())
+
+    def test_accept_retries_transient_public_transport(self) -> None:
+        output = StringIO()
+        opener = _TransientOpener()
+        with (
+            mock.patch.object(acceptance.time, "sleep") as sleeper,
+            redirect_stdout(output),
+        ):
+            seal = acceptance.run(
+                operation="accept",
+                expected_sha=SHA,
+                observed_main_sha=SHA,
+                confirmation=acceptance.ACCEPT_CONFIRMATION,
+                opener=opener,
+                **_accepted_kwargs(),
+            )
+        self.assertIsNotNone(seal)
+        sleeper.assert_called_once_with(acceptance._PUBLIC_PROBE_RETRY_DELAYS[0])
+        self.assertEqual(opener.paths[:2], ["/livez", "/livez"])
 
     def test_accept_rejects_disabled_telegram(self) -> None:
         kwargs = _accepted_kwargs()

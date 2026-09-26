@@ -47,7 +47,10 @@
     "must_be_verified_before_public_network_enable": true,
     "must_be_reverified_after_public_network_enable": true,
     "exclusive_service_group_required": true,
-    "preexisting_public_network_requires_safe_narrow_firewall": true
+    "preexisting_public_network_requires_safe_narrow_firewall": true,
+    "mutation_reconciliation_before_exposure_required": true,
+    "post_exposure_revalidation_read_only": true,
+    "ambiguous_mutation_replay_allowed": false
   },
   "public_ipv4": {
     "authorized": true,
@@ -187,6 +190,53 @@
       "exact_provider_validation_message_unavailable": true,
       "repair_requires_separate_public_ipv4_and_tls_transitions": true,
       "get_reconciliation_between_transitions_required": true
+    },
+    "latest_live_readiness_failure": {
+      "workflow_ordinal": 6,
+      "exact_main_sha_parts": [
+        "86294ebb",
+        "0e5b6eb0",
+        "a56aa8d4",
+        "b28f1692",
+        "f483a8d8"
+      ],
+      "observed_terminal_code": "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT",
+      "prior_tls_wait_budget_seconds": 83,
+      "provider_readiness_sla_seconds_documented": false,
+      "provider_mutation_success_can_precede_resource_readiness": true,
+      "extended_get_only_reconciliation_required": true,
+      "minimum_tls_wait_budget_seconds": 300,
+      "maximum_tls_wait_budget_seconds": 900,
+      "stage_specific_timeout_classification_required": true,
+      "stage_specific_timeout_codes": [
+        "TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS",
+        "TIMEWEB_TLS_ENABLE_READY_TIMEOUT",
+        "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT",
+        "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT"
+      ],
+      "blind_retry_allowed": false,
+      "transient_control_plane_reads_retryable": true,
+      "transient_http_statuses": [
+        408,
+        429,
+        500,
+        502,
+        503,
+        504
+      ],
+      "nullable_domains_during_tls_transition_means_pending": true,
+      "ca_fetch_transient_retry_required": true,
+      "postgres_tls_socket_transient_retry_required": true,
+      "postgres_tls_refused_is_retryable_readiness": true,
+      "postgres_tls_refused_timeout_code": "TIMEWEB_POSTGRES_TLS_REFUSED_TIMEOUT",
+      "postgres_tls_transport_timeout_code": "TIMEWEB_POSTGRES_TLS_TRANSPORT_TIMEOUT",
+      "certificate_verification_failure_retry_allowed": false,
+      "rollback_get_reconciliation_extended": true,
+      "rollback_final_observation_after_last_backoff_required": true,
+      "post_exposure_scope_transient_read_retry_required": true,
+      "post_exposure_scope_security_drift_retry_allowed": false,
+      "public_ipv4_binding_visibility_is_reconciled": true,
+      "public_ipv4_binding_timeout_code": "TIMEWEB_PUBLIC_IPV4_BINDING_READY_TIMEOUT"
     }
   },
   "ipv4_custody": {

@@ -41,12 +41,32 @@ _OPERATION_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$", re.ASCII)
 _HOST_RE = re.compile(
     r"^(?=.{1,253}\.?$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\.?$"
 )
-_RECONCILE_DELAYS_SECONDS = (1.0, 2.0, 4.0)
+_RECONCILE_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 _RECONCILABLE_MUTATION_HTTP_STATUSES = frozenset({409, 423})
-_STATE_DELAYS_SECONDS = (2.0, 3.0, 5.0, 8.0, 15.0, 20.0, 30.0)
+_PUBLIC_IPV4_STATE_DELAYS_SECONDS = (2.0, 3.0, 5.0, 8.0, 15.0, 20.0, 30.0)
+_TLS_STATE_DELAYS_SECONDS = (
+    2.0,
+    3.0,
+    5.0,
+    8.0,
+    15.0,
+    20.0,
+    30.0,
+    45.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+)
 _TRANSITIONAL_STATUSES = frozenset(
     {"starting", "rebooting", "lan_transfer", "transfer", "turning_on"}
 )
+_WAIT_API_TIMEOUT_SECONDS = 8.0
+_ROLLBACK_STATE_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 30.0)
+_CA_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
+_TLS_SOCKET_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0, 10.0)
+_POST_EXPOSURE_SCOPE_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 Sleep = Callable[[float], None]
 
 
@@ -205,6 +225,10 @@ def _required_verifier_cidr() -> str:
 
 
 def _safe_id(value: object, code: str) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise _provider_base.ProvisioningStopped(code)
+    if isinstance(value, int) and value <= 0:
+        raise _provider_base.ProvisioningStopped(code)
     text = str(value).strip()
     if _ID_RE.fullmatch(text) is None:
         raise _provider_base.ProvisioningStopped(code)
@@ -243,9 +267,11 @@ def _target_cluster_id(api: read_only.TimewebReadOnlyApi) -> int:
 def _cluster(
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
+    *,
+    timeout: float = 30.0,
 ) -> dict[str, Any]:
     payload = _provider_base._json_object(
-        api.get(f"/api/v1/databases/{cluster_id}"),
+        api.get(f"/api/v1/databases/{cluster_id}", timeout=timeout),
         "TIMEWEB_CLUSTER_RESPONSE_INVALID",
     )
     cluster = _provider_base._json_object(
@@ -334,9 +360,72 @@ def _verify_group(api: read_only.TimewebReadOnlyApi, group_id: str) -> None:
         raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_GROUP_DRIFT")
 
 
+def _group_id_from_create_response(response: Any | None) -> str | None:
+    if response is None:
+        return None
+    try:
+        obj = _provider_base._json_object(
+            response,
+            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
+        )
+        group = _provider_base._json_object(
+            obj.get("group"),
+            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
+        )
+        return _safe_id(
+            group.get("id"),
+            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
+        )
+    except _provider_base.ProvisioningStopped as exc:
+        if exc.code != "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID":
+            raise
+        return None
+
+
+def _observed_group_id(
+    api: read_only.TimewebReadOnlyApi,
+    created: str | None,
+) -> str | None:
+    observed = _group_id_by_name(api)
+    if observed is None:
+        return None
+    if created is not None and observed != created:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_GROUP_CREATE_RECONCILIATION_DRIFT"
+        )
+    _verify_group(api, observed)
+    return observed
+
+
+def _wait_group_reconciliation(
+    api: read_only.TimewebReadOnlyApi,
+    created: str | None,
+    *,
+    sleeper: Sleep,
+    delays: tuple[float, ...],
+) -> str:
+    for attempt in range(len(delays) + 1):
+        try:
+            observed = _observed_group_id(api, created)
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_post_mutation_visibility_failure(exc):
+                raise
+        else:
+            if observed is not None:
+                return observed
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_FIREWALL_GROUP_CREATE_RECONCILIATION_REQUIRED"
+    )
+
+
 def _ensure_group(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
 ) -> str:
     existing = _group_id_by_name(api)
     if existing is not None:
@@ -354,32 +443,13 @@ def _ensure_group(
         )
     except AmbiguousMutation:
         response = None
-    created: str | None = None
-    if response is not None:
-        obj = _provider_base._json_object(
-            response,
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
-        )
-        group = _provider_base._json_object(
-            obj.get("group"),
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
-        )
-        created = _safe_id(
-            group.get("id"),
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
-        )
-    if created is None:
-        for delay in _RECONCILE_DELAYS_SECONDS:
-            created = _group_id_by_name(api)
-            if created is not None:
-                break
-            time.sleep(delay)
-    if created is None:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RECONCILIATION_REQUIRED"
-        )
-    _verify_group(api, created)
-    return created
+    created = _group_id_from_create_response(response)
+    return _wait_group_reconciliation(
+        api,
+        created,
+        sleeper=sleeper,
+        delays=delays,
+    )
 
 
 def _rule_body(cidr: str) -> dict[str, object]:
@@ -401,18 +471,60 @@ def _rules(
     return _rows(api, f"/api/v1/firewall/groups/{group_id}/rules", "rules")
 
 
-def _ensure_rule(
-    mutation: TimewebMutationApi,
+def _rule_shape(rule: dict[str, Any]) -> dict[str, object]:
+    return {
+        key: rule.get(key)
+        for key in ("description", "direction", "port", "protocol", "cidr")
+    }
+
+
+def _verify_exact_rule(
     api: read_only.TimewebReadOnlyApi,
     group_id: str,
     cidr: str,
 ) -> None:
     expected = _rule_body(cidr)
     rules = _rules(api, group_id)
+    if len(rules) != 1:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULE_DRIFT")
+    if _rule_shape(rules[0]) != expected:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULE_DRIFT")
+
+
+def _without_cidr(rule: dict[str, object]) -> dict[str, object]:
+    copy = dict(rule)
+    copy.pop("cidr", None)
+    return copy
+
+
+def _rule_state(
+    rules: list[dict[str, Any]],
+    expected: dict[str, object],
+) -> tuple[bool, str | None]:
     if len(rules) > 1:
         raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULESET_WIDENED")
     if not rules:
-        try:
+        return False, None
+    comparable = _rule_shape(rules[0])
+    if comparable == expected:
+        return True, None
+    if _without_cidr(comparable) != _without_cidr(expected):
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULESET_WIDENED")
+    rule_id = _safe_id(
+        rules[0].get("id"),
+        "TIMEWEB_FIREWALL_RULE_ID_INVALID",
+    )
+    return False, rule_id
+
+
+def _mutate_rule_once(
+    mutation: TimewebMutationApi,
+    group_id: str,
+    expected: dict[str, object],
+    rule_id: str | None,
+) -> None:
+    try:
+        if rule_id is None:
             mutation.mutate_once(
                 "POST",
                 f"/api/v1/firewall/groups/{group_id}/rules",
@@ -421,46 +533,64 @@ def _ensure_rule(
                 expected_statuses=frozenset({201}),
                 reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
             )
-        except AmbiguousMutation:
-            pass
-    else:
-        rule = rules[0]
-        comparable = {
-            key: rule.get(key)
-            for key in ("description", "direction", "port", "protocol", "cidr")
-        }
-        if comparable != expected:
-            non_cidr = dict(comparable)
-            expected_non_cidr = dict(expected)
-            non_cidr.pop("cidr", None)
-            expected_non_cidr.pop("cidr", None)
-            if non_cidr != expected_non_cidr:
-                raise _provider_base.ProvisioningStopped(
-                    "TIMEWEB_FIREWALL_RULESET_WIDENED"
-                )
-            rule_id = _safe_id(rule.get("id"), "TIMEWEB_FIREWALL_RULE_ID_INVALID")
-            try:
-                mutation.mutate_once(
-                    "PATCH",
-                    f"/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
-                    operation="FIREWALL_RULE_PATCH",
-                    body=expected,
-                    expected_statuses=frozenset({200}),
-                    reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
-                )
-            except AmbiguousMutation:
-                pass
-    verified = _rules(api, group_id)
-    if len(verified) != 1:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_RULE_RECONCILIATION_FAILED"
-        )
-    comparable = {
-        key: verified[0].get(key)
-        for key in ("description", "direction", "port", "protocol", "cidr")
-    }
-    if comparable != expected:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULE_DRIFT")
+        else:
+            mutation.mutate_once(
+                "PATCH",
+                f"/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
+                operation="FIREWALL_RULE_PATCH",
+                body=expected,
+                expected_statuses=frozenset({200}),
+                reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
+            )
+    except AmbiguousMutation:
+        pass
+
+
+def _wait_exact_rule(
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    expected: dict[str, object],
+    *,
+    sleeper: Sleep,
+    delays: tuple[float, ...],
+) -> None:
+    for attempt in range(len(delays) + 1):
+        try:
+            ready, _rule_id = _rule_state(_rules(api, group_id), expected)
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        else:
+            if ready:
+                return
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_FIREWALL_RULE_RECONCILIATION_FAILED"
+    )
+
+
+def _ensure_rule(
+    mutation: TimewebMutationApi,
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    cidr: str,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
+) -> None:
+    expected = _rule_body(cidr)
+    ready, rule_id = _rule_state(_rules(api, group_id), expected)
+    if ready:
+        return
+    _mutate_rule_once(mutation, group_id, expected, rule_id)
+    _wait_exact_rule(
+        api,
+        group_id,
+        expected,
+        sleeper=sleeper,
+        delays=delays,
+    )
 
 
 def _resources(
@@ -483,8 +613,11 @@ def _service_groups(
 
 def _resource_matches(row: dict[str, Any], cluster_id: int) -> bool:
     try:
-        resource_id = int(row.get("id"))
-    except (TypeError, ValueError):
+        resource_id = _numeric_id(
+            row.get("id"),
+            "TIMEWEB_FIREWALL_RESOURCE_ID_INVALID",
+        )
+    except _provider_base.ProvisioningStopped:
         return False
     return resource_id == cluster_id and row.get("type") in {"dbaas", "database"}
 
@@ -521,39 +654,70 @@ def _verify_exclusive_firewall(
         )
 
 
+def _resource_link_ready(
+    resources: list[dict[str, Any]],
+    cluster_id: int,
+) -> bool:
+    if not resources:
+        return False
+    if len(resources) == 1 and _resource_matches(resources[0], cluster_id):
+        return True
+    raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RESOURCE_SCOPE_WIDENED")
+
+
+def _wait_resource_link(
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    cluster_id: int,
+    *,
+    sleeper: Sleep,
+    delays: tuple[float, ...],
+) -> None:
+    for attempt in range(len(delays) + 1):
+        try:
+            ready = _resource_link_ready(_resources(api, group_id), cluster_id)
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        else:
+            if ready:
+                return
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RESOURCE_LINK_FAILED")
+
+
 def _ensure_resource_link(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
     group_id: str,
     cluster_id: int,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
 ) -> None:
-    resources = _resources(api, group_id)
-    if resources and not (
-        len(resources) == 1 and _resource_matches(resources[0], cluster_id)
-    ):
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_RESOURCE_SCOPE_WIDENED"
+    if _resource_link_ready(_resources(api, group_id), cluster_id):
+        return
+    path = f"/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?" + urlencode(
+        {"resource_type": FIREWALL_RESOURCE_TYPE}
+    )
+    try:
+        mutation.mutate_once(
+            "POST",
+            path,
+            operation="FIREWALL_RESOURCE_LINK",
+            expected_statuses=frozenset({201}),
+            reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
         )
-    if not resources:
-        path = (
-            f"/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?"
-            + urlencode({"resource_type": FIREWALL_RESOURCE_TYPE})
-        )
-        try:
-            mutation.mutate_once(
-                "POST",
-                path,
-                operation="FIREWALL_RESOURCE_LINK",
-                expected_statuses=frozenset({201}),
-                reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
-            )
-        except AmbiguousMutation:
-            pass
-    verified = _resources(api, group_id)
-    if len(verified) != 1 or not _resource_matches(verified[0], cluster_id):
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_RESOURCE_LINK_FAILED"
-        )
+    except AmbiguousMutation:
+        pass
+    _wait_resource_link(
+        api,
+        group_id,
+        cluster_id,
+        sleeper=sleeper,
+        delays=delays,
+    )
 
 
 def _verify_safe_narrow_rule(
@@ -635,9 +799,25 @@ def _bound_ip_for_cluster(
     return next(row for row in rows if row["id"] == matches[0].identifier)
 
 
+def _bound_ipv4_matches(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    expected_address: str,
+) -> bool:
+    row = _bound_ip_for_cluster(_floating_ips(api), cluster_id)
+    if row is None:
+        return False
+    if _verify_floating_ip_row(row) != expected_address:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FLOATING_IP_BINDING_DRIFT")
+    return True
+
+
 def _issued_domain(cluster: dict[str, Any]) -> str | None:
+    raw_domains = cluster.get("domains")
+    if raw_domains is None:
+        return None
     domains = _provider_base._json_list(
-        cluster.get("domains"),
+        raw_domains,
         "TIMEWEB_CLUSTER_DOMAINS_INVALID",
     )
     issued: list[str] = []
@@ -673,25 +853,101 @@ def _network_ready(cluster: dict[str, Any]) -> bool:
     )
 
 
+def _is_transient_control_plane_failure(
+    exc: _provider_base.ProvisioningStopped,
+) -> bool:
+    return exc.code == "TIMEWEB_API_NETWORK_ERROR" or (
+        exc.code == "TIMEWEB_API_HTTP_ERROR"
+        and exc.status in read_only._TRANSIENT_HTTP_STATUSES
+    )
+
+
+def _is_post_mutation_visibility_failure(
+    exc: _provider_base.ProvisioningStopped,
+) -> bool:
+    return _is_transient_control_plane_failure(exc) or (
+        exc.code == "TIMEWEB_API_HTTP_ERROR" and exc.status == 404
+    )
+
+
+def _wait_cluster_read(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+) -> dict[str, Any]:
+    return _cluster(api, cluster_id, timeout=_WAIT_API_TIMEOUT_SECONDS)
+
+
+def _public_ipv4_observation(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    expected_address: str,
+    cluster: dict[str, Any],
+) -> tuple[bool, bool]:
+    if _public_ipv4_ready(cluster):
+        return _bound_ipv4_matches(api, cluster_id, expected_address), True
+    status = str(cluster.get("status", ""))
+    if status not in _TRANSITIONAL_STATUSES and status != "started":
+        raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
+    return False, False
+
+
+def _public_ipv4_timeout_code(
+    observed_state: bool,
+    binding_pending: bool,
+) -> str:
+    if binding_pending:
+        return "TIMEWEB_PUBLIC_IPV4_BINDING_READY_TIMEOUT"
+    if observed_state:
+        return "TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT"
+    return "TIMEWEB_PUBLIC_IPV4_CONTROL_PLANE_READ_TIMEOUT"
+
+
 def _wait_public_ipv4_ready(
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
     expected_address: str,
     *,
     sleeper: Sleep = time.sleep,
-    delays: tuple[float, ...] = _STATE_DELAYS_SECONDS,
+    delays: tuple[float, ...] = _PUBLIC_IPV4_STATE_DELAYS_SECONDS,
 ) -> dict[str, Any]:
+    observed_state = False
+    binding_pending = False
     for attempt in range(len(delays) + 1):
-        cluster = _cluster(api, cluster_id)
-        if _public_ipv4_ready(cluster):
-            _verify_bound_ipv4(api, cluster_id, expected_address)
-            return cluster
-        status = str(cluster.get("status", ""))
-        if status not in _TRANSITIONAL_STATUSES and status != "started":
-            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
+        try:
+            cluster = _wait_cluster_read(api, cluster_id)
+            observed_state = True
+            ready, observed_binding = _public_ipv4_observation(
+                api,
+                cluster_id,
+                expected_address,
+                cluster,
+            )
+            binding_pending = binding_pending or observed_binding
+            if ready:
+                return cluster
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT")
+    raise _provider_base.ProvisioningStopped(
+        _public_ipv4_timeout_code(observed_state, binding_pending)
+    )
+
+
+def _tls_readiness_timeout_code(cluster: dict[str, Any]) -> str:
+    if (
+        cluster.get("is_enabled_public_network") is not True
+        or cluster.get("is_enabled_public_ipv6") is not False
+    ):
+        return "TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS"
+    if cluster.get("is_secure_connection_enabled") is not True:
+        return "TIMEWEB_TLS_ENABLE_READY_TIMEOUT"
+    if _issued_domain(cluster) is None:
+        return "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT"
+    if cluster.get("status") != "started":
+        return "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT"
+    return "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
 
 
 def _wait_network_ready(
@@ -699,18 +955,30 @@ def _wait_network_ready(
     cluster_id: int,
     *,
     sleeper: Sleep = time.sleep,
-    delays: tuple[float, ...] = _STATE_DELAYS_SECONDS,
+    delays: tuple[float, ...] = _TLS_STATE_DELAYS_SECONDS,
 ) -> dict[str, Any]:
+    last_cluster: dict[str, Any] | None = None
     for attempt in range(len(delays) + 1):
-        cluster = _cluster(api, cluster_id)
-        if _network_ready(cluster):
-            return cluster
-        status = str(cluster.get("status", ""))
-        if status not in _TRANSITIONAL_STATUSES and status != "started":
-            raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
+        try:
+            cluster = _wait_cluster_read(api, cluster_id)
+            last_cluster = cluster
+            if _network_ready(cluster):
+                return cluster
+            status = str(cluster.get("status", ""))
+            if status not in _TRANSITIONAL_STATUSES and status != "started":
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_CLUSTER_UNSAFE_STATUS"
+                )
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT")
+    if last_cluster is None:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_TLS_CONTROL_PLANE_READ_TIMEOUT"
+        )
+    raise _provider_base.ProvisioningStopped(_tls_readiness_timeout_code(last_cluster))
 
 
 def _patch_public_ipv4(
@@ -763,6 +1031,7 @@ def _close_public_network(
     cluster_id: int,
     *,
     sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _ROLLBACK_STATE_DELAYS_SECONDS,
 ) -> None:
     body = {
         "is_enabled_public_network": False,
@@ -779,45 +1048,71 @@ def _close_public_network(
         )
     except AmbiguousMutation:
         pass
-    for delay in (1.0, 2.0, 4.0, 8.0, 15.0):
-        cluster = _cluster(api, cluster_id)
-        if (
-            cluster.get("is_enabled_public_network") is False
-            and cluster.get("is_enabled_public_ipv6") is False
-        ):
-            return
-        sleeper(delay)
+    for attempt in range(len(delays) + 1):
+        try:
+            cluster = _wait_cluster_read(api, cluster_id)
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        else:
+            if (
+                cluster.get("is_enabled_public_network") is False
+                and cluster.get("is_enabled_public_ipv6") is False
+            ):
+                return
+        if attempt < len(delays):
+            sleeper(delays[attempt])
     raise _provider_base.ProvisioningStopped(
         "TIMEWEB_PUBLIC_NETWORK_ROLLBACK_MANUAL_RECONCILIATION_REQUIRED"
     )
 
 
-def _fetch_ca_file(
-    *,
-    opener: OpenerDirector | Any | None = None,
-) -> Path:
-    client = opener or _provider_base._NO_REDIRECT_OPENER
-    request = Request(
-        CA_URL,
-        headers={
-            "Accept": "application/x-pem-file,text/plain",
-            "User-Agent": "omni-cio-v10-ru-pg-ca-fetch",
-        },
-        method="GET",
-    )
+def _read_ca_once(
+    client: OpenerDirector | Any,
+    request: Request,
+) -> bytes | None:
     try:
         with client.open(request, timeout=20.0) as response:
             status = int(response.status)
             raw = response.read(MAX_CA_BYTES + 1)
-    except OSError:
+    except HTTPError as exc:
+        if int(exc.code) in read_only._TRANSIENT_HTTP_STATUSES:
+            return None
         raise _provider_base.ProvisioningStopped("TIMEWEB_CA_FETCH_FAILED") from None
+    except OSError:
+        return None
+    if status in read_only._TRANSIENT_HTTP_STATUSES:
+        return None
     if status != 200 or len(raw) > MAX_CA_BYTES:
         raise _provider_base.ProvisioningStopped("TIMEWEB_CA_FETCH_FAILED")
+    return raw
+
+
+def _download_ca(
+    client: OpenerDirector | Any,
+    request: Request,
+    *,
+    sleeper: Sleep,
+    delays: tuple[float, ...],
+) -> bytes:
+    for attempt in range(len(delays) + 1):
+        raw = _read_ca_once(client, request)
+        if raw is not None:
+            return raw
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped("TIMEWEB_CA_FETCH_FAILED")
+
+
+def _validate_ca(raw: bytes) -> None:
     if (
         b"-----BEGIN CERTIFICATE-----" not in raw
         or b"-----END CERTIFICATE-----" not in raw
     ):
         raise _provider_base.ProvisioningStopped("TIMEWEB_CA_INVALID")
+
+
+def _write_ca_file(raw: bytes) -> Path:
     handle = tempfile.NamedTemporaryFile(
         mode="wb",
         prefix="omni-cio-timeweb-ca-",
@@ -840,6 +1135,31 @@ def _fetch_ca_file(
     return path
 
 
+def _fetch_ca_file(
+    *,
+    opener: OpenerDirector | Any | None = None,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _CA_RETRY_DELAYS_SECONDS,
+) -> Path:
+    client = opener or _provider_base._NO_REDIRECT_OPENER
+    request = Request(
+        CA_URL,
+        headers={
+            "Accept": "application/x-pem-file,text/plain",
+            "User-Agent": "omni-cio-v10-ru-pg-ca-fetch",
+        },
+        method="GET",
+    )
+    raw = _download_ca(
+        client,
+        request,
+        sleeper=sleeper,
+        delays=delays,
+    )
+    _validate_ca(raw)
+    return _write_ca_file(raw)
+
+
 def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -849,8 +1169,7 @@ def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
     return context
 
 
-def _probe_postgres_tls(hostname: str, ca_path: Path) -> None:
-    context = _tls_client_context(ca_path)
+def _probe_postgres_tls_once(hostname: str, context: ssl.SSLContext) -> None:
     raw_socket: socket.socket | None = None
     try:
         raw_socket = socket.create_connection(
@@ -866,13 +1185,46 @@ def _probe_postgres_tls(hostname: str, ca_path: Path) -> None:
                 raise _provider_base.ProvisioningStopped(
                     "TIMEWEB_POSTGRES_TLS_CERT_MISSING"
                 )
-    except OSError:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
-        ) from None
     finally:
         if raw_socket is not None:
             raw_socket.close()
+
+
+def _probe_postgres_tls_attempt(
+    hostname: str,
+    context: ssl.SSLContext,
+) -> str | None:
+    try:
+        _probe_postgres_tls_once(hostname, context)
+    except ssl.SSLCertVerificationError:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
+        ) from None
+    except _provider_base.ProvisioningStopped as exc:
+        if exc.code != "TIMEWEB_POSTGRES_TLS_REFUSED":
+            raise
+        return "TIMEWEB_POSTGRES_TLS_REFUSED_TIMEOUT"
+    except OSError:
+        return "TIMEWEB_POSTGRES_TLS_TRANSPORT_TIMEOUT"
+    return None
+
+
+def _probe_postgres_tls(
+    hostname: str,
+    ca_path: Path,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _TLS_SOCKET_RETRY_DELAYS_SECONDS,
+) -> None:
+    context = _tls_client_context(ca_path)
+    for attempt in range(len(delays) + 1):
+        timeout_code = _probe_postgres_tls_attempt(hostname, context)
+        if timeout_code is None:
+            return
+        if attempt >= len(delays):
+            raise _provider_base.ProvisioningStopped(timeout_code)
+        sleeper(delays[attempt])
+    raise AssertionError("bounded PostgreSQL TLS probe exhausted")
 
 
 def _verify_bound_ipv4(
@@ -880,8 +1232,7 @@ def _verify_bound_ipv4(
     cluster_id: int,
     expected_address: str,
 ) -> None:
-    row = _bound_ip_for_cluster(_floating_ips(api), cluster_id)
-    if row is None or _verify_floating_ip_row(row) != expected_address:
+    if not _bound_ipv4_matches(api, cluster_id, expected_address):
         raise _provider_base.ProvisioningStopped("TIMEWEB_FLOATING_IP_BINDING_DRIFT")
 
 
@@ -997,7 +1348,6 @@ def _rollback_failed_transport(
 
 
 def _verify_transport_scope(
-    mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
     group_id: str,
     cluster_id: int,
@@ -1005,10 +1355,40 @@ def _verify_transport_scope(
     address: str,
 ) -> None:
     _verify_group(api, group_id)
-    _ensure_rule(mutation, api, group_id, cidr)
-    _ensure_resource_link(mutation, api, group_id, cluster_id)
+    _verify_exact_rule(api, group_id, cidr)
+    _verify_resource_link(api, group_id, cluster_id)
     _verify_exclusive_firewall(api, group_id, cluster_id)
     _verify_bound_ipv4(api, cluster_id, address)
+
+
+def _wait_transport_scope(
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    cluster_id: int,
+    cidr: str,
+    address: str,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _POST_EXPOSURE_SCOPE_DELAYS_SECONDS,
+) -> None:
+    for attempt in range(len(delays) + 1):
+        try:
+            _verify_transport_scope(
+                api,
+                group_id,
+                cluster_id,
+                cidr,
+                address,
+            )
+            return
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_POST_EXPOSURE_SCOPE_CONTROL_PLANE_TIMEOUT"
+    )
 
 
 def _configure_transport(
@@ -1042,8 +1422,7 @@ def _configure_transport(
                     cluster_id,
                     address,
                 )
-            _verify_transport_scope(
-                mutation,
+            _wait_transport_scope(
                 api,
                 group_id,
                 cluster_id,
@@ -1057,8 +1436,7 @@ def _configure_transport(
             else:
                 cluster = _enable_secure_connection(mutation, api, cluster_id)
 
-        _verify_transport_scope(
-            mutation,
+        _wait_transport_scope(
             api,
             group_id,
             cluster_id,

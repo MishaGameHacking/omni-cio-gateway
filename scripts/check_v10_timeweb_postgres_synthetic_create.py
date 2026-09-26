@@ -393,12 +393,34 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
     _require(
+        api.get("ambiguous_http_statuses"),
+        [408, 409, 423, 429, 500, 502, 503, 504],
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
+        api.get(
+            "transient_control_plane_read_failures_retry_within_outer_reconciliation"
+        ),
+        True,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
         api.get("existing_exact_target_recovery_get_only"),
         True,
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
     _require(
         api.get("second_post_for_existing_target_allowed"),
+        False,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
+        api.get("ambiguous_reconcile_minimum_budget_seconds"),
+        180,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
+        api.get("local_reconcile_budget_is_provider_sla"),
         False,
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
@@ -457,6 +479,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "exact_project_membership_recheck_required",
         "started_status_required",
         "starting_state_uses_bounded_state_aware_verification",
+        "transient_control_plane_read_failures_retry_within_start_wait",
+        "control_plane_only_timeout_has_distinct_sanitized_code",
         "starting_explicit_unsafe_values_fail_closed",
         "terminal_started_exact_shape_required",
         "field_specific_sanitized_drift_codes_required",
@@ -476,6 +500,21 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _require(
         verification.get("provider_replica_list_count_must_equal"),
         1,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("starting_minimum_wait_budget_seconds"),
+        240,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("starting_maximum_wait_budget_seconds"),
+        600,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("local_wait_budget_is_provider_sla"),
+        False,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
 
@@ -549,6 +588,8 @@ def _validate_provisioner() -> None:
             "class AmbiguousCreate",
             "TIMEWEB_CLUSTER_CREATE_AMBIGUOUS_RECONCILIATION_REQUIRED",
             "def _reconcile_cluster_id(",
+            "_RECONCILE_DELAYS_SECONDS = (",
+            "_START_DELAYS_SECONDS = (",
             "def _create_or_reconcile(",
             "read_only.verify_credential_health(read_api)",
             "existing_cluster_id = _target_cluster_id(read_api.get(project_path))",

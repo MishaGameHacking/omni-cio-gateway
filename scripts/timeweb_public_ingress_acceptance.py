@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import time
 from typing import Any, NoReturn, Protocol
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -39,6 +40,8 @@ _REQUIRED_CSP_DIRECTIVES = (
     "frame-ancestors 'none'",
     "form-action 'self'",
 )
+_TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+_PUBLIC_PROBE_RETRY_DELAYS = (2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 
 
 class PublicIngressStopped(RuntimeError):
@@ -105,7 +108,9 @@ def _sha256(value: str, code: str) -> str:
 
 
 def _safe_id(value: object) -> str:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        _stop("TIMEWEB_PUBLIC_INGRESS_APP_ID_INVALID")
+    if isinstance(value, int) and value <= 0:
         _stop("TIMEWEB_PUBLIC_INGRESS_APP_ID_INVALID")
     text = str(value).strip()
     if _ID_RE.fullmatch(text) is None:
@@ -127,7 +132,7 @@ def _rows(payload: dict[str, Any], key: str, code: str) -> list[dict[str, Any]]:
     meta = payload.get("meta")
     if meta is not None:
         total = _mapping(meta, code).get("total")
-        if type(total) is not int or total != len(rows) or total > _PAGE_SIZE:
+        if type(total) is not int or total < 0 or total != len(rows):
             _stop(code)
     return rows
 
@@ -227,6 +232,31 @@ def _require_security_headers(headers: dict[str, str], *, api_path: bool) -> Non
         _stop("TIMEWEB_PUBLIC_INGRESS_CACHE_POLICY_INVALID")
 
 
+def _read_public_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, str] | None, bytes | None, str | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            if status in _TRANSIENT_HTTP_STATUSES:
+                return None, None, f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}"
+            if status != 200:
+                _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}")
+            return (
+                _normalized_headers(response),
+                response.read(MAX_RESPONSE_BYTES + 1),
+                None,
+            )
+    except HTTPError as exc:
+        status = int(exc.code)
+        if status in _TRANSIENT_HTTP_STATUSES:
+            return None, None, f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{status}"
+        _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{status}")
+    except OSError:
+        return None, None, "TIMEWEB_PUBLIC_INGRESS_TRANSPORT_FAILED"
+
+
 def _read_public(
     path: str,
     *,
@@ -243,17 +273,17 @@ def _read_public(
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    try:
-        with active.open(request, timeout=30.0) as response:
-            status = int(response.status)
-            headers = _normalized_headers(response)
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-    except HTTPError as exc:
-        _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_ERROR:{int(exc.code)}")
-    except OSError:
-        _stop("TIMEWEB_PUBLIC_INGRESS_TRANSPORT_FAILED")
-    if status != 200:
-        _stop(f"TIMEWEB_PUBLIC_INGRESS_HTTP_STATUS:{status}")
+    headers: dict[str, str] | None = None
+    raw: bytes | None = None
+    for attempt in range(len(_PUBLIC_PROBE_RETRY_DELAYS) + 1):
+        headers, raw, failure = _read_public_attempt(active, request)
+        if failure is None:
+            break
+        if attempt >= len(_PUBLIC_PROBE_RETRY_DELAYS):
+            _stop(failure)
+        time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+    if headers is None or raw is None:
+        raise AssertionError("bounded public probe exhausted")
     if len(raw) > MAX_RESPONSE_BYTES:
         _stop("TIMEWEB_PUBLIC_INGRESS_RESPONSE_TOO_LARGE")
     _require_security_headers(headers, api_path=path != "/")
@@ -384,13 +414,12 @@ def _validate_runtime_env(app: dict[str, Any], expected_sha: str) -> None:
         app_release.PUBLIC_MULTI_USER_ENV: "false",
         app_release.TELEGRAM_LOGIN_ENV: "false",
     }
-    if any(str(envs.get(name, "")) != value for name, value in expected.items()):
+    if any(envs.get(name) != value for name, value in expected.items()):
         _stop("TIMEWEB_PUBLIC_INGRESS_ENV_DRIFT")
-    if str(envs.get(app_release.VK_LOGIN_ENV, "")).strip().lower() not in {
-        "",
-        "0",
-        "false",
-    }:
+    vk_value = envs.get(app_release.VK_LOGIN_ENV)
+    if vk_value is not None and not isinstance(vk_value, str):
+        _stop("TIMEWEB_PUBLIC_INGRESS_VK_ACTIVATION_FORBIDDEN")
+    if (vk_value or "").strip().lower() not in {"", "0", "false"}:
         _stop("TIMEWEB_PUBLIC_INGRESS_VK_ACTIVATION_FORBIDDEN")
     dsn = envs.get(app_release.POSTGRES_DSN_ENV)
     if not isinstance(dsn, str) or not dsn.strip():

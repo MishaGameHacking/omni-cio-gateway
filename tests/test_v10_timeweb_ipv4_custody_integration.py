@@ -246,6 +246,20 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "ORDER_INVALID"):
             guard._validate_custody_order(changed_tree)
 
+        changed = source.replace(
+            "        try:\n            _verify_transport_scope(\n",
+            "        try:\n"
+            "            _ensure_rule(mutation, api, group_id, cidr)\n"
+            "            _verify_transport_scope(\n",
+            1,
+        )
+        changed_tree = ast.parse(changed)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN",
+        ):
+            guard._validate_provider_transition_order(changed_tree)
+
     def test_guard_rejects_diagnostic_write_or_false_ready(self) -> None:
         source = Path(observer.__file__).read_text(encoding="utf-8")
         for changed in (

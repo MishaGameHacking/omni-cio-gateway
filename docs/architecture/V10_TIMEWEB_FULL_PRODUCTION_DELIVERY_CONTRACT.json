@@ -189,5 +189,36 @@
     "squash_merge_required": true,
     "post_merge_acceptance_required": true,
     "production_accepted_before_merge": false
+  },
+  "provider_convergence_policy": {
+    "retry_observation_not_authority": true,
+    "transient_http_statuses": [
+      408,
+      429,
+      500,
+      502,
+      503,
+      504
+    ],
+    "transient_network_failures_may_retry_bounded_read_only_observation": true,
+    "authentication_or_authorization_failure_retry_allowed": false,
+    "semantic_or_security_mismatch_retry_allowed": false,
+    "mutation_replay_after_timeout_or_ambiguous_result_allowed": false,
+    "exact_identity_inflight_state_adoption_required_when_supported": true,
+    "duplicate_inflight_exact_identity_terminal": true,
+    "provider_history_pagination_must_be_exhaustive": true,
+    "asynchronous_provider_success_may_precede_readiness": true,
+    "local_polling_budget_is_provider_sla": false,
+    "stage_specific_sanitized_timeout_required": true,
+    "provider_response_body_logging_allowed": false,
+    "rollback_requires_get_reconciliation": true,
+    "final_observation_after_last_backoff_required": true,
+    "post_exposure_validation_read_only_required": true,
+    "public_probe_transient_retry_required": true,
+    "postgres_connect_transient_retry_required": true,
+    "tls_listener_not_ready_may_retry_bounded_readiness": true,
+    "tls_transport_timeout_distinct_from_certificate_failure": true,
+    "tls_certificate_verification_failure_retry_allowed": false,
+    "authority_expansion_on_recovery_allowed": false
   }
 }

@@ -82,6 +82,32 @@ def _validate_target(payload: dict[str, Any]) -> None:
         raise CutoverContractError(code)
 
 
+def _validate_connection_retry(payload: dict[str, Any]) -> None:
+    retry = _mapping(
+        payload.get("connection_retry"),
+        "TIMEWEB_PG_CUTOVER_CONNECTION_RETRY_INVALID",
+    )
+    expected = {
+        "bounded": True,
+        "client_network_without_sqlstate_retry_allowed": True,
+        "transient_sqlstates": [
+            "08000",
+            "08001",
+            "08003",
+            "08006",
+            "08007",
+            "53300",
+            "57P01",
+            "57P02",
+            "57P03",
+        ],
+        "invalid_authorization_sqlstate_retry_allowed": False,
+        "unknown_server_sqlstate_retry_allowed": False,
+    }
+    if retry != expected:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONNECTION_RETRY_INVALID")
+
+
 def _validate_runtime_role(payload: dict[str, Any]) -> None:
     role = _mapping(
         payload.get("runtime_role"),
@@ -223,6 +249,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     if any(payload.get(key) != value for key, value in expected_root.items()):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_IDENTITY_DRIFT")
     _validate_target(payload)
+    _validate_connection_retry(payload)
     _validate_runtime_role(payload)
     _validate_prepare(payload)
     _validate_recovery(payload)
@@ -261,6 +288,8 @@ def _validate_sources() -> None:
             "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)",
             "probe_hosted_runtime_database",
             "_verify_cross_tenant_negative(runtime)",
+            "_PRODUCTION_CONNECT_RETRY_DELAYS = (",
+            "retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS",
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",

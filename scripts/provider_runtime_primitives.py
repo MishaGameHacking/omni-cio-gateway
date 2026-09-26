@@ -9,6 +9,19 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 _TRANSIENT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
 _DATABASE_CONNECT_TIMEOUT_SECONDS = 15
+_TRANSIENT_POSTGRES_SQLSTATES = frozenset(
+    {
+        "08000",
+        "08001",
+        "08003",
+        "08006",
+        "08007",
+        "53300",
+        "57P01",
+        "57P02",
+        "57P03",
+    }
+)
 
 
 class ProvisioningStopped(RuntimeError):
@@ -82,14 +95,27 @@ def _safe_api_path(path: str, code: str) -> str:
     return path
 
 
+def _postgres_connect_failure_is_transient(exc: BaseException) -> bool:
+    sqlstate = getattr(exc, "sqlstate", None)
+    if sqlstate is None:
+        sqlstate = getattr(exc, "pgcode", None)
+    if sqlstate is None:
+        return True
+    if not isinstance(sqlstate, str):
+        return False
+    normalized = sqlstate.strip().upper()
+    return normalized in _TRANSIENT_POSTGRES_SQLSTATES
+
+
 def _connect_postgres_with_retry(
     psycopg_module: Any,
     uri: str,
     *,
     retry_marker: str,
     failure_code: str,
+    retry_delays: tuple[float, ...] = _TRANSIENT_RETRY_DELAYS_SECONDS,
 ) -> Any:
-    attempts = len(_TRANSIENT_RETRY_DELAYS_SECONDS) + 1
+    attempts = len(retry_delays) + 1
     for attempt in range(attempts):
         try:
             return psycopg_module.connect(
@@ -97,9 +123,11 @@ def _connect_postgres_with_retry(
                 autocommit=True,
                 connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
             )
-        except psycopg_module.OperationalError:
+        except psycopg_module.OperationalError as exc:
+            if not _postgres_connect_failure_is_transient(exc):
+                raise ProvisioningStopped(failure_code) from None
             if attempt + 1 >= attempts:
                 raise ProvisioningStopped(failure_code) from None
             _emit(f"{retry_marker} attempt={attempt + 2}/{attempts}")
-            time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+            time.sleep(retry_delays[attempt])
     raise AssertionError("bounded PostgreSQL connection retry exhausted")

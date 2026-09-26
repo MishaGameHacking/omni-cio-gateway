@@ -199,6 +199,8 @@ def _validate_source_assets(root: Path) -> None:
             '"/livez"',
             '"/healthz"',
             '"/api/v10/web/auth/providers"',
+            "_TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})",
+            "_PUBLIC_PROBE_RETRY_DELAYS = (",
         ),
         "TIMEWEB_P6_CONTROLLER_DRIFT",
     )

@@ -365,6 +365,54 @@ Official Timeweb evidence rechecked on 2026-09-26:
 Do not rerun the live transport until this source repair is exact-head certified
 and accepted on protected main.
 
+## Live RED #6 — TLS/domain readiness outlived the fixed 83-second waiter
+
+After PR #588 was accepted as protected main
+`86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8`, manual workflow ordinal #6
+passed the exact-main/source gate, verifier `/32`, GitHub Environment, cost
+confirmation and existing-IPv4 allocation prerequisite. The prior deterministic
+HTTP 400 did not recur.
+
+The run then stopped with:
+
+`TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=STOPPED code=TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT`.
+
+This marker can only be emitted by the GET-only network/TLS readiness waiter after
+the public-IPv4 transition path has been entered. The source allowed only
+`2+3+5+8+15+20+30 = 83` seconds before declaring timeout. Timeweb's API contract
+explicitly permits a successful mutation response while the resource remains in a
+startup/transition state, and the PostgreSQL TLS guide requires waiting for setup
+completion without documenting an 83-second readiness SLA.
+
+The repair therefore preserves exactly one mutation per transition and changes only
+reconciliation behavior:
+
+1. keep the public IPv4 and TLS PATCH operations separate;
+2. keep post-mutation waiting GET-only with no blind mutation retry;
+3. give TLS/domain/certificate readiness a bounded multi-minute budget that remains
+   below the workflow timeout;
+4. on timeout, emit a sanitized predicate-specific code distinguishing public-network
+   drift, secure-connection enablement still pending, certificate/domain issuance
+   still pending, and an otherwise-ready TLS surface whose cluster status remains
+   transitional;
+5. retain unsafe-status immediate stops, exact managed-IP/firewall verification and
+   fail-closed public-network rollback.
+
+No second IPv4 purchase, IPv4 delete/stamp, wildcard firewall, DNS mutation,
+production DB cutover or Telegram/public-user activation is added by this repair.
+
+The blast-radius review also hardens the live transport against provider/control-plane propagation without weakening any semantic gate. DB control-plane `500`/network failures may be retried only as bounded GET observations; `domains=null` during TLS setup is treated as not-yet-ready rather than malformed terminal state; transient CA download and TCP/TLS socket transport may retry within bounded budgets; certificate verification failure stays terminal. Public-network rollback has its own longer GET-only closure proof, so a rollback request is never mistaken for a proven rollback.
+
+The same failure class was reviewed across the later currently authorized Timeweb delivery controllers. P2 adopts a unique in-flight exact-SHA deploy instead of issuing another POST, P3 receives a production-only bounded PostgreSQL reconnect window, and P4/P5/P6 retry only transient read-only public probes. Wrong SHA, wrong security headers, auth/authorization errors, certificate failures, provider-state drift and tenant/security proof failures are not retryable. This is the project-wide rule: **retry observation, never authority; adopt exact intent, never replay an uncertain mutation**.
+
+Three additional restart/live-state protections are mandatory in this repair. First, App Platform deploy-history consumers must exhaust provider pagination rather than treating the first 100 rows as the complete history. Second, every bounded rollback wait must observe state once more after its final backoff. Third, firewall rule/resource mutations and their GET reconciliation must finish before public exposure; every firewall verification after public IPv4 or TLS enablement is read-only. This prevents stale provider reads from being converted into duplicate mutations while still failing closed on any semantic or security drift.
+The OWNER also reports that `omnicio.ru` is visible in the Timeweb domain panel after
+being added manually, and no further manual domain configuration was performed. Treat that as
+unverified pre-existing provider state only. It is not accepted evidence of DNS,
+certificate issuance or TLS readiness and grants no create/overwrite authority.
+The provisioner must continue to rely on sanitized provider GET state and must not
+log the hostname.
+
 ## Success marker
 
 Only this sanitized marker is accepted:

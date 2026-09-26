@@ -34,6 +34,8 @@ _PUBLIC_IPV4_GUARD_MODULE = (
 _PUBLIC_IPV4_GUARD_SCRIPT = (
     "python scripts/check_v10_timeweb_postgres_public_ipv4_tls.py"
 )
+_PROVIDER_TRANSITION_ORDER_INVALID = "TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID"
+_POST_EXPOSURE_MUTATION_FORBIDDEN = "TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN"
 
 
 def _read(path: Path) -> str:
@@ -169,6 +171,9 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "must_be_reverified_after_public_network_enable": True,
         "exclusive_service_group_required": True,
         "preexisting_public_network_requires_safe_narrow_firewall": True,
+        "mutation_reconciliation_before_exposure_required": True,
+        "post_exposure_revalidation_read_only": True,
+        "ambiguous_mutation_replay_allowed": False,
     }
     _require(
         firewall,
@@ -402,6 +407,46 @@ def _validate_contract(payload: dict[str, Any]) -> None:
                 "repair_requires_separate_public_ipv4_and_tls_transitions": True,
                 "get_reconciliation_between_transitions_required": True,
             },
+            "latest_live_readiness_failure": {
+                "workflow_ordinal": 6,
+                "exact_main_sha_parts": [
+                    "86294ebb",
+                    "0e5b6eb0",
+                    "a56aa8d4",
+                    "b28f1692",
+                    "f483a8d8",
+                ],
+                "observed_terminal_code": "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT",
+                "prior_tls_wait_budget_seconds": 83,
+                "provider_readiness_sla_seconds_documented": False,
+                "provider_mutation_success_can_precede_resource_readiness": True,
+                "extended_get_only_reconciliation_required": True,
+                "minimum_tls_wait_budget_seconds": 300,
+                "maximum_tls_wait_budget_seconds": 900,
+                "stage_specific_timeout_classification_required": True,
+                "stage_specific_timeout_codes": [
+                    "TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS",
+                    "TIMEWEB_TLS_ENABLE_READY_TIMEOUT",
+                    "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT",
+                    "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT",
+                ],
+                "blind_retry_allowed": False,
+                "transient_control_plane_reads_retryable": True,
+                "transient_http_statuses": [408, 429, 500, 502, 503, 504],
+                "nullable_domains_during_tls_transition_means_pending": True,
+                "ca_fetch_transient_retry_required": True,
+                "postgres_tls_socket_transient_retry_required": True,
+                "postgres_tls_refused_is_retryable_readiness": True,
+                "postgres_tls_refused_timeout_code": "TIMEWEB_POSTGRES_TLS_REFUSED_TIMEOUT",
+                "postgres_tls_transport_timeout_code": "TIMEWEB_POSTGRES_TLS_TRANSPORT_TIMEOUT",
+                "certificate_verification_failure_retry_allowed": False,
+                "rollback_get_reconciliation_extended": True,
+                "rollback_final_observation_after_last_backoff_required": True,
+                "post_exposure_scope_transient_read_retry_required": True,
+                "post_exposure_scope_security_drift_retry_allowed": False,
+                "public_ipv4_binding_visibility_is_reconciled": True,
+                "public_ipv4_binding_timeout_code": "TIMEWEB_PUBLIC_IPV4_BINDING_READY_TIMEOUT",
+            },
         },
         "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",
     )
@@ -611,6 +656,20 @@ def _validate_sources() -> None:
             'operation="DATABASE_PUBLIC_IPV4_PATCH"',
             'operation="DATABASE_TLS_ENABLE_PATCH"',
             "_wait_public_ipv4_ready(api, cluster_id, address)",
+            "_TLS_STATE_DELAYS_SECONDS = (",
+            "_WAIT_API_TIMEOUT_SECONDS = 8.0",
+            "_CA_RETRY_DELAYS_SECONDS = (",
+            "_TLS_SOCKET_RETRY_DELAYS_SECONDS = (",
+            "_ROLLBACK_STATE_DELAYS_SECONDS = (",
+            "_RECONCILE_DELAYS_SECONDS = (",
+            "_verify_exact_rule",
+            "for attempt in range(len(delays) + 1):",
+            "_is_transient_control_plane_failure",
+            "TIMEWEB_TLS_CONTROL_PLANE_READ_TIMEOUT",
+            "TIMEWEB_TLS_ENABLE_READY_TIMEOUT",
+            "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT",
+            "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT",
+            "TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS",
             "http_status={exc.status}",
             "TIMEWEB_PUBLIC_NETWORK_ROLLBACK_MANUAL_RECONCILIATION_REQUIRED",
             "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE",
@@ -799,6 +858,27 @@ def _validate_existing_only_transport(tree: ast.Module) -> None:
                 raise RuntimeError("TIMEWEB_IPV4_EXISTING_ONLY_RESOLVER_INVALID")
 
 
+def _validate_read_only_transport_scope(
+    tree: ast.Module,
+    function_name: str,
+) -> None:
+    forbidden_scope_calls = {
+        "_ensure_group",
+        "_ensure_rule",
+        "_ensure_resource_link",
+        "_patch_public_ipv4",
+        "_enable_secure_connection",
+    }
+    function = _function(tree, function_name)
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name) and node.func.id in forbidden_scope_calls:
+            raise RuntimeError(_POST_EXPOSURE_MUTATION_FORBIDDEN)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "mutate_once":
+            raise RuntimeError(_POST_EXPOSURE_MUTATION_FORBIDDEN)
+
+
 def _validate_provider_transition_order(tree: ast.Module) -> None:
     public_patch = _function(tree, "_patch_public_ipv4")
     tls_patch = _function(tree, "_enable_secure_connection")
@@ -843,11 +923,18 @@ def _validate_provider_transition_order(tree: ast.Module) -> None:
     configure = _function(tree, "_configure_transport")
     public_calls = call_lines(configure, owner=None, name="_patch_public_ipv4")
     tls_calls = call_lines(configure, owner=None, name="_enable_secure_connection")
-    scope_calls = call_lines(configure, owner=None, name="_verify_transport_scope")
-    if len(public_calls) != 1 or len(tls_calls) != 1 or len(scope_calls) != 2:
-        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
-    if not public_calls[0] < scope_calls[0] < tls_calls[0] < scope_calls[1]:
-        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+    scope_wait_calls = call_lines(configure, owner=None, name="_wait_transport_scope")
+    if (len(public_calls), len(tls_calls), len(scope_wait_calls)) != (1, 1, 2):
+        raise RuntimeError(_PROVIDER_TRANSITION_ORDER_INVALID)
+    if not (public_calls[0] < scope_wait_calls[0] < tls_calls[0] < scope_wait_calls[1]):
+        raise RuntimeError(_PROVIDER_TRANSITION_ORDER_INVALID)
+
+    scope_wait = _function(tree, "_wait_transport_scope")
+    if len(call_lines(scope_wait, owner=None, name="_verify_transport_scope")) != 1:
+        raise RuntimeError(_PROVIDER_TRANSITION_ORDER_INVALID)
+
+    _validate_read_only_transport_scope(tree, "_wait_transport_scope")
+    _validate_read_only_transport_scope(tree, "_verify_transport_scope")
 
 
 def _validate_custody_probe(source: str) -> None:

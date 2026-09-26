@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from urllib.request import Request
 
 from scripts import timeweb_public_ingress_acceptance as ingress
@@ -70,14 +71,19 @@ class _Response:
 
 
 class _Opener:
-    def __init__(self, responses: list[_Response]) -> None:
+    def __init__(self, responses: list[object]) -> None:
         self.responses = list(responses)
         self.requests: list[Request] = []
 
     def open(self, request: Request, *, timeout: float) -> _Response:
         del timeout
         self.requests.append(request)
-        return self.responses.pop(0)
+        value = self.responses.pop(0)
+        if isinstance(value, BaseException):
+            raise value
+        if not isinstance(value, _Response):
+            raise AssertionError("unexpected response fixture")
+        return value
 
 
 def _opener(
@@ -180,6 +186,14 @@ def _accept(api: _Api, *, opener: _Opener | None = None) -> None:
 
 
 class TimewebPublicIngressTests(unittest.TestCase):
+    def test_provider_app_id_rejects_non_scalar_values(self) -> None:
+        for value in (True, False, None, 1.5, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaises(ingress.PublicIngressStopped):
+                    ingress._safe_id(value)
+        self.assertEqual(ingress._safe_id(17), "17")
+        self.assertEqual(ingress._safe_id("app-17"), "app-17")
+
     def test_repository_guard_passes(self) -> None:
         guard.validate(ROOT)
 
@@ -216,6 +230,24 @@ class TimewebPublicIngressTests(unittest.TestCase):
             ],
         )
 
+    def test_observe_retries_transient_transport_before_semantic_checks(
+        self,
+    ) -> None:
+        opener = _opener()
+        opener.responses.insert(0, OSError("transient route propagation"))
+        with mock.patch.object(ingress.time, "sleep") as sleeper:
+            ingress.run(
+                operation="observe",
+                expected_sha=EXPECTED_SHA,
+                observed_main_sha=EXPECTED_SHA,
+                opener=opener,
+            )
+        sleeper.assert_called_once_with(ingress._PUBLIC_PROBE_RETRY_DELAYS[0])
+        self.assertEqual(
+            [request.full_url for request in opener.requests[:2]],
+            ["https://omnicio.ru/livez", "https://omnicio.ru/livez"],
+        )
+
     def test_observe_rejects_release_sha_drift(self) -> None:
         opener = _opener(ROLLBACK_SHA)
         with self.assertRaisesRegex(
@@ -249,6 +281,29 @@ class TimewebPublicIngressTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_CANONICAL_DOMAIN_MISSING",
+        ):
+            _accept(api)
+
+    def test_accept_rejects_non_string_runtime_env_values(self) -> None:
+        app = _app()
+        envs = app["envs"]
+        assert isinstance(envs, dict)
+        envs["OMNI_V10_HOSTED_RUNTIME"] = 1
+        api = _Api(app)
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_ENV_DRIFT",
+        ):
+            _accept(api)
+
+        app = _app()
+        envs = app["envs"]
+        assert isinstance(envs, dict)
+        envs["OMNI_V10_VK_ID_LOGIN_ENABLED"] = False
+        api = _Api(app)
+        with self.assertRaisesRegex(
+            ingress.PublicIngressStopped,
+            "TIMEWEB_PUBLIC_INGRESS_VK_ACTIVATION_FORBIDDEN",
         ):
             _accept(api)
 

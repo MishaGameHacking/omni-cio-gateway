@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from datetime import datetime
 import json
 import os
 import re
@@ -33,8 +34,23 @@ RUNTIME_MODE_LIVE_OPERABLE = "live-operable"
 _RUNTIME_MODES = frozenset({RUNTIME_MODE_PREACTIVATION, RUNTIME_MODE_LIVE_OPERABLE})
 MAX_RESPONSE_BYTES = 1024 * 1024
 _PAGE_SIZE = 100
+_MAX_DEPLOY_HISTORY_PAGES = 100
 _GET_DELAYS = (1.0, 2.0)
-_POLL_DELAYS = (0.0, 5.0, 10.0, 20.0, 30.0, 60.0, 60.0)
+_LIVEZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
+_DEPLOY_RECONCILE_DELAYS = (0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
+_POLL_DELAYS = (
+    0.0,
+    5.0,
+    10.0,
+    20.0,
+    30.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+)
 _TRANSIENT = frozenset({408, 429, 500, 502, 503, 504})
 _TERMINAL_FAILURE = frozenset({"failure", "access_error", "stopped"})
 _VALID_DEPLOY_STATUS = frozenset(
@@ -55,6 +71,7 @@ _VALID_DEPLOY_STATUS = frozenset(
         "access_error",
     }
 )
+_INFLIGHT_DEPLOY_STATUS = _VALID_DEPLOY_STATUS - _TERMINAL_FAILURE - {"success"}
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 _ID_RE = re.compile(r"^[A-Za-z0-9-]{1,96}$", re.ASCII)
@@ -153,7 +170,9 @@ def _validate_runtime_mode_evidence(runtime_mode: str, evidence_sha256: str) -> 
 
 
 def _safe_id(value: object, code: str) -> str:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        _stop(code)
+    if isinstance(value, int) and value <= 0:
         _stop(code)
     text = str(value).strip()
     if _ID_RE.fullmatch(text) is None:
@@ -184,7 +203,7 @@ def _rows(payload: dict[str, Any], key: str, code: str) -> list[dict[str, Any]]:
     meta = payload.get("meta")
     if meta is not None:
         total = _mapping(meta, code).get("total")
-        if type(total) is not int or total != len(rows) or total > _PAGE_SIZE:
+        if type(total) is not int or total < 0 or total != len(rows):
             _stop(code)
     return rows
 
@@ -199,6 +218,43 @@ def _decode(status: int, raw: bytes, expected: int, code: str) -> dict[str, Any]
     except (UnicodeDecodeError, json.JSONDecodeError):
         _stop(f"{code}_RESPONSE_INVALID")
     return _mapping(value, f"{code}_RESPONSE_INVALID")
+
+
+def _deploy_page(
+    payload: dict[str, Any],
+    existing_count: int,
+) -> tuple[list[dict[str, Any]], int]:
+    raw = payload.get("deploys")
+    if not isinstance(raw, list):
+        _stop(_DEPLOYS_INVALID)
+    page_rows = [_mapping(item, _DEPLOYS_INVALID) for item in raw]
+    total = _mapping(payload.get("meta"), _DEPLOYS_INVALID).get("total")
+    if (
+        type(total) is not int
+        or total < 0
+        or len(page_rows) > _PAGE_SIZE
+        or existing_count + len(page_rows) > total
+    ):
+        _stop(_DEPLOYS_INVALID)
+    return page_rows, total
+
+
+def _require_stable_total(expected_total: int | None, total: int) -> int:
+    if expected_total is not None and total != expected_total:
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED")
+    return total if expected_total is None else expected_total
+
+
+def _validate_deploy_history_ids(rows: list[dict[str, Any]]) -> None:
+    identifiers = [
+        _safe_id(
+            row.get("id"),
+            "TIMEWEB_APP_RELEASE_DEPLOY_ID_INVALID",
+        )
+        for row in rows
+    ]
+    if len(set(identifiers)) != len(identifiers):
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID")
 
 
 class TimewebAppApi:
@@ -263,7 +319,22 @@ class TimewebAppApi:
 
     def list_deploys(self, app_id: str) -> dict[str, Any]:
         safe = _safe_id(app_id, _APP_ID_INVALID)
-        return self._get(f"/api/v1/apps/{safe}/deploys?limit={_PAGE_SIZE}&offset=0")
+        rows: list[dict[str, Any]] = []
+        expected_total: int | None = None
+        for page in range(_MAX_DEPLOY_HISTORY_PAGES):
+            offset = page * _PAGE_SIZE
+            payload = self._get(
+                f"/api/v1/apps/{safe}/deploys?limit={_PAGE_SIZE}&offset={offset}"
+            )
+            page_rows, total = _deploy_page(payload, len(rows))
+            expected_total = _require_stable_total(expected_total, total)
+            rows.extend(page_rows)
+            if len(rows) == total:
+                _validate_deploy_history_ids(rows)
+                return {"deploys": rows, "meta": {"total": total}}
+            if not page_rows or len(page_rows) < _PAGE_SIZE:
+                _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TRUNCATED")
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TOO_LARGE")
 
     def deploy_once(self, app_id: str, sha: str) -> dict[str, Any]:
         safe = _safe_id(app_id, _APP_ID_INVALID)
@@ -275,12 +346,8 @@ class TimewebAppApi:
         )
         try:
             with self._opener.open(request, timeout=30.0) as response:
-                return _decode(
-                    int(response.status),
-                    response.read(MAX_RESPONSE_BYTES + 1),
-                    201,
-                    "TIMEWEB_APP_RELEASE_DEPLOY",
-                )
+                status = int(response.status)
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
             status = int(exc.code)
             if status in _TRANSIENT or status in {409, 423}:
@@ -290,6 +357,25 @@ class TimewebAppApi:
             _stop("TIMEWEB_APP_RELEASE_DEPLOY_REJECTED", status=status)
         except OSError:
             raise AmbiguousDeploy from None
+
+        if status != 201:
+            if 200 <= status < 300:
+                raise AmbiguousDeploy from None
+            _stop("TIMEWEB_APP_RELEASE_DEPLOY_REJECTED", status=status)
+        try:
+            return _decode(
+                status,
+                raw,
+                201,
+                "TIMEWEB_APP_RELEASE_DEPLOY",
+            )
+        except ReleaseStopped as exc:
+            if exc.code in {
+                "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_TOO_LARGE",
+                "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID",
+            }:
+                raise AmbiguousDeploy from None
+            raise
 
 
 def _repository(app: dict[str, Any]) -> str:
@@ -318,12 +404,49 @@ def _deploys(api: ApiLike, app_id: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _completed_deploy_time(row: dict[str, Any]) -> datetime:
+    value = row.get("ended_at")
+    if not isinstance(value, str) or not value.strip():
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_ENDED_AT_INVALID")
+    try:
+        observed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_ENDED_AT_INVALID")
+    if observed.tzinfo is None or observed.utcoffset() is None:
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_ENDED_AT_INVALID")
+    return observed
+
+
 def _last_known_good(rows: list[dict[str, Any]], expected: str) -> str | None:
+    candidates: list[tuple[datetime, str]] = []
     for row in rows:
         _id, commit, status = _deploy(row)
         if status == "success" and commit != expected:
-            return commit
-    return None
+            candidates.append((_completed_deploy_time(row), commit))
+    if not candidates:
+        return None
+    latest_time = max(observed for observed, _commit in candidates)
+    latest_commits = {
+        commit for observed, commit in candidates if observed == latest_time
+    }
+    if len(latest_commits) != 1:
+        _stop("TIMEWEB_APP_RELEASE_LKG_HISTORY_AMBIGUOUS")
+    return next(iter(latest_commits))
+
+
+def _inflight_exact_deploy_id(
+    rows: list[dict[str, Any]],
+    expected: str,
+) -> str | None:
+    candidates = [
+        deploy_id
+        for row in rows
+        for deploy_id, commit, status in (_deploy(row),)
+        if commit == expected and status in _INFLIGHT_DEPLOY_STATUS
+    ]
+    if len(candidates) > 1:
+        _stop("TIMEWEB_APP_RELEASE_MULTIPLE_INFLIGHT_EXACT_SHA")
+    return candidates[0] if candidates else None
 
 
 def _matching_app_row(api: ApiLike) -> dict[str, Any]:
@@ -431,6 +554,34 @@ def _candidate_app(
     return app, app_id, candidate
 
 
+def _livez_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+    except HTTPError as exc:
+        status = int(exc.code)
+        if status in _TRANSIENT:
+            return None, "http", status
+        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+    except OSError:
+        return None, "transport", None
+    if status in _TRANSIENT:
+        return None, "http", status
+    if status != 200:
+        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+    return _decode(status, raw, 200, "TIMEWEB_APP_RELEASE_LIVEZ"), None, None
+
+
+def _stop_livez_retry(failure: str | None, status: int | None) -> NoReturn:
+    if failure == "http" and status is not None:
+        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+    _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
+
+
 def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) -> None:
     request = Request(
         f"https://{hostname}/livez",
@@ -441,29 +592,29 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    try:
-        with active.open(request, timeout=30.0) as response:
-            payload = _decode(
-                int(response.status),
-                response.read(MAX_RESPONSE_BYTES + 1),
-                200,
-                "TIMEWEB_APP_RELEASE_LIVEZ",
-            )
-    except HTTPError as exc:
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=int(exc.code))
-    except OSError:
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
-    if payload.get("status") != "ok":
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_NOT_OK")
-    if (
-        _sha(payload.get("release_sha"), "TIMEWEB_APP_RELEASE_LIVEZ_SHA_INVALID")
-        != expected
-    ):
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT")
+    for attempt in range(len(_LIVEZ_RETRY_DELAYS) + 1):
+        payload, failure, status = _livez_attempt(active, request)
+        if payload is None:
+            if attempt >= len(_LIVEZ_RETRY_DELAYS):
+                _stop_livez_retry(failure, status)
+            time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+            continue
+        if payload.get("status") != "ok":
+            _stop("TIMEWEB_APP_RELEASE_LIVEZ_NOT_OK")
+        observed = _sha(
+            payload.get("release_sha"),
+            "TIMEWEB_APP_RELEASE_LIVEZ_SHA_INVALID",
+        )
+        if observed == expected:
+            return
+        if attempt >= len(_LIVEZ_RETRY_DELAYS):
+            _stop("TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT")
+        time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+    raise AssertionError("bounded liveness verification exhausted")
 
 
 def _reconcile(api: ApiLike, app_id: str, before: frozenset[str], expected: str) -> str:
-    for delay in (0.0, 2.0, 5.0, 10.0):
+    for delay in _DEPLOY_RECONCILE_DELAYS:
         if delay:
             api.sleeper(delay)
         candidates = []
@@ -527,27 +678,14 @@ def observe(
     return _last_known_good(_deploys(api, app_id), expected)
 
 
-def _perform_exact_deploy(
+def _verify_completed_deploy(
     api: ApiLike,
     app_id: str,
+    deploy_id: str,
     hostname: str,
     expected: str,
     runtime_mode: str,
-    before_rows: list[dict[str, Any]],
 ) -> None:
-    before = frozenset(_deploy(row)[0] for row in before_rows)
-    try:
-        response = api.deploy_once(app_id, expected)
-    except AmbiguousDeploy:
-        deploy_id = _reconcile(api, app_id, before, expected)
-    else:
-        row = _mapping(
-            response.get("deploy"), "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID"
-        )
-        deploy_id, commit, _status = _deploy(row)
-        if commit != expected or deploy_id in before:
-            _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
-
     _wait(api, app_id, deploy_id, expected)
     refreshed, refreshed_id, refreshed_hostname = _candidate_app(
         api, expected, runtime_mode
@@ -564,6 +702,41 @@ def _perform_exact_deploy(
         _stop("TIMEWEB_APP_RELEASE_POSTDEPLOY_NOT_ACTIVE")
 
 
+def _perform_exact_deploy(
+    api: ApiLike,
+    app_id: str,
+    hostname: str,
+    expected: str,
+    runtime_mode: str,
+    before_rows: list[dict[str, Any]],
+) -> None:
+    before = frozenset(_deploy(row)[0] for row in before_rows)
+    try:
+        response = api.deploy_once(app_id, expected)
+    except AmbiguousDeploy:
+        deploy_id = _reconcile(api, app_id, before, expected)
+    else:
+        try:
+            row = _mapping(
+                response.get("deploy"),
+                "TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_INVALID",
+            )
+            deploy_id, commit, _status = _deploy(row)
+            if commit != expected or deploy_id in before:
+                _stop("TIMEWEB_APP_RELEASE_DEPLOY_RESPONSE_DRIFT")
+        except ReleaseStopped:
+            deploy_id = _reconcile(api, app_id, before, expected)
+
+    _verify_completed_deploy(
+        api,
+        app_id,
+        deploy_id,
+        hostname,
+        expected,
+        runtime_mode,
+    )
+
+
 def deploy(
     api: ApiLike,
     expected: str,
@@ -578,13 +751,24 @@ def deploy(
     app, app_id, hostname = _candidate_app(api, expected, runtime_mode)
     before_rows = _deploys(api, app_id)
     last_known_good = _last_known_good(before_rows, expected)
+    inflight = _inflight_exact_deploy_id(before_rows, expected)
     already_active = (
         app.get("status") == "active" and app.get(_COMMIT_SHA_KEY) == expected
     )
     if not already_active:
-        _perform_exact_deploy(
-            api, app_id, hostname, expected, runtime_mode, before_rows
-        )
+        if inflight is not None:
+            _verify_completed_deploy(
+                api,
+                app_id,
+                inflight,
+                hostname,
+                expected,
+                runtime_mode,
+            )
+        else:
+            _perform_exact_deploy(
+                api, app_id, hostname, expected, runtime_mode, before_rows
+            )
 
     _verify_livez(hostname, expected, opener=livez_opener)
     return last_known_good

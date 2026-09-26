@@ -786,23 +786,25 @@ class TimewebControlPlaneTests(unittest.TestCase):
         self.assertTrue(opener.requests[0].full_url.endswith("/api/v1/projects"))
 
     def test_transient_get_retry_is_bounded(self) -> None:
-        first = HTTPError(
-            "https://api.timeweb.cloud/api/v1/projects",
-            429,
-            "rate limited",
-            {},
-            io.BytesIO(b"provider detail"),
-        )
-        opener = _Opener([first, _Response({"projects": []})])
-        sleeps: list[float] = []
-        api = probe.TimewebReadOnlyApi(
-            "synthetic-token",
-            opener=opener,
-            sleeper=sleeps.append,
-        )
-        self.assertEqual(api.get("/api/v1/projects"), {"projects": []})
-        self.assertEqual(sleeps, [1.0])
-        self.assertEqual(len(opener.requests), 2)
+        for status in (429, 500):
+            with self.subTest(status=status):
+                first = HTTPError(
+                    "https://api.timeweb.cloud/api/v1/projects",
+                    status,
+                    "transient provider failure",
+                    {},
+                    io.BytesIO(b"provider detail"),
+                )
+                opener = _Opener([first, _Response({"projects": []})])
+                sleeps: list[float] = []
+                api = probe.TimewebReadOnlyApi(
+                    "synthetic-token",
+                    opener=opener,
+                    sleeper=sleeps.append,
+                )
+                self.assertEqual(api.get("/api/v1/projects"), {"projects": []})
+                self.assertEqual(sleeps, [1.0])
+                self.assertEqual(len(opener.requests), 2)
 
     def test_request_is_get_only_and_token_is_not_emitted(self) -> None:
         opener = _Opener([_Response({"projects": []})])
