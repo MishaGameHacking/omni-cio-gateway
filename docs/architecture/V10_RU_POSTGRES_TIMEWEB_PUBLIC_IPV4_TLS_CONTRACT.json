@@ -205,6 +205,12 @@
       "minimum_tls_wait_budget_seconds": 300,
       "maximum_tls_wait_budget_seconds": 900,
       "stage_specific_timeout_classification_required": true,
+      "stage_specific_timeout_codes": [
+        "TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS",
+        "TIMEWEB_TLS_ENABLE_READY_TIMEOUT",
+        "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT",
+        "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT"
+      ],
       "blind_retry_allowed": false
     }
   },
