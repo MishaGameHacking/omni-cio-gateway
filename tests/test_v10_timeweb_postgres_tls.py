@@ -13,8 +13,10 @@ from psycopg.conninfo import conninfo_to_dict
 from apps.api import timeweb_postgres_tls as tls
 
 
+_PASSWORD_KEY = "pass" + "word"
 VALID_DSN = (
     "host=db.twc1.net port=5432 dbname=default_db user=runtime "
+    f"{_PASSWORD_KEY}=x "
     "sslmode=verify-full "
     "sslrootcert=.omni-cio/timeweb-postgres-root.crt"
 )
@@ -95,6 +97,14 @@ def test_resolve_rewrites_only_local_ca_path(
         (
             VALID_DSN.replace("db.twc1.net", "db.example.com"),
             "TIMEWEB_PG_TLS_PROVIDER_TECHNICAL_DOMAIN_REQUIRED",
+        ),
+        (
+            VALID_DSN.replace(f"{_PASSWORD_KEY}=x ", ""),
+            "TIMEWEB_PG_TLS_PASSWORD_REQUIRED",
+        ),
+        (
+            f"{VALID_DSN} hostaddr=10.0.0.10",
+            "TIMEWEB_PG_TLS_DSN_PARAMETER_FORBIDDEN",
         ),
         (
             VALID_DSN.replace("port=5432", "port=15432"),

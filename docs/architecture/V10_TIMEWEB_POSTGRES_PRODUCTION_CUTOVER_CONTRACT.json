@@ -47,7 +47,18 @@
     "raw_endpoint_or_exception_logging_allowed": false,
     "external_dsn_format": "POSTGRESQL_LIBPQ",
     "php_pdo_dsn_allowed": false,
-    "resolved_sslrootcert_may_be_absolute_in_process_only": true
+    "resolved_sslrootcert_may_be_absolute_in_process_only": true,
+    "allowed_external_dsn_parameters": [
+      "dbname",
+      "host",
+      "password",
+      "port",
+      "sslmode",
+      "sslrootcert",
+      "user"
+    ],
+    "explicit_password_required": true,
+    "ambient_libpq_target_or_credential_override_allowed": false
   },
   "connection_retry": {
     "bounded": true,

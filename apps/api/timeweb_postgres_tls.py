@@ -60,6 +60,17 @@ _TIMEWEB_TECHNICAL_DOMAIN_SUFFIXES = (
     ".twc1.net",
     ".webtm.ru",
 )
+_ALLOWED_EXTERNAL_DSN_PARAMETERS = frozenset(
+    {
+        "dbname",
+        "host",
+        "password",
+        "port",
+        "sslmode",
+        "sslrootcert",
+        "user",
+    }
+)
 _RETIRED_HOST_MARKERS = ("neon.tech", "cloudflare", "render.com", "cloud.ru")
 _POSTGRES_SSL_REQUEST = struct.pack("!II", 8, 80877103)
 Sleep = Callable[[float], None]
@@ -95,6 +106,8 @@ def _connection_params(dsn: str) -> dict[str, str]:
     except psycopg.Error:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_DSN_INVALID") from None
     params = {str(key): str(value) for key, value in raw.items()}
+    if set(params) - _ALLOWED_EXTERNAL_DSN_PARAMETERS:
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_DSN_PARAMETER_FORBIDDEN")
     host = params.get("host", "").strip().lower().rstrip(".")
     if (
         not host
@@ -102,6 +115,8 @@ def _connection_params(dsn: str) -> dict[str, str]:
         or not params.get("user", "").strip()
     ):
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_IDENTITY_REQUIRED")
+    if not params.get("password", ""):
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PASSWORD_REQUIRED")
     if _DOMAIN_RE.fullmatch(host) is None or any(
         marker in host for marker in _RETIRED_HOST_MARKERS
     ):
