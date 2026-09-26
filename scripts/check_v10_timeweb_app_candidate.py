@@ -182,6 +182,7 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "live_operable_release_requires_p5_live_evidence_sha256": True,
         "deploy_readiness_minimum_budget_seconds": 300,
         "deploy_readiness_maximum_budget_seconds": 900,
+        "liveness_retry_on_transient_or_stale_route_required": True,
     }
     if acceptance != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID")
