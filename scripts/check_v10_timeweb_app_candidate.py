@@ -120,6 +120,11 @@ def _validate_provider_api(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_MUTATION_RETRY_FORBIDDEN")
     if api.get("ambiguous_mutation_reconcile_with_get_only") is not True:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
+    if (
+        api.get("successful_but_unprovable_mutation_response_reconcile_with_get_only")
+        is not True
+    ):
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
     if api.get("existing_inflight_exact_sha_adoption_required") is not True:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
     if api.get("multiple_inflight_exact_sha_terminal") is not True:
@@ -193,6 +198,8 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "deploy_readiness_minimum_budget_seconds": 300,
         "deploy_readiness_maximum_budget_seconds": 900,
         "liveness_retry_on_transient_or_stale_route_required": True,
+        "liveness_retry_minimum_budget_seconds": 120,
+        "liveness_retry_maximum_budget_seconds": 300,
     }
     if acceptance != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID")
