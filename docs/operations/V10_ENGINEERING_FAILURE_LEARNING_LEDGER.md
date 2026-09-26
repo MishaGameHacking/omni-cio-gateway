@@ -818,7 +818,7 @@ Dependency/tooling knowledge change:
 **Dependency/tooling knowledge change:** none.
 
 ---
- 
+
 ## FL-035 — Provider state transitions must follow documented prerequisite order
 
 **Date:** 2026-09-26  
@@ -828,13 +828,13 @@ Dependency/tooling knowledge change:
 
 **Root cause:** repository code modeled public IPv4 attachment/enablement and TLS enablement as one atomic database PATCH. Current Timeweb documentation requires public-IP connectivity before TLS enablement, and the generated `UpdateClusterV2` schema exposes both groups as optional fields suitable for separate partial updates. The live HTTP 400 proves the combined-transition assumption is not accepted for the current provider state. The exact provider validation message remains intentionally unknown because raw error bodies are not read or logged.
 
-**Blast radius searched:** the database v2 mutation model, public IPv4 custody/receipt prerequisite, firewall-first ordering, public-IP binding reconciliation, secure-connection readiness, TLS certificate/domain wait, rollback, operation-specific diagnostics, contract guard and transport tests. No evidence points to the OWNER input, verifier CIDR, GitHub Environment policy or allocation receipt as the failing boundary.
+**Blast radius searched:** the database v2 mutation model, public IPv4 custody/receipt prerequisite, firewall-first ordering, public-IP binding reconciliation, secure-connection readiness, TLS certificate/domain wait, rollback, operation-specific diagnostics, contract guard and transport tests. The producer/consumer review also found an adjacent authority race: after a valid `ALLOCATED` receipt, the transport still called the legacy generic custody resolver whose `None -> create_once` path could purchase a second IPv4 if the accepted address disappeared between prerequisite GET and transport GET. No evidence points to the OWNER input, verifier CIDR or GitHub Environment policy as the failing boundary.
 
 **Why preflight missed it:** unit coverage asserted the exact combined request body rather than independently modeling provider prerequisite states. The source guard therefore froze the same false atomic-transition assumption instead of testing the documented ordering between public IPv4 and TLS.
 
-**Corrective change:** split first-time public IPv4 attachment from TLS enablement. After the public IPv4 PATCH, GET-reconcile cluster state and exact managed-IP binding, re-prove the DROP TCP/5432 verifier-only firewall/resource scope, then issue a TLS-only PATCH and wait for secure connection plus issued technical domain. Re-prove firewall/binding/TLS before success.
+**Corrective change:** split first-time public IPv4 attachment from TLS enablement. After the public IPv4 PATCH, GET-reconcile cluster state and exact managed-IP binding, re-prove the DROP TCP/5432 verifier-only firewall/resource scope, then issue a TLS-only PATCH and wait for secure connection plus issued technical domain. Re-prove firewall/binding/TLS before success. In the same defect-class repair, remove floating-IP create/stamp/delete authority from the transport path entirely: after the allocation receipt, missing or drifting IPv4 state is terminal `TIMEWEB_ALLOCATED_IPV4_MISSING` / `TIMEWEB_ALLOCATED_IPV4_DRIFT`, never a new purchase opportunity.
 
-**Permanent regression/guard:** tests require the public IPv4 PATCH to exclude `is_secure_connection_enable`, require the TLS PATCH to contain only the secure-connection field, and prove TLS failure triggers public-network rollback. The AST machine guard requires public IPv4 mutation -> scope reconciliation -> TLS mutation -> final scope verification and rejects any reintroduction of the combined transition.
+**Permanent regression/guard:** tests require the public IPv4 PATCH to exclude `is_secure_connection_enable`, require the TLS PATCH to contain only the secure-connection field, prove TLS failure triggers public-network rollback, and prove missing/two-read-drifting allocated IPv4 state stops without write authority. The AST machine guard requires public IPv4 mutation -> scope reconciliation -> TLS mutation -> final scope verification, rejects any reintroduction of the combined transition and forbids current transport calls to create/stamp/delete or `custody.resolve`.
 
 **Future prevention rule:** when provider documentation expresses one operation as a prerequisite for another, model them as separate observable state transitions unless live provider evidence proves the combined transition is supported. A shared endpoint does not imply atomic multi-state authority.
 
