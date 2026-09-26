@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { appRouteFeatureByPath } from "../src/app-shell/contracts.ts";
+
 const dashboard = readFileSync(new URL("../src/app-shell/portfolio-dashboard.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
 const contracts = readFileSync(new URL("../src/app-shell/contracts.ts", import.meta.url), "utf8");
 
 test("WP18 replaces Portfolio and Assets placeholders inside the accepted shell", () => {
-  assert.match(shell, /path === ["']\/portfolio["']/);
-  assert.match(shell, /path === ["']\/assets["']/);
+  assert.equal(appRouteFeatureByPath["/portfolio"], "portfolio-dashboard");
+  assert.equal(appRouteFeatureByPath["/assets"], "portfolio-assets");
   assert.match(shell, /PortfolioDashboardPage/);
   assert.match(dashboard, /Current-on-demand READ snapshot/);
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { appRoutes, isKnownRoute, isPublicRoute, publicRoutes } from "../src/app-shell/contracts.ts";
+import { appRouteFeatureByPath, appRoutes, isKnownRoute, isPublicRoute, publicRoutes } from "../src/app-shell/contracts.ts";
 
 const expectedRoutes = [
   "/",
@@ -30,6 +30,7 @@ const forbiddenHumanSessionBypasses = [
 
 test("WP17 exposes the exact Master Plan navigation routes", () => {
   assert.deepEqual(appRoutes.map((route) => route.path), expectedRoutes);
+  assert.deepEqual(Object.keys(appRouteFeatureByPath), expectedRoutes);
   for (const path of expectedRoutes) assert.equal(isKnownRoute(path), true);
   assert.equal(isKnownRoute("/private-other-tenant"), false);
 });
@@ -88,7 +89,8 @@ test("synthetic hosted mode remains a non-authority warning only", () => {
 test("logout UI never claims revocation when the server request fails", () => {
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(shell, /logoutCurrentSession\(\)\.finally/);
-  assert.match(shell, /logoutCurrentSession\(\)[\s\S]*\.then\(\(\) =>/);
+  assert.match(shell, /logoutCurrentSession\(\)[\s\S]*\.then\(authentication\.markSessionClosed\)/);
+  assert.match(shell, /\.catch\(authentication\.markSessionUnavailable\)/);
   assert.match(shell, /Выход не подтверждён сервером\. Текущая сессия остаётся активной/);
 });
 

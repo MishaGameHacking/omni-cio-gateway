@@ -20,6 +20,36 @@ export const publicRoutes = [
 export type AppRoutePath = (typeof appRoutes)[number]["path"];
 export type PublicRoutePath = (typeof publicRoutes)[number]["path"];
 export type ShellRoutePath = AppRoutePath | PublicRoutePath;
+
+export type AppRouteFeature =
+  | "generic"
+  | "portfolio-dashboard"
+  | "portfolio-assets"
+  | "watchtower-incidents"
+  | "research-dossiers"
+  | "decision-risks"
+  | "decision-decisions"
+  | "decision-plans"
+  | "system-admin";
+
+export const appRouteFeatureByPath = {
+  "/": "generic",
+  "/portfolio": "portfolio-dashboard",
+  "/assets": "portfolio-assets",
+  "/watchtower": "watchtower-incidents",
+  "/research": "research-dossiers",
+  "/risks": "decision-risks",
+  "/decisions": "decision-decisions",
+  "/plans": "decision-plans",
+  "/execution": "generic",
+  "/journal": "generic",
+  "/system": "system-admin",
+  "/settings": "generic",
+} as const satisfies Record<AppRoutePath, AppRouteFeature>;
+
+export function featureForAppRoute(path: AppRoutePath): AppRouteFeature {
+  return appRouteFeatureByPath[path];
+}
 export type IdentityProvider = "telegram";
 
 export interface WebSessionView {

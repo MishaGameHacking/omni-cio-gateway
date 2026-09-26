@@ -11,6 +11,7 @@ import {
 } from "./api";
 import {
   appRoutes,
+  featureForAppRoute,
   isKnownRoute,
   isPublicRoute,
   type AppRoutePath,
@@ -275,22 +276,22 @@ function ActiveRoutePage({
   freshness: string;
   onSessionsRevoked: () => void;
 }>) {
-  switch (path) {
-    case "/portfolio":
+  switch (featureForAppRoute(path)) {
+    case "portfolio-dashboard":
       return <PortfolioDashboardPage assetsMode={false} />;
-    case "/assets":
+    case "portfolio-assets":
       return <PortfolioDashboardPage assetsMode />;
-    case "/watchtower":
+    case "watchtower-incidents":
       return <WatchtowerIncidentsPage />;
-    case "/research":
+    case "research-dossiers":
       return <ResearchDossiersPage />;
-    case "/risks":
+    case "decision-risks":
       return <DecisionPlanPage focus="risks" />;
-    case "/decisions":
+    case "decision-decisions":
       return <DecisionPlanPage focus="decisions" />;
-    case "/plans":
+    case "decision-plans":
       return <DecisionPlanPage focus="plans" />;
-    case "/system":
+    case "system-admin":
       return <SystemAdminPage healthState={healthState} freshness={freshness} />;
     default:
       return (
