@@ -129,7 +129,7 @@ def _prepare_connection_dsns(
 ) -> tuple[str, str]:
     try:
         ca_path = timeweb_postgres_tls.install_timeweb_postgres_ca()
-        timeweb_postgres_tls.probe_timeweb_postgres_transport(
+        verified_address = timeweb_postgres_tls.probe_timeweb_postgres_transport(
             bootstrap_dsn,
             ca_path,
         )
@@ -137,10 +137,12 @@ def _prepare_connection_dsns(
             timeweb_postgres_tls.resolve_timeweb_postgres_dsn(
                 bootstrap_dsn,
                 ca_path,
+                hostaddr=verified_address,
             ),
             timeweb_postgres_tls.resolve_timeweb_postgres_dsn(
                 runtime_dsn,
                 ca_path,
+                hostaddr=verified_address,
             ),
         )
     except timeweb_postgres_tls.TimewebPostgresTlsError as exc:

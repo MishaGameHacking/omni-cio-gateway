@@ -297,7 +297,7 @@ def test_transport_probe_proves_public_tcp_sslrequest_and_verify_full(
         assert timeout == 15.0
         return raw_socket
 
-    tls.probe_timeweb_postgres_transport(
+    verified_address = tls.probe_timeweb_postgres_transport(
         VALID_DSN,
         ca_path,
         resolver=_public_resolver,
@@ -306,12 +306,58 @@ def test_transport_probe_proves_public_tcp_sslrequest_and_verify_full(
         delays=(),
     )
 
+    assert verified_address == "8.8.8.8"
     assert raw_socket.sent == tls._POSTGRES_SSL_REQUEST
     assert context.server_names == ["db.twc1.net"]
     output = capsys.readouterr().out
     assert "TIMEWEB_PG_TLS_TRANSPORT=READY" in output
     assert "db.twc1.net" not in output
     assert "8.8.8.8" not in output
+
+
+def test_transport_probe_rejects_ambient_libpq_target_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ca_path = tmp_path / "root.crt"
+    ca_path.write_bytes(b"provider-ca")
+    monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
+    monkeypatch.setenv("PGHOSTADDR", "10.0.0.10")
+
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_AMBIENT_LIBPQ_ENV_FORBIDDEN",
+    ):
+        tls.probe_timeweb_postgres_transport(
+            VALID_DSN,
+            ca_path,
+            resolver=_public_resolver,
+            connector=lambda *_args, **_kwargs: pytest.fail(
+                "TCP must not run with ambient target override"
+            ),
+            context_factory=lambda _path: _ProbeContext(),
+            delays=(),
+        )
+
+
+def test_resolve_binds_authenticated_connect_to_verified_address(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ca_path = tmp_path / "root.crt"
+    ca_path.write_bytes(b"provider-ca")
+    monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
+
+    resolved = tls.resolve_timeweb_postgres_dsn(
+        VALID_DSN,
+        ca_path,
+        hostaddr="8.8.8.8",
+    )
+
+    params = conninfo_to_dict(resolved)
+    assert params["host"] == "db.twc1.net"
+    assert params["hostaddr"] == "8.8.8.8"
+    assert params["sslmode"] == "verify-full"
 
 
 def test_transport_probe_rejects_private_only_resolution_before_tcp(

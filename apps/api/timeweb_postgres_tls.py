@@ -71,6 +71,48 @@ _ALLOWED_EXTERNAL_DSN_PARAMETERS = frozenset(
         "user",
     }
 )
+_FORBIDDEN_LIBPQ_ENVIRONMENT = frozenset(
+    {
+        "PGAPPNAME",
+        "PGCHANNELBINDING",
+        "PGCLIENTENCODING",
+        "PGCONNECT_TIMEOUT",
+        "PGDATABASE",
+        "PGGSSDELEGATION",
+        "PGGSSENCMODE",
+        "PGGSSLIB",
+        "PGHOST",
+        "PGHOSTADDR",
+        "PGKRBSRVNAME",
+        "PGLOADBALANCEHOSTS",
+        "PGMAXPROTOCOLVERSION",
+        "PGMINPROTOCOLVERSION",
+        "PGOPTIONS",
+        "PGPASSFILE",
+        "PGPASSWORD",
+        "PGPORT",
+        "PGREQUIREAUTH",
+        "PGREQUIREPEER",
+        "PGREQUIRESSL",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+        "PGSSLCERT",
+        "PGSSLCERTMODE",
+        "PGSSLCOMPRESSION",
+        "PGSSLCRL",
+        "PGSSLCRLDIR",
+        "PGSSLKEY",
+        "PGSSLMAXPROTOCOLVERSION",
+        "PGSSLMINPROTOCOLVERSION",
+        "PGSSLMODE",
+        "PGSSLNEGOTIATION",
+        "PGSSLROOTCERT",
+        "PGSSLSNI",
+        "PGSYSCONFDIR",
+        "PGTARGETSESSIONATTRS",
+        "PGUSER",
+    }
+)
 _RETIRED_HOST_MARKERS = ("neon.tech", "cloudflare", "render.com", "cloud.ru")
 _POSTGRES_SSL_REQUEST = struct.pack("!II", 8, 80877103)
 Sleep = Callable[[float], None]
@@ -98,6 +140,15 @@ class _NoRedirectHandler(HTTPRedirectHandler):
 
 def _emit(message: str) -> None:
     print(message, flush=True)
+
+
+def _reject_ambient_libpq_environment(
+    env: Any = os.environ,
+) -> None:
+    if any(name in env for name in _FORBIDDEN_LIBPQ_ENVIRONMENT):
+        raise TimewebPostgresTlsError(
+            "TIMEWEB_PG_TLS_AMBIENT_LIBPQ_ENV_FORBIDDEN"
+        )
 
 
 def _connection_params(dsn: str) -> dict[str, str]:
@@ -357,7 +408,7 @@ def _probe_transport_once(
     *,
     resolver: Any,
     connector: Any,
-) -> None:
+) -> str:
     addresses = _resolve_public_addresses(hostname, resolver=resolver)
     last_transient: TimewebPostgresTlsError | None = None
     for address in addresses:
@@ -368,7 +419,7 @@ def _probe_transport_once(
                 context,
                 connector=connector,
             )
-            return
+            return address
         except TimewebPostgresTlsError as exc:
             if exc.code not in _TRANSIENT_TRANSPORT_CODES:
                 raise
@@ -387,7 +438,8 @@ def probe_timeweb_postgres_transport(
     context_factory: Any = _tls_client_context,
     sleeper: Sleep = time.sleep,
     delays: tuple[float, ...] = _TRANSPORT_RETRY_DELAYS_SECONDS,
-) -> None:
+) -> str:
+    _reject_ambient_libpq_environment()
     params = _connection_params(dsn)
     try:
         if ca_path.is_symlink() or not ca_path.is_file():
@@ -403,7 +455,7 @@ def probe_timeweb_postgres_transport(
     attempts = len(delays) + 1
     for attempt in range(attempts):
         try:
-            _probe_transport_once(
+            verified_address = _probe_transport_once(
                 hostname,
                 context,
                 resolver=resolver,
@@ -413,7 +465,7 @@ def probe_timeweb_postgres_transport(
                 "TIMEWEB_PG_TLS_TRANSPORT=READY "
                 "dns=public tcp=5432 tls=verify-full"
             )
-            return
+            return verified_address
         except TimewebPostgresTlsError as exc:
             if exc.code not in _TRANSIENT_TRANSPORT_CODES or attempt + 1 >= attempts:
                 raise
@@ -425,14 +477,30 @@ def probe_timeweb_postgres_transport(
     raise AssertionError("bounded Timeweb PostgreSQL transport retry exhausted")
 
 
-def resolve_timeweb_postgres_dsn(dsn: str, ca_path: Path) -> str:
+def resolve_timeweb_postgres_dsn(
+    dsn: str,
+    ca_path: Path,
+    *,
+    hostaddr: str | None = None,
+) -> str:
     _connection_params(dsn)
     try:
         if ca_path.is_symlink() or not ca_path.is_file():
             raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
         _validate_ca(ca_path.read_bytes())
         absolute_ca = ca_path.resolve(strict=True)
-        return make_conninfo(dsn, sslrootcert=str(absolute_ca))
+        if hostaddr is None:
+            return make_conninfo(dsn, sslrootcert=str(absolute_ca))
+        address = ipaddress.ip_address(hostaddr)
+        if not address.is_global:
+            raise TimewebPostgresTlsError(
+                "TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID"
+            )
+        return make_conninfo(
+            dsn,
+            sslrootcert=str(absolute_ca),
+            hostaddr=address.compressed,
+        )
     except TimewebPostgresTlsError:
         raise
     except (OSError, psycopg.Error):
@@ -519,6 +587,7 @@ def connect_prepared_timeweb_postgres(
     connector: Any = psycopg.connect,
     autocommit: bool | None = None,
 ) -> Any:
+    _reject_ambient_libpq_environment()
     if _FAILURE_PREFIX_RE.fullmatch(failure_prefix) is None:
         raise TimewebPostgresTlsError("TIMEWEB_PG_CONNECT_FAILURE_PREFIX_INVALID")
     if connect_timeout <= 0:
@@ -569,7 +638,7 @@ def prepare_timeweb_postgres_tls(
         sleeper=sleeper,
         delays=delays,
     )
-    probe_timeweb_postgres_transport(
+    verified_address = probe_timeweb_postgres_transport(
         dsn,
         ca_path,
         resolver=resolver,
@@ -578,4 +647,8 @@ def prepare_timeweb_postgres_tls(
         sleeper=sleeper,
         delays=transport_delays,
     )
-    return resolve_timeweb_postgres_dsn(dsn, ca_path)
+    return resolve_timeweb_postgres_dsn(
+        dsn,
+        ca_path,
+        hostaddr=verified_address,
+    )

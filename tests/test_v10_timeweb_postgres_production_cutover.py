@@ -67,6 +67,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             mock.patch.object(
                 cutover.timeweb_postgres_tls,
                 "probe_timeweb_postgres_transport",
+                return_value="8.8.8.8",
             ) as probe,
             mock.patch.object(
                 cutover.timeweb_postgres_tls,
@@ -84,8 +85,16 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         self.assertEqual(
             resolve.call_args_list,
             [
-                mock.call("bootstrap-dsn", ca_path),
-                mock.call("runtime-dsn", ca_path),
+                mock.call(
+                    "bootstrap-dsn",
+                    ca_path,
+                    hostaddr="8.8.8.8",
+                ),
+                mock.call(
+                    "runtime-dsn",
+                    ca_path,
+                    hostaddr="8.8.8.8",
+                ),
             ],
         )
 

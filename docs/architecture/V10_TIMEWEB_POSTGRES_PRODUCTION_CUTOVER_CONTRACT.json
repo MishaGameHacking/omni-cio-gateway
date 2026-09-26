@@ -58,7 +58,10 @@
       "user"
     ],
     "explicit_password_required": true,
-    "ambient_libpq_target_or_credential_override_allowed": false
+    "ambient_libpq_target_or_credential_override_allowed": false,
+    "ambient_libpq_connection_environment_allowed": false,
+    "verified_hostaddr_binding_required": true,
+    "second_dns_lookup_for_authenticated_connection_allowed": false
   },
   "connection_retry": {
     "bounded": true,
