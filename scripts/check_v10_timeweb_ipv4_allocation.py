@@ -382,21 +382,26 @@ def _validate_provider_identity_contract(
     tree: ast.Module,
     classes: dict[str, ast.ClassDef],
 ) -> None:
-    _require("ProviderStopped" in classes)
-    provider_stopped = classes["ProviderStopped"]
-    _require(len(provider_stopped.bases) == 1)
-    _require(ast.unparse(provider_stopped.bases[0]) == "allocation.AllocationStopped")
+    provider_stopped = classes.get("ProviderStopped")
+    if provider_stopped is None or len(provider_stopped.bases) != 1:
+        raise ValueError(_ERROR)
+    provider_base = provider_stopped.bases[0]
+    _require(ast.unparse(provider_base) == "allocation.AllocationStopped")
 
     functions = {
         node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
     }
-    _require({"_select_project", "_cluster", "_cluster_identity"} <= functions.keys())
-    project_literals = _string_literals(functions["_select_project"])
-    identity_literals = _string_literals(functions["_cluster_identity"])
+    select_project = functions.get("_select_project")
+    cluster = functions.get("_cluster")
+    cluster_identity = functions.get("_cluster_identity")
+    if select_project is None or cluster is None or cluster_identity is None:
+        raise ValueError(_ERROR)
+    project_literals = _string_literals(select_project)
+    identity_literals = _string_literals(cluster_identity)
     _require("account_id" in project_literals)
     _require("account_id" not in identity_literals)
     _require("project_id" in identity_literals)
-    _require("_cluster_identity" in _call_names(functions["_cluster"]))
+    _require("_cluster_identity" in _call_names(cluster))
 
 
 def _validate_provider() -> None:
