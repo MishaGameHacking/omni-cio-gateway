@@ -41,7 +41,7 @@ _OPERATION_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$", re.ASCII)
 _HOST_RE = re.compile(
     r"^(?=.{1,253}\.?$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\.?$"
 )
-_RECONCILE_DELAYS_SECONDS = (1.0, 2.0, 4.0)
+_RECONCILE_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
 _RECONCILABLE_MUTATION_HTTP_STATUSES = frozenset({409, 423})
 _PUBLIC_IPV4_STATE_DELAYS_SECONDS = (2.0, 3.0, 5.0, 8.0, 15.0, 20.0, 30.0)
 _TLS_STATE_DELAYS_SECONDS = (
@@ -358,6 +358,9 @@ def _verify_group(api: read_only.TimewebReadOnlyApi, group_id: str) -> None:
 def _ensure_group(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
 ) -> str:
     existing = _group_id_by_name(api)
     if existing is not None:
@@ -390,11 +393,12 @@ def _ensure_group(
             "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
         )
     if created is None:
-        for delay in _RECONCILE_DELAYS_SECONDS:
+        for attempt in range(len(delays) + 1):
             created = _group_id_by_name(api)
             if created is not None:
                 break
-            time.sleep(delay)
+            if attempt < len(delays):
+                sleeper(delays[attempt])
     if created is None:
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_FIREWALL_GROUP_CREATE_RECONCILIATION_REQUIRED"
@@ -422,11 +426,34 @@ def _rules(
     return _rows(api, f"/api/v1/firewall/groups/{group_id}/rules", "rules")
 
 
+def _rule_shape(rule: dict[str, Any]) -> dict[str, object]:
+    return {
+        key: rule.get(key)
+        for key in ("description", "direction", "port", "protocol", "cidr")
+    }
+
+
+def _verify_exact_rule(
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    cidr: str,
+) -> None:
+    expected = _rule_body(cidr)
+    rules = _rules(api, group_id)
+    if len(rules) != 1:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULE_DRIFT")
+    if _rule_shape(rules[0]) != expected:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULE_DRIFT")
+
+
 def _ensure_rule(
     mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
     group_id: str,
     cidr: str,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
 ) -> None:
     expected = _rule_body(cidr)
     rules = _rules(api, group_id)
@@ -445,11 +472,7 @@ def _ensure_rule(
         except AmbiguousMutation:
             pass
     else:
-        rule = rules[0]
-        comparable = {
-            key: rule.get(key)
-            for key in ("description", "direction", "port", "protocol", "cidr")
-        }
+        comparable = _rule_shape(rules[0])
         if comparable != expected:
             non_cidr = dict(comparable)
             expected_non_cidr = dict(expected)
@@ -459,7 +482,10 @@ def _ensure_rule(
                 raise _provider_base.ProvisioningStopped(
                     "TIMEWEB_FIREWALL_RULESET_WIDENED"
                 )
-            rule_id = _safe_id(rule.get("id"), "TIMEWEB_FIREWALL_RULE_ID_INVALID")
+            rule_id = _safe_id(
+                rules[0].get("id"),
+                "TIMEWEB_FIREWALL_RULE_ID_INVALID",
+            )
             try:
                 mutation.mutate_once(
                     "PATCH",
@@ -471,17 +497,30 @@ def _ensure_rule(
                 )
             except AmbiguousMutation:
                 pass
-    verified = _rules(api, group_id)
-    if len(verified) != 1:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_RULE_RECONCILIATION_FAILED"
-        )
-    comparable = {
-        key: verified[0].get(key)
-        for key in ("description", "direction", "port", "protocol", "cidr")
-    }
-    if comparable != expected:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULE_DRIFT")
+
+    for attempt in range(len(delays) + 1):
+        verified = _rules(api, group_id)
+        if len(verified) > 1:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_FIREWALL_RULESET_WIDENED"
+            )
+        if len(verified) == 1:
+            comparable = _rule_shape(verified[0])
+            if comparable == expected:
+                return
+            non_cidr = dict(comparable)
+            expected_non_cidr = dict(expected)
+            non_cidr.pop("cidr", None)
+            expected_non_cidr.pop("cidr", None)
+            if non_cidr != expected_non_cidr:
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_FIREWALL_RULESET_WIDENED"
+                )
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_FIREWALL_RULE_RECONCILIATION_FAILED"
+    )
 
 
 def _resources(
@@ -547,6 +586,9 @@ def _ensure_resource_link(
     api: read_only.TimewebReadOnlyApi,
     group_id: str,
     cluster_id: int,
+    *,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
 ) -> None:
     resources = _resources(api, group_id)
     if resources and not (
@@ -570,11 +612,20 @@ def _ensure_resource_link(
             )
         except AmbiguousMutation:
             pass
-    verified = _resources(api, group_id)
-    if len(verified) != 1 or not _resource_matches(verified[0], cluster_id):
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_RESOURCE_LINK_FAILED"
-        )
+
+    for attempt in range(len(delays) + 1):
+        verified = _resources(api, group_id)
+        if len(verified) == 1 and _resource_matches(verified[0], cluster_id):
+            return
+        if verified:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_FIREWALL_RESOURCE_SCOPE_WIDENED"
+            )
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_FIREWALL_RESOURCE_LINK_FAILED"
+    )
 
 
 def _verify_safe_narrow_rule(
@@ -1123,7 +1174,6 @@ def _rollback_failed_transport(
 
 
 def _verify_transport_scope(
-    mutation: TimewebMutationApi,
     api: read_only.TimewebReadOnlyApi,
     group_id: str,
     cluster_id: int,
@@ -1131,8 +1181,8 @@ def _verify_transport_scope(
     address: str,
 ) -> None:
     _verify_group(api, group_id)
-    _ensure_rule(mutation, api, group_id, cidr)
-    _ensure_resource_link(mutation, api, group_id, cluster_id)
+    _verify_exact_rule(api, group_id, cidr)
+    _verify_resource_link(api, group_id, cluster_id)
     _verify_exclusive_firewall(api, group_id, cluster_id)
     _verify_bound_ipv4(api, cluster_id, address)
 
@@ -1169,7 +1219,6 @@ def _configure_transport(
                     address,
                 )
             _verify_transport_scope(
-                mutation,
                 api,
                 group_id,
                 cluster_id,
@@ -1184,7 +1233,6 @@ def _configure_transport(
                 cluster = _enable_secure_connection(mutation, api, cluster_id)
 
         _verify_transport_scope(
-            mutation,
             api,
             group_id,
             cluster_id,
