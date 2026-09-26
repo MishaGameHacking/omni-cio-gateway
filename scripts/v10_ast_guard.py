@@ -9,7 +9,7 @@ def call_lines(
     owner: str | None,
     name: str,
 ) -> tuple[int, ...]:
-    """Return source lines for exact direct or one-owner method calls."""
+    """Return exact direct or one-owner call lines in lexical source order."""
     lines: list[int] = []
     for node in ast.walk(function):
         if not isinstance(node, ast.Call):
@@ -25,4 +25,4 @@ def call_lines(
             and node.func.attr == name
         ):
             lines.append(node.lineno)
-    return tuple(lines)
+    return tuple(sorted(lines))
