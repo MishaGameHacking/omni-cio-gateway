@@ -382,7 +382,7 @@ export function ApplicationShell() {
   if (authentication.session === null) {
     return (
       <main className="shell-loading" role="main">
-        <span role="status">Проверка server-side session…</span>
+        <output>Проверка server-side session…</output>
       </main>
     );
   }

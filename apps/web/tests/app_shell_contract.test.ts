@@ -97,9 +97,10 @@ test("logout UI never claims revocation when the server request fails", () => {
 test("status notices use native output semantics without role emulation", () => {
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../src/app-shell/app-shell.css", import.meta.url), "utf8");
-  assert.doesNotMatch(shell, /<div className="shell-degraded" role="status">/);
+  assert.doesNotMatch(shell, /role="status"/);
   assert.match(shell, /<output className="shell-degraded">[\s\S]*SYNTHETIC PREVIEW/);
   assert.match(shell, /<output className="shell-degraded">[\s\S]*Downstream API недоступен/);
+  assert.match(shell, /<output>Проверка server-side session…<\/output>/);
   assert.match(css, /\.shell-degraded,\.login-warning\{display:block;/);
 });
 
