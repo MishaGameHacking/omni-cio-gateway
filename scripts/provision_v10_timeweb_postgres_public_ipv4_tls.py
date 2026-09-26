@@ -635,10 +635,6 @@ def _bound_ip_for_cluster(
     return next(row for row in rows if row["id"] == matches[0].identifier)
 
 
-def _is_unbound(row: dict[str, Any]) -> bool:
-    return custody.is_unbound(row)
-
-
 def _issued_domain(cluster: dict[str, Any]) -> str | None:
     domains = _provider_base._json_list(
         cluster.get("domains"),
