@@ -1,8 +1,8 @@
 # Вклад в Omni-CIO
 
-Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается в PR #584.
+Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается повторно в current `main` и не обходит принятую PR #584 convergence.
 
-OWNER-approved convergence выполняется внутри той же ветки #584. P1 закрыт через `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` и branch-local `CERTIFIED_GREEN` на exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; P2 exact-SHA Timeweb App candidate branch-local `CERTIFIED_GREEN` на `ba43fa4be350340557fcf6d8532b6c089022a8ca`. Exact branch-local checkpoint/certification state здесь намеренно не дублируется: читай `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` и PR #584 exact-head Actions. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
+OWNER-approved convergence из PR #584 уже принята на protected `main`; historical internal checkpoint evidence остаётся provenance, а mutable current state читается только из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Current main после PR #587 — `7a87509258552db4b9ee0c2e762597e561a42fb6`; live Public IPv4/TLS #5 находится в RED и ремонтируется отдельным focused change без повторного provider rerun до принятия source repair. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -31,7 +31,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - accepted progress: **54%**;
 - WP0–WP22A remain COMPLETE;
 - current next package: **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
-- exact branch-local P1–P6 checkpoint/certification state is intentionally not duplicated here; read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions, while external DNS/domain mutation remains independently gated;
+- historical PR #584 P1–P6 checkpoint evidence is not duplicated here; read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for current accepted main/live gate state, while external provider/DB/DNS/Telegram mutation remains independently gated;
 - target active services: ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
 - Timeweb is the only selected V10 production infrastructure target;
 - Telegram is the only selected human login provider;
@@ -39,7 +39,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - WEB-VISUAL and WP23+ remain paused during consolidation;
 - public multi-user remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
 - broker-write and Real-money remain disabled;
-- V9C-A→V9C-F convergence runs inside PR #584; merging PR #584 to `main` still requires a new explicit OWNER instruction.
+- V9C-A→V9C-F convergence from PR #584 is already accepted on `main`; no stale PR584 landing rule may be used as current authority.
 
 Exact dynamic state still comes only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
