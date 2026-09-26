@@ -306,6 +306,27 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_hosted_runtime_direct_unprepared_connector(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / "apps/api/hosted_runtime.py"
+            source = path.read_text(encoding="utf-8")
+            marker = "raw_connection = connect_prepared_timeweb_postgres("
+            self.assertIn(marker, source)
+            mutated = source.replace(
+                marker,
+                "raw_connection = connect_postgres(",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_rejects_synthetic_fixture_promotion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

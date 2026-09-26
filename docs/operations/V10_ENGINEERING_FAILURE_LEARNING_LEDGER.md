@@ -980,3 +980,25 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** a live-connectivity fix is incomplete until it proves the first connection, reconnect/failover path, and every textual machine guard that protects that path. Negative source-mutation tests must assert that the intended mutation occurred. Test fixtures must pass the real secret scanner without exclusions, and connector-authored Python must be projected through the pinned formatter before an exact head is called certifiable.
 
 **Dependency/tooling knowledge change:** Timeweb documents PostgreSQL HA through Patroni/Etcd with automatic leader failover; runtime reconnect logic must therefore follow the verified provider hostname on each new connection instead of treating one process-start backend address as permanent.
+
+
+---
+
+## FL-042 — File-wide security markers cannot substitute for function-scoped runtime authority guards
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 predecessor head `3cc1e56ae72758e6ac9c428f3228b99bad90daf0`
+
+**Symptom / finding:** exact-head repair work corrected the observed formatter and focused regression failures, but the blast-radius review found an adjacent guard weakness before production replay. The hosted-runtime machine guard required security-sensitive call names only as file-wide substrings. An import could therefore keep a marker present even if `_open_runtime_database` stopped calling the prepared Timeweb connector or moved CA acquisition into every reconnect.
+
+**Root cause:** the guard froze vocabulary rather than call ownership. That was sufficient while hosted PostgreSQL setup was one-shot, but the reconnect/failover refactor introduced a lifecycle distinction: `create_app` must materialize the public CA once, while every `_open_runtime_database` call must re-prove the Timeweb target and then use only the prepared connector.
+
+**Blast radius searched:** hosted-runtime startup, pool replacement connections, CA custody, transport re-probe, prepared DSN enforcement, runtime database verification, P3 source guard, negative guard tests, and the downstream application-shell/Regression Shield consumers. No public-user, Telegram, tenant, broker-write or Real-money authority was widened.
+
+**Corrective change:** retain the exact source markers as drift evidence, and add AST function-call validation. `_open_runtime_database` must call target preparation, the prepared connector, long-lived connection configuration and runtime probing; it must not call the generic PostgreSQL connector, one-shot TLS wrapper or CA installer. `create_app` must call the CA installer and runtime opener, and must not perform target preparation or authenticated connection directly. A new negative regression replaces the prepared connector with the generic connector and proves the machine guard fails closed.
+
+**Permanent regression/guard:** hosted-runtime transport authority is now verified at both textual/dataflow-shape and function-call ownership levels. Negative source-mutation tests assert that their mutation actually changes the current source before expecting rejection.
+
+**Future prevention rule:** for security- or authority-bearing runtime paths, file-wide string presence may support a guard but cannot be its only proof. Freeze the owning function and forbidden bypass calls structurally, and update the negative mutation whenever the architecture changes.
+
+**Dependency/tooling knowledge change:** none.

@@ -374,20 +374,24 @@ def _validate_workflow_secret_scope(workflow: str) -> None:
         )
 
 
-def _direct_call_names(source: str, function_name: str) -> set[str]:
+def _function_call_names(
+    source: str,
+    function_name: str,
+    *,
+    syntax_code: str,
+    function_code: str,
+) -> set[str]:
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID"
-        ) from exc
+        raise CutoverContractError(syntax_code) from exc
     functions = [
         node
         for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name == function_name
     ]
     if len(functions) != 1:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID")
+        raise CutoverContractError(function_code)
     calls: set[str] = set()
     for node in ast.walk(functions[0]):
         if not isinstance(node, ast.Call):
@@ -397,6 +401,57 @@ def _direct_call_names(source: str, function_name: str) -> set[str]:
         elif isinstance(node.func, ast.Attribute):
             calls.add(node.func.attr)
     return calls
+
+
+def _direct_call_names(source: str, function_name: str) -> set[str]:
+    return _function_call_names(
+        source,
+        function_name,
+        syntax_code="TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID",
+        function_code="TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID",
+    )
+
+
+def _validate_hosted_runtime_tls_flow(source: str) -> None:
+    runtime_calls = _function_call_names(
+        source,
+        "_open_runtime_database",
+        syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
+        function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
+    )
+    required_runtime_calls = {
+        "prepare_timeweb_postgres_target",
+        "connect_prepared_timeweb_postgres",
+        "_configure_long_lived_web_connection",
+        "probe_hosted_runtime_database",
+    }
+    if not required_runtime_calls.issubset(runtime_calls):
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
+    forbidden_runtime_calls = {
+        "connect_postgres",
+        "prepare_timeweb_postgres_tls",
+        "install_timeweb_postgres_ca",
+    }
+    if runtime_calls & forbidden_runtime_calls:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
+
+    create_calls = _function_call_names(
+        source,
+        "create_app",
+        syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
+        function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
+    )
+    if not {"install_timeweb_postgres_ca", "_open_runtime_database"}.issubset(
+        create_calls
+    ):
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
+    forbidden_create_calls = {
+        "prepare_timeweb_postgres_target",
+        "connect_prepared_timeweb_postgres",
+        "prepare_timeweb_postgres_tls",
+    }
+    if create_calls & forbidden_create_calls:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
 
 
 def _validate_sources() -> None:
@@ -490,8 +545,9 @@ def _validate_sources() -> None:
         "TIMEWEB_PG_CUTOVER_TLS_RUNTIME_DRIFT",
     )
 
+    hosted_runtime = _text(HOSTED_RUNTIME)
     _markers(
-        _text(HOSTED_RUNTIME),
+        hosted_runtime,
         (
             "connect_prepared_timeweb_postgres",
             "install_timeweb_postgres_ca",
@@ -504,6 +560,7 @@ def _validate_sources() -> None:
         ),
         "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
     )
+    _validate_hosted_runtime_tls_flow(hosted_runtime)
 
     workflow = _text(WORKFLOW)
     _markers(
