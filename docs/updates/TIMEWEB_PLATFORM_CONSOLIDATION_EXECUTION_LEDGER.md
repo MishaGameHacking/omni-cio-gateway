@@ -310,17 +310,16 @@ long-line layout drifts; no assertion, security check or test is weakened.
 - Current update: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
 - Historical snapshot member milestone: TW-B / source and runtime consolidation
 - Historical snapshot checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
-- Current branch: `system/timeweb-platform-consolidation-tw-b`
+- Historical TW-B branch at this snapshot: `system/timeweb-platform-consolidation-tw-b`
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
 - State at this historical snapshot: `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT / IN_PROGRESS`; V9C-C was branch-local `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; DRAFT PR #584 remained open
 - Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
 - Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
-- Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
-- TW-C remains forbidden until TW-B is certified and accepted
+- Historical next-step text at this snapshot was to complete TW-B exact-head verification before TW-C. PR #584 was subsequently accepted on main; current live-cutover state is defined only in section 3 and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-### 2026-09-24 — TW-B pre-merge security/correctness audit
+### 2026-09-24 — TW-B pre-merge security/correctness audit (historical)
 
-The current TW-B branch remains unmerged and in RED repair. Exact-head verification exposed authenticated-cookie policy drift and Ruff formatting drift. Deeper producer/consumer review found adjacent risks corrected in the same coherent batch:
+At this historical checkpoint the TW-B branch remained unmerged and in RED repair. Exact-head verification exposed authenticated-cookie policy drift and Ruff formatting drift. Deeper producer/consumer review found adjacent risks corrected in the same coherent batch:
 
 - authenticated product session + CSRF cookies are `SameSite=Strict` in every session-minting route; the OIDC browser-proof cookie alone remains `SameSite=Lax`;
 - fixed provider callbacks reject a verified identity whose provider does not match the callback route;
