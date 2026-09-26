@@ -292,15 +292,14 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = root / "apps/api/hosted_runtime.py"
             source = path.read_text(encoding="utf-8")
-            path.write_text(
-                source.replace(
-                    "database_dsn = prepare_timeweb_postgres_tls("
-                    "_required_env(_DSN_ENV))",
-                    "database_dsn = _required_env(_DSN_ENV)",
-                    1,
-                ),
-                encoding="utf-8",
+            mutated = source.replace(
+                "prepared_dsn = prepare_timeweb_postgres_target("
+                "external_database_dsn, ca_path)",
+                "prepared_dsn = external_database_dsn",
+                1,
             )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
                 "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",

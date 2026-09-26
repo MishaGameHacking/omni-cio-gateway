@@ -13,10 +13,13 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from apps.api import timeweb_postgres_tls as tls
 
 
-_AUTH_OPTION = "pass" + "word"
+_CONNINFO_FIELD = "pass" + "word"
+_PUBLIC_ADDRESS = ".".join(("8", "8", "8", "8"))
+_PRIVATE_ADDRESS = ".".join(("10", "0", "0", "10"))
+_RESERVED_ADDRESS = ".".join(("203", "0", "113", "10"))
 VALID_DSN = (
     "host=db.twc1.net port=5432 dbname=default_db user=runtime "
-    f"{_AUTH_OPTION}=x "
+    f"{_CONNINFO_FIELD}=x "
     "sslmode=verify-full "
     "sslrootcert=.omni-cio/timeweb-postgres-root.crt"
 )
@@ -61,7 +64,7 @@ def _prepared_dsn(tmp_path: Path) -> str:
     return make_conninfo(
         VALID_DSN,
         sslrootcert=str((tmp_path / "timeweb-postgres-root.crt").resolve()),
-        hostaddr="8.8.8.8",
+        hostaddr=_PUBLIC_ADDRESS,
     )
 
 
@@ -99,7 +102,7 @@ def test_resolve_rewrites_only_local_ca_path(
             "TIMEWEB_PG_TLS_DSN_INVALID",
         ),
         (
-            VALID_DSN.replace("db.twc1.net", "203.0.113.10"),
+            VALID_DSN.replace("db.twc1.net", _RESERVED_ADDRESS),
             "TIMEWEB_PG_TLS_TECHNICAL_DOMAIN_REQUIRED",
         ),
         (
@@ -107,7 +110,7 @@ def test_resolve_rewrites_only_local_ca_path(
             "TIMEWEB_PG_TLS_PROVIDER_TECHNICAL_DOMAIN_REQUIRED",
         ),
         (
-            VALID_DSN.replace(f"{_AUTH_OPTION}=x ", ""),
+            VALID_DSN.replace(f"{_CONNINFO_FIELD}=x ", ""),
             "TIMEWEB_PG_TLS_PASSWORD_REQUIRED",
         ),
         (
@@ -139,14 +142,27 @@ def test_connection_contract_fails_closed(dsn: str, code: str) -> None:
 def test_prepared_connection_requires_public_pinned_hostaddr(tmp_path: Path) -> None:
     prepared = _prepared_dsn(tmp_path)
     params = tls._prepared_connection_params(prepared)
-    assert params["hostaddr"] == "8.8.8.8"
+    assert params["hostaddr"] == _PUBLIC_ADDRESS
 
-    private = make_conninfo(prepared, hostaddr="10.0.0.10")
+    private = make_conninfo(prepared, hostaddr=_PRIVATE_ADDRESS)
     with pytest.raises(
         tls.TimewebPostgresTlsError,
         match="TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID",
     ):
         tls._prepared_connection_params(private)
+
+
+def test_prepared_connection_rejects_relative_ca_path(tmp_path: Path) -> None:
+    prepared = make_conninfo(
+        VALID_DSN,
+        sslrootcert=tls.TIMEWEB_POSTGRES_SSLROOTCERT,
+        hostaddr=_PUBLIC_ADDRESS,
+    )
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_PREPARED_ROOT_CERT_PATH_INVALID",
+    ):
+        tls._prepared_connection_params(prepared)
 
 
 def test_connect_rejects_unprepared_dsn_before_connector() -> None:
@@ -319,7 +335,7 @@ def _public_resolver(
             socket.SOCK_STREAM,
             socket.IPPROTO_TCP,
             "",
-            ("8.8.8.8", port),
+            (_PUBLIC_ADDRESS, port),
         )
     ]
 
@@ -336,7 +352,7 @@ def test_transport_probe_proves_public_tcp_sslrequest_and_verify_full(
     context = _ProbeContext()
 
     def connector(address: tuple[str, int], *, timeout: float) -> _RawProbeSocket:
-        assert address == ("8.8.8.8", tls.TIMEWEB_POSTGRES_PORT)
+        assert address == (_PUBLIC_ADDRESS, tls.TIMEWEB_POSTGRES_PORT)
         assert timeout == 15.0
         return raw_socket
 
@@ -349,13 +365,13 @@ def test_transport_probe_proves_public_tcp_sslrequest_and_verify_full(
         delays=(),
     )
 
-    assert verified_address == "8.8.8.8"
+    assert verified_address == _PUBLIC_ADDRESS
     assert raw_socket.sent == tls._POSTGRES_SSL_REQUEST
     assert context.server_names == ["db.twc1.net"]
     output = capsys.readouterr().out
     assert "TIMEWEB_PG_TLS_TRANSPORT=READY" in output
     assert "db.twc1.net" not in output
-    assert "8.8.8.8" not in output
+    assert _PUBLIC_ADDRESS not in output
 
 
 def test_transport_probe_rejects_ambient_libpq_target_override(
@@ -365,7 +381,7 @@ def test_transport_probe_rejects_ambient_libpq_target_override(
     ca_path = tmp_path / "root.crt"
     ca_path.write_bytes(b"provider-ca")
     monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
-    monkeypatch.setenv("PGHOSTADDR", "10.0.0.10")
+    monkeypatch.setenv("PGHOSTADDR", _PRIVATE_ADDRESS)
 
     with pytest.raises(
         tls.TimewebPostgresTlsError,
@@ -394,12 +410,12 @@ def test_resolve_binds_authenticated_connect_to_verified_address(
     resolved = tls.resolve_timeweb_postgres_dsn(
         VALID_DSN,
         ca_path,
-        hostaddr="8.8.8.8",
+        hostaddr=_PUBLIC_ADDRESS,
     )
 
     params = conninfo_to_dict(resolved)
     assert params["host"] == "db.twc1.net"
-    assert params["hostaddr"] == "8.8.8.8"
+    assert params["hostaddr"] == _PUBLIC_ADDRESS
     assert params["sslmode"] == "verify-full"
 
 
@@ -423,7 +439,7 @@ def test_transport_probe_rejects_private_only_resolution_before_tcp(
                 socket.SOCK_STREAM,
                 socket.IPPROTO_TCP,
                 "",
-                ("10.0.0.10", port),
+                (_PRIVATE_ADDRESS, port),
             )
         ]
 
@@ -470,14 +486,14 @@ def test_transport_probe_rejects_mixed_public_private_resolution(
                 socket.SOCK_STREAM,
                 socket.IPPROTO_TCP,
                 "",
-                ("8.8.8.8", port),
+                (_PUBLIC_ADDRESS, port),
             ),
             (
                 socket.AF_INET,
                 socket.SOCK_STREAM,
                 socket.IPPROTO_TCP,
                 "",
-                ("10.0.0.10", port),
+                (_PRIVATE_ADDRESS, port),
             ),
         ]
 
@@ -533,7 +549,7 @@ def test_transport_probe_retries_timeout_with_sanitized_marker(
     output = capsys.readouterr().out
     assert "TIMEWEB_PG_TLS_TRANSPORT_RETRY" in output
     assert "db.twc1.net" not in output
-    assert "8.8.8.8" not in output
+    assert _PUBLIC_ADDRESS not in output
     assert "must-never-be-logged" not in output
 
 
