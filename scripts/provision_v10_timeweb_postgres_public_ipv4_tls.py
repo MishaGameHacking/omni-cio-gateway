@@ -1041,15 +1041,21 @@ def _probe_postgres_tls(
             raise _provider_base.ProvisioningStopped(
                 "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
             ) from None
-        except _provider_base.ProvisioningStopped:
-            raise
+        except _provider_base.ProvisioningStopped as exc:
+            if exc.code != "TIMEWEB_POSTGRES_TLS_REFUSED":
+                raise
+            if attempt >= len(delays):
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_POSTGRES_TLS_REFUSED_TIMEOUT"
+                ) from None
+            sleeper(delays[attempt])
         except OSError:
             if attempt >= len(delays):
                 raise _provider_base.ProvisioningStopped(
-                    "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
+                    "TIMEWEB_POSTGRES_TLS_TRANSPORT_TIMEOUT"
                 ) from None
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped("TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED")
+    raise AssertionError("bounded PostgreSQL TLS probe exhausted")
 
 
 def _verify_bound_ipv4(
