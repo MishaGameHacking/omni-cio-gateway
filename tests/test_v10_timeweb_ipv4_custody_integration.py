@@ -231,8 +231,7 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
         )
         changed = source.replace(
             "    return selected.ip_address\n",
-            "    _create_floating_ip(mutation, api)\n"
-            "    return selected.ip_address\n",
+            "    _create_floating_ip(mutation, api)\n    return selected.ip_address\n",
             1,
         )
         changed_tree = ast.parse(changed)
