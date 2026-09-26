@@ -76,6 +76,27 @@ def _headers(response: object) -> dict[str, str]:
         _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_HEADERS_INVALID")
 
 
+def _read_json_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, str] | None, bytes | None, str | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            if status in _TRANSIENT_HTTP_STATUSES:
+                return None, None, "TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_STATUS_INVALID"
+            if status != 200:
+                _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_STATUS_INVALID")
+            return _headers(response), response.read(MAX_RESPONSE_BYTES + 1), None
+    except HTTPError as exc:
+        status = int(exc.code)
+        if status in _TRANSIENT_HTTP_STATUSES:
+            return None, None, f"TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_ERROR:{status}"
+        _stop(f"TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_ERROR:{status}")
+    except OSError:
+        return None, None, "TIMEWEB_PRODUCTION_ACCEPTANCE_TRANSPORT_FAILED"
+
+
 def _read_json(path: str, *, opener: Any | None = None) -> object:
     allowed_paths = {"/livez", "/healthz", "/api/v10/web/auth/providers"}
     if path not in allowed_paths:
@@ -89,35 +110,17 @@ def _read_json(path: str, *, opener: Any | None = None) -> object:
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    headers: dict[str, str] = {}
-    raw = b""
+    headers: dict[str, str] | None = None
+    raw: bytes | None = None
     for attempt in range(len(_PUBLIC_PROBE_RETRY_DELAYS) + 1):
-        try:
-            with active.open(request, timeout=30.0) as response:
-                status = int(response.status)
-                if status != 200:
-                    if status in _TRANSIENT_HTTP_STATUSES and attempt < len(
-                        _PUBLIC_PROBE_RETRY_DELAYS
-                    ):
-                        time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
-                        continue
-                    _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_STATUS_INVALID")
-                headers = _headers(response)
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
-                break
-        except HTTPError as exc:
-            status = int(exc.code)
-            if status in _TRANSIENT_HTTP_STATUSES and attempt < len(
-                _PUBLIC_PROBE_RETRY_DELAYS
-            ):
-                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
-                continue
-            _stop(f"TIMEWEB_PRODUCTION_ACCEPTANCE_HTTP_ERROR:{status}")
-        except OSError:
-            if attempt < len(_PUBLIC_PROBE_RETRY_DELAYS):
-                time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
-                continue
-            _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_TRANSPORT_FAILED")
+        headers, raw, failure = _read_json_attempt(active, request)
+        if failure is None:
+            break
+        if attempt >= len(_PUBLIC_PROBE_RETRY_DELAYS):
+            _stop(failure)
+        time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
+    if headers is None or raw is None:
+        raise AssertionError("bounded public probe exhausted")
     if len(raw) > MAX_RESPONSE_BYTES:
         _stop("TIMEWEB_PRODUCTION_ACCEPTANCE_RESPONSE_TOO_LARGE")
     content_type = headers.get("content-type", "").partition(";")[0].strip().casefold()
