@@ -380,31 +380,41 @@ def _ensure_group(
         response = None
     created: str | None = None
     if response is not None:
-        obj = _provider_base._json_object(
-            response,
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
-        )
-        group = _provider_base._json_object(
-            obj.get("group"),
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
-        )
-        created = _safe_id(
-            group.get("id"),
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
-        )
-    if created is None:
-        for attempt in range(len(delays) + 1):
-            created = _group_id_by_name(api)
-            if created is not None:
-                break
-            if attempt < len(delays):
-                sleeper(delays[attempt])
-    if created is None:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_GROUP_CREATE_RECONCILIATION_REQUIRED"
-        )
-    _verify_group(api, created)
-    return created
+        try:
+            obj = _provider_base._json_object(
+                response,
+                "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
+            )
+            group = _provider_base._json_object(
+                obj.get("group"),
+                "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
+            )
+            created = _safe_id(
+                group.get("id"),
+                "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID",
+            )
+        except _provider_base.ProvisioningStopped as exc:
+            if exc.code != "TIMEWEB_FIREWALL_GROUP_CREATE_RESPONSE_INVALID":
+                raise
+
+    for attempt in range(len(delays) + 1):
+        try:
+            observed = _group_id_by_name(api)
+            if observed is not None:
+                if created is not None and observed != created:
+                    raise _provider_base.ProvisioningStopped(
+                        "TIMEWEB_FIREWALL_GROUP_CREATE_RECONCILIATION_DRIFT"
+                    )
+                _verify_group(api, observed)
+                return observed
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_post_mutation_visibility_failure(exc):
+                raise
+        if attempt < len(delays):
+            sleeper(delays[attempt])
+    raise _provider_base.ProvisioningStopped(
+        "TIMEWEB_FIREWALL_GROUP_CREATE_RECONCILIATION_REQUIRED"
+    )
 
 
 def _rule_body(cidr: str) -> dict[str, object]:
@@ -499,21 +509,28 @@ def _ensure_rule(
                 pass
 
     for attempt in range(len(delays) + 1):
-        verified = _rules(api, group_id)
-        if len(verified) > 1:
-            raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULESET_WIDENED")
-        if len(verified) == 1:
-            comparable = _rule_shape(verified[0])
-            if comparable == expected:
-                return
-            non_cidr = dict(comparable)
-            expected_non_cidr = dict(expected)
-            non_cidr.pop("cidr", None)
-            expected_non_cidr.pop("cidr", None)
-            if non_cidr != expected_non_cidr:
+        try:
+            verified = _rules(api, group_id)
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        else:
+            if len(verified) > 1:
                 raise _provider_base.ProvisioningStopped(
                     "TIMEWEB_FIREWALL_RULESET_WIDENED"
                 )
+            if len(verified) == 1:
+                comparable = _rule_shape(verified[0])
+                if comparable == expected:
+                    return
+                non_cidr = dict(comparable)
+                expected_non_cidr = dict(expected)
+                non_cidr.pop("cidr", None)
+                expected_non_cidr.pop("cidr", None)
+                if non_cidr != expected_non_cidr:
+                    raise _provider_base.ProvisioningStopped(
+                        "TIMEWEB_FIREWALL_RULESET_WIDENED"
+                    )
         if attempt < len(delays):
             sleeper(delays[attempt])
     raise _provider_base.ProvisioningStopped(
@@ -612,13 +629,18 @@ def _ensure_resource_link(
             pass
 
     for attempt in range(len(delays) + 1):
-        verified = _resources(api, group_id)
-        if len(verified) == 1 and _resource_matches(verified[0], cluster_id):
-            return
-        if verified:
-            raise _provider_base.ProvisioningStopped(
-                "TIMEWEB_FIREWALL_RESOURCE_SCOPE_WIDENED"
-            )
+        try:
+            verified = _resources(api, group_id)
+        except _provider_base.ProvisioningStopped as exc:
+            if not _is_transient_control_plane_failure(exc):
+                raise
+        else:
+            if len(verified) == 1 and _resource_matches(verified[0], cluster_id):
+                return
+            if verified:
+                raise _provider_base.ProvisioningStopped(
+                    "TIMEWEB_FIREWALL_RESOURCE_SCOPE_WIDENED"
+                )
         if attempt < len(delays):
             sleeper(delays[attempt])
     raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RESOURCE_LINK_FAILED")
@@ -703,6 +725,19 @@ def _bound_ip_for_cluster(
     return next(row for row in rows if row["id"] == matches[0].identifier)
 
 
+def _bound_ipv4_matches(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+    expected_address: str,
+) -> bool:
+    row = _bound_ip_for_cluster(_floating_ips(api), cluster_id)
+    if row is None:
+        return False
+    if _verify_floating_ip_row(row) != expected_address:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FLOATING_IP_BINDING_DRIFT")
+    return True
+
+
 def _issued_domain(cluster: dict[str, Any]) -> str | None:
     raw_domains = cluster.get("domains")
     if raw_domains is None:
@@ -753,6 +788,14 @@ def _is_transient_control_plane_failure(
     )
 
 
+def _is_post_mutation_visibility_failure(
+    exc: _provider_base.ProvisioningStopped,
+) -> bool:
+    return _is_transient_control_plane_failure(exc) or (
+        exc.code == "TIMEWEB_API_HTTP_ERROR" and exc.status == 404
+    )
+
+
 def _wait_cluster_read(
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
@@ -769,13 +812,15 @@ def _wait_public_ipv4_ready(
     delays: tuple[float, ...] = _PUBLIC_IPV4_STATE_DELAYS_SECONDS,
 ) -> dict[str, Any]:
     observed_state = False
+    binding_pending = False
     for attempt in range(len(delays) + 1):
         try:
             cluster = _wait_cluster_read(api, cluster_id)
             observed_state = True
             if _public_ipv4_ready(cluster):
-                _verify_bound_ipv4(api, cluster_id, expected_address)
-                return cluster
+                if _bound_ipv4_matches(api, cluster_id, expected_address):
+                    return cluster
+                binding_pending = True
             status = str(cluster.get("status", ""))
             if status not in _TRANSITIONAL_STATUSES and status != "started":
                 raise _provider_base.ProvisioningStopped(
@@ -786,11 +831,12 @@ def _wait_public_ipv4_ready(
                 raise
         if attempt < len(delays):
             sleeper(delays[attempt])
-    code = (
-        "TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT"
-        if observed_state
-        else "TIMEWEB_PUBLIC_IPV4_CONTROL_PLANE_READ_TIMEOUT"
-    )
+    if binding_pending:
+        code = "TIMEWEB_PUBLIC_IPV4_BINDING_READY_TIMEOUT"
+    elif observed_state:
+        code = "TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT"
+    else:
+        code = "TIMEWEB_PUBLIC_IPV4_CONTROL_PLANE_READ_TIMEOUT"
     raise _provider_base.ProvisioningStopped(code)
 
 
@@ -1059,8 +1105,7 @@ def _verify_bound_ipv4(
     cluster_id: int,
     expected_address: str,
 ) -> None:
-    row = _bound_ip_for_cluster(_floating_ips(api), cluster_id)
-    if row is None or _verify_floating_ip_row(row) != expected_address:
+    if not _bound_ipv4_matches(api, cluster_id, expected_address):
         raise _provider_base.ProvisioningStopped("TIMEWEB_FLOATING_IP_BINDING_DRIFT")
 
 
