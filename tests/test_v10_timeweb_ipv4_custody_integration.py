@@ -218,26 +218,30 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
             "code=TIMEWEB_IPV4_OBSERVATION_UNAVAILABLE",
         )
 
-    def test_guard_enforces_comment_only_patch_and_order(self) -> None:
+    def test_guard_enforces_existing_only_transport_and_order(self) -> None:
         source = Path(provisioner.__file__).read_text(encoding="utf-8")
         tree = ast.parse(source)
-        guard._validate_custody_stamp(tree)
         guard._validate_custody_order(tree)
+        guard._validate_existing_only_transport(tree)
+        guard._validate_provider_transition_order(tree)
         guard._validate_custody_probe(
             Path(observer.__file__).read_text(
                 encoding="utf-8",
             ),
         )
         changed = source.replace(
-            '{"comment": management_marker}',
-            '{"ptr": management_marker}',
+            "    return selected.ip_address\n",
+            "    _create_floating_ip(mutation, api)\n"
+            "    return selected.ip_address\n",
+            1,
         )
         changed_tree = ast.parse(changed)
-        with self.assertRaisesRegex(RuntimeError, "STAMP_INVALID"):
-            guard._validate_custody_stamp(changed_tree)
+        with self.assertRaisesRegex(RuntimeError, "EXISTING_ONLY_RESOLVER_INVALID"):
+            guard._validate_existing_only_transport(changed_tree)
         changed = source.replace(
             "        _preflight_ipv4_custody(api, cluster_id, initial)\n",
             "",
+            1,
         )
         changed_tree = ast.parse(changed)
         with self.assertRaisesRegex(RuntimeError, "ORDER_INVALID"):
