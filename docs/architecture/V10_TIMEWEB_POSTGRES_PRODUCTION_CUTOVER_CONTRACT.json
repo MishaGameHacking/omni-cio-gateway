@@ -25,6 +25,23 @@
     "encrypted_session_required": true,
     "plaintext_dsn_in_repository_allowed": false
   },
+  "connection_retry": {
+    "bounded": true,
+    "client_network_without_sqlstate_retry_allowed": true,
+    "transient_sqlstates": [
+      "08000",
+      "08001",
+      "08003",
+      "08006",
+      "08007",
+      "53300",
+      "57P01",
+      "57P02",
+      "57P03"
+    ],
+    "invalid_authorization_sqlstate_retry_allowed": false,
+    "unknown_server_sqlstate_retry_allowed": false
+  },
   "runtime_role": {
     "name": "omni_cio_hosted_api",
     "provider_user_must_preexist": true,
