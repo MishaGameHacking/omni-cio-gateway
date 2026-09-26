@@ -252,14 +252,14 @@ function ShellNotices({
         </div>
       ) : null}
       {previewMode?.synthetic ? (
-        <div className="shell-degraded" role="status">
+        <output className="shell-degraded">
           SYNTHETIC PREVIEW · real registration, broker credentials and private portfolio data are disabled. Не вводи реальные токены на этом стенде.
-        </div>
+        </output>
       ) : null}
       {healthUnavailable ? (
-        <div className="shell-degraded" role="status">
+        <output className="shell-degraded">
           Downstream API недоступен — shell работает в DEGRADED режиме.
-        </div>
+        </output>
       ) : null}
     </>
   );
