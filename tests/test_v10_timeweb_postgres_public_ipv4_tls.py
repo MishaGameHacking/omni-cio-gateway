@@ -406,6 +406,64 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         )
         probe.assert_called_once()
 
+    def test_tls_refused_is_retryable_readiness_not_certificate_failure(
+        self,
+    ) -> None:
+        context = mock.Mock(spec=ssl.SSLContext)
+        sleeps: list[float] = []
+        refused = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_POSTGRES_TLS_REFUSED"
+        )
+        with (
+            mock.patch.object(
+                provisioner,
+                "_tls_client_context",
+                return_value=context,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_probe_postgres_tls_once",
+                side_effect=[refused, None],
+            ) as probe,
+        ):
+            provisioner._probe_postgres_tls(
+                "example.twc1.net",
+                Path("provider-ca.crt"),
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        self.assertEqual(probe.call_count, 2)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_tls_transport_timeout_is_not_mislabeled_as_certificate_failure(
+        self,
+    ) -> None:
+        context = mock.Mock(spec=ssl.SSLContext)
+        with (
+            mock.patch.object(
+                provisioner,
+                "_tls_client_context",
+                return_value=context,
+            ),
+            mock.patch.object(
+                provisioner,
+                "_probe_postgres_tls_once",
+                side_effect=OSError("network unavailable"),
+            ),
+        ):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._probe_postgres_tls(
+                    "example.twc1.net",
+                    Path("provider-ca.crt"),
+                    delays=(),
+                )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_POSTGRES_TLS_TRANSPORT_TIMEOUT",
+        )
+
     def test_rollback_reconciles_through_transient_control_plane_read(self) -> None:
         api = mock.Mock()
         mutation = mock.Mock()
