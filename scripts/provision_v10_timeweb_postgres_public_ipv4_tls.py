@@ -43,7 +43,22 @@ _HOST_RE = re.compile(
 )
 _RECONCILE_DELAYS_SECONDS = (1.0, 2.0, 4.0)
 _RECONCILABLE_MUTATION_HTTP_STATUSES = frozenset({409, 423})
-_STATE_DELAYS_SECONDS = (2.0, 3.0, 5.0, 8.0, 15.0, 20.0, 30.0)
+_PUBLIC_IPV4_STATE_DELAYS_SECONDS = (2.0, 3.0, 5.0, 8.0, 15.0, 20.0, 30.0)
+_TLS_STATE_DELAYS_SECONDS = (
+    2.0,
+    3.0,
+    5.0,
+    8.0,
+    15.0,
+    20.0,
+    30.0,
+    45.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+)
 _TRANSITIONAL_STATUSES = frozenset(
     {"starting", "rebooting", "lan_transfer", "transfer", "turning_on"}
 )
@@ -679,7 +694,7 @@ def _wait_public_ipv4_ready(
     expected_address: str,
     *,
     sleeper: Sleep = time.sleep,
-    delays: tuple[float, ...] = _STATE_DELAYS_SECONDS,
+    delays: tuple[float, ...] = _PUBLIC_IPV4_STATE_DELAYS_SECONDS,
 ) -> dict[str, Any]:
     for attempt in range(len(delays) + 1):
         cluster = _cluster(api, cluster_id)
@@ -694,15 +709,27 @@ def _wait_public_ipv4_ready(
     raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT")
 
 
+def _tls_readiness_timeout_code(cluster: dict[str, Any]) -> str:
+    if not _public_ipv4_ready(cluster):
+        return "TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS"
+    if cluster.get("is_secure_connection_enabled") is not True:
+        return "TIMEWEB_TLS_ENABLE_READY_TIMEOUT"
+    if _issued_domain(cluster) is None:
+        return "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT"
+    return "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
+
+
 def _wait_network_ready(
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
     *,
     sleeper: Sleep = time.sleep,
-    delays: tuple[float, ...] = _STATE_DELAYS_SECONDS,
+    delays: tuple[float, ...] = _TLS_STATE_DELAYS_SECONDS,
 ) -> dict[str, Any]:
+    last_cluster: dict[str, Any] | None = None
     for attempt in range(len(delays) + 1):
         cluster = _cluster(api, cluster_id)
+        last_cluster = cluster
         if _network_ready(cluster):
             return cluster
         status = str(cluster.get("status", ""))
@@ -710,7 +737,11 @@ def _wait_network_ready(
             raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_UNSAFE_STATUS")
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT")
+    if last_cluster is None:
+        raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT")
+    raise _provider_base.ProvisioningStopped(
+        _tls_readiness_timeout_code(last_cluster)
+    )
 
 
 def _patch_public_ipv4(
