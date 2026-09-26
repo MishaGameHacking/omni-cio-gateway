@@ -716,6 +716,59 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         mutation.mutate_once.assert_called_once()
         self.assertEqual(sleeps, [0.0])
 
+    def test_post_exposure_scope_retries_transient_read_only_failure(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        transient = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_API_HTTP_ERROR",
+            status=500,
+        )
+        sleeps: list[float] = []
+        with mock.patch.object(
+            provisioner,
+            "_verify_transport_scope",
+            side_effect=[transient, None],
+        ) as verify:
+            provisioner._wait_transport_scope(
+                api,
+                "group-1",
+                91,
+                "8.8.8.8/32",
+                "8.8.4.4",
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        self.assertEqual(verify.call_count, 2)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_post_exposure_scope_security_drift_is_not_retried(self) -> None:
+        api = mock.Mock()
+        drift = provisioner._provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_RULE_DRIFT"
+        )
+        sleeper = mock.Mock()
+        with mock.patch.object(
+            provisioner,
+            "_verify_transport_scope",
+            side_effect=drift,
+        ) as verify:
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._wait_transport_scope(
+                    api,
+                    "group-1",
+                    91,
+                    "8.8.8.8/32",
+                    "8.8.4.4",
+                    sleeper=sleeper,
+                    delays=(0.0,),
+                )
+        self.assertEqual(raised.exception.code, "TIMEWEB_FIREWALL_RULE_DRIFT")
+        verify.assert_called_once()
+        sleeper.assert_not_called()
+
     def test_multiple_firewall_groups_are_rejected(self) -> None:
         api = mock.Mock()
         with mock.patch.object(
@@ -912,7 +965,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 "_patch_public_ipv4",
                 return_value=public_ready,
             ),
-            mock.patch.object(provisioner, "_verify_transport_scope"),
+            mock.patch.object(provisioner, "_wait_transport_scope"),
             mock.patch.object(
                 provisioner,
                 "_enable_secure_connection",
