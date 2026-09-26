@@ -170,7 +170,9 @@ def _validate_runtime_mode_evidence(runtime_mode: str, evidence_sha256: str) -> 
 
 
 def _safe_id(value: object, code: str) -> str:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        _stop(code)
+    if isinstance(value, int) and value <= 0:
         _stop(code)
     text = str(value).strip()
     if _ID_RE.fullmatch(text) is None:
