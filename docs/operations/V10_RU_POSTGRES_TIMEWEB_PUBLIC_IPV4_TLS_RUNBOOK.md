@@ -392,8 +392,9 @@ reconciliation behavior:
 3. give TLS/domain/certificate readiness a bounded multi-minute budget that remains
    below the workflow timeout;
 4. on timeout, emit a sanitized predicate-specific code distinguishing public-network
-   drift, secure-connection enablement still pending and certificate/domain issuance
-   still pending;
+   drift, secure-connection enablement still pending, certificate/domain issuance
+   still pending, and an otherwise-ready TLS surface whose cluster status remains
+   transitional;
 5. retain unsafe-status immediate stops, exact managed-IP/firewall verification and
    fail-closed public-network rollback.
 
