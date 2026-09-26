@@ -401,6 +401,10 @@ reconciliation behavior:
 No second IPv4 purchase, IPv4 delete/stamp, wildcard firewall, DNS mutation,
 production DB cutover or Telegram/public-user activation is added by this repair.
 
+The blast-radius review also hardens the live transport against provider/control-plane propagation without weakening any semantic gate. DB control-plane `500`/network failures may be retried only as bounded GET observations; `domains=null` during TLS setup is treated as not-yet-ready rather than malformed terminal state; transient CA download and TCP/TLS socket transport may retry within bounded budgets; certificate verification failure stays terminal. Public-network rollback has its own longer GET-only closure proof, so a rollback request is never mistaken for a proven rollback.
+
+The same failure class was reviewed across the later currently authorized Timeweb delivery controllers. P2 adopts a unique in-flight exact-SHA deploy instead of issuing another POST, P3 receives a production-only bounded PostgreSQL reconnect window, and P4/P5/P6 retry only transient read-only public probes. Wrong SHA, wrong security headers, auth/authorization errors, certificate failures, provider-state drift and tenant/security proof failures are not retryable. This is the project-wide rule: **retry observation, never authority; adopt exact intent, never replay an uncertain mutation**.
+
 The OWNER also reports that `omnicio.ru` is visible in the Timeweb domain panel after
 being added manually, and no further manual domain configuration was performed. Treat that as
 unverified pre-existing provider state only. It is not accepted evidence of DNS,
