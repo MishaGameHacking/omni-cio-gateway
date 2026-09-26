@@ -36,6 +36,8 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 
 The P1–P6 rows preserve the internal branch-local certification evidence that preceded the accepted PR #584 landing. PR #584 is now accepted on protected main; external/live gates remain separate. Accepted V10 implementation progress remains 54% until explicit program authority changes it.
 
+Historical machine checkpoint anchors remain immutable verifier/recovery provenance after PR #584 acceptance: `P2-TIMEWEB-EXACT-SHA-CANDIDATE`, `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER`, `P4-TIMEWEB-OMNICIO-RU-PUBLIC-INGRESS`, `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION`, `P5.5-TIMEWEB-WORKTREE-CONVERGENCE`, and `P6-POST-MERGE-PRODUCTION-ACCEPTANCE`. They are historical identifiers, not current branch or provider-mutation authority.
+
 ## 2A. V9-to-V10 convergence checkpoints inside TW-B
 
 | Order | Convergence checkpoint | State | Purpose |
