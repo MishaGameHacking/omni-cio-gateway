@@ -33,6 +33,7 @@ RUNTIME_MODE_LIVE_OPERABLE = "live-operable"
 _RUNTIME_MODES = frozenset({RUNTIME_MODE_PREACTIVATION, RUNTIME_MODE_LIVE_OPERABLE})
 MAX_RESPONSE_BYTES = 1024 * 1024
 _PAGE_SIZE = 100
+_MAX_DEPLOY_HISTORY_PAGES = 100
 _GET_DELAYS = (1.0, 2.0)
 _LIVEZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0)
 _DEPLOY_RECONCILE_DELAYS = (0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
@@ -199,7 +200,7 @@ def _rows(payload: dict[str, Any], key: str, code: str) -> list[dict[str, Any]]:
     meta = payload.get("meta")
     if meta is not None:
         total = _mapping(meta, code).get("total")
-        if type(total) is not int or total != len(rows) or total > _PAGE_SIZE:
+        if type(total) is not int or total < 0 or total != len(rows):
             _stop(code)
     return rows
 
@@ -278,7 +279,36 @@ class TimewebAppApi:
 
     def list_deploys(self, app_id: str) -> dict[str, Any]:
         safe = _safe_id(app_id, _APP_ID_INVALID)
-        return self._get(f"/api/v1/apps/{safe}/deploys?limit={_PAGE_SIZE}&offset=0")
+        rows: list[dict[str, Any]] = []
+        expected_total: int | None = None
+        for page in range(_MAX_DEPLOY_HISTORY_PAGES):
+            offset = page * _PAGE_SIZE
+            payload = self._get(
+                f"/api/v1/apps/{safe}/deploys?limit={_PAGE_SIZE}&offset={offset}"
+            )
+            raw = payload.get("deploys")
+            if not isinstance(raw, list):
+                _stop(_DEPLOYS_INVALID)
+            page_rows = [_mapping(item, _DEPLOYS_INVALID) for item in raw]
+            meta = _mapping(payload.get("meta"), _DEPLOYS_INVALID)
+            total = meta.get("total")
+            if (
+                type(total) is not int
+                or total < 0
+                or len(page_rows) > _PAGE_SIZE
+                or len(rows) + len(page_rows) > total
+            ):
+                _stop(_DEPLOYS_INVALID)
+            if expected_total is None:
+                expected_total = total
+            elif total != expected_total:
+                _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED")
+            rows.extend(page_rows)
+            if len(rows) == total:
+                return {"deploys": rows, "meta": {"total": total}}
+            if not page_rows or len(page_rows) < _PAGE_SIZE:
+                _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TRUNCATED")
+        _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TOO_LARGE")
 
     def deploy_once(self, app_id: str, sha: str) -> dict[str, Any]:
         safe = _safe_id(app_id, _APP_ID_INVALID)
