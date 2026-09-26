@@ -252,6 +252,25 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "TIMEWEB_TLS_ENABLE_READY_TIMEOUT",
         )
 
+    def test_tls_wait_classifies_cluster_state_timeout(self) -> None:
+        api = mock.Mock()
+        pending = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "is_secure_connection_enabled": True,
+            "status": "starting",
+            "domains": [{"fqdn": "example.twc1.net", "cert_status": "issued"}],
+        }
+        with mock.patch.object(provisioner, "_cluster", return_value=pending):
+            with self.assertRaises(
+                provisioner._provider_base.ProvisioningStopped
+            ) as raised:
+                provisioner._wait_network_ready(api, 91, delays=())
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT",
+        )
+
     def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
         context = mock.Mock()
         with mock.patch.object(
