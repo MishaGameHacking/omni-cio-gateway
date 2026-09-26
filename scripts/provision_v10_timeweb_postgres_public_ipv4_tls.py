@@ -225,6 +225,10 @@ def _required_verifier_cidr() -> str:
 
 
 def _safe_id(value: object, code: str) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise _provider_base.ProvisioningStopped(code)
+    if isinstance(value, int) and value <= 0:
+        raise _provider_base.ProvisioningStopped(code)
     text = str(value).strip()
     if _ID_RE.fullmatch(text) is None:
         raise _provider_base.ProvisioningStopped(code)
