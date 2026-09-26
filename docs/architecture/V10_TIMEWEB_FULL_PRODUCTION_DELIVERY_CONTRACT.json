@@ -206,6 +206,7 @@
     "mutation_replay_after_timeout_or_ambiguous_result_allowed": false,
     "exact_identity_inflight_state_adoption_required_when_supported": true,
     "duplicate_inflight_exact_identity_terminal": true,
+    "provider_history_pagination_must_be_exhaustive": true,
     "asynchronous_provider_success_may_precede_readiness": true,
     "local_polling_budget_is_provider_sla": false,
     "stage_specific_sanitized_timeout_required": true,
