@@ -205,6 +205,7 @@ def _cluster(
         _stop("TIMEWEB_ALLOCATION_CLUSTER_NETWORK_STATE_INVALID")
     return public, ipv6
 
+
 def _raw_inventory(payload: object) -> list[dict[str, object]]:
     try:
         rows = custody.raw_inventory(payload)
