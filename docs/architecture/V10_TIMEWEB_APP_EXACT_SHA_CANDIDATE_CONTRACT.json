@@ -80,7 +80,8 @@
     "automatic_rollback_authorized": false,
     "live_operable_release_requires_p5_live_evidence_sha256": true,
     "deploy_readiness_minimum_budget_seconds": 300,
-    "deploy_readiness_maximum_budget_seconds": 900
+    "deploy_readiness_maximum_budget_seconds": 900,
+    "liveness_retry_on_transient_or_stale_route_required": true
   },
   "github": {
     "workflow": ".github/workflows/v10-timeweb-app-candidate.yml",
