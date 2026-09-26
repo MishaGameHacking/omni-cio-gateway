@@ -169,6 +169,9 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "must_be_reverified_after_public_network_enable": True,
         "exclusive_service_group_required": True,
         "preexisting_public_network_requires_safe_narrow_firewall": True,
+        "mutation_reconciliation_before_exposure_required": True,
+        "post_exposure_revalidation_read_only": True,
+        "ambiguous_mutation_replay_allowed": False,
     }
     _require(
         firewall,
@@ -649,6 +652,8 @@ def _validate_sources() -> None:
             "_CA_RETRY_DELAYS_SECONDS = (",
             "_TLS_SOCKET_RETRY_DELAYS_SECONDS = (",
             "_ROLLBACK_STATE_DELAYS_SECONDS = (",
+            "_RECONCILE_DELAYS_SECONDS = (",
+            "_verify_exact_rule",
             "for attempt in range(len(delays) + 1):",
             "_is_transient_control_plane_failure",
             "TIMEWEB_TLS_CONTROL_PLANE_READ_TIMEOUT",
@@ -893,6 +898,20 @@ def _validate_provider_transition_order(tree: ast.Module) -> None:
         raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
     if not public_calls[0] < scope_calls[0] < tls_calls[0] < scope_calls[1]:
         raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+
+    scope = _function(tree, "_verify_transport_scope")
+    forbidden_scope_calls = {
+        "_ensure_group",
+        "_ensure_rule",
+        "_ensure_resource_link",
+    }
+    for node in ast.walk(scope):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name) and node.func.id in forbidden_scope_calls:
+            raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "mutate_once":
+            raise RuntimeError("TIMEWEB_POST_EXPOSURE_FIREWALL_MUTATION_FORBIDDEN")
 
 
 def _validate_custody_probe(source: str) -> None:
