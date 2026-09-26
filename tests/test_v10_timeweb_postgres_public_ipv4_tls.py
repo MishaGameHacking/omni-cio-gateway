@@ -28,6 +28,22 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
     def test_source_contract_passes(self) -> None:
         guard.validate()
 
+    def test_provider_ids_reject_bool_none_and_fractional_values(self) -> None:
+        for value in (True, False, None, 1.5, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaises(
+                    provisioner._provider_base.ProvisioningStopped
+                ):
+                    provisioner._safe_id(value, "TIMEWEB_PROVIDER_ID_INVALID")
+        self.assertEqual(
+            provisioner._safe_id(17, "TIMEWEB_PROVIDER_ID_INVALID"),
+            "17",
+        )
+        self.assertEqual(
+            provisioner._safe_id("group-17", "TIMEWEB_PROVIDER_ID_INVALID"),
+            "group-17",
+        )
+
     def test_verifier_cidr_requires_exact_global_ipv4_32(self) -> None:
         with mock.patch.dict(
             os.environ,
