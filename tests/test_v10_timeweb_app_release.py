@@ -654,13 +654,13 @@ def test_wire_unprovable_201_is_ambiguous_and_never_replayed() -> None:
         b"{not-json",
         b"x" * (release.MAX_RESPONSE_BYTES + 1),
     ):
+        opener = _Opener([_RawResponse(raw, status=201)])
+        api = release.TimewebAppApi(
+            "opaque-token",
+            opener=opener,
+            sleeper=lambda _: None,
+        )
         with pytest.raises(release.AmbiguousDeploy):
-            opener = _Opener([_RawResponse(raw, status=201)])
-            api = release.TimewebAppApi(
-                "opaque-token",
-                opener=opener,
-                sleeper=lambda _: None,
-            )
             api.deploy_once("17", EXPECTED_SHA)
         assert len(opener.requests) == 1
 
