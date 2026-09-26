@@ -258,6 +258,10 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         self.assertFalse(policy["local_polling_budget_is_provider_sla"])
         self.assertTrue(policy["final_observation_after_last_backoff_required"])
         self.assertTrue(policy["post_exposure_validation_read_only_required"])
+        self.assertTrue(policy["tls_listener_not_ready_may_retry_bounded_readiness"])
+        self.assertTrue(
+            policy["tls_transport_timeout_distinct_from_certificate_failure"]
+        )
         self.assertFalse(policy["tls_certificate_verification_failure_retry_allowed"])
         self.assertFalse(policy["authority_expansion_on_recovery_allowed"])
 
