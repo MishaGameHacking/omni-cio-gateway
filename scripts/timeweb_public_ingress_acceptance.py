@@ -408,13 +408,12 @@ def _validate_runtime_env(app: dict[str, Any], expected_sha: str) -> None:
         app_release.PUBLIC_MULTI_USER_ENV: "false",
         app_release.TELEGRAM_LOGIN_ENV: "false",
     }
-    if any(str(envs.get(name, "")) != value for name, value in expected.items()):
+    if any(envs.get(name) != value for name, value in expected.items()):
         _stop("TIMEWEB_PUBLIC_INGRESS_ENV_DRIFT")
-    if str(envs.get(app_release.VK_LOGIN_ENV, "")).strip().lower() not in {
-        "",
-        "0",
-        "false",
-    }:
+    vk_value = envs.get(app_release.VK_LOGIN_ENV)
+    if vk_value is not None and not isinstance(vk_value, str):
+        _stop("TIMEWEB_PUBLIC_INGRESS_VK_ACTIVATION_FORBIDDEN")
+    if (vk_value or "").strip().lower() not in {"", "0", "false"}:
         _stop("TIMEWEB_PUBLIC_INGRESS_VK_ACTIVATION_FORBIDDEN")
     dsn = envs.get(app_release.POSTGRES_DSN_ENV)
     if not isinstance(dsn, str) or not dsn.strip():
