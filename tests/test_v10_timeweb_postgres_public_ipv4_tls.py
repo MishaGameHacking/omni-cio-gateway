@@ -184,7 +184,9 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         self.assertGreaterEqual(budget, 300.0)
         self.assertLess(budget, 15 * 60)
 
-    def test_tls_wait_reconciles_delayed_certificate_without_second_mutation(self) -> None:
+    def test_tls_wait_reconciles_delayed_certificate_without_second_mutation(
+        self,
+    ) -> None:
         api = mock.Mock()
         pending = {
             "is_enabled_public_network": True,
@@ -213,7 +215,9 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         self.assertEqual(cluster.call_count, 2)
         sleeper.assert_called_once_with(0.0)
 
-    def test_tls_wait_classifies_certificate_timeout_without_hostname_output(self) -> None:
+    def test_tls_wait_classifies_certificate_timeout_without_hostname_output(
+        self,
+    ) -> None:
         api = mock.Mock()
         pending = {
             "is_enabled_public_network": True,
