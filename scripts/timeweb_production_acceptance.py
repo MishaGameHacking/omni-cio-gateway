@@ -96,9 +96,8 @@ def _read_json(path: str, *, opener: Any | None = None) -> object:
             with active.open(request, timeout=30.0) as response:
                 status = int(response.status)
                 if status != 200:
-                    if (
-                        status in _TRANSIENT_HTTP_STATUSES
-                        and attempt < len(_PUBLIC_PROBE_RETRY_DELAYS)
+                    if status in _TRANSIENT_HTTP_STATUSES and attempt < len(
+                        _PUBLIC_PROBE_RETRY_DELAYS
                     ):
                         time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
                         continue
@@ -108,9 +107,8 @@ def _read_json(path: str, *, opener: Any | None = None) -> object:
                 break
         except HTTPError as exc:
             status = int(exc.code)
-            if (
-                status in _TRANSIENT_HTTP_STATUSES
-                and attempt < len(_PUBLIC_PROBE_RETRY_DELAYS)
+            if status in _TRANSIENT_HTTP_STATUSES and attempt < len(
+                _PUBLIC_PROBE_RETRY_DELAYS
             ):
                 time.sleep(_PUBLIC_PROBE_RETRY_DELAYS[attempt])
                 continue
