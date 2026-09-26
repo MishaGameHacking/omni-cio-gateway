@@ -233,6 +233,39 @@ class V9ToV10ConvergenceGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_live_guidance_does_not_own_terminal_v9c_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            live_paths = (
+                *(root / relative for relative in guard._CURRENT_GPT_AUTHORITY_PATHS),
+                root / guard.AGENTS.relative_to(ROOT),
+                root / guard.README.relative_to(ROOT),
+                root / guard.CONTRIBUTING.relative_to(ROOT),
+            )
+            for path in live_paths:
+                source = path.read_text(encoding="utf-8")
+                path.write_text(
+                    source.replace(guard._CURRENT_CHECKPOINT, "HISTORICAL-CHECKPOINT"),
+                    encoding="utf-8",
+                )
+
+            guard.validate(root)
+
+    def test_rejects_terminal_checkpoint_identity_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / guard.CONTRACT.relative_to(ROOT)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["current_checkpoint"] = "V9C-E"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "V9C_IDENTITY_DRIFT:current_checkpoint",
+            ):
+                guard.validate(root)
+
     def test_rejects_current_gpt_authority_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -554,7 +554,6 @@ def _validate_gpt_authority(root: Path) -> None:
             "CURRENT AMENDMENT-21",
             "Timeweb Cloud",
             "Telegram Login",
-            _CURRENT_CHECKPOINT,
         ):
             if marker not in source:
                 raise RuntimeError(
@@ -915,14 +914,10 @@ def _validate_documentation(root: Path) -> None:
         ),
         AGENTS.relative_to(ROOT): (
             _V9_MIGRATION_SOURCE_MARKER,
-            _CURRENT_CHECKPOINT,
             "PR #584",
         ),
-        README.relative_to(ROOT): (_V9_MIGRATION_SOURCE_MARKER, _CURRENT_CHECKPOINT),
-        CONTRIBUTING.relative_to(ROOT): (
-            _V9_MIGRATION_SOURCE_MARKER,
-            _CURRENT_CHECKPOINT,
-        ),
+        README.relative_to(ROOT): (_V9_MIGRATION_SOURCE_MARKER,),
+        CONTRIBUTING.relative_to(ROOT): (_V9_MIGRATION_SOURCE_MARKER,),
     }
     for relative, markers in required.items():
         source = _text(root / relative)
