@@ -743,10 +743,10 @@ def _wait_network_ready(
         if attempt < len(delays):
             sleeper(delays[attempt])
     if last_cluster is None:
-        raise _provider_base.ProvisioningStopped("TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT")
-    raise _provider_base.ProvisioningStopped(
-        _tls_readiness_timeout_code(last_cluster)
-    )
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
+        )
+    raise _provider_base.ProvisioningStopped(_tls_readiness_timeout_code(last_cluster))
 
 
 def _patch_public_ipv4(
