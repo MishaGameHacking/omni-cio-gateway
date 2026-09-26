@@ -710,12 +710,17 @@ def _wait_public_ipv4_ready(
 
 
 def _tls_readiness_timeout_code(cluster: dict[str, Any]) -> str:
-    if not _public_ipv4_ready(cluster):
+    if (
+        cluster.get("is_enabled_public_network") is not True
+        or cluster.get("is_enabled_public_ipv6") is not False
+    ):
         return "TIMEWEB_PUBLIC_IPV4_STATE_DRIFT_DURING_TLS"
     if cluster.get("is_secure_connection_enabled") is not True:
         return "TIMEWEB_TLS_ENABLE_READY_TIMEOUT"
     if _issued_domain(cluster) is None:
         return "TIMEWEB_TLS_CERTIFICATE_READY_TIMEOUT"
+    if cluster.get("status") != "started":
+        return "TIMEWEB_TLS_CLUSTER_STATE_READY_TIMEOUT"
     return "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
 
 
