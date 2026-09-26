@@ -443,6 +443,57 @@ def test_ambiguous_deploy_reconciles_by_get_without_second_post() -> None:
     assert last_known_good == LKG_SHA
 
 
+def test_wire_deploy_history_paginates_all_pages_without_truncation() -> None:
+    rows = [
+        {
+            "id": f"deploy-{index}",
+            "commit_sha": EXPECTED_SHA,
+            "status": "success",
+        }
+        for index in range(101)
+    ]
+    opener = _Opener(
+        [
+            _Response({"deploys": rows[:100], "meta": {"total": 101}}),
+            _Response({"deploys": rows[100:], "meta": {"total": 101}}),
+        ]
+    )
+    api = release.TimewebAppApi("opaque-token", opener=opener, sleeper=lambda _: None)
+
+    payload = api.list_deploys("17")
+
+    assert payload["deploys"] == rows
+    assert payload["meta"] == {"total": 101}
+    assert [request.full_url for request in opener.requests] == [
+        "https://api.timeweb.cloud/api/v1/apps/17/deploys?limit=100&offset=0",
+        "https://api.timeweb.cloud/api/v1/apps/17/deploys?limit=100&offset=100",
+    ]
+
+
+def test_wire_deploy_history_rejects_total_drift_between_pages() -> None:
+    rows = [
+        {
+            "id": f"deploy-{index}",
+            "commit_sha": EXPECTED_SHA,
+            "status": "success",
+        }
+        for index in range(101)
+    ]
+    opener = _Opener(
+        [
+            _Response({"deploys": rows[:100], "meta": {"total": 101}}),
+            _Response({"deploys": rows[100:], "meta": {"total": 102}}),
+        ]
+    )
+    api = release.TimewebAppApi("opaque-token", opener=opener, sleeper=lambda _: None)
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED",
+    ):
+        api.list_deploys("17")
+
+
 def test_wire_deploy_body_is_exact_commit_only() -> None:
     opener = _Opener(
         [
