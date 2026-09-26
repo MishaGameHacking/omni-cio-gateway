@@ -132,6 +132,7 @@ def _validate_provider_api(payload: dict[str, Any]) -> None:
         "deploy_history_page_size": 100,
         "deploy_history_max_pages": 100,
         "deploy_history_total_stability_required": True,
+        "deploy_history_identity_uniqueness_required": True,
     }
     for key, expected in pagination_expected.items():
         if api.get(key) != expected:
