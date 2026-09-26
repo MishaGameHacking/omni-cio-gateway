@@ -563,8 +563,11 @@ def _service_groups(
 
 def _resource_matches(row: dict[str, Any], cluster_id: int) -> bool:
     try:
-        resource_id = int(row.get("id"))
-    except (TypeError, ValueError):
+        resource_id = _numeric_id(
+            row.get("id"),
+            "TIMEWEB_FIREWALL_RESOURCE_ID_INVALID",
+        )
+    except _provider_base.ProvisioningStopped:
         return False
     return resource_id == cluster_id and row.get("type") in {"dbaas", "database"}
 
