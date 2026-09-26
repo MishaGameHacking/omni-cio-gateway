@@ -401,8 +401,8 @@ reconciliation behavior:
 No second IPv4 purchase, IPv4 delete/stamp, wildcard firewall, DNS mutation,
 production DB cutover or Telegram/public-user activation is added by this repair.
 
-The OWNER also reports that a domain visible in the Timeweb database UI was added
-manually earlier and no further manual configuration was performed. Treat that as
+The OWNER also reports that `omnicio.ru` is visible in the Timeweb domain panel after
+being added manually, and no further manual domain configuration was performed. Treat that as
 unverified pre-existing provider state only. It is not accepted evidence of DNS,
 certificate issuance or TLS readiness and grants no create/overwrite authority.
 The provisioner must continue to rely on sanitized provider GET state and must not
