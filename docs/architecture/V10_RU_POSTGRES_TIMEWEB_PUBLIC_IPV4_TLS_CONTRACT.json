@@ -55,11 +55,13 @@
     "availability_zone": "msk-1",
     "ddos_addon_authorized": false,
     "reuse_unmanaged_free_ip_allowed": false,
-    "create_endpoint": "POST /api/v1/floating-ips",
     "database_patch_endpoint": "PATCH /api/v2/databases/{cluster_id}",
-    "ambiguous_create_requires_get_reconciliation": true,
     "blind_mutation_retry_allowed": false,
-    "enable_transition_requires_tls_fields_absent": true
+    "enable_transition_requires_tls_fields_absent": true,
+    "existing_allocated_ipv4_required": true,
+    "new_ipv4_create_authorized": false,
+    "ipv4_delete_authorized": false,
+    "metadata_stamp_authorized": false
   },
   "tls": {
     "provider_secure_connection_required": true,
@@ -97,15 +99,12 @@
     "post_endpoints": [
       "/api/v1/firewall/groups?policy=DROP",
       "/api/v1/firewall/groups/{group_id}/rules",
-      "/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?resource_type=dbaas",
-      "/api/v1/floating-ips"
+      "/api/v1/firewall/groups/{group_id}/resources/{cluster_id}?resource_type=dbaas"
     ],
     "patch_endpoints": [
       "/api/v1/firewall/groups/{group_id}/rules/{rule_id}",
-      "/api/v2/databases/{cluster_id}",
-      "/api/v1/floating-ips/{floating_ip_id}"
+      "/api/v2/databases/{cluster_id}"
     ],
-    "delete_endpoint_for_created_ipv4_cleanup_only": "/api/v1/floating-ips/{floating_ip_id}",
     "redirects_allowed": false,
     "response_body_logging_allowed": false,
     "provider_identifiers_in_output_allowed": false
@@ -215,7 +214,13 @@
     "diagnostic_output": "COUNTS_AND_STATIC_DISPOSITION_ONLY",
     "diagnostic_proves_network_readiness": false,
     "diagnostic_proves_sql_parity": false,
-    "ambiguous_create_delta_is_ownership_proof": false
+    "ambiguous_create_delta_is_ownership_proof": false,
+    "transport_existing_only_after_allocation_receipt": true,
+    "transport_create_allowed": false,
+    "transport_delete_allowed": false,
+    "transport_stamp_allowed": false,
+    "transport_missing_allocated_ipv4_terminal_code": "TIMEWEB_ALLOCATED_IPV4_MISSING",
+    "transport_two_read_drift_terminal_code": "TIMEWEB_ALLOCATED_IPV4_DRIFT"
   },
   "allocation_prerequisite": {
     "workflow": ".github/workflows/v10-timeweb-ipv4-allocation.yml",
