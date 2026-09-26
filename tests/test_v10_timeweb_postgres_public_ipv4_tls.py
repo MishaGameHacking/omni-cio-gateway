@@ -785,6 +785,28 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         verify.assert_called_once()
         sleeper.assert_not_called()
 
+    def test_firewall_resource_match_rejects_coerced_numeric_ids(self) -> None:
+        for value in (True, False, 91.5, None, [], {}):
+            with self.subTest(value=value):
+                self.assertFalse(
+                    provisioner._resource_matches(
+                        {"id": value, "type": "dbaas"},
+                        91,
+                    )
+                )
+        self.assertTrue(
+            provisioner._resource_matches(
+                {"id": 91, "type": "dbaas"},
+                91,
+            )
+        )
+        self.assertTrue(
+            provisioner._resource_matches(
+                {"id": "91", "type": "database"},
+                91,
+            )
+        )
+
     def test_multiple_firewall_groups_are_rejected(self) -> None:
         api = mock.Mock()
         with mock.patch.object(
