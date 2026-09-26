@@ -82,6 +82,32 @@ def _validate_target(payload: dict[str, Any]) -> None:
         raise CutoverContractError(code)
 
 
+def _validate_connection_retry(payload: dict[str, Any]) -> None:
+    retry = _mapping(
+        payload.get("connection_retry"),
+        "TIMEWEB_PG_CUTOVER_CONNECTION_RETRY_INVALID",
+    )
+    expected = {
+        "bounded": True,
+        "client_network_without_sqlstate_retry_allowed": True,
+        "transient_sqlstates": [
+            "08000",
+            "08001",
+            "08003",
+            "08006",
+            "08007",
+            "53300",
+            "57P01",
+            "57P02",
+            "57P03",
+        ],
+        "invalid_authorization_sqlstate_retry_allowed": False,
+        "unknown_server_sqlstate_retry_allowed": False,
+    }
+    if retry != expected:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONNECTION_RETRY_INVALID")
+
+
 def _validate_runtime_role(payload: dict[str, Any]) -> None:
     role = _mapping(
         payload.get("runtime_role"),
@@ -223,6 +249,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     if any(payload.get(key) != value for key, value in expected_root.items()):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_IDENTITY_DRIFT")
     _validate_target(payload)
+    _validate_connection_retry(payload)
     _validate_runtime_role(payload)
     _validate_prepare(payload)
     _validate_recovery(payload)
