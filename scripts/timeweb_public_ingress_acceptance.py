@@ -130,7 +130,7 @@ def _rows(payload: dict[str, Any], key: str, code: str) -> list[dict[str, Any]]:
     meta = payload.get("meta")
     if meta is not None:
         total = _mapping(meta, code).get("total")
-        if type(total) is not int or total != len(rows) or total > _PAGE_SIZE:
+        if type(total) is not int or total < 0 or total != len(rows):
             _stop(code)
     return rows
 
