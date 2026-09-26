@@ -164,11 +164,7 @@ def test_ca_install_rejects_redirect_without_retry(tmp_path: Path) -> None:
 def test_ca_install_rejects_malformed_pem_with_sanitized_error(
     tmp_path: Path,
 ) -> None:
-    malformed = (
-        b"-----BEGIN CERTIFICATE-----\n"
-        b"not-base64\n"
-        b"-----END CERTIFICATE-----\n"
-    )
+    malformed = b"-----BEGIN CERTIFICATE-----\nnot-base64\n-----END CERTIFICATE-----\n"
     opener = _Opener([_Response(malformed)])
     with pytest.raises(
         tls.TimewebPostgresTlsError,

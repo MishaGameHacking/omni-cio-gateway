@@ -78,9 +78,7 @@ def _ca_target(base_dir: Path | None = None) -> Path:
     base = Path.cwd() if base_dir is None else Path(base_dir)
     directory = base / ".omni-cio"
     try:
-        if directory.exists() and (
-            directory.is_symlink() or not directory.is_dir()
-        ):
+        if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
             raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         if directory.is_symlink():
@@ -89,9 +87,7 @@ def _ca_target(base_dir: Path | None = None) -> Path:
     except TimewebPostgresTlsError:
         raise
     except OSError:
-        raise TimewebPostgresTlsError(
-            "TIMEWEB_PG_TLS_CA_PATH_UNAVAILABLE"
-        ) from None
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNAVAILABLE") from None
     target = directory / "timeweb-postgres-root.crt"
     if target.is_symlink() or (target.exists() and not target.is_file()):
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
