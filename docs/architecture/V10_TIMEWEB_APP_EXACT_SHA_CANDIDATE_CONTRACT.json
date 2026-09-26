@@ -37,6 +37,7 @@
     ],
     "mutation_retry_allowed": false,
     "ambiguous_mutation_reconcile_with_get_only": true,
+    "successful_but_unprovable_mutation_response_reconcile_with_get_only": true,
     "existing_inflight_exact_sha_adoption_required": true,
     "multiple_inflight_exact_sha_terminal": true,
     "ambiguous_reconcile_minimum_budget_seconds": 60,
@@ -86,7 +87,9 @@
     "live_operable_release_requires_p5_live_evidence_sha256": true,
     "deploy_readiness_minimum_budget_seconds": 300,
     "deploy_readiness_maximum_budget_seconds": 900,
-    "liveness_retry_on_transient_or_stale_route_required": true
+    "liveness_retry_on_transient_or_stale_route_required": true,
+    "liveness_retry_minimum_budget_seconds": 120,
+    "liveness_retry_maximum_budget_seconds": 300
   },
   "github": {
     "workflow": ".github/workflows/v10-timeweb-app-candidate.yml",
