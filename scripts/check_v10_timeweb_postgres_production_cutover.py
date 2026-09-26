@@ -253,10 +253,7 @@ def _validate_observe(payload: dict[str, Any]) -> None:
         payload.get("operations"),
         "TIMEWEB_PG_CUTOVER_OPERATIONS_INVALID",
     )
-    if (
-        operations.get("observe")
-        != "READ_ONLY_PREPARE_PREREQUISITE_VERIFICATION"
-    ):
+    if operations.get("observe") != "READ_ONLY_PREPARE_PREREQUISITE_VERIFICATION":
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_OPERATIONS_INVALID")
 
 
@@ -318,7 +315,9 @@ def _direct_call_names(source: str, function_name: str) -> set[str]:
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID") from exc
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID"
+        ) from exc
     functions = [
         node
         for node in tree.body
@@ -411,12 +410,7 @@ def _validate_sources() -> None:
         "TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT",
     )
     _validate_workflow_secret_scope(workflow)
-    if (
-        workflow.count(
-            "python -m scripts.verify_v10_timeweb_github_environment"
-        )
-        != 2
-    ):
+    if workflow.count("python -m scripts.verify_v10_timeweb_github_environment") != 2:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_ENVIRONMENT_REVERIFY_MISSING")
     if any(
         item in workflow for item in ("\n  push:", "\n  pull_request:", "schedule:")
@@ -435,7 +429,7 @@ def _validate_sources() -> None:
             "timeweb-production",
             "Selected branches and tags",
             "Branch `main`",
-            "observe is SQL read-only",
+            "The observe phase is SQL read-only",
             "Only after P3 acceptance may P4",
         ),
         "TIMEWEB_PG_CUTOVER_RUNBOOK_DRIFT",

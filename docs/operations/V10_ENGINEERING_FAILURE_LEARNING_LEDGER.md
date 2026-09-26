@@ -863,3 +863,26 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** GitHub Environment read/policy inspection uses Actions-read authority; environment creation/update and deployment-policy mutation are repository-administration actions and are not granted to the P3 workflow token.
 
+---
+
+## FL-037 — Machine guards must freeze the exact canonical prose and pinned formatter shape
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #590 exact head `d8b776767144d35511ef3875b9b2b6718477c51c`
+
+**Symptom / failing gate:** DRAFT exact-head verification produced three repository-owned REDs with one coupled source cause. Engineering Governance and Fast PR stopped at `TIMEWEB_PG_CUTOVER_RUNBOOK_DRIFT:observe is SQL read-only`; the authoritative Windows merge gate independently reported Ruff 0.16.1 formatting drift in `scripts/check_v10_timeweb_postgres_production_cutover.py`.
+
+**Root cause:** the P3 guard required a paraphrased prose substring that did not exactly exist in the updated runbook, and the connector-authored Python guard had not yet been projected through the pinned formatter. Runtime/controller behavior was not the failing boundary in this batch.
+
+**Blast radius searched:** all PR #590 changed files, the P3 contract/runbook/controller/guard/tests, all three failed job logs, exact-head review threads, and the formatter diff emitted by the authoritative merge gate. The other repository-owned DRAFT workflows completed successfully before this repair.
+
+**Why preflight missed it:** the connector-only publication path could validate source relationships by inspection but did not execute the pinned Ruff formatter locally, and the prose guard was compared conceptually instead of byte-for-byte against the canonical runbook sentence.
+
+**Corrective change:** align the guard with the exact canonical runbook phrase and apply exactly the Ruff 0.16.1 formatting changes reported by CI. No assertion, permission, secret scope, provider mutation, database authority, tenant isolation, public-user gate, broker-write gate, or Real-money boundary is weakened.
+
+**Permanent regression/guard:** the existing P3 machine guard continues to require the canonical runbook language, while Fast PR and the authoritative merge gate remain unchanged as the exact formatter authority.
+
+**Future prevention rule:** source guards that freeze human-readable documentation must use the exact canonical sentence they intend to protect, and connector-only edits must treat the first authoritative formatter result as required source output rather than optional style feedback.
+
+**Dependency/tooling knowledge change:** none.
+
