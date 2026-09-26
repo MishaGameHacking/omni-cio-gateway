@@ -403,6 +403,16 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
     _require(
+        api.get("ambiguous_reconcile_minimum_budget_seconds"),
+        180,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
+        api.get("local_reconcile_budget_is_provider_sla"),
+        False,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
         api.get("max_response_bytes"),
         1048576,
         "TIMEWEB_SYNTHETIC_CREATE_API_BOUNDARY_INVALID",
@@ -478,6 +488,21 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         1,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
+    _require(
+        verification.get("starting_minimum_wait_budget_seconds"),
+        240,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("starting_maximum_wait_budget_seconds"),
+        600,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("local_wait_budget_is_provider_sla"),
+        False,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
 
     invariants = _mapping(
         payload.get("protected_invariants"),
@@ -549,6 +574,8 @@ def _validate_provisioner() -> None:
             "class AmbiguousCreate",
             "TIMEWEB_CLUSTER_CREATE_AMBIGUOUS_RECONCILIATION_REQUIRED",
             "def _reconcile_cluster_id(",
+            "_RECONCILE_DELAYS_SECONDS = (",
+            "_START_DELAYS_SECONDS = (",
             "def _create_or_reconcile(",
             "read_only.verify_credential_health(read_api)",
             "existing_cluster_id = _target_cluster_id(read_api.get(project_path))",
