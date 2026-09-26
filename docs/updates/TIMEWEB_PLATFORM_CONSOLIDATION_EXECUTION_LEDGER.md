@@ -333,11 +333,11 @@ long-line layout drifts; no assertion, security check or test is weakened.
 - Accepted TW-A: PR #583 / exact reviewed head `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
 - Post-merge TW-A evidence: Regression Shield #1647, Engineering Governance #1909, owning WP audits and Timeweb Read-Only Proof #14 = `success`
 - Current update: `TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED`
-- Current member milestone: TW-B / source and runtime consolidation
-- Current checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
+- Historical snapshot member milestone: TW-B / source and runtime consolidation
+- Historical snapshot checkpoint: `TW-B-SOURCE-AND-RUNTIME-CONSOLIDATION`
 - Current branch: `system/timeweb-platform-consolidation-tw-b`
 - Exact branch head is resolved from GitHub/PR evidence rather than frozen self-referentially inside this ledger.
-- State: `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT / IN_PROGRESS`; V9C-C is branch-local `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; DRAFT PR #584 remains open
+- State at this historical snapshot: `V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT / IN_PROGRESS`; V9C-C was branch-local `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`; DRAFT PR #584 remained open
 - Proven defect classes closed branch-locally before current RED repair: synthetic-preview startup dependency, provider-specific runtime/transport coupling, current dual-provider auth defaults/import graph, stale provider-specific PostgreSQL/recovery/readiness paths, and untrusted build-time release-SHA display
 - Latest pre-correction exact-head evidence: the complete repository-integrity gate passed over 1,723 discovered files (1,693 text, 30 binary; 919 Python and 80 JSON structurally parsed), Engineering Governance and all observed functional WP lanes passed, while Fast PR and authoritative Windows stopped on one Ruff-format drift in the repository-integrity verifier. Sonar Quality Gate passed with zero Security Hotspots and one remaining non-security issue on the new audit code. WP17 remains separately fail-closed on exact-head OWNER evidence binding. T-Bank CA trust failures remain accepted-repaired on main through PR #585/#586; prior direct-entry, stale guidance and hosted/provider-duplication source defects remain closed.
 - Remaining TW-B work: complete the coherent correction set, publish a replacement exact head, require all applicable exact-head checks to complete `success`, then READY-verify the unchanged head; only after accepted squash merge and required post-merge GREEN may TW-C begin
@@ -370,7 +370,7 @@ V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE subsequently reached branch-local
 `CERTIFIED_GREEN` on exact head `ddc780b43e74797bc0adea31a741db35eeb06605`:
 all 19 repository workflows completed `success`, the supported Timeweb runtime/Docker
 import graph proved zero dependency on protected V9 runtime roots, and unresolved review
-threads were zero. V9C-D is the active checkpoint after that evidence.
+threads were zero. At that historical stage V9C-D became the next checkpoint; later P1 evidence closed through V9C-F.
 
 The branch now owns these ordered internal milestones:
 
@@ -392,7 +392,7 @@ has since been superseded by proven execution evidence: P1 closed through V9C-F,
 and P2 is branch-local `CERTIFIED_GREEN` on exact head
 `ba43fa4be350340557fcf6d8532b6c089022a8ca`.
 
-The current member checkpoint is
+At that historical stage the member checkpoint was
 `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER / IMPLEMENTED_VERIFICATION_PENDING`.
 No production provider mutation or recovery acceptance is claimed by repository
 implementation. P4 remains blocked until a replacement P3 exact head is fully
@@ -484,7 +484,7 @@ The previous head is diagnostic evidence only; exact-head certification must res
 - P4 source head `d2240886ba3e7484622898670ac9b37ee45a7c6c` completed the fresh repository verification cycle with all 19 applicable workflow runs successful and zero unresolved review threads.
 - Whole-repository integrity evidence on that head: `V10_TIMEWEB_REPOSITORY_INTEGRITY=PASS files=1760 text=1730 binary=30 python=937 json=85`.
 - This certifies the repository-side P4 public-ingress implementation only. It does not claim that Timeweb DNS/TLS, Russian no-VPN evidence or public-user activation have been externally accepted.
-- Current internal milestone advances to P5 two-phase Telegram/public-user activation implementation.
+- At that historical transition the internal milestone advanced to P5 two-phase Telegram/public-user activation implementation.
 - P5 is read-only with respect to provider configuration. It binds P3/P4/external/rollback evidence to the exact release SHA, emits `READY_TO_ACTIVATE` only while public flags remain disabled, then requires the same evidence seal and real-user evidence before `LIVE_OPERABLE`.
 - `PUBLIC_MULTI_USER_ENABLED=false`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`, `OMNI_V10_VK_ID_LOGIN_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and broker write remain unchanged by this implementation checkpoint.
 

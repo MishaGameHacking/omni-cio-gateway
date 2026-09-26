@@ -4,7 +4,7 @@
 
 Current applied GPT: **v9.0.0**, owner-accepted in place on 2026-08-05.  
 Protected rollback: **v8.6.1**.  
-Current convergence mode: **Amendment 20 / V9C-B deterministic source relocation**.  
+Dynamic convergence/checkpoint state: **delegated to `../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and exact PR #584 Actions evidence**.  
 Active feature program: **Omni-CIO V10**, started by owner command `START V10` on 2026-08-05.
 
 ## Быстрый вход
@@ -84,7 +84,7 @@ Current accepted physical V10 roots include:
 
 Later roots remain lifecycle-gated: `../apps/telegram/` and `../ai/` are not authorized merely because the architecture reserves their ownership locations.
 
-The V9 root wrappers remain temporary V9C-C migration inputs; V9-specific `gpt/` and retired-provider artifacts remain V9C-D/V9C-E inputs until their parity/zero-consumer/recovery gates.
+The branch-local V9C-A through V9C-F convergence pass is retained as P1 evidence. Protected V9 compatibility/recovery roots remain only until separate accepted decommission authority; obsolete provider/GPT working-tree artifacts proven safe to retire stay absent while Git history remains the archive.
 
 Permanent structural guard:
 

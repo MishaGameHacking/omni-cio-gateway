@@ -70,8 +70,8 @@ accepted main. Therefore stale `v9/*` branch heads are not merged into PR #584.
 V9 is now the migration source for the one forward V10/Timeweb runtime.
 
 `V9C-A / AUTHORITY_AND_INVENTORY` is branch-local **CERTIFIED_GREEN** on exact head `7b325d7805e4c9b4c571d85d33ebd4875f060d35`: all 18 repository workflows completed `success`, including Fast PR, authoritative Windows CI, Engineering Governance, Toolchain and the owning WP audits. V9C-C / RUNTIME_ENTRYPOINT_CONVERGENCE is branch-local **CERTIFIED_GREEN** on exact
-head `ddc780b43e74797bc0adea31a741db35eeb06605`. Current internal checkpoint is
-**V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT**. Current GPT development
+head `ddc780b43e74797bc0adea31a741db35eeb06605`. At that historical stage, the next internal checkpoint was
+**V9C-D / GPT_AND_RETIRED_PROVIDER_WORKTREE_RETIREMENT**; later P1 evidence closed V9C-D/V9C-E/V9C-F. Current GPT development
 authority is Timeweb/Telegram under Amendments 18–21; protected V9 GPT/Render recovery
 material remains explicitly non-current; the supported V10 runtime must have zero
 retired-provider module imports.

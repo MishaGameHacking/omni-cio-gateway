@@ -2,7 +2,7 @@
 
 Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается в PR #584.
 
-OWNER-approved convergence выполняется внутри той же ветки #584. P1 закрыт через `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` и branch-local `CERTIFIED_GREEN` на exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; P2 exact-SHA Timeweb App candidate branch-local `CERTIFIED_GREEN` на `ba43fa4be350340557fcf6d8532b6c089022a8ca`. Текущий integrated checkpoint — P3 PostgreSQL 18 production cutover/recovery control в `RED_REPAIR_ONLY / REPLACEMENT_HEAD_VERIFICATION_PENDING`; P4 нельзя начинать до exact-head GREEN P3. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
+OWNER-approved convergence выполняется внутри той же ветки #584. P1 закрыт через `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` и branch-local `CERTIFIED_GREEN` на exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`; P2 exact-SHA Timeweb App candidate branch-local `CERTIFIED_GREEN` на `ba43fa4be350340557fcf6d8532b6c089022a8ca`. Exact branch-local checkpoint/certification state здесь намеренно не дублируется: читай `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` и PR #584 exact-head Actions. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -17,7 +17,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` для V9;
 6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–20;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и applicable active amendments, включая Amendments 12–21;
 9. `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_GREEN_CHECKPOINT_TARGETED_CI_REPAIR_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`, current Timeweb/Telegram owning contracts и остальные applicable current contracts; historical Cloudflare contracts read only when recovery/provenance/compatibility review requires them;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
@@ -31,7 +31,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - accepted progress: **54%**;
 - WP0–WP22A remain COMPLETE;
 - current next package: **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**;
-- P1 and P2 are branch-local `CERTIFIED_GREEN`; P3 PostgreSQL 18 production-cutover source machinery is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec` with 25/25 checks successful; current checkpoint is P4 `omnicio.ru` public-ingress acceptance implementation, while external DNS/domain mutation remains independently gated;
+- exact branch-local P1–P6 checkpoint/certification state is intentionally not duplicated here; read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions, while external DNS/domain mutation remains independently gated;
 - target active services: ChatGPT + GitHub + Timeweb Cloud + Telegram Login;
 - Timeweb is the only selected V10 production infrastructure target;
 - Telegram is the only selected human login provider;

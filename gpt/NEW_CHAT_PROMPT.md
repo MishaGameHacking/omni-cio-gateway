@@ -1,6 +1,6 @@
 # Стартовый запрос для нового рабочего чата Omni-CIO
 
-> **CURRENT AMENDMENT-21 TIMEWEB DELIVERY OVERRIDE (2026-09-24):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+> **CURRENT TIMEWEB DELIVERY AUTHORITY:** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
 
 
 Использовать, когда нужно продолжить разработку/обслуживание проекта в новом чате после подключения GitHub.
@@ -47,7 +47,7 @@ Current target after Amendment 18 acceptance:
 - milestones = TW-A inventory/authority -> TW-B source/runtime -> TW-C Timeweb candidate -> TW-D PostgreSQL cutover -> TW-E DNS/no-VPN ingress -> TW-F Telegram public activation -> TW-G external-provider decommission;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID are historical/retirement targets, not new feature authority;
 - Amendments 20 and 21 govern the single PR #584 integrated delivery: migrate useful V9 semantics, prove parity/zero current consumers/recovery, retire obsolete provider authority, and implement the fail-closed Timeweb production-delivery chain;
-- current branch checkpoint = `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`; V9C-D is branch-local `CERTIFIED_GREEN` on exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; V9C-E/V9C-F implementation is verification-pending on the replacement head and P2 must not start before GREEN;
+- exact branch-local checkpoint/certification state is intentionally not duplicated here; resolve it from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions;
 - historical files may be touched only when a compatibility/governance check must acknowledge the new current authority;
 - retired provider resources/secrets/workflow actions are disabled/revoked only after replacement/cutover/recovery evidence;
 - GitHub-native checks are the active quality/security authority; external CI/review SaaS is historical and must not be required by current/future workflows;

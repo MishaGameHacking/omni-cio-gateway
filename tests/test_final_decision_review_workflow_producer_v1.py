@@ -436,7 +436,10 @@ def test_producer_does_not_change_openapi_or_action_count() -> None:
 
 def test_producer_result_and_timestamp_are_fail_closed() -> None:
     result = _produce()
-    payload = result.model_dump(mode="python")
+    payload = {
+        field_name: getattr(result, field_name)
+        for field_name in type(result).model_fields
+    }
     payload["trade_authorized"] = True
     with pytest.raises(ValidationError):
         FinalDecisionReviewWorkflowProducerResultV1.model_validate(payload)

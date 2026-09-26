@@ -228,10 +228,11 @@ def test_first_publication_is_internal_safe_and_retrievable() -> None:
     assert result.trading_methods is False
     assert result.observability_event.external_call is not None
     assert (
-        result.observability_event.external_call.status
-        is ExternalCallStatus.NOT_CALLED
+        result.observability_event.external_call.status is ExternalCallStatus.NOT_CALLED
     )
-    assert _lookup(registry, binding).status is FinalDecisionReviewSourceLookupStatus.FOUND
+    assert (
+        _lookup(registry, binding).status is FinalDecisionReviewSourceLookupStatus.FOUND
+    )
 
 
 def test_second_publication_replaces_same_context() -> None:
@@ -289,16 +290,22 @@ def test_bounded_registry_reports_eviction() -> None:
     assert result.disposition is FinalDecisionReviewPublicationDisposition.PUBLISHED
     assert result.registry_active_sources == 1
     assert result.registry_evicted_sources == 1
-    assert _lookup(
-        registry,
-        first_binding,
-        requested_at=NOW + timedelta(seconds=2),
-    ).status is FinalDecisionReviewSourceLookupStatus.CONFLICT
-    assert _lookup(
-        registry,
-        second_binding,
-        requested_at=NOW + timedelta(seconds=2),
-    ).status is FinalDecisionReviewSourceLookupStatus.FOUND
+    assert (
+        _lookup(
+            registry,
+            first_binding,
+            requested_at=NOW + timedelta(seconds=2),
+        ).status
+        is FinalDecisionReviewSourceLookupStatus.CONFLICT
+    )
+    assert (
+        _lookup(
+            registry,
+            second_binding,
+            requested_at=NOW + timedelta(seconds=2),
+        ).status
+        is FinalDecisionReviewSourceLookupStatus.FOUND
+    )
 
 
 def test_concurrent_publication_uses_one_publisher_lock_per_registry() -> None:
@@ -368,7 +375,9 @@ def test_blocked_plan_and_context_substitution_are_rejected() -> None:
             published_at=NOW,
         )
 
-    changed_query = binding.query.model_copy(update={"final_option_id": "option.changed"})
+    changed_query = binding.query.model_copy(
+        update={"final_option_id": "option.changed"}
+    )
     changed_binding = binding.model_copy(update={"query": changed_query})
     with pytest.raises(
         FinalDecisionReviewPublisherError,

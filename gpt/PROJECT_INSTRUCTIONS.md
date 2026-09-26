@@ -1,6 +1,6 @@
 # Инструкции проекта ChatGPT — Omni-CIO
 
-> **CURRENT AMENDMENT-21 TIMEWEB DELIVERY OVERRIDE (2026-09-24):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
+> **CURRENT TIMEWEB DELIVERY AUTHORITY:** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current next System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED**. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets and receive no new feature authority. Historical references remain evidence only. Timeweb cutover/decommission must preserve exact-SHA, tenant/RLS, security and recovery gates. WEB-VISUAL and WP23+ remain paused during this consolidation.
 
 
 Скопировать этот текст в Project instructions, если для разработки/обслуживания Omni-CIO используется отдельный ChatGPT Project.
@@ -45,7 +45,7 @@ Current accepted/convenience state after Amendment 18 acceptance:
 - Telegram Login is the only selected human product login provider;
 - Cloudflare, Neon, Render, Cloud.ru and VK ID receive no new feature authority;
 - Amendments 20 and 21 supply the OWNER-approved PR #584 authority: converge V9 semantics into canonical V10, retire current authority from obsolete provider surfaces, then implement the gated Timeweb production-delivery chain while preserving protected V9 recovery and Git history;
-- current branch checkpoint = `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF`; V9C-D is branch-local `CERTIFIED_GREEN` on exact head `80fec000845f93929e204144ce6d4b22db29bcc0`; V9C-E/V9C-F implementation is verification-pending on the replacement head and P2 must not start before GREEN;
+- exact branch-local checkpoint/certification state is intentionally not duplicated here; resolve it from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions;
 - WEB-VISUAL and WP23+ remain paused/locked behind the platform-consolidation path;
 - public activation remains fail-closed until Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write, `trading_methods` and Real execution remain disabled.

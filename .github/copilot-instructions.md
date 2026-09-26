@@ -1,6 +1,6 @@
 # GitHub Copilot Instructions — Omni-CIO
 
-> **CURRENT AMENDMENT-20 OVERRIDE (2026-09-24):** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** in PR #584. V9 is a **V9 migration source**, not a parallel forward runtime; stale `v9/*` branch heads are not merged. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets. Proven zero-consumer legacy working-tree paths are removed after replacement/parity/recovery proof while Git history preserves provenance. WEB-VISUAL and WP23+ remain paused.
+> **CURRENT TIMEWEB DELIVERY AUTHORITY:** target active service model is **ChatGPT + GitHub + Timeweb Cloud + Telegram Login**. Current System Update is **TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED** in PR #584. V9 is a **V9 migration source**, not a parallel forward runtime; stale `v9/*` branch heads are not merged. Cloudflare, Neon, Render, Cloud.ru and VK ID are retirement targets. Proven zero-consumer legacy working-tree paths are removed after replacement/parity/recovery proof while Git history preserves provenance. WEB-VISUAL and WP23+ remain paused. Exact active amendments/checkpoint state are resolved from the Amendments Index and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 
 Работай только над существующим продуктом Omni-CIO в `MishaGameHacking/omni-cio-gateway`. Не создавай параллельный проект, второй Web/Core/Gateway/Telegram/AI/execution stack.
@@ -23,7 +23,7 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 - `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-Before material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, historical V9 status, V10 Program Lock/Master Plan/Amendments Index, Amendments 18–20, current status, owning contracts, open PR/issues and GitHub Actions.
+Before material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, historical V9 status, V10 Program Lock/Master Plan/Amendments Index, Amendments 18–21, current status, owning contracts, open PR/issues and GitHub Actions.
 
 ## GitHub / Timeweb authority
 

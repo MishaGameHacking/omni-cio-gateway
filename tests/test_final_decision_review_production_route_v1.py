@@ -184,10 +184,7 @@ def _replace_param(
     name: str,
     value: str,
 ) -> list[tuple[str, str]]:
-    return [
-        (key, value if key == name else current)
-        for key, current in params
-    ]
+    return [(key, value if key == name else current) for key, current in params]
 
 
 def test_empty_registry_returns_503_after_authentication() -> None:

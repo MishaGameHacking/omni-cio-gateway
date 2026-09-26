@@ -26,7 +26,7 @@ Current synchronized snapshot:
 - WEB-VISUAL and WP23+ are paused;
 - public multi-user remains fail-closed until its Timeweb/Telegram/legal/privacy/capacity gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
-- OWNER-approved V9→V10 convergence is closed through `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` as branch-local P1 evidence on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`. P2 exact-SHA Timeweb App candidate is branch-local `CERTIFIED_GREEN` on `ba43fa4be350340557fcf6d8532b6c089022a8ca`. P3 PostgreSQL 18 production-cutover source machinery is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec` with all 25 exact-head checks successful and Sonar 0 new issues / 0 Security Hotspots. The current integrated checkpoint is P4 `omnicio.ru` DNS/TLS/public-ingress acceptance implementation; physical DNS/domain mutation remains a separate fail-closed external gate. PR #584 must not merge to `main` without the required exact-head OWNER landing confirmation.
+- OWNER-approved V9→V10 convergence is closed through `V9C-F / WHOLE_TREE_LEGACY_ABSENCE_PROOF` as branch-local P1 evidence on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f`. P2 exact-SHA Timeweb App candidate is branch-local `CERTIFIED_GREEN` on `ba43fa4be350340557fcf6d8532b6c089022a8ca`. P3 PostgreSQL 18 production-cutover source machinery is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec` with all 25 exact-head checks successful and Sonar 0 new issues / 0 Security Hotspots. Exact branch-local checkpoint/certification state is intentionally not duplicated here; read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and PR #584 exact-head Actions. Physical DNS/domain mutation remains a separate fail-closed external gate. PR #584 must not merge to `main` without the required exact-head OWNER landing confirmation.
 
 PROJECT OWNER is not a special Omni-CIO product role. Product users, including OWNER, use the same `Telegram USER account OIDC Login -> verified identity -> OmniCIOUserAccount -> Tenant -> Session` path, backed by a server-side session. The optional Omni-CIO Telegram bot may only be linked after that account/session exists; bot chat, `/start`, Bot API identity or bot-token possession can never create an account, mint/select a tenant or replace product login.
 
@@ -271,7 +271,7 @@ Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow
 
 ## 14. V9 / V10 boundary
 
-Amendment 20 changes the forward architecture: V9 is a migration source, not a permanent parallel runtime. `V9C-A` completed the accepted-lineage inventory; current checkpoint `V9C-B` relocates the remaining deterministic root engines into canonical `omni_cio/` packages by reuse/extraction and requires zero legacy imports plus parity/verifier migration before root-source deletion. `app.py`, `app_v360.py`, `app_v371.py`, `main.py` remain V9C-C migration inputs; retired provider/GPT working-tree artifacts remain V9C-D inputs. Git history is preserved.
+Amendment 20 changed the forward architecture: V9 is a migration source, not a permanent parallel runtime. The branch-local V9C-A through V9C-F convergence pass is preserved as P1 evidence; protected `app.py`, `app_v360.py`, `app_v371.py`, `main.py` compatibility/recovery surfaces remain only until separate accepted decommission authority. Git history is preserved.
 
 ## 15. OWNER participation / handoff law
 

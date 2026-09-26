@@ -97,7 +97,7 @@ At Amendment 14 acceptance, the historical new-V10 deployment/release selection 
 - Render was no longer the active new-V10 deployment, zero-charge-attestation, hosted-release-alignment or recovery target;
 - no new Render attestation refresh/provider mutation was required;
 - accepted WP22A Render + Neon evidence remains historical evidence and must not be rewritten;
-- V9 Render/app:app remains a temporary recovery/migration boundary only until its V9C-C/V9C-D replacement, zero-consumer and recovery gates.
+- protected V9 Render/app:app remains a recovery/compatibility boundary after branch-local P1 convergence and is retained until separate accepted decommission authority.
 
 Historically, Amendment 14 selected the Cloudflare platform and Amendment 15 grouped its four stages into one `INTEGRATED_SYSTEM_UPDATE`. Amendment 18 supersedes that provider model for all current/future V10 work.
 
@@ -195,7 +195,7 @@ Timeweb App Platform is the selected runtime target. Timeweb Managed PostgreSQL 
 
 Do not create a second Gateway, second Web product, competing DB authority or competing scheduler merely to fit provider products.
 
-Cloudflare/Neon/Render/Cloud.ru/VK files are retirement inputs under Amendment 20. They are historical evidence, not implementation templates. Remove working-tree artifacts only at their owning V9C-D/V9C-E gate after useful invariants are migrated and zero-current-consumer/recovery proof exists; Git history remains the archive.
+Cloudflare/Neon/Render/Cloud.ru/VK files are historical/retirement evidence under Amendment 20, not implementation templates. The branch-local P1 convergence pass already retired proven zero-current-consumer working-tree artifacts; remaining protected compatibility/recovery surfaces stay until separate accepted decommission authority. Git history remains the archive.
 
 ## 11. Timeweb-first dependency / capacity / cost boundary
 
@@ -267,9 +267,9 @@ Do not create its implementation branch or perform visual-refresh source changes
 
 Protected V9 production/recovery remains available until an explicit accepted decommission/parity gate.
 
-`app:app` remains only the temporary V9C-C compatibility/recovery entrypoint; the forward Timeweb source entrypoint is `apps.api.hosted_runtime:create_app`.
+`app:app` remains the protected V9 compatibility/recovery entrypoint until separate accepted decommission authority; the forward Timeweb source entrypoint is `apps.api.hosted_runtime:create_app`.
 
-Render retirement in forward V10 authority is implemented through Amendment-20 gates: V9 runtime/recovery dependencies are removed only after V9C-C/V9C-D parity, zero-consumer and recovery proof.
+Render retirement in forward V10 authority has completed the repository-side P1 convergence/zero-consumer proof where applicable; external/provider decommission remains a separate accepted gate.
 
 ## 17. Continuity
 
