@@ -217,6 +217,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         tls,
         {
             "provider_secure_connection_required": True,
+            "public_ipv4_required_before_enable": True,
+            "separate_provider_transition_required": True,
             "technical_domain_required": True,
             "certificate_status_required": "issued",
             "ca_url": "https://st.timeweb.com/cloud-static/ca.crt",
@@ -239,6 +241,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             "public_ipv6_authorized": False,
             "ddos_addon_authorized": False,
             "firewall_first_required": True,
+            "public_ipv4_before_tls_required": True,
+            "state_reconciliation_between_public_ipv4_and_tls_required": True,
             "public_network_rollback_on_tls_or_verification_failure": True,
         },
         "TIMEWEB_PUBLIC_IPV4_NETWORK_SHAPE_INVALID",
@@ -297,8 +301,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         {
             "/api/v1/projects",
             "/api/v1/projects/{project_id}/resources/databases",
-            "/api/v1/databases/{cluster_id}",
-            "/api/v1/firewall/groups",
+            "/api/v1/databases/{cluster_id}",            "/api/v1/firewall/groups",
             "/api/v1/firewall/groups/{group_id}",
             "/api/v1/firewall/groups/{group_id}/rules",
             "/api/v1/firewall/groups/{group_id}/resources",
@@ -365,6 +368,22 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             "bodyless_mutation_content_type": "application/json",
             "reconcilable_http_statuses": [409, 423],
             "blind_mutation_retry_allowed": False,
+            "latest_live_sequence_failure": {
+                "workflow_ordinal": 5,
+                "exact_main_sha_parts": [
+                    "7a875092",
+                    "58552db4",
+                    "b9ee0c2e",
+                    "762597e5",
+                    "61a42fb6",
+                ],
+                "observed_terminal_code": "TIMEWEB_DATABASE_PUBLIC_NETWORK_PATCH_REJECTED",
+                "http_status": 400,
+                "combined_public_ipv4_tls_patch_rejected": True,
+                "exact_provider_validation_message_unavailable": True,
+                "repair_requires_separate_public_ipv4_and_tls_transitions": True,
+                "get_reconciliation_between_transitions_required": True,
+            },
         },
         "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",
     )
@@ -573,7 +592,9 @@ def _validate_sources() -> None:
             'operation="FIREWALL_RULE_CREATE"',
             'operation="FIREWALL_RESOURCE_LINK"',
             'operation="FLOATING_IP_CREATE"',
-            'operation="DATABASE_PUBLIC_NETWORK_PATCH"',
+            'operation="DATABASE_PUBLIC_IPV4_PATCH"',
+            'operation="DATABASE_TLS_ENABLE_PATCH"',
+            "_wait_public_ipv4_ready(api, cluster_id, address)",
             "http_status={exc.status}",
             "TIMEWEB_PUBLIC_NETWORK_ROLLBACK_MANUAL_RECONCILIATION_REQUIRED",
             "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE",
@@ -597,8 +618,7 @@ def _validate_sources() -> None:
         workflow,
         (
             "workflow_dispatch:",
-            _CONFIRMATION,
-            "verifier_cidr:",
+            _CONFIRMATION,            "verifier_cidr:",
             "allocation_plan_id:",
             "actions: read",
             "contents: read",
@@ -742,6 +762,57 @@ def _validate_custody_order(tree: ast.Module) -> None:
     )
 
 
+def _validate_provider_transition_order(tree: ast.Module) -> None:
+    public_patch = _function(tree, "_patch_public_ipv4")
+    tls_patch = _function(tree, "_enable_secure_connection")
+    public_literals = _string_literals(public_patch)
+    tls_literals = _string_literals(tls_patch)
+    for required in (
+        "floating_ip",
+        "is_enabled_public_network",
+        "is_enabled_public_ipv6",
+        "DATABASE_PUBLIC_IPV4_PATCH",
+    ):
+        _require(
+            required in public_literals,
+            True,
+            "TIMEWEB_PUBLIC_IPV4_TRANSITION_INVALID",
+        )
+    _require(
+        "is_secure_connection_enable" in public_literals,
+        False,
+        "TIMEWEB_PUBLIC_IPV4_TRANSITION_INVALID",
+    )
+    for required in (
+        "is_secure_connection_enable",
+        "DATABASE_TLS_ENABLE_PATCH",
+    ):
+        _require(
+            required in tls_literals,
+            True,
+            "TIMEWEB_TLS_TRANSITION_INVALID",
+        )
+    for forbidden in (
+        "floating_ip",
+        "is_enabled_public_network",
+        "is_enabled_public_ipv6",
+    ):
+        _require(
+            forbidden in tls_literals,
+            False,
+            "TIMEWEB_TLS_TRANSITION_INVALID",
+        )
+
+    configure = _function(tree, "_configure_transport")
+    public_calls = call_lines(configure, owner=None, name="_patch_public_ipv4")
+    tls_calls = call_lines(configure, owner=None, name="_enable_secure_connection")
+    scope_calls = call_lines(configure, owner=None, name="_verify_transport_scope")
+    if len(public_calls) != 1 or len(tls_calls) != 1 or len(scope_calls) != 2:
+        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+    if not public_calls[0] < scope_calls[0] < tls_calls[0] < scope_calls[1]:
+        raise RuntimeError("TIMEWEB_PROVIDER_TRANSITION_ORDER_INVALID")
+
+
 def _validate_custody_probe(source: str) -> None:
     tree = ast.parse(source)
     for node in ast.walk(tree):
@@ -780,6 +851,7 @@ def _validate_ipv4_custody_sources() -> None:
     tree = ast.parse(source)
     _validate_custody_stamp(tree)
     _validate_custody_order(tree)
+    _validate_provider_transition_order(tree)
     _markers(
         source,
         (
