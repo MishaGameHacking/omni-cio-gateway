@@ -6,6 +6,9 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest import mock
+
+from scripts import provider_runtime_primitives as provider_runtime
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,9 +50,102 @@ def _contract_path(root: Path) -> Path:
     )
 
 
+class _ConnectOperationalError(Exception):
+    def __init__(self, sqlstate: str | None) -> None:
+        super().__init__("sanitized-connect-failure")
+        self.sqlstate = sqlstate
+
+
+class _FakePsycopg:
+    OperationalError = _ConnectOperationalError
+
+    def __init__(self, outcomes: list[object]) -> None:
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def connect(
+        self,
+        uri: str,
+        *,
+        autocommit: bool,
+        connect_timeout: int,
+    ) -> object:
+        del uri
+        self.calls += 1
+        self.assertions = (autocommit, connect_timeout)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+
 class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         guard.validate(ROOT)
+
+    def test_connect_retry_retries_only_transient_sqlstate(self) -> None:
+        connection = object()
+        client = _FakePsycopg(
+            [
+                _ConnectOperationalError("08006"),
+                connection,
+            ]
+        )
+        with mock.patch.object(provider_runtime.time, "sleep") as sleeper:
+            actual = provider_runtime._connect_postgres_with_retry(
+                client,
+                "postgresql://redacted",
+                retry_marker="TIMEWEB_PG_TEST_RETRY",
+                failure_code="TIMEWEB_PG_TEST_FAILED",
+                retry_delays=(0.0,),
+            )
+        self.assertIs(actual, connection)
+        self.assertEqual(client.calls, 2)
+        sleeper.assert_called_once_with(0.0)
+
+    def test_connect_retry_does_not_retry_authentication_sqlstate(self) -> None:
+        client = _FakePsycopg(
+            [
+                _ConnectOperationalError("28P01"),
+                object(),
+            ]
+        )
+        with mock.patch.object(provider_runtime.time, "sleep") as sleeper:
+            with self.assertRaisesRegex(
+                provider_runtime.ProvisioningStopped,
+                "TIMEWEB_PG_TEST_FAILED",
+            ):
+                provider_runtime._connect_postgres_with_retry(
+                    client,
+                    "postgresql://redacted",
+                    retry_marker="TIMEWEB_PG_TEST_RETRY",
+                    failure_code="TIMEWEB_PG_TEST_FAILED",
+                    retry_delays=(0.0,),
+                )
+        self.assertEqual(client.calls, 1)
+        sleeper.assert_not_called()
+
+    def test_connect_retry_allows_client_side_network_error_without_sqlstate(
+        self,
+    ) -> None:
+        connection = object()
+        client = _FakePsycopg(
+            [
+                _ConnectOperationalError(None),
+                connection,
+            ]
+        )
+        with mock.patch.object(provider_runtime.time, "sleep") as sleeper:
+            actual = provider_runtime._connect_postgres_with_retry(
+                client,
+                "postgresql://redacted",
+                retry_marker="TIMEWEB_PG_TEST_RETRY",
+                failure_code="TIMEWEB_PG_TEST_FAILED",
+                retry_delays=(0.0,),
+            )
+        self.assertIs(actual, connection)
+        self.assertEqual(client.calls, 2)
+        sleeper.assert_called_once_with(0.0)
 
     def test_rejects_synthetic_fixture_promotion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
