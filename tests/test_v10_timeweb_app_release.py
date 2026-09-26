@@ -28,6 +28,21 @@ class _Response:
         del args
 
 
+class _RawResponse:
+    def __init__(self, raw: bytes, *, status: int = 200) -> None:
+        self.status = status
+        self._raw = raw
+
+    def read(self, amount: int = -1) -> bytes:
+        return self._raw if amount < 0 else self._raw[:amount]
+
+    def __enter__(self) -> _RawResponse:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        del args
+
+
 class _Opener:
     def __init__(self, responses: list[_Response]) -> None:
         self.responses = list(responses)
@@ -549,6 +564,22 @@ def test_successful_but_unprovable_deploy_response_reconciles_by_get() -> None:
     )
     assert api.calls == [("17", EXPECTED_SHA)]
     assert last_known_good == LKG_SHA
+
+
+def test_wire_unprovable_201_is_ambiguous_and_never_replayed() -> None:
+    for raw in (
+        b"{not-json",
+        b"x" * (release.MAX_RESPONSE_BYTES + 1),
+    ):
+        with pytest.raises(release.AmbiguousDeploy):
+            opener = _Opener([_RawResponse(raw, status=201)])
+            api = release.TimewebAppApi(
+                "opaque-token",
+                opener=opener,
+                sleeper=lambda _: None,
+            )
+            api.deploy_once("17", EXPECTED_SHA)
+        assert len(opener.requests) == 1
 
 
 def test_wire_deploy_body_is_exact_commit_only() -> None:
