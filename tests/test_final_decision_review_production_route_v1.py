@@ -35,6 +35,7 @@ from omni_cio.contracts.v1.final_decision_review_input import (
 )
 from omni_cio.contracts.v1.final_decision_review_route_plan import (
     FinalDecisionReviewProposedRouteV1,
+    FinalDecisionReviewAcceptanceCheckCode,
     FinalDecisionReviewRouteImplementationPlanV1,
     FinalDecisionReviewRoutePlanStatus,
 )
@@ -333,7 +334,7 @@ def test_registry_rejects_unready_plan() -> None:
         update={
             "status": FinalDecisionReviewRoutePlanStatus.BLOCKED,
             "ready_for_implementation_review": False,
-            "blockers": ("source_dossier",),
+            "blockers": (FinalDecisionReviewAcceptanceCheckCode.SOURCE_DOSSIER,),
         }
     )
 

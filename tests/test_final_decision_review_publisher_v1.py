@@ -41,6 +41,7 @@ from omni_cio.contracts.v1.final_decision_review_publisher import (
 )
 from omni_cio.contracts.v1.final_decision_review_route_plan import (
     FinalDecisionReviewProposedRouteV1,
+    FinalDecisionReviewAcceptanceCheckCode,
     FinalDecisionReviewRouteImplementationPlanV1,
     FinalDecisionReviewRoutePlanStatus,
 )
@@ -352,7 +353,7 @@ def test_blocked_plan_and_context_substitution_are_rejected() -> None:
         update={
             "status": FinalDecisionReviewRoutePlanStatus.BLOCKED,
             "ready_for_implementation_review": False,
-            "blockers": ("source_dossier",),
+            "blockers": (FinalDecisionReviewAcceptanceCheckCode.SOURCE_DOSSIER,),
         }
     )
     with pytest.raises(

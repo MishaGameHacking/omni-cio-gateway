@@ -32,6 +32,7 @@ from omni_cio.contracts.v1.final_decision_review_input import (
     FinalDecisionReviewReadOnlyQueryV1,
 )
 from omni_cio.contracts.v1.final_decision_review_route_plan import (
+    FinalDecisionReviewAcceptanceCheckCode,
     FinalDecisionReviewRouteImplementationPlanV1,
     FinalDecisionReviewRoutePlanStatus,
 )
@@ -270,7 +271,7 @@ def test_blocked_route_plan_maps_to_503() -> None:
         update={
             "status": FinalDecisionReviewRoutePlanStatus.BLOCKED,
             "ready_for_implementation_review": False,
-            "blockers": ("source_dossier",),
+            "blockers": (FinalDecisionReviewAcceptanceCheckCode.SOURCE_DOSSIER,),
         }
     )
 
