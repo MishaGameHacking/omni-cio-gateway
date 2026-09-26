@@ -305,6 +305,15 @@ class TimewebAppApi:
                 _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_CHANGED")
             rows.extend(page_rows)
             if len(rows) == total:
+                identifiers = [
+                    _safe_id(
+                        row.get("id"),
+                        "TIMEWEB_APP_RELEASE_DEPLOY_ID_INVALID",
+                    )
+                    for row in rows
+                ]
+                if len(set(identifiers)) != len(identifiers):
+                    _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID")
                 return {"deploys": rows, "meta": {"total": total}}
             if not page_rows or len(page_rows) < _PAGE_SIZE:
                 _stop("TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TRUNCATED")
