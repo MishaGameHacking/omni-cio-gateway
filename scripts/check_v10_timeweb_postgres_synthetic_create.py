@@ -393,6 +393,16 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
     _require(
+        api.get("ambiguous_http_statuses"),
+        [408, 409, 423, 429, 500, 502, 503, 504],
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
+        api.get("transient_control_plane_read_failures_retry_within_outer_reconciliation"),
+        True,
+        "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
+    )
+    _require(
         api.get("existing_exact_target_recovery_get_only"),
         True,
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
@@ -467,6 +477,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "exact_project_membership_recheck_required",
         "started_status_required",
         "starting_state_uses_bounded_state_aware_verification",
+        "transient_control_plane_read_failures_retry_within_start_wait",
+        "control_plane_only_timeout_has_distinct_sanitized_code",
         "starting_explicit_unsafe_values_fail_closed",
         "terminal_started_exact_shape_required",
         "field_specific_sanitized_drift_codes_required",
