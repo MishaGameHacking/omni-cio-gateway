@@ -86,7 +86,9 @@ def _verify_terminal_shape():
         ):
             guard._validate_transport_state(transport, target, require_ready=True)
 
-    def test_transport_state_machine_accepts_exactly_one_proved_ready_mode(self) -> None:
+    def test_transport_state_machine_accepts_exactly_one_proved_ready_mode(
+        self,
+    ) -> None:
         payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
         transport = payload["parity_transport_gate"]
         transport["status"] = "READY"
@@ -119,7 +121,9 @@ def _verify_terminal_shape():
         ):
             guard._validate_transport_state(transport, target, require_ready=True)
 
-    def test_public_transport_cannot_be_ready_while_create_shape_forbids_it(self) -> None:
+    def test_public_transport_cannot_be_ready_while_create_shape_forbids_it(
+        self,
+    ) -> None:
         payload = json.loads(Path(guard.CONTRACT).read_text(encoding="utf-8"))
         transport = payload["parity_transport_gate"]
         target = payload["target"]
@@ -205,14 +209,14 @@ def _verify_terminal_shape():
     def test_create_post_is_exactly_once_and_secret_is_not_emitted(self) -> None:
         opener = _sequence_opener(
             _json_response(
-                    {
-                        "db": {
-                            "id": 91,
-                            "name": read_only.TARGET_CLUSTER_NAME,
-                        }
-                    },
-                    status=201,
-                )
+                {
+                    "db": {
+                        "id": 91,
+                        "name": read_only.TARGET_CLUSTER_NAME,
+                    }
+                },
+                status=201,
+            )
         )
         api = provisioner.TimewebCreateApi("synthetic-token", opener=opener)
         with mock.patch("builtins.print") as output:
@@ -249,15 +253,15 @@ def _verify_terminal_shape():
         mutation_opener = _sequence_opener(OSError("lost response"))
         read_opener = _sequence_opener(
             _json_response(
-                    {
-                        "databases": [
-                            {
-                                "id": 91,
-                                "name": read_only.TARGET_CLUSTER_NAME,
-                            }
-                        ]
-                    }
-                )
+                {
+                    "databases": [
+                        {
+                            "id": 91,
+                            "name": read_only.TARGET_CLUSTER_NAME,
+                        }
+                    ]
+                }
+            )
         )
         mutation_api = provisioner.TimewebCreateApi(
             "synthetic-token",
@@ -608,7 +612,9 @@ def _verify_terminal_shape():
                 preset_id=777,
             )
 
-    def test_existing_exact_target_enters_get_only_recovery_without_writer(self) -> None:
+    def test_existing_exact_target_enters_get_only_recovery_without_writer(
+        self,
+    ) -> None:
         read_api = mock.Mock()
         project_path = "/api/v1/projects/42/resources/databases"
         responses = {
