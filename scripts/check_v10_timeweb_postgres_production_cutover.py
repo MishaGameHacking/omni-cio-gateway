@@ -261,6 +261,8 @@ def _validate_sources() -> None:
             "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)",
             "probe_hosted_runtime_database",
             "_verify_cross_tenant_negative(runtime)",
+            "_PRODUCTION_CONNECT_RETRY_DELAYS = (",
+            "retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS",
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",
