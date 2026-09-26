@@ -397,7 +397,8 @@ def _rule_body(cidr: str) -> dict[str, object]:
 
 def _rules(
     api: read_only.TimewebReadOnlyApi,
-    group_id: str,) -> list[dict[str, Any]]:
+    group_id: str,
+) -> list[dict[str, Any]]:
     return _rows(api, f"/api/v1/firewall/groups/{group_id}/rules", "rules")
 
 
@@ -841,7 +842,8 @@ def _close_public_network(
     try:
         mutation.mutate_once(
             "PATCH",
-            f"/api/v2/databases/{cluster_id}",            operation="DATABASE_PUBLIC_NETWORK_ROLLBACK",
+            f"/api/v2/databases/{cluster_id}",
+            operation="DATABASE_PUBLIC_NETWORK_ROLLBACK",
             body=body,
             expected_statuses=frozenset({200}),
             reconcile_statuses=_RECONCILABLE_MUTATION_HTTP_STATUSES,
@@ -1274,6 +1276,7 @@ def _stopped_marker(exc: _provider_base.ProvisioningStopped) -> str:
     if exc.status is not None:
         marker += f" http_status={exc.status}"
     return marker
+
 
 def main() -> int:
     try:
