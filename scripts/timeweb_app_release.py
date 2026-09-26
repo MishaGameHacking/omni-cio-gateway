@@ -34,6 +34,7 @@ _RUNTIME_MODES = frozenset({RUNTIME_MODE_PREACTIVATION, RUNTIME_MODE_LIVE_OPERAB
 MAX_RESPONSE_BYTES = 1024 * 1024
 _PAGE_SIZE = 100
 _GET_DELAYS = (1.0, 2.0)
+_LIVEZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0)
 _DEPLOY_RECONCILE_DELAYS = (0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 _POLL_DELAYS = (
     0.0,
@@ -470,25 +471,47 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    try:
-        with active.open(request, timeout=30.0) as response:
-            payload = _decode(
-                int(response.status),
-                response.read(MAX_RESPONSE_BYTES + 1),
-                200,
-                "TIMEWEB_APP_RELEASE_LIVEZ",
-            )
-    except HTTPError as exc:
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=int(exc.code))
-    except OSError:
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
-    if payload.get("status") != "ok":
-        _stop("TIMEWEB_APP_RELEASE_LIVEZ_NOT_OK")
-    if (
-        _sha(payload.get("release_sha"), "TIMEWEB_APP_RELEASE_LIVEZ_SHA_INVALID")
-        != expected
-    ):
+    for attempt in range(len(_LIVEZ_RETRY_DELAYS) + 1):
+        try:
+            with active.open(request, timeout=30.0) as response:
+                status = int(response.status)
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+        except HTTPError as exc:
+            status = int(exc.code)
+            if status in _TRANSIENT and attempt < len(_LIVEZ_RETRY_DELAYS):
+                time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+                continue
+            _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+        except OSError:
+            if attempt < len(_LIVEZ_RETRY_DELAYS):
+                time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+                continue
+            _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
+
+        if status != 200:
+            if status in _TRANSIENT and attempt < len(_LIVEZ_RETRY_DELAYS):
+                time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+                continue
+            _stop("TIMEWEB_APP_RELEASE_LIVEZ_HTTP_ERROR", status=status)
+        payload = _decode(
+            status,
+            raw,
+            200,
+            "TIMEWEB_APP_RELEASE_LIVEZ",
+        )
+        if payload.get("status") != "ok":
+            _stop("TIMEWEB_APP_RELEASE_LIVEZ_NOT_OK")
+        observed = _sha(
+            payload.get("release_sha"),
+            "TIMEWEB_APP_RELEASE_LIVEZ_SHA_INVALID",
+        )
+        if observed == expected:
+            return
+        if attempt < len(_LIVEZ_RETRY_DELAYS):
+            time.sleep(_LIVEZ_RETRY_DELAYS[attempt])
+            continue
         _stop("TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT")
+    _stop("TIMEWEB_APP_RELEASE_LIVEZ_TRANSPORT_FAILED")
 
 
 def _reconcile(api: ApiLike, app_id: str, before: frozenset[str], expected: str) -> str:
