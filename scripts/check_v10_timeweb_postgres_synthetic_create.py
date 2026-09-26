@@ -398,7 +398,9 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
     _require(
-        api.get("transient_control_plane_read_failures_retry_within_outer_reconciliation"),
+        api.get(
+            "transient_control_plane_read_failures_retry_within_outer_reconciliation"
+        ),
         True,
         "TIMEWEB_SYNTHETIC_CREATE_RECONCILIATION_INVALID",
     )
