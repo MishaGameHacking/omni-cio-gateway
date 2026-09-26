@@ -901,10 +901,9 @@ def _fetch_ca_file(
                 raw = response.read(MAX_CA_BYTES + 1)
             break
         except HTTPError as exc:
-            if (
-                int(exc.code) not in read_only._TRANSIENT_HTTP_STATUSES
-                or attempt >= len(delays)
-            ):
+            if int(
+                exc.code
+            ) not in read_only._TRANSIENT_HTTP_STATUSES or attempt >= len(delays):
                 raise _provider_base.ProvisioningStopped(
                     "TIMEWEB_CA_FETCH_FAILED"
                 ) from None
@@ -997,9 +996,7 @@ def _probe_postgres_tls(
                     "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
                 ) from None
             sleeper(delays[attempt])
-    raise _provider_base.ProvisioningStopped(
-        "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
-    )
+    raise _provider_base.ProvisioningStopped("TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED")
 
 
 def _verify_bound_ipv4(
