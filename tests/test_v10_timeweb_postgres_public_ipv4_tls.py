@@ -477,6 +477,83 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         self.assertEqual(context.verify_mode, provisioner.ssl.CERT_REQUIRED)
         context.load_verify_locations.assert_called_once_with(cafile="provider-ca.crt")
 
+    def test_firewall_rule_ambiguous_create_reconciles_by_get_only(self) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        expected = {
+            "id": "rule-1",
+            **provisioner._rule_body("8.8.8.8/32"),
+        }
+        sleeps: list[float] = []
+        with mock.patch.object(
+            provisioner,
+            "_rules",
+            side_effect=[[], [], [expected]],
+        ) as rules:
+            provisioner._ensure_rule(
+                mutation,
+                api,
+                "group-1",
+                "8.8.8.8/32",
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        mutation.mutate_once.assert_called_once()
+        self.assertEqual(rules.call_count, 3)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_firewall_resource_link_reconciles_delayed_visibility_get_only(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        sleeps: list[float] = []
+        linked = {"id": 91, "type": "dbaas"}
+        with mock.patch.object(
+            provisioner,
+            "_resources",
+            side_effect=[[], [], [linked]],
+        ) as resources:
+            provisioner._ensure_resource_link(
+                mutation,
+                api,
+                "group-1",
+                91,
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        mutation.mutate_once.assert_called_once()
+        self.assertEqual(resources.call_count, 3)
+        self.assertEqual(sleeps, [0.0])
+
+    def test_post_exposure_transport_scope_is_read_only(self) -> None:
+        api = mock.Mock()
+        with (
+            mock.patch.object(provisioner, "_verify_group") as verify_group,
+            mock.patch.object(provisioner, "_verify_exact_rule") as verify_rule,
+            mock.patch.object(
+                provisioner,
+                "_verify_resource_link",
+            ) as verify_resource,
+            mock.patch.object(
+                provisioner,
+                "_verify_exclusive_firewall",
+            ) as verify_exclusive,
+            mock.patch.object(provisioner, "_verify_bound_ipv4") as verify_ipv4,
+        ):
+            provisioner._verify_transport_scope(
+                api,
+                "group-1",
+                91,
+                "8.8.8.8/32",
+                "8.8.4.4",
+            )
+        verify_group.assert_called_once_with(api, "group-1")
+        verify_rule.assert_called_once_with(api, "group-1", "8.8.8.8/32")
+        verify_resource.assert_called_once_with(api, "group-1", 91)
+        verify_exclusive.assert_called_once_with(api, "group-1", 91)
+        verify_ipv4.assert_called_once_with(api, 91, "8.8.4.4")
+
     def test_multiple_firewall_groups_are_rejected(self) -> None:
         api = mock.Mock()
         with mock.patch.object(
