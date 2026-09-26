@@ -522,6 +522,7 @@ def test_deploy_rejects_multiple_inflight_exact_sha_before_mutation() -> None:
         {"id": "deploy-a", "commit_sha": EXPECTED_SHA, "status": "created"},
         {"id": "deploy-b", "commit_sha": EXPECTED_SHA, "status": "started"},
     ]
+    livez = _Livez()
     with pytest.raises(
         release.ReleaseStopped,
         match="TIMEWEB_APP_RELEASE_MULTIPLE_INFLIGHT_EXACT_SHA",
@@ -533,7 +534,7 @@ def test_deploy_rejects_multiple_inflight_exact_sha_before_mutation() -> None:
             token="token",
             confirmation=release.DEPLOY_CONFIRMATION,
             api=api,
-            livez_opener=_Livez(),
+            livez_opener=livez,
         )
     assert api.calls == []
 
