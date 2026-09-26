@@ -747,3 +747,73 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** every source relocation into a stricter package boundary must pass the destination lint/type/format baseline as part of the relocation preflight, even when runtime behavior is intentionally unchanged.
 
 **Dependency/tooling knowledge change:** Python Decimal tuple exponents are typed as an integer or special-value marker; runtime finite checks do not necessarily narrow that union for static type checkers.
+
+---
+
+## FL-032 — Provider adapters must bind authority to fields that the live API actually owns
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / existing-IPv4 custody gate / live PLAN run `36230181006`
+
+**Symptom / failing gate:** the protected-main `V10 RU-PG-B Timeweb Existing IPv4 Allocation` PLAN passed exact-main, source-contract and GitHub-environment gates, then stopped before any provider mutation with `TIMEWEB_ALLOCATION_OBSERVATION_UNAVAILABLE`.
+
+**Root cause:** the allocation provider adapter tried to derive private account scope from `DatabaseCluster.account_id`. Current Timeweb API schema exposes `Project.account_id` and `DatabaseCluster.project_id`; the database cluster does not own an `account_id` field. The adapter therefore rejected a valid live cluster response. A second producer/consumer defect hid that safe diagnosis: `ProviderStopped` inherited directly from `RuntimeError`, so the protocol's read boundary converted its fixed provider code into the generic observation-unavailable code.
+
+**Blast radius searched:** Timeweb project/cluster/floating-IP provider schema, allocation snapshot construction, transport prerequisite identity, closed-journal serialization, PLAN/APPLY/RECONCILE consumers, live adapter fixtures, provider-error sanitization and the machine allocation guard. The closed snapshot schema can remain stable because account scope is still available from the selected Project object.
+
+**Why preflight missed it:** the live adapter fixture invented `account_id` on the DatabaseCluster payload and omitted `account_id` from the Project payload, so the synthetic contract encoded the same false assumption as production code. Unit tests therefore certified the fixture rather than the provider schema.
+
+**Corrective change:** source account scope from the exact selected `Project.account_id`; require the live `DatabaseCluster.project_id` to equal that selected project; remove the non-existent cluster-account dependency; make sanitized `ProviderStopped` a protocol `AllocationStopped` subtype so fixed fail-closed provider diagnostics cross the read boundary without exposing raw payloads.
+
+**Permanent regression/guard:** live adapter fixtures now mirror the current provider ownership split, tests prove no cluster `account_id` is required, project drift is rejected, and provider-stop inheritance is machine-guarded. Unknown raw provider exceptions remain sanitized by the existing generic read-failure regression.
+
+**Future prevention rule:** provider fixtures must be derived from current provider schemas for every authority-bearing field. Never infer identity/authority from a convenient adjacent resource when the provider schema assigns it to another object, and never let a sanitization boundary erase already-sanitized fixed error codes.
+
+**Dependency/tooling knowledge change:** current Timeweb schema places account identity on Project (`account_id`) and project identity on DatabaseCluster (`project_id`).
+
+---
+
+## FL-033 — Published repair checkpoints must reproduce the pinned formatter before CI
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / PR #587 / exact head `3da2dc6e8a7a97e5e5eb61d46d7a8f114eb8b5e9`
+
+**Symptom / failing gate:** twelve repository workflows completed successfully, but both `V10 Fast PR Checks` and the authoritative Windows merge gate rejected the same repair head before tests because Ruff 0.16.1 would reformat `scripts/timeweb_ipv4_allocation_provider.py` and `tests/test_v10_timeweb_ipv4_allocation_live.py`. Sonar also reported one new maintainability issue on the repair diff.
+
+**Root cause:** the source correction was published from a connector-only environment where a local repository checkout and the pinned Ruff runtime were unavailable. Manual formatting review did not exactly reproduce Ruff 0.16.1, and the new regression used a generic `unittest.assertTrue` shape instead of a more specific assertion.
+
+**Blast radius searched:** every changed Python file in PR #587, Fast PR changed-file formatting, authoritative repository-wide formatting, the live allocation regression tests, the allocation machine guard and Sonar's new-code maintainability surface. No runtime, tenant, broker, provider-mutation or schema behavior failure was found in this CI batch.
+
+**Why preflight missed it:** formatter equivalence was assumed from visual review after local tool bootstrap failed. Existing FL-026/FL-031 already require exact formatter reproduction, but the fallback path for a connector-only repair checkpoint did not enforce that rule before publication.
+
+**Corrective change:** apply the exact Ruff diff emitted by CI and strengthen the provider guard to inspect field ownership inside the exact AST functions instead of relying on file-wide string presence. Remove the duplicate forbidden-method literal while touching that guard. When Sonar still reported one new issue on replacement head `640eea8f679864582981da0a696403839a66e3b4`, split the dense cluster validator into identity/storage/network units and move new AST ownership checks out of the already-dense provider guard without changing fail-closed codes or provider capabilities. Class-introspection and direct/public boundary-test variants were removed after exact-head Sonar evidence showed each test form added a separate maintainability finding; the deterministic machine guard remains the regression protection for the inheritance boundary, while live PLAN re-execution is the external behavioral proof after merge.
+
+**Permanent regression/guard:** Fast PR and the authoritative merge gate remain unchanged and fail closed on formatter drift; the allocation guard proves `account_id` belongs to `_select_project`, is absent from the cluster-identity validator, `project_id` is required there, and `_cluster` must call that validator.
+
+**Future prevention rule:** inability to run the pinned formatter locally is not a formatting waiver. Before treating a connector-only checkpoint as final, reproduce the exact formatter output from the first available targeted verifier and fold all formatting/static-analysis findings into the same RED-repair batch before recertification.
+
+**Dependency/tooling knowledge change:** none.
+
+---
+
+## FL-034 — Exception regressions must isolate the single operation expected to fail
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / PR #587 / exact head `fd4888c2e76f4a2875aafd4229bf78284822cdf3`
+
+**Symptom / failing gate:** the exact-head authoritative Windows Regression Shield failed with one focused guard failure after 3,805 tests passed, and Sonar reported the same new-code maintainability defect in `test_snapshot_rejects_cluster_project_drift`: the expected-exception context contained three nested invocations instead of one isolated operation.
+
+**Root cause:** the negative regression constructed `_ReadApi`, constructed `TimewebAllocationProvider`, and called `snapshot()` inside one `assertRaisesRegex` body. This made the intended throw site ambiguous and could let a setup/construction failure satisfy a test meant to prove cluster/project drift rejection.
+
+**Blast radius searched:** every `assertRaises` / `assertRaisesRegex` block in the Timeweb IPv4 allocation test family, the existing protocol AST guard, the provider constructor/read boundary, and exact-head Sonar plus Regression Shield evidence. The guard identified this as the only remaining multi-call exception body in that test family.
+
+**Why preflight missed it:** focused source/static checks were GREEN, but this invariant is enforced by the full Regression Shield guard and Sonar. The test was introduced while iterating on the provider-schema defect and retained nested setup in the exception body.
+
+**Corrective change:** construct the read adapter and provider before the exception context, then execute only `adapter.snapshot()` inside `assertRaisesRegex`. Setup failures now fail independently instead of falsely satisfying the expected cluster/project-drift exception.
+
+**Permanent regression/guard:** `ProtocolGuardTests.test_exception_assertions_isolate_the_operation_under_test` scans every `test_v10_timeweb_ipv4_allocation*.py` expected-exception body and requires exactly one call. Sonar independently checks the same maintainability class.
+
+**Future prevention rule:** exception tests must complete all non-target setup before entering the expected-exception context; the body must contain exactly the operation whose failure semantics the test proves.
+
+**Dependency/tooling knowledge change:** none.
+

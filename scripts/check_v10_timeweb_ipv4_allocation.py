@@ -80,6 +80,7 @@ def validate_contract(data: dict[str, object]) -> None:
     )
     adapters = _mapping(data.get("source_adapters"))
     _require(adapters.get("sqlite_synchronous") == "EXTRA")
+    _require(adapters.get("provider_account_scope_source") == "PROJECT.account_id")
     _flags(
         adapters,
         (
@@ -90,6 +91,8 @@ def validate_contract(data: dict[str, object]) -> None:
             "timeweb_snapshot_comment_only_adapter",
             "operational_workflow_source_present",
             "native_windows_evidence_required_before_live_apply",
+            "cluster_project_binding_required",
+            "sanitized_provider_stop_passthrough",
         ),
         True,
     )
@@ -359,11 +362,54 @@ def _validate_m1_adapters() -> None:
             _require(forbidden not in source)
 
 
+def _string_literals(function: ast.FunctionDef) -> set[str]:
+    return {
+        node.value
+        for node in ast.walk(function)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+
+def _call_names(function: ast.FunctionDef) -> set[str]:
+    return {
+        node.func.id
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+
+
+def _validate_provider_identity_contract(
+    tree: ast.Module,
+    classes: dict[str, ast.ClassDef],
+) -> None:
+    provider_stopped = classes.get("ProviderStopped")
+    if provider_stopped is None or len(provider_stopped.bases) != 1:
+        raise ValueError(_ERROR)
+    provider_base = provider_stopped.bases[0]
+    _require(ast.unparse(provider_base) == "allocation.AllocationStopped")
+
+    functions = {
+        node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
+    select_project = functions.get("_select_project")
+    cluster = functions.get("_cluster")
+    cluster_identity = functions.get("_cluster_identity")
+    if select_project is None or cluster is None or cluster_identity is None:
+        raise ValueError(_ERROR)
+    project_literals = _string_literals(select_project)
+    identity_literals = _string_literals(cluster_identity)
+    _require("account_id" in project_literals)
+    _require("account_id" not in identity_literals)
+    _require("project_id" in identity_literals)
+    _require("_cluster_identity" in _call_names(cluster))
+
+
 def _validate_provider() -> None:
     source = PROVIDER.read_text(encoding="utf-8")
     tree = ast.parse(source)
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     _require("TimewebAllocationProvider" in classes)
+    _validate_provider_identity_contract(tree, classes)
     methods = {
         node.name: node
         for node in classes["TimewebAllocationProvider"].body
@@ -388,7 +434,6 @@ def _validate_provider() -> None:
         '"POST"',
         '"PUT"',
         '"DELETE"',
-        '"POST"',
         '"/bind"',
         '"/unbind"',
         "/firewall/",
@@ -398,6 +443,10 @@ def _validate_provider() -> None:
     ):
         _require(forbidden not in source)
     _require('body={"comment": marker}' in source)
+    _require("def _select_project(payload: object) -> tuple[str, str]:" in source)
+    _require("TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT" in source)
+    _require("def _cluster_identity(" in source)
+    _require("def _cluster_storage(" in source)
     _require("def transport_snapshot(" in source)
     _require("allocation.TransportSnapshot(" in source)
     _require('self._read_api.get("/api/v1/floating-ips")' in source)

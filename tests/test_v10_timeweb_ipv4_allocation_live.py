@@ -73,7 +73,13 @@ def _provider_payloads(comment: str = "") -> dict[str, object]:
     row = _floating_row(comment)
     return {
         "/api/v1/projects": {
-            "projects": [{"id": "project-1", "name": provider.TARGET_PROJECT_NAME}],
+            "projects": [
+                {
+                    "id": "project-1",
+                    "account_id": "account-1",
+                    "name": provider.TARGET_PROJECT_NAME,
+                }
+            ],
             "meta": {"total": 1},
         },
         "/api/v1/projects/project-1/resources/databases": {
@@ -97,7 +103,7 @@ def _provider_payloads(comment: str = "") -> dict[str, object]:
                 "replica_list": [{"db_id": 123}],
                 "is_enabled_public_network": False,
                 "is_enabled_public_ipv6": False,
-                "account_id": "account-1",
+                "project_id": "project-1",
             }
         },
         "/api/v1/floating-ips": {"ips": [row], "meta": {"total": 1}},
@@ -208,11 +214,45 @@ class TimewebAllocationProviderTests(unittest.TestCase):
             row["cpu"] = value
             adapter = provider.TimewebAllocationProvider(_ReadApi(payloads))
 
-            with self.subTest(value=value), self.assertRaisesRegex(
-                provider.ProviderStopped,
-                "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID",
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(
+                    provider.ProviderStopped,
+                    "TIMEWEB_ALLOCATION_CLUSTER_CPU_INVALID",
+                ),
             ):
                 adapter.snapshot()
+
+    def test_snapshot_uses_project_account_scope_not_cluster_account_field(
+        self,
+    ) -> None:
+        payloads = _provider_payloads()
+        cluster = payloads["/api/v1/databases/123"]
+        assert isinstance(cluster, dict)
+        row = cluster["db"]
+        assert isinstance(row, dict)
+        self.assertNotIn("account_id", row)
+
+        observed = provider.TimewebAllocationProvider(_ReadApi(payloads)).snapshot()
+
+        self.assertEqual(observed.account_scope, "account-1")
+        self.assertEqual(observed.project_id, "project-1")
+
+    def test_snapshot_rejects_cluster_project_drift(self) -> None:
+        payloads = _provider_payloads()
+        cluster = payloads["/api/v1/databases/123"]
+        assert isinstance(cluster, dict)
+        row = cluster["db"]
+        assert isinstance(row, dict)
+        row["project_id"] = "project-2"
+
+        adapter = provider.TimewebAllocationProvider(_ReadApi(payloads))
+
+        with self.assertRaisesRegex(
+            provider.ProviderStopped,
+            "TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT",
+        ):
+            adapter.snapshot()
 
     def test_comment_writer_is_one_exact_patch(self) -> None:
         mutation = _MutationApi()
@@ -262,7 +302,6 @@ class TimewebAllocationProviderTests(unittest.TestCase):
         ) as raised:
             adapter.snapshot()
         self.assertNotIn("provider-private-payload", str(raised.exception))
-
 
     def test_write_capable_live_provider_preserves_safe_auth_rejection(self) -> None:
         cases = (
@@ -379,9 +418,7 @@ class AllocationRunnerTests(unittest.TestCase):
         timeweb = mock.Mock()
         with (
             mock.patch.object(runner, "_expected_head", return_value=source),
-            mock.patch.object(
-                runner, "_required_env", return_value="synthetic-token"
-            ),
+            mock.patch.object(runner, "_required_env", return_value="synthetic-token"),
             mock.patch.object(runner, "_verifier", return_value=github),
             mock.patch.object(runner, "_context", return_value=context),
             mock.patch.object(runner, "_open_journal", return_value=journal),
@@ -398,8 +435,7 @@ class AllocationRunnerTests(unittest.TestCase):
                 runner.allocation,
                 "safe_summary",
                 return_value=(
-                    "TIMEWEB_IPV4_ALLOCATION_PLAN=handle "
-                    "state=OWNER_APPROVAL_REQUIRED"
+                    "TIMEWEB_IPV4_ALLOCATION_PLAN=handle state=OWNER_APPROVAL_REQUIRED"
                 ),
             ),
             mock.patch.object(runner, "_emit"),
@@ -416,9 +452,7 @@ class AllocationRunnerTests(unittest.TestCase):
         timeweb = mock.Mock()
         with (
             mock.patch.object(runner, "_expected_head", return_value=source),
-            mock.patch.object(
-                runner, "_required_env", return_value="synthetic-token"
-            ),
+            mock.patch.object(runner, "_required_env", return_value="synthetic-token"),
             mock.patch.object(runner, "_verifier", return_value=github),
             mock.patch.object(runner, "_context", return_value=context),
             mock.patch.object(runner, "_open_journal", return_value=mock.Mock()),
@@ -449,9 +483,7 @@ class AllocationRunnerTests(unittest.TestCase):
         timeweb = mock.Mock()
         with (
             mock.patch.object(runner, "_expected_head", return_value=source),
-            mock.patch.object(
-                runner, "_required_env", return_value="synthetic-token"
-            ),
+            mock.patch.object(runner, "_required_env", return_value="synthetic-token"),
             mock.patch.object(runner, "_verifier", return_value=github),
             mock.patch.object(runner, "_context", return_value=context),
             mock.patch.object(runner, "_open_journal", return_value=mock.Mock()),
