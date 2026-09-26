@@ -58,7 +58,8 @@
     "create_endpoint": "POST /api/v1/floating-ips",
     "database_patch_endpoint": "PATCH /api/v2/databases/{cluster_id}",
     "ambiguous_create_requires_get_reconciliation": true,
-    "blind_mutation_retry_allowed": false
+    "blind_mutation_retry_allowed": false,
+    "enable_transition_requires_tls_fields_absent": true
   },
   "tls": {
     "provider_secure_connection_required": true,
@@ -68,14 +69,18 @@
     "sslmode": "verify-full",
     "minimum_tls_version": "TLSv1.2",
     "hostname_verification_required": true,
-    "postgres_sslrequest_probe_required": true
+    "postgres_sslrequest_probe_required": true,
+    "public_ipv4_required_before_enable": true,
+    "separate_provider_transition_required": true
   },
   "network_shape": {
     "public_ipv4_authorized": true,
     "public_ipv6_authorized": false,
     "ddos_addon_authorized": false,
     "firewall_first_required": true,
-    "public_network_rollback_on_tls_or_verification_failure": true
+    "public_network_rollback_on_tls_or_verification_failure": true,
+    "public_ipv4_before_tls_required": true,
+    "state_reconciliation_between_public_ipv4_and_tls_required": true
   },
   "provider_api": {
     "get_endpoints": [
@@ -167,7 +172,23 @@
       409,
       423
     ],
-    "blind_mutation_retry_allowed": false
+    "blind_mutation_retry_allowed": false,
+    "latest_live_sequence_failure": {
+      "workflow_ordinal": 5,
+      "exact_main_sha_parts": [
+        "7a875092",
+        "58552db4",
+        "b9ee0c2e",
+        "762597e5",
+        "61a42fb6"
+      ],
+      "observed_terminal_code": "TIMEWEB_DATABASE_PUBLIC_NETWORK_PATCH_REJECTED",
+      "http_status": 400,
+      "combined_public_ipv4_tls_patch_rejected": true,
+      "exact_provider_validation_message_unavailable": true,
+      "repair_requires_separate_public_ipv4_and_tls_transitions": true,
+      "get_reconciliation_between_transitions_required": true
+    }
   },
   "ipv4_custody": {
     "observed_failed_run": 35519666168,
