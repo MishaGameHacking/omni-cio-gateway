@@ -8,9 +8,10 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Title: Timeweb-only runtime/database/DNS/Telegram consolidation
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
 - Initial TW-A branch: `system/timeweb-platform-consolidation` (squash-merged via PR #583)
-- Current TW-B continuation branch: `system/timeweb-platform-consolidation-tw-b`
+- Accepted integrated delivery PR: #584 -> main `a3e96287f6f29f9a17f14758223a653b37abb50c`
+- Current focused live-cutover repair branch: `fix/timeweb-public-ipv4-tls-sequencing`
 - TW-A accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current accepted-main SHA after focused CA repairs PR #585/#586: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
+- Current accepted-main SHA after focused PR #587: `7a87509258552db4b9ee0c2e762597e561a42fb6`
 - OWNER authority: Amendment 18 accepted through PR #581; Amendment 21 branch-local full production-delivery implementation authority
 - GitHub dashboard issue: #580
 - Accepted split-boundary PR: #582
@@ -33,7 +34,7 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 | 6 | TW-F / TELEGRAM_PUBLIC_ACTIVATION | CERTIFIED_GREEN (BRANCH-LOCAL) | exact head `ad50273642cc66f537070b4800f319857f7d0096`; 19/19 applicable workflows success; Sonar 0 issues/hotspots/annotations; review threads 0; `behind_by=0` | Source machinery certified; provider credentials, legal/privacy/capacity, public activation and real-user acceptance remain fail-closed |
 | 7 | TW-G / LEGACY_PROVIDER_DECOMMISSION | TODO |  | External proof + active-authority cleanup; repository history stays archive-in-place |
 
-Milestone state is branch-local only and does not change accepted V10 implementation progress.
+The P1–P6 rows preserve the internal branch-local certification evidence that preceded the accepted PR #584 landing. PR #584 is now accepted on protected main; external/live gates remain separate. Accepted V10 implementation progress remains 54% until explicit program authority changes it.
 
 ## 2A. V9-to-V10 convergence checkpoints inside TW-B
 
@@ -51,49 +52,21 @@ Accepted V9 migration source is
 ancestry. Direct merge of stale `v9/*` branch heads is forbidden. Git history remains
 the immutable archive while proven obsolete working-tree files are retired.
 
-PR #584 remains the sole integrated continuation branch and must not merge to `main`
-without a new explicit OWNER instruction.
+PR #584 is accepted on protected `main`; its former integrated branch is historical evidence, not current execution authority.
 
 ## 3. Current execution state
 
-- Current exact work item: PR #584 final exact-head merge-readiness verification
-- Current logical checkpoint ID: `PR584-FINAL-EXACT-HEAD-MERGE-READINESS`
-- P1 source/runtime convergence is branch-local `CERTIFIED_GREEN` on exact head `738d8c623d3002fd2eb312a6bce96c35bd45f75f` with 25/25 observed checks `success`.
-- P2 exact-SHA candidate implementation is branch-local `CERTIFIED_GREEN` on exact head `ba43fa4be350340557fcf6d8532b6c089022a8ca`; all 19 observed repository workflows completed `success` and unresolved review threads were zero.
-- P3 repository-side production-cutover/recovery implementation is branch-local `CERTIFIED_GREEN` on exact head `7a9051bf8775977b1ae1324fe6d1b460c1d21aec`; all 25 exact-head checks completed `success`, Sonar reported 0 new issues / 0 Security Hotspots and unresolved review threads were zero. This does not claim physical production DB mutation or recovery acceptance.
-- P4 source machinery is branch-local `CERTIFIED_GREEN` on exact head `d2240886ba3e7484622898670ac9b37ee45a7c6c`; external DNS/domain mutation and representative no-VPN evidence remain independent gates.
-- P5 source machinery is branch-local `CERTIFIED_GREEN` on exact head `ad50273642cc66f537070b4800f319857f7d0096`; production credential custody, legal/privacy/capacity, public activation and real-user evidence remain independent gates.
-- P5.5 current-worktree convergence repository implementation is complete across all four internal phases: clientless Cloudflare/WP22A removal, retired Render/Neon/Cloudflare runtime detachment, Telegram-only auth convergence, and live-documentation canonicalization. Final exact-head verification remains required because the closing state commit changes the reviewed head.
-- P6 post-merge production-acceptance source machinery is complete and remains intentionally non-executable as acceptance before merge; exact-main execution with real evidence remains a post-merge gate.
-- Machine checkpoint anchor: `P2-TIMEWEB-EXACT-SHA-CANDIDATE` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P3-TIMEWEB-POSTGRES-PRODUCTION-CUTOVER` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P4-TIMEWEB-OMNICIO-RU-PUBLIC-INGRESS` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P5-TIMEWEB-TELEGRAM-PUBLIC-ACTIVATION` = `CERTIFIED_GREEN_BRANCH_LOCAL`.
-- Machine checkpoint anchor: `P5.5-TIMEWEB-WORKTREE-CONVERGENCE` = `IMPLEMENTATION_COMPLETE_FINAL_EXACT_HEAD_VERIFICATION_REQUIRED`.
-- Machine checkpoint anchor: `P6-POST-MERGE-PRODUCTION-ACCEPTANCE` = `SOURCE_IMPLEMENTATION_COMPLETE_POST_MERGE_EXECUTION_REQUIRED`.
-- Accepted base: `26bdc17c4e5d68c262f47b999e975b1eb8651858`
-- Current branch: `system/timeweb-platform-consolidation-tw-b`
-- TW-A exact reviewed head: `2c4cf7915c02d05e42b269544bc0336c31fa9a87`
-- TW-A accepted PR: #583
-- Post-merge evidence on current accepted main:
-  - Regression Shield #1647: success
-  - Engineering Governance #1909: success
-  - WP16/WP17/WP18/WP19/WP20/WP21/WP22/WP22A owning audits: success
-  - Timeweb Read-Only Proof #14: success
-  - `TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY`
-  - `TIMEWEB_RU_PG_CONTROL_PLANE=READ_ONLY_READY`
-- Timeweb IPv4 recovery remains fail-closed: `TIMEWEB_IPV4_ORPHAN_PROVENANCE_REQUIRED`
-- Inventory artifact: `docs/architecture/V10_TIMEWEB_PLATFORM_PROVIDER_INVENTORY.json`
-- TW-B source scope started from the 33 accepted `TIMEWEB_REPLACE` consumers/producers identified by TW-A; branch-local closure now classifies all completed current source consumers as `KEEP` and detached provider wrappers as `HISTORY`, with no explicit `TIMEWEB_REPLACE` source consumer remaining.
-- Amendment 21 authorizes repository-side implementation for TW-C/TW-D/TW-E/TW-F/P6 in this same PR, while paid/provider/network/database/DNS/secret/legal/public-activation mutations remain independent fail-closed external gates. Real-money authority remains forbidden.
-- TW-B runtime root-cause review found that the first provider-neutral entrypoint still called `_probe_hosted_preview_database()`, which requires the historical synthetic preview USER/TENANT fixture. A clean Timeweb production database must not depend on that Phase-4 fixture.
-- Correction head `7306c2ae0dfa806c49774d2ccfa629da5e1f85e7` replaces the Timeweb runtime probe with the production runtime-only PostgreSQL 18 / least-privilege / schema / FORCE-RLS probe, gives the Timeweb entrypoint its own hosted session policy, and keeps historical synthetic verification inside the historical preview path.
-- The same correction adds a process-only `/livez` Docker health check and explicitly permits `localhost` for the container-local Timeweb health probe; `/healthz` remains database readiness and is intentionally not used as the process liveness gate.
-- Non-synthetic hosted status no longer identifies the database as Neon or emits synthetic-preview broker/decision reason codes. Historical synthetic behavior remains unchanged when `synthetic_preview=true`.
-- Second-pass review also found stale handoff text later in this ledger that still described TW-A as RED and TW-B as locked after PR #583 acceptance. That stale handoff is corrected as part of the same TW-B documentation convergence.
-- P2 adds a manual-only exact-SHA Timeweb candidate controller and verification workflow. It does not create an app, patch settings, attach `omnicio.ru`, cut over PostgreSQL, provision Telegram credentials, or activate public users. Physical candidate execution remains post-acceptance/external-gate evidence.
+- Accepted main: `7a87509258552db4b9ee0c2e762597e561a42fb6` (PR #587).
+- PR #584 production-delivery source is already accepted on main as `a3e96287f6f29f9a17f14758223a653b37abb50c`; its historical P1–P6 checkpoint SHAs remain evidence only.
+- Exact-main post-PR584 repository evidence was GREEN: Regression Shield #1650, Engineering Governance #2174, Timeweb Worktree Convergence Audit #29 and Timeweb PostgreSQL Read-Only Proof #17 succeeded.
+- The repaired existing-IPv4 allocation path advanced the one existing address to accepted managed custody. Live Public IPv4/TLS #5 observed `managed_unbound=1 unproven_unbound=0`.
+- Public IPv4/TLS #5 then passed exact-main/source policy, verifier `/32`, GitHub Environment, cost and allocation-prerequisite gates and stopped at `TIMEWEB_DATABASE_PUBLIC_NETWORK_PATCH_REJECTED http_status=400`.
+- Root-cause class: the repository modeled first-time public IPv4 attachment/enablement and TLS enablement as one provider state transition. Current Timeweb guidance requires public-IP connectivity before enabling TLS.
+- Current focused repair branch: `fix/timeweb-public-ipv4-tls-sequencing`.
+- Current execution state: `RED_REPAIR_ONLY`; no rerun of the live transport is permitted until the replacement source is exact-head certified, merged and post-merge accepted.
+- Repair scope: separate public IPv4 PATCH from TLS PATCH, GET-reconcile exact managed-IP binding between transitions, re-prove DROP TCP/5432 verifier-only firewall/resource scope before TLS, preserve rollback, and add regression/machine guards.
+- No second IPv4 purchase/delete, production PostgreSQL cutover, `omnicio.ru` DNS/TLS mutation, Telegram public activation, broker write or Real-money authority is introduced.
 - Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
-
 
 ## 4. Accepted MAIN_RED_STOP repair provenance
 
