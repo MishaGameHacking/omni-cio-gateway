@@ -246,11 +246,13 @@ class TimewebAllocationProviderTests(unittest.TestCase):
         assert isinstance(row, dict)
         row["project_id"] = "project-2"
 
+        adapter = provider.TimewebAllocationProvider(_ReadApi(payloads))
+
         with self.assertRaisesRegex(
             provider.ProviderStopped,
             "TIMEWEB_ALLOCATION_CLUSTER_PROJECT_DRIFT",
         ):
-            provider.TimewebAllocationProvider(_ReadApi(payloads)).snapshot()
+            adapter.snapshot()
 
     def test_comment_writer_is_one_exact_patch(self) -> None:
         mutation = _MutationApi()

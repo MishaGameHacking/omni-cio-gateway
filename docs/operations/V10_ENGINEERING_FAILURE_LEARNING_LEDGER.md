@@ -794,3 +794,26 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** none.
 
+---
+
+## FL-034 — Exception regressions must isolate the single operation expected to fail
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / PR #587 / exact head `fd4888c2e76f4a2875aafd4229bf78284822cdf3`
+
+**Symptom / failing gate:** the exact-head authoritative Windows Regression Shield failed with one focused guard failure after 3,805 tests passed, and Sonar reported the same new-code maintainability defect in `test_snapshot_rejects_cluster_project_drift`: the expected-exception context contained three nested invocations instead of one isolated operation.
+
+**Root cause:** the negative regression constructed `_ReadApi`, constructed `TimewebAllocationProvider`, and called `snapshot()` inside one `assertRaisesRegex` body. This made the intended throw site ambiguous and could let a setup/construction failure satisfy a test meant to prove cluster/project drift rejection.
+
+**Blast radius searched:** every `assertRaises` / `assertRaisesRegex` block in the Timeweb IPv4 allocation test family, the existing protocol AST guard, the provider constructor/read boundary, and exact-head Sonar plus Regression Shield evidence. The guard identified this as the only remaining multi-call exception body in that test family.
+
+**Why preflight missed it:** focused source/static checks were GREEN, but this invariant is enforced by the full Regression Shield guard and Sonar. The test was introduced while iterating on the provider-schema defect and retained nested setup in the exception body.
+
+**Corrective change:** construct the read adapter and provider before the exception context, then execute only `adapter.snapshot()` inside `assertRaisesRegex`. Setup failures now fail independently instead of falsely satisfying the expected cluster/project-drift exception.
+
+**Permanent regression/guard:** `ProtocolGuardTests.test_exception_assertions_isolate_the_operation_under_test` scans every `test_v10_timeweb_ipv4_allocation*.py` expected-exception body and requires exactly one call. Sonar independently checks the same maintainability class.
+
+**Future prevention rule:** exception tests must complete all non-target setup before entering the expected-exception context; the body must contain exactly the operation whose failure semantics the test proves.
+
+**Dependency/tooling knowledge change:** none.
+
