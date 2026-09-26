@@ -212,6 +212,12 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
     )
 
+    _require(
+        ipv4.get("enable_transition_requires_tls_fields_absent"),
+        True,
+        "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
+    )
+
     tls = _mapping(payload.get("tls"), "TIMEWEB_PUBLIC_IPV4_TLS_INVALID")
     _require(
         tls,
@@ -347,8 +353,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
 
     recovery = _mapping(
         payload.get("mutation_recovery"),
-        "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",
-    )
+        "TIMEWEB_PUBLIC_IPV4_MUTATION_RECOVERY_INVALID",    )
     _require(
         recovery,
         {
@@ -699,7 +704,6 @@ def _validate_ipv4_custody_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_IPV4_CUSTODY_CONTRACT_INVALID",
     )
 
-
 def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
     matches = [
         node
@@ -709,6 +713,14 @@ def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
     if len(matches) != 1:
         raise RuntimeError("TIMEWEB_IPV4_CUSTODY_SOURCE_INVALID")
     return matches[0]
+
+
+def _string_literals(function: ast.FunctionDef) -> set[str]:
+    return {
+        node.value
+        for node in ast.walk(function)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
 
 
 def _validate_custody_stamp(tree: ast.Module) -> None:
