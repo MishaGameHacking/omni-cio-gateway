@@ -470,6 +470,35 @@ def test_wire_deploy_history_paginates_all_pages_without_truncation() -> None:
     ]
 
 
+def test_wire_deploy_history_rejects_duplicate_identity_across_pages() -> None:
+    rows = [
+        {
+            "id": f"deploy-{index}",
+            "commit_sha": EXPECTED_SHA,
+            "status": "success",
+        }
+        for index in range(100)
+    ]
+    duplicate = {
+        "id": "deploy-0",
+        "commit_sha": LKG_SHA,
+        "status": "success",
+    }
+    opener = _Opener(
+        [
+            _Response({"deploys": rows, "meta": {"total": 101}}),
+            _Response({"deploys": [duplicate], "meta": {"total": 101}}),
+        ]
+    )
+    api = release.TimewebAppApi("opaque-token", opener=opener, sleeper=lambda _: None)
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID",
+    ):
+        api.list_deploys("17")
+
+
 def test_wire_deploy_history_rejects_total_drift_between_pages() -> None:
     rows = [
         {
