@@ -373,6 +373,8 @@ def _validate_provider_convergence_policy(payload: dict[str, Any]) -> None:
         "stage_specific_sanitized_timeout_required": True,
         "provider_response_body_logging_allowed": False,
         "rollback_requires_get_reconciliation": True,
+        "final_observation_after_last_backoff_required": True,
+        "post_exposure_validation_read_only_required": True,
         "public_probe_transient_retry_required": True,
         "postgres_connect_transient_retry_required": True,
         "tls_certificate_verification_failure_retry_allowed": False,
