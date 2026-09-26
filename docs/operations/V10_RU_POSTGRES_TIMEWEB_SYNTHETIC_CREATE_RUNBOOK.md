@@ -194,6 +194,7 @@ still starting. Verification is therefore state-aware:
   mismatches can be diagnosed without logging response bodies, provider IDs or
   secrets.
 
+The provider-readiness budget is deliberately multi-minute and remains below the enclosing 15-minute workflow timeout. A locally chosen wait vector is not a Timeweb SLA: create acceptance, project-list visibility and terminal `started` readiness are separate observations. Ambiguous create reconciliation remains GET-only and never authorizes a second POST.
 ## Ambiguous-create recovery
 
 The create POST is never automatically retried.
