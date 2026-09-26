@@ -221,7 +221,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             True,
             "TIMEWEB_PUBLIC_IPV4_IP_AUTHORITY_INVALID",
         )
-    for forbidden_key in ("create_endpoint", "ambiguous_create_requires_get_reconciliation"):
+    for forbidden_key in (
+        "create_endpoint",
+        "ambiguous_create_requires_get_reconciliation",
+    ):
         _require(
             forbidden_key in ipv4,
             False,
