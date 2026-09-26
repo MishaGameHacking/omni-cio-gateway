@@ -339,7 +339,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 provisioner,
                 "_patch_public_ipv4",
                 side_effect=provisioner._provider_base.ProvisioningStopped(
-                    "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT"
+                    "TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT"
                 ),
             ),
             mock.patch.object(provisioner, "_close_public_network") as close,
@@ -357,7 +357,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 provisioner._provider_base.ProvisioningStopped,
-                "TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT",
+                "TIMEWEB_PUBLIC_IPV4_READY_TIMEOUT",
             ):
                 provisioner.provision()
         close.assert_called_once_with(mutation, api, 91)
@@ -373,29 +373,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         api = mock.Mock()
         mutation = mock.Mock()
         with (
-            self._healthy_credential_preflight(),
-            mock.patch.object(provisioner, "_verify_allocation_prerequisite"),
-            mock.patch.object(provisioner, "_required_confirmation"),
-            mock.patch.object(
-                provisioner,
-                "_required_verifier_cidr",
-                return_value="8.8.8.8/32",
-            ),
-            mock.patch.object(
-                provisioner._provider_base,
-                "_required_env",
-                return_value="synthetic-token",
-            ),
-            mock.patch.object(
-                provisioner,
-                "_target_cluster_id",
-                return_value=91,
-            ),
-            mock.patch.object(
-                provisioner,
-                "_cluster",
-                return_value=initial,
-            ),
+            mock.patch.object(provisioner, "_preflight_ipv4_custody"),
             mock.patch.object(
                 provisioner,
                 "_converge_firewall",
@@ -426,27 +404,48 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 ),
             ),
             mock.patch.object(provisioner, "_close_public_network") as close,
-            mock.patch.object(
-                provisioner.read_only,
-                "TimewebReadOnlyApi",
-                return_value=api,
-            ),
-            mock.patch.object(
-                provisioner,
-                "TimewebMutationApi",
-                return_value=mutation,
-            ),
         ):
             with self.assertRaises(
                 provisioner._provider_base.ProvisioningStopped
             ) as raised:
-                provisioner.provision()
+                provisioner._configure_transport(
+                    mutation,
+                    api,
+                    91,
+                    initial,
+                    "8.8.8.8/32",
+                    preexisting_public_network=False,
+                )
         self.assertEqual(
             raised.exception.code,
             "TIMEWEB_DATABASE_TLS_ENABLE_PATCH_REJECTED",
         )
         self.assertEqual(raised.exception.status, 400)
         close.assert_called_once_with(mutation, api, 91)
+
+    def test_public_ipv4_wait_reconciles_exact_bound_address(self) -> None:
+        api = mock.Mock()
+        public_ready = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+            "status": "started",
+        }
+        with (
+            mock.patch.object(
+                provisioner,
+                "_cluster",
+                return_value=public_ready,
+            ),
+            mock.patch.object(provisioner, "_verify_bound_ipv4") as verify,
+        ):
+            actual = provisioner._wait_public_ipv4_ready(
+                api,
+                91,
+                "8.8.4.4",
+                delays=(),
+            )
+        self.assertIs(actual, public_ready)
+        verify.assert_called_once_with(api, 91, "8.8.4.4")
 
     def test_preexisting_public_network_without_managed_ipv4_is_closed(self) -> None:
         initial = {
