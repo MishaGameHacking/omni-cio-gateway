@@ -120,6 +120,13 @@ def _validate_provider_api(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_MUTATION_RETRY_FORBIDDEN")
     if api.get("ambiguous_mutation_reconcile_with_get_only") is not True:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
+    if api.get("existing_inflight_exact_sha_adoption_required") is not True:
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
+    if api.get("multiple_inflight_exact_sha_terminal") is not True:
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
+    reconcile_budget = api.get("ambiguous_reconcile_minimum_budget_seconds")
+    if type(reconcile_budget) is not int or reconcile_budget < 60:
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_RECONCILIATION_INVALID")
 
 
 def _validate_runtime_contract(payload: dict[str, Any]) -> None:
@@ -173,6 +180,8 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "last_known_good_sha_must_come_from_successful_provider_history": True,
         "automatic_rollback_authorized": False,
         "live_operable_release_requires_p5_live_evidence_sha256": True,
+        "deploy_readiness_minimum_budget_seconds": 300,
+        "deploy_readiness_maximum_budget_seconds": 900,
     }
     if acceptance != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID")
@@ -243,6 +252,10 @@ def _validate_controller(path: Path) -> None:
         "TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED",
         "TIMEWEB_APP_RELEASE_RETIRED_PROVIDER_ENV_PRESENT",
         "TIMEWEB_APP_RELEASE_AMBIGUOUS_UNRESOLVED",
+        "TIMEWEB_APP_RELEASE_MULTIPLE_INFLIGHT_EXACT_SHA",
+        "_inflight_exact_deploy_id",
+        "_DEPLOY_RECONCILE_DELAYS",
+        "_POLL_DELAYS",
         "TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT",
     )
     if any(marker not in source for marker in required):
