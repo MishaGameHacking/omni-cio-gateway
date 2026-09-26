@@ -2,7 +2,7 @@
 
 Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается повторно в current `main` и не обходит принятую PR #584 convergence.
 
-OWNER-approved convergence из PR #584 уже принята на protected `main`; historical internal checkpoint evidence остаётся provenance, а mutable current state читается только из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Current main после PR #587 — `7a87509258552db4b9ee0c2e762597e561a42fb6`; live Public IPv4/TLS #5 находится в RED и ремонтируется отдельным focused change без повторного provider rerun до принятия source repair. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
+OWNER-approved convergence из PR #584 уже принята на protected `main`; historical internal checkpoint evidence остаётся provenance, а mutable current state читается только из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Current main после PR #588 — `86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8`; live Public IPv4/TLS #6 дошёл до GET-only TLS/domain readiness и остановился на fixed 83-second budget. Текущий focused repair `fix/timeweb-tls-readiness-timeout` увеличивает только bounded reconcile и diagnostic precision; повторный provider run запрещён до accepted source repair. Protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
