@@ -31,9 +31,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
     def test_provider_ids_reject_bool_none_and_fractional_values(self) -> None:
         for value in (True, False, None, 1.5, [], {}):
             with self.subTest(value=value):
-                with self.assertRaises(
-                    provisioner._provider_base.ProvisioningStopped
-                ):
+                with self.assertRaises(provisioner._provider_base.ProvisioningStopped):
                     provisioner._safe_id(value, "TIMEWEB_PROVIDER_ID_INVALID")
         self.assertEqual(
             provisioner._safe_id(17, "TIMEWEB_PROVIDER_ID_INVALID"),
