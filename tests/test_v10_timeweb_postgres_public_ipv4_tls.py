@@ -328,7 +328,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             mock.patch.object(
                 provisioner,
                 "_resolve_transport_ipv4",
-                return_value=("ip-1", "8.8.4.4", True),
+                return_value="8.8.4.4",
             ),
             mock.patch.object(
                 provisioner,
@@ -343,7 +343,6 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 ),
             ),
             mock.patch.object(provisioner, "_close_public_network") as close,
-            mock.patch.object(provisioner, "_delete_created_ipv4_if_unbound"),
             mock.patch.object(
                 provisioner.read_only,
                 "TimewebReadOnlyApi",
@@ -382,7 +381,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             mock.patch.object(
                 provisioner,
                 "_resolve_transport_ipv4",
-                return_value=("ip-1", "8.8.4.4", False),
+                return_value="8.8.4.4",
             ),
             mock.patch.object(
                 provisioner,
@@ -601,37 +600,6 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 provisioner._provision_transport()
         mutation.assert_not_called()
 
-    def test_floating_ip_create_shape_has_no_ddos_authority(self) -> None:
-        mutation = mock.Mock()
-        mutation.mutate_once.return_value = {
-            "ip": {
-                "id": "abc-123",
-                "ip": "8.8.4.4",
-                "is_ddos_guard": False,
-                "availability_zone": "msk-1",
-                "resource_type": None,
-                "resource_id": None,
-            }
-        }
-        api = mock.Mock()
-        with mock.patch.object(provisioner, "_floating_ips", return_value=[]):
-            ip_id, address, created = provisioner._create_floating_ip(
-                mutation,
-                api,
-            )
-        self.assertEqual(
-            (ip_id, address, created),
-            ("abc-123", "8.8.4.4", True),
-        )
-        mutation.mutate_once.assert_called_once_with(
-            "POST",
-            "/api/v1/floating-ips",
-            operation="FLOATING_IP_CREATE",
-            body={"is_ddos_guard": False, "availability_zone": "msk-1"},
-            expected_statuses=frozenset({201}),
-            reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
-        )
-
     def test_bodyless_mutation_uses_json_content_type_like_provider_sdk(self) -> None:
         api = provisioner.TimewebMutationApi("synthetic-token", opener=mock.Mock())
         request = api._request(
@@ -679,7 +647,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             with self.subTest(status=status):
                 opener = mock.Mock()
                 opener.open.side_effect = HTTPError(
-                    "https://api.timeweb.cloud/api/v1/floating-ips",
+                    "https://api.timeweb.cloud/api/v1/firewall/groups",
                     status,
                     "auth rejected",
                     hdrs=None,
@@ -689,15 +657,15 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                     "synthetic-token",
                     opener=opener,
                 )
-                body = {"availability_zone": "msk-1"}
+                body = {"name": "synthetic"}
                 expected_statuses = frozenset({201})
                 with self.assertRaises(
                     provisioner._provider_base.ProvisioningStopped
                 ) as raised:
                     api.mutate_once(
                         "POST",
-                        "/api/v1/floating-ips",
-                        operation="FLOATING_IP_CREATE",
+                        "/api/v1/firewall/groups?policy=DROP",
+                        operation="FIREWALL_GROUP_CREATE",
                         body=body,
                         expected_statuses=expected_statuses,
                     )
@@ -750,7 +718,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
     ) -> None:
         opener = mock.Mock()
         opener.open.side_effect = HTTPError(
-            "https://api.timeweb.cloud/api/v1/floating-ips",
+            "https://api.timeweb.cloud/api/v1/firewall/groups",
             409,
             "Conflict",
             hdrs=None,
@@ -761,13 +729,13 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         with self.assertRaises(provisioner.AmbiguousMutation) as raised:
             api.mutate_once(
                 "POST",
-                "/api/v1/floating-ips",
-                operation="FLOATING_IP_CREATE",
-                body={"is_ddos_guard": False, "availability_zone": "msk-1"},
+                "/api/v1/firewall/groups?policy=DROP",
+                operation="FIREWALL_GROUP_CREATE",
+                body={"name": "synthetic"},
                 expected_statuses=expected_statuses,
                 reconcile_statuses=provisioner._RECONCILABLE_MUTATION_HTTP_STATUSES,
             )
-        self.assertEqual(raised.exception.operation, "FLOATING_IP_CREATE")
+        self.assertEqual(raised.exception.operation, "FIREWALL_GROUP_CREATE")
         self.assertEqual(raised.exception.status, 409)
         self.assertEqual(opener.open.call_count, 1)
 
