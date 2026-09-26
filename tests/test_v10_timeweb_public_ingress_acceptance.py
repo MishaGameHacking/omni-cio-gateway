@@ -189,9 +189,7 @@ class TimewebPublicIngressTests(unittest.TestCase):
     def test_provider_app_id_rejects_non_scalar_values(self) -> None:
         for value in (True, False, None, 1.5, [], {}):
             with self.subTest(value=value):
-                with self.assertRaises(
-                    ingress.PublicIngressStopped
-                ):
+                with self.assertRaises(ingress.PublicIngressStopped):
                     ingress._safe_id(value)
         self.assertEqual(ingress._safe_id(17), "17")
         self.assertEqual(ingress._safe_id("app-17"), "app-17")
@@ -291,21 +289,23 @@ class TimewebPublicIngressTests(unittest.TestCase):
         envs = app["envs"]
         assert isinstance(envs, dict)
         envs["OMNI_V10_HOSTED_RUNTIME"] = 1
+        api = _Api(app)
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_ENV_DRIFT",
         ):
-            _accept(_Api(app))
+            _accept(api)
 
         app = _app()
         envs = app["envs"]
         assert isinstance(envs, dict)
         envs["OMNI_V10_VK_ID_LOGIN_ENABLED"] = False
+        api = _Api(app)
         with self.assertRaisesRegex(
             ingress.PublicIngressStopped,
             "TIMEWEB_PUBLIC_INGRESS_VK_ACTIVATION_FORBIDDEN",
         ):
-            _accept(_Api(app))
+            _accept(api)
 
     def test_accept_rejects_premature_public_activation(self) -> None:
         api = _Api(_app(public="true"))
