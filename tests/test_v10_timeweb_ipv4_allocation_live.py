@@ -252,11 +252,18 @@ class TimewebAllocationProviderTests(unittest.TestCase):
         ):
             provider.TimewebAllocationProvider(_ReadApi(payloads)).snapshot()
 
-    def test_provider_stop_is_a_sanitized_protocol_stop(self) -> None:
-        self.assertIn(
-            allocation.AllocationStopped,
-            provider.ProviderStopped.__mro__,
+    def test_provider_stop_crosses_protocol_read_boundary_unchanged(self) -> None:
+        failure = provider.ProviderStopped(
+            "TIMEWEB_ALLOCATION_ACCOUNT_SCOPE_INVALID"
         )
+
+        with self.assertRaisesRegex(
+            allocation.AllocationStopped,
+            "^TIMEWEB_ALLOCATION_ACCOUNT_SCOPE_INVALID$",
+        ) as raised:
+            allocation._read(mock.Mock(side_effect=failure))
+
+        self.assertIs(raised.exception, failure)
 
     def test_comment_writer_is_one_exact_patch(self) -> None:
         mutation = _MutationApi()
