@@ -431,6 +431,34 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         mutation.mutate_once.assert_called_once()
         self.assertEqual(sleeps, [provisioner._ROLLBACK_STATE_DELAYS_SECONDS[0]])
 
+    def test_rollback_observes_state_after_final_backoff(self) -> None:
+        api = mock.Mock()
+        mutation = mock.Mock()
+        open_state = {
+            "is_enabled_public_network": True,
+            "is_enabled_public_ipv6": False,
+        }
+        closed_state = {
+            "is_enabled_public_network": False,
+            "is_enabled_public_ipv6": False,
+        }
+        sleeps: list[float] = []
+        with mock.patch.object(
+            provisioner,
+            "_wait_cluster_read",
+            side_effect=[open_state, closed_state],
+        ) as read:
+            provisioner._close_public_network(
+                mutation,
+                api,
+                91,
+                sleeper=sleeps.append,
+                delays=(0.0,),
+            )
+        mutation.mutate_once.assert_called_once()
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual(sleeps, [0.0])
+
     def test_tls_context_uses_client_protocol_tls12_floor_and_verify_full(self) -> None:
         context = mock.Mock()
         with mock.patch.object(
