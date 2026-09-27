@@ -107,6 +107,42 @@ def _find_assignment(function: ast.FunctionDef, name: str) -> ast.Assign:
     raise RuntimeError(_PROVISIONER_DRIFT)
 
 
+def _require_existing_target_lookup_timeout(function: ast.FunctionDef) -> None:
+    assignment = _find_assignment(function, "existing_cluster_id")
+    target_call = assignment.value
+    if (
+        not isinstance(target_call, ast.Call)
+        or not isinstance(target_call.func, ast.Name)
+        or target_call.func.id != "_target_cluster_id"
+        or len(target_call.args) != 1
+        or target_call.keywords
+    ):
+        raise RuntimeError(_PROVISIONER_DRIFT)
+
+    get_call = target_call.args[0]
+    if (
+        not isinstance(get_call, ast.Call)
+        or not isinstance(get_call.func, ast.Attribute)
+        or get_call.func.attr != "get"
+        or not isinstance(get_call.func.value, ast.Name)
+        or get_call.func.value.id != "read_api"
+        or len(get_call.args) != 1
+        or not isinstance(get_call.args[0], ast.Name)
+        or get_call.args[0].id != "project_path"
+    ):
+        raise RuntimeError(_PROVISIONER_DRIFT)
+
+    timeout_keywords = [
+        keyword
+        for keyword in get_call.keywords
+        if keyword.arg == "timeout"
+        and isinstance(keyword.value, ast.Name)
+        and keyword.value.id == "_CONTROL_PLANE_READ_TIMEOUT_SECONDS"
+    ]
+    if len(timeout_keywords) != 1 or len(get_call.keywords) != 1:
+        raise RuntimeError(_PROVISIONER_DRIFT)
+
+
 def _assignment_sequence(assignment: ast.Assign) -> ast.Tuple | ast.List:
     if isinstance(assignment.value, (ast.Tuple, ast.List)):
         return assignment.value
@@ -630,7 +666,6 @@ def _validate_provisioner() -> None:
             "def _create_or_reconcile(",
             "read_only.verify_credential_health(",
             "timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS",
-            "existing_cluster_id = _target_cluster_id(",
             "mutation_api = TimewebCreateApi(token)",
             "read_only.raise_timeweb_auth_failure(status)",
             '"existing-recovery"',
@@ -673,6 +708,7 @@ def _validate_provisioner() -> None:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_CREATE_TIMEOUT_SURFACE_INVALID")
     tree = _parse_python_source(source)
     provision = _find_function(tree, "provision")
+    _require_existing_target_lookup_timeout(provision)
 
     credential = call_lines(
         provision,
