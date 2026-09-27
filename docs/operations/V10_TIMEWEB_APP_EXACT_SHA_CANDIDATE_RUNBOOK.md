@@ -13,6 +13,13 @@ from `MishaGameHacking/omni-cio-gateway` branch `main`, with autodeploy disabled
 The controller accepts only one explicit 40-character protected-main SHA. It does not
 create, resize, delete, stop, or patch the application.
 
+Initial App creation is an OWNER/provider-panel action. The current documented public
+Timeweb CreateApp schema does not expose the immutable private-network selection that the
+Docker App requires, while Timeweb documents that the selected private network cannot be
+changed in place after creation. Therefore do not replace the panel creation step with an
+API create call that cannot bind the accepted network. After the application exists, this
+controller may manage only the separately authorized exact-SHA deploy operation.
+
 Required runtime configuration for P2:
 
 - `OMNI_V10_HOSTED_RUNTIME=1`
@@ -44,6 +51,26 @@ RFC1918 Timeweb network CIDR selected for the App, and must not use Timeweb-rese
 service addresses. Do not replace the DSN host with a private IP and do not weaken TLS.
 
 In `preactivation` mode, P2 does not accept Telegram credential custody and both public-user activation flags must remain false even if credentials were pre-provisioned outside this gate. A later `live-operable` continuous release preserves an already accepted P5 activation and requires its live-evidence digest; it does not create or rotate Telegram credentials.
+
+## Cross-gate execution ordering
+
+P2 repository certification and P3 database execution are interleaved deliberately to
+avoid a circular dependency:
+
+1. P2 source implementation may be certified and merged before any paid App exists.
+2. P3 `observe` may run before App creation because it is a read-only production-target
+   prerequisite proof.
+3. P3 `prepare` and the required recovery evidence must complete before physical App
+   creation/candidate execution, because `/healthz database=READY` depends on the
+   canonical schema, runtime ACL and RLS/FORCE-RLS state.
+4. Create the Timeweb App once, in the already accepted private network, then complete the
+   technical-domain bootstrap and exact-SHA P2 `/livez` plus `/healthz` candidate proof.
+5. P3 `accept` runs only after that current physical candidate proof and independently
+   repeats it. P3 acceptance is therefore downstream of physical P2 evidence, while P3
+   preparation is upstream of physical P2 evidence.
+
+A source-GREEN P2 result is not permission to skip P3 preparation, and a successful P3
+prepare is not P3 acceptance.
 
 ## Observe mode
 
@@ -90,7 +117,8 @@ The controller records the most recent distinct successful provider deployment S
 `last_known_good_sha`, but P2 does not perform automatic rollback. Rollback remains a
 later explicit acceptance transition to an exact previously successful SHA.
 
-P2 is `CERTIFIED_GREEN` only after its repository implementation passes the complete
-exact-head DRAFT verification. Physical candidate execution occurs only after accepted
-main plus the independent Timeweb application/environment gates. P3 PostgreSQL production
-cutover remains blocked until then.
+P2 source implementation is `CERTIFIED_GREEN` only after complete exact-head DRAFT
+verification. Physical candidate execution additionally requires accepted main, completed
+P3 preparation/recovery prerequisites, and the independent Timeweb application/environment
+gates. P3 final acceptance remains blocked until the current physical P2 technical-domain
+candidate proves both exact-SHA liveness and real database readiness.
