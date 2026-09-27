@@ -75,9 +75,7 @@ def _paged_rows(
             api.get(f"{path}?limit={_PAGE_SIZE}&offset={offset}"),
             code,
         )
-        page_rows = [
-            _mapping(item, code) for item in _list(payload.get(key), code)
-        ]
+        page_rows = [_mapping(item, code) for item in _list(payload.get(key), code)]
         total = _meta_total(payload, code)
         if expected_total is None:
             expected_total = total
