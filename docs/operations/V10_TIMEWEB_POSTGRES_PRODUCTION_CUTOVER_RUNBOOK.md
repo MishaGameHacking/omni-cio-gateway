@@ -38,6 +38,8 @@ The hosted App Platform runtime uses the Timeweb private-network path selected a
 
 `Timeweb technical-domain provenance -> explicit scoped RFC1918 private hostaddr -> private TCP/5432 -> PostgreSQL SSLRequest -> TLS >= 1.2 + CA/technical-hostname verification -> authenticated PostgreSQL connect`.
 
+Current Timeweb Firewall documentation states that Firewall filtering does not operate inside private networks. Therefore the P3 verifier-only public firewall remains a control for the public verifier path only; it is neither a prerequisite for nor an authorization mechanism for App-to-PostgreSQL private traffic. Do not add a private-CIDR firewall rule merely to make the App route work, and do not weaken the public verifier firewall because the private route is separate.
+
 The accepted provider technical-domain suffix set is `.tw1.ru`, `.tw1.su`, `.twc1.net`, and `.webtm.ru`. External DSNs remain strict allowlist inputs: only `host`, `port`, `dbname`, `user`, explicit `password`, `sslmode`, and `sslrootcert` are accepted. The stored DSN never contains `hostaddr`. For P3, the runtime preparation resolves and proves one public address. For App Platform, `OMNI_V10_POSTGRES_PRIVATE_HOSTADDR` is supplied separately and must be inside the exact RFC1918 `OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR`; Timeweb-reserved service addresses are rejected. In both modes the prepared in-process conninfo keeps the original technical hostname as `host` for SNI/`verify-full` certificate identity and uses only the separately proved numeric address as `hostaddr`. Ambient libpq target/credential variables remain forbidden. Neither probe prints the technical hostname, public/private address, DSN, user, password, certificate body, or raw exception text.
 
 Transport retries are bounded and only explicit transient DNS/TCP failures are replayed. Certificate, protocol, provider-domain, private-resolution and PostgreSQL authentication failures stop immediately. Database connection retries likewise require a classified transient failure; an unclassified client-side `OperationalError` is not replayed blindly.
@@ -123,6 +125,7 @@ The last-known-good application release remains the application rollback target.
 Provider references for this boundary:
 - https://timeweb.cloud/docs/dbaas/postgresql — managed PostgreSQL uses Patroni/Etcd leader-replica failover;
 - https://timeweb.cloud/docs/dbaas/postgresql/connect-to-database — domain connections use protected TLS;
+- https://timeweb.cloud/docs/firewall/upravlenie-fajrvolom — Timeweb Firewall does not filter traffic inside private networks;
 - https://timeweb.cloud/docs/dbaas/dbaas-manage/public-ip-access — external access requires enabled public IP access.
 - https://www.postgresql.org/docs/18/libpq-connect.html — `hostaddr`, GSS/SSL connection parameters and libpq connection semantics.
 - https://www.postgresql.org/docs/18/libpq-ssl.html — verify-full server identity and default client-certificate file behavior.
