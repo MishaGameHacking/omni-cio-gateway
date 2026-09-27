@@ -29,6 +29,16 @@ The full sequential audit also found a live evidence gap beyond the current crea
 
 This gap is a mandatory split after the current focused #595 repair: database parity execution and any replacement network transport require their own reviewed authority. Do not move the production IPv4 back to the synthetic cluster, buy a replacement IP, enable IPv6, mutate production PostgreSQL, attach DNS, or activate Telegram merely to close the sequence. Observation/reconciliation may be automated; network, database-cutover, DNS and public-login mutations stay fail-closed one-shot gates.
 
+### 2026-09-27 hosted-runtime database route defect class
+
+The sequential audit found a separate pre-publication production-network defect class in accepted source contracts. P3 currently proves production PostgreSQL ingress as `DROP + one TCP/5432 verifier /32` where the allowed source is the current self-hosted verification runner. P2/hosted runtime later expects Timeweb App Platform to open `OMNI_V10_POSTGRES_DSN` to that same production PostgreSQL endpoint. No accepted contract proves that App Platform outbound traffic will originate from that verifier /32, and current official Timeweb documentation does not provide that guarantee.
+
+Therefore P3 verifier reachability is not application-runtime reachability. A production cutover must not be accepted merely because the self-hosted verifier can connect while the future App Platform container may remain blocked by the exact firewall rule.
+
+Official Timeweb App Platform documentation also makes private-network selection an application-creation decision that cannot be changed in place later. This creates a mandatory network/security split **before physical App Platform creation**: the final App-to-PostgreSQL route must be selected and proved first. A preferred target may use a shared Timeweb private network only after an owning contract proves provider compatibility, TLS/hostname verification, PostgreSQL identity, recovery and routing; it must not silently replace the currently accepted public verify-full path.
+
+Until that gate is accepted, do not create the production App Platform application with an arbitrary/no-private-network choice, widen the production PostgreSQL firewall, assume a stable App Platform public egress IP, or treat P3 `source=/32` evidence as hosted-runtime connectivity proof.
+
 ### 2026-09-27 accepted-main read-only proof #24 defect
 
 PR #593 was squash-merged to accepted `main = 2bfa6c2b55caab0d474f890792f4e44c745a7744`.
