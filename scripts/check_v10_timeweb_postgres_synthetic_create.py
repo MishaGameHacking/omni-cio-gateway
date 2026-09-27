@@ -483,6 +483,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "control_plane_only_timeout_has_distinct_sanitized_code",
         "starting_timeout_has_distinct_sanitized_code",
         "existing_target_retry_remains_get_only",
+        "nested_read_retry_worst_case_included_in_headroom",
         "starting_explicit_unsafe_values_fail_closed",
         "terminal_started_exact_shape_required",
         "field_specific_sanitized_drift_codes_required",
@@ -526,12 +527,17 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _require(
         verification.get("workflow_timeout_minutes"),
-        20,
+        35,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("start_read_timeout_seconds"),
+        10,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
     _require(
         verification.get("minimum_workflow_headroom_seconds"),
-        300,
+        600,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
 
@@ -607,6 +613,8 @@ def _validate_provisioner() -> None:
             "def _reconcile_cluster_id(",
             "_RECONCILE_DELAYS_SECONDS = (",
             "_START_DELAYS_SECONDS = (",
+            "_START_READ_TIMEOUT_SECONDS = 10.0",
+            "api.get(path, timeout=_START_READ_TIMEOUT_SECONDS)",
             "TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT",
             "def _create_or_reconcile(",
             "read_only.verify_credential_health(read_api)",
@@ -722,7 +730,7 @@ def _validate_workflow() -> None:
             "environment-policy-proof:",
             "needs: environment-policy-proof",
             "environment: timeweb-synthetic",
-            "timeout-minutes: 20",
+            "timeout-minutes: 35",
             _SYNTHETIC_GUARD_MODULE,
             _SYNTHETIC_GUARD_MODULE + " --require-parity-transport-ready",
             "python -m scripts.verify_v10_timeweb_github_environment",
@@ -734,7 +742,7 @@ def _validate_workflow() -> None:
     )
     if source.count(_SYNTHETIC_GUARD_MODULE) != 3:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
-    if source.count("timeout-minutes: 20") != 1:
+    if source.count("timeout-minutes: 35") != 1:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_TIMEOUT_INVALID")
     if _SYNTHETIC_GUARD_SCRIPT in source:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
