@@ -155,6 +155,7 @@
     "runtime_private_route_required": true,
     "runtime_private_route_must_preserve_tls_hostname": true,
     "runtime_private_route_must_be_proved_by_candidate_healthz": true,
+    "runtime_private_route_firewall_dependency_allowed": false,
     "public_multi_user_env": "PUBLIC_MULTI_USER_ENABLED",
     "telegram_login_env": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
     "runtime_dsn_promotion_by_controller_allowed": false,
