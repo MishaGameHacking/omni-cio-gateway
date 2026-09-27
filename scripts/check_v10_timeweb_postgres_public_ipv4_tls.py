@@ -767,6 +767,12 @@ def _validate_ipv4_custody_contract(payload: dict[str, Any]) -> None:
         "diagnostic_output": "COUNTS_AND_STATIC_DISPOSITION_ONLY",
         "diagnostic_proves_network_readiness": False,
         "diagnostic_proves_sql_parity": False,
+        "target_absent_is_valid_read_only_state": True,
+        "target_absent_complete_inventory_required": True,
+        "target_absent_recovery_disposition": "BLOCKED",
+        "target_absent_recovery_code": "TIMEWEB_IPV4_TARGET_ABSENT",
+        "target_absent_grants_custody": False,
+        "target_absent_grants_mutation_authority": False,
         "ambiguous_create_delta_is_ownership_proof": False,
         "transport_existing_only_after_allocation_receipt": True,
         "transport_create_allowed": False,
@@ -954,6 +960,7 @@ def _validate_custody_probe(source: str) -> None:
         "exec(",
         "TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY",
         "RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS",
+        "TIMEWEB_IPV4_TARGET_NOT_FOUND",
     ):
         if forbidden in source:
             raise RuntimeError("TIMEWEB_IPV4_DIAGNOSTIC_WRITE_OR_OVERCLAIM")
@@ -962,8 +969,10 @@ def _validate_custody_probe(source: str) -> None:
         (
             'api.get("/api/v1/floating-ips")',
             "custody.raw_inventory(",
+            "custody.pretarget_observation(",
             "custody.observation(",
             "custody.disposition(",
+            "TIMEWEB_IPV4_TARGET_ABSENT",
             "TIMEWEB_RU_PG_IPV4_INVENTORY=STOPPED",
         ),
         "TIMEWEB_IPV4_DIAGNOSTIC_SOURCE_INVALID",
@@ -1004,6 +1013,8 @@ def _validate_ipv4_custody_sources() -> None:
             "TIMEWEB_IPV4_CREATE_RECEIPT_NOT_UNIQUE",
             "TIMEWEB_IPV4_CUSTODY_CLEANUP_UNPROVEN",
             "TIMEWEB_IPV4_INVENTORY_INCOMPLETE",
+            "def pretarget_observation(",
+            "target=absent",
             "TIMEWEB_RU_PG_IPV4_INVENTORY=OBSERVED",
             "TIMEWEB_RU_PG_IPV4_RECOVERY=BLOCKED",
         ),

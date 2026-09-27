@@ -191,6 +191,11 @@ The probe must verify, without emitting provider identifiers:
 - exact approved base price 790 RUB/month;
 - the target cluster name is either absent or resolves to exactly one provider
   object;
+- target absence is a valid pre-create read-only state: the control-plane marker remains
+  `READ_ONLY_READY`, while the account-level IPv4 observer must return a successful
+  observation with recovery explicitly `BLOCKED` as
+  `TIMEWEB_IPV4_TARGET_ABSENT`; target absence must never fabricate custody or mutation
+  authority;
 - if that exact target already exists, its cluster detail is read with GET only
   and only the sanitized `replica_list_count` is emitted.
 
