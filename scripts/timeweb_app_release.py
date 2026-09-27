@@ -11,6 +11,7 @@ import sys
 import time
 from typing import Any, NoReturn, Protocol
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -18,6 +19,8 @@ API_BASE = "https://api.timeweb.cloud"
 TOKEN_ENV = "TIMEWEB_CLOUD_API_TOKEN"
 CANONICAL_APP_NAME = "omni-cio-v10"
 CANONICAL_REPOSITORY = "MishaGameHacking/omni-cio-gateway"
+CANONICAL_REPOSITORY_NAME = "omni-cio-gateway"
+CANONICAL_REPOSITORY_PATH = "/MishaGameHacking/omni-cio-gateway"
 CANONICAL_BRANCH = "main"
 CANONICAL_FRAMEWORK = "docker"
 CANONICAL_PUBLIC_HOSTNAME = "omnicio.ru"
@@ -388,14 +391,36 @@ class TimewebAppApi:
             raise
 
 
+def _canonical_repository_url(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    parsed = urlsplit(value.strip())
+    path = parsed.path.rstrip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc == "github.com"
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and path == CANONICAL_REPOSITORY_PATH
+    )
+
+
 def _repository(app: dict[str, Any]) -> str:
     repository = _mapping(
         app.get("repository"), "TIMEWEB_APP_RELEASE_REPOSITORY_INVALID"
     )
     full_name = repository.get("full_name")
-    if not isinstance(full_name, str):
+    name = repository.get("name")
+    if (
+        not isinstance(full_name, str)
+        or not full_name.strip()
+        or name != CANONICAL_REPOSITORY_NAME
+        or not _canonical_repository_url(repository.get("url"))
+    ):
         _stop("TIMEWEB_APP_RELEASE_REPOSITORY_INVALID")
-    return full_name
+    return CANONICAL_REPOSITORY
 
 
 def _deploy(row: dict[str, Any]) -> tuple[str, str, str]:
