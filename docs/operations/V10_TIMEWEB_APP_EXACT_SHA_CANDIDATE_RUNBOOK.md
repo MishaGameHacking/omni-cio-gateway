@@ -20,10 +20,19 @@ Required runtime configuration for P2:
 - `OMNI_V10_CANDIDATE_HOSTNAME=<Timeweb technical domain>`
 - `OMNI_V10_RELEASE_SHA=<exact protected-main SHA>`
 - `OMNI_V10_POSTGRES_RUNTIME_ROLE=omni_cio_hosted_api`
+- `OMNI_V10_POSTGRES_PRIVATE_HOSTADDR=<production PostgreSQL private IPv4>`
+- `OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR=<exact Timeweb private-network CIDR>`
 - `OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED=true`
 - `PUBLIC_MULTI_USER_ENABLED=false`
 - `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`
 - `OMNI_V10_POSTGRES_DSN` present in Timeweb runtime custody.
+
+The DSN keeps the Timeweb PostgreSQL technical hostname, `sslmode=verify-full` and
+the canonical relative CA path. The private address is supplied separately. The runtime
+uses the private address only as the TCP `hostaddr` while preserving the technical
+hostname for SNI/certificate identity. The private host must be IPv4, inside the exact
+RFC1918 Timeweb network CIDR selected for the App, and must not use Timeweb-reserved
+service addresses. Do not replace the DSN host with a private IP and do not weaken TLS.
 
 In `preactivation` mode, P2 does not accept Telegram credential custody and both public-user activation flags must remain false even if credentials were pre-provisioned outside this gate. A later `live-operable` continuous release preserves an already accepted P5 activation and requires its live-evidence digest; it does not create or rotate Telegram credentials.
 
@@ -32,7 +41,11 @@ In `preactivation` mode, P2 does not accept Telegram credential custody and both
 The manual workflow `.github/workflows/v10-timeweb-app-candidate.yml` first proves that
 the requested SHA equals protected `main`, verifies the `timeweb-production` GitHub
 Environment policy, then checks Timeweb application identity, autodeploy-off state,
-runtime configuration, exact active commit, and HTTPS `/livez` release identity.
+runtime configuration, exact active commit, HTTPS `/livez` release identity, and
+HTTPS `/healthz` database readiness. Candidate acceptance requires
+`status=ok`, the exact release SHA, `database=READY`, and
+`synthetic_preview=false`. A process-only `/livez` success is never sufficient proof
+that the App Platform container can reach PostgreSQL on its own network path.
 
 The Timeweb technical domain is allowed only as an additional trusted Host for candidate
 verification. Browser Origin/CSRF authority remains canonical `https://omnicio.ru`.
