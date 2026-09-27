@@ -118,6 +118,14 @@
     "provider_binding": "TIMEWEB_CLOUD_API_TOKEN",
     "provider_binding_step_scope_only": true
   },
+  "orchestration": {
+    "p3_observe_before_physical_candidate_allowed": true,
+    "p3_prepare_before_physical_candidate_required": true,
+    "app_creation_after_p3_prepare_required": true,
+    "p3_accept_before_physical_candidate_allowed": false,
+    "candidate_healthz_requires_prepared_database": true,
+    "p3_accept_requires_current_candidate_livez_and_healthz": true
+  },
   "protected_invariants": {
     "preactivation_is_default": true,
     "public_activation_without_p5_live_evidence_allowed": false,
