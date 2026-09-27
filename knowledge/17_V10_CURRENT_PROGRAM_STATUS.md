@@ -4,9 +4,20 @@ Updated: 2026-09-27
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `2bfa6c2b55caab0d474f890792f4e44c745a7744` VIA PR #593 / REPOSITORY REGRESSION-GOVERNANCE-SECURITY BASELINE GREEN / TIMEWEB READ-ONLY PROOF #24 RED AT `TIMEWEB_IPV4_TARGET_NOT_FOUND` AFTER CONTROL-PLANE `existing_target=false` / CURRENT FOCUSED DEFECT CLASS READ-ONLY TARGET-ABSENT PRODUCER-CONSUMER CONTRACT SKEW / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `dee72c4fadd775ffcf878ce7dd7484aa57ed35f1` VIA PR #594 / TIMEWEB SYNTHETIC CREATE #6 STOPPED AT `TIMEWEB_CLUSTER_START_TIMEOUT` AFTER PROVIDER STATE WAS OBSERVED BUT TERMINAL `started` WAS NOT PROVED WITHIN THE OLD 288-SECOND LOCAL WAITER / CURRENT FOCUSED DEFECT CLASS ASYNCHRONOUS PROVIDER READINESS BUDGET / BRANCH `fix/timeweb-synthetic-start-readiness` / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**. The PR #584 merge does not by itself invent a new percentage; this ledger changes the percentage only through explicit accepted program authority.
+
+### 2026-09-27 synthetic create #6 start-readiness defect
+
+PR #594 is accepted on protected `main = dee72c4fadd775ffcf878ce7dd7484aa57ed35f1`.
+The subsequent manual `V10 RU-PG-B Timeweb Synthetic Create #6` reached the provider mutation/recovery step and stopped with the sanitized code `TIMEWEB_CLUSTER_START_TIMEOUT`.
+
+Current source proves that this code is emitted only after provider state has been observed while terminal `status=started` has not been proved before the local start-readiness budget expires. The accepted source budget was only 288 seconds. This is therefore an asynchronous-provider readiness defect class, not evidence that a second create POST is safe or required.
+
+The focused repair branch is `fix/timeweb-synthetic-start-readiness`. It may change only observation/recovery semantics needed to make the existing single-create state machine robust: extend the GET-only readiness budget, preserve workflow headroom, add a specific persistent-`starting` sanitized timeout class, strengthen tests/guards/runbook/failure-learning evidence, and keep restart recovery GET-only for an already-existing exact target.
+
+The repair must not issue another create for an existing target, delete or resize the cluster, widen network exposure, enable IPv6/backups/replication, mutate production DSN/DNS/TLS, activate Telegram/public users, enable broker write or enable Real Trading. A remaining `starting` state after the new bounded waiter is still fail-closed and requires read-only reconciliation.
 
 ### 2026-09-27 accepted-main read-only proof #24 defect
 
