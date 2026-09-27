@@ -383,10 +383,6 @@ def test_rejects_verifier_cidr_drift() -> None:
         _verify(responses)
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [("direction", "egress"), ("protocol", "udp"), ("port", "5433")],
-)
 def test_rejects_malformed_firewall_rule_id() -> None:
     responses = _responses()
     path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
@@ -398,6 +394,10 @@ def test_rejects_malformed_firewall_rule_id() -> None:
         _verify(responses)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("direction", "egress"), ("protocol", "udp"), ("port", "5433")],
+)
 def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
     responses = _responses()
     path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"

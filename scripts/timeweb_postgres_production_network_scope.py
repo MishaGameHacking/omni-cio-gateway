@@ -358,7 +358,11 @@ def _require_exact_rule(
     return rule_id
 
 
-def _require_exact_resource(api: ReadOnlyApi, group_id: str, database_id: str) -> str:
+def _require_exact_resource(
+    api: ReadOnlyApi,
+    group_id: str,
+    database_id: str,
+) -> str:
     resources = _paged_rows(
         api,
         f"/api/v1/firewall/groups/{group_id}/resources",
