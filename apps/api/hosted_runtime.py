@@ -111,15 +111,8 @@ def create_app() -> FastAPI:
     database_ca_path = install_timeweb_postgres_ca()
     candidate_hostname = _optional_candidate_hostname()
     candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
-    raw_connection = _open_runtime_database(
-        external_database_dsn,
-        database_ca_path,
-        runtime_role,
-        private_hostaddr,
-        private_network_cidr,
-    )
     connection = _BoundedWebConnectionPool(
-        raw_connection,
+        None,
         connect=lambda: _open_runtime_database(
             external_database_dsn,
             database_ca_path,
