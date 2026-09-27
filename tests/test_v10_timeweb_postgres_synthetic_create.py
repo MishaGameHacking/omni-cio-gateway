@@ -33,6 +33,19 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
     def test_source_contract_passes(self) -> None:
         guard.validate()
 
+    def test_existing_target_lookup_guard_rejects_unbounded_read(self) -> None:
+        source = """
+def provision():
+    existing_cluster_id = _target_cluster_id(read_api.get(project_path))
+"""
+        tree = guard._parse_python_source(source)
+        function = guard._find_function(tree, "provision")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_SYNTHETIC_CREATE_PROVISIONER_DRIFT",
+        ):
+            guard._require_existing_target_lookup_timeout(function)
+
     def test_terminal_invariant_guard_accepts_equivalent_tuple_syntax(self) -> None:
         source = """
 def _verify_terminal_shape():
