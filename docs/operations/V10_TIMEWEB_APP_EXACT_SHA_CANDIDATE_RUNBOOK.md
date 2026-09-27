@@ -13,6 +13,15 @@ from `MishaGameHacking/omni-cio-gateway` branch `main`, with autodeploy disabled
 The controller accepts only one explicit 40-character protected-main SHA. It does not
 create, resize, delete, stop, or patch the application.
 
+The current OWNER bootstrap uses Timeweb's documented repository-by-URL flow because the
+interactive GitHub provider handoff did not converge. Timeweb may decorate repository
+display/full-name metadata for a URL-connected source, so release identity is not based on
+that presentation string alone. The controller requires the repository name plus the exact
+canonical HTTPS clone URL for `MishaGameHacking/omni-cio-gateway`; alternate hosts,
+repositories, embedded credentials, query parameters and fragments are rejected. URL
+connections intentionally keep autodeploy unavailable, which matches the exact-SHA manual
+release authority.
+
 Initial App creation is an OWNER/provider-panel action. The current documented public
 Timeweb CreateApp schema does not expose the immutable private-network selection that the
 Docker App requires, while Timeweb documents that the selected private network cannot be
