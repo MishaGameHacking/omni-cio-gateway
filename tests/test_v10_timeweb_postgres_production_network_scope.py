@@ -82,6 +82,28 @@ def _verify(responses: dict[str, Any]) -> None:
     )
 
 
+def test_hostname_accepts_dotted_ascii_fqdn() -> None:
+    assert scope._hostname(HOST) == HOST
+
+
+@pytest.mark.parametrize(
+    "hostname",
+    [
+        "localhost",
+        r"prod-db\\.twc1.net",
+        "prod-db..twc1.net",
+        "-prod.twc1.net",
+        "prod-.twc1.net",
+    ],
+)
+def test_hostname_rejects_non_fqdn_shapes(hostname: str) -> None:
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_NETWORK_HOST_INVALID",
+    ):
+        scope._hostname(hostname)
+
+
 def test_accepts_exact_fail_closed_network_scope(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -12,9 +12,8 @@ BOOTSTRAP_DSN_ENV = "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN"
 VERIFIER_CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"
 POSTGRES_PORT = "5432"
 SYNTHETIC_CLUSTER_NAME = "omni-cio-v10-ru-pg-synthetic"
-_HOST_RE = re.compile(
-    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-    r"(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+_HOST_LABEL_RE = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
     re.ASCII,
 )
 _ID_RE = re.compile(r"^[A-Za-z0-9-]{1,96}$", re.ASCII)
@@ -59,7 +58,12 @@ def _hostname(value: object) -> str:
     if not isinstance(value, str):
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_HOST_INVALID")
     host = value.strip().lower().rstrip(".")
-    if len(host) > 253 or _HOST_RE.fullmatch(host) is None:
+    labels = host.split(".")
+    if (
+        len(host) > 253
+        or len(labels) < 2
+        or any(_HOST_LABEL_RE.fullmatch(label) is None for label in labels)
+    ):
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_HOST_INVALID")
     return host
 
