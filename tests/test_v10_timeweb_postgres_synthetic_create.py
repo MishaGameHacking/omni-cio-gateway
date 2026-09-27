@@ -251,18 +251,25 @@ def _verify_terminal_shape():
 
         read_attempts = len(read_only._RETRY_DELAYS_SECONDS) + 1
         read_retry_sleep_budget = sum(read_only._RETRY_DELAYS_SECONDS)
-        observations = len(provisioner._START_DELAYS_SECONDS) + 1
-        per_observation_read_budget = (
-            read_attempts * provisioner._START_READ_TIMEOUT_SECONDS
+        per_read_budget = (
+            read_attempts * provisioner._CONTROL_PLANE_READ_TIMEOUT_SECONDS
             + read_retry_sleep_budget
         )
-        worst_case_wait_budget = (
-            start_budget + observations * per_observation_read_budget
+        fixed_control_plane_reads = 5
+        reconcile_observations = len(provisioner._RECONCILE_DELAYS_SECONDS) + 1
+        start_observations = len(provisioner._START_DELAYS_SECONDS) + 1
+        worst_case_provider_phase = (
+            provisioner._CREATE_REQUEST_TIMEOUT_SECONDS
+            + fixed_control_plane_reads * per_read_budget
+            + reconcile_observations * per_read_budget
+            + reconcile_budget
+            + start_observations * per_read_budget
+            + start_budget
         )
-        workflow_budget = 35 * 60
+        workflow_budget = 60 * 60
         self.assertGreaterEqual(
-            workflow_budget - worst_case_wait_budget,
-            600.0,
+            workflow_budget - worst_case_provider_phase,
+            1200.0,
         )
 
     def test_ambiguous_post_reconciles_by_get_without_second_post(self) -> None:
@@ -533,7 +540,10 @@ def _verify_terminal_shape():
         self.assertEqual(api.get.call_count, 2)
         self.assertEqual(
             [call.kwargs for call in api.get.call_args_list],
-            [{"timeout": 10.0}, {"timeout": 10.0}],
+            [
+                {"timeout": provisioner._CONTROL_PLANE_READ_TIMEOUT_SECONDS},
+                {"timeout": provisioner._CONTROL_PLANE_READ_TIMEOUT_SECONDS},
+            ],
         )
         self.assertEqual(sleeps, [0.0])
 
