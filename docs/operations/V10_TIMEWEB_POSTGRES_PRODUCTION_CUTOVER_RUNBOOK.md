@@ -56,11 +56,27 @@ A RED emits a sanitized stage code. Treat these codes as operator routing, not a
 
 Timeweb documents that external PostgreSQL access requires public-IP access and that domain-based PostgreSQL connection uses protected TLS. A provider-side node incident or firewall drop can therefore coexist with valid source configuration and a valid CA while the live TCP connection still times out; source correctness alone is not transport readiness.
 
+### Provider network-scope gate
+
+Before any operation-specific database controller step receives production DSNs, the workflow validates all dispatch authority without secrets, validates and masks the exact current `verifier_cidr` as one global IPv4 `/32`, and then performs a **read-only** Timeweb provider-state proof.
+
+The provider proof binds the bootstrap DSN technical hostname to exactly one non-synthetic project database and requires: cluster `started`; PostgreSQL port `5432`; public IPv4 enabled and uniquely bound to that database; the public IPv4 in the same availability zone with DDoS add-on disabled; public IPv6 disabled; protected connection enabled with the exact hostname certificate issued; exactly one attached firewall service group; group policy `DROP`; exactly one `ingress tcp/5432` rule from the supplied global `/32`; and exactly one linked database resource. Firewall collection reads use bounded provider pagination and fail closed on total drift or truncation.
+
+The proof is intentionally not a single composite read. It performs **two consecutive read-only provider snapshots** and builds an in-memory stability witness from the production database identity, availability zone, floating-IP identity/address, firewall group, firewall rule, linked resource, and verifier CIDR. Every individual pass must be valid, and both witnesses must be identical. A mismatch stops with `TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT` before database authentication. Witness values are never printed. The database detail must also preserve the exact project identity selected through the authenticated project resource list. For the bound public IPv4, each pass reconciles the account-level floating-IP list row with a second exact floating-IP detail GET; any network-identity disagreement stops with `TIMEWEB_PG_PRODUCTION_FLOATING_IP_LIST_DETAIL_DRIFT`. Malformed provider domain, floating-IP, firewall-rule, or firewall-resource identities fail closed instead of being silently skipped. This prevents a valid-looking READY result assembled from stale list data, cross-project drift, or mutually inconsistent control-plane states while an external actor is changing the provider configuration.
+
+A successful provider-scope proof emits only:
+
+`TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY public_ipv4=bound ipv6=off tls=enabled firewall=drop ingress=tcp/5432 source=/32`
+
+It never prints the hostname, verifier CIDR, database ID, firewall ID or public IP. The floating-IP list/detail comparison and database project identity are provider-side control-plane evidence only; their raw values also remain private. A provider-scope STOP occurs **before database authentication**. Only after this read-only provider proof may the credential-free DNS/TCP/SSLRequest/verify-full ladder run and then present PostgreSQL credentials.
+
+The production cutover workflow shares the `v10-timeweb-postgres-public-ipv4-tls` concurrency group with the existing Timeweb network/allocation workflows so repository-controlled public-IP/firewall mutation cannot race the preflight. The double-read stability witness additionally detects provider-state drift that occurs during the preflight itself. Neither mechanism can serialize an unrelated external writer after the second snapshot, so manual Timeweb dashboard changes and unrelated API writers must remain frozen during P3 execution. The subsequent credential-free transport probe is still mandatory because a stable, correct provider configuration does not prove that the current verifier route is reachable.
+
 ## GitHub production-environment prerequisite
 
 Before the first P3 dispatch, the repository GitHub Environment `timeweb-production` must already exist. Its deployment policy must be **Selected branches and tags** with exactly one rule: **Branch `main`**. The workflow only has read authority over this policy and must never create or relax the environment itself.
 
-The same environment must hold `OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN` and `OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN` as environment secrets. Do not paste either value into source, issues, chat, workflow inputs, screenshots, or logs.
+The same environment must hold `OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN` and `OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN` as environment secrets. Do not paste either value into source, issues, chat, workflow inputs, screenshots, or logs. The current verifier source is supplied separately as the manual `verifier_cidr` workflow input, must be one global IPv4 `/32`, and is masked before provider-secret access.
 
 A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment has not been established. `...AUTHENTICATION_FAILED` or `...PERMISSION_DENIED` means stop and repair GitHub access; do not retry the production operation blindly.
 
@@ -69,7 +85,7 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 1. PR #584 P2 source and exact-head verification is GREEN and the implementation is accepted on protected `main`.
 2. Establish the dedicated production PostgreSQL 18 database and the pre-existing `omni_cio_hosted_api` login without exposing credentials.
 3. Establish the `timeweb-production` GitHub Environment, exact-main branch policy, and the two production DSN secrets described above.
-4. Invoke the P3 workflow with the exact accepted main SHA and `operation=observe`. The observe phase is SQL read-only: it verifies target identity, PostgreSQL 18, TLS, bootstrap/runtime role authority and absence of product-data residue without applying migrations, ACLs, RLS, or cross-tenant write probes.
+4. Invoke the P3 workflow with the exact accepted main SHA, the current global verifier `verifier_cidr` `/32`, and `operation=observe`. Dispatch authority is validated without secrets, then the read-only provider network-scope gate must return `TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY` before the credential-free transport ladder or any PostgreSQL authentication. The observe phase is SQL read-only: it verifies target identity, PostgreSQL 18, TLS, bootstrap/runtime role authority and absence of product-data residue without applying migrations, ACLs, RLS, or cross-tenant write probes.
 5. Run `operation=prepare` with confirmation `PREPARE_TIMEWEB_PRODUCTION_POSTGRES`.
 6. The controller verifies PostgreSQL 18/TLS, applies canonical migrations twice to prove retry idempotence, applies the canonical runtime ACL bootstrap, verifies the least-privilege runtime role, RLS/FORCE-RLS, tenant security constraints, and requires clean product identity/session/broker tables.
 7. Create a Timeweb physical backup recovery point. Physical backup is mandatory and additive to the repository logical recovery contract.
@@ -85,7 +101,7 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 
 Manual run `36276384123` on exact accepted main `2a7c7104e4e0d5bd2e6eee2f9b87fd71ed7b822d` passed exact-main/source/environment policy, then exhausted seven 15-second bootstrap connection attempts and stopped with the old generic `TIMEWEB_PG_PRODUCTION_BOOTSTRAP_CONNECTION_FAILED` marker. No `prepare` or `accept` step ran, so no production SQL mutation occurred.
 
-That marker proves a live connection failure but cannot distinguish DNS, public-IP/firewall/routing, SSLRequest/TLS, provider-node readiness, or authentication because the old no-SQLSTATE path treated every client-side `OperationalError` as retryable. Do not rerun that source blindly. The connectivity-diagnostic repair replaces this collapsed boundary with the credential-free readiness ladder and classified authenticated-connect failures above.
+That marker proves a live connection failure but cannot distinguish DNS, public-IP/firewall/routing, SSLRequest/TLS, provider-node readiness, or authentication because the old no-SQLSTATE path treated every client-side `OperationalError` as retryable. Do not rerun that source blindly. The connectivity-diagnostic repair replaces this collapsed boundary with the credential-free readiness ladder and classified authenticated-connect failures above. The later provider-scope repair additionally proves the Timeweb public-IP/firewall/TLS control-plane state before any database authentication. If that scope gate is READY but the credential-free TCP stage still times out, the remaining failure boundary is route/source/provider reachability rather than an unobserved firewall-policy assumption.
 
 Any SHA mismatch, TLS downgrade, migration drift, widened runtime role, RLS/FORCE-RLS drift, non-empty clean-target tables, missing recovery attestation or evidence digest, App Platform DSN mismatch, or public-user flag enablement is `DEPLOYMENT_BLOCKED`.
 
