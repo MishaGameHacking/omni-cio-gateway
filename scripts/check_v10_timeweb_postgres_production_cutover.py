@@ -675,9 +675,7 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
         function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
     )
-    if not {"_LazyTimewebPostgresCa", "_open_runtime_database"}.issubset(
-        create_calls
-    ):
+    if not {"_LazyTimewebPostgresCa", "_open_runtime_database"}.issubset(create_calls):
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
     forbidden_create_calls = {
         _CALL_INSTALL_CA,
