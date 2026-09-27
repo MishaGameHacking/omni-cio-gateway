@@ -170,6 +170,14 @@
     "prepare": "DATABASE_SCHEMA_AND_RUNTIME_ACL_MUTATION_ONLY",
     "accept": "READ_ONLY_FINAL_ACCEPTANCE_AFTER_EXTERNAL_RECOVERY_AND_DSN_PROMOTION"
   },
+  "orchestration": {
+    "observe_may_run_before_app_creation": true,
+    "prepare_must_complete_before_app_creation": true,
+    "recovery_must_complete_before_app_creation": true,
+    "physical_candidate_must_complete_before_accept": true,
+    "accept_repeats_candidate_livez_and_healthz": true,
+    "accept_before_physical_candidate_allowed": false
+  },
   "github": {
     "workflow": ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
     "environment": "timeweb-production",
