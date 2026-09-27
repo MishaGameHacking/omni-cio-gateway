@@ -292,6 +292,7 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
         "runtime_private_route_required": True,
         "runtime_private_route_must_preserve_tls_hostname": True,
         "runtime_private_route_must_be_proved_by_candidate_healthz": True,
+        "runtime_private_route_firewall_dependency_allowed": False,
         "public_multi_user_env": "PUBLIC_MULTI_USER_ENABLED",
         "telegram_login_env": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
         "accepted_binding_must_equal_verified_runtime_dsn": True,
