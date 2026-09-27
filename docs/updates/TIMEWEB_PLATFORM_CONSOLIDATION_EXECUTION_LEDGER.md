@@ -639,8 +639,9 @@ Focused branch `fix/timeweb-synthetic-start-readiness` repairs the complete loca
 defect class without widening provider authority:
 
 - the start-readiness GET-only budget is extended to 708 seconds;
-- each outer readiness GET is bounded to a 10-second socket-attempt timeout while the existing finite control-plane retry policy remains intact;
-- the enclosing create job gets a 35-minute ceiling and at least 600 seconds of worst-case headroom after accounting for both the 708-second delay vector and nested read retries;
+- every synthetic-create control-plane GET is bounded to a 10-second socket-attempt timeout while the existing finite control-plane retry policy remains intact;
+- the single create POST is explicitly bounded to 30 seconds;
+- the enclosing create job gets a 60-minute ceiling and at least 1,200 seconds of worst-case headroom after accounting for pre-create reads, one ambiguous POST, GET-only reconciliation, the 708-second startup delay vector, nested read retries and final project-custody verification;
 - persistent safe `starting` receives the distinct sanitized code
   `TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT`;
 - control-plane-only read failure remains separately classified;
@@ -654,11 +655,14 @@ repair. Fresh exact-head verification is required before the source can be accep
 
 A later pre-merge challenge of the same defect class found that the first headroom proof
 counted explicit sleeps only. The reused read-only client may perform three network
-attempts per outer observation, with its own bounded retry sleeps. Under a sustained
-provider/network outage that nested behavior could outlive the prior 20-minute Actions
-ceiling and suppress the provisioner's own sanitized timeout classification. The
-replacement source therefore bounds readiness reads to 10 seconds and calculates workflow
-headroom from the complete nested retry envelope. No provider mutation authority changes.
+attempts per observation, with its own bounded retry sleeps. A further full-path challenge
+found that startup is not the only consumer: credential/type/preset/target reads, an
+ambiguous create's GET-only reconciliation and final custody verification all share the
+same control-plane failure domain. Under a sustained provider/network incident the prior
+workflow ceiling could therefore suppress the provisioner's own sanitized reconciliation
+or readiness result. The replacement source bounds all synthetic-create reads to 10
+seconds, the single POST to 30 seconds and calculates workflow headroom from the complete
+provider phase. No provider mutation authority changes.
 
 ### Full Timeweb provider-chain audit after current OWNER screenshot — 2026-09-27
 
