@@ -37,7 +37,10 @@ Required runtime configuration for P2:
 The provider-assigned App technical domain does not exist until the application has been
 created. During that one creation-time bootstrap only, `OMNI_V10_CANDIDATE_HOSTNAME`
 may be absent so the container can start and Timeweb can perform its localhost
-`/livez` health check. This is **not** P2 acceptance. As soon as Timeweb assigns the
+`/livez` health check. Startup intentionally does not open PostgreSQL merely to satisfy
+liveness; the bounded database pool connects lazily and `/healthz` owns the real
+database readiness probe. This prevents a transient database outage from turning a
+process-liveness check into a container restart loop. This is **not** P2 acceptance. As soon as Timeweb assigns the
 technical domain, add it as `OMNI_V10_CANDIDATE_HOSTNAME`, keep autodeploy disabled and
 the selected private network unchanged, redeploy the same exact accepted-main SHA, and
 only then run P2 `observe`/`deploy`. P2 remains fail-closed while that hostname is
