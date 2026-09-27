@@ -985,33 +985,47 @@ def test_candidate_hostname_is_optional_and_validated(
         _optional_candidate_hostname()
 
 
-def test_hosted_runtime_reproves_transport_for_each_database_open(
+def test_hosted_runtime_reproves_private_transport_for_each_database_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ca_path = tmp_path / "timeweb-postgres-root.crt"
     prepared_dsns = iter(("prepared-a", "prepared-b"))
-    preparation_calls: list[tuple[str, Path]] = []
-    connection_calls: list[str] = []
+    preparation_calls: list[tuple[str, Path, str, str]] = []
+    connection_calls: list[tuple[str, str]] = []
     configured: list[object] = []
     probed_roles: list[str] = []
     connections = [object(), object()]
 
-    def prepare_target(external_dsn: str, observed_ca_path: Path) -> str:
-        preparation_calls.append((external_dsn, observed_ca_path))
+    def prepare_target(
+        external_dsn: str,
+        observed_ca_path: Path,
+        *,
+        private_hostaddr: str,
+        private_network_cidr: str,
+    ) -> str:
+        preparation_calls.append(
+            (
+                external_dsn,
+                observed_ca_path,
+                private_hostaddr,
+                private_network_cidr,
+            )
+        )
         return next(prepared_dsns)
 
     def connect_prepared(
         prepared_dsn: str,
         **kwargs: object,
     ) -> object:
-        del kwargs
-        connection_calls.append(prepared_dsn)
+        private_network_cidr = str(kwargs.pop("private_network_cidr"))
+        kwargs.clear()
+        connection_calls.append((prepared_dsn, private_network_cidr))
         return connections[len(connection_calls) - 1]
 
     monkeypatch.setattr(
         hosted_runtime,
-        "prepare_timeweb_postgres_target",
+        "prepare_timeweb_postgres_private_target",
         prepare_target,
     )
     monkeypatch.setattr(
@@ -1036,20 +1050,27 @@ def test_hosted_runtime_reproves_transport_for_each_database_open(
         "external-dsn",
         ca_path,
         "runtime",
+        "10.0.0.10",
+        "10.0.0.0/24",
     )
     second = hosted_runtime._open_runtime_database(
         "external-dsn",
         ca_path,
         "runtime",
+        "10.0.0.10",
+        "10.0.0.0/24",
     )
 
     assert first is connections[0]
     assert second is connections[1]
     assert preparation_calls == [
-        ("external-dsn", ca_path),
-        ("external-dsn", ca_path),
+        ("external-dsn", ca_path, "10.0.0.10", "10.0.0.0/24"),
+        ("external-dsn", ca_path, "10.0.0.10", "10.0.0.0/24"),
     ]
-    assert connection_calls == ["prepared-a", "prepared-b"]
+    assert connection_calls == [
+        ("prepared-a", "10.0.0.0/24"),
+        ("prepared-b", "10.0.0.0/24"),
+    ]
     assert configured == connections
     assert probed_roles == ["runtime", "runtime"]
 
@@ -1093,7 +1114,9 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "OMNI_V10_POSTGRES_RUNTIME_ROLE" in runtime
     assert "connect_prepared_timeweb_postgres" in runtime
     assert "install_timeweb_postgres_ca" in runtime
-    assert "prepare_timeweb_postgres_target" in runtime
+    assert "prepare_timeweb_postgres_private_target" in runtime
+    assert "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR" in runtime
+    assert "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR" in runtime
     assert "prepare_timeweb_postgres_tls" not in runtime
     assert 'failure_prefix="HOSTED_RUNTIME_DATABASE"' in runtime
     assert "connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS" in runtime
