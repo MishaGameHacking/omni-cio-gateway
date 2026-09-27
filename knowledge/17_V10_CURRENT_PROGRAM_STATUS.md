@@ -716,3 +716,14 @@ its dedicated workflow/tests from the current worktree, preserves protected V9
 fail-closed guard that rejects reintroduction of the retired subtree or workflow/runtime
 references. Ordinary non-sensitive history remains available in Git history rather than
 being kept executable in the current tree.
+
+## Timeweb App private PostgreSQL route repair — 2026-09-27
+
+Fresh accepted protected `main` for this checkpoint is `3326da2314010f510fb48775e21209a3ba165b0f`. Focused branch `fix/timeweb-app-private-postgres-route` is the only active source-repair branch for the discovered App Platform database-route defect.
+
+OWNER panel evidence confirms, without recording credential values or private provider identifiers, that the canonical production PostgreSQL target already belongs to the same Timeweb private network offered by the `omni-cio-v10` App Platform creation flow, that PostgreSQL exposes a private TCP/5432 endpoint, and that protected connection remains enabled. The existing production public IPv4 stays attached and is not repurposed.
+
+The prior hosted runtime incorrectly inherited the P3 self-hosted verifier's public-address invariant and P2 accepted exact-SHA `/livez` without proving App-to-PostgreSQL reachability. The focused repair now separates the two routes: P3 remains public/firewall-scoped; the Timeweb App runtime uses an explicit scoped private PostgreSQL address while retaining the technical-domain DSN for `verify-full` TLS identity. P2 candidate acceptance is being strengthened to require `/healthz status=ok database=READY synthetic_preview=false` in addition to exact-SHA `/livez`.
+
+Physical `omni-cio-v10` creation remains paused until this branch is fully certified, accepted, squash-merged and exact-new-main post-merge GREEN. The intended App creation parameters already observed are Dockerfile backend, `main`, autodeploy off, Moscow MSK-1, selected production private network, provider-assigned private App address, `/livez` platform health path and technical Timeweb HTTPS hostname first. `omnicio.ru`, public users and Telegram activation remain later gates.
+
