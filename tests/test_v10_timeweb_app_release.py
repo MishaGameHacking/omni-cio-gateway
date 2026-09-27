@@ -206,6 +206,29 @@ class _MalformedSuccessApi(_Api):
         return {"deploy": {"unexpected": "successful-but-unprovable-response"}}
 
 
+def _assert_observe_stops(app: dict[str, object], code: str) -> None:
+    api = _Api(app)
+    livez = _Livez()
+    with pytest.raises(release.ReleaseStopped, match=code):
+        release.run(
+            operation="observe",
+            expected_sha=EXPECTED_SHA,
+            observed_main_sha=EXPECTED_SHA,
+            token="token",
+            api=api,
+            livez_opener=livez,
+        )
+
+
+def _assert_healthz_stops(opener: _Livez, code: str) -> None:
+    with pytest.raises(release.ReleaseStopped, match=code):
+        release._verify_healthz(
+            CANDIDATE_HOST,
+            EXPECTED_SHA,
+            opener=opener,
+        )
+
+
 def test_provider_ids_reject_bool_none_and_fractional_values() -> None:
     for value in (True, False, None, 1.5, [], {}):
         with pytest.raises(
@@ -268,50 +291,26 @@ def test_candidate_requires_scoped_private_database_route() -> None:
     missing = _app(active_sha=EXPECTED_SHA)
     assert isinstance(missing["envs"], dict)
     missing["envs"].pop("OMNI_V10_POSTGRES_PRIVATE_HOSTADDR")
-    with pytest.raises(
-        release.ReleaseStopped,
-        match="TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_REQUIRED",
-    ):
-        release.run(
-            operation="observe",
-            expected_sha=EXPECTED_SHA,
-            observed_main_sha=EXPECTED_SHA,
-            token="token",
-            api=_Api(missing),
-            livez_opener=_Livez(),
-        )
+    _assert_observe_stops(
+        missing,
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_REQUIRED",
+    )
 
     public_target = _app(active_sha=EXPECTED_SHA)
     assert isinstance(public_target["envs"], dict)
     public_target["envs"]["OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"] = "8.8.8.8"
-    with pytest.raises(
-        release.ReleaseStopped,
-        match="TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
-    ):
-        release.run(
-            operation="observe",
-            expected_sha=EXPECTED_SHA,
-            observed_main_sha=EXPECTED_SHA,
-            token="token",
-            api=_Api(public_target),
-            livez_opener=_Livez(),
-        )
+    _assert_observe_stops(
+        public_target,
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
+    )
 
     mismatched = _app(active_sha=EXPECTED_SHA)
     assert isinstance(mismatched["envs"], dict)
     mismatched["envs"]["OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"] = "10.0.1.0/24"
-    with pytest.raises(
-        release.ReleaseStopped,
-        match="TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
-    ):
-        release.run(
-            operation="observe",
-            expected_sha=EXPECTED_SHA,
-            observed_main_sha=EXPECTED_SHA,
-            token="token",
-            api=_Api(mismatched),
-            livez_opener=_Livez(),
-        )
+    _assert_observe_stops(
+        mismatched,
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
+    )
 
 
 def test_healthz_requires_real_database_readiness(
@@ -319,36 +318,23 @@ def test_healthz_requires_real_database_readiness(
 ) -> None:
     monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(
-        release.ReleaseStopped,
-        match="TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY",
-    ):
-        release._verify_healthz(
-            CANDIDATE_HOST,
-            EXPECTED_SHA,
-            opener=_Livez(health_status="unavailable", database="NOT_READY"),
-        )
+    unavailable = _Livez(health_status="unavailable", database="NOT_READY")
+    _assert_healthz_stops(
+        unavailable,
+        "TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY",
+    )
 
-    with pytest.raises(
-        release.ReleaseStopped,
-        match="TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN",
-    ):
-        release._verify_healthz(
-            CANDIDATE_HOST,
-            EXPECTED_SHA,
-            opener=_Livez(synthetic_preview=True),
-        )
+    synthetic = _Livez(synthetic_preview=True)
+    _assert_healthz_stops(
+        synthetic,
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN",
+    )
 
-    with pytest.raises(
-        release.ReleaseStopped,
-        match="TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT",
-    ):
-        release._verify_healthz(
-            CANDIDATE_HOST,
-            EXPECTED_SHA,
-            opener=_Livez(sha=LKG_SHA),
-        )
-
+    stale_release = _Livez(sha=LKG_SHA)
+    _assert_healthz_stops(
+        stale_release,
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT",
+    )
 
 def test_healthz_retries_transient_unavailability_until_ready(
     monkeypatch: pytest.MonkeyPatch,
