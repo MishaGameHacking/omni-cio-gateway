@@ -85,10 +85,10 @@ _TIMEWEB_TECHNICAL_DOMAIN_SUFFIXES = (
     ".twc1.net",
     ".webtm.ru",
 )
-_RFC1918_NETWORKS = (
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
+_RFC1918_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network((0x0A000000, 8)),
+    ipaddress.IPv4Network((0xAC100000, 12)),
+    ipaddress.IPv4Network((0xC0A80000, 16)),
 )
 _TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS = frozenset({1, 2, 3})
 _ALLOWED_EXTERNAL_DSN_PARAMETERS = frozenset(
