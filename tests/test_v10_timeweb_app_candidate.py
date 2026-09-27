@@ -61,6 +61,30 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         ):
             guard.validate(root)
 
+    def test_rejects_unsafe_initial_create_api_authority(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["target"]["initial_create_via_documented_api_allowed"] = True
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_TARGET_INVALID",
+        ):
+            guard.validate(root)
+
+    def test_requires_creation_time_private_network_binding(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["target"]["immutable_private_network_required_at_creation"] = False
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_TARGET_INVALID",
+        ):
+            guard.validate(root)
+
     def test_rejects_automatic_workflow_trigger(self) -> None:
         root = self._fixture()
         path = root / ".github/workflows/v10-timeweb-app-candidate.yml"
