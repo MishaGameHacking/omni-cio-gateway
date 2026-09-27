@@ -336,6 +336,7 @@ def test_healthz_requires_real_database_readiness(
         "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT",
     )
 
+
 def test_healthz_retries_transient_unavailability_until_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
