@@ -270,9 +270,7 @@ def _prepared_connection_params(dsn: str) -> dict[str, str]:
     if not root_certificate.is_absolute():
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PREPARED_ROOT_CERT_PATH_INVALID")
     if params.get(_GSSENCMODE_KEY, "").strip().lower() != _PREPARED_GSSENCMODE:
-        raise TimewebPostgresTlsError(
-            "TIMEWEB_PG_TLS_PREPARED_GSS_ENCRYPTION_INVALID"
-        )
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PREPARED_GSS_ENCRYPTION_INVALID")
     if params.get(_SSLCERTMODE_KEY, "").strip().lower() != _PREPARED_SSLCERTMODE:
         raise TimewebPostgresTlsError(
             "TIMEWEB_PG_TLS_PREPARED_CLIENT_CERT_MODE_INVALID"
@@ -281,9 +279,7 @@ def _prepared_connection_params(dsn: str) -> dict[str, str]:
         params.get(_SSL_MIN_PROTOCOL_VERSION_KEY, "").strip()
         != _PREPARED_SSL_MIN_PROTOCOL_VERSION
     ):
-        raise TimewebPostgresTlsError(
-            "TIMEWEB_PG_TLS_PREPARED_TLS_MIN_VERSION_INVALID"
-        )
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PREPARED_TLS_MIN_VERSION_INVALID")
     return params
 
 
