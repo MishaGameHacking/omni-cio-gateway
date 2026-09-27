@@ -37,7 +37,7 @@ _START_DELAYS_SECONDS = (
     60.0,
     60.0,
 )
-_START_READ_TIMEOUT_SECONDS = 10.0
+_CONTROL_PLANE_READ_TIMEOUT_SECONDS = 10.0
 _AMBIGUOUS_HTTP_STATUSES = frozenset({408, 409, 423, 429, 500, 502, 503, 504})
 Sleep = Callable[[float], None]
 
@@ -213,7 +213,12 @@ def _reconcile_cluster_id(
     attempts = len(delays) + 1
     for attempt in range(attempts):
         try:
-            cluster_id = _target_cluster_id(api.get(project_path))
+            cluster_id = _target_cluster_id(
+                api.get(
+                    project_path,
+                    timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS,
+                )
+            )
             observed_state = True
         except _provider_base.ProvisioningStopped as exc:
             if not _is_transient_read_failure(exc):
@@ -473,7 +478,7 @@ def _wait_for_started(
     for attempt in range(attempts):
         try:
             status = _verify_cluster_shape(
-                api.get(path, timeout=_START_READ_TIMEOUT_SECONDS),
+                api.get(path, timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS),
                 expected_cluster_id=cluster_id,
                 provider_type=provider_type,
                 preset_id=preset_id,
@@ -503,16 +508,30 @@ def provision() -> None:
     token = _provider_base._required_env(read_only.TOKEN_ENV)
     read_api = read_only.TimewebReadOnlyApi(token)
 
-    project_id = read_only.verify_credential_health(read_api)
+    project_id = read_only.verify_credential_health(
+        read_api,
+        timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS,
+    )
     provider_type = read_only._select_postgres18_type(
-        read_api.get("/api/v1/database-types")
+        read_api.get(
+            "/api/v1/database-types",
+            timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS,
+        )
     )
     preset_id = read_only._select_target_preset(
-        read_api.get("/api/v2/presets/dbs"),
+        read_api.get(
+            "/api/v2/presets/dbs",
+            timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS,
+        ),
         provider_type,
     )
     project_path = f"/api/v1/projects/{project_id}/resources/databases"
-    existing_cluster_id = _target_cluster_id(read_api.get(project_path))
+    existing_cluster_id = _target_cluster_id(
+        read_api.get(
+            project_path,
+            timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS,
+        )
+    )
     payload = _create_payload(
         provider_type=provider_type,
         preset_id=preset_id,
@@ -534,7 +553,15 @@ def provision() -> None:
         provider_type=provider_type,
         preset_id=preset_id,
     )
-    if _target_cluster_id(read_api.get(project_path)) != cluster_id:
+    if (
+        _target_cluster_id(
+            read_api.get(
+                project_path,
+                timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS,
+            )
+        )
+        != cluster_id
+    ):
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_CLUSTER_PROJECT_CUSTODY_DRIFT"
         )
