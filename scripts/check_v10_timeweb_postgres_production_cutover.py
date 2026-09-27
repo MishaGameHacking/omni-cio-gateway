@@ -313,6 +313,23 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
     )
 
 
+def _validate_orchestration(payload: dict[str, Any]) -> None:
+    orchestration = _mapping(
+        payload.get("orchestration"),
+        "TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID",
+    )
+    expected = {
+        "observe_may_run_before_app_creation": True,
+        "prepare_must_complete_before_app_creation": True,
+        "recovery_must_complete_before_app_creation": True,
+        "physical_candidate_must_complete_before_accept": True,
+        "accept_repeats_candidate_livez_and_healthz": True,
+        "accept_before_physical_candidate_allowed": False,
+    }
+    if orchestration != expected:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID")
+
+
 def _validate_github(payload: dict[str, Any]) -> None:
     github = _mapping(payload.get("github"), _GITHUB_INVALID)
     expected = {
@@ -415,6 +432,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _validate_prepare(payload)
     _validate_recovery(payload)
     _validate_app_binding(payload)
+    _validate_orchestration(payload)
     _validate_github(payload)
     _validate_observe(payload)
     _validate_protected_invariants(payload)
