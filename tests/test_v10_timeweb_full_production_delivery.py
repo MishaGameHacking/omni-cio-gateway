@@ -150,10 +150,37 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         runtime = payload["runtime"]
+        self.assertTrue(runtime["private_postgres_route_required"])
+        self.assertEqual(
+            runtime["private_postgres_hostaddr_env"],
+            "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        )
+        self.assertEqual(
+            runtime["private_postgres_network_cidr_env"],
+            "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        )
+        self.assertTrue(runtime["private_postgres_tls_hostname_identity_from_dsn"])
         self.assertEqual(runtime["postgres_pool_max_size"], 4)
         self.assertEqual(runtime["postgres_pool_acquire_timeout_seconds"], 5)
         self.assertFalse(runtime["single_serialized_runtime_connection_allowed"])
         self.assertFalse(runtime["session_lookup_event_loop_blocking_allowed"])
+
+    def test_rejects_private_database_route_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["runtime"]["private_postgres_route_required"] = False
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT",
+            ):
+                guard.validate(root)
 
     def test_identity_binding_continuity_is_fail_closed(self) -> None:
         payload = json.loads(
