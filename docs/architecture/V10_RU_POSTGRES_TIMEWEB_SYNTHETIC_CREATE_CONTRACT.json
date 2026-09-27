@@ -153,8 +153,10 @@
     "sanitized_marker": "TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY",
     "canonical_replica_topology_verification_required": true,
     "provider_replica_list_count_must_equal": 1,
-    "workflow_timeout_minutes": 20,
-    "minimum_workflow_headroom_seconds": 300,
+    "workflow_timeout_minutes": 35,
+    "start_read_timeout_seconds": 10,
+    "nested_read_retry_worst_case_included_in_headroom": true,
+    "minimum_workflow_headroom_seconds": 600,
     "provider_readiness_sla_seconds_documented": false,
     "starting_timeout_has_distinct_sanitized_code": true,
     "existing_target_retry_remains_get_only": true
