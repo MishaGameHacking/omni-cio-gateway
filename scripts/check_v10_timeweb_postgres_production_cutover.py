@@ -675,9 +675,12 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
         function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
     )
-    if not {_CALL_INSTALL_CA, "_open_runtime_database"}.issubset(create_calls):
+    if not {"_LazyTimewebPostgresCa", "_open_runtime_database"}.issubset(
+        create_calls
+    ):
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
     forbidden_create_calls = {
+        _CALL_INSTALL_CA,
         _CALL_PREPARE_TARGET,
         _CALL_PREPARE_PRIVATE_TARGET,
         _CALL_CONNECT_PREPARED,
@@ -689,6 +692,11 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
     _markers(
         source,
         (
+            "class _LazyTimewebPostgresCa:",
+            "installer: Callable[[], Path] = install_timeweb_postgres_ca",
+            "path = self._installer()",
+            "database_ca = _LazyTimewebPostgresCa()",
+            "database_ca.resolve()",
             '"OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"',
             '"OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"',
             "private_hostaddr=private_hostaddr",
