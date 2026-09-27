@@ -265,6 +265,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: PRIVATE_HOSTADDR,
             cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: PRIVATE_NETWORK_CIDR,
         }
+        api = object()
         with (
             mock.patch.dict(
                 cutover.os.environ,
@@ -274,17 +275,23 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             mock.patch.object(
                 cutover.app_release,
                 "TimewebAppApi",
-                return_value=object(),
+                return_value=api,
             ),
             mock.patch.object(cutover, "_app_envs", return_value=envs),
             mock.patch.object(
                 cutover.app_release,
                 "validate_private_route_env",
             ) as validate_private_route,
+            mock.patch.object(cutover.app_release, "observe") as observe,
         ):
             cutover._verify_app_binding(expected_sha, RUNTIME_DSN)
 
         validate_private_route.assert_called_once_with(envs)
+        observe.assert_called_once_with(
+            api,
+            expected_sha,
+            runtime_mode=cutover.app_release.RUNTIME_MODE_PREACTIVATION,
+        )
 
     def test_guard_rejects_mutation_in_observe_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -359,6 +366,25 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             mutated = source.replace(
                 "    app_release.validate_private_route_env(envs)\n",
                 "",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            controller.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_CONTROLLER_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_app_binding_without_live_candidate_route_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "    app_release.observe(\n",
+                "    # candidate observation intentionally removed\n",
                 1,
             )
             self.assertNotEqual(mutated, source)
