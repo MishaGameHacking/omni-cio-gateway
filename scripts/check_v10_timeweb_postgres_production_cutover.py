@@ -283,6 +283,25 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
         payload.get("app_binding"),
         "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
     )
+    expected = {
+        "application_name": "omni-cio-v10",
+        "runtime_dsn_env": "OMNI_V10_POSTGRES_DSN",
+        "runtime_release_env": "OMNI_V10_RELEASE_SHA",
+        "runtime_private_hostaddr_env": "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        "runtime_private_network_cidr_env": "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        "runtime_private_route_required": True,
+        "runtime_private_route_must_preserve_tls_hostname": True,
+        "runtime_private_route_must_be_proved_by_candidate_healthz": True,
+        "public_multi_user_env": "PUBLIC_MULTI_USER_ENABLED",
+        "telegram_login_env": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+        "accepted_binding_must_equal_verified_runtime_dsn": True,
+        "accepted_release_sha_must_equal_exact_main_sha": True,
+        "public_multi_user_must_remain_false": True,
+        "telegram_login_must_remain_false": True,
+    }
+    for key, value in expected.items():
+        if binding.get(key) != value:
+            raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID")
     _false_map(
         binding,
         (
