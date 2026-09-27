@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 from collections.abc import Callable
 from datetime import datetime
 import json
@@ -23,6 +24,8 @@ CANONICAL_PUBLIC_HOSTNAME = "omnicio.ru"
 CANDIDATE_HOSTNAME_ENV = "OMNI_V10_CANDIDATE_HOSTNAME"
 RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 POSTGRES_DSN_ENV = "OMNI_V10_POSTGRES_DSN"
+POSTGRES_PRIVATE_HOSTADDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"
+POSTGRES_PRIVATE_NETWORK_CIDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"
 POSTGRES_RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
 PUBLIC_MULTI_USER_ENV = "PUBLIC_MULTI_USER_ENABLED"
@@ -37,6 +40,7 @@ _PAGE_SIZE = 100
 _MAX_DEPLOY_HISTORY_PAGES = 100
 _GET_DELAYS = (1.0, 2.0)
 _LIVEZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
+_HEALTHZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 _DEPLOY_RECONCILE_DELAYS = (0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 _POLL_DELAYS = (
     0.0,
@@ -80,6 +84,12 @@ _HOST_RE = re.compile(
     r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
     re.ASCII,
 )
+_RFC1918_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
+_TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS = frozenset({1, 2, 3})
 _RETIRED_ENV_MARKERS = ("CLOUDFLARE", "NEON", "RENDER", "CLOUDRU")
 _APP_ID_INVALID = "TIMEWEB_APP_RELEASE_APP_ID_INVALID"
 _DEPLOYS_INVALID = "TIMEWEB_APP_RELEASE_DEPLOYS_INVALID"
@@ -489,6 +499,32 @@ def _expected_runtime_env(expected: str, runtime_mode: str) -> dict[str, str]:
     }
 
 
+def _validate_private_route_env(envs: dict[str, Any]) -> None:
+    raw_hostaddr = envs.get(POSTGRES_PRIVATE_HOSTADDR_ENV)
+    raw_cidr = envs.get(POSTGRES_PRIVATE_NETWORK_CIDR_ENV)
+    if (
+        not isinstance(raw_hostaddr, str)
+        or not raw_hostaddr.strip()
+        or not isinstance(raw_cidr, str)
+        or not raw_cidr.strip()
+    ):
+        _stop("TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_REQUIRED")
+    try:
+        network = ipaddress.ip_network(raw_cidr.strip(), strict=True)
+        address = ipaddress.ip_address(raw_hostaddr.strip())
+    except ValueError:
+        _stop("TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID")
+    if (
+        not isinstance(network, ipaddress.IPv4Network)
+        or not any(network.subnet_of(parent) for parent in _RFC1918_NETWORKS)
+        or not isinstance(address, ipaddress.IPv4Address)
+        or address not in network
+        or address in {network.network_address, network.broadcast_address}
+        or (int(address) & 0xFF) in _TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS
+    ):
+        _stop("TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID")
+
+
 def _validate_runtime_env(app: dict[str, Any], expected: str, runtime_mode: str) -> str:
     envs = _mapping(app.get("envs"), "TIMEWEB_APP_RELEASE_ENV_INVALID")
     for name, value in _expected_runtime_env(expected, runtime_mode).items():
@@ -501,6 +537,8 @@ def _validate_runtime_env(app: dict[str, Any], expected: str, runtime_mode: str)
     if not isinstance(dsn, str) or not dsn.strip():
         _stop("TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED")
     _mask(dsn)
+
+    _validate_private_route_env(envs)
 
     retired_names = [
         str(name)
@@ -613,6 +651,68 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
     raise AssertionError("bounded liveness verification exhausted")
 
 
+def _healthz_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+    except HTTPError as exc:
+        status = int(exc.code)
+        if status in _TRANSIENT:
+            return None, "http", status
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
+    except OSError:
+        return None, "transport", None
+    if status in _TRANSIENT:
+        return None, "http", status
+    if status != 200:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
+    return _decode(status, raw, 200, "TIMEWEB_APP_RELEASE_HEALTHZ"), None, None
+
+
+def _stop_healthz_retry(failure: str | None, status: int | None) -> NoReturn:
+    if failure == "http" and status is not None:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
+    _stop("TIMEWEB_APP_RELEASE_HEALTHZ_TRANSPORT_FAILED")
+
+
+def _verify_healthz(hostname: str, expected: str, *, opener: Any | None = None) -> None:
+    request = Request(
+        f"https://{hostname}/healthz",
+        headers={
+            "Accept": _JSON_CONTENT_TYPE,
+            "User-Agent": "omni-cio-v10-timeweb-healthz",
+        },
+        method="GET",
+    )
+    active = opener or _NO_REDIRECT_OPENER
+    for attempt in range(len(_HEALTHZ_RETRY_DELAYS) + 1):
+        payload, failure, status = _healthz_attempt(active, request)
+        if payload is None:
+            if attempt >= len(_HEALTHZ_RETRY_DELAYS):
+                _stop_healthz_retry(failure, status)
+            time.sleep(_HEALTHZ_RETRY_DELAYS[attempt])
+            continue
+        if payload.get("synthetic_preview") is not False:
+            _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN")
+        observed = _sha(
+            payload.get("release_sha"),
+            "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_INVALID",
+        )
+        ready = payload.get("status") == "ok" and payload.get("database") == "READY"
+        if ready and observed == expected:
+            return
+        if attempt >= len(_HEALTHZ_RETRY_DELAYS):
+            if observed != expected:
+                _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT")
+            _stop("TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY")
+        time.sleep(_HEALTHZ_RETRY_DELAYS[attempt])
+    raise AssertionError("bounded database readiness verification exhausted")
+
+
 def _reconcile(api: ApiLike, app_id: str, before: frozenset[str], expected: str) -> str:
     for delay in _DEPLOY_RECONCILE_DELAYS:
         if delay:
@@ -675,6 +775,7 @@ def observe(
     ):
         _stop("TIMEWEB_APP_RELEASE_NOT_ACTIVE_EXACT_SHA")
     _verify_livez(hostname, expected, opener=livez_opener)
+    _verify_healthz(hostname, expected, opener=livez_opener)
     return _last_known_good(_deploys(api, app_id), expected)
 
 
@@ -771,6 +872,7 @@ def deploy(
             )
 
     _verify_livez(hostname, expected, opener=livez_opener)
+    _verify_healthz(hostname, expected, opener=livez_opener)
     return last_known_good
 
 
