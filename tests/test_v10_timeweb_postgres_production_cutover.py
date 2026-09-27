@@ -26,6 +26,8 @@ WORKFLOW_RELATIVE = Path(
     ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 )
 NETWORK_SCOPE_RELATIVE = Path("scripts/timeweb_postgres_production_network_scope.py")
+TRANSPORT_KEY = "transport"
+TRANSPORT_INVALID = "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID"
 
 DEPENDENCIES = (
     "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
@@ -267,11 +269,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"]["canonical_sslrootcert"] = "C:/runner/root.crt"
+            payload[TRANSPORT_KEY]["canonical_sslrootcert"] = "C:/runner/root.crt"
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
-                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+                TRANSPORT_INVALID,
             ):
                 guard.validate(root)
 
@@ -281,11 +283,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"]["credential_free_transport_preflight_required"] = False
+            payload[TRANSPORT_KEY]["credential_free_transport_preflight_required"] = False
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
-                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+                TRANSPORT_INVALID,
             ):
                 guard.validate(root)
 
@@ -295,11 +297,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"]["authenticated_libpq_gss_encryption_allowed"] = True
+            payload[TRANSPORT_KEY]["authenticated_libpq_gss_encryption_allowed"] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
-                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+                TRANSPORT_INVALID,
             ):
                 guard.validate(root)
 
@@ -536,11 +538,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"]["provider_network_scope_stability_passes"] = 1
+            payload[TRANSPORT_KEY]["provider_network_scope_stability_passes"] = 1
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
-                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+                TRANSPORT_INVALID,
             ):
                 guard.validate(root)
 
@@ -550,11 +552,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"]["public_ipv4_list_detail_consistency_required"] = False
+            payload[TRANSPORT_KEY]["public_ipv4_list_detail_consistency_required"] = False
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
-                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+                TRANSPORT_INVALID,
             ):
                 guard.validate(root)
 
@@ -564,13 +566,13 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"]["provider_network_scope_project_identity_required"] = (
+            payload[TRANSPORT_KEY]["provider_network_scope_project_identity_required"] = (
                 False
             )
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
-                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+                TRANSPORT_INVALID,
             ):
                 guard.validate(root)
 

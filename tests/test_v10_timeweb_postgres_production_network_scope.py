@@ -23,10 +23,19 @@ SPEC.loader.exec_module(scope)
 
 CIDR = "8.8.8.8/32"
 HOST = "prod-db.twc1.net"
+PROJECT_ID = "project-1"
 DATABASE_ID = "901"
 FLOATING_IP_ID = "float-1"
 GROUP_ID = "group-1"
 PAGE = "?limit=100&offset=0"
+PROJECT_DATABASES_PATH = f"/api/v1/projects/{PROJECT_ID}/resources/databases"
+DATABASE_PATH = f"/api/v1/databases/{DATABASE_ID}"
+FLOATING_IPS_PATH = "/api/v1/floating-ips"
+FLOATING_IP_DETAIL_PATH = f"{FLOATING_IPS_PATH}/{FLOATING_IP_ID}"
+SERVICE_GROUPS_PATH = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
+FIREWALL_GROUP_PATH = f"/api/v1/firewall/groups/{GROUP_ID}"
+FIREWALL_RULES_PATH = f"{FIREWALL_GROUP_PATH}/rules{PAGE}"
+FIREWALL_RESOURCES_PATH = f"{FIREWALL_GROUP_PATH}/resources{PAGE}"
 
 
 class FakeApi:
@@ -47,11 +56,11 @@ class DriftingApi(FakeApi):
 
     def get(self, path: str, *, timeout: float = 30.0) -> Any:
         value = deepcopy(super().get(path, timeout=timeout))
-        if path == "/api/v1/floating-ips" and self.calls.count(path) == 2:
+        if path == FLOATING_IPS_PATH and self.calls.count(path) == 2:
             self._drifted = True
-        if self._drifted and path == "/api/v1/floating-ips":
+        if self._drifted and path == FLOATING_IPS_PATH:
             value["ips"][0]["ip"] = "1.1.1.1"
-        if self._drifted and path == f"/api/v1/floating-ips/{FLOATING_IP_ID}":
+        if self._drifted and path == FLOATING_IP_DETAIL_PATH:
             value["ip"]["ip"] = "1.1.1.1"
         return value
 
@@ -75,35 +84,35 @@ def _floating_ip_row() -> dict[str, Any]:
 def _responses() -> dict[str, Any]:
     floating_ip = _floating_ip_row()
     return {
-        "/api/v1/projects/project-1/resources/databases": {
+        PROJECT_DATABASES_PATH: {
             "databases": [{"id": DATABASE_ID}]
         },
-        f"/api/v1/databases/{DATABASE_ID}": {
+        DATABASE_PATH: {
             "db": {
                 "id": DATABASE_ID,
                 "name": "omni-cio-v10-production",
                 "status": "started",
                 "port": 5432,
                 "availability_zone": "msk-1",
-                "project_id": "project-1",
+                "project_id": PROJECT_ID,
                 "is_enabled_public_network": True,
                 "is_enabled_public_ipv6": False,
                 "is_secure_connection_enabled": True,
                 "domains": [{"fqdn": HOST, "cert_status": "issued"}],
             }
         },
-        "/api/v1/floating-ips": _page("ips", [floating_ip]),
-        f"/api/v1/floating-ips/{FLOATING_IP_ID}": {
+        FLOATING_IPS_PATH: _page("ips", [floating_ip]),
+        FLOATING_IP_DETAIL_PATH: {
             "ip": dict(floating_ip),
         },
-        f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}": _page(
+        SERVICE_GROUPS_PATH: _page(
             "groups",
             [{"id": GROUP_ID}],
         ),
-        f"/api/v1/firewall/groups/{GROUP_ID}": {
+        FIREWALL_GROUP_PATH: {
             "group": {"id": GROUP_ID, "policy": "DROP"}
         },
-        f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}": _page(
+        FIREWALL_RULES_PATH: _page(
             "rules",
             [
                 {
@@ -115,7 +124,7 @@ def _responses() -> dict[str, Any]:
                 }
             ],
         ),
-        f"/api/v1/firewall/groups/{GROUP_ID}/resources{PAGE}": _page(
+        FIREWALL_RESOURCES_PATH: _page(
             "resources",
             [{"id": DATABASE_ID, "type": "dbaas"}],
         ),
@@ -126,7 +135,7 @@ def _verify(responses: dict[str, Any]) -> FakeApi:
     api = FakeApi(responses)
     scope.verify_network_scope(
         api,
-        project_id="project-1",
+        project_id=PROJECT_ID,
         target_host=HOST,
         verifier_cidr=CIDR,
     )
@@ -166,7 +175,7 @@ def test_accepts_exact_fail_closed_network_scope(
     assert DATABASE_ID not in output
     assert GROUP_ID not in output
     assert "8.8.4.4" not in output
-    assert api.calls.count("/api/v1/floating-ips") == 2
+    assert api.calls.count(FLOATING_IPS_PATH) == 2
 
 
 def test_rejects_provider_snapshot_drift_between_valid_passes() -> None:
@@ -177,7 +186,7 @@ def test_rejects_provider_snapshot_drift_between_valid_passes() -> None:
     ):
         scope.verify_network_scope(
             api,
-            project_id="project-1",
+            project_id=PROJECT_ID,
             target_host=HOST,
             verifier_cidr=CIDR,
         )
@@ -185,7 +194,7 @@ def test_rejects_provider_snapshot_drift_between_valid_passes() -> None:
 
 def test_rejects_malformed_domain_entry_even_with_exact_target() -> None:
     responses = _responses()
-    domains = responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"]
+    domains = responses[DATABASE_PATH]["db"]["domains"]
     domains.append({"fqdn": None, "cert_status": "issued"})
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -218,14 +227,14 @@ def test_rejects_malformed_domain_entry_even_with_exact_target() -> None:
 )
 def test_rejects_unready_cluster_state(field: str, value: object, code: str) -> None:
     responses = _responses()
-    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"][field] = value
+    responses[DATABASE_PATH]["db"][field] = value
     with pytest.raises(scope.NetworkScopeStopped, match=code):
         _verify(responses)
 
 
 def test_rejects_synthetic_cluster() -> None:
     responses = _responses()
-    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["name"] = (
+    responses[DATABASE_PATH]["db"]["name"] = (
         scope.SYNTHETIC_CLUSTER_NAME
     )
     with pytest.raises(
@@ -237,7 +246,7 @@ def test_rejects_synthetic_cluster() -> None:
 
 def test_rejects_unissued_target_certificate() -> None:
     responses = _responses()
-    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0]["cert_status"] = (
+    responses[DATABASE_PATH]["db"]["domains"][0]["cert_status"] = (
         "pending"
     )
     with pytest.raises(
@@ -249,7 +258,7 @@ def test_rejects_unissued_target_certificate() -> None:
 
 def test_rejects_target_domain_not_found() -> None:
     responses = _responses()
-    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0]["fqdn"] = (
+    responses[DATABASE_PATH]["db"]["domains"][0]["fqdn"] = (
         "different.twc1.net"
     )
     with pytest.raises(
@@ -261,7 +270,7 @@ def test_rejects_target_domain_not_found() -> None:
 
 def test_rejects_database_project_identity_drift() -> None:
     responses = _responses()
-    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["project_id"] = "project-2"
+    responses[DATABASE_PATH]["db"]["project_id"] = "project-2"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_NETWORK_DATABASE_PROJECT_DRIFT",
@@ -271,7 +280,7 @@ def test_rejects_database_project_identity_drift() -> None:
 
 def test_rejects_public_ipv4_zone_mismatch() -> None:
     responses = _responses()
-    responses["/api/v1/floating-ips"]["ips"][0]["availability_zone"] = "spb-1"
+    responses[FLOATING_IPS_PATH]["ips"][0]["availability_zone"] = "spb-1"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID",
@@ -281,7 +290,7 @@ def test_rejects_public_ipv4_zone_mismatch() -> None:
 
 def test_rejects_floating_ipv4_list_detail_drift() -> None:
     responses = _responses()
-    responses[f"/api/v1/floating-ips/{FLOATING_IP_ID}"]["ip"]["ip"] = "1.1.1.1"
+    responses[FLOATING_IP_DETAIL_PATH]["ip"]["ip"] = "1.1.1.1"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_LIST_DETAIL_DRIFT",
@@ -291,7 +300,7 @@ def test_rejects_floating_ipv4_list_detail_drift() -> None:
 
 def test_rejects_malformed_database_binding_state() -> None:
     responses = _responses()
-    responses["/api/v1/floating-ips"]["ips"][0]["resource_id"] = True
+    responses[FLOATING_IPS_PATH]["ips"][0]["resource_id"] = True
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
@@ -301,7 +310,7 @@ def test_rejects_malformed_database_binding_state() -> None:
 
 def test_rejects_malformed_bound_public_ipv4_id() -> None:
     responses = _responses()
-    responses["/api/v1/floating-ips"]["ips"][0]["id"] = True
+    responses[FLOATING_IPS_PATH]["ips"][0]["id"] = True
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_ID_INVALID",
@@ -311,7 +320,7 @@ def test_rejects_malformed_bound_public_ipv4_id() -> None:
 
 def test_rejects_missing_bound_public_ipv4() -> None:
     responses = _responses()
-    responses["/api/v1/floating-ips"]["ips"][0]["resource_id"] = "902"
+    responses[FLOATING_IPS_PATH]["ips"][0]["resource_id"] = "902"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_MISSING",
@@ -321,11 +330,11 @@ def test_rejects_missing_bound_public_ipv4() -> None:
 
 def test_rejects_multiple_bound_public_ipv4s() -> None:
     responses = _responses()
-    duplicate = dict(responses["/api/v1/floating-ips"]["ips"][0])
+    duplicate = dict(responses[FLOATING_IPS_PATH]["ips"][0])
     duplicate["id"] = "float-2"
     duplicate["ip"] = "1.1.1.1"
-    responses["/api/v1/floating-ips"]["ips"].append(duplicate)
-    responses["/api/v1/floating-ips"]["meta"]["total"] = 2
+    responses[FLOATING_IPS_PATH]["ips"].append(duplicate)
+    responses[FLOATING_IPS_PATH]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_NOT_UNIQUE",
@@ -342,7 +351,7 @@ def test_rejects_multiple_bound_public_ipv4s() -> None:
 )
 def test_rejects_invalid_bound_public_ipv4(field: str, value: object) -> None:
     responses = _responses()
-    responses["/api/v1/floating-ips"]["ips"][0][field] = value
+    responses[FLOATING_IPS_PATH]["ips"][0][field] = value
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID",
@@ -352,7 +361,7 @@ def test_rejects_invalid_bound_public_ipv4(field: str, value: object) -> None:
 
 def test_rejects_incomplete_floating_ip_inventory() -> None:
     responses = _responses()
-    responses["/api/v1/floating-ips"]["meta"]["total"] = 2
+    responses[FLOATING_IPS_PATH]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_INVENTORY_INVALID_INCOMPLETE",
@@ -362,7 +371,7 @@ def test_rejects_incomplete_floating_ip_inventory() -> None:
 
 def test_rejects_multiple_firewall_groups() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
+    path = SERVICE_GROUPS_PATH
     responses[path]["groups"].append({"id": "group-2"})
     responses[path]["meta"]["total"] = 2
     with pytest.raises(
@@ -374,7 +383,7 @@ def test_rejects_multiple_firewall_groups() -> None:
 
 def test_rejects_truncated_firewall_group_page() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
+    path = SERVICE_GROUPS_PATH
     responses[path]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -387,7 +396,7 @@ def test_rejects_truncated_firewall_group_page() -> None:
 
 def test_rejects_firewall_group_identity_drift() -> None:
     responses = _responses()
-    responses[f"/api/v1/firewall/groups/{GROUP_ID}"]["group"]["id"] = "group-2"
+    responses[FIREWALL_GROUP_PATH]["group"]["id"] = "group-2"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_DRIFT",
@@ -397,7 +406,7 @@ def test_rejects_firewall_group_identity_drift() -> None:
 
 def test_rejects_allow_default_policy() -> None:
     responses = _responses()
-    responses[f"/api/v1/firewall/groups/{GROUP_ID}"]["group"]["policy"] = "ACCEPT"
+    responses[FIREWALL_GROUP_PATH]["group"]["policy"] = "ACCEPT"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED",
@@ -407,7 +416,7 @@ def test_rejects_allow_default_policy() -> None:
 
 def test_rejects_verifier_cidr_drift() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
+    path = FIREWALL_RULES_PATH
     responses[path]["rules"][0]["cidr"] = "1.1.1.1/32"
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -418,7 +427,7 @@ def test_rejects_verifier_cidr_drift() -> None:
 
 def test_rejects_malformed_firewall_rule_id() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
+    path = FIREWALL_RULES_PATH
     responses[path]["rules"][0]["id"] = True
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -433,7 +442,7 @@ def test_rejects_malformed_firewall_rule_id() -> None:
 )
 def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
+    path = FIREWALL_RULES_PATH
     responses[path]["rules"][0][field] = value
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -444,7 +453,7 @@ def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
 
 def test_rejects_truncated_firewall_rule_page() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
+    path = FIREWALL_RULES_PATH
     responses[path]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -455,7 +464,7 @@ def test_rejects_truncated_firewall_rule_page() -> None:
 
 def test_rejects_malformed_firewall_resource_id() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/groups/{GROUP_ID}/resources{PAGE}"
+    path = FIREWALL_RESOURCES_PATH
     responses[path]["resources"][0]["id"] = True
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -466,7 +475,7 @@ def test_rejects_malformed_firewall_resource_id() -> None:
 
 def test_rejects_extra_firewall_resource() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/groups/{GROUP_ID}/resources{PAGE}"
+    path = FIREWALL_RESOURCES_PATH
     responses[path]["resources"].append({"id": "902", "type": "dbaas"})
     responses[path]["meta"]["total"] = 2
     with pytest.raises(
@@ -478,7 +487,7 @@ def test_rejects_extra_firewall_resource() -> None:
 
 def test_rejects_truncated_firewall_resource_page() -> None:
     responses = _responses()
-    path = f"/api/v1/firewall/groups/{GROUP_ID}/resources{PAGE}"
+    path = FIREWALL_RESOURCES_PATH
     responses[path]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
@@ -499,7 +508,7 @@ def test_rejects_non_exact_global_ipv4_32(cidr: str) -> None:
     ):
         scope.verify_network_scope(
             api,
-            project_id="project-1",
+            project_id=PROJECT_ID,
             target_host=HOST,
             verifier_cidr=cidr,
         )
