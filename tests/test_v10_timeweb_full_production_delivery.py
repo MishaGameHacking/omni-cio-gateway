@@ -311,6 +311,45 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_execution_sequence_has_no_p2_p3_deadlock(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            payload["execution_sequence"],
+            [
+                "P2_SOURCE_REPAIR_ACCEPTED_MAIN",
+                "P3_OBSERVE",
+                "P3_PREPARE",
+                "P3_RECOVERY_EVIDENCE",
+                "TIMEWEB_APP_CREATE_IN_ACCEPTED_PRIVATE_NETWORK",
+                "TIMEWEB_TECHNICAL_DOMAIN_BOOTSTRAP",
+                "P2_PHYSICAL_EXACT_SHA_CANDIDATE",
+                "P3_ACCEPT",
+                "P4_CANONICAL_DOMAIN_TLS",
+            ],
+        )
+
+    def test_rejects_execution_sequence_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["execution_sequence"] = list(reversed(payload["execution_sequence"]))
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_EXECUTION_SEQUENCE_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_merge_readiness_keeps_production_acceptance_post_merge(self) -> None:
         payload = json.loads(
             (
