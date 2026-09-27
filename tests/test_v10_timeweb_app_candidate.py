@@ -116,6 +116,18 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         ):
             guard.validate(root)
 
+    def test_rejects_liveness_database_startup_dependency(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["acceptance"]["liveness_startup_database_connection_required"] = True
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID",
+        ):
+            guard.validate(root)
+
     def test_rejects_missing_private_database_readiness_contract(self) -> None:
         root = self._fixture()
         path = root / CONTRACT_RELATIVE
