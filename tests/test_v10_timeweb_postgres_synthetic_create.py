@@ -248,8 +248,22 @@ def _verify_terminal_shape():
         self.assertLess(reconcile_budget, 10 * 60)
         self.assertGreaterEqual(start_budget, 600.0)
         self.assertLess(start_budget, 13 * 60)
-        workflow_budget = 20 * 60
-        self.assertGreaterEqual(workflow_budget - start_budget, 300.0)
+
+        read_attempts = len(read_only._RETRY_DELAYS_SECONDS) + 1
+        read_retry_sleep_budget = sum(read_only._RETRY_DELAYS_SECONDS)
+        observations = len(provisioner._START_DELAYS_SECONDS) + 1
+        per_observation_read_budget = (
+            read_attempts * provisioner._START_READ_TIMEOUT_SECONDS
+            + read_retry_sleep_budget
+        )
+        worst_case_wait_budget = (
+            start_budget + observations * per_observation_read_budget
+        )
+        workflow_budget = 35 * 60
+        self.assertGreaterEqual(
+            workflow_budget - worst_case_wait_budget,
+            600.0,
+        )
 
     def test_ambiguous_post_reconciles_by_get_without_second_post(self) -> None:
         mutation_opener = _sequence_opener(OSError("lost response"))
@@ -517,6 +531,10 @@ def _verify_terminal_shape():
             delays=(0.0,),
         )
         self.assertEqual(api.get.call_count, 2)
+        self.assertEqual(
+            [call.kwargs for call in api.get.call_args_list],
+            [{"timeout": 10.0}, {"timeout": 10.0}],
+        )
         self.assertEqual(sleeps, [0.0])
 
     def test_start_wait_classifies_control_plane_only_timeout(self) -> None:
