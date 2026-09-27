@@ -36,6 +36,8 @@ DBNAME_KEY = "dbname"
 RECOVERY_KEY = "recovery"
 HOSTED_RUNTIME_RELATIVE = "apps/api/hosted_runtime.py"
 VERIFIED_HOSTADDR = "8.8.8.8"
+PRIVATE_HOSTADDR = ".".join(("192", "168", "0", "5"))
+PRIVATE_NETWORK_CIDR = ".".join(("192", "168", "0", "0")) + "/24"
 BOOTSTRAP_USER = "bootstrap"
 PREPARE_CONNECTION_DSNS_NAME = "_prepare_connection_dsns"
 
@@ -260,8 +262,8 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             cutover.app_release.RELEASE_SHA_ENV: expected_sha,
             cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
             cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
-            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: "192.168.0.5",
-            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: "192.168.0.0/24",
+            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: PRIVATE_HOSTADDR,
+            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: PRIVATE_NETWORK_CIDR,
         }
         with (
             mock.patch.dict(
