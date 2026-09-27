@@ -57,7 +57,7 @@ def _string_set(value: object, code: str) -> set[str]:
 def _validate_root(payload: dict[str, Any]) -> None:
     expected_root = {
         "schema": "omni-cio.v10.timeweb-app-exact-sha-candidate.v1",
-        "status": "CERTIFIED_GREEN_BRANCH_LOCAL",
+        "status": "REPAIR_SOURCE_IMPLEMENTED_EXACT_HEAD_VERIFICATION_REQUIRED",
         "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "owning_pr": 584,
         "milestone": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
