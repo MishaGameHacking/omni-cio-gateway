@@ -52,7 +52,7 @@ verifiable accepted evidence.
 
 Production identity is:
 
-`accepted GitHub main SHA -> exact Timeweb deploy -> runtime /livez SHA -> accepted production`.
+`accepted GitHub main SHA -> exact Timeweb deploy -> runtime /livez SHA -> runtime /healthz database READY -> accepted production`.
 
 Autodeploy is not production authority. Production deployment must target one explicit
 40-character Git commit SHA. A Timeweb deploy whose `commit_sha`, runtime
@@ -75,6 +75,14 @@ requires the owning explicit confirmation/evidence and must never be guessed by 
 
 App Platform variables/secrets remain provider-side runtime inputs; real secret values
 must not enter source, PR text, CI artifacts or logs.
+
+The production App and production PostgreSQL must use one explicitly selected Timeweb
+private network. The portable PostgreSQL DSN retains the Timeweb technical hostname for
+TLS `verify-full` identity; the runtime receives the private PostgreSQL address and
+exact private-network CIDR as separate provider-side bindings. The application must prove
+that private route through HTTPS `/healthz` with `database=READY` and
+`synthetic_preview=false` before the candidate is accepted. A successful process-only
+`/livez` check is not database reachability evidence.
 
 ## 5. PostgreSQL 18 production cutover
 
