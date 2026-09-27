@@ -461,6 +461,11 @@ def _verify_app_binding(expected_sha: str, runtime_dsn: str) -> None:
     ):
         if envs.get(name, "").strip().lower() != "false":
             _stop(f"TIMEWEB_PG_PRODUCTION_PREMATURE_ACTIVATION:{name}")
+    app_release.observe(
+        api,
+        expected_sha,
+        runtime_mode=app_release.RUNTIME_MODE_PREACTIVATION,
+    )
 
 
 def run(
