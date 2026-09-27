@@ -29,6 +29,13 @@ _START_DELAYS_SECONDS = (
     60.0,
     60.0,
     60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    60.0,
 )
 _AMBIGUOUS_HTTP_STATUSES = frozenset({408, 409, 423, 429, 500, 502, 503, 504})
 Sleep = Callable[[float], None]
@@ -460,6 +467,7 @@ def _wait_for_started(
 ) -> None:
     path = f"/api/v1/databases/{cluster_id}"
     observed_state = False
+    last_status: str | None = None
     attempts = len(delays) + 1
     for attempt in range(attempts):
         try:
@@ -470,6 +478,7 @@ def _wait_for_started(
                 preset_id=preset_id,
             )
             observed_state = True
+            last_status = status
         except _provider_base.ProvisioningStopped as exc:
             if not _is_transient_read_failure(exc):
                 raise
@@ -478,11 +487,13 @@ def _wait_for_started(
                 return
         if attempt < len(delays):
             sleeper(delays[attempt])
-    code = (
-        "TIMEWEB_CLUSTER_START_TIMEOUT"
-        if observed_state
-        else "TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT"
-    )
+
+    if last_status == "starting":
+        code = "TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT"
+    elif observed_state:
+        code = "TIMEWEB_CLUSTER_START_TIMEOUT"
+    else:
+        code = "TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT"
     raise _provider_base.ProvisioningStopped(code)
 
 
