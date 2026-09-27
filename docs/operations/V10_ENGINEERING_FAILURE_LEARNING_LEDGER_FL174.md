@@ -56,13 +56,16 @@ No evidence authorizes a second cluster create, delete, resize, public-network w
 The focused repair keeps provider authority unchanged and strengthens observation only:
 
 1. extend the synthetic `starting` GET-only budget from 288 seconds to 708 seconds;
-2. raise the enclosing create job ceiling from 15 to 20 minutes so bootstrap and verification retain bounded headroom;
-3. classify a final safe `starting` observation as `TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT`;
-4. preserve `TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT` for read-only control-plane unavailability;
-5. preserve immediate failure for unsafe status or configuration drift;
-6. preserve exact-target `existing-recovery` as GET-only and never issue a second POST for an existing target.
+2. bound each start-readiness GET to a 10-second socket-attempt timeout while preserving the control-plane client's finite two-retry policy;
+3. raise the enclosing create job ceiling from 15 to 35 minutes so the **complete** worst-case nested read/retry envelope plus the 708-second delay budget retains more than ten minutes of workflow headroom;
+4. classify a final safe `starting` observation as `TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT`;
+5. preserve `TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT` for read-only control-plane unavailability;
+6. preserve immediate failure for unsafe status or configuration drift;
+7. preserve exact-target `existing-recovery` as GET-only and never issue a second POST for an existing target.
 
 The new timeout is still fail-closed. It does not turn `starting` into success. If Timeweb remains `starting` after the larger bounded window, the workflow stops with a more precise sanitized code and the next action is read-only reconciliation.
+
+A second pre-merge review found that the first correction's "workflow headroom" calculation counted only sleep delays. That was incomplete because `TimewebReadOnlyApi.get()` can itself make three bounded network attempts with 1s+2s retry sleeps. With the default 30-second socket timeout, 18 outer observations plus 708 seconds of sleeps could exceed the 20-minute Actions ceiling and be killed by GitHub before our semantic STOP code ran. The replacement proof therefore bounds the outer readiness read timeout and calculates headroom from the nested retry stack, not from sleeps alone.
 
 ## Permanent regression protection
 
@@ -70,8 +73,10 @@ The source contract, guard and tests now require:
 
 - at least 600 seconds of synthetic start-readiness observation;
 - less than 13 minutes of start-readiness delay budget;
-- at least 300 seconds of enclosing workflow headroom;
-- exactly one 20-minute create-job timeout marker;
+- a 10-second bound on each outer readiness control-plane read;
+- worst-case headroom calculated from both the 708-second delay vector and the nested provider read retry envelope;
+- at least 600 seconds of enclosing workflow headroom after that complete worst-case wait;
+- exactly one 35-minute create-job timeout marker;
 - a distinct sanitized persistent-`starting` timeout code;
 - successful convergence after multiple safe `starting` observations;
 - continued no-replay / existing-target GET-only recovery semantics.
