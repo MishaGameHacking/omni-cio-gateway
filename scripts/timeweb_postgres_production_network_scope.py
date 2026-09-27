@@ -12,6 +12,7 @@ VERIFIER_CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"
 POSTGRES_PORT = "5432"
 SYNTHETIC_CLUSTER_NAME = "omni-cio-v10-ru-pg-synthetic"
 _VERIFIER_CIDR_INVALID = "TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID"
+_DOMAINS_INVALID = "TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID"
 _PAGE_SIZE = 100
 _MAX_PAGES = 10
 _MAX_DATABASES = 1000
@@ -182,18 +183,16 @@ def _domain_rows(cluster: dict[str, Any]) -> list[dict[str, Any]]:
     if raw is None:
         return []
     if not isinstance(raw, list):
-        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID")
+        _stop(_DOMAINS_INVALID)
     if len(raw) > _MAX_DOMAINS:
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_OVER_LIMIT")
-    return [
-        _mapping(item, "TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID") for item in raw
-    ]
+    return [_mapping(item, _DOMAINS_INVALID) for item in raw]
 
 
 def _domain_fqdn(row: dict[str, Any]) -> str:
     raw = row.get("fqdn")
     if not isinstance(raw, str):
-        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID")
+        _stop(_DOMAINS_INVALID)
     return _hostname(raw)
 
 
