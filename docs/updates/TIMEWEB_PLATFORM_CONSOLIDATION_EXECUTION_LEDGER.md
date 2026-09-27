@@ -625,3 +625,29 @@ into canonical style, decomposes the two high-complexity validators, removes the
 parameter and leaves setup outside expected-exception scopes. No quality threshold,
 security control, provider boundary, TLS verification, public-user state or money
 authority is weakened. Fresh exact-head verification is required.
+
+### RU-PG-B synthetic create #6 start-readiness repair — 2026-09-27
+
+Accepted main `dee72c4fadd775ffcf878ce7dd7484aa57ed35f1` reached the manual
+`V10 RU-PG-B Timeweb Synthetic Create #6` provider step and stopped with
+`TIMEWEB_CLUSTER_START_TIMEOUT`. The source-defined waiter totalled 288 seconds.
+Because the provisioner had already observed provider state and accepts only safe
+`starting` or exact terminal `started`, this is an eventual-consistency/readiness
+boundary rather than authority to replay the create mutation.
+
+Focused branch `fix/timeweb-synthetic-start-readiness` repairs the complete local
+defect class without widening provider authority:
+
+- the start-readiness GET-only budget is extended to 708 seconds;
+- the enclosing create job gets bounded 20-minute headroom;
+- persistent safe `starting` receives the distinct sanitized code
+  `TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT`;
+- control-plane-only read failure remains separately classified;
+- exact-target reruns remain `existing-recovery` and GET-only;
+- unsafe state/configuration drift remains immediately terminal;
+- contract, guard, regression tests, runbook and FL-174 are updated together.
+
+No second POST, delete, resize, public-network widening, production DB/DNS/TLS
+cutover, Telegram activation, broker write or Real Trading is authorized by this
+repair. Fresh exact-head verification is required before the source can be accepted.
+
