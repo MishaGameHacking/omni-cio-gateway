@@ -240,6 +240,23 @@ def _validate_github(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_GITHUB_INVALID")
 
 
+def _validate_orchestration(payload: dict[str, Any]) -> None:
+    orchestration = _dict(
+        payload.get("orchestration"),
+        "TIMEWEB_APP_CANDIDATE_ORCHESTRATION_INVALID",
+    )
+    expected = {
+        "p3_observe_before_physical_candidate_allowed": True,
+        "p3_prepare_before_physical_candidate_required": True,
+        "app_creation_after_p3_prepare_required": True,
+        "p3_accept_before_physical_candidate_allowed": False,
+        "candidate_healthz_requires_prepared_database": True,
+        "p3_accept_requires_current_candidate_livez_and_healthz": True,
+    }
+    if orchestration != expected:
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_ORCHESTRATION_INVALID")
+
+
 def _validate_invariants(payload: dict[str, Any]) -> None:
     invariants = _dict(
         payload.get("protected_invariants"),
@@ -268,6 +285,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _validate_runtime_contract(payload)
     _validate_acceptance(payload)
     _validate_github(payload)
+    _validate_orchestration(payload)
     _validate_invariants(payload)
 
 
