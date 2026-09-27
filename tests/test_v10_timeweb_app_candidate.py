@@ -96,7 +96,7 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         root = self._fixture()
         path = root / CONTRACT_RELATIVE
         payload = json.loads(path.read_text(encoding="utf-8"))
-        payload["acceptance"]["database_readiness_required"] = False
+        payload["acceptance"]["database_readiness_path"] = "/livez"
         path.write_text(json.dumps(payload), encoding="utf-8")
         with self.assertRaisesRegex(
             RuntimeError,
