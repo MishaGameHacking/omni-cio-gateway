@@ -1048,3 +1048,25 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** when a preflight and a client library perform separate handshakes, security proof must cover both. A preflight may establish provider reachability and identity, but the authenticated client must independently prohibit alternate encryption, client-credential and protocol-version channels that could make the real session differ from the proven path.
 
 **Dependency/tooling knowledge change:** PostgreSQL 18 libpq documentation states that GSSAPI encryption may take precedence over SSL and that the default client certificate location can be used when the server requests a certificate; these semantics are now treated as part of the P3 transport threat model.
+---
+
+## FL-045 — Verifier transport success cannot stand in for the deployed App-to-database route
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / post-#595 App Platform bootstrap / branch `fix/timeweb-app-private-postgres-route`
+
+**Symptom / finding:** fresh Timeweb panel evidence showed that the production PostgreSQL target and the prospective `omni-cio-v10` App Platform instance can share one private network, with separate service addresses. The existing source nevertheless forced every hosted-runtime prepared `hostaddr` to be globally routable and P2 accepted a candidate from HTTPS `/livez` alone. A P3 verifier could therefore be GREEN on its public `/32` path while the real App container had no accepted database route, and P2 could still declare the process alive without proving PostgreSQL readiness.
+
+**Root cause:** one transport adapter encoded the P3 self-hosted verifier's public-network assumption as a universal runtime invariant. The release gate also treated process liveness as sufficient candidate acceptance even though `/livez` intentionally does not probe PostgreSQL. Provider network identity, transport identity and application readiness were therefore conflated across two different execution environments.
+
+**Blast radius searched:** Timeweb PostgreSQL TLS/conninfo preparation, hosted-runtime startup and reconnects, P3 production cutover guard/contract/runbook, P2 exact-SHA candidate controller/contract/workflow/tests, full-production delivery contract/guard, App Platform immutable-network selection, `/livez` and `/healthz`, secret/DSN custody, public IPv4/firewall verifier scope and downstream P4/P5/P6 acceptance. The production public IPv4 is preserved; no firewall widening, DNS mutation, public-user activation, Telegram activation, broker write or Real-money authority is introduced.
+
+**Why prior guards missed it:** tests proved that a public `hostaddr` was pinned before authentication and that every hosted reconnect re-probed that public path. They did not model App Platform as a distinct producer of database traffic. The P2 contract froze exact-SHA `/livez`, while database-aware readiness was deferred to later public-ingress gates. Both sets of guards therefore certified internally consistent but incomplete assumptions.
+
+**Corrective change:** preserve the portable Timeweb technical-domain DSN as credential and TLS hostname authority; supply the hosted runtime with a separate private PostgreSQL IPv4 and exact RFC1918 network CIDR; validate that the address belongs to that network and is not a provider-reserved service address; perform credential-free PostgreSQL SSLRequest plus CA/technical-hostname `verify-full` directly over the private address before each pooled connection; keep the P3 verifier/public transport unchanged by default. Strengthen P2 to require both exact-SHA `/livez` and `/healthz status=ok database=READY synthetic_preview=false`.
+
+**Permanent regression/guard:** public prepared connections still reject private `hostaddr` unless an explicit RFC1918 scope is supplied; private preparation rejects public/out-of-scope/reserved addresses; tests prove the private TCP destination retains the Timeweb technical hostname for TLS SNI/hostname verification; hosted-runtime tests require private preparation on every connection; P3 guards forbid silently falling back to the public preparation path; P2 and full-delivery guards freeze private-route bindings and database-aware candidate readiness.
+
+**Future prevention rule:** never promote an observer/verifier route into a runtime-route assumption. For every deployed execution environment, separately prove network reachability, authenticated transport identity and application-level dependency readiness. A process liveness endpoint must never be accepted as proof that mandatory external dependencies are reachable.
+
+**Dependency/tooling knowledge change:** current Timeweb documentation supports PostgreSQL connections by private IP and allows Dockerfile Apps to be placed in a private network selected at creation time; that App network cannot be changed after deployment. PostgreSQL libpq permits `hostaddr` to select the numeric TCP destination while retaining `host` for `verify-full` hostname validation.
