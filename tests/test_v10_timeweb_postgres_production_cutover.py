@@ -29,12 +29,21 @@ NETWORK_SCOPE_RELATIVE = Path("scripts/timeweb_postgres_production_network_scope
 TRANSPORT_KEY = "transport"
 TRANSPORT_INVALID = "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID"
 TEXT_ENCODING = "utf-8"
+BOOTSTRAP_DSN = "bootstrap-dsn"
+RUNTIME_DSN = "runtime-dsn"
+DB_HOST = "db.example"
+DBNAME_KEY = "dbname"
+RECOVERY_KEY = "recovery"
+HOSTED_RUNTIME_RELATIVE = "apps/api/hosted_runtime.py"
+VERIFIED_HOSTADDR = "8.8.8.8"
+BOOTSTRAP_USER = "bootstrap"
+PREPARE_CONNECTION_DSNS_NAME = "_prepare_connection_dsns"
 
 DEPENDENCIES = (
     "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
     "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOOK.md",
     "scripts/timeweb_postgres_production_cutover.py",
-    "apps/api/hosted_runtime.py",
+    HOSTED_RUNTIME_RELATIVE,
     "apps/api/timeweb_postgres_tls.py",
     NETWORK_SCOPE_RELATIVE.as_posix(),
     "scripts/discover_v10_ru_pg_verifier_ipv4.py",
@@ -73,7 +82,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             mock.patch.object(
                 cutover.timeweb_postgres_tls,
                 "probe_timeweb_postgres_transport",
-                return_value="8.8.8.8",
+                return_value=VERIFIED_HOSTADDR,
             ) as probe,
             mock.patch.object(
                 cutover.timeweb_postgres_tls,
@@ -82,24 +91,24 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ) as resolve,
         ):
             actual = cutover._prepare_connection_dsns(
-                "bootstrap-dsn",
-                "runtime-dsn",
+                BOOTSTRAP_DSN,
+                RUNTIME_DSN,
             )
 
         self.assertEqual(actual, ("bootstrap-prepared", "runtime-prepared"))
-        probe.assert_called_once_with("bootstrap-dsn", ca_path)
+        probe.assert_called_once_with(BOOTSTRAP_DSN, ca_path)
         self.assertEqual(
             resolve.call_args_list,
             [
                 mock.call(
-                    "bootstrap-dsn",
+                    BOOTSTRAP_DSN,
                     ca_path,
-                    hostaddr="8.8.8.8",
+                    hostaddr=VERIFIED_HOSTADDR,
                 ),
                 mock.call(
-                    "runtime-dsn",
+                    RUNTIME_DSN,
                     ca_path,
-                    hostaddr="8.8.8.8",
+                    hostaddr=VERIFIED_HOSTADDR,
                 ),
             ],
         )
@@ -133,15 +142,15 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
     def test_observe_is_read_only_and_does_not_require_prepared_schema(self) -> None:
         expected_sha = "a" * 40
         bootstrap = {
-            "host": "db.example",
+            "host": DB_HOST,
             "port": "5432",
-            "dbname": "omni",
-            "user": "bootstrap",
+            DBNAME_KEY: "omni",
+            "user": BOOTSTRAP_USER,
         }
         runtime = {
-            "host": "db.example",
+            "host": DB_HOST,
             "port": "5432",
-            "dbname": "omni",
+            DBNAME_KEY: "omni",
             "user": cutover.RUNTIME_ROLE,
         }
         with (
@@ -149,13 +158,13 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 cutover,
                 "_dsn",
                 side_effect=[
-                    ("bootstrap-dsn", bootstrap),
-                    ("runtime-dsn", runtime),
+                    (BOOTSTRAP_DSN, bootstrap),
+                    (RUNTIME_DSN, runtime),
                 ],
             ),
             mock.patch.object(
                 cutover,
-                "_prepare_connection_dsns",
+                PREPARE_CONNECTION_DSNS_NAME,
                 return_value=("bootstrap-connect", "runtime-connect"),
             ) as prepare_dsns,
             mock.patch.object(cutover, "_observe_database") as observe,
@@ -167,7 +176,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 expected_sha=expected_sha,
                 observed_main_sha=expected_sha,
             )
-        prepare_dsns.assert_called_once_with("bootstrap-dsn", "runtime-dsn")
+        prepare_dsns.assert_called_once_with(BOOTSTRAP_DSN, RUNTIME_DSN)
         observe.assert_called_once_with("bootstrap-connect", "runtime-connect")
         prepare.assert_not_called()
         verify_runtime.assert_not_called()
@@ -175,15 +184,15 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
     def test_invalid_operation_stops_before_ca_materialization(self) -> None:
         expected_sha = "a" * 40
         bootstrap = {
-            "host": "db.example",
+            "host": DB_HOST,
             "port": "5432",
-            "dbname": "omni",
-            "user": "bootstrap",
+            DBNAME_KEY: "omni",
+            "user": BOOTSTRAP_USER,
         }
         runtime = {
-            "host": "db.example",
+            "host": DB_HOST,
             "port": "5432",
-            "dbname": "omni",
+            DBNAME_KEY: "omni",
             "user": cutover.RUNTIME_ROLE,
         }
         with (
@@ -191,11 +200,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 cutover,
                 "_dsn",
                 side_effect=[
-                    ("bootstrap-dsn", bootstrap),
-                    ("runtime-dsn", runtime),
+                    (BOOTSTRAP_DSN, bootstrap),
+                    (RUNTIME_DSN, runtime),
                 ],
             ),
-            mock.patch.object(cutover, "_prepare_connection_dsns") as prepare_dsns,
+            mock.patch.object(cutover, PREPARE_CONNECTION_DSNS_NAME) as prepare_dsns,
             self.assertRaisesRegex(
                 cutover.CutoverStopped,
                 "TIMEWEB_PG_PRODUCTION_OPERATION_INVALID",
@@ -211,15 +220,15 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
     def test_prepare_confirmation_stops_before_ca_materialization(self) -> None:
         expected_sha = "a" * 40
         bootstrap = {
-            "host": "db.example",
+            "host": DB_HOST,
             "port": "5432",
-            "dbname": "omni",
-            "user": "bootstrap",
+            DBNAME_KEY: "omni",
+            "user": BOOTSTRAP_USER,
         }
         runtime = {
-            "host": "db.example",
+            "host": DB_HOST,
             "port": "5432",
-            "dbname": "omni",
+            DBNAME_KEY: "omni",
             "user": cutover.RUNTIME_ROLE,
         }
         with (
@@ -227,11 +236,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 cutover,
                 "_dsn",
                 side_effect=[
-                    ("bootstrap-dsn", bootstrap),
-                    ("runtime-dsn", runtime),
+                    (BOOTSTRAP_DSN, bootstrap),
+                    (RUNTIME_DSN, runtime),
                 ],
             ),
-            mock.patch.object(cutover, "_prepare_connection_dsns") as prepare_dsns,
+            mock.patch.object(cutover, PREPARE_CONNECTION_DSNS_NAME) as prepare_dsns,
             self.assertRaisesRegex(
                 cutover.CutoverStopped,
                 "TIMEWEB_PG_PRODUCTION_PREPARE_CONFIRMATION_REQUIRED",
@@ -312,7 +321,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = root / "apps/api/hosted_runtime.py"
+            path = root / HOSTED_RUNTIME_RELATIVE
             source = path.read_text(encoding=TEXT_ENCODING)
             mutated = source.replace(
                 "prepared_dsn = prepare_timeweb_postgres_target("
@@ -332,7 +341,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = root / "apps/api/hosted_runtime.py"
+            path = root / HOSTED_RUNTIME_RELATIVE
             source = path.read_text(encoding=TEXT_ENCODING)
             marker = "raw_connection = connect_prepared_timeweb_postgres("
             self.assertIn(marker, source)
@@ -606,7 +615,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
-            payload["recovery"]["recovery_evidence_sha256_required"] = False
+            payload[RECOVERY_KEY]["recovery_evidence_sha256_required"] = False
             path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
@@ -616,11 +625,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
 
     def test_contract_keeps_recovery_and_app_promotion_external(self) -> None:
         payload = json.loads(_contract_path(ROOT).read_text(encoding=TEXT_ENCODING))
-        self.assertTrue(payload["recovery"]["timeweb_physical_backup_required"])
-        self.assertTrue(payload["recovery"]["separate_restore_rehearsal_required"])
-        self.assertTrue(payload["recovery"]["recovery_evidence_sha256_required"])
+        self.assertTrue(payload[RECOVERY_KEY]["timeweb_physical_backup_required"])
+        self.assertTrue(payload[RECOVERY_KEY]["separate_restore_rehearsal_required"])
+        self.assertTrue(payload[RECOVERY_KEY]["recovery_evidence_sha256_required"])
         self.assertFalse(
-            payload["recovery"]["actions_secret_for_recovery_attestation_allowed"]
+            payload[RECOVERY_KEY]["actions_secret_for_recovery_attestation_allowed"]
         )
         self.assertFalse(
             payload["app_binding"]["runtime_dsn_promotion_by_controller_allowed"]

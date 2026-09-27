@@ -36,6 +36,8 @@ _BOOTSTRAP_DSN_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}"
 _RUNTIME_DSN_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}"
 _RECOVERY_ATTESTATION_SECRET = "${{ secrets.OMNI_V10_TIMEWEB_PG_RECOVERY_ATTESTATION }}"
 _GITHUB_INVALID = "TIMEWEB_PG_CUTOVER_GITHUB_INVALID"
+_PREPARE_INVALID = "TIMEWEB_PG_CUTOVER_PREPARE_INVALID"
+_PRODUCTION_ENVIRONMENT = "timeweb-production"
 
 
 class CutoverContractError(RuntimeError):
@@ -225,9 +227,9 @@ def _validate_runtime_role(payload: dict[str, Any]) -> None:
 
 
 def _validate_prepare(payload: dict[str, Any]) -> None:
-    prepare = _mapping(payload.get("prepare"), "TIMEWEB_PG_CUTOVER_PREPARE_INVALID")
+    prepare = _mapping(payload.get("prepare"), _PREPARE_INVALID)
     if prepare.get("confirmation") != _PREPARE_CONFIRMATION:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_PREPARE_INVALID")
+        raise CutoverContractError(_PREPARE_INVALID)
     _true_map(
         prepare,
         (
@@ -237,7 +239,7 @@ def _validate_prepare(payload: dict[str, Any]) -> None:
             "force_rls_required",
             "cross_tenant_negative_required",
         ),
-        "TIMEWEB_PG_CUTOVER_PREPARE_INVALID",
+        _PREPARE_INVALID,
     )
     _false_map(
         prepare,
@@ -293,7 +295,7 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
 def _validate_github(payload: dict[str, Any]) -> None:
     github = _mapping(payload.get("github"), _GITHUB_INVALID)
     expected = {
-        "environment": "timeweb-production",
+        "environment": _PRODUCTION_ENVIRONMENT,
         "environment_preexisting_required": True,
         "environment_branch_policy_pattern": "main",
         "environment_branch_policy_type": "branch",
@@ -704,7 +706,7 @@ def _validate_sources() -> None:
             "verifier_cidr:",
             "recovery_attestation:",
             "recovery_evidence_sha256:",
-            "timeweb-production",
+            _PRODUCTION_ENVIRONMENT,
             _PREPARE_CONFIRMATION,
             "Observe verified production database",
             "Prepare verified production database",
@@ -740,7 +742,7 @@ def _validate_sources() -> None:
             "recovery_evidence_sha256",
             "not credentials",
             "Do not invent an undocumented endpoint",
-            "timeweb-production",
+            _PRODUCTION_ENVIRONMENT,
             "Selected branches and tags",
             "Branch `main`",
             "Portable CA / DSN rule",
