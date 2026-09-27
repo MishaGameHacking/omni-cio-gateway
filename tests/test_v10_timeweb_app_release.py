@@ -236,13 +236,28 @@ def _assert_healthz_stops(opener: _Livez, code: str) -> None:
         )
 
 
-def test_url_connected_repository_accepts_provider_decorated_full_name() -> None:
+def test_url_connected_repository_accepts_provider_decorated_metadata() -> None:
     app = _app(active_sha=EXPECTED_SHA)
     repository = app["repository"]
     assert isinstance(repository, dict)
     repository["full_name"] = "provider-account/" + release.CANONICAL_REPOSITORY
+    repository["name"] = "provider-display/" + release.CANONICAL_REPOSITORY_NAME
 
     assert release._repository(app) == release.CANONICAL_REPOSITORY
+
+
+@pytest.mark.parametrize("field", ("name", "full_name"))
+def test_url_connected_repository_rejects_empty_provider_metadata(field: str) -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository[field] = ""
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_REPOSITORY_INVALID",
+    ):
+        release._repository(app)
 
 
 @pytest.mark.parametrize(
