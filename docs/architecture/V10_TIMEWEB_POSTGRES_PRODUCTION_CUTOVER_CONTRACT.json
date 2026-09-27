@@ -82,7 +82,9 @@
     "provider_network_scope_output_sanitized_required": true,
     "provider_network_scope_stability_passes": 2,
     "provider_network_scope_stability_witness_required": true,
-    "provider_network_scope_malformed_provider_rows_fail_closed": true
+    "provider_network_scope_malformed_provider_rows_fail_closed": true,
+    "provider_network_scope_project_identity_required": true,
+    "public_ipv4_list_detail_consistency_required": true
   },
   "connection_retry": {
     "bounded": true,

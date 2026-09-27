@@ -158,7 +158,11 @@ def _database_ids(api: ReadOnlyApi, project_id: str) -> tuple[str, ...]:
     return identifiers
 
 
-def _cluster(api: ReadOnlyApi, database_id: str) -> dict[str, Any]:
+def _cluster(
+    api: ReadOnlyApi,
+    database_id: str,
+    project_id: str,
+) -> dict[str, Any]:
     payload = _mapping(
         api.get(f"/api/v1/databases/{database_id}"),
         "TIMEWEB_PG_PRODUCTION_NETWORK_DATABASE_INVALID",
@@ -175,6 +179,12 @@ def _cluster(api: ReadOnlyApi, database_id: str) -> dict[str, Any]:
         != database_id
     ):
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DATABASE_ID_DRIFT")
+    observed_project_id = _safe_id(
+        cluster.get("project_id"),
+        "TIMEWEB_PG_PRODUCTION_NETWORK_DATABASE_PROJECT_ID_INVALID",
+    )
+    if observed_project_id != project_id:
+        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DATABASE_PROJECT_DRIFT")
     return cluster
 
 
@@ -207,7 +217,7 @@ def _select_target_cluster(
 ) -> tuple[str, dict[str, Any]]:
     matches: list[tuple[str, dict[str, Any]]] = []
     for database_id in _database_ids(api, project_id):
-        cluster = _cluster(api, database_id)
+        cluster = _cluster(api, database_id, project_id)
         if _domain_matches(cluster, target_host):
             matches.append((database_id, cluster))
     if not matches:
@@ -245,6 +255,42 @@ def _require_target_network(cluster: dict[str, Any], target_host: str) -> str:
     return availability_zone
 
 
+def _bound_public_ipv4_identity(
+    row: dict[str, Any],
+    *,
+    database_id: str,
+    availability_zone: str,
+) -> tuple[str, str, str, str]:
+    floating_ip_id = _safe_id(
+        row.get("id"),
+        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_ID_INVALID",
+    )
+    resource_type = row.get("resource_type")
+    if resource_type not in _FIREWALL_RESOURCE_TYPES:
+        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+    resource_id = _safe_id(
+        row.get("resource_id"),
+        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
+    )
+    try:
+        address = ipaddress.ip_address(str(row.get("ip", "")))
+    except ValueError:
+        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+    zone = _safe_id(
+        row.get("availability_zone"),
+        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_ZONE_INVALID",
+    )
+    if (
+        resource_id != database_id
+        or not isinstance(address, ipaddress.IPv4Address)
+        or not address.is_global
+        or zone != availability_zone
+        or row.get("is_ddos_guard") is not False
+    ):
+        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+    return floating_ip_id, str(address), resource_type, resource_id
+
+
 def _require_bound_public_ipv4(
     api: ReadOnlyApi,
     database_id: str,
@@ -270,22 +316,28 @@ def _require_bound_public_ipv4(
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_MISSING")
     if len(bound) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_NOT_UNIQUE")
-    floating_ip_id = _safe_id(
-        bound[0].get("id"),
-        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_ID_INVALID",
+
+    listed = _bound_public_ipv4_identity(
+        bound[0],
+        database_id=database_id,
+        availability_zone=availability_zone,
     )
-    try:
-        address = ipaddress.ip_address(str(bound[0].get("ip", "")))
-    except ValueError:
-        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
-    if (
-        not isinstance(address, ipaddress.IPv4Address)
-        or not address.is_global
-        or bound[0].get("availability_zone") != availability_zone
-        or bound[0].get("is_ddos_guard") is not False
-    ):
-        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
-    return floating_ip_id, str(address)
+    detail_payload = _mapping(
+        api.get(f"/api/v1/floating-ips/{listed[0]}"),
+        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_DETAIL_INVALID",
+    )
+    detailed = _mapping(
+        detail_payload.get("ip"),
+        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_DETAIL_INVALID",
+    )
+    observed = _bound_public_ipv4_identity(
+        detailed,
+        database_id=database_id,
+        availability_zone=availability_zone,
+    )
+    if observed != listed:
+        _stop("TIMEWEB_PG_PRODUCTION_FLOATING_IP_LIST_DETAIL_DRIFT")
+    return listed[0], listed[1]
 
 
 def _service_group_id(api: ReadOnlyApi, database_id: str) -> str:

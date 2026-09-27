@@ -24,6 +24,7 @@ SPEC.loader.exec_module(scope)
 CIDR = "8.8.8.8/32"
 HOST = "prod-db.twc1.net"
 DATABASE_ID = "901"
+FLOATING_IP_ID = "float-1"
 GROUP_ID = "group-1"
 PAGE = "?limit=100&offset=0"
 
@@ -40,10 +41,18 @@ class FakeApi:
 
 
 class DriftingApi(FakeApi):
+    def __init__(self, responses: dict[str, Any]) -> None:
+        super().__init__(responses)
+        self._drifted = False
+
     def get(self, path: str, *, timeout: float = 30.0) -> Any:
         value = deepcopy(super().get(path, timeout=timeout))
         if path == "/api/v1/floating-ips" and self.calls.count(path) == 2:
+            self._drifted = True
+        if self._drifted and path == "/api/v1/floating-ips":
             value["ips"][0]["ip"] = "1.1.1.1"
+        if self._drifted and path == f"/api/v1/floating-ips/{FLOATING_IP_ID}":
+            value["ip"]["ip"] = "1.1.1.1"
         return value
 
 
@@ -51,7 +60,20 @@ def _page(key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {key: rows, "meta": {"total": len(rows)}}
 
 
+def _floating_ip_row() -> dict[str, Any]:
+    return {
+        "id": FLOATING_IP_ID,
+        "ip": "8.8.4.4",
+        "availability_zone": "msk-1",
+        "is_ddos_guard": False,
+        "resource_type": "dbaas",
+        "resource_id": DATABASE_ID,
+        "comment": "",
+    }
+
+
 def _responses() -> dict[str, Any]:
+    floating_ip = _floating_ip_row()
     return {
         "/api/v1/projects/project-1/resources/databases": {
             "databases": [{"id": DATABASE_ID}]
@@ -63,26 +85,17 @@ def _responses() -> dict[str, Any]:
                 "status": "started",
                 "port": 5432,
                 "availability_zone": "msk-1",
+                "project_id": "project-1",
                 "is_enabled_public_network": True,
                 "is_enabled_public_ipv6": False,
                 "is_secure_connection_enabled": True,
                 "domains": [{"fqdn": HOST, "cert_status": "issued"}],
             }
         },
-        "/api/v1/floating-ips": _page(
-            "ips",
-            [
-                {
-                    "id": "float-1",
-                    "ip": "8.8.4.4",
-                    "availability_zone": "msk-1",
-                    "is_ddos_guard": False,
-                    "resource_type": "dbaas",
-                    "resource_id": DATABASE_ID,
-                    "comment": "",
-                }
-            ],
-        ),
+        "/api/v1/floating-ips": _page("ips", [floating_ip]),
+        f"/api/v1/floating-ips/{FLOATING_IP_ID}": {
+            "ip": dict(floating_ip),
+        },
         f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}": _page(
             "groups",
             [{"id": GROUP_ID}],
@@ -246,12 +259,32 @@ def test_rejects_target_domain_not_found() -> None:
         _verify(responses)
 
 
+def test_rejects_database_project_identity_drift() -> None:
+    responses = _responses()
+    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["project_id"] = "project-2"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_NETWORK_DATABASE_PROJECT_DRIFT",
+    ):
+        _verify(responses)
+
+
 def test_rejects_public_ipv4_zone_mismatch() -> None:
     responses = _responses()
     responses["/api/v1/floating-ips"]["ips"][0]["availability_zone"] = "spb-1"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID",
+    ):
+        _verify(responses)
+
+
+def test_rejects_floating_ipv4_list_detail_drift() -> None:
+    responses = _responses()
+    responses[f"/api/v1/floating-ips/{FLOATING_IP_ID}"]["ip"]["ip"] = "1.1.1.1"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_LIST_DETAIL_DRIFT",
     ):
         _verify(responses)
 
