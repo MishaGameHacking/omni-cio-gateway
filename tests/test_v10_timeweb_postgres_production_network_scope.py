@@ -24,6 +24,7 @@ CIDR = "8.8.8.8/32"
 HOST = "prod-db.twc1.net"
 DATABASE_ID = "901"
 GROUP_ID = "group-1"
+PAGE = "?limit=100&offset=0"
 
 
 class FakeApi:
@@ -37,6 +38,10 @@ class FakeApi:
         return self.responses[path]
 
 
+def _page(key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {key: rows, "meta": {"total": len(rows)}}
+
+
 def _responses() -> dict[str, Any]:
     return {
         "/api/v1/projects/project-1/resources/databases": {
@@ -47,29 +52,51 @@ def _responses() -> dict[str, Any]:
                 "id": DATABASE_ID,
                 "name": "omni-cio-v10-production",
                 "status": "started",
+                "port": 5432,
+                "availability_zone": "msk-1",
                 "is_enabled_public_network": True,
                 "is_enabled_public_ipv6": False,
                 "is_secure_connection_enabled": True,
                 "domains": [{"fqdn": HOST, "cert_status": "issued"}],
             }
         },
-        f"/api/v1/firewall/service/dbaas/{DATABASE_ID}": {"groups": [{"id": GROUP_ID}]},
+        "/api/v1/floating-ips": _page(
+            "ips",
+            [
+                {
+                    "id": "float-1",
+                    "ip": "8.8.4.4",
+                    "availability_zone": "msk-1",
+                    "is_ddos_guard": False,
+                    "resource_type": "dbaas",
+                    "resource_id": DATABASE_ID,
+                    "comment": "",
+                }
+            ],
+        ),
+        f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}": _page(
+            "groups",
+            [{"id": GROUP_ID}],
+        ),
         f"/api/v1/firewall/groups/{GROUP_ID}": {
             "group": {"id": GROUP_ID, "policy": "DROP"}
         },
-        f"/api/v1/firewall/groups/{GROUP_ID}/rules": {
-            "rules": [
+        f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}": _page(
+            "rules",
+            [
                 {
+                    "id": "rule-1",
                     "direction": "ingress",
                     "protocol": "tcp",
                     "port": "5432",
                     "cidr": CIDR,
                 }
-            ]
-        },
-        f"/api/v1/firewall/groups/{GROUP_ID}/resources": {
-            "resources": [{"id": DATABASE_ID, "type": "dbaas"}]
-        },
+            ],
+        ),
+        f"/api/v1/firewall/groups/{GROUP_ID}/resources{PAGE}": _page(
+            "resources",
+            [{"id": DATABASE_ID, "type": "dbaas"}],
+        ),
     }
 
 
@@ -90,7 +117,7 @@ def test_hostname_accepts_dotted_ascii_fqdn() -> None:
     "hostname",
     [
         "localhost",
-        r"prod-db\\.twc1.net",
+        r"prod-db\.twc1.net",
         "prod-db..twc1.net",
         "-prod.twc1.net",
         "prod-.twc1.net",
@@ -114,12 +141,14 @@ def test_accepts_exact_fail_closed_network_scope(
     assert CIDR not in output
     assert DATABASE_ID not in output
     assert GROUP_ID not in output
+    assert "8.8.4.4" not in output
 
 
 @pytest.mark.parametrize(
     ("field", "value", "code"),
     [
         ("status", "starting", "TIMEWEB_PG_PRODUCTION_NETWORK_CLUSTER_NOT_READY"),
+        ("port", 5433, "TIMEWEB_PG_PRODUCTION_NETWORK_PORT_DRIFT"),
         (
             "is_enabled_public_network",
             False,
@@ -180,14 +209,76 @@ def test_rejects_target_domain_not_found() -> None:
         _verify(responses)
 
 
+def test_rejects_missing_bound_public_ipv4() -> None:
+    responses = _responses()
+    responses["/api/v1/floating-ips"]["ips"][0]["resource_id"] = "902"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_MISSING",
+    ):
+        _verify(responses)
+
+
+def test_rejects_multiple_bound_public_ipv4s() -> None:
+    responses = _responses()
+    duplicate = dict(responses["/api/v1/floating-ips"]["ips"][0])
+    duplicate["id"] = "float-2"
+    duplicate["ip"] = "1.1.1.1"
+    responses["/api/v1/floating-ips"]["ips"].append(duplicate)
+    responses["/api/v1/floating-ips"]["meta"]["total"] = 2
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_NOT_UNIQUE",
+    ):
+        _verify(responses)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ip", "10.0.0.1"),
+        ("is_ddos_guard", True),
+    ],
+)
+def test_rejects_invalid_bound_public_ipv4(field: str, value: object) -> None:
+    responses = _responses()
+    responses["/api/v1/floating-ips"]["ips"][0][field] = value
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID",
+    ):
+        _verify(responses)
+
+
+def test_rejects_incomplete_floating_ip_inventory() -> None:
+    responses = _responses()
+    responses["/api/v1/floating-ips"]["meta"]["total"] = 2
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_INVENTORY_INVALID_INCOMPLETE",
+    ):
+        _verify(responses)
+
+
 def test_rejects_multiple_firewall_groups() -> None:
     responses = _responses()
-    responses[f"/api/v1/firewall/service/dbaas/{DATABASE_ID}"]["groups"].append(
-        {"id": "group-2"}
-    )
+    path = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
+    responses[path]["groups"].append({"id": "group-2"})
+    responses[path]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE",
+    ):
+        _verify(responses)
+
+
+def test_rejects_truncated_firewall_group_page() -> None:
+    responses = _responses()
+    path = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
+    responses[path]["meta"]["total"] = 2
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUPS_INVALID_PAGINATION_INCOMPLETE",
     ):
         _verify(responses)
 
@@ -204,9 +295,8 @@ def test_rejects_allow_default_policy() -> None:
 
 def test_rejects_verifier_cidr_drift() -> None:
     responses = _responses()
-    responses[f"/api/v1/firewall/groups/{GROUP_ID}/rules"]["rules"][0]["cidr"] = (
-        "1.1.1.1/32"
-    )
+    path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
+    responses[path]["rules"][0]["cidr"] = "1.1.1.1/32"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT",
@@ -220,7 +310,8 @@ def test_rejects_verifier_cidr_drift() -> None:
 )
 def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
     responses = _responses()
-    responses[f"/api/v1/firewall/groups/{GROUP_ID}/rules"]["rules"][0][field] = value
+    path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
+    responses[path]["rules"][0][field] = value
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED",
@@ -228,14 +319,36 @@ def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
         _verify(responses)
 
 
+def test_rejects_truncated_firewall_rule_page() -> None:
+    responses = _responses()
+    path = f"/api/v1/firewall/groups/{GROUP_ID}/rules{PAGE}"
+    responses[path]["meta"]["total"] = 2
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULES_INVALID_PAGINATION_INCOMPLETE",
+    ):
+        _verify(responses)
+
+
 def test_rejects_extra_firewall_resource() -> None:
     responses = _responses()
-    responses[f"/api/v1/firewall/groups/{GROUP_ID}/resources"]["resources"].append(
-        {"id": "902", "type": "dbaas"}
-    )
+    path = f"/api/v1/firewall/groups/{GROUP_ID}/resources{PAGE}"
+    responses[path]["resources"].append({"id": "902", "type": "dbaas"})
+    responses[path]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED",
+    ):
+        _verify(responses)
+
+
+def test_rejects_truncated_firewall_resource_page() -> None:
+    responses = _responses()
+    path = f"/api/v1/firewall/groups/{GROUP_ID}/resources{PAGE}"
+    responses[path]["meta"]["total"] = 2
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCES_INVALID_PAGINATION_INCOMPLETE",
     ):
         _verify(responses)
 

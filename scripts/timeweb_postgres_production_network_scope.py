@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ipaddress
-import os
 import re
 import sys
 from typing import Any, NoReturn, Protocol
@@ -12,6 +11,9 @@ BOOTSTRAP_DSN_ENV = "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN"
 VERIFIER_CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"
 POSTGRES_PORT = "5432"
 SYNTHETIC_CLUSTER_NAME = "omni-cio-v10-ru-pg-synthetic"
+_PAGE_SIZE = 100
+_MAX_PAGES = 10
+_FIREWALL_RESOURCE_TYPES = frozenset({"dbaas", "database"})
 _HOST_LABEL_RE = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
     re.ASCII,
@@ -37,12 +39,53 @@ def _mapping(value: object, code: str) -> dict[str, Any]:
     return value
 
 
+def _list(value: object, code: str) -> list[Any]:
+    if not isinstance(value, list):
+        _stop(code)
+    return value
+
+
+def _meta_total(body: dict[str, Any], code: str) -> int:
+    meta = _mapping(body.get("meta"), code)
+    total = meta.get("total")
+    if type(total) is not int or total < 0:
+        _stop(code)
+    return total
+
+
 def _rows(value: object, key: str, code: str) -> list[dict[str, Any]]:
     body = _mapping(value, code)
-    raw = body.get(key)
-    if not isinstance(raw, list):
-        _stop(code)
+    raw = _list(body.get(key), code)
+    if "meta" in body and _meta_total(body, code) != len(raw):
+        _stop(f"{code}_INCOMPLETE")
     return [_mapping(item, code) for item in raw]
+
+
+def _paged_rows(api: ReadOnlyApi, path: str, key: str, code: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    expected_total: int | None = None
+    for page in range(_MAX_PAGES):
+        offset = page * _PAGE_SIZE
+        payload = _mapping(
+            api.get(f"{path}?limit={_PAGE_SIZE}&offset={offset}"),
+            code,
+        )
+        page_rows = [
+            _mapping(item, code) for item in _list(payload.get(key), code)
+        ]
+        total = _meta_total(payload, code)
+        if expected_total is None:
+            expected_total = total
+        elif total != expected_total:
+            _stop(f"{code}_PAGINATION_DRIFT")
+        if len(page_rows) > _PAGE_SIZE or len(rows) + len(page_rows) > total:
+            _stop(f"{code}_PAGINATION_INVALID")
+        rows.extend(page_rows)
+        if len(rows) == total:
+            return rows
+        if not page_rows or len(page_rows) < _PAGE_SIZE:
+            _stop(f"{code}_PAGINATION_INCOMPLETE")
+    _stop(f"{code}_PAGINATION_INCOMPLETE")
 
 
 def _safe_id(value: object, code: str) -> str:
@@ -87,8 +130,12 @@ def _verifier_cidr(value: object) -> str:
 
 
 def _database_ids(api: ReadOnlyApi, project_id: str) -> tuple[str, ...]:
+    safe_project_id = _safe_id(
+        project_id,
+        "TIMEWEB_PG_PRODUCTION_NETWORK_PROJECT_ID_INVALID",
+    )
     rows = _rows(
-        api.get(f"/api/v1/projects/{project_id}/resources/databases"),
+        api.get(f"/api/v1/projects/{safe_project_id}/resources/databases"),
         "databases",
         "TIMEWEB_PG_PRODUCTION_NETWORK_DATABASES_INVALID",
     )
@@ -164,6 +211,8 @@ def _require_target_network(cluster: dict[str, Any], target_host: str) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_SYNTHETIC_TARGET_FORBIDDEN")
     if cluster.get("status") != "started":
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_CLUSTER_NOT_READY")
+    if str(cluster.get("port", "")) != POSTGRES_PORT:
+        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_PORT_DRIFT")
     if cluster.get("is_enabled_public_network") is not True:
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_DISABLED")
     if cluster.get("is_enabled_public_ipv6") is not False:
@@ -183,9 +232,46 @@ def _require_target_network(cluster: dict[str, Any], target_host: str) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_TLS_CERTIFICATE_NOT_READY")
 
 
-def _service_group_id(api: ReadOnlyApi, database_id: str) -> str:
+def _require_bound_public_ipv4(api: ReadOnlyApi, database_id: str) -> None:
     rows = _rows(
-        api.get(f"/api/v1/firewall/service/dbaas/{database_id}"),
+        api.get("/api/v1/floating-ips"),
+        "ips",
+        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_INVENTORY_INVALID",
+    )
+    bound: list[dict[str, Any]] = []
+    for row in rows:
+        resource_type = row.get("resource_type")
+        if resource_type not in _FIREWALL_RESOURCE_TYPES:
+            continue
+        try:
+            resource_id = _safe_id(
+                row.get("resource_id"),
+                "TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
+            )
+        except NetworkScopeStopped:
+            continue
+        if resource_id == database_id:
+            bound.append(row)
+    if not bound:
+        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_MISSING")
+    if len(bound) != 1:
+        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_NOT_UNIQUE")
+    try:
+        address = ipaddress.ip_address(str(bound[0].get("ip", "")))
+    except ValueError:
+        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+    if (
+        not isinstance(address, ipaddress.IPv4Address)
+        or not address.is_global
+        or bound[0].get("is_ddos_guard") is not False
+    ):
+        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+
+
+def _service_group_id(api: ReadOnlyApi, database_id: str) -> str:
+    rows = _paged_rows(
+        api,
+        f"/api/v1/firewall/service/dbaas/{database_id}",
         "groups",
         "TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUPS_INVALID",
     )
@@ -211,8 +297,9 @@ def _require_default_drop(api: ReadOnlyApi, group_id: str) -> None:
 
 
 def _require_exact_rule(api: ReadOnlyApi, group_id: str, verifier_cidr: str) -> None:
-    rules = _rows(
-        api.get(f"/api/v1/firewall/groups/{group_id}/rules"),
+    rules = _paged_rows(
+        api,
+        f"/api/v1/firewall/groups/{group_id}/rules",
         "rules",
         "TIMEWEB_PG_PRODUCTION_FIREWALL_RULES_INVALID",
     )
@@ -241,12 +328,13 @@ def _resource_matches(row: dict[str, Any], database_id: str) -> bool:
         )
     except NetworkScopeStopped:
         return False
-    return resource_id == database_id and row.get("type") in {"dbaas", "database"}
+    return resource_id == database_id and row.get("type") in _FIREWALL_RESOURCE_TYPES
 
 
 def _require_exact_resource(api: ReadOnlyApi, group_id: str, database_id: str) -> None:
-    resources = _rows(
-        api.get(f"/api/v1/firewall/groups/{group_id}/resources"),
+    resources = _paged_rows(
+        api,
+        f"/api/v1/firewall/groups/{group_id}/resources",
         "resources",
         "TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCES_INVALID",
     )
@@ -265,22 +353,16 @@ def verify_network_scope(
     cidr = _verifier_cidr(verifier_cidr)
     database_id, cluster = _select_target_cluster(api, project_id, host)
     _require_target_network(cluster, host)
+    _require_bound_public_ipv4(api, database_id)
     group_id = _service_group_id(api, database_id)
     _require_default_drop(api, group_id)
     _require_exact_rule(api, group_id, cidr)
     _require_exact_resource(api, group_id, database_id)
     print(
         "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY "
-        "public_ipv4=enabled ipv6=off tls=enabled "
+        "public_ipv4=bound ipv6=off tls=enabled "
         "firewall=drop ingress=tcp/5432 source=/32"
     )
-
-
-def _required_env(name: str) -> str:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        _stop(f"{name}_REQUIRED")
-    return value
 
 
 def _runtime_inputs() -> tuple[ReadOnlyApi, str, str, str]:
@@ -288,9 +370,9 @@ def _runtime_inputs() -> tuple[ReadOnlyApi, str, str, str]:
     from scripts import probe_v10_timeweb_postgres_control_plane as control_plane
     from scripts import provider_runtime_primitives as provider_base
 
-    token = _required_env(TOKEN_ENV)
-    bootstrap_dsn = _required_env(BOOTSTRAP_DSN_ENV)
-    cidr = _required_env(VERIFIER_CIDR_ENV)
+    token = provider_base._required_env(TOKEN_ENV)
+    bootstrap_dsn = provider_base._required_env(BOOTSTRAP_DSN_ENV)
+    cidr = provider_base._required_env(VERIFIER_CIDR_ENV)
     try:
         params = timeweb_postgres_tls._connection_params(bootstrap_dsn)
     except timeweb_postgres_tls.TimewebPostgresTlsError as exc:
