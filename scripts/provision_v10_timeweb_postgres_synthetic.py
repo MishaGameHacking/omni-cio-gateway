@@ -38,6 +38,7 @@ _START_DELAYS_SECONDS = (
     60.0,
 )
 _CONTROL_PLANE_READ_TIMEOUT_SECONDS = 10.0
+_CREATE_REQUEST_TIMEOUT_SECONDS = 30.0
 _AMBIGUOUS_HTTP_STATUSES = frozenset({408, 409, 423, 429, 500, 502, 503, 504})
 Sleep = Callable[[float], None]
 
@@ -246,7 +247,10 @@ def _create_or_reconcile(
     reconcile_delays: tuple[float, ...] = _RECONCILE_DELAYS_SECONDS,
 ) -> tuple[int, str]:
     try:
-        response = mutation_api.post_once(payload)
+        response = mutation_api.post_once(
+            payload,
+            timeout=_CREATE_REQUEST_TIMEOUT_SECONDS,
+        )
     except AmbiguousCreate:
         return (
             _reconcile_cluster_id(
