@@ -106,6 +106,9 @@ def _validate_target(payload: dict[str, Any]) -> None:
         "provider_decorated_repository_full_name_allowed_when_clone_url_exact": True,
         "provider_decorated_repository_name_allowed_when_clone_url_exact": True,
         "provider_repository_metadata_must_be_nonempty": True,
+        "github_clone_url_equivalent_case_normalization_allowed": True,
+        "github_clone_url_default_https_port_allowed": True,
+        "github_clone_url_embedded_credentials_allowed": False,
     }
     if target != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_TARGET_INVALID")
