@@ -209,6 +209,26 @@ def test_rejects_target_domain_not_found() -> None:
         _verify(responses)
 
 
+def test_rejects_public_ipv4_zone_mismatch() -> None:
+    responses = _responses()
+    responses["/api/v1/floating-ips"]["ips"][0]["availability_zone"] = "spb-1"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID",
+    ):
+        _verify(responses)
+
+
+def test_rejects_malformed_database_binding_state() -> None:
+    responses = _responses()
+    responses["/api/v1/floating-ips"]["ips"][0]["resource_id"] = True
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
+    ):
+        _verify(responses)
+
+
 def test_rejects_missing_bound_public_ipv4() -> None:
     responses = _responses()
     responses["/api/v1/floating-ips"]["ips"][0]["resource_id"] = "902"
@@ -281,6 +301,16 @@ def test_rejects_truncated_firewall_group_page() -> None:
         match=(
             "TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUPS_INVALID_PAGINATION_INCOMPLETE"
         ),
+    ):
+        _verify(responses)
+
+
+def test_rejects_firewall_group_identity_drift() -> None:
+    responses = _responses()
+    responses[f"/api/v1/firewall/groups/{GROUP_ID}"]["group"]["id"] = "group-2"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_DRIFT",
     ):
         _verify(responses)
 
@@ -360,12 +390,13 @@ def test_rejects_truncated_firewall_resource_page() -> None:
     ["0.0.0.0/0", "10.0.0.1/32", "8.8.8.0/24", "8.8.8.8", "::1/128"],
 )
 def test_rejects_non_exact_global_ipv4_32(cidr: str) -> None:
+    api = FakeApi(_responses())
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID",
     ):
         scope.verify_network_scope(
-            FakeApi(_responses()),
+            api,
             project_id="project-1",
             target_host=HOST,
             verifier_cidr=cidr,

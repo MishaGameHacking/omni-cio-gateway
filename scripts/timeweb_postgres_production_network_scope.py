@@ -14,6 +14,8 @@ SYNTHETIC_CLUSTER_NAME = "omni-cio-v10-ru-pg-synthetic"
 _VERIFIER_CIDR_INVALID = "TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID"
 _PAGE_SIZE = 100
 _MAX_PAGES = 10
+_MAX_DATABASES = 1000
+_MAX_DOMAINS = 32
 _FIREWALL_RESOURCE_TYPES = frozenset({"dbaas", "database"})
 _HOST_LABEL_RE = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
@@ -143,6 +145,8 @@ def _database_ids(api: ReadOnlyApi, project_id: str) -> tuple[str, ...]:
         "databases",
         "TIMEWEB_PG_PRODUCTION_NETWORK_DATABASES_INVALID",
     )
+    if len(rows) > _MAX_DATABASES:
+        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DATABASES_OVER_LIMIT")
     identifiers = tuple(
         _safe_id(row.get("id"), "TIMEWEB_PG_PRODUCTION_NETWORK_DATABASE_ID_INVALID")
         for row in rows
@@ -178,6 +182,8 @@ def _domain_rows(cluster: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if not isinstance(raw, list):
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID")
+    if len(raw) > _MAX_DOMAINS:
+        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_OVER_LIMIT")
     return [
         _mapping(item, "TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID") for item in raw
     ]
@@ -210,13 +216,17 @@ def _select_target_cluster(
     return matches[0]
 
 
-def _require_target_network(cluster: dict[str, Any], target_host: str) -> None:
+def _require_target_network(cluster: dict[str, Any], target_host: str) -> str:
     if cluster.get("name") == SYNTHETIC_CLUSTER_NAME:
         _stop("TIMEWEB_PG_PRODUCTION_SYNTHETIC_TARGET_FORBIDDEN")
     if cluster.get("status") != "started":
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_CLUSTER_NOT_READY")
     if str(cluster.get("port", "")) != POSTGRES_PORT:
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_PORT_DRIFT")
+    availability_zone = _safe_id(
+        cluster.get("availability_zone"),
+        "TIMEWEB_PG_PRODUCTION_NETWORK_ZONE_INVALID",
+    )
     if cluster.get("is_enabled_public_network") is not True:
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_DISABLED")
     if cluster.get("is_enabled_public_ipv6") is not False:
@@ -234,9 +244,14 @@ def _require_target_network(cluster: dict[str, Any], target_host: str) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_TARGET_DOMAIN_DRIFT")
     if domain_matches[0].get("cert_status") != "issued":
         _stop("TIMEWEB_PG_PRODUCTION_TLS_CERTIFICATE_NOT_READY")
+    return availability_zone
 
 
-def _require_bound_public_ipv4(api: ReadOnlyApi, database_id: str) -> None:
+def _require_bound_public_ipv4(
+    api: ReadOnlyApi,
+    database_id: str,
+    availability_zone: str,
+) -> None:
     rows = _rows(
         api.get("/api/v1/floating-ips"),
         "ips",
@@ -247,13 +262,10 @@ def _require_bound_public_ipv4(api: ReadOnlyApi, database_id: str) -> None:
         resource_type = row.get("resource_type")
         if resource_type not in _FIREWALL_RESOURCE_TYPES:
             continue
-        try:
-            resource_id = _safe_id(
-                row.get("resource_id"),
-                "TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
-            )
-        except NetworkScopeStopped:
-            continue
+        resource_id = _safe_id(
+            row.get("resource_id"),
+            "TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
+        )
         if resource_id == database_id:
             bound.append(row)
     if not bound:
@@ -267,6 +279,7 @@ def _require_bound_public_ipv4(api: ReadOnlyApi, database_id: str) -> None:
     if (
         not isinstance(address, ipaddress.IPv4Address)
         or not address.is_global
+        or bound[0].get("availability_zone") != availability_zone
         or bound[0].get("is_ddos_guard") is not False
     ):
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
@@ -296,6 +309,14 @@ def _require_default_drop(api: ReadOnlyApi, group_id: str) -> None:
         payload.get("group"),
         "TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_INVALID",
     )
+    if (
+        _safe_id(
+            group.get("id"),
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_INVALID",
+        )
+        != group_id
+    ):
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_DRIFT")
     if group.get("policy") != "DROP":
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED")
 
@@ -356,8 +377,8 @@ def verify_network_scope(
     host = _hostname(target_host)
     cidr = _verifier_cidr(verifier_cidr)
     database_id, cluster = _select_target_cluster(api, project_id, host)
-    _require_target_network(cluster, host)
-    _require_bound_public_ipv4(api, database_id)
+    availability_zone = _require_target_network(cluster, host)
+    _require_bound_public_ipv4(api, database_id, availability_zone)
     group_id = _service_group_id(api, database_id)
     _require_default_drop(api, group_id)
     _require_exact_rule(api, group_id, cidr)

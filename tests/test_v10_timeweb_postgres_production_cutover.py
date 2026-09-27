@@ -32,6 +32,8 @@ DEPENDENCIES = (
     "scripts/timeweb_postgres_production_cutover.py",
     "apps/api/hosted_runtime.py",
     "apps/api/timeweb_postgres_tls.py",
+    "scripts/timeweb_postgres_production_network_scope.py",
+    "scripts/discover_v10_ru_pg_verifier_ipv4.py",
     WORKFLOW_RELATIVE.as_posix(),
     "infrastructure/postgres/hosted-postgres-runtime-contract.json",
     "infrastructure/postgres/hosted-recovery-contract.json",
@@ -419,7 +421,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
-    def test_rejects_provider_token_outside_accept_scope(self) -> None:
+    def test_rejects_provider_token_outside_network_preflight_or_accept_scope(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
@@ -445,6 +449,83 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
                 "TIMEWEB_PG_CUTOVER_WORKFLOW_SECRET_SCOPE_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_missing_network_scope_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / WORKFLOW_RELATIVE
+            source = path.read_text(encoding="utf-8")
+            mutated = source.replace(
+                "python -m scripts.timeweb_postgres_production_network_scope",
+                "python -m scripts.timeweb_postgres_production_cutover",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_network_scope_after_database_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / WORKFLOW_RELATIVE
+            source = path.read_text(encoding="utf-8")
+            network = "Verify production network scope before database authentication"
+            observe = "Observe verified production database"
+            self.assertIn(network, source)
+            self.assertIn(observe, source)
+            source = source.replace(network, "__NETWORK_SCOPE_STEP__", 1)
+            source = source.replace(observe, network, 1)
+            source = source.replace("__NETWORK_SCOPE_STEP__", observe, 1)
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_ORDER_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_network_scope_mutation_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / "scripts/timeweb_postgres_production_network_scope.py"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source
+                + "\n\ndef _forbidden_network_mutation(provider: object) -> None:\n"
+                + "    provider.patch('/api/v1/databases/1')\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_MUTATION_FORBIDDEN",
+            ):
+                guard.validate(root)
+
+    def test_rejects_provider_network_concurrency_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / WORKFLOW_RELATIVE
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace(
+                    "group: v10-timeweb-postgres-public-ipv4-tls",
+                    "group: v10-timeweb-postgres-production-cutover",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT",
             ):
                 guard.validate(root)
 

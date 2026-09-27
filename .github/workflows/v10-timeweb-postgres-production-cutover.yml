@@ -7,6 +7,10 @@ on:
         description: Exact accepted protected-main SHA to observe, prepare, or accept
         required: true
         type: string
+      verifier_cidr:
+        description: Exact current self-hosted verifier global IPv4 /32
+        required: true
+        type: string
       operation:
         description: Read-only observation, bounded database preparation, or final acceptance
         required: true
@@ -37,7 +41,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: v10-timeweb-postgres-production-cutover
+  group: v10-timeweb-postgres-public-ipv4-tls
   cancel-in-progress: false
 
 jobs:
@@ -171,6 +175,47 @@ jobs:
         run: >-
           python -m scripts.verify_v10_timeweb_github_environment
           --environment-name timeweb-production
+
+      - name: Validate operation input authority before production bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$REQUESTED_OPERATION" in
+            observe)
+              test -z "$REQUESTED_CONFIRMATION"
+              test -z "$REQUESTED_RECOVERY_ATTESTATION"
+              test -z "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
+              ;;
+            prepare)
+              test "$REQUESTED_CONFIRMATION" = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+              test -z "$REQUESTED_RECOVERY_ATTESTATION"
+              test -z "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
+              ;;
+            accept)
+              test -z "$REQUESTED_CONFIRMATION"
+              test "$REQUESTED_RECOVERY_ATTESTATION" = "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
+              case "$REQUESTED_RECOVERY_EVIDENCE_SHA256" in
+                *[!0-9a-f]*|'') exit 21 ;;
+              esac
+              test "${#REQUESTED_RECOVERY_EVIDENCE_SHA256}" -eq 64
+              ;;
+            *)
+              exit 22
+              ;;
+          esac
+
+      - name: Validate and mask production verifier egress IPv4 /32
+        shell: cmd
+        env:
+          OMNI_V10_RU_PG_VERIFIER_CIDR: ${{ inputs.verifier_cidr }}
+        run: python -m scripts.discover_v10_ru_pg_verifier_ipv4
+
+      - name: Verify production network scope before database authentication
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
+          OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
+        run: python -m scripts.timeweb_postgres_production_network_scope
 
       - name: Observe verified production database
         if: ${{ inputs.operation == 'observe' }}
