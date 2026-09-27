@@ -2,7 +2,7 @@
 
 Omni-CIO — один продукт. V10 — единственная active feature/runtime line. Accepted V9 target `b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62` является **V9 migration source** и уже находится в ancestry current main; stale `v9/*` branch-head не вливается повторно в current `main` и не обходит принятую PR #584 convergence.
 
-OWNER-approved convergence из PR #584 уже принята on protected `main`; historical internal checkpoint evidence остаётся provenance, а mutable current state читается только из fresh GitHub и `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Этот durable contribution guide намеренно не закрепляет временный current-main SHA, branch или focused defect. Provider rerun допустим только после accepted source repair owning defect class; protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
+OWNER-approved convergence из PR #584 уже принята на protected `main`; historical internal checkpoint evidence остаётся provenance, а mutable current state читается только из fresh GitHub и `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Этот durable contribution guide намеренно не закрепляет временный current-main SHA, branch или focused defect. Provider rerun допустим только после accepted source repair owning defect class; protected V9 entrypoint сохраняется для recovery/compatibility до отдельного accepted decommission authority.
 
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
