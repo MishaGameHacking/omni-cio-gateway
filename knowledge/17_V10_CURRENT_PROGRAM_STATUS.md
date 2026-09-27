@@ -19,6 +19,16 @@ The focused repair branch is `fix/timeweb-synthetic-start-readiness`. It may cha
 
 The repair must not issue another create for an existing target, delete or resize the cluster, widen network exposure, enable IPv6/backups/replication, mutate production DSN/DNS/TLS, activate Telegram/public users, enable broker write or enable Real Trading. A remaining `starting` state after the new bounded waiter is still fail-closed and requires read-only reconciliation.
 
+### 2026-09-27 downstream topology / executable-chain audit
+
+The current OWNER-provided Timeweb project screenshot is treated as external provider observation, not API acceptance evidence. It shows two PostgreSQL services present, the single current public IPv4 attached to the production PostgreSQL target, the synthetic PostgreSQL target without a displayed public IPv4, and `omnicio.ru` present as an externally managed domain.
+
+Repository authority must not infer from that screenshot that the production-bound IPv4 may be moved. Current IPv4 custody code already treats a managed resource bound to another target as `TIMEWEB_IPV4_CUSTODY_BOUND_ELSEWHERE`; production transport must remain protected from synthetic-test reuse.
+
+The full sequential audit also found a live evidence gap beyond the current create waiter: the RU-PG-B parity contract still says `SOURCE_READY_PROVIDER_EVIDENCE_PENDING`, and no accepted live `RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS` evidence is present in the owning issue/repository history. The parity Python harness exists, but there is no dedicated protected-main GitHub workflow that binds its synthetic DSN/certificate custody and executes the real parity proof. Therefore source-level P2/P3/P4/P5/P6 machinery must not be interpreted as proof that the complete provider sequence has already executed.
+
+This gap is a mandatory split after the current focused #595 repair: database parity execution and any replacement network transport require their own reviewed authority. Do not move the production IPv4 back to the synthetic cluster, buy a replacement IP, enable IPv6, mutate production PostgreSQL, attach DNS, or activate Telegram merely to close the sequence. Observation/reconciliation may be automated; network, database-cutover, DNS and public-login mutations stay fail-closed one-shot gates.
+
 ### 2026-09-27 accepted-main read-only proof #24 defect
 
 PR #593 was squash-merged to accepted `main = 2bfa6c2b55caab0d474f890792f4e44c745a7744`.
