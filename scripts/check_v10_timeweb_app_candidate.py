@@ -171,6 +171,15 @@ def _validate_runtime_contract(payload: dict[str, Any]) -> None:
     postgres_ready = (
         runtime.get("postgres_dsn_env") == "OMNI_V10_POSTGRES_DSN"
         and runtime.get("postgres_dsn_required") is True
+        and runtime.get("postgres_private_hostaddr_env")
+        == "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"
+        and runtime.get("postgres_private_hostaddr_required") is True
+        and runtime.get("postgres_private_network_cidr_env")
+        == "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"
+        and runtime.get("postgres_private_network_cidr_required") is True
+        and runtime.get("postgres_private_route_rfc1918_required") is True
+        and runtime.get("postgres_private_hostaddr_must_be_inside_cidr") is True
+        and runtime.get("postgres_tls_hostname_identity_must_remain_dsn_host") is True
     )
     flags_ready = (
         runtime.get("vk_login_must_be_false_or_absent") is True
@@ -203,6 +212,16 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "liveness_retry_on_transient_or_stale_route_required": True,
         "liveness_retry_minimum_budget_seconds": 120,
         "liveness_retry_maximum_budget_seconds": 300,
+        "database_readiness_path": "/healthz",
+        "database_readiness_https_required": True,
+        "database_readiness_redirect_allowed": False,
+        "database_readiness_status": "ok",
+        "database_readiness_database": "READY",
+        "database_readiness_synthetic_preview": False,
+        "database_readiness_release_sha_must_equal_expected_sha": True,
+        "database_readiness_retry_on_transient_or_unavailable_required": True,
+        "database_readiness_retry_minimum_budget_seconds": 120,
+        "database_readiness_retry_maximum_budget_seconds": 300,
     }
     if acceptance != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID")
@@ -285,6 +304,15 @@ def _validate_controller(path: Path) -> None:
         "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TOO_LARGE",
         "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID",
         "TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT",
+        "POSTGRES_PRIVATE_HOSTADDR_ENV",
+        "POSTGRES_PRIVATE_NETWORK_CIDR_ENV",
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_REQUIRED",
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
+        "_HEALTHZ_RETRY_DELAYS",
+        "_verify_healthz",
+        "TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY",
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN",
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT",
     )
     if any(marker not in source for marker in required):
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_CONTROLLER_MARKER_MISSING")
@@ -344,6 +372,9 @@ def _validate_runtime(path: Path) -> None:
     source = _text(path)
     required = (
         '"OMNI_V10_CANDIDATE_HOSTNAME"',
+        '"OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"',
+        '"OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"',
+        "prepare_timeweb_postgres_private_target",
         "_optional_candidate_hostname",
         'additional_hosts=("localhost", *candidate_hosts)',
     )
