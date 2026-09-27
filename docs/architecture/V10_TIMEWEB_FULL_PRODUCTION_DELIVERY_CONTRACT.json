@@ -189,6 +189,17 @@
     "acceptance_seal_algorithm": "SHA-256",
     "rollback_evidence_required": true
   },
+  "execution_sequence": [
+    "P2_SOURCE_REPAIR_ACCEPTED_MAIN",
+    "P3_OBSERVE",
+    "P3_PREPARE",
+    "P3_RECOVERY_EVIDENCE",
+    "TIMEWEB_APP_CREATE_IN_ACCEPTED_PRIVATE_NETWORK",
+    "TIMEWEB_TECHNICAL_DOMAIN_BOOTSTRAP",
+    "P2_PHYSICAL_EXACT_SHA_CANDIDATE",
+    "P3_ACCEPT",
+    "P4_CANONICAL_DOMAIN_TLS"
+  ],
   "merge_readiness": {
     "repository_implementation_complete": true,
     "exact_head_ci_required": true,
