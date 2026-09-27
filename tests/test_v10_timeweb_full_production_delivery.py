@@ -106,7 +106,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         states = {row["id"]: row["state"] for row in payload["branch_milestones"]}
         self.assertEqual(
             states["P2_TIMEWEB_EXACT_SHA_CANDIDATE"],
-            "CERTIFIED_GREEN_BRANCH_LOCAL",
+            "REPAIR_SOURCE_IMPLEMENTED_EXACT_HEAD_VERIFICATION_REQUIRED",
         )
         self.assertEqual(
             states["P3_POSTGRES18_PRODUCTION_CUTOVER"],
