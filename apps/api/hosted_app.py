@@ -840,7 +840,6 @@ def _validate_hosted_runtime_inputs(
 ) -> str:
     hostname = _hostname(services.hostname)
     services.release_sha = _release_sha(services.release_sha)
-    services.database_probe()
     if not web_dist.is_dir() or not (web_dist / "index.html").is_file():
         raise RuntimeError("HOSTED_RUNTIME_WEB_BUILD_MISSING")
     return hostname
