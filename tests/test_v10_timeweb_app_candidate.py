@@ -102,6 +102,18 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         ):
             guard.validate(root)
 
+    def test_rejects_repository_clone_url_identity_downgrade(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["target"]["repository_clone_url_identity_required"] = False
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_TARGET_INVALID",
+        ):
+            guard.validate(root)
+
     def test_rejects_live_mode_without_p5_evidence_contract(self) -> None:
         root = self._fixture()
         path = root / CONTRACT_RELATIVE
