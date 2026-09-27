@@ -37,6 +37,7 @@ _START_DELAYS_SECONDS = (
     60.0,
     60.0,
 )
+_START_READ_TIMEOUT_SECONDS = 10.0
 _AMBIGUOUS_HTTP_STATUSES = frozenset({408, 409, 423, 429, 500, 502, 503, 504})
 Sleep = Callable[[float], None]
 
@@ -472,7 +473,7 @@ def _wait_for_started(
     for attempt in range(attempts):
         try:
             status = _verify_cluster_shape(
-                api.get(path),
+                api.get(path, timeout=_START_READ_TIMEOUT_SECONDS),
                 expected_cluster_id=cluster_id,
                 provider_type=provider_type,
                 preset_id=preset_id,
