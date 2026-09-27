@@ -428,6 +428,22 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_MILESTONE_DRIFT")
 
 
+def _validate_execution_sequence(payload: dict[str, Any]) -> None:
+    expected = [
+        "P2_SOURCE_REPAIR_ACCEPTED_MAIN",
+        "P3_OBSERVE",
+        "P3_PREPARE",
+        "P3_RECOVERY_EVIDENCE",
+        "TIMEWEB_APP_CREATE_IN_ACCEPTED_PRIVATE_NETWORK",
+        "TIMEWEB_TECHNICAL_DOMAIN_BOOTSTRAP",
+        "P2_PHYSICAL_EXACT_SHA_CANDIDATE",
+        "P3_ACCEPT",
+        "P4_CANONICAL_DOMAIN_TLS",
+    ]
+    if payload.get("execution_sequence") != expected:
+        raise RuntimeError("TIMEWEB_FULL_DELIVERY_EXECUTION_SEQUENCE_DRIFT")
+
+
 def _validate_merge_readiness(payload: dict[str, Any]) -> None:
     expected = {
         "repository_implementation_complete": True,
@@ -512,6 +528,7 @@ def validate(root: Path = ROOT) -> None:
         _validate_external_gates(payload)
         _validate_provider_convergence_policy(payload)
         _validate_milestones(payload)
+        _validate_execution_sequence(payload)
         _validate_merge_readiness(payload)
         _validate_protected_invariants(payload)
     finally:
