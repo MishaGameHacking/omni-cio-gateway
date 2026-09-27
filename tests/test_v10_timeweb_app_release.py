@@ -263,10 +263,29 @@ def test_url_connected_repository_rejects_empty_provider_metadata(field: str) ->
 @pytest.mark.parametrize(
     "url",
     (
+        "https://github.com/mishagamehacking/OMNI-CIO-GATEWAY.GIT",
+        "HTTPS://GITHUB.COM:443/MishaGameHacking/omni-cio-gateway/",
+    ),
+)
+def test_url_connected_repository_accepts_github_equivalent_clone_url(
+    url: str,
+) -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository["url"] = url
+
+    assert release._repository(app) == release.CANONICAL_REPOSITORY
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
         "http://github.com/MishaGameHacking/omni-cio-gateway.git",
         "https://example.invalid/MishaGameHacking/omni-cio-gateway.git",
         "https://github.com/MishaGameHacking/other.git",
         "https://github.com/MishaGameHacking/omni-cio-gateway.git?ref=main",
+        "https://github.com:444/MishaGameHacking/omni-cio-gateway.git",
         "https://user@github.com/MishaGameHacking/omni-cio-gateway.git",
     ),
 )
