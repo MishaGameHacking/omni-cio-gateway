@@ -395,6 +395,34 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_app_creation_before_p3_prepare(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["orchestration"]["prepare_must_complete_before_app_creation"] = False
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_p3_accept_before_physical_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["orchestration"]["accept_before_physical_candidate_allowed"] = True
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID",
+            ):
+                guard.validate(root)
+
     def test_rejects_private_route_firewall_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
