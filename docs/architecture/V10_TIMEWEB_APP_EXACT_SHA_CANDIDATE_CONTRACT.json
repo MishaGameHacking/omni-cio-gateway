@@ -27,7 +27,9 @@
     "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME",
     "canonical_repository_clone_url": "https://github.com/MishaGameHacking/omni-cio-gateway.git",
     "repository_clone_url_identity_required": true,
-    "provider_decorated_repository_full_name_allowed_when_clone_url_exact": true
+    "provider_decorated_repository_full_name_allowed_when_clone_url_exact": true,
+    "provider_decorated_repository_name_allowed_when_clone_url_exact": true,
+    "provider_repository_metadata_must_be_nonempty": true
   },
   "provider_api": {
     "base": "https://api.timeweb.cloud",
