@@ -471,6 +471,44 @@ def test_serialized_web_connection_never_replays_failed_operation() -> None:
     assert replacement.execute_calls == 1
 
 
+def test_lazy_timeweb_postgres_ca_materializes_once(tmp_path: Path) -> None:
+    ca_path = tmp_path / "timeweb-postgres-root.crt"
+    calls: list[str] = []
+
+    def install() -> Path:
+        calls.append("install")
+        return ca_path
+
+    lazy_ca = hosted_runtime._LazyTimewebPostgresCa(install)
+
+    assert calls == []
+    assert lazy_ca.resolve() == ca_path
+    assert lazy_ca.resolve() == ca_path
+    assert calls == ["install"]
+
+
+def test_lazy_timeweb_postgres_ca_retries_after_failed_materialization(
+    tmp_path: Path,
+) -> None:
+    ca_path = tmp_path / "timeweb-postgres-root.crt"
+    attempts = 0
+
+    def install() -> Path:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("simulated CA fetch failure")
+        return ca_path
+
+    lazy_ca = hosted_runtime._LazyTimewebPostgresCa(install)
+
+    with pytest.raises(RuntimeError, match="simulated CA fetch failure"):
+        lazy_ca.resolve()
+    assert lazy_ca.resolve() == ca_path
+    assert lazy_ca.resolve() == ca_path
+    assert attempts == 2
+
+
 def test_bounded_pool_lazy_initializes_on_first_checkout() -> None:
     replacement = _PoolRawConnection("replacement")
     connect_calls: list[str] = []
@@ -1158,6 +1196,8 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "OMNI_V10_POSTGRES_RUNTIME_ROLE" in runtime
     assert "connect_prepared_timeweb_postgres" in runtime
     assert "install_timeweb_postgres_ca" in runtime
+    assert "_LazyTimewebPostgresCa" in runtime
+    assert "database_ca.resolve()" in runtime
     assert "prepare_timeweb_postgres_private_target" in runtime
     assert "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR" in runtime
     assert "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR" in runtime
