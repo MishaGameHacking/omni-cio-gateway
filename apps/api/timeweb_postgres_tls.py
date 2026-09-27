@@ -390,6 +390,20 @@ def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
     return context
 
 
+def _socket_record_address(
+    record: Any,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    if not isinstance(record, tuple) or len(record) < 5:
+        return None
+    socket_address = record[4]
+    if not isinstance(socket_address, tuple) or not socket_address:
+        return None
+    try:
+        return ipaddress.ip_address(str(socket_address[0]).strip())
+    except ValueError:
+        return None
+
+
 def _resolve_public_addresses(
     hostname: str,
     *,
@@ -407,20 +421,13 @@ def _resolve_public_addresses(
     addresses: set[str] = set()
     non_public_seen = False
     for record in records:
-        if not isinstance(record, tuple) or len(record) < 5:
+        address = _socket_record_address(record)
+        if address is None:
             continue
-        socket_address = record[4]
-        if not isinstance(socket_address, tuple) or not socket_address:
-            continue
-        raw_address = str(socket_address[0]).strip()
-        try:
-            address = ipaddress.ip_address(raw_address)
-        except ValueError:
-            continue
-        if address.is_global:
-            addresses.add(address.compressed)
-        else:
+        if not address.is_global:
             non_public_seen = True
+            continue
+        addresses.add(address.compressed)
 
     if non_public_seen or not addresses:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_RESOLUTION_NOT_PUBLIC")
@@ -428,17 +435,18 @@ def _resolve_public_addresses(
 
 
 def _transport_socket_failure_code(exc: OSError) -> str:
+    code = _TLS_TCP_FAILED
     if isinstance(exc, ssl.SSLCertVerificationError):
-        return "TIMEWEB_PG_TLS_CERT_VERIFY_FAILED"
-    if isinstance(exc, ssl.SSLError):
-        return "TIMEWEB_PG_TLS_HANDSHAKE_FAILED"
-    if isinstance(exc, TimeoutError):
-        return _TLS_TCP_TIMEOUT
-    if isinstance(exc, ConnectionRefusedError) or exc.errno == errno.ECONNREFUSED:
-        return _TLS_TCP_REFUSED
-    if exc.errno in {errno.ENETUNREACH, errno.EHOSTUNREACH}:
-        return _TLS_ROUTE_UNREACHABLE
-    return _TLS_TCP_FAILED
+        code = "TIMEWEB_PG_TLS_CERT_VERIFY_FAILED"
+    elif isinstance(exc, ssl.SSLError):
+        code = "TIMEWEB_PG_TLS_HANDSHAKE_FAILED"
+    elif isinstance(exc, TimeoutError):
+        code = _TLS_TCP_TIMEOUT
+    elif isinstance(exc, ConnectionRefusedError) or exc.errno == errno.ECONNREFUSED:
+        code = _TLS_TCP_REFUSED
+    elif exc.errno in {errno.ENETUNREACH, errno.EHOSTUNREACH}:
+        code = _TLS_ROUTE_UNREACHABLE
+    return code
 
 
 def _probe_postgres_tls_endpoint(
@@ -499,6 +507,50 @@ def _probe_transport_once(
     raise TimewebPostgresTlsError(_TLS_TCP_FAILED)
 
 
+def _validate_probe_ca(ca_path: Path) -> None:
+    try:
+        if ca_path.is_symlink() or not ca_path.is_file():
+            raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
+        raw = ca_path.read_bytes()
+    except TimewebPostgresTlsError:
+        raise
+    except OSError:
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNAVAILABLE") from None
+    _validate_ca(raw)
+
+
+def _probe_transport_with_retry(
+    hostname: str,
+    context: Any,
+    *,
+    resolver: Any,
+    connector: Any,
+    sleeper: Sleep,
+    delays: tuple[float, ...],
+) -> str:
+    attempts = len(delays) + 1
+    for attempt in range(attempts):
+        try:
+            verified_address = _probe_transport_once(
+                hostname,
+                context,
+                resolver=resolver,
+                connector=connector,
+            )
+        except TimewebPostgresTlsError as exc:
+            if exc.code not in _TRANSIENT_TRANSPORT_CODES or attempt + 1 >= attempts:
+                raise
+            _emit(
+                "TIMEWEB_PG_TLS_TRANSPORT_RETRY "
+                f"code={exc.code} attempt={attempt + 2}/{attempts}"
+            )
+            sleeper(delays[attempt])
+            continue
+        _emit("TIMEWEB_PG_TLS_TRANSPORT=READY dns=public tcp=5432 tls=verify-full")
+        return verified_address
+    raise AssertionError("bounded Timeweb PostgreSQL transport retry exhausted")
+
+
 def probe_timeweb_postgres_transport(
     dsn: str,
     ca_path: Path,
@@ -511,37 +563,17 @@ def probe_timeweb_postgres_transport(
 ) -> str:
     _reject_ambient_libpq_environment()
     params = _connection_params(dsn)
-    try:
-        if ca_path.is_symlink() or not ca_path.is_file():
-            raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
-        _validate_ca(ca_path.read_bytes())
-    except TimewebPostgresTlsError:
-        raise
-    except OSError:
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNAVAILABLE") from None
-
+    _validate_probe_ca(ca_path)
     context = context_factory(ca_path)
     hostname = params["host"].strip().lower().rstrip(".")
-    attempts = len(delays) + 1
-    for attempt in range(attempts):
-        try:
-            verified_address = _probe_transport_once(
-                hostname,
-                context,
-                resolver=resolver,
-                connector=connector,
-            )
-            _emit("TIMEWEB_PG_TLS_TRANSPORT=READY dns=public tcp=5432 tls=verify-full")
-            return verified_address
-        except TimewebPostgresTlsError as exc:
-            if exc.code not in _TRANSIENT_TRANSPORT_CODES or attempt + 1 >= attempts:
-                raise
-            _emit(
-                "TIMEWEB_PG_TLS_TRANSPORT_RETRY "
-                f"code={exc.code} attempt={attempt + 2}/{attempts}"
-            )
-            sleeper(delays[attempt])
-    raise AssertionError("bounded Timeweb PostgreSQL transport retry exhausted")
+    return _probe_transport_with_retry(
+        hostname,
+        context,
+        resolver=resolver,
+        connector=connector,
+        sleeper=sleeper,
+        delays=delays,
+    )
 
 
 def resolve_timeweb_postgres_dsn(
@@ -706,31 +738,3 @@ def prepare_timeweb_postgres_target(
     )
 
 
-def prepare_timeweb_postgres_tls(
-    dsn: str,
-    *,
-    base_dir: Path | None = None,
-    opener: Any | None = None,
-    sleeper: Sleep = time.sleep,
-    delays: tuple[float, ...] = _CA_RETRY_DELAYS_SECONDS,
-    transport_delays: tuple[float, ...] = _TRANSPORT_RETRY_DELAYS_SECONDS,
-    resolver: Any = socket.getaddrinfo,
-    connector: Any = socket.create_connection,
-    context_factory: Any = _tls_client_context,
-) -> str:
-    _connection_params(dsn)
-    ca_path = install_timeweb_postgres_ca(
-        base_dir=base_dir,
-        opener=opener,
-        sleeper=sleeper,
-        delays=delays,
-    )
-    return prepare_timeweb_postgres_target(
-        dsn,
-        ca_path,
-        sleeper=sleeper,
-        transport_delays=transport_delays,
-        resolver=resolver,
-        connector=connector,
-        context_factory=context_factory,
-    )

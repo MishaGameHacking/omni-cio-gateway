@@ -187,19 +187,26 @@ def test_connect_rejects_unprepared_dsn_before_connector() -> None:
     assert calls == 0
 
 
-def test_invalid_dsn_does_not_fetch_ca(tmp_path: Path) -> None:
-    opener = _Opener([_Response(b"unused")])
+def test_invalid_dsn_stops_before_transport_probe(tmp_path: Path) -> None:
+    calls = 0
+
+    def resolver(host: str, port: int, **kwargs: int) -> list[object]:
+        nonlocal calls
+        del host, port, kwargs
+        calls += 1
+        return []
+
     with pytest.raises(
         tls.TimewebPostgresTlsError,
         match="TIMEWEB_PG_TLS_DSN_INVALID",
     ):
-        tls.prepare_timeweb_postgres_tls(
+        tls.prepare_timeweb_postgres_target(
             "pgsql:host=db.twc1.net;dbname=default_db",
-            base_dir=tmp_path,
-            opener=opener,
-            delays=(),
+            tmp_path / "unused.crt",
+            resolver=resolver,
+            transport_delays=(),
         )
-    assert opener.calls == 0
+    assert calls == 0
 
 
 def test_ca_install_retries_transient_and_writes_canonical_path(
