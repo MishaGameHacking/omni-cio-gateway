@@ -7,6 +7,8 @@ import sys
 from typing import Any
 
 
+_NETWORK_SCOPE_RELATIVE = "scripts/timeweb_postgres_production_network_scope.py"
+
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
     ROOT / "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json"
@@ -15,7 +17,7 @@ RUNBOOK = ROOT / "docs/operations/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_RUNBOO
 CONTROLLER = ROOT / "scripts/timeweb_postgres_production_cutover.py"
 HOSTED_RUNTIME = ROOT / "apps/api/hosted_runtime.py"
 TIMEWEB_TLS = ROOT / "apps/api/timeweb_postgres_tls.py"
-NETWORK_SCOPE = ROOT / "scripts/timeweb_postgres_production_network_scope.py"
+NETWORK_SCOPE = ROOT / _NETWORK_SCOPE_RELATIVE
 DISCOVERER = ROOT / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 RUNTIME = ROOT / "infrastructure/postgres/hosted-postgres-runtime-contract.json"
@@ -153,6 +155,9 @@ def _validate_transport(payload: dict[str, Any]) -> None:
         "firewall_exact_ingress_tcp_5432_source_32_required": True,
         "firewall_resource_exclusive_required": True,
         "provider_network_scope_output_sanitized_required": True,
+        "provider_network_scope_stability_passes": 2,
+        "provider_network_scope_stability_witness_required": True,
+        "provider_network_scope_malformed_provider_rows_fail_closed": True,
         "raw_endpoint_or_exception_logging_allowed": False,
         "external_dsn_format": "POSTGRESQL_LIBPQ",
         "php_pdo_dsn_allowed": False,
@@ -292,9 +297,7 @@ def _validate_github(payload: dict[str, Any]) -> None:
         "environment_branch_policy_type": "branch",
         "verifier_cidr_input": "verifier_cidr",
         "verifier_cidr_source": "WORKFLOW_DISPATCH_INPUT",
-        "provider_network_scope_script": (
-            "scripts/timeweb_postgres_production_network_scope.py"
-        ),
+        "provider_network_scope_script": _NETWORK_SCOPE_RELATIVE,
         "shared_provider_network_concurrency_group": (
             "v10-timeweb-postgres-public-ipv4-tls"
         ),
@@ -462,6 +465,12 @@ def _validate_network_scope_source(source: str) -> None:
             "is_ddos_guard",
             "_require_exact_rule",
             "_require_exact_resource",
+            "_NETWORK_SCOPE_STABILITY_PASSES = 2",
+            "def _collect_network_scope_witness(",
+            "TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT",
+            "TIMEWEB_PG_PRODUCTION_FLOATING_IP_ID_INVALID",
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_RULE_ID_INVALID",
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_ID_INVALID",
         ),
         "TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_SOURCE_DRIFT",
     )
@@ -733,6 +742,8 @@ def _validate_sources() -> None:
             "Credential-free connection-readiness ladder",
             "Provider network-scope gate",
             "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY",
+            "two consecutive read-only provider snapshots",
+            "TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT",
             "verifier_cidr",
             "v10-timeweb-postgres-public-ipv4-tls",
             "re-proves the current provider address before every new pooled connection",
@@ -779,7 +790,7 @@ def validate(root: Path = ROOT) -> None:
         CONTROLLER = root / "scripts/timeweb_postgres_production_cutover.py"
         HOSTED_RUNTIME = root / "apps/api/hosted_runtime.py"
         TIMEWEB_TLS = root / "apps/api/timeweb_postgres_tls.py"
-        NETWORK_SCOPE = root / "scripts/timeweb_postgres_production_network_scope.py"
+        NETWORK_SCOPE = root / _NETWORK_SCOPE_RELATIVE
         DISCOVERER = root / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
         WORKFLOW = (
             root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"

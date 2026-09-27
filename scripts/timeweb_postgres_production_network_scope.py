@@ -16,6 +16,7 @@ _PAGE_SIZE = 100
 _MAX_PAGES = 10
 _MAX_DATABASES = 1000
 _MAX_DOMAINS = 32
+_NETWORK_SCOPE_STABILITY_PASSES = 2
 _FIREWALL_RESOURCE_TYPES = frozenset({"dbaas", "database"})
 _HOST_LABEL_RE = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
@@ -189,14 +190,15 @@ def _domain_rows(cluster: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _domain_fqdn(row: dict[str, Any]) -> str:
+    raw = row.get("fqdn")
+    if not isinstance(raw, str):
+        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID")
+    return _hostname(raw)
+
+
 def _domain_matches(cluster: dict[str, Any], target_host: str) -> bool:
-    for row in _domain_rows(cluster):
-        raw = row.get("fqdn")
-        if not isinstance(raw, str):
-            continue
-        if raw.strip().lower().rstrip(".") == target_host:
-            return True
-    return False
+    return any(_domain_fqdn(row) == target_host for row in _domain_rows(cluster))
 
 
 def _select_target_cluster(
@@ -235,10 +237,7 @@ def _require_target_network(cluster: dict[str, Any], target_host: str) -> str:
         _stop("TIMEWEB_PG_PRODUCTION_TLS_NOT_READY")
 
     domain_matches = [
-        row
-        for row in _domain_rows(cluster)
-        if isinstance(row.get("fqdn"), str)
-        and str(row["fqdn"]).strip().lower().rstrip(".") == target_host
+        row for row in _domain_rows(cluster) if _domain_fqdn(row) == target_host
     ]
     if len(domain_matches) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_TARGET_DOMAIN_DRIFT")
@@ -251,7 +250,7 @@ def _require_bound_public_ipv4(
     api: ReadOnlyApi,
     database_id: str,
     availability_zone: str,
-) -> None:
+) -> tuple[str, str]:
     rows = _rows(
         api.get("/api/v1/floating-ips"),
         "ips",
@@ -272,6 +271,10 @@ def _require_bound_public_ipv4(
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_MISSING")
     if len(bound) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_NOT_UNIQUE")
+    floating_ip_id = _safe_id(
+        bound[0].get("id"),
+        "TIMEWEB_PG_PRODUCTION_FLOATING_IP_ID_INVALID",
+    )
     try:
         address = ipaddress.ip_address(str(bound[0].get("ip", "")))
     except ValueError:
@@ -283,6 +286,7 @@ def _require_bound_public_ipv4(
         or bound[0].get("is_ddos_guard") is not False
     ):
         _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+    return floating_ip_id, str(address)
 
 
 def _service_group_id(api: ReadOnlyApi, database_id: str) -> str:
@@ -321,7 +325,11 @@ def _require_default_drop(api: ReadOnlyApi, group_id: str) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED")
 
 
-def _require_exact_rule(api: ReadOnlyApi, group_id: str, verifier_cidr: str) -> None:
+def _require_exact_rule(
+    api: ReadOnlyApi,
+    group_id: str,
+    verifier_cidr: str,
+) -> str:
     rules = _paged_rows(
         api,
         f"/api/v1/firewall/groups/{group_id}/rules",
@@ -331,6 +339,10 @@ def _require_exact_rule(api: ReadOnlyApi, group_id: str, verifier_cidr: str) -> 
     if len(rules) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED")
     rule = rules[0]
+    rule_id = _safe_id(
+        rule.get("id"),
+        "TIMEWEB_PG_PRODUCTION_FIREWALL_RULE_ID_INVALID",
+    )
     shape = (
         str(rule.get("direction", "")).lower(),
         str(rule.get("protocol", "")).lower(),
@@ -343,28 +355,59 @@ def _require_exact_rule(api: ReadOnlyApi, group_id: str, verifier_cidr: str) -> 
         _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT")
     if _verifier_cidr(observed_cidr) != verifier_cidr:
         _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT")
+    return rule_id
 
 
-def _resource_matches(row: dict[str, Any], database_id: str) -> bool:
-    try:
-        resource_id = _safe_id(
-            row.get("id"),
-            "TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_ID_INVALID",
-        )
-    except NetworkScopeStopped:
-        return False
-    return resource_id == database_id and row.get("type") in _FIREWALL_RESOURCE_TYPES
-
-
-def _require_exact_resource(api: ReadOnlyApi, group_id: str, database_id: str) -> None:
+def _require_exact_resource(api: ReadOnlyApi, group_id: str, database_id: str) -> str:
     resources = _paged_rows(
         api,
         f"/api/v1/firewall/groups/{group_id}/resources",
         "resources",
         "TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCES_INVALID",
     )
-    if len(resources) != 1 or not _resource_matches(resources[0], database_id):
+    if len(resources) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED")
+    resource = resources[0]
+    resource_id = _safe_id(
+        resource.get("id"),
+        "TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_ID_INVALID",
+    )
+    if (
+        resource_id != database_id
+        or resource.get("type") not in _FIREWALL_RESOURCE_TYPES
+    ):
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED")
+    return resource_id
+
+
+def _collect_network_scope_witness(
+    api: ReadOnlyApi,
+    *,
+    project_id: str,
+    target_host: str,
+    verifier_cidr: str,
+) -> tuple[str, str, str, str, str, str, str, str]:
+    database_id, cluster = _select_target_cluster(api, project_id, target_host)
+    availability_zone = _require_target_network(cluster, target_host)
+    floating_ip_id, public_ipv4 = _require_bound_public_ipv4(
+        api,
+        database_id,
+        availability_zone,
+    )
+    group_id = _service_group_id(api, database_id)
+    _require_default_drop(api, group_id)
+    rule_id = _require_exact_rule(api, group_id, verifier_cidr)
+    resource_id = _require_exact_resource(api, group_id, database_id)
+    return (
+        database_id,
+        availability_zone,
+        floating_ip_id,
+        public_ipv4,
+        group_id,
+        rule_id,
+        resource_id,
+        verifier_cidr,
+    )
 
 
 def verify_network_scope(
@@ -376,13 +419,17 @@ def verify_network_scope(
 ) -> None:
     host = _hostname(target_host)
     cidr = _verifier_cidr(verifier_cidr)
-    database_id, cluster = _select_target_cluster(api, project_id, host)
-    availability_zone = _require_target_network(cluster, host)
-    _require_bound_public_ipv4(api, database_id, availability_zone)
-    group_id = _service_group_id(api, database_id)
-    _require_default_drop(api, group_id)
-    _require_exact_rule(api, group_id, cidr)
-    _require_exact_resource(api, group_id, database_id)
+    witnesses = tuple(
+        _collect_network_scope_witness(
+            api,
+            project_id=project_id,
+            target_host=host,
+            verifier_cidr=cidr,
+        )
+        for _ in range(_NETWORK_SCOPE_STABILITY_PASSES)
+    )
+    if len(set(witnesses)) != 1:
+        _stop("TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT")
     print(
         "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY "
         "public_ipv4=bound ipv6=off tls=enabled "

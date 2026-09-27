@@ -529,6 +529,39 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_network_scope_stability_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["transport"]["provider_network_scope_stability_passes"] = 1
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_missing_network_scope_stability_witness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / "scripts/timeweb_postgres_production_network_scope.py"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace(
+                    "TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT",
+                    "TIMEWEB_PG_PRODUCTION_NETWORK_STATE_CHANGED",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_SOURCE_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_rejects_missing_recovery_evidence_digest_requirement(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

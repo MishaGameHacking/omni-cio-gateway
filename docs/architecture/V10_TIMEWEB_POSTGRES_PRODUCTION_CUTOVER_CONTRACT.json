@@ -79,7 +79,10 @@
     "firewall_service_group_exclusive_required": true,
     "firewall_exact_ingress_tcp_5432_source_32_required": true,
     "firewall_resource_exclusive_required": true,
-    "provider_network_scope_output_sanitized_required": true
+    "provider_network_scope_output_sanitized_required": true,
+    "provider_network_scope_stability_passes": 2,
+    "provider_network_scope_stability_witness_required": true,
+    "provider_network_scope_malformed_provider_rows_fail_closed": true
   },
   "connection_retry": {
     "bounded": true,
