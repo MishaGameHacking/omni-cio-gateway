@@ -16,6 +16,7 @@ from apps.api import timeweb_postgres_tls as tls
 _CONNINFO_FIELD = "pass" + "word"
 _PUBLIC_ADDRESS = ".".join(("8", "8", "8", "8"))
 _PRIVATE_ADDRESS = ".".join(("10", "0", "0", "10"))
+_PRIVATE_NETWORK = "10.0.0.0/24"
 _RESERVED_ADDRESS = ".".join(("203", "0", "113", "10"))
 VALID_DSN = (
     "host=db.twc1.net port=5432 dbname=default_db user=runtime "
@@ -149,7 +150,9 @@ def test_connection_contract_fails_closed(dsn: str, code: str) -> None:
         tls._connection_params(dsn)
 
 
-def test_prepared_connection_requires_public_pinned_hostaddr(tmp_path: Path) -> None:
+def test_prepared_connection_requires_public_pinned_hostaddr_by_default(
+    tmp_path: Path,
+) -> None:
     prepared = _prepared_dsn(tmp_path)
     params = tls._prepared_connection_params(prepared)
     assert params["hostaddr"] == _PUBLIC_ADDRESS
@@ -160,6 +163,44 @@ def test_prepared_connection_requires_public_pinned_hostaddr(tmp_path: Path) -> 
         match="TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID",
     ):
         tls._prepared_connection_params(private)
+
+
+def test_prepared_connection_accepts_only_scoped_private_hostaddr(
+    tmp_path: Path,
+) -> None:
+    private = make_conninfo(_prepared_dsn(tmp_path), hostaddr=_PRIVATE_ADDRESS)
+
+    params = tls._prepared_connection_params(
+        private,
+        private_network_cidr=_PRIVATE_NETWORK,
+    )
+
+    assert params["host"] == "db.twc1.net"
+    assert params["hostaddr"] == _PRIVATE_ADDRESS
+    assert params["sslmode"] == "verify-full"
+
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_PRIVATE_HOSTADDR_INVALID",
+    ):
+        tls._prepared_connection_params(
+            private,
+            private_network_cidr="10.0.1.0/24",
+        )
+
+
+@pytest.mark.parametrize(
+    "cidr",
+    ("0.0.0.0/0", "8.8.8.0/24", "2001:db8::/64", "10.0.0.1/24"),
+)
+def test_private_network_scope_rejects_non_rfc1918_or_noncanonical_cidr(
+    cidr: str,
+) -> None:
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_PRIVATE_NETWORK_INVALID",
+    ):
+        tls._private_ipv4_network(cidr)
 
 
 @pytest.mark.parametrize(
@@ -465,6 +506,87 @@ def test_resolve_binds_authenticated_connect_to_verified_address(
     params = conninfo_to_dict(resolved)
     assert params["host"] == "db.twc1.net"
     assert params["hostaddr"] == _PUBLIC_ADDRESS
+    assert params["sslmode"] == "verify-full"
+
+
+def test_private_transport_probe_preserves_hostname_tls_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ca_path = tmp_path / "root.crt"
+    ca_path.write_bytes(b"provider-ca")
+    monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
+    raw_socket = _RawProbeSocket()
+    context = _ProbeContext()
+
+    def connector(address: tuple[str, int], *, timeout: float) -> _RawProbeSocket:
+        assert address == (_PRIVATE_ADDRESS, tls.TIMEWEB_POSTGRES_PORT)
+        assert timeout == 15.0
+        return raw_socket
+
+    verified_address = tls.probe_timeweb_postgres_private_transport(
+        VALID_DSN,
+        ca_path,
+        private_hostaddr=_PRIVATE_ADDRESS,
+        private_network_cidr=_PRIVATE_NETWORK,
+        connector=connector,
+        context_factory=lambda _path: context,
+        delays=(),
+    )
+
+    assert verified_address == _PRIVATE_ADDRESS
+    assert raw_socket.sent == tls._POSTGRES_SSL_REQUEST
+    assert context.server_names == ["db.twc1.net"]
+    output = capsys.readouterr().out
+    assert "TIMEWEB_PG_TLS_PRIVATE_TRANSPORT=READY" in output
+    assert "db.twc1.net" not in output
+    assert _PRIVATE_ADDRESS not in output
+
+
+def test_private_transport_probe_rejects_public_target_before_tcp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ca_path = tmp_path / "root.crt"
+    ca_path.write_bytes(b"provider-ca")
+    monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
+
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_PRIVATE_HOSTADDR_INVALID",
+    ):
+        tls.probe_timeweb_postgres_private_transport(
+            VALID_DSN,
+            ca_path,
+            private_hostaddr=_PUBLIC_ADDRESS,
+            private_network_cidr=_PRIVATE_NETWORK,
+            connector=lambda *_args, **_kwargs: pytest.fail(
+                "TCP must not run for a public target in private mode"
+            ),
+            context_factory=lambda _path: _ProbeContext(),
+            delays=(),
+        )
+
+
+def test_resolve_binds_private_tcp_target_to_provider_hostname_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ca_path = tmp_path / "root.crt"
+    ca_path.write_bytes(b"provider-ca")
+    monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
+
+    resolved = tls.resolve_timeweb_postgres_dsn(
+        VALID_DSN,
+        ca_path,
+        hostaddr=_PRIVATE_ADDRESS,
+        private_network_cidr=_PRIVATE_NETWORK,
+    )
+
+    params = conninfo_to_dict(resolved)
+    assert params["host"] == "db.twc1.net"
+    assert params["hostaddr"] == _PRIVATE_ADDRESS
     assert params["sslmode"] == "verify-full"
 
 
