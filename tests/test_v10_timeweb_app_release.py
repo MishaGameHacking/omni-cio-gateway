@@ -116,7 +116,14 @@ def _app(
         "branch_name": "main",
         "is_auto_deploy": False,
         "commit_sha": active_sha,
-        "repository": {"full_name": release.CANONICAL_REPOSITORY},
+        "repository": {
+            "full_name": release.CANONICAL_REPOSITORY,
+            "name": release.CANONICAL_REPOSITORY_NAME,
+            "url": (
+                "https://github.com/"
+                f"{release.CANONICAL_REPOSITORY}.git"
+            ),
+        },
         "domains": domains,
         "envs": {
             "OMNI_V10_HOSTED_RUNTIME": "1",
@@ -227,6 +234,38 @@ def _assert_healthz_stops(opener: _Livez, code: str) -> None:
             EXPECTED_SHA,
             opener=opener,
         )
+
+
+def test_url_connected_repository_accepts_provider_decorated_full_name() -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository["full_name"] = "provider-account/" + release.CANONICAL_REPOSITORY
+
+    assert release._repository(app) == release.CANONICAL_REPOSITORY
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "http://github.com/MishaGameHacking/omni-cio-gateway.git",
+        "https://example.invalid/MishaGameHacking/omni-cio-gateway.git",
+        "https://github.com/MishaGameHacking/other.git",
+        "https://github.com/MishaGameHacking/omni-cio-gateway.git?ref=main",
+        "https://user@github.com/MishaGameHacking/omni-cio-gateway.git",
+    ),
+)
+def test_url_connected_repository_rejects_noncanonical_clone_url(url: str) -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository["url"] = url
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_REPOSITORY_INVALID",
+    ):
+        release._repository(app)
 
 
 def test_provider_ids_reject_bool_none_and_fractional_values() -> None:
