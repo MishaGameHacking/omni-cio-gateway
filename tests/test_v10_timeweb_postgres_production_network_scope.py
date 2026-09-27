@@ -36,6 +36,16 @@ SERVICE_GROUPS_PATH = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
 FIREWALL_GROUP_PATH = f"/api/v1/firewall/groups/{GROUP_ID}"
 FIREWALL_RULES_PATH = f"{FIREWALL_GROUP_PATH}/rules{PAGE}"
 FIREWALL_RESOURCES_PATH = f"{FIREWALL_GROUP_PATH}/resources{PAGE}"
+DRIFT_IP = "1.1.1.1"
+AVAILABILITY_ZONE_KEY = "availability_zone"
+RESOURCE_ID_KEY = "resource_id"
+CERT_STATUS_KEY = "cert_status"
+DBAAS_RESOURCE_TYPE = "dbaas"
+DOMAINS_KEY = "domains"
+RULES_KEY = "rules"
+GROUP_KEY = "group"
+RESOURCES_KEY = "resources"
+TOTAL_KEY = "total"
 
 
 class FakeApi:
@@ -59,24 +69,24 @@ class DriftingApi(FakeApi):
         if path == FLOATING_IPS_PATH and self.calls.count(path) == 2:
             self._drifted = True
         if self._drifted and path == FLOATING_IPS_PATH:
-            value["ips"][0]["ip"] = "1.1.1.1"
+            value["ips"][0]["ip"] = DRIFT_IP
         if self._drifted and path == FLOATING_IP_DETAIL_PATH:
-            value["ip"]["ip"] = "1.1.1.1"
+            value["ip"]["ip"] = DRIFT_IP
         return value
 
 
 def _page(key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
-    return {key: rows, "meta": {"total": len(rows)}}
+    return {key: rows, "meta": {TOTAL_KEY: len(rows)}}
 
 
 def _floating_ip_row() -> dict[str, Any]:
     return {
         "id": FLOATING_IP_ID,
         "ip": "8.8.4.4",
-        "availability_zone": "msk-1",
+        AVAILABILITY_ZONE_KEY: "msk-1",
         "is_ddos_guard": False,
-        "resource_type": "dbaas",
-        "resource_id": DATABASE_ID,
+        "resource_type": DBAAS_RESOURCE_TYPE,
+        RESOURCE_ID_KEY: DATABASE_ID,
         "comment": "",
     }
 
@@ -93,12 +103,12 @@ def _responses() -> dict[str, Any]:
                 "name": "omni-cio-v10-production",
                 "status": "started",
                 "port": 5432,
-                "availability_zone": "msk-1",
+                AVAILABILITY_ZONE_KEY: "msk-1",
                 "project_id": PROJECT_ID,
                 "is_enabled_public_network": True,
                 "is_enabled_public_ipv6": False,
                 "is_secure_connection_enabled": True,
-                "domains": [{"fqdn": HOST, "cert_status": "issued"}],
+                DOMAINS_KEY: [{"fqdn": HOST, CERT_STATUS_KEY: "issued"}],
             }
         },
         FLOATING_IPS_PATH: _page("ips", [floating_ip]),
@@ -110,10 +120,10 @@ def _responses() -> dict[str, Any]:
             [{"id": GROUP_ID}],
         ),
         FIREWALL_GROUP_PATH: {
-            "group": {"id": GROUP_ID, "policy": "DROP"}
+            GROUP_KEY: {"id": GROUP_ID, "policy": "DROP"}
         },
         FIREWALL_RULES_PATH: _page(
-            "rules",
+            RULES_KEY,
             [
                 {
                     "id": "rule-1",
@@ -125,8 +135,8 @@ def _responses() -> dict[str, Any]:
             ],
         ),
         FIREWALL_RESOURCES_PATH: _page(
-            "resources",
-            [{"id": DATABASE_ID, "type": "dbaas"}],
+            RESOURCES_KEY,
+            [{"id": DATABASE_ID, "type": DBAAS_RESOURCE_TYPE}],
         ),
     }
 
@@ -194,8 +204,8 @@ def test_rejects_provider_snapshot_drift_between_valid_passes() -> None:
 
 def test_rejects_malformed_domain_entry_even_with_exact_target() -> None:
     responses = _responses()
-    domains = responses[DATABASE_PATH]["db"]["domains"]
-    domains.append({"fqdn": None, "cert_status": "issued"})
+    domains = responses[DATABASE_PATH]["db"][DOMAINS_KEY]
+    domains.append({"fqdn": None, CERT_STATUS_KEY: "issued"})
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID",
@@ -246,7 +256,7 @@ def test_rejects_synthetic_cluster() -> None:
 
 def test_rejects_unissued_target_certificate() -> None:
     responses = _responses()
-    responses[DATABASE_PATH]["db"]["domains"][0]["cert_status"] = (
+    responses[DATABASE_PATH]["db"][DOMAINS_KEY][0][CERT_STATUS_KEY] = (
         "pending"
     )
     with pytest.raises(
@@ -258,7 +268,7 @@ def test_rejects_unissued_target_certificate() -> None:
 
 def test_rejects_target_domain_not_found() -> None:
     responses = _responses()
-    responses[DATABASE_PATH]["db"]["domains"][0]["fqdn"] = (
+    responses[DATABASE_PATH]["db"][DOMAINS_KEY][0]["fqdn"] = (
         "different.twc1.net"
     )
     with pytest.raises(
@@ -280,7 +290,7 @@ def test_rejects_database_project_identity_drift() -> None:
 
 def test_rejects_public_ipv4_zone_mismatch() -> None:
     responses = _responses()
-    responses[FLOATING_IPS_PATH]["ips"][0]["availability_zone"] = "spb-1"
+    responses[FLOATING_IPS_PATH]["ips"][0][AVAILABILITY_ZONE_KEY] = "spb-1"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID",
@@ -290,7 +300,7 @@ def test_rejects_public_ipv4_zone_mismatch() -> None:
 
 def test_rejects_floating_ipv4_list_detail_drift() -> None:
     responses = _responses()
-    responses[FLOATING_IP_DETAIL_PATH]["ip"]["ip"] = "1.1.1.1"
+    responses[FLOATING_IP_DETAIL_PATH]["ip"]["ip"] = DRIFT_IP
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_LIST_DETAIL_DRIFT",
@@ -300,7 +310,7 @@ def test_rejects_floating_ipv4_list_detail_drift() -> None:
 
 def test_rejects_malformed_database_binding_state() -> None:
     responses = _responses()
-    responses[FLOATING_IPS_PATH]["ips"][0]["resource_id"] = True
+    responses[FLOATING_IPS_PATH]["ips"][0][RESOURCE_ID_KEY] = True
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
@@ -320,7 +330,7 @@ def test_rejects_malformed_bound_public_ipv4_id() -> None:
 
 def test_rejects_missing_bound_public_ipv4() -> None:
     responses = _responses()
-    responses[FLOATING_IPS_PATH]["ips"][0]["resource_id"] = "902"
+    responses[FLOATING_IPS_PATH]["ips"][0][RESOURCE_ID_KEY] = "902"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_MISSING",
@@ -332,9 +342,9 @@ def test_rejects_multiple_bound_public_ipv4s() -> None:
     responses = _responses()
     duplicate = dict(responses[FLOATING_IPS_PATH]["ips"][0])
     duplicate["id"] = "float-2"
-    duplicate["ip"] = "1.1.1.1"
+    duplicate["ip"] = DRIFT_IP
     responses[FLOATING_IPS_PATH]["ips"].append(duplicate)
-    responses[FLOATING_IPS_PATH]["meta"]["total"] = 2
+    responses[FLOATING_IPS_PATH]["meta"][TOTAL_KEY] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_NOT_UNIQUE",
@@ -361,7 +371,7 @@ def test_rejects_invalid_bound_public_ipv4(field: str, value: object) -> None:
 
 def test_rejects_incomplete_floating_ip_inventory() -> None:
     responses = _responses()
-    responses[FLOATING_IPS_PATH]["meta"]["total"] = 2
+    responses[FLOATING_IPS_PATH]["meta"][TOTAL_KEY] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_INVENTORY_INVALID_INCOMPLETE",
@@ -373,7 +383,7 @@ def test_rejects_multiple_firewall_groups() -> None:
     responses = _responses()
     path = SERVICE_GROUPS_PATH
     responses[path]["groups"].append({"id": "group-2"})
-    responses[path]["meta"]["total"] = 2
+    responses[path]["meta"][TOTAL_KEY] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE",
@@ -384,7 +394,7 @@ def test_rejects_multiple_firewall_groups() -> None:
 def test_rejects_truncated_firewall_group_page() -> None:
     responses = _responses()
     path = SERVICE_GROUPS_PATH
-    responses[path]["meta"]["total"] = 2
+    responses[path]["meta"][TOTAL_KEY] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match=(
@@ -396,7 +406,7 @@ def test_rejects_truncated_firewall_group_page() -> None:
 
 def test_rejects_firewall_group_identity_drift() -> None:
     responses = _responses()
-    responses[FIREWALL_GROUP_PATH]["group"]["id"] = "group-2"
+    responses[FIREWALL_GROUP_PATH][GROUP_KEY]["id"] = "group-2"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_DRIFT",
@@ -406,7 +416,7 @@ def test_rejects_firewall_group_identity_drift() -> None:
 
 def test_rejects_allow_default_policy() -> None:
     responses = _responses()
-    responses[FIREWALL_GROUP_PATH]["group"]["policy"] = "ACCEPT"
+    responses[FIREWALL_GROUP_PATH][GROUP_KEY]["policy"] = "ACCEPT"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED",
@@ -417,7 +427,7 @@ def test_rejects_allow_default_policy() -> None:
 def test_rejects_verifier_cidr_drift() -> None:
     responses = _responses()
     path = FIREWALL_RULES_PATH
-    responses[path]["rules"][0]["cidr"] = "1.1.1.1/32"
+    responses[path][RULES_KEY][0]["cidr"] = "1.1.1.1/32"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT",
@@ -428,7 +438,7 @@ def test_rejects_verifier_cidr_drift() -> None:
 def test_rejects_malformed_firewall_rule_id() -> None:
     responses = _responses()
     path = FIREWALL_RULES_PATH
-    responses[path]["rules"][0]["id"] = True
+    responses[path][RULES_KEY][0]["id"] = True
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULE_ID_INVALID",
@@ -443,7 +453,7 @@ def test_rejects_malformed_firewall_rule_id() -> None:
 def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
     responses = _responses()
     path = FIREWALL_RULES_PATH
-    responses[path]["rules"][0][field] = value
+    responses[path][RULES_KEY][0][field] = value
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED",
@@ -454,7 +464,7 @@ def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
 def test_rejects_truncated_firewall_rule_page() -> None:
     responses = _responses()
     path = FIREWALL_RULES_PATH
-    responses[path]["meta"]["total"] = 2
+    responses[path]["meta"][TOTAL_KEY] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULES_INVALID_PAGINATION_INCOMPLETE",
@@ -465,7 +475,7 @@ def test_rejects_truncated_firewall_rule_page() -> None:
 def test_rejects_malformed_firewall_resource_id() -> None:
     responses = _responses()
     path = FIREWALL_RESOURCES_PATH
-    responses[path]["resources"][0]["id"] = True
+    responses[path][RESOURCES_KEY][0]["id"] = True
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_ID_INVALID",
@@ -476,8 +486,8 @@ def test_rejects_malformed_firewall_resource_id() -> None:
 def test_rejects_extra_firewall_resource() -> None:
     responses = _responses()
     path = FIREWALL_RESOURCES_PATH
-    responses[path]["resources"].append({"id": "902", "type": "dbaas"})
-    responses[path]["meta"]["total"] = 2
+    responses[path][RESOURCES_KEY].append({"id": "902", "type": DBAAS_RESOURCE_TYPE})
+    responses[path]["meta"][TOTAL_KEY] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED",
@@ -488,7 +498,7 @@ def test_rejects_extra_firewall_resource() -> None:
 def test_rejects_truncated_firewall_resource_page() -> None:
     responses = _responses()
     path = FIREWALL_RESOURCES_PATH
-    responses[path]["meta"]["total"] = 2
+    responses[path]["meta"][TOTAL_KEY] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCES_INVALID_PAGINATION_INCOMPLETE",
