@@ -448,6 +448,7 @@ def _verify_app_binding(expected_sha: str, runtime_dsn: str) -> None:
     token = _required_env(app_release.TOKEN_ENV)
     api = app_release.TimewebAppApi(token)
     envs = _app_envs(api)
+    app_release.validate_private_route_env(envs)
     observed_dsn = envs.get(app_release.POSTGRES_DSN_ENV, "")
     _mask(observed_dsn)
     if not observed_dsn or observed_dsn != runtime_dsn:
