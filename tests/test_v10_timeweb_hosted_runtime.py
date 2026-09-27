@@ -471,6 +471,50 @@ def test_serialized_web_connection_never_replays_failed_operation() -> None:
     assert replacement.execute_calls == 1
 
 
+def test_bounded_pool_lazy_initializes_on_first_checkout() -> None:
+    replacement = _PoolRawConnection("replacement")
+    connect_calls: list[str] = []
+
+    def connect() -> _PoolRawConnection:
+        connect_calls.append("connect")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        None,
+        connect=connect,
+        max_size=1,
+        acquire_timeout_seconds=1.0,
+    )
+
+    assert connect_calls == []
+    assert _execute_pool_transaction(pool, "SELECT 1") == ("replacement",)
+    assert connect_calls == ["connect"]
+
+
+def test_bounded_pool_lazy_connect_failure_releases_slot() -> None:
+    replacement = _PoolRawConnection("replacement")
+    attempts = 0
+
+    def connect() -> _PoolRawConnection:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("simulated connect failure")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        None,
+        connect=connect,
+        max_size=1,
+        acquire_timeout_seconds=1.0,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated connect failure"):
+        _execute_pool_transaction(pool, "SELECT 1")
+    assert _execute_pool_transaction(pool, "SELECT 1") == ("replacement",)
+    assert attempts == 2
+
+
 def test_bounded_pool_allows_two_concurrent_transactions() -> None:
     initial = _PoolRawConnection("initial")
     replacement = _PoolRawConnection("replacement")
@@ -784,19 +828,19 @@ def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
         provider_start_paths=frozenset(),
         provider_route_installer=lambda app, *, services: None,
     )
-    assert state["calls"] == 1
+    assert state["calls"] == 0
     state["fail"] = True
 
     client = TestClient(app, base_url="http://localhost")
     live = client.get("/livez")
     assert live.status_code == 200
     assert live.json() == {"status": "ok", "release_sha": RELEASE_SHA}
-    assert state["calls"] == 1
+    assert state["calls"] == 0
 
     ready = client.get("/healthz")
     assert ready.status_code == 503
     assert ready.json()["status"] == "unavailable"
-    assert state["calls"] == 2
+    assert state["calls"] == 1
 
 
 def test_livez_can_use_plain_http_only_from_explicit_loopback(tmp_path: Path) -> None:
