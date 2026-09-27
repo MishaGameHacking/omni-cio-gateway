@@ -284,7 +284,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
-            payload[TRANSPORT_KEY]["credential_free_transport_preflight_required"] = False
+            payload[TRANSPORT_KEY]["credential_free_transport_preflight_required"] = (
+                False
+            )
             path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
@@ -553,7 +555,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
-            payload[TRANSPORT_KEY]["public_ipv4_list_detail_consistency_required"] = False
+            payload[TRANSPORT_KEY]["public_ipv4_list_detail_consistency_required"] = (
+                False
+            )
             path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
@@ -567,9 +571,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
-            payload[TRANSPORT_KEY]["provider_network_scope_project_identity_required"] = (
-                False
-            )
+            payload[TRANSPORT_KEY][
+                "provider_network_scope_project_identity_required"
+            ] = False
             path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
             with self.assertRaisesRegex(
                 guard.CutoverContractError,

@@ -96,9 +96,7 @@ def _floating_ip_row() -> dict[str, Any]:
 def _responses() -> dict[str, Any]:
     floating_ip = _floating_ip_row()
     return {
-        PROJECT_DATABASES_PATH: {
-            "databases": [{"id": DATABASE_ID}]
-        },
+        PROJECT_DATABASES_PATH: {"databases": [{"id": DATABASE_ID}]},
         DATABASE_PATH: {
             "db": {
                 "id": DATABASE_ID,
@@ -121,9 +119,7 @@ def _responses() -> dict[str, Any]:
             "groups",
             [{"id": GROUP_ID}],
         ),
-        FIREWALL_GROUP_PATH: {
-            GROUP_KEY: {"id": GROUP_ID, "policy": "DROP"}
-        },
+        FIREWALL_GROUP_PATH: {GROUP_KEY: {"id": GROUP_ID, "policy": "DROP"}},
         FIREWALL_RULES_PATH: _page(
             RULES_KEY,
             [
@@ -246,9 +242,7 @@ def test_rejects_unready_cluster_state(field: str, value: object, code: str) -> 
 
 def test_rejects_synthetic_cluster() -> None:
     responses = _responses()
-    responses[DATABASE_PATH]["db"]["name"] = (
-        scope.SYNTHETIC_CLUSTER_NAME
-    )
+    responses[DATABASE_PATH]["db"]["name"] = scope.SYNTHETIC_CLUSTER_NAME
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_SYNTHETIC_TARGET_FORBIDDEN",
@@ -258,9 +252,7 @@ def test_rejects_synthetic_cluster() -> None:
 
 def test_rejects_unissued_target_certificate() -> None:
     responses = _responses()
-    responses[DATABASE_PATH]["db"][DOMAINS_KEY][0][CERT_STATUS_KEY] = (
-        "pending"
-    )
+    responses[DATABASE_PATH]["db"][DOMAINS_KEY][0][CERT_STATUS_KEY] = "pending"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_TLS_CERTIFICATE_NOT_READY",
@@ -270,9 +262,7 @@ def test_rejects_unissued_target_certificate() -> None:
 
 def test_rejects_target_domain_not_found() -> None:
     responses = _responses()
-    responses[DATABASE_PATH]["db"][DOMAINS_KEY][0]["fqdn"] = (
-        "different.twc1.net"
-    )
+    responses[DATABASE_PATH]["db"][DOMAINS_KEY][0]["fqdn"] = "different.twc1.net"
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_NETWORK_TARGET_NOT_FOUND",
