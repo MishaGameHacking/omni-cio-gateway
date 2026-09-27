@@ -25,7 +25,7 @@ from apps.api.telegram_auth import build_telegram_provider_auth
 from apps.api.timeweb_postgres_tls import (
     connect_prepared_timeweb_postgres,
     install_timeweb_postgres_ca,
-    prepare_timeweb_postgres_target,
+    prepare_timeweb_postgres_private_target,
 )
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
@@ -40,6 +40,8 @@ _RUNTIME_ENABLED_ENV = "OMNI_V10_HOSTED_RUNTIME"
 _HOSTNAME_ENV = "OMNI_V10_PUBLIC_HOSTNAME"
 _RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 _DSN_ENV = "OMNI_V10_POSTGRES_DSN"
+_PRIVATE_HOSTADDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"
+_PRIVATE_NETWORK_CIDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"
 _RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
 _CANDIDATE_HOSTNAME_ENV = "OMNI_V10_CANDIDATE_HOSTNAME"
@@ -72,12 +74,20 @@ def _open_runtime_database(
     external_database_dsn: str,
     ca_path: Path,
     runtime_role: str,
+    private_hostaddr: str,
+    private_network_cidr: str,
 ) -> ConnectionLike:
-    prepared_dsn = prepare_timeweb_postgres_target(external_database_dsn, ca_path)
+    prepared_dsn = prepare_timeweb_postgres_private_target(
+        external_database_dsn,
+        ca_path,
+        private_hostaddr=private_hostaddr,
+        private_network_cidr=private_network_cidr,
+    )
     raw_connection = connect_prepared_timeweb_postgres(
         prepared_dsn,
         failure_prefix="HOSTED_RUNTIME_DATABASE",
         connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
+        private_network_cidr=private_network_cidr,
     )
     _configure_long_lived_web_connection(raw_connection)
     probe_hosted_runtime_database(
@@ -96,6 +106,8 @@ def create_app() -> FastAPI:
     release_sha = _release_sha(_required_env(_RELEASE_SHA_ENV))
     runtime_role = validate_hosted_runtime_role(_required_env(_RUNTIME_ROLE_ENV))
     external_database_dsn = _required_env(_DSN_ENV)
+    private_hostaddr = _required_env(_PRIVATE_HOSTADDR_ENV)
+    private_network_cidr = _required_env(_PRIVATE_NETWORK_CIDR_ENV)
     database_ca_path = install_timeweb_postgres_ca()
     candidate_hostname = _optional_candidate_hostname()
     candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
@@ -103,6 +115,8 @@ def create_app() -> FastAPI:
         external_database_dsn,
         database_ca_path,
         runtime_role,
+        private_hostaddr,
+        private_network_cidr,
     )
     connection = _BoundedWebConnectionPool(
         raw_connection,
@@ -110,6 +124,8 @@ def create_app() -> FastAPI:
             external_database_dsn,
             database_ca_path,
             runtime_role,
+            private_hostaddr,
+            private_network_cidr,
         ),
         max_size=_DATABASE_POOL_MAX_SIZE,
         acquire_timeout_seconds=_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS,
