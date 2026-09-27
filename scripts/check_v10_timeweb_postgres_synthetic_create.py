@@ -630,7 +630,7 @@ def _validate_provisioner() -> None:
             "def _create_or_reconcile(",
             "read_only.verify_credential_health(",
             "timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS",
-            "existing_cluster_id = _target_cluster_id(read_api.get(project_path))",
+            "existing_cluster_id = _target_cluster_id(",
             "mutation_api = TimewebCreateApi(token)",
             "read_only.raise_timeweb_auth_failure(status)",
             '"existing-recovery"',
