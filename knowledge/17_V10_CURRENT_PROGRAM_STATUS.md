@@ -15,9 +15,11 @@ The subsequent manual `V10 RU-PG-B Timeweb Synthetic Create #6` reached the prov
 
 Current source proves that this code is emitted only after provider state has been observed while terminal `status=started` has not been proved before the local start-readiness budget expires. The accepted source budget was only 288 seconds. This is therefore an asynchronous-provider readiness defect class, not evidence that a second create POST is safe or required.
 
-The focused repair branch is `fix/timeweb-synthetic-start-readiness`. It may change only observation/recovery semantics needed to make the existing single-create state machine robust: extend the GET-only readiness budget, preserve workflow headroom, add a specific persistent-`starting` sanitized timeout class, strengthen tests/guards/runbook/failure-learning evidence, and keep restart recovery GET-only for an already-existing exact target.
+The focused repair branch is `fix/timeweb-synthetic-start-readiness`. It may change only observation/recovery semantics needed to make the existing single-create state machine robust: extend the GET-only readiness budget, bound nested control-plane read retries so the GitHub workflow cannot preempt semantic timeout classification, preserve complete wall-clock workflow headroom, add a specific persistent-`starting` sanitized timeout class, strengthen tests/guards/runbook/failure-learning evidence, and keep restart recovery GET-only for an already-existing exact target.
 
 The repair must not issue another create for an existing target, delete or resize the cluster, widen network exposure, enable IPv6/backups/replication, mutate production DSN/DNS/TLS, activate Telegram/public users, enable broker write or enable Real Trading. A remaining `starting` state after the new bounded waiter is still fail-closed and requires read-only reconciliation.
+
+Pre-merge full-path review found a second defect in the same readiness-budget class: the first 20-minute workflow correction counted only the 708 seconds of explicit sleeps, while every readiness GET can itself perform up to three bounded control-plane attempts. The branch now uses a 10-second readiness read timeout and a 35-minute job ceiling; regression math includes both nested request/retry time and delay time and requires at least 600 seconds of worst-case headroom. This prevents Actions from killing the job before a sanitized provider-readiness STOP can be emitted.
 
 ### 2026-09-27 downstream topology / executable-chain audit
 
