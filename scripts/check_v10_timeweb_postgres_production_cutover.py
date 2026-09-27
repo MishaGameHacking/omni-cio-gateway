@@ -472,7 +472,7 @@ def _direct_call_names(source: str, function_name: str) -> set[str]:
     )
 
 
-def _require_hosted_runtime_private_call_shape(source: str) -> None:
+def _runtime_function(source: str, name: str) -> ast.FunctionDef:
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
@@ -482,46 +482,66 @@ def _require_hosted_runtime_private_call_shape(source: str) -> None:
     functions = [
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_open_runtime_database"
+        if isinstance(node, ast.FunctionDef) and node.name == name
     ]
     if len(functions) != 1:
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+    return functions[0]
 
-    calls: dict[str, list[ast.Call]] = {
-        _CALL_PREPARE_PRIVATE_TARGET: [],
-        _CALL_CONNECT_PREPARED: [],
+
+def _named_calls(
+    function: ast.FunctionDef,
+    names: tuple[str, ...],
+) -> dict[str, list[ast.Call]]:
+    calls = {name: [] for name in names}
+    for node in ast.walk(function):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            bucket = calls.get(node.func.id)
+            if bucket is not None:
+                bucket.append(node)
+    return calls
+
+
+def _keyword_arguments(call: ast.Call) -> dict[str, ast.expr]:
+    return {
+        keyword.arg: keyword.value
+        for keyword in call.keywords
+        if keyword.arg is not None
     }
-    for node in ast.walk(functions[0]):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
-            continue
-        if node.func.id in calls:
-            calls[node.func.id].append(node)
 
+
+def _require_name_argument(
+    arguments: dict[str, ast.expr],
+    argument: str,
+    expected_name: str,
+) -> None:
+    value = arguments.get(argument)
+    if not isinstance(value, ast.Name) or value.id != expected_name:
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+
+def _require_hosted_runtime_private_call_shape(source: str) -> None:
+    function = _runtime_function(source, "_open_runtime_database")
+    calls = _named_calls(
+        function,
+        (_CALL_PREPARE_PRIVATE_TARGET, _CALL_CONNECT_PREPARED),
+    )
     if any(len(values) != 1 for values in calls.values()):
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
 
-    prepare_keywords = {
-        keyword.arg: keyword.value
-        for keyword in calls[_CALL_PREPARE_PRIVATE_TARGET][0].keywords
-        if keyword.arg is not None
-    }
-    connect_keywords = {
-        keyword.arg: keyword.value
-        for keyword in calls[_CALL_CONNECT_PREPARED][0].keywords
-        if keyword.arg is not None
-    }
-    expected_prepare = {
-        "private_hostaddr": "private_hostaddr",
-        "private_network_cidr": "private_network_cidr",
-    }
-    for key, name in expected_prepare.items():
-        value = prepare_keywords.get(key)
-        if not isinstance(value, ast.Name) or value.id != name:
-            raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
-    value = connect_keywords.get("private_network_cidr")
-    if not isinstance(value, ast.Name) or value.id != "private_network_cidr":
-        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
-
+    prepare_keywords = _keyword_arguments(calls[_CALL_PREPARE_PRIVATE_TARGET][0])
+    connect_keywords = _keyword_arguments(calls[_CALL_CONNECT_PREPARED][0])
+    _require_name_argument(prepare_keywords, "private_hostaddr", "private_hostaddr")
+    _require_name_argument(
+        prepare_keywords,
+        "private_network_cidr",
+        "private_network_cidr",
+    )
+    _require_name_argument(
+        connect_keywords,
+        "private_network_cidr",
+        "private_network_cidr",
+    )
 
 def _validate_network_scope_source(source: str) -> None:
     _markers(
@@ -645,7 +665,6 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
     }
     if create_calls & forbidden_create_calls:
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
-
 
     _markers(
         source,
