@@ -27,6 +27,15 @@ Required runtime configuration for P2:
 - `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`
 - `OMNI_V10_POSTGRES_DSN` present in Timeweb runtime custody.
 
+The provider-assigned App technical domain does not exist until the application has been
+created. During that one creation-time bootstrap only, `OMNI_V10_CANDIDATE_HOSTNAME`
+may be absent so the container can start and Timeweb can perform its localhost
+`/livez` health check. This is **not** P2 acceptance. As soon as Timeweb assigns the
+technical domain, add it as `OMNI_V10_CANDIDATE_HOSTNAME`, keep autodeploy disabled and
+the selected private network unchanged, redeploy the same exact accepted-main SHA, and
+only then run P2 `observe`/`deploy`. P2 remains fail-closed while that hostname is
+missing or not attached to the application.
+
 The DSN keeps the Timeweb PostgreSQL technical hostname, `sslmode=verify-full` and
 the canonical relative CA path. The private address is supplied separately. The runtime
 uses the private address only as the TCP `hostaddr` while preserving the technical
