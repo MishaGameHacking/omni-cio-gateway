@@ -26,6 +26,7 @@ RECOVERY = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
 _PREPARE_CONFIRMATION = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
 _HOSTED_RUNTIME_TLS_DRIFT = "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT"
 _CALL_PREPARE_TARGET = "prepare_timeweb_postgres_target"
+_CALL_PREPARE_PRIVATE_TARGET = "prepare_timeweb_postgres_private_target"
 _CALL_CONNECT_PREPARED = "connect_prepared_timeweb_postgres"
 _CALL_INSTALL_CA = "install_timeweb_postgres_ca"
 _RECOVERY_ATTESTATION = (
@@ -541,7 +542,7 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
     )
     required_runtime_calls = {
-        _CALL_PREPARE_TARGET,
+        _CALL_PREPARE_PRIVATE_TARGET,
         _CALL_CONNECT_PREPARED,
         "_configure_long_lived_web_connection",
         "probe_hosted_runtime_database",
@@ -551,6 +552,7 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
     forbidden_runtime_calls = {
         "connect_postgres",
         "prepare_timeweb_postgres_tls",
+        _CALL_PREPARE_TARGET,
         _CALL_INSTALL_CA,
     }
     if runtime_calls & forbidden_runtime_calls:
@@ -566,11 +568,24 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
     forbidden_create_calls = {
         _CALL_PREPARE_TARGET,
+        _CALL_PREPARE_PRIVATE_TARGET,
         _CALL_CONNECT_PREPARED,
         "prepare_timeweb_postgres_tls",
     }
     if create_calls & forbidden_create_calls:
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+
+    _markers(
+        source,
+        (
+            '"OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"',
+            '"OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"',
+            "private_hostaddr=private_hostaddr",
+            "private_network_cidr=private_network_cidr",
+        ),
+        _HOSTED_RUNTIME_TLS_DRIFT,
+    )
 
 
 def _validate_sources() -> None:
