@@ -11,6 +11,7 @@ BOOTSTRAP_DSN_ENV = "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN"
 VERIFIER_CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"
 POSTGRES_PORT = "5432"
 SYNTHETIC_CLUSTER_NAME = "omni-cio-v10-ru-pg-synthetic"
+_VERIFIER_CIDR_INVALID = "TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID"
 _PAGE_SIZE = 100
 _MAX_PAGES = 10
 _FIREWALL_RESOURCE_TYPES = frozenset({"dbaas", "database"})
@@ -116,19 +117,19 @@ def _hostname(value: object) -> str:
 
 def _verifier_cidr(value: object) -> str:
     if not isinstance(value, str):
-        _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID")
+        _stop(_VERIFIER_CIDR_INVALID)
     raw = value.strip()
     try:
         network = ipaddress.ip_network(raw, strict=True)
     except ValueError:
-        _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID")
+        _stop(_VERIFIER_CIDR_INVALID)
     if (
         not isinstance(network, ipaddress.IPv4Network)
         or network.prefixlen != 32
         or raw != str(network)
         or not network.network_address.is_global
     ):
-        _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID")
+        _stop(_VERIFIER_CIDR_INVALID)
     return str(network)
 
 
