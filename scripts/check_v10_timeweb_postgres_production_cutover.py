@@ -20,6 +20,10 @@ RUNTIME = ROOT / "infrastructure/postgres/hosted-postgres-runtime-contract.json"
 RECOVERY = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
 
 _PREPARE_CONFIRMATION = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+_HOSTED_RUNTIME_TLS_DRIFT = "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT"
+_CALL_PREPARE_TARGET = "prepare_timeweb_postgres_target"
+_CALL_CONNECT_PREPARED = "connect_prepared_timeweb_postgres"
+_CALL_INSTALL_CA = "install_timeweb_postgres_ca"
 _RECOVERY_ATTESTATION = (
     "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
 )
@@ -420,20 +424,20 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
     )
     required_runtime_calls = {
-        "prepare_timeweb_postgres_target",
-        "connect_prepared_timeweb_postgres",
+        _CALL_PREPARE_TARGET,
+        _CALL_CONNECT_PREPARED,
         "_configure_long_lived_web_connection",
         "probe_hosted_runtime_database",
     }
     if not required_runtime_calls.issubset(runtime_calls):
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
     forbidden_runtime_calls = {
         "connect_postgres",
         "prepare_timeweb_postgres_tls",
-        "install_timeweb_postgres_ca",
+        _CALL_INSTALL_CA,
     }
     if runtime_calls & forbidden_runtime_calls:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
 
     create_calls = _function_call_names(
         source,
@@ -441,17 +445,15 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
         function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
     )
-    if not {"install_timeweb_postgres_ca", "_open_runtime_database"}.issubset(
-        create_calls
-    ):
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
+    if not {_CALL_INSTALL_CA, "_open_runtime_database"}.issubset(create_calls):
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
     forbidden_create_calls = {
-        "prepare_timeweb_postgres_target",
-        "connect_prepared_timeweb_postgres",
+        _CALL_PREPARE_TARGET,
+        _CALL_CONNECT_PREPARED,
         "prepare_timeweb_postgres_tls",
     }
     if create_calls & forbidden_create_calls:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT")
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
 
 
 def _validate_sources() -> None:
@@ -549,16 +551,16 @@ def _validate_sources() -> None:
     _markers(
         hosted_runtime,
         (
-            "connect_prepared_timeweb_postgres",
-            "install_timeweb_postgres_ca",
-            "prepare_timeweb_postgres_target",
+            _CALL_CONNECT_PREPARED,
+            _CALL_INSTALL_CA,
+            _CALL_PREPARE_TARGET,
             "external_database_dsn = _required_env(_DSN_ENV)",
             "database_ca_path = install_timeweb_postgres_ca()",
             "prepared_dsn = prepare_timeweb_postgres_target(",
             "connect=lambda: _open_runtime_database(",
             'failure_prefix="HOSTED_RUNTIME_DATABASE"',
         ),
-        "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+        _HOSTED_RUNTIME_TLS_DRIFT,
     )
     _validate_hosted_runtime_tls_flow(hosted_runtime)
 
