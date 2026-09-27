@@ -48,6 +48,14 @@ A later milestone may be implemented before an earlier external action is physic
 performed, but its mutation path must refuse to execute until the earlier gate has
 verifiable accepted evidence.
 
+The physical Timeweb execution order for the repaired App/database boundary is explicit:
+accepted P2 source on main -> P3 observe -> P3 prepare -> P3 recovery evidence -> App
+creation in the accepted private network -> provider technical-domain bootstrap -> physical
+P2 exact-SHA candidate proof -> P3 accept -> P4 canonical-domain/TLS acceptance. P3
+prepare is therefore an upstream prerequisite for database-aware candidate health, while
+P3 accept is downstream of the current physical candidate proof. Neither gate may claim
+the other has completed merely from source certification.
+
 ## 3. Exact-SHA release law
 
 Production identity is:
