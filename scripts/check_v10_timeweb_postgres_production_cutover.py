@@ -706,6 +706,7 @@ def _validate_sources() -> None:
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",
+            "app_release.validate_private_route_env(envs)",
             "--recovery-attestation",
             "--recovery-evidence-sha256",
             "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED",
@@ -722,6 +723,10 @@ def _validate_sources() -> None:
     }
     if observe_calls & forbidden_observe_calls:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_MUTATION_PATH")
+
+    app_binding_calls = _direct_call_names(controller, "_verify_app_binding")
+    if "validate_private_route_env" not in app_binding_calls:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_PRIVATE_ROUTE_UNVERIFIED")
 
     if any(
         item in controller
