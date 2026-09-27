@@ -472,6 +472,57 @@ def _direct_call_names(source: str, function_name: str) -> set[str]:
     )
 
 
+def _require_hosted_runtime_private_call_shape(source: str) -> None:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID"
+        ) from exc
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_open_runtime_database"
+    ]
+    if len(functions) != 1:
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+    calls: dict[str, list[ast.Call]] = {
+        _CALL_PREPARE_PRIVATE_TARGET: [],
+        _CALL_CONNECT_PREPARED: [],
+    }
+    for node in ast.walk(functions[0]):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        if node.func.id in calls:
+            calls[node.func.id].append(node)
+
+    if any(len(values) != 1 for values in calls.values()):
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+    prepare_keywords = {
+        keyword.arg: keyword.value
+        for keyword in calls[_CALL_PREPARE_PRIVATE_TARGET][0].keywords
+        if keyword.arg is not None
+    }
+    connect_keywords = {
+        keyword.arg: keyword.value
+        for keyword in calls[_CALL_CONNECT_PREPARED][0].keywords
+        if keyword.arg is not None
+    }
+    expected_prepare = {
+        "private_hostaddr": "private_hostaddr",
+        "private_network_cidr": "private_network_cidr",
+    }
+    for key, name in expected_prepare.items():
+        value = prepare_keywords.get(key)
+        if not isinstance(value, ast.Name) or value.id != name:
+            raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+    value = connect_keywords.get("private_network_cidr")
+    if not isinstance(value, ast.Name) or value.id != "private_network_cidr":
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+
 def _validate_network_scope_source(source: str) -> None:
     _markers(
         source,
@@ -554,6 +605,7 @@ def _validate_workflow_network_scope_order(workflow: str) -> None:
 
 
 def _validate_hosted_runtime_tls_flow(source: str) -> None:
+    _require_hosted_runtime_private_call_shape(source)
     runtime_calls = _function_call_names(
         source,
         "_open_runtime_database",
