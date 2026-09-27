@@ -651,3 +651,38 @@ No second POST, delete, resize, public-network widening, production DB/DNS/TLS
 cutover, Telegram activation, broker write or Real Trading is authorized by this
 repair. Fresh exact-head verification is required before the source can be accepted.
 
+### Full Timeweb provider-chain audit after current OWNER screenshot — 2026-09-27
+
+A full source/evidence pass was extended beyond the synthetic-create timeout through the
+next Timeweb delivery gates.
+
+The current OWNER screenshot is recorded only as non-authorizing external observation:
+two PostgreSQL services are visible; the only visible public IPv4 is attached to the
+production PostgreSQL target; the synthetic target has no displayed public IPv4; and
+`omnicio.ru` is present as an externally managed domain.
+
+The existing repository fails closed for this topology. A managed IPv4 bound to another
+target is not an eligible synthetic resource, and current custody logic emits
+`TIMEWEB_IPV4_CUSTODY_BOUND_ELSEWHERE` rather than reassigning it. The production-bound
+resource must therefore never be borrowed for RU-PG-B proof.
+
+The same pass found a separate execution-chain gap that is intentionally not folded into
+the focused #595 readiness repair:
+
+- RU-PG-B parity remains `SOURCE_READY_PROVIDER_EVIDENCE_PENDING`;
+- no accepted live `RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS` evidence was found;
+- the Python parity harness exists, but no dedicated protected-main GitHub workflow owns
+  its synthetic DSN/certificate custody and real execution;
+- P2/P3/P4/P5/P6 source controllers are present and guarded, but their source readiness
+  does not retroactively satisfy RU-PG-B parity or prove physical provider execution.
+
+After #595 lands, the next repository change must be a separate governed database-parity
+execution gate from fresh accepted main. It must re-observe current transport state and
+must not silently fall back from the historical public-IPv4 route. A replacement transport
+such as public IPv6 requires its own network/security proof; the production IPv4 cannot be
+moved merely to make the synthetic proof convenient.
+
+Automatic continuation is permitted only for observation/reconciliation. Paid/network
+mutation, production database prepare/accept, DNS/TLS cutover and Telegram public
+activation remain explicit fail-closed one-shot gates.
+
