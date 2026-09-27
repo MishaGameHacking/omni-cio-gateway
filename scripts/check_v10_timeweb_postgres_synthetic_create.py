@@ -481,6 +481,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "starting_state_uses_bounded_state_aware_verification",
         "transient_control_plane_read_failures_retry_within_start_wait",
         "control_plane_only_timeout_has_distinct_sanitized_code",
+        "starting_timeout_has_distinct_sanitized_code",
+        "existing_target_retry_remains_get_only",
         "starting_explicit_unsafe_values_fail_closed",
         "terminal_started_exact_shape_required",
         "field_specific_sanitized_drift_codes_required",
@@ -504,17 +506,32 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _require(
         verification.get("starting_minimum_wait_budget_seconds"),
-        240,
+        600,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
     _require(
         verification.get("starting_maximum_wait_budget_seconds"),
-        600,
+        780,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
     _require(
         verification.get("local_wait_budget_is_provider_sla"),
         False,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("provider_readiness_sla_seconds_documented"),
+        False,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("workflow_timeout_minutes"),
+        20,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("minimum_workflow_headroom_seconds"),
+        300,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
 
@@ -590,6 +607,7 @@ def _validate_provisioner() -> None:
             "def _reconcile_cluster_id(",
             "_RECONCILE_DELAYS_SECONDS = (",
             "_START_DELAYS_SECONDS = (",
+            "TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT",
             "def _create_or_reconcile(",
             "read_only.verify_credential_health(read_api)",
             "existing_cluster_id = _target_cluster_id(read_api.get(project_path))",
@@ -704,6 +722,7 @@ def _validate_workflow() -> None:
             "environment-policy-proof:",
             "needs: environment-policy-proof",
             "environment: timeweb-synthetic",
+            "timeout-minutes: 20",
             _SYNTHETIC_GUARD_MODULE,
             _SYNTHETIC_GUARD_MODULE + " --require-parity-transport-ready",
             "python -m scripts.verify_v10_timeweb_github_environment",
@@ -715,6 +734,8 @@ def _validate_workflow() -> None:
     )
     if source.count(_SYNTHETIC_GUARD_MODULE) != 3:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
+    if source.count("timeout-minutes: 20") != 1:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_TIMEOUT_INVALID")
     if _SYNTHETIC_GUARD_SCRIPT in source:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
     if source.count(f"secrets.{_TIMEWEB_BINDING}") != 1:
