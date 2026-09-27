@@ -64,7 +64,11 @@
     "second_dns_lookup_for_authenticated_connection_allowed": false,
     "prepared_connection_shape_validation_required": true,
     "hosted_runtime_reprobe_on_connection_open_required": true,
-    "hosted_runtime_ca_fetch_per_connection_allowed": false
+    "hosted_runtime_ca_fetch_per_connection_allowed": false,
+    "authenticated_libpq_gss_encryption_allowed": false,
+    "authenticated_libpq_client_certificate_allowed": false,
+    "authenticated_libpq_tls_minimum_version": "TLSv1.2",
+    "prepared_authenticated_transport_controls_required": true
   },
   "connection_retry": {
     "bounded": true,

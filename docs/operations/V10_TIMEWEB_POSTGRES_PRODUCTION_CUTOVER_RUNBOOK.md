@@ -24,6 +24,8 @@ The connection host must be the Timeweb technical **domain** on explicit port `5
 
 The CA is public trust material, not a credential. Never weaken this boundary by omitting `sslrootcert`, switching to `sslmode=require`/disabled verification, using the public IP as the verified host, or storing a machine-specific absolute CA path in the shared DSN.
 
+The stored external DSN stays minimal and portable. After the provider hostname/address has been proven, the **in-process prepared conninfo** adds three mandatory authenticated-transport controls: `gssencmode=disable`, `sslcertmode=disable`, and `ssl_min_protocol_version=TLSv1.2`. PostgreSQL/libpq can otherwise prefer GSS encryption over SSL even when `sslmode` is set, and by default may send a client certificate from the standard per-user location if a server requests one. Omni-CIO does not delegate database transport or client identity to those ambient channels: authenticated traffic must remain on the same verify-full TLS boundary that the credential-free probe just proved. These controls are injected only into the process-local prepared DSN; OWNER does not add them to the GitHub/Timeweb secret value.
+
 ### Credential-free connection-readiness ladder
 
 Before any database password is presented, P3 and the Timeweb hosted runtime prove the live boundary in ordered stages:
@@ -95,3 +97,5 @@ Provider references for this boundary:
 - https://timeweb.cloud/docs/dbaas/postgresql — managed PostgreSQL uses Patroni/Etcd leader-replica failover;
 - https://timeweb.cloud/docs/dbaas/postgresql/connect-to-database — domain connections use protected TLS;
 - https://timeweb.cloud/docs/dbaas/dbaas-manage/public-ip-access — external access requires enabled public IP access.
+- https://www.postgresql.org/docs/18/libpq-connect.html — `hostaddr`, GSS/SSL connection parameters and libpq connection semantics.
+- https://www.postgresql.org/docs/18/libpq-ssl.html — verify-full server identity and default client-certificate file behavior.

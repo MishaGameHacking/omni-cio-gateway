@@ -1026,3 +1026,25 @@ Dependency/tooling knowledge change:
 
 **Dependency/tooling knowledge change:** Python 3.12 documents `ssl.SSLError` as a subtype of `OSError`; catching both in the same tuple is redundant.
 
+
+
+---
+
+## FL-044 — A successful TLS preflight does not prove the authenticated libpq session uses the same transport authority
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 post-CERTIFIED_GREEN review after exact head `e44c1798b9d3e015c0a977e270fb4699e145c119`
+
+**Symptom / finding:** the credential-free Timeweb readiness ladder explicitly proves PostgreSQL SSLRequest, TLS >= 1.2, the Timeweb CA and hostname identity before credentials are presented, but the subsequent authenticated libpq conninfo did not explicitly close two independent ambient transport/identity channels. PostgreSQL documents that GSSAPI encryption can be preferred over SSL regardless of `sslmode`, and that libpq may send a client certificate from the standard per-user location when the server requests one.
+
+**Root cause:** the original hardening treated `sslmode=verify-full` plus a verified/pinned `hostaddr` as a complete statement of the authenticated transport. That is incomplete when libpq owns connection negotiation: transport and client-certificate defaults outside the external DSN can still participate unless the prepared in-process conninfo constrains them.
+
+**Blast radius searched:** P3 bootstrap/runtime authenticated connects, hosted-runtime startup and pool reconnects, external DSN custody, ambient `PG*` rejection, Timeweb CA/hostname verification, prepared-hostaddr binding, runtime-role checks and all consumers of `resolve_timeweb_postgres_dsn`. No public-user, Telegram, tenant, broker-write or Real-money authority is widened.
+
+**Corrective change:** keep the stored OWNER/provider DSN unchanged, but inject `gssencmode=disable`, `sslcertmode=disable` and `ssl_min_protocol_version=TLSv1.2` into every process-local prepared conninfo. The prepared-DSN validator now rejects any downgrade or omission of those controls before psycopg/libpq is called.
+
+**Permanent regression/guard:** focused tests prove all three controls are present after preparation, external secrets cannot pre-supply the process-local controls, and downgrade attempts fail closed. The P3 machine contract and runbook freeze the authenticated-transport requirement.
+
+**Future prevention rule:** when a preflight and a client library perform separate handshakes, security proof must cover both. A preflight may establish provider reachability and identity, but the authenticated client must independently prohibit alternate encryption, client-credential and protocol-version channels that could make the real session differ from the proven path.
+
+**Dependency/tooling knowledge change:** PostgreSQL 18 libpq documentation states that GSSAPI encryption may take precedence over SSL and that the default client certificate location can be used when the server requests a certificate; these semantics are now treated as part of the P3 transport threat model.

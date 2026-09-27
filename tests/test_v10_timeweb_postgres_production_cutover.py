@@ -286,6 +286,20 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_authenticated_transport_control_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["transport"]["authenticated_libpq_gss_encryption_allowed"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID",
+            ):
+                guard.validate(root)
+
     def test_rejects_hosted_runtime_without_tls_preparation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

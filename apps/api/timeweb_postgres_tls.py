@@ -37,6 +37,12 @@ _TLS_CA_FETCH_FAILED = "TIMEWEB_PG_TLS_CA_FETCH_FAILED"
 _TLS_CA_INVALID = "TIMEWEB_PG_TLS_CA_INVALID"
 _TLS_CA_PATH_UNSAFE = "TIMEWEB_PG_TLS_CA_PATH_UNSAFE"
 _SSLROOTCERT_KEY = "sslrootcert"
+_GSSENCMODE_KEY = "gssencmode"
+_SSLCERTMODE_KEY = "sslcertmode"
+_SSL_MIN_PROTOCOL_VERSION_KEY = "ssl_min_protocol_version"
+_PREPARED_GSSENCMODE = "disable"
+_PREPARED_SSLCERTMODE = "disable"
+_PREPARED_SSL_MIN_PROTOCOL_VERSION = "TLSv1.2"
 _CONNECT_FAILURE_PREFIX_INVALID = "TIMEWEB_PG_CONNECT_FAILURE_PREFIX_INVALID"
 _SUFFIX_AUTHENTICATION_REJECTED = "AUTHENTICATION_REJECTED"
 _SUFFIX_DATABASE_NOT_FOUND = "DATABASE_NOT_FOUND"
@@ -90,7 +96,14 @@ _ALLOWED_EXTERNAL_DSN_PARAMETERS = frozenset(
         "user",
     }
 )
-_PREPARED_DSN_PARAMETERS = _ALLOWED_EXTERNAL_DSN_PARAMETERS | frozenset({"hostaddr"})
+_PREPARED_DSN_PARAMETERS = _ALLOWED_EXTERNAL_DSN_PARAMETERS | frozenset(
+    {
+        "hostaddr",
+        _GSSENCMODE_KEY,
+        _SSLCERTMODE_KEY,
+        _SSL_MIN_PROTOCOL_VERSION_KEY,
+    }
+)
 _FORBIDDEN_LIBPQ_ENVIRONMENT = frozenset(
     {
         "PGAPPNAME",
@@ -256,6 +269,21 @@ def _prepared_connection_params(dsn: str) -> dict[str, str]:
     root_certificate = Path(params.get(_SSLROOTCERT_KEY, "").strip())
     if not root_certificate.is_absolute():
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PREPARED_ROOT_CERT_PATH_INVALID")
+    if params.get(_GSSENCMODE_KEY, "").strip().lower() != _PREPARED_GSSENCMODE:
+        raise TimewebPostgresTlsError(
+            "TIMEWEB_PG_TLS_PREPARED_GSS_ENCRYPTION_INVALID"
+        )
+    if params.get(_SSLCERTMODE_KEY, "").strip().lower() != _PREPARED_SSLCERTMODE:
+        raise TimewebPostgresTlsError(
+            "TIMEWEB_PG_TLS_PREPARED_CLIENT_CERT_MODE_INVALID"
+        )
+    if (
+        params.get(_SSL_MIN_PROTOCOL_VERSION_KEY, "").strip()
+        != _PREPARED_SSL_MIN_PROTOCOL_VERSION
+    ):
+        raise TimewebPostgresTlsError(
+            "TIMEWEB_PG_TLS_PREPARED_TLS_MIN_VERSION_INVALID"
+        )
     return params
 
 
@@ -588,15 +616,21 @@ def resolve_timeweb_postgres_dsn(
             raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
         _validate_ca(ca_path.read_bytes())
         absolute_ca = ca_path.resolve(strict=True)
+        prepared_options = {
+            _SSLROOTCERT_KEY: str(absolute_ca),
+            _GSSENCMODE_KEY: _PREPARED_GSSENCMODE,
+            _SSLCERTMODE_KEY: _PREPARED_SSLCERTMODE,
+            _SSL_MIN_PROTOCOL_VERSION_KEY: _PREPARED_SSL_MIN_PROTOCOL_VERSION,
+        }
         if hostaddr is None:
-            return make_conninfo(dsn, sslrootcert=str(absolute_ca))
+            return make_conninfo(dsn, **prepared_options)
         address = ipaddress.ip_address(hostaddr)
         if not address.is_global:
             raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID)
         prepared_dsn = make_conninfo(
             dsn,
-            sslrootcert=str(absolute_ca),
             hostaddr=address.compressed,
+            **prepared_options,
         )
         _prepared_connection_params(prepared_dsn)
         return prepared_dsn

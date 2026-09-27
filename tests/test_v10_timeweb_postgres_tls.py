@@ -65,6 +65,9 @@ def _prepared_dsn(tmp_path: Path) -> str:
         VALID_DSN,
         sslrootcert=str((tmp_path / "timeweb-postgres-root.crt").resolve()),
         hostaddr=_PUBLIC_ADDRESS,
+        gssencmode="disable",
+        sslcertmode="disable",
+        ssl_min_protocol_version="TLSv1.2",
     )
 
 
@@ -90,6 +93,9 @@ def test_resolve_rewrites_only_local_ca_path(
     prepared = conninfo_to_dict(resolved)
     assert original["sslrootcert"] == tls.TIMEWEB_POSTGRES_SSLROOTCERT
     assert prepared["sslrootcert"] == str(ca_path.resolve())
+    assert prepared["gssencmode"] == "disable"
+    assert prepared["sslcertmode"] == "disable"
+    assert prepared["ssl_min_protocol_version"] == "TLSv1.2"
     for field in ("host", "port", "dbname", "user", "sslmode"):
         assert prepared[field] == original[field]
 
@@ -115,6 +121,10 @@ def test_resolve_rewrites_only_local_ca_path(
         ),
         (
             f"{VALID_DSN} hostaddr=10.0.0.10",
+            "TIMEWEB_PG_TLS_DSN_PARAMETER_FORBIDDEN",
+        ),
+        (
+            f"{VALID_DSN} gssencmode=disable",
             "TIMEWEB_PG_TLS_DSN_PARAMETER_FORBIDDEN",
         ),
         (
@@ -150,6 +160,38 @@ def test_prepared_connection_requires_public_pinned_hostaddr(tmp_path: Path) -> 
         match="TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID",
     ):
         tls._prepared_connection_params(private)
+
+
+@pytest.mark.parametrize(
+    ("parameter", "value", "code"),
+    [
+        (
+            "gssencmode",
+            "prefer",
+            "TIMEWEB_PG_TLS_PREPARED_GSS_ENCRYPTION_INVALID",
+        ),
+        (
+            "sslcertmode",
+            "allow",
+            "TIMEWEB_PG_TLS_PREPARED_CLIENT_CERT_MODE_INVALID",
+        ),
+        (
+            "ssl_min_protocol_version",
+            "TLSv1.0",
+            "TIMEWEB_PG_TLS_PREPARED_TLS_MIN_VERSION_INVALID",
+        ),
+    ],
+)
+def test_prepared_connection_rejects_authenticated_transport_downgrade(
+    tmp_path: Path,
+    parameter: str,
+    value: str,
+    code: str,
+) -> None:
+    prepared = _prepared_dsn(tmp_path)
+    downgraded = make_conninfo(prepared, **{parameter: value})
+    with pytest.raises(tls.TimewebPostgresTlsError, match=code):
+        tls._prepared_connection_params(downgraded)
 
 
 def test_prepared_connection_rejects_relative_ca_path() -> None:
