@@ -572,7 +572,9 @@ def _verify_terminal_shape():
         )
         self.assertEqual(api.get.call_count, 2)
 
-    def test_start_wait_can_converge_after_many_safe_starting_observations(self) -> None:
+    def test_start_wait_can_converge_after_many_safe_starting_observations(
+        self,
+    ) -> None:
         api = mock.Mock()
         starting = {
             "db": {
