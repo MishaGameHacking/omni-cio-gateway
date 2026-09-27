@@ -84,10 +84,10 @@ _HOST_RE = re.compile(
     r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
     re.ASCII,
 )
-_RFC1918_NETWORKS = (
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
+_RFC1918_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network((0x0A000000, 8)),
+    ipaddress.IPv4Network((0xAC100000, 12)),
+    ipaddress.IPv4Network((0xC0A80000, 16)),
 )
 _TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS = frozenset({1, 2, 3})
 _RETIRED_ENV_MARKERS = ("CLOUDFLARE", "NEON", "RENDER", "CLOUDRU")
@@ -679,6 +679,27 @@ def _stop_healthz_retry(failure: str | None, status: int | None) -> NoReturn:
     _stop("TIMEWEB_APP_RELEASE_HEALTHZ_TRANSPORT_FAILED")
 
 
+def _healthz_state(payload: dict[str, Any], expected: str) -> tuple[bool, bool]:
+    if payload.get("synthetic_preview") is not False:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN")
+    observed = _sha(
+        payload.get("release_sha"),
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_INVALID",
+    )
+    database_ready = (
+        payload.get("status") == "ok" and payload.get("database") == "READY"
+    )
+    return database_ready, observed == expected
+
+
+def _stop_healthz_terminal(*, database_ready: bool, release_matches: bool) -> NoReturn:
+    if not release_matches:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT")
+    if not database_ready:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY")
+    raise AssertionError("unreachable healthz terminal state")
+
+
 def _verify_healthz(hostname: str, expected: str, *, opener: Any | None = None) -> None:
     request = Request(
         f"https://{hostname}/healthz",
@@ -689,26 +710,22 @@ def _verify_healthz(hostname: str, expected: str, *, opener: Any | None = None) 
         method="GET",
     )
     active = opener or _NO_REDIRECT_OPENER
-    for attempt in range(len(_HEALTHZ_RETRY_DELAYS) + 1):
+    last_attempt = len(_HEALTHZ_RETRY_DELAYS)
+    for attempt in range(last_attempt + 1):
         payload, failure, status = _healthz_attempt(active, request)
         if payload is None:
-            if attempt >= len(_HEALTHZ_RETRY_DELAYS):
+            if attempt == last_attempt:
                 _stop_healthz_retry(failure, status)
             time.sleep(_HEALTHZ_RETRY_DELAYS[attempt])
             continue
-        if payload.get("synthetic_preview") is not False:
-            _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN")
-        observed = _sha(
-            payload.get("release_sha"),
-            "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_INVALID",
-        )
-        ready = payload.get("status") == "ok" and payload.get("database") == "READY"
-        if ready and observed == expected:
+        database_ready, release_matches = _healthz_state(payload, expected)
+        if database_ready and release_matches:
             return
-        if attempt >= len(_HEALTHZ_RETRY_DELAYS):
-            if observed != expected:
-                _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT")
-            _stop("TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY")
+        if attempt == last_attempt:
+            _stop_healthz_terminal(
+                database_ready=database_ready,
+                release_matches=release_matches,
+            )
         time.sleep(_HEALTHZ_RETRY_DELAYS[attempt])
     raise AssertionError("bounded database readiness verification exhausted")
 
