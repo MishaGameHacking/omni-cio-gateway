@@ -246,8 +246,10 @@ def _verify_terminal_shape():
         start_budget = sum(provisioner._START_DELAYS_SECONDS)
         self.assertGreaterEqual(reconcile_budget, 180.0)
         self.assertLess(reconcile_budget, 10 * 60)
-        self.assertGreaterEqual(start_budget, 240.0)
-        self.assertLess(start_budget, 10 * 60)
+        self.assertGreaterEqual(start_budget, 600.0)
+        self.assertLess(start_budget, 13 * 60)
+        workflow_budget = 20 * 60
+        self.assertGreaterEqual(workflow_budget - start_budget, 300.0)
 
     def test_ambiguous_post_reconciles_by_get_without_second_post(self) -> None:
         mutation_opener = _sequence_opener(OSError("lost response"))
@@ -538,6 +540,83 @@ def _verify_terminal_shape():
             raised.exception.code,
             "TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT",
         )
+
+    def test_start_wait_classifies_persistent_starting_state_separately(self) -> None:
+        api = mock.Mock()
+        starting = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "status": "starting",
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+            }
+        }
+        api.get.side_effect = [starting, starting]
+        with self.assertRaises(
+            provisioner._provider_base.ProvisioningStopped
+        ) as raised:
+            provisioner._wait_for_started(
+                api,
+                91,
+                provider_type="postgres18",
+                preset_id=777,
+                sleeper=lambda _seconds: None,
+                delays=(0.0,),
+            )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT",
+        )
+        self.assertEqual(api.get.call_count, 2)
+
+    def test_start_wait_can_converge_after_many_safe_starting_observations(self) -> None:
+        api = mock.Mock()
+        starting = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "status": "starting",
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+            }
+        }
+        started = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "availability_zone": "msk-1",
+                "cpu": 1,
+                "ram": 2048,
+                "preset_id": 777,
+                "disk": {"size": 20_971_520, "used": 0},
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+                "is_autobackups_enabled": False,
+                "is_backup_schedule_enabled": False,
+                "replica_list": [{"id": 501, "db_id": 91}],
+                "disk_autoscaling": {"is_enabled": False},
+                "status": "started",
+            }
+        }
+        api.get.side_effect = [starting] * 6 + [started]
+        sleeps: list[float] = []
+        provisioner._wait_for_started(
+            api,
+            91,
+            provider_type="postgres18",
+            preset_id=777,
+            sleeper=sleeps.append,
+            delays=(0.0,) * 6,
+        )
+        self.assertEqual(api.get.call_count, 7)
+        self.assertEqual(sleeps, [0.0] * 6)
 
     def test_post_create_shape_requires_no_paid_addons(self) -> None:
         payload = {
