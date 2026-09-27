@@ -441,6 +441,29 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_hosted_runtime_eager_ca_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / HOSTED_RUNTIME_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            eager_source = source.replace(
+                "database_ca = _LazyTimewebPostgresCa()",
+                "database_ca = install_timeweb_postgres_ca()",
+                1,
+            ).replace(
+                "database_ca.resolve()",
+                "database_ca",
+                1,
+            )
+            self.assertNotEqual(eager_source, source)
+            path.write_text(eager_source, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_rejects_hosted_runtime_without_tls_preparation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
