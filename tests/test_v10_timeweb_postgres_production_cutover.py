@@ -25,6 +25,7 @@ SPEC.loader.exec_module(guard)
 WORKFLOW_RELATIVE = Path(
     ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 )
+NETWORK_SCOPE_RELATIVE = Path("scripts/timeweb_postgres_production_network_scope.py")
 
 DEPENDENCIES = (
     "docs/architecture/V10_TIMEWEB_POSTGRES_PRODUCTION_CUTOVER_CONTRACT.json",
@@ -32,7 +33,7 @@ DEPENDENCIES = (
     "scripts/timeweb_postgres_production_cutover.py",
     "apps/api/hosted_runtime.py",
     "apps/api/timeweb_postgres_tls.py",
-    "scripts/timeweb_postgres_production_network_scope.py",
+    NETWORK_SCOPE_RELATIVE.as_posix(),
     "scripts/discover_v10_ru_pg_verifier_ipv4.py",
     WORKFLOW_RELATIVE.as_posix(),
     "infrastructure/postgres/hosted-postgres-runtime-contract.json",
@@ -495,7 +496,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = root / "scripts/timeweb_postgres_production_network_scope.py"
+            path = root / NETWORK_SCOPE_RELATIVE
             source = path.read_text(encoding="utf-8")
             path.write_text(
                 source
@@ -547,7 +548,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy(root)
-            path = root / "scripts/timeweb_postgres_production_network_scope.py"
+            path = root / NETWORK_SCOPE_RELATIVE
             source = path.read_text(encoding="utf-8")
             path.write_text(
                 source.replace(
