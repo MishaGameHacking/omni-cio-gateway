@@ -145,6 +145,10 @@ def _validate_runtime_contract(runtime: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_POLICY_DRIFT")
 
     expected_capacity = {
+        "private_postgres_hostaddr_env": "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        "private_postgres_network_cidr_env": "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        "private_postgres_route_required": True,
+        "private_postgres_tls_hostname_identity_from_dsn": True,
         "postgres_pool_max_size": 4,
         "postgres_pool_acquire_timeout_seconds": 5,
         "single_serialized_runtime_connection_allowed": False,
