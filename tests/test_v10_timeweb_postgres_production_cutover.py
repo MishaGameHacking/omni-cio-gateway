@@ -253,6 +253,33 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             )
         prepare_dsns.assert_not_called()
 
+    def test_app_binding_revalidates_private_database_route(self) -> None:
+        expected_sha = "a" * 40
+        envs = {
+            cutover.app_release.POSTGRES_DSN_ENV: RUNTIME_DSN,
+            cutover.app_release.RELEASE_SHA_ENV: expected_sha,
+            cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
+            cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
+            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: "192.168.0.5",
+            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: "192.168.0.0/24",
+        }
+        with (
+            mock.patch.dict(
+                cutover.os.environ,
+                {cutover.app_release.TOKEN_ENV: "token"},
+                clear=False,
+            ),
+            mock.patch.object(cutover.app_release, "TimewebAppApi", return_value=object()),
+            mock.patch.object(cutover, "_app_envs", return_value=envs),
+            mock.patch.object(
+                cutover.app_release,
+                "validate_private_route_env",
+            ) as validate_private_route,
+        ):
+            cutover._verify_app_binding(expected_sha, RUNTIME_DSN)
+
+        validate_private_route.assert_called_once_with(envs)
+
     def test_guard_rejects_mutation_in_observe_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -314,6 +341,25 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
                 TRANSPORT_INVALID,
+            ):
+                guard.validate(root)
+
+    def test_rejects_app_binding_without_private_route_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "    app_release.validate_private_route_env(envs)\n",
+                "",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            controller.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_CONTROLLER_DRIFT",
             ):
                 guard.validate(root)
 
