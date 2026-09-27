@@ -46,6 +46,8 @@ RULES_KEY = "rules"
 GROUP_KEY = "group"
 RESOURCES_KEY = "resources"
 TOTAL_KEY = "total"
+FIELD_VALUE_PARAMS = ("field", "value")
+FIELD_VALUE_CODE_PARAMS = (*FIELD_VALUE_PARAMS, "code")
 
 
 class FakeApi:
@@ -214,7 +216,7 @@ def test_rejects_malformed_domain_entry_even_with_exact_target() -> None:
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "code"),
+    FIELD_VALUE_CODE_PARAMS,
     [
         ("status", "starting", "TIMEWEB_PG_PRODUCTION_NETWORK_CLUSTER_NOT_READY"),
         ("port", 5433, "TIMEWEB_PG_PRODUCTION_NETWORK_PORT_DRIFT"),
@@ -353,7 +355,7 @@ def test_rejects_multiple_bound_public_ipv4s() -> None:
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    FIELD_VALUE_PARAMS,
     [
         ("ip", "10.0.0.1"),
         ("is_ddos_guard", True),
@@ -447,7 +449,7 @@ def test_rejects_malformed_firewall_rule_id() -> None:
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    FIELD_VALUE_PARAMS,
     [("direction", "egress"), ("protocol", "udp"), ("port", "5433")],
 )
 def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
