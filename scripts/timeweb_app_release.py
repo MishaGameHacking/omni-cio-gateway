@@ -394,16 +394,23 @@ class TimewebAppApi:
 def _canonical_repository_url(value: object) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
-    parsed = urlsplit(value.strip())
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except ValueError:
+        return False
     path = parsed.path.rstrip("/")
-    if path.endswith(".git"):
+    if path.casefold().endswith(".git"):
         path = path[:-4]
     return (
-        parsed.scheme == "https"
-        and parsed.netloc == "github.com"
+        parsed.scheme.casefold() == "https"
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.hostname == "github.com"
+        and port in {None, 443}
         and parsed.query == ""
         and parsed.fragment == ""
-        and path == CANONICAL_REPOSITORY_PATH
+        and path.casefold() == CANONICAL_REPOSITORY_PATH.casefold()
     )
 
 
