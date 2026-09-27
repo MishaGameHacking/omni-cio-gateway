@@ -54,7 +54,7 @@ def _list(value: object, code: str) -> list[Any]:
 def _meta_total(body: dict[str, Any], code: str) -> int:
     meta = _mapping(body.get("meta"), code)
     total = meta.get("total")
-    if type(total) is not int or total < 0:
+    if not isinstance(total, int) or isinstance(total, bool) or total < 0:
         _stop(code)
     return total
 

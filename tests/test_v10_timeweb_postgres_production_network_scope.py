@@ -361,6 +361,16 @@ def test_rejects_invalid_bound_public_ipv4(field: str, value: object) -> None:
         _verify(responses)
 
 
+def test_rejects_boolean_meta_total() -> None:
+    responses = _responses()
+    responses[FLOATING_IPS_PATH]["meta"][TOTAL_KEY] = True
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FLOATING_IP_INVENTORY_INVALID",
+    ):
+        _verify(responses)
+
+
 def test_rejects_incomplete_floating_ip_inventory() -> None:
     responses = _responses()
     responses[FLOATING_IPS_PATH]["meta"][TOTAL_KEY] = 2
