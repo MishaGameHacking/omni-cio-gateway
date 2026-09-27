@@ -13,6 +13,7 @@ POSTGRES_PORT = "5432"
 SYNTHETIC_CLUSTER_NAME = "omni-cio-v10-ru-pg-synthetic"
 _VERIFIER_CIDR_INVALID = "TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID"
 _DOMAINS_INVALID = "TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID"
+_PUBLIC_IPV4_BINDING_INVALID = "TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID"
 _PAGE_SIZE = 100
 _MAX_PAGES = 10
 _MAX_DATABASES = 1000
@@ -267,7 +268,7 @@ def _bound_public_ipv4_identity(
     )
     resource_type = row.get("resource_type")
     if resource_type not in _FIREWALL_RESOURCE_TYPES:
-        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+        _stop(_PUBLIC_IPV4_BINDING_INVALID)
     resource_id = _safe_id(
         row.get("resource_id"),
         "TIMEWEB_PG_PRODUCTION_FLOATING_IP_RESOURCE_ID_INVALID",
@@ -275,7 +276,7 @@ def _bound_public_ipv4_identity(
     try:
         address = ipaddress.ip_address(str(row.get("ip", "")))
     except ValueError:
-        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+        _stop(_PUBLIC_IPV4_BINDING_INVALID)
     zone = _safe_id(
         row.get("availability_zone"),
         "TIMEWEB_PG_PRODUCTION_FLOATING_IP_ZONE_INVALID",
@@ -287,7 +288,7 @@ def _bound_public_ipv4_identity(
         or zone != availability_zone
         or row.get("is_ddos_guard") is not False
     ):
-        _stop("TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_BINDING_INVALID")
+        _stop(_PUBLIC_IPV4_BINDING_INVALID)
     return floating_ip_id, str(address), resource_type, resource_id
 
 
