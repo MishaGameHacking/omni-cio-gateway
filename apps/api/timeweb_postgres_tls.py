@@ -85,6 +85,12 @@ _TIMEWEB_TECHNICAL_DOMAIN_SUFFIXES = (
     ".twc1.net",
     ".webtm.ru",
 )
+_RFC1918_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+)
+_TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS = frozenset({1, 2, 3})
 _ALLOWED_EXTERNAL_DSN_PARAMETERS = frozenset(
     {
         "dbname",
@@ -250,7 +256,62 @@ def _connection_params(dsn: str) -> dict[str, str]:
     return params
 
 
-def _prepared_connection_params(dsn: str) -> dict[str, str]:
+def _private_ipv4_network(cidr: str) -> ipaddress.IPv4Network:
+    try:
+        network = ipaddress.ip_network(cidr.strip(), strict=True)
+    except ValueError:
+        raise TimewebPostgresTlsError(
+            "TIMEWEB_PG_TLS_PRIVATE_NETWORK_INVALID"
+        ) from None
+    if not isinstance(network, ipaddress.IPv4Network) or not any(
+        network.subnet_of(parent) for parent in _RFC1918_NETWORKS
+    ):
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PRIVATE_NETWORK_INVALID")
+    return network
+
+
+def _private_ipv4_address(
+    value: str,
+    network: ipaddress.IPv4Network,
+) -> ipaddress.IPv4Address:
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        raise TimewebPostgresTlsError(
+            "TIMEWEB_PG_TLS_PRIVATE_HOSTADDR_INVALID"
+        ) from None
+    if (
+        not isinstance(address, ipaddress.IPv4Address)
+        or address not in network
+        or address in {network.network_address, network.broadcast_address}
+        or (int(address) & 0xFF) in _TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS
+    ):
+        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PRIVATE_HOSTADDR_INVALID")
+    return address
+
+
+def _prepared_hostaddr(
+    raw_hostaddr: str,
+    *,
+    private_network_cidr: str | None,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    try:
+        address = ipaddress.ip_address(raw_hostaddr)
+    except ValueError:
+        raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID) from None
+    if private_network_cidr is None:
+        if not address.is_global:
+            raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID)
+        return address
+    network = _private_ipv4_network(private_network_cidr)
+    return _private_ipv4_address(raw_hostaddr, network)
+
+
+def _prepared_connection_params(
+    dsn: str,
+    *,
+    private_network_cidr: str | None = None,
+) -> dict[str, str]:
     params = _parse_conninfo(dsn)
     if set(params) - _PREPARED_DSN_PARAMETERS:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PREPARED_DSN_PARAMETER_FORBIDDEN")
@@ -259,12 +320,10 @@ def _prepared_connection_params(dsn: str) -> dict[str, str]:
     raw_hostaddr = params.get("hostaddr", "").strip()
     if not raw_hostaddr:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PREPARED_HOSTADDR_REQUIRED")
-    try:
-        address = ipaddress.ip_address(raw_hostaddr)
-    except ValueError:
-        raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID) from None
-    if not address.is_global:
-        raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID)
+    _prepared_hostaddr(
+        raw_hostaddr,
+        private_network_cidr=private_network_cidr,
+    )
 
     root_certificate = Path(params.get(_SSLROOTCERT_KEY, "").strip())
     if not root_certificate.is_absolute():
@@ -531,6 +590,41 @@ def _probe_transport_once(
     raise TimewebPostgresTlsError(_TLS_TCP_FAILED)
 
 
+def _probe_private_transport_with_retry(
+    hostname: str,
+    address: str,
+    context: Any,
+    *,
+    connector: Any,
+    sleeper: Sleep,
+    delays: tuple[float, ...],
+) -> str:
+    attempts = len(delays) + 1
+    for attempt in range(attempts):
+        try:
+            _probe_postgres_tls_endpoint(
+                hostname,
+                address,
+                context,
+                connector=connector,
+            )
+        except TimewebPostgresTlsError as exc:
+            if exc.code not in _TRANSIENT_TRANSPORT_CODES or attempt + 1 >= attempts:
+                raise
+            _emit(
+                "TIMEWEB_PG_TLS_PRIVATE_TRANSPORT_RETRY "
+                f"code={exc.code} attempt={attempt + 2}/{attempts}"
+            )
+            sleeper(delays[attempt])
+            continue
+        _emit(
+            "TIMEWEB_PG_TLS_PRIVATE_TRANSPORT=READY "
+            "tcp=5432 tls=verify-full route=private"
+        )
+        return address
+    raise AssertionError("bounded Timeweb PostgreSQL private transport retry exhausted")
+
+
 def _validate_probe_ca(ca_path: Path) -> None:
     try:
         if ca_path.is_symlink() or not ca_path.is_file():
@@ -600,11 +694,40 @@ def probe_timeweb_postgres_transport(
     )
 
 
+def probe_timeweb_postgres_private_transport(
+    dsn: str,
+    ca_path: Path,
+    *,
+    private_hostaddr: str,
+    private_network_cidr: str,
+    connector: Any = socket.create_connection,
+    context_factory: Any = _tls_client_context,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _TRANSPORT_RETRY_DELAYS_SECONDS,
+) -> str:
+    _reject_ambient_libpq_environment()
+    params = _connection_params(dsn)
+    network = _private_ipv4_network(private_network_cidr)
+    address = _private_ipv4_address(private_hostaddr, network)
+    _validate_probe_ca(ca_path)
+    context = context_factory(ca_path)
+    hostname = params["host"].strip().lower().rstrip(".")
+    return _probe_private_transport_with_retry(
+        hostname,
+        address.compressed,
+        context,
+        connector=connector,
+        sleeper=sleeper,
+        delays=delays,
+    )
+
+
 def resolve_timeweb_postgres_dsn(
     dsn: str,
     ca_path: Path,
     *,
     hostaddr: str | None = None,
+    private_network_cidr: str | None = None,
 ) -> str:
     _connection_params(dsn)
     try:
@@ -620,15 +743,19 @@ def resolve_timeweb_postgres_dsn(
         }
         if hostaddr is None:
             return make_conninfo(dsn, **prepared_options)
-        address = ipaddress.ip_address(hostaddr)
-        if not address.is_global:
-            raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID)
+        address = _prepared_hostaddr(
+            hostaddr,
+            private_network_cidr=private_network_cidr,
+        )
         prepared_dsn = make_conninfo(
             dsn,
             hostaddr=address.compressed,
             **prepared_options,
         )
-        _prepared_connection_params(prepared_dsn)
+        _prepared_connection_params(
+            prepared_dsn,
+            private_network_cidr=private_network_cidr,
+        )
         return prepared_dsn
     except TimewebPostgresTlsError:
         raise
@@ -705,13 +832,17 @@ def connect_prepared_timeweb_postgres(
     *,
     failure_prefix: str,
     connect_timeout: int = 15,
+    private_network_cidr: str | None = None,
     retry_delays: tuple[float, ...] = _CONNECT_RETRY_DELAYS_SECONDS,
     sleeper: Sleep = time.sleep,
     connector: Any = psycopg.connect,
     autocommit: bool | None = None,
 ) -> Any:
     _reject_ambient_libpq_environment()
-    _prepared_connection_params(dsn)
+    _prepared_connection_params(
+        dsn,
+        private_network_cidr=private_network_cidr,
+    )
     if _FAILURE_PREFIX_RE.fullmatch(failure_prefix) is None:
         raise TimewebPostgresTlsError(_CONNECT_FAILURE_PREFIX_INVALID)
     if connect_timeout <= 0:
@@ -739,6 +870,36 @@ def connect_prepared_timeweb_postgres(
         except OSError:
             raise TimewebPostgresTlsError(f"{failure_prefix}_CLIENT_FAILURE") from None
     raise AssertionError("bounded Timeweb PostgreSQL connection retry exhausted")
+
+
+def prepare_timeweb_postgres_private_target(
+    dsn: str,
+    ca_path: Path,
+    *,
+    private_hostaddr: str,
+    private_network_cidr: str,
+    sleeper: Sleep = time.sleep,
+    transport_delays: tuple[float, ...] = _TRANSPORT_RETRY_DELAYS_SECONDS,
+    connector: Any = socket.create_connection,
+    context_factory: Any = _tls_client_context,
+) -> str:
+    _connection_params(dsn)
+    verified_address = probe_timeweb_postgres_private_transport(
+        dsn,
+        ca_path,
+        private_hostaddr=private_hostaddr,
+        private_network_cidr=private_network_cidr,
+        connector=connector,
+        context_factory=context_factory,
+        sleeper=sleeper,
+        delays=transport_delays,
+    )
+    return resolve_timeweb_postgres_dsn(
+        dsn,
+        ca_path,
+        hostaddr=verified_address,
+        private_network_cidr=private_network_cidr,
+    )
 
 
 def prepare_timeweb_postgres_target(
