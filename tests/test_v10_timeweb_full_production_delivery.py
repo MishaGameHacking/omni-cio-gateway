@@ -160,10 +160,29 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
         )
         self.assertTrue(runtime["private_postgres_tls_hostname_identity_from_dsn"])
+        self.assertFalse(runtime["liveness_startup_database_dependency_allowed"])
+        self.assertTrue(runtime["database_pool_lazy_initialization_required"])
         self.assertEqual(runtime["postgres_pool_max_size"], 4)
         self.assertEqual(runtime["postgres_pool_acquire_timeout_seconds"], 5)
         self.assertFalse(runtime["single_serialized_runtime_connection_allowed"])
         self.assertFalse(runtime["session_lookup_event_loop_blocking_allowed"])
+
+    def test_rejects_liveness_database_startup_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["runtime"]["liveness_startup_database_dependency_allowed"] = True
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT",
+            ):
+                guard.validate(root)
 
     def test_rejects_private_database_route_downgrade(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
