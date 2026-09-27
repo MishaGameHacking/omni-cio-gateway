@@ -385,7 +385,7 @@ def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_verify_locations(cafile=str(ca_path))
-    except (OSError, ssl.SSLError):
+    except OSError:
         raise TimewebPostgresTlsError(_TLS_CA_INVALID) from None
     return context
 
@@ -736,5 +736,3 @@ def prepare_timeweb_postgres_target(
         ca_path,
         hostaddr=verified_address,
     )
-
-

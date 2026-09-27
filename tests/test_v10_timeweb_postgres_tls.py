@@ -668,12 +668,13 @@ def test_connect_classifier_does_not_retry_authentication_rejection(
         calls += 1
         raise psycopg.errors.InvalidPassword("authentication rejected")
 
+    prepared_dsn = _prepared_dsn(tmp_path)
     with pytest.raises(
         tls.TimewebPostgresTlsError,
         match="TIMEWEB_PG_TEST_AUTHENTICATION_REJECTED",
     ):
         tls.connect_prepared_timeweb_postgres(
-            _prepared_dsn(tmp_path),
+            prepared_dsn,
             failure_prefix="TIMEWEB_PG_TEST",
             connector=connector,
             sleeper=sleeps.append,
@@ -695,12 +696,13 @@ def test_connect_classifier_maps_database_not_found_without_retry(
         calls += 1
         raise psycopg.errors.InvalidCatalogName("catalog rejected")
 
+    prepared_dsn = _prepared_dsn(tmp_path)
     with pytest.raises(
         tls.TimewebPostgresTlsError,
         match="TIMEWEB_PG_TEST_DATABASE_NOT_FOUND",
     ):
         tls.connect_prepared_timeweb_postgres(
-            _prepared_dsn(tmp_path),
+            prepared_dsn,
             failure_prefix="TIMEWEB_PG_TEST",
             connector=connector,
             retry_delays=(0.0,),
@@ -720,12 +722,13 @@ def test_connect_classifier_does_not_retry_unclassified_client_failure(
         calls += 1
         raise psycopg.OperationalError("opaque hidden client failure")
 
+    prepared_dsn = _prepared_dsn(tmp_path)
     with pytest.raises(
         tls.TimewebPostgresTlsError,
         match="TIMEWEB_PG_TEST_UNCLASSIFIED_CLIENT_FAILURE",
     ):
         tls.connect_prepared_timeweb_postgres(
-            _prepared_dsn(tmp_path),
+            prepared_dsn,
             failure_prefix="TIMEWEB_PG_TEST",
             connector=connector,
             retry_delays=(0.0,),

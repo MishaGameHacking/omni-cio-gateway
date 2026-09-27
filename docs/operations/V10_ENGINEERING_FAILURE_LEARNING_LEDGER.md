@@ -1002,3 +1002,27 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** for security- or authority-bearing runtime paths, file-wide string presence may support a guard but cannot be its only proof. Freeze the owning function and forbidden bypass calls structurally, and update the negative mutation whenever the architecture changes.
 
 **Dependency/tooling knowledge change:** none.
+
+---
+
+## FL-043 — Final exact-head static quality must isolate throw sites and honor exception inheritance
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 exact head `04ccb6b536d3f729efe231ff92db4c7157cbb37f`
+
+**Symptom / failing gate:** the authoritative Windows merge gate completed successfully, but Fast PR and WP17 rejected one Ruff 0.16.1 formatting drift in `apps/api/timeweb_postgres_tls.py`. SonarQube Cloud passed its Quality Gate but still reported four new maintainability findings: one redundant `ssl.SSLError` catch next to its superclass `OSError`, plus three expected-exception tests whose context also constructed the prepared DSN.
+
+**Root cause:** the final connector-authored cleanup was not projected through the exact pinned formatter before publication, and three negative connection-classifier tests left setup work inside the expected-exception context. The TLS-context catch also encoded both a superclass and its subclass even though Python defines `ssl.SSLError` as an `OSError` subtype.
+
+**Blast radius searched:** every exception handler in the shared Timeweb PostgreSQL adapter, every `pytest.raises` / `assertRaises` block in the P3 changed test surfaces, hosted-runtime reconnect consumers, P3 controller/guard consumers, and current exact-head Fast PR/WP17/Windows/Sonar evidence. No provider mutation, database mutation, tenant/public-user/Telegram authority, broker-write authority, or Real-money setting is implicated.
+
+**Why preflight missed it:** the connector-only environment cannot execute repository-pinned Ruff/Sonar locally. The functional Regression Shield and Windows gate proved runtime behavior, but format projection and Sonar's single-throw-site maintainability rule remain independent acceptance surfaces.
+
+**Corrective change:** retain one `except OSError` branch for TLS-context construction because it already covers `ssl.SSLError`; precompute each prepared DSN before entering the three expected-exception contexts; and normalize the adapter EOF to the exact Ruff shape. No retry, TLS, DNS, CA, credential, reconnect, role, or authority behavior changes.
+
+**Permanent regression/guard:** the existing exact-head Ruff gates and Sonar analysis remain unchanged, while the corrected negative tests now prove only the intended connector call can satisfy their expected exception. Future expected-exception tests must complete setup before the assertion context.
+
+**Future prevention rule:** final release hardening must treat formatter output, static exception-hierarchy analysis, and single-throw-site exception tests as first-class exact-head evidence even when the full runtime regression suite is already GREEN.
+
+**Dependency/tooling knowledge change:** Python 3.12 documents `ssl.SSLError` as a subtype of `OSError`; catching both in the same tuple is redundant.
+
