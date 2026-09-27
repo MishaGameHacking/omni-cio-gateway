@@ -324,9 +324,27 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             path = root / HOSTED_RUNTIME_RELATIVE
             source = path.read_text(encoding=TEXT_ENCODING)
             mutated = source.replace(
-                "prepared_dsn = prepare_timeweb_postgres_target("
-                "external_database_dsn, ca_path)",
-                "prepared_dsn = external_database_dsn",
+                "prepared_dsn = prepare_timeweb_postgres_private_target(",
+                "prepared_dsn = prepare_timeweb_postgres_target(",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_hosted_runtime_without_private_route_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / HOSTED_RUNTIME_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "private_network_cidr=private_network_cidr,",
+                "private_network_cidr=None,",
                 1,
             )
             self.assertNotEqual(mutated, source)
