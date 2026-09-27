@@ -499,7 +499,7 @@ def _expected_runtime_env(expected: str, runtime_mode: str) -> dict[str, str]:
     }
 
 
-def _validate_private_route_env(envs: dict[str, Any]) -> None:
+def validate_private_route_env(envs: dict[str, Any]) -> None:
     raw_hostaddr = envs.get(POSTGRES_PRIVATE_HOSTADDR_ENV)
     raw_cidr = envs.get(POSTGRES_PRIVATE_NETWORK_CIDR_ENV)
     if (
@@ -538,7 +538,7 @@ def _validate_runtime_env(app: dict[str, Any], expected: str, runtime_mode: str)
         _stop("TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED")
     _mask(dsn)
 
-    _validate_private_route_env(envs)
+    validate_private_route_env(envs)
 
     retired_names = [
         str(name)
