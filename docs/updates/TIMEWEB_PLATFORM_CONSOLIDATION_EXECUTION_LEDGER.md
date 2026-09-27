@@ -728,3 +728,16 @@ scope, reconnect/failover and recovery. It must not assume a stable App Platform
 egress IP, widen PostgreSQL to `0.0.0.0/0`, move the production IPv4, or weaken
 `sslmode=verify-full`.
 
+### App Platform private PostgreSQL route — 2026-09-27
+
+Accepted base: `3326da2314010f510fb48775e21209a3ba165b0f`.
+Focused branch: `fix/timeweb-app-private-postgres-route`.
+
+Sanitized OWNER provider observation proves the production PostgreSQL target and prospective `omni-cio-v10` App can be placed in the same existing Timeweb private network and that PostgreSQL exposes a private TCP/5432 connection path with protected connection enabled. No credential, DSN, private address, provider resource identifier or token is recorded in the repository. The existing production public IPv4 remains immutable for this repair.
+
+Source defect: P3 verifies the production database through the self-hosted verifier/public `/32` path, while the hosted runtime previously forced the same public-hostaddr model. That does not prove the Timeweb App can traverse its own route. P2 also accepted process-only `/livez`, allowing database-route failure to escape until a later gate.
+
+Repair scope: explicit scoped RFC1918 App-to-PostgreSQL transport with technical-domain `verify-full` identity, per-connection SSLRequest/TLS re-proof, unchanged P3 public verifier route, exact candidate `/livez` plus `/healthz database=READY synthetic_preview=false`, contract/guard/runbook/test updates and FL-045. App creation, paid capacity, DNS, database cutover, public-user activation, Telegram activation, broker write and Real-money execution are not performed by this branch.
+
+Next evidence: focused source verification -> Draft PR exact-head CI/Sonar/review -> READY verification -> explicit landing confirmation -> squash merge -> exact-main post-merge verification. Only then may the OWNER complete the already prepared Timeweb App order with the accepted network/runtime bindings.
+
