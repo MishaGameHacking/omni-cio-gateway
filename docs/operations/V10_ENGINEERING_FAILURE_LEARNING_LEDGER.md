@@ -932,3 +932,119 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** every regex used as an authority or transport validator must have at least one positive-path regression that proves representative valid input reaches downstream predicates; negative-only regex tests can pass for the wrong rejection reason.
 
 **Dependency/tooling knowledge change:** none.
+
+
+---
+
+## FL-040 — A successful source/TLS contract is not a live database transport proof
+
+**Date:** 2026-09-26  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / manual run `36276384123` / accepted main `2a7c7104e4e0d5bd2e6eee2f9b87fd71ed7b822d`
+
+**Symptom / failing gate:** P3 exact-main/source/environment policy passed and the portable Timeweb CA was materialized, but the first production bootstrap connection exhausted seven attempts. Each attempt consumed approximately the configured 15-second connection timeout. The only terminal evidence was `TIMEWEB_PG_PRODUCTION_BOOTSTRAP_CONNECTION_FAILED`.
+
+**Root cause:** the source boundary proved DSN syntax, provider CA custody and verify-full configuration, but it did not independently prove the credential-free live path from the execution environment through provider DNS, public routing/firewall, TCP/5432 and PostgreSQL SSLRequest/TLS before presenting a database password. The old connection boundary also treated every client-side `OperationalError` without SQLSTATE as transient and collapsed the final result into one generic code.
+
+**Blast radius searched:** P3 observe/prepare/accept connection setup, the portable Timeweb CA adapter, future Timeweb hosted-runtime startup/reconnect, PostgreSQL technical-domain provenance, public/private DNS resolution, TCP/5432, PostgreSQL SSLRequest, verify-full certificate identity, authentication/database/role failure classification, retry policy, runbook/operator response and provider-neutral legacy retry callers. Run #2 contains no evidence of SQL mutation, tenant/RLS drift, credential leakage, Telegram/public-user activation, broker-write or Real-money authority expansion.
+
+**Why preflight missed it:** deterministic tests mocked PostgreSQL connection outcomes and CA handling but never required a real transport-state ladder between valid source configuration and authenticated connection. The old no-SQLSTATE regression explicitly accepted blanket retry, so CI correctly certified the behavior that later made the live failure non-actionable.
+
+**Corrective change:** the Timeweb adapter now owns a credential-free readiness ladder: provider-owned technical-domain suffix, public-only DNS resolution, TCP/5432, PostgreSQL SSLRequest and TLS 1.2+ CA/hostname verification. Only explicit transient DNS/TCP failures are retried and only sanitized stage codes are emitted. Authenticated connections use a separate classifier for timeout, DNS, TCP, TLS, password/authentication, role, database, host-policy, server-rejection and transient SQLSTATE classes; an unclassified client failure is fail-closed and not replayed. External conninfo is allowlisted, ambient libpq connection variables are rejected, and the authenticated connection is pinned in-process to the exact public host address that passed the credential-free TLS probe while preserving hostname verification. The same adapter is used by P3 and Timeweb hosted-runtime startup.
+
+**Permanent regression/guard:** focused tests cover the positive DNS/TCP/SSLRequest/verify-full path, private-only DNS rejection, bounded timeout retry, non-retryable certificate and SSLRequest failures, classified authentication behavior, unclassified-client fail-closed behavior, and P3 transport-before-auth ordering. The P3 machine guard freezes these transport/retry invariants and the runbook maps each sanitized failure class to a bounded operator response.
+
+**Future prevention rule:** every external service readiness gate must separate configuration validity from live transport readiness and authentication. Before a credential-bearing protocol operation, prove the non-secret network/TLS layers independently when the protocol allows it. Never treat “no SQLSTATE” as synonymous with “transient network failure,” never emit raw connection exceptions containing endpoints/users, and never turn an unknown failure into availability by blind replay.
+
+**Dependency/tooling knowledge change:** Psycopg connection errors can have `sqlstate=None` for client-side failures, while `ConnectionTimeout` is a specific `OperationalError` and failed connection objects can expose password-use metadata. Those facts support precise sanitized classification without logging the raw exception.
+
+
+---
+
+## FL-041 — Live transport repairs must certify reconnect lifecycle and scanner/formatter shape before replay
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 failed heads `b64565dfaa7ca384efba98636512fbe6db79cbe6` and `2db03f38d41ef44b59238a1f61b35ea18a5981a1`
+
+**Symptom / failing gate:** the first hardened connectivity head produced coupled formatter and tracked-content secret-scan REDs before executable certification could finish. The next coherent repair removed the scanner false positive and passed Windows compilation/static-quality/secret-scan stages, but exact-head Fast PR and WP17 still exposed two Ruff 0.16.1 formatter lines, while Engineering Governance exposed a stale negative regression that still mutated the superseded hosted-runtime source shape. SonarQube Cloud passed its gate but reported four new maintainability issues and zero Security Hotspots. No real credential was present and neither failed head was replayed against production.
+
+**Root cause:** the connectivity repair correctly separated configuration, transport and authentication, but publication preflight did not freeze every producer/consumer that changed with the new reconnect API. Formatter output was still not projected exactly, one guard regression mutated a source string that no longer existed, and the shared adapter accumulated repeated diagnostic literals plus exception-routing branches during the live-boundary expansion. Adjacent review also found a deeper lifecycle defect not visible in one-shot P3 observation: hosted-runtime startup originally pinned one verified DNS result and reused that same `hostaddr` for every future pool reconnect.
+
+**Blast radius searched:** P3 observe/prepare/accept, the shared Timeweb TLS adapter, hosted-runtime startup and replacement pool connections, external versus prepared DSN shape, ambient libpq override channels, CA custody, DNS/TCP/SSLRequest/TLS ordering, authenticated-connect classification, guard negative tests, formatter/security gates, machine contract and operator runbook. Timeweb-managed PostgreSQL failover is included because the provider documents Patroni/Etcd leader-replica failover. Public-user, Telegram, broker-write, tenant, Real-money and provider-mutation authority remain unchanged.
+
+**Why prior guards missed it:** one-shot tests proved that a verified address was pinned before authentication but did not assert the lifetime of that pin across later pool reconnects. The stale negative guard verified a textual mutation without first asserting that the mutation actually changed the current source. The connector-only environment also cannot execute the repository-pinned Ruff/detect-secrets stack, so exact formatter/scanner behavior first appeared in authoritative CI.
+
+**Corrective change:** apply the exact Ruff projection; keep synthetic fixtures scanner-safe without exclusions; make the prepared connector validate its own public `hostaddr`, verify-full hostname identity and absolute process-local CA path; materialize the CA once per hosted-runtime process while re-running public DNS/TCP/PostgreSQL SSLRequest/hostname-verified TLS for every new pooled connection; centralize transport/failure vocabulary and use small classifiers instead of repeated exception branches; and make source-mutation guard tests assert that their mutation actually changed the current source before expecting rejection.
+
+**Permanent regression/guard:** focused tests require raw external DSNs to be rejected by the prepared connector, private/reserved `hostaddr` to fail closed, relative prepared CA paths to fail closed, and two successive hosted-runtime database opens to invoke two separate target preparations. The P3 machine contract freezes prepared-shape validation plus reconnect re-probing. The hosted-runtime negative guard now fails itself if its source mutation becomes stale. Ruff, tracked-content secret scan, Sonar review and Regression Shield remain unchanged authorities.
+
+**Future prevention rule:** a live-connectivity fix is incomplete until it proves the first connection, reconnect/failover path, and every textual machine guard that protects that path. Negative source-mutation tests must assert that the intended mutation occurred. Test fixtures must pass the real secret scanner without exclusions, and connector-authored Python must be projected through the pinned formatter before an exact head is called certifiable.
+
+**Dependency/tooling knowledge change:** Timeweb documents PostgreSQL HA through Patroni/Etcd with automatic leader failover; runtime reconnect logic must therefore follow the verified provider hostname on each new connection instead of treating one process-start backend address as permanent.
+
+
+---
+
+## FL-042 — File-wide security markers cannot substitute for function-scoped runtime authority guards
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 predecessor head `3cc1e56ae72758e6ac9c428f3228b99bad90daf0`
+
+**Symptom / finding:** exact-head repair work corrected the observed formatter and focused regression failures, but the blast-radius review found an adjacent guard weakness before production replay. The hosted-runtime machine guard required security-sensitive call names only as file-wide substrings. An import could therefore keep a marker present even if `_open_runtime_database` stopped calling the prepared Timeweb connector or moved CA acquisition into every reconnect.
+
+**Root cause:** the guard froze vocabulary rather than call ownership. That was sufficient while hosted PostgreSQL setup was one-shot, but the reconnect/failover refactor introduced a lifecycle distinction: `create_app` must materialize the public CA once, while every `_open_runtime_database` call must re-prove the Timeweb target and then use only the prepared connector.
+
+**Blast radius searched:** hosted-runtime startup, pool replacement connections, CA custody, transport re-probe, prepared DSN enforcement, runtime database verification, P3 source guard, negative guard tests, and the downstream application-shell/Regression Shield consumers. No public-user, Telegram, tenant, broker-write or Real-money authority was widened.
+
+**Corrective change:** retain the exact source markers as drift evidence, and add AST function-call validation. `_open_runtime_database` must call target preparation, the prepared connector, long-lived connection configuration and runtime probing; it must not call the generic PostgreSQL connector, one-shot TLS wrapper or CA installer. `create_app` must call the CA installer and runtime opener, and must not perform target preparation or authenticated connection directly. A new negative regression replaces the prepared connector with the generic connector and proves the machine guard fails closed.
+
+**Permanent regression/guard:** hosted-runtime transport authority is now verified at both textual/dataflow-shape and function-call ownership levels. Negative source-mutation tests assert that their mutation actually changes the current source before expecting rejection.
+
+**Future prevention rule:** for security- or authority-bearing runtime paths, file-wide string presence may support a guard but cannot be its only proof. Freeze the owning function and forbidden bypass calls structurally, and update the negative mutation whenever the architecture changes.
+
+**Dependency/tooling knowledge change:** none.
+
+---
+
+## FL-043 — Final exact-head static quality must isolate throw sites and honor exception inheritance
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 exact head `04ccb6b536d3f729efe231ff92db4c7157cbb37f`
+
+**Symptom / failing gate:** the authoritative Windows merge gate completed successfully, but Fast PR and WP17 rejected one Ruff 0.16.1 formatting drift in `apps/api/timeweb_postgres_tls.py`. SonarQube Cloud passed its Quality Gate but still reported four new maintainability findings: one redundant `ssl.SSLError` catch next to its superclass `OSError`, plus three expected-exception tests whose context also constructed the prepared DSN.
+
+**Root cause:** the final connector-authored cleanup was not projected through the exact pinned formatter before publication, and three negative connection-classifier tests left setup work inside the expected-exception context. The TLS-context catch also encoded both a superclass and its subclass even though Python defines `ssl.SSLError` as an `OSError` subtype.
+
+**Blast radius searched:** every exception handler in the shared Timeweb PostgreSQL adapter, every `pytest.raises` / `assertRaises` block in the P3 changed test surfaces, hosted-runtime reconnect consumers, P3 controller/guard consumers, and current exact-head Fast PR/WP17/Windows/Sonar evidence. No provider mutation, database mutation, tenant/public-user/Telegram authority, broker-write authority, or Real-money setting is implicated.
+
+**Why preflight missed it:** the connector-only environment cannot execute repository-pinned Ruff/Sonar locally. The functional Regression Shield and Windows gate proved runtime behavior, but format projection and Sonar's single-throw-site maintainability rule remain independent acceptance surfaces.
+
+**Corrective change:** retain one `except OSError` branch for TLS-context construction because it already covers `ssl.SSLError`; precompute each prepared DSN before entering the three expected-exception contexts; and normalize the adapter EOF to the exact Ruff shape. No retry, TLS, DNS, CA, credential, reconnect, role, or authority behavior changes.
+
+**Permanent regression/guard:** the existing exact-head Ruff gates and Sonar analysis remain unchanged, while the corrected negative tests now prove only the intended connector call can satisfy their expected exception. Future expected-exception tests must complete setup before the assertion context.
+
+**Future prevention rule:** final release hardening must treat formatter output, static exception-hierarchy analysis, and single-throw-site exception tests as first-class exact-head evidence even when the full runtime regression suite is already GREEN.
+
+**Dependency/tooling knowledge change:** Python 3.12 documents `ssl.SSLError` as a subtype of `OSError`; catching both in the same tuple is redundant.
+
+
+
+---
+
+## FL-044 — A successful TLS preflight does not prove the authenticated libpq session uses the same transport authority
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / P3 PostgreSQL production cutover / PR #592 post-CERTIFIED_GREEN review after exact head `e44c1798b9d3e015c0a977e270fb4699e145c119`
+
+**Symptom / finding:** the credential-free Timeweb readiness ladder explicitly proves PostgreSQL SSLRequest, TLS >= 1.2, the Timeweb CA and hostname identity before credentials are presented, but the subsequent authenticated libpq conninfo did not explicitly close two independent ambient transport/identity channels. PostgreSQL documents that GSSAPI encryption can be preferred over SSL regardless of `sslmode`, and that libpq may send a client certificate from the standard per-user location when the server requests one.
+
+**Root cause:** the original hardening treated `sslmode=verify-full` plus a verified/pinned `hostaddr` as a complete statement of the authenticated transport. That is incomplete when libpq owns connection negotiation: transport and client-certificate defaults outside the external DSN can still participate unless the prepared in-process conninfo constrains them.
+
+**Blast radius searched:** P3 bootstrap/runtime authenticated connects, hosted-runtime startup and pool reconnects, external DSN custody, ambient `PG*` rejection, Timeweb CA/hostname verification, prepared-hostaddr binding, runtime-role checks and all consumers of `resolve_timeweb_postgres_dsn`. No public-user, Telegram, tenant, broker-write or Real-money authority is widened.
+
+**Corrective change:** keep the stored OWNER/provider DSN unchanged, but inject `gssencmode=disable`, `sslcertmode=disable` and `ssl_min_protocol_version=TLSv1.2` into every process-local prepared conninfo. The prepared-DSN validator now rejects any downgrade or omission of those controls before psycopg/libpq is called.
+
+**Permanent regression/guard:** focused tests prove all three controls are present after preparation, external secrets cannot pre-supply the process-local controls, and downgrade attempts fail closed. The P3 machine contract and runbook freeze the authenticated-transport requirement.
+
+**Future prevention rule:** when a preflight and a client library perform separate handshakes, security proof must cover both. A preflight may establish provider reachability and identity, but the authenticated client must independently prohibit alternate encryption, client-credential and protocol-version channels that could make the real session differ from the proven path.
+
+**Dependency/tooling knowledge change:** PostgreSQL 18 libpq documentation states that GSSAPI encryption may take precedence over SSL and that the default client certificate location can be used when the server requests a certificate; these semantics are now treated as part of the P3 transport threat model.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -21,8 +22,12 @@ from apps.api.hosted_database_runtime import (
     validate_hosted_runtime_role,
 )
 from apps.api.telegram_auth import build_telegram_provider_auth
-from apps.api.timeweb_postgres_tls import prepare_timeweb_postgres_tls
-from omni_cio.persistence.migration import ConnectionLike, connect_postgres
+from apps.api.timeweb_postgres_tls import (
+    connect_prepared_timeweb_postgres,
+    install_timeweb_postgres_ca,
+    prepare_timeweb_postgres_target,
+)
+from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 from omni_cio.web.session_v1 import SessionPolicyV1
 from omni_cio.web.telegram_auth_routes_v1 import (
@@ -63,9 +68,15 @@ def _optional_candidate_hostname() -> str | None:
     return _hostname(raw)
 
 
-def _open_runtime_database(database_dsn: str, runtime_role: str) -> ConnectionLike:
-    raw_connection = connect_postgres(
-        database_dsn,
+def _open_runtime_database(
+    external_database_dsn: str,
+    ca_path: Path,
+    runtime_role: str,
+) -> ConnectionLike:
+    prepared_dsn = prepare_timeweb_postgres_target(external_database_dsn, ca_path)
+    raw_connection = connect_prepared_timeweb_postgres(
+        prepared_dsn,
+        failure_prefix="HOSTED_RUNTIME_DATABASE",
         connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
     )
     _configure_long_lived_web_connection(raw_connection)
@@ -84,13 +95,22 @@ def create_app() -> FastAPI:
     hostname = _hostname(_required_env(_HOSTNAME_ENV))
     release_sha = _release_sha(_required_env(_RELEASE_SHA_ENV))
     runtime_role = validate_hosted_runtime_role(_required_env(_RUNTIME_ROLE_ENV))
-    database_dsn = prepare_timeweb_postgres_tls(_required_env(_DSN_ENV))
+    external_database_dsn = _required_env(_DSN_ENV)
+    database_ca_path = install_timeweb_postgres_ca()
     candidate_hostname = _optional_candidate_hostname()
     candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
-    raw_connection = _open_runtime_database(database_dsn, runtime_role)
+    raw_connection = _open_runtime_database(
+        external_database_dsn,
+        database_ca_path,
+        runtime_role,
+    )
     connection = _BoundedWebConnectionPool(
         raw_connection,
-        connect=lambda: _open_runtime_database(database_dsn, runtime_role),
+        connect=lambda: _open_runtime_database(
+            external_database_dsn,
+            database_ca_path,
+            runtime_role,
+        ),
         max_size=_DATABASE_POOL_MAX_SIZE,
         acquire_timeout_seconds=_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS,
     )

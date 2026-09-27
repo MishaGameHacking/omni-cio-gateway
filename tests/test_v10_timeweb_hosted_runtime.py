@@ -9,6 +9,8 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 import pytest
 
+import apps.api.hosted_runtime as hosted_runtime
+
 from apps.api.hosted_app import (
     HostedRuntimeServicesV1,
     _system_status,
@@ -983,6 +985,75 @@ def test_candidate_hostname_is_optional_and_validated(
         _optional_candidate_hostname()
 
 
+def test_hosted_runtime_reproves_transport_for_each_database_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ca_path = tmp_path / "timeweb-postgres-root.crt"
+    prepared_dsns = iter(("prepared-a", "prepared-b"))
+    preparation_calls: list[tuple[str, Path]] = []
+    connection_calls: list[str] = []
+    configured: list[object] = []
+    probed_roles: list[str] = []
+    connections = [object(), object()]
+
+    def prepare_target(external_dsn: str, observed_ca_path: Path) -> str:
+        preparation_calls.append((external_dsn, observed_ca_path))
+        return next(prepared_dsns)
+
+    def connect_prepared(
+        prepared_dsn: str,
+        **kwargs: object,
+    ) -> object:
+        del kwargs
+        connection_calls.append(prepared_dsn)
+        return connections[len(connection_calls) - 1]
+
+    monkeypatch.setattr(
+        hosted_runtime,
+        "prepare_timeweb_postgres_target",
+        prepare_target,
+    )
+    monkeypatch.setattr(
+        hosted_runtime,
+        "connect_prepared_timeweb_postgres",
+        connect_prepared,
+    )
+    monkeypatch.setattr(
+        hosted_runtime,
+        "_configure_long_lived_web_connection",
+        configured.append,
+    )
+    monkeypatch.setattr(
+        hosted_runtime,
+        "probe_hosted_runtime_database",
+        lambda _connection, *, expected_runtime_role: probed_roles.append(
+            expected_runtime_role
+        ),
+    )
+
+    first = hosted_runtime._open_runtime_database(
+        "external-dsn",
+        ca_path,
+        "runtime",
+    )
+    second = hosted_runtime._open_runtime_database(
+        "external-dsn",
+        ca_path,
+        "runtime",
+    )
+
+    assert first is connections[0]
+    assert second is connections[1]
+    assert preparation_calls == [
+        ("external-dsn", ca_path),
+        ("external-dsn", ca_path),
+    ]
+    assert connection_calls == ["prepared-a", "prepared-b"]
+    assert configured == connections
+    assert probed_roles == ["runtime", "runtime"]
+
+
 def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     root = Path(__file__).resolve().parents[1]
     current_sources = (
@@ -1020,7 +1091,13 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "_probe_runtime_database" not in runtime
     assert "_probe_hosted_preview_database" not in runtime
     assert "OMNI_V10_POSTGRES_RUNTIME_ROLE" in runtime
+    assert "connect_prepared_timeweb_postgres" in runtime
+    assert "install_timeweb_postgres_ca" in runtime
+    assert "prepare_timeweb_postgres_target" in runtime
+    assert "prepare_timeweb_postgres_tls" not in runtime
+    assert 'failure_prefix="HOSTED_RUNTIME_DATABASE"' in runtime
     assert "connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS" in runtime
+    assert "connect_postgres(" not in runtime
     assert "connect=lambda:" in runtime
     assert "_BoundedWebConnectionPool(" in runtime
     assert "_SerializedWebConnection(" not in runtime

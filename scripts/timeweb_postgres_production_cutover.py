@@ -23,7 +23,6 @@ from omni_cio.persistence.migration import (
     require_postgres_18,
 )
 from scripts import postgres_runtime_primitives as postgres_runtime
-from scripts import provider_runtime_primitives as provider_base
 from scripts import timeweb_app_release as app_release
 
 
@@ -48,7 +47,7 @@ _CLEAN_TABLES = (
     "broker_connection_accounts",
 )
 _SET_TENANT_SCOPE_SQL = "SELECT set_config('omni_cio.tenant_id', %s, true)"
-_PRODUCTION_CONNECT_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0)
+_PRODUCTION_CONNECT_RETRY_DELAYS = (1.0, 2.0, 5.0)
 
 
 class CutoverStopped(RuntimeError):
@@ -130,14 +129,20 @@ def _prepare_connection_dsns(
 ) -> tuple[str, str]:
     try:
         ca_path = timeweb_postgres_tls.install_timeweb_postgres_ca()
+        verified_address = timeweb_postgres_tls.probe_timeweb_postgres_transport(
+            bootstrap_dsn,
+            ca_path,
+        )
         return (
             timeweb_postgres_tls.resolve_timeweb_postgres_dsn(
                 bootstrap_dsn,
                 ca_path,
+                hostaddr=verified_address,
             ),
             timeweb_postgres_tls.resolve_timeweb_postgres_dsn(
                 runtime_dsn,
                 ca_path,
+                hostaddr=verified_address,
             ),
         )
     except timeweb_postgres_tls.TimewebPostgresTlsError as exc:
@@ -335,13 +340,19 @@ def _verify_cross_tenant_negative(connection: Any) -> None:
 
 
 def _connect(dsn: str, *, code: str) -> Any:
-    return provider_base._connect_postgres_with_retry(
-        psycopg,
-        dsn,
-        retry_marker="TIMEWEB_PG_PRODUCTION_NETWORK_RETRY",
-        failure_code=code,
-        retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS,
-    )
+    suffix = "_CONNECTION_FAILED"
+    if not code.endswith(suffix):
+        _stop("TIMEWEB_PG_PRODUCTION_CONNECTION_CODE_INVALID")
+    failure_prefix = code[: -len(suffix)]
+    try:
+        return timeweb_postgres_tls.connect_prepared_timeweb_postgres(
+            dsn,
+            failure_prefix=failure_prefix,
+            autocommit=True,
+            retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS,
+        )
+    except timeweb_postgres_tls.TimewebPostgresTlsError as exc:
+        _stop(exc.code)
 
 
 def _prepare_database(bootstrap_dsn: str, runtime_dsn: str) -> None:
@@ -550,12 +561,6 @@ def main() -> int:
     except CutoverStopped as exc:
         print(
             f"TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=STOPPED code={exc}",
-            file=sys.stderr,
-        )
-        return 1
-    except provider_base.ProvisioningStopped as exc:
-        print(
-            f"TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=STOPPED code={exc.code}",
             file=sys.stderr,
         )
         return 1

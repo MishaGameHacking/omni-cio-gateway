@@ -20,6 +20,10 @@ RUNTIME = ROOT / "infrastructure/postgres/hosted-postgres-runtime-contract.json"
 RECOVERY = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
 
 _PREPARE_CONFIRMATION = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+_HOSTED_RUNTIME_TLS_DRIFT = "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT"
+_CALL_PREPARE_TARGET = "prepare_timeweb_postgres_target"
+_CALL_CONNECT_PREPARED = "connect_prepared_timeweb_postgres"
+_CALL_INSTALL_CA = "install_timeweb_postgres_ca"
 _RECOVERY_ATTESTATION = (
     "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
 )
@@ -96,12 +100,47 @@ def _validate_transport(payload: dict[str, Any]) -> None:
         "encrypted_session_required": True,
         "plaintext_dsn_in_repository_allowed": False,
         "technical_domain_required": True,
+        "provider_technical_domain_suffix_required": True,
+        "provider_technical_domain_suffixes": [
+            ".tw1.ru",
+            ".tw1.su",
+            ".twc1.net",
+            ".webtm.ru",
+        ],
+        "allowed_external_dsn_parameters": [
+            "dbname",
+            "host",
+            "password",
+            "port",
+            "sslmode",
+            "sslrootcert",
+            "user",
+        ],
+        "explicit_password_required": True,
+        "ambient_libpq_target_or_credential_override_allowed": False,
+        "ambient_libpq_connection_environment_allowed": False,
+        "verified_hostaddr_binding_required": True,
+        "second_dns_lookup_for_authenticated_connection_allowed": False,
+        "prepared_connection_shape_validation_required": True,
+        "hosted_runtime_reprobe_on_connection_open_required": True,
+        "hosted_runtime_ca_fetch_per_connection_allowed": False,
+        "authenticated_libpq_gss_encryption_allowed": False,
+        "authenticated_libpq_client_certificate_allowed": False,
+        "authenticated_libpq_tls_minimum_version": "TLSv1.2",
+        "prepared_authenticated_transport_controls_required": True,
         "port": 5432,
         "canonical_sslrootcert": ".omni-cio/timeweb-postgres-root.crt",
         "ca_source_url": "https://st.timeweb.com/cloud-static/ca.crt",
         "ca_fetch_bounded_retry_required": True,
         "ca_redirect_allowed": False,
         "ca_materialization_before_connect_required": True,
+        "credential_free_transport_preflight_required": True,
+        "dns_public_resolution_required": True,
+        "private_or_reserved_resolution_allowed": False,
+        "postgres_sslrequest_required": True,
+        "tls_minimum_version": "TLSv1.2",
+        "transport_preflight_before_database_auth_required": True,
+        "raw_endpoint_or_exception_logging_allowed": False,
         "external_dsn_format": "POSTGRESQL_LIBPQ",
         "php_pdo_dsn_allowed": False,
         "resolved_sslrootcert_may_be_absolute_in_process_only": True,
@@ -117,7 +156,10 @@ def _validate_connection_retry(payload: dict[str, Any]) -> None:
     )
     expected = {
         "bounded": True,
-        "client_network_without_sqlstate_retry_allowed": True,
+        "classified_failure_code_required": True,
+        "raw_exception_text_logging_allowed": False,
+        "unclassified_client_failure_retry_allowed": False,
+        "classified_client_timeout_retry_allowed": True,
         "transient_sqlstates": [
             "08000",
             "08001",
@@ -340,20 +382,24 @@ def _validate_workflow_secret_scope(workflow: str) -> None:
         )
 
 
-def _direct_call_names(source: str, function_name: str) -> set[str]:
+def _function_call_names(
+    source: str,
+    function_name: str,
+    *,
+    syntax_code: str,
+    function_code: str,
+) -> set[str]:
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID"
-        ) from exc
+        raise CutoverContractError(syntax_code) from exc
     functions = [
         node
         for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name == function_name
     ]
     if len(functions) != 1:
-        raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID")
+        raise CutoverContractError(function_code)
     calls: set[str] = set()
     for node in ast.walk(functions[0]):
         if not isinstance(node, ast.Call):
@@ -363,6 +409,55 @@ def _direct_call_names(source: str, function_name: str) -> set[str]:
         elif isinstance(node.func, ast.Attribute):
             calls.add(node.func.attr)
     return calls
+
+
+def _direct_call_names(source: str, function_name: str) -> set[str]:
+    return _function_call_names(
+        source,
+        function_name,
+        syntax_code="TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID",
+        function_code="TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID",
+    )
+
+
+def _validate_hosted_runtime_tls_flow(source: str) -> None:
+    runtime_calls = _function_call_names(
+        source,
+        "_open_runtime_database",
+        syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
+        function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
+    )
+    required_runtime_calls = {
+        _CALL_PREPARE_TARGET,
+        _CALL_CONNECT_PREPARED,
+        "_configure_long_lived_web_connection",
+        "probe_hosted_runtime_database",
+    }
+    if not required_runtime_calls.issubset(runtime_calls):
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+    forbidden_runtime_calls = {
+        "connect_postgres",
+        "prepare_timeweb_postgres_tls",
+        _CALL_INSTALL_CA,
+    }
+    if runtime_calls & forbidden_runtime_calls:
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+    create_calls = _function_call_names(
+        source,
+        "create_app",
+        syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
+        function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
+    )
+    if not {_CALL_INSTALL_CA, "_open_runtime_database"}.issubset(create_calls):
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+    forbidden_create_calls = {
+        _CALL_PREPARE_TARGET,
+        _CALL_CONNECT_PREPARED,
+        "prepare_timeweb_postgres_tls",
+    }
+    if create_calls & forbidden_create_calls:
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
 
 
 def _validate_sources() -> None:
@@ -386,7 +481,9 @@ def _validate_sources() -> None:
             "_PRODUCTION_CONNECT_RETRY_DELAYS = (",
             "retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS",
             "timeweb_postgres_tls.install_timeweb_postgres_ca()",
+            "timeweb_postgres_tls.probe_timeweb_postgres_transport(",
             "timeweb_postgres_tls.resolve_timeweb_postgres_dsn(",
+            "timeweb_postgres_tls.connect_prepared_timeweb_postgres(",
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",
@@ -428,22 +525,53 @@ def _validate_sources() -> None:
             'TIMEWEB_POSTGRES_SSLROOTCERT = ".omni-cio/timeweb-postgres-root.crt"',
             "_NoRedirectHandler",
             "TIMEWEB_PG_TLS_TECHNICAL_DOMAIN_REQUIRED",
+            "TIMEWEB_PG_TLS_PROVIDER_TECHNICAL_DOMAIN_REQUIRED",
+            "_TIMEWEB_TECHNICAL_DOMAIN_SUFFIXES",
+            "_ALLOWED_EXTERNAL_DSN_PARAMETERS",
+            "_PREPARED_DSN_PARAMETERS",
+            "_PREPARED_GSSENCMODE",
+            "_PREPARED_SSLCERTMODE",
+            "_PREPARED_SSL_MIN_PROTOCOL_VERSION",
+            "_FORBIDDEN_LIBPQ_ENVIRONMENT",
+            "TIMEWEB_PG_TLS_AMBIENT_LIBPQ_ENV_FORBIDDEN",
+            "TIMEWEB_PG_TLS_DSN_PARAMETER_FORBIDDEN",
+            "TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID",
+            "TIMEWEB_PG_TLS_PASSWORD_REQUIRED",
+            "TIMEWEB_PG_TLS_RESOLUTION_NOT_PUBLIC",
+            "TIMEWEB_PG_TLS_TCP_TIMEOUT",
+            "TIMEWEB_PG_TLS_SSLREQUEST_REFUSED",
+            "TIMEWEB_PG_TLS_CERT_VERIFY_FAILED",
+            "UNCLASSIFIED_CLIENT_FAILURE",
             "TIMEWEB_PG_TLS_VERIFY_FULL_REQUIRED",
             "TIMEWEB_PG_TLS_ROOT_CERT_PATH_INVALID",
+            "probe_timeweb_postgres_transport(",
+            "prepare_timeweb_postgres_target(",
+            "_prepared_connection_params(",
+            "connect_prepared_timeweb_postgres(",
             "os.replace(temporary, target)",
-            "make_conninfo(dsn, sslrootcert=str(absolute_ca))",
+            "_GSSENCMODE_KEY: _PREPARED_GSSENCMODE",
+            "_SSLCERTMODE_KEY: _PREPARED_SSLCERTMODE",
+            "_SSL_MIN_PROTOCOL_VERSION_KEY: _PREPARED_SSL_MIN_PROTOCOL_VERSION",
         ),
         "TIMEWEB_PG_CUTOVER_TLS_RUNTIME_DRIFT",
     )
 
+    hosted_runtime = _text(HOSTED_RUNTIME)
     _markers(
-        _text(HOSTED_RUNTIME),
+        hosted_runtime,
         (
-            "from apps.api.timeweb_postgres_tls import prepare_timeweb_postgres_tls",
-            "database_dsn = prepare_timeweb_postgres_tls(_required_env(_DSN_ENV))",
+            _CALL_CONNECT_PREPARED,
+            _CALL_INSTALL_CA,
+            _CALL_PREPARE_TARGET,
+            "external_database_dsn = _required_env(_DSN_ENV)",
+            "database_ca_path = install_timeweb_postgres_ca()",
+            "prepared_dsn = prepare_timeweb_postgres_target(",
+            "connect=lambda: _open_runtime_database(",
+            'failure_prefix="HOSTED_RUNTIME_DATABASE"',
         ),
-        "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+        _HOSTED_RUNTIME_TLS_DRIFT,
     )
+    _validate_hosted_runtime_tls_flow(hosted_runtime)
 
     workflow = _text(WORKFLOW)
     _markers(
@@ -486,9 +614,13 @@ def _validate_sources() -> None:
             "Selected branches and tags",
             "Branch `main`",
             "Portable CA / DSN rule",
+            "Credential-free connection-readiness ladder",
+            "re-proves the current provider address before every new pooled connection",
             "sslrootcert=.omni-cio/timeweb-postgres-root.crt",
+            "TIMEWEB_PG_TLS_TRANSPORT=READY",
             "pgsql:host=...",
             "The observe phase is SQL read-only",
+            "36276384123",
             "Only after P3 acceptance may P4",
         ),
         "TIMEWEB_PG_CUTOVER_RUNBOOK_DRIFT",
