@@ -29,7 +29,10 @@
     "repository_clone_url_identity_required": true,
     "provider_decorated_repository_full_name_allowed_when_clone_url_exact": true,
     "provider_decorated_repository_name_allowed_when_clone_url_exact": true,
-    "provider_repository_metadata_must_be_nonempty": true
+    "provider_repository_metadata_must_be_nonempty": true,
+    "github_clone_url_equivalent_case_normalization_allowed": true,
+    "github_clone_url_default_https_port_allowed": true,
+    "github_clone_url_embedded_credentials_allowed": false
   },
   "provider_api": {
     "base": "https://api.timeweb.cloud",
