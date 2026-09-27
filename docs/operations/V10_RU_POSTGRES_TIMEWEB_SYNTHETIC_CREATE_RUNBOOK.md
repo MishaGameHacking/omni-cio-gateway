@@ -194,7 +194,27 @@ still starting. Verification is therefore state-aware:
   mismatches can be diagnosed without logging response bodies, provider IDs or
   secrets.
 
-The provider-readiness budget is deliberately multi-minute and remains below the enclosing 15-minute workflow timeout. A locally chosen wait vector is not a Timeweb SLA: create acceptance, project-list visibility and terminal `started` readiness are separate observations. Ambiguous create reconciliation remains GET-only and never authorizes a second POST.
+The provider-readiness budget is deliberately multi-minute and remains below the enclosing workflow timeout. A locally chosen wait vector is not a Timeweb SLA: create acceptance, project-list visibility and terminal `started` readiness are separate observations. Ambiguous create reconciliation remains GET-only and never authorizes a second POST.
+
+### Live start-readiness failure learning from workflow ordinal #6
+
+The 2026-09-27 manual create/recovery run reached the exact target cluster and then stopped with:
+
+`TIMEWEB_CLUSTER_START_TIMEOUT`
+
+The step duration matched the old source-defined start waiter closely: the old delay vector totalled only 288 seconds. That result does **not** prove that Timeweb rejected or lost the cluster. The provisioner emits that code only after it has observed provider state but has not proved terminal `started` before its local budget expires. Because create acceptance and provider readiness are separate observations, a safe `starting` resource must not be converted into a second create attempt.
+
+The corrected source therefore:
+
+- keeps the single-create / no-blind-replay authority unchanged;
+- extends the GET-only start-readiness budget to 708 seconds;
+- increases only the enclosing create job timeout to 20 minutes, leaving more than five minutes of workflow headroom beyond the readiness budget;
+- emits `TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT` when the last valid provider state is still `starting`, while preserving a distinct control-plane-read timeout;
+- keeps every unsafe status or explicit configuration drift immediately terminal;
+- preserves restart safety: if the exact target already exists, a later run enters `existing-recovery` and remains GET-only.
+
+If the new bounded budget is exhausted while Timeweb still reports `starting`, stop and reconcile provider state rather than widening authority, issuing another POST, deleting the cluster, or inventing a provider SLA.
+
 ## Ambiguous-create recovery
 
 The create POST is never automatically retried.
