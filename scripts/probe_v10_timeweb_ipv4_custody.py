@@ -14,13 +14,10 @@ def observe() -> None:
     project_path = f"/api/v1/projects/{project_id}/resources/databases"
     cluster_id = read_only._target_cluster_id(api.get(project_path))
     if cluster_id is None:
-        rows = custody.inventory(
-            custody.raw_inventory(api.get("/api/v1/floating-ips"))
-        )
+        rows = custody.inventory(custody.raw_inventory(api.get("/api/v1/floating-ips")))
         provider_base._emit(custody.pretarget_observation(rows))
         provider_base._emit(
-            "TIMEWEB_RU_PG_IPV4_RECOVERY=BLOCKED "
-            "code=TIMEWEB_IPV4_TARGET_ABSENT"
+            "TIMEWEB_RU_PG_IPV4_RECOVERY=BLOCKED code=TIMEWEB_IPV4_TARGET_ABSENT"
         )
         return
     payload = provider_base._json_object(
