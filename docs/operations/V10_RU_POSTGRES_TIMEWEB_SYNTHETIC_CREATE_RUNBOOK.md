@@ -208,12 +208,15 @@ The corrected source therefore:
 
 - keeps the single-create / no-blind-replay authority unchanged;
 - extends the GET-only start-readiness budget to 708 seconds;
-- increases only the enclosing create job timeout to 20 minutes, leaving more than five minutes of workflow headroom beyond the readiness budget;
+- bounds each outer readiness observation to a 10-second provider read attempt, including the existing finite inner retry policy;
+- increases only the enclosing create job timeout to 35 minutes so the complete worst-case nested read/retry envelope plus the 708-second observation delays still has more than ten minutes of workflow headroom;
 - emits `TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT` when the last valid provider state is still `starting`, while preserving a distinct control-plane-read timeout;
 - keeps every unsafe status or explicit configuration drift immediately terminal;
 - preserves restart safety: if the exact target already exists, a later run enters `existing-recovery` and remains GET-only.
 
 If the new bounded budget is exhausted while Timeweb still reports `starting`, stop and reconcile provider state rather than widening authority, issuing another POST, deleting the cluster, or inventing a provider SLA.
+
+The workflow ceiling is not calculated from sleep delays alone. Every readiness GET inherits the control-plane client's bounded retry behavior, so the safety proof includes the maximum per-attempt socket timeout plus the two existing retry sleeps. This prevents GitHub Actions from terminating the job before the provisioner can emit its own sanitized timeout class during a prolonged provider/network incident.
 
 ## Ambiguous-create recovery
 
