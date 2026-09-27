@@ -104,6 +104,30 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         ):
             guard.validate(root)
 
+    def test_rejects_candidate_before_p3_prepare_ordering(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["orchestration"]["p3_prepare_before_physical_candidate_required"] = False
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_ORCHESTRATION_INVALID",
+        ):
+            guard.validate(root)
+
+    def test_rejects_p3_accept_before_current_candidate_proof(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["orchestration"]["p3_accept_before_physical_candidate_allowed"] = True
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_ORCHESTRATION_INVALID",
+        ):
+            guard.validate(root)
+
     def test_rejects_public_activation_contract_drift(self) -> None:
         root = self._fixture()
         path = root / CONTRACT_RELATIVE
