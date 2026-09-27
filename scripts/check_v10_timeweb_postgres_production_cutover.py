@@ -543,6 +543,7 @@ def _require_hosted_runtime_private_call_shape(source: str) -> None:
         "private_network_cidr",
     )
 
+
 def _validate_network_scope_source(source: str) -> None:
     _markers(
         source,
