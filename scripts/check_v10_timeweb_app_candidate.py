@@ -99,6 +99,11 @@ def _validate_target(payload: dict[str, Any]) -> None:
         "canonical_public_hostname": "omnicio.ru",
         "canonical_domain_attachment_allowed_in_p2": False,
         "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME",
+        "canonical_repository_clone_url": (
+            "https://github.com/MishaGameHacking/omni-cio-gateway.git"
+        ),
+        "repository_clone_url_identity_required": True,
+        "provider_decorated_repository_full_name_allowed_when_clone_url_exact": True,
     }
     if target != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_TARGET_INVALID")
@@ -302,6 +307,11 @@ def _validate_controller(path: Path) -> None:
         'API_BASE = "https://api.timeweb.cloud"',
         'CANONICAL_APP_NAME = "omni-cio-v10"',
         'CANONICAL_REPOSITORY = "MishaGameHacking/omni-cio-gateway"',
+        'CANONICAL_REPOSITORY_PATH = "/MishaGameHacking/omni-cio-gateway"',
+        "def _canonical_repository_url(",
+        'parsed.netloc == "github.com"',
+        "path == CANONICAL_REPOSITORY_PATH",
+        "TIMEWEB_APP_RELEASE_REPOSITORY_INVALID",
         'CANONICAL_BRANCH = "main"',
         'CANONICAL_FRAMEWORK = "docker"',
         'DEPLOY_CONFIRMATION = "DEPLOY_EXACT_TIMEWEB_APP_COMMIT"',
