@@ -33,6 +33,10 @@ _TLS_TCP_REFUSED = "TIMEWEB_PG_TLS_TCP_REFUSED"
 _TLS_TCP_TIMEOUT = "TIMEWEB_PG_TLS_TCP_TIMEOUT"
 _TLS_ROUTE_UNREACHABLE = "TIMEWEB_PG_TLS_ROUTE_UNREACHABLE"
 _TLS_VERIFIED_HOSTADDR_INVALID = "TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID"
+_TLS_CA_FETCH_FAILED = "TIMEWEB_PG_TLS_CA_FETCH_FAILED"
+_TLS_CA_INVALID = "TIMEWEB_PG_TLS_CA_INVALID"
+_TLS_CA_PATH_UNSAFE = "TIMEWEB_PG_TLS_CA_PATH_UNSAFE"
+_SSLROOTCERT_KEY = "sslrootcert"
 _CONNECT_FAILURE_PREFIX_INVALID = "TIMEWEB_PG_CONNECT_FAILURE_PREFIX_INVALID"
 _SUFFIX_AUTHENTICATION_REJECTED = "AUTHENTICATION_REJECTED"
 _SUFFIX_DATABASE_NOT_FOUND = "DATABASE_NOT_FOUND"
@@ -82,7 +86,7 @@ _ALLOWED_EXTERNAL_DSN_PARAMETERS = frozenset(
         "password",
         "port",
         "sslmode",
-        "sslrootcert",
+        _SSLROOTCERT_KEY,
         "user",
     }
 )
@@ -228,7 +232,7 @@ def _connection_params(dsn: str) -> dict[str, str]:
     if set(params) - _ALLOWED_EXTERNAL_DSN_PARAMETERS:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_DSN_PARAMETER_FORBIDDEN")
     _validate_provider_identity(params)
-    if params.get("sslrootcert", "").strip() != TIMEWEB_POSTGRES_SSLROOTCERT:
+    if params.get(_SSLROOTCERT_KEY, "").strip() != TIMEWEB_POSTGRES_SSLROOTCERT:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_ROOT_CERT_PATH_INVALID")
     return params
 
@@ -249,7 +253,7 @@ def _prepared_connection_params(dsn: str) -> dict[str, str]:
     if not address.is_global:
         raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID)
 
-    root_certificate = Path(params.get("sslrootcert", "").strip())
+    root_certificate = Path(params.get(_SSLROOTCERT_KEY, "").strip())
     if not root_certificate.is_absolute():
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_PREPARED_ROOT_CERT_PATH_INVALID")
     return params
@@ -260,10 +264,10 @@ def _ca_target(base_dir: Path | None = None) -> Path:
     directory = base / ".omni-cio"
     try:
         if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
-            raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
+            raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         if directory.is_symlink():
-            raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
+            raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
         directory.chmod(0o700)
     except TimewebPostgresTlsError:
         raise
@@ -271,7 +275,7 @@ def _ca_target(base_dir: Path | None = None) -> Path:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNAVAILABLE") from None
     target = directory / "timeweb-postgres-root.crt"
     if target.is_symlink() or (target.exists() and not target.is_file()):
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
+        raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
     return target
 
 
@@ -291,13 +295,13 @@ def _read_ca_once(opener: Any) -> bytes | None:
     except HTTPError as exc:
         if int(exc.code) in _TRANSIENT_HTTP_STATUSES:
             return None
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_FETCH_FAILED") from None
+        raise TimewebPostgresTlsError(_TLS_CA_FETCH_FAILED) from None
     except OSError:
         return None
     if status in _TRANSIENT_HTTP_STATUSES:
         return None
     if status != 200 or len(raw) > _MAX_CA_BYTES:
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_FETCH_FAILED")
+        raise TimewebPostgresTlsError(_TLS_CA_FETCH_FAILED)
     return raw
 
 
@@ -313,26 +317,26 @@ def _fetch_ca(
             return raw
         if attempt < len(delays):
             sleeper(delays[attempt])
-    raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_FETCH_FAILED")
+    raise TimewebPostgresTlsError(_TLS_CA_FETCH_FAILED)
 
 
 def _validate_ca(raw: bytes) -> None:
     if not raw or len(raw) > _MAX_CA_BYTES:
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_INVALID")
+        raise TimewebPostgresTlsError(_TLS_CA_INVALID)
     try:
         text = raw.decode("ascii")
     except UnicodeDecodeError:
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_INVALID") from None
+        raise TimewebPostgresTlsError(_TLS_CA_INVALID) from None
     begin = text.find("-----BEGIN CERTIFICATE-----")
     end_marker = "-----END CERTIFICATE-----"
     end = text.find(end_marker, begin + 1)
     if begin < 0 or end < 0:
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_INVALID")
+        raise TimewebPostgresTlsError(_TLS_CA_INVALID)
     certificate = text[begin : end + len(end_marker)]
     try:
         ssl.PEM_cert_to_DER_cert(certificate)
     except ValueError:
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_INVALID") from None
+        raise TimewebPostgresTlsError(_TLS_CA_INVALID) from None
 
 
 def _write_ca(target: Path, raw: bytes) -> None:
@@ -382,7 +386,7 @@ def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_verify_locations(cafile=str(ca_path))
     except (OSError, ssl.SSLError):
-        raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_INVALID") from None
+        raise TimewebPostgresTlsError(_TLS_CA_INVALID) from None
     return context
 
 
@@ -509,7 +513,7 @@ def probe_timeweb_postgres_transport(
     params = _connection_params(dsn)
     try:
         if ca_path.is_symlink() or not ca_path.is_file():
-            raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
+            raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
         _validate_ca(ca_path.read_bytes())
     except TimewebPostgresTlsError:
         raise
@@ -549,7 +553,7 @@ def resolve_timeweb_postgres_dsn(
     _connection_params(dsn)
     try:
         if ca_path.is_symlink() or not ca_path.is_file():
-            raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_CA_PATH_UNSAFE")
+            raise TimewebPostgresTlsError(_TLS_CA_PATH_UNSAFE)
         _validate_ca(ca_path.read_bytes())
         absolute_ca = ca_path.resolve(strict=True)
         if hostaddr is None:
