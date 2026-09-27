@@ -278,7 +278,9 @@ def test_rejects_truncated_firewall_group_page() -> None:
     responses[path]["meta"]["total"] = 2
     with pytest.raises(
         scope.NetworkScopeStopped,
-        match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUPS_INVALID_PAGINATION_INCOMPLETE",
+        match=(
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUPS_INVALID_PAGINATION_INCOMPLETE"
+        ),
     ):
         _verify(responses)
 

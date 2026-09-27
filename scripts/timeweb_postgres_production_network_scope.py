@@ -61,7 +61,12 @@ def _rows(value: object, key: str, code: str) -> list[dict[str, Any]]:
     return [_mapping(item, code) for item in raw]
 
 
-def _paged_rows(api: ReadOnlyApi, path: str, key: str, code: str) -> list[dict[str, Any]]:
+def _paged_rows(
+    api: ReadOnlyApi,
+    path: str,
+    key: str,
+    code: str,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     expected_total: int | None = None
     for page in range(_MAX_PAGES):
