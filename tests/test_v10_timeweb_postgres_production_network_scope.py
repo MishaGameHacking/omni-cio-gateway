@@ -53,9 +53,7 @@ def _responses() -> dict[str, Any]:
                 "domains": [{"fqdn": HOST, "cert_status": "issued"}],
             }
         },
-        f"/api/v1/firewall/service/dbaas/{DATABASE_ID}": {
-            "groups": [{"id": GROUP_ID}]
-        },
+        f"/api/v1/firewall/service/dbaas/{DATABASE_ID}": {"groups": [{"id": GROUP_ID}]},
         f"/api/v1/firewall/groups/{GROUP_ID}": {
             "group": {"id": GROUP_ID, "policy": "DROP"}
         },
@@ -84,7 +82,9 @@ def _verify(responses: dict[str, Any]) -> None:
     )
 
 
-def test_accepts_exact_fail_closed_network_scope(capsys: pytest.CaptureFixture[str]) -> None:
+def test_accepts_exact_fail_closed_network_scope(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     _verify(_responses())
     output = capsys.readouterr().out
     assert "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY" in output
@@ -136,9 +136,9 @@ def test_rejects_synthetic_cluster() -> None:
 
 def test_rejects_unissued_target_certificate() -> None:
     responses = _responses()
-    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0][
-        "cert_status"
-    ] = "pending"
+    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0]["cert_status"] = (
+        "pending"
+    )
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_TLS_CERTIFICATE_NOT_READY",
@@ -148,9 +148,9 @@ def test_rejects_unissued_target_certificate() -> None:
 
 def test_rejects_target_domain_not_found() -> None:
     responses = _responses()
-    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0][
-        "fqdn"
-    ] = "different.twc1.net"
+    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0]["fqdn"] = (
+        "different.twc1.net"
+    )
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_NETWORK_TARGET_NOT_FOUND",

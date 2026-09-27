@@ -124,8 +124,7 @@ def _domain_rows(cluster: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID")
     return [
-        _mapping(item, "TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID")
-        for item in raw
+        _mapping(item, "TIMEWEB_PG_PRODUCTION_NETWORK_DOMAINS_INVALID") for item in raw
     ]
 
 
