@@ -416,7 +416,8 @@ def _repository(app: dict[str, Any]) -> str:
     if (
         not isinstance(full_name, str)
         or not full_name.strip()
-        or name != CANONICAL_REPOSITORY_NAME
+        or not isinstance(name, str)
+        or not name.strip()
         or not _canonical_repository_url(repository.get("url"))
     ):
         _stop("TIMEWEB_APP_RELEASE_REPOSITORY_INVALID")
