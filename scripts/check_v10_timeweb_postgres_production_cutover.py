@@ -499,18 +499,14 @@ def _validate_workflow_network_scope_order(workflow: str) -> None:
         operation_indexes = tuple(workflow.index(value) for value in operations)
     except ValueError as exc:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT") from exc
-    if not (
-        authority_index < mask_index < network_index < min(operation_indexes)
-    ):
+    if not (authority_index < mask_index < network_index < min(operation_indexes)):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_ORDER_INVALID")
 
     authority_block = workflow[authority_index:mask_index]
     mask_block = workflow[mask_index:network_index]
-    network_block = workflow[network_index:operation_indexes[0]]
+    network_block = workflow[network_index : operation_indexes[0]]
     if "${{ secrets." in authority_block or "${{ secrets." in mask_block:
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_SECRET_BEFORE_INPUT_VALIDATION"
-        )
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_SECRET_BEFORE_INPUT_VALIDATION")
     if (
         _CONTROL_PLANE_SECRET not in network_block
         or _BOOTSTRAP_DSN_SECRET not in network_block
