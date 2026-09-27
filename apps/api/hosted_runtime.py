@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import timedelta
 import os
 from pathlib import Path
+import threading
 
 from fastapi import FastAPI
 
@@ -52,6 +54,29 @@ HOSTED_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
 )
+
+
+class _LazyTimewebPostgresCa:
+    """Materialize the provider CA only when database transport is first needed."""
+
+    def __init__(
+        self,
+        installer: Callable[[], Path] = install_timeweb_postgres_ca,
+    ) -> None:
+        self._installer = installer
+        self._path: Path | None = None
+        self._lock = threading.Lock()
+
+    def resolve(self) -> Path:
+        path = self._path
+        if path is not None:
+            return path
+        with self._lock:
+            path = self._path
+            if path is None:
+                path = self._installer()
+                self._path = path
+            return path
 
 
 def _trusted_edge_tls_terminated() -> bool:
@@ -108,14 +133,14 @@ def create_app() -> FastAPI:
     external_database_dsn = _required_env(_DSN_ENV)
     private_hostaddr = _required_env(_PRIVATE_HOSTADDR_ENV)
     private_network_cidr = _required_env(_PRIVATE_NETWORK_CIDR_ENV)
-    database_ca_path = install_timeweb_postgres_ca()
+    database_ca = _LazyTimewebPostgresCa()
     candidate_hostname = _optional_candidate_hostname()
     candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
     connection = _BoundedWebConnectionPool(
         None,
         connect=lambda: _open_runtime_database(
             external_database_dsn,
-            database_ca_path,
+            database_ca.resolve(),
             runtime_role,
             private_hostaddr,
             private_network_cidr,
