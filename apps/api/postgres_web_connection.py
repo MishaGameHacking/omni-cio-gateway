@@ -186,7 +186,7 @@ class _BoundedWebConnectionPool:
 
     def __init__(
         self,
-        initial_connection: Any,
+        initial_connection: Any | None,
         *,
         connect: Callable[[], Any],
         max_size: int,
@@ -200,16 +200,20 @@ class _BoundedWebConnectionPool:
             or acquire_timeout_seconds <= 0
         ):
             raise ValueError("WEB_RUNTIME_POSTGRES_POOL_TIMEOUT_INVALID")
-        if bool(getattr(initial_connection, "closed", False)):
+        if initial_connection is not None and bool(
+            getattr(initial_connection, "closed", False)
+        ):
             raise RuntimeError("WEB_RUNTIME_POSTGRES_POOL_INITIAL_CONNECTION_CLOSED")
 
         self._connect = connect
         self._max_size = max_size
         self._acquire_timeout_seconds = float(acquire_timeout_seconds)
         self._available: LifoQueue[Any] = LifoQueue(maxsize=max_size)
-        self._available.put_nowait(initial_connection)
         self._count_lock = threading.Lock()
-        self._created = 1
+        self._created = 0
+        if initial_connection is not None:
+            self._available.put_nowait(initial_connection)
+            self._created = 1
         self._local = threading.local()
 
     def _transaction_connection(self) -> Any | None:
