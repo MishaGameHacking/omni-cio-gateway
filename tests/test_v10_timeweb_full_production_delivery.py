@@ -361,7 +361,9 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
                 / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
             )
             payload = json.loads(contract_path.read_text(encoding="utf-8"))
-            payload["execution_sequence"] = list(reversed(payload["execution_sequence"]))
+            payload["execution_sequence"] = list(
+                reversed(payload["execution_sequence"])
+            )
             contract_path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
