@@ -38,6 +38,9 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         runtime.parent.mkdir(parents=True, exist_ok=True)
         runtime.write_text(
             'X = "OMNI_V10_CANDIDATE_HOSTNAME"\n'
+            'Y = "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"\n'
+            'Z = "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"\n'
+            "def prepare_timeweb_postgres_private_target(): pass\n"
             "def _optional_candidate_hostname(): pass\n"
             'additional_hosts=("localhost", *candidate_hosts)\n',
             encoding="utf-8",
@@ -86,6 +89,18 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(
             RuntimeError,
             "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID",
+        ):
+            guard.validate(root)
+
+    def test_rejects_missing_private_database_readiness_contract(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["acceptance"]["database_readiness_required"] = False
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID",
         ):
             guard.validate(root)
 
