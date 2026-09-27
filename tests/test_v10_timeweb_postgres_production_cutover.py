@@ -564,7 +564,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["transport"]["provider_network_scope_project_identity_required"] = False
+            payload["transport"]["provider_network_scope_project_identity_required"] = (
+                False
+            )
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
