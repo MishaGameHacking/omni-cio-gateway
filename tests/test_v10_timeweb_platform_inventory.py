@@ -128,7 +128,9 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
             ".github/workflows/v10-timeweb-postgres-production-cutover.yml",
             "scripts/check_v10_timeweb_postgres_production_cutover.py",
             "scripts/timeweb_postgres_production_cutover.py",
+            "scripts/timeweb_postgres_production_network_scope.py",
             "tests/test_v10_timeweb_postgres_production_cutover.py",
+            "tests/test_v10_timeweb_postgres_production_network_scope.py",
             "tests/test_v10_timeweb_postgres_tls.py",
         ):
             with self.subTest(path=path):

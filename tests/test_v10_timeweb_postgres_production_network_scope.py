@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+
+SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / "scripts/timeweb_postgres_production_network_scope.py"
+)
+SPEC = importlib.util.spec_from_file_location(
+    "timeweb_postgres_production_network_scope",
+    SCRIPT,
+)
+assert SPEC is not None
+assert SPEC.loader is not None
+scope = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(scope)
+
+CIDR = "8.8.8.8/32"
+HOST = "prod-db.twc1.net"
+DATABASE_ID = "901"
+GROUP_ID = "group-1"
+
+
+class FakeApi:
+    def __init__(self, responses: dict[str, Any]) -> None:
+        self.responses = responses
+        self.calls: list[str] = []
+
+    def get(self, path: str, *, timeout: float = 30.0) -> Any:
+        del timeout
+        self.calls.append(path)
+        return self.responses[path]
+
+
+def _responses() -> dict[str, Any]:
+    return {
+        "/api/v1/projects/project-1/resources/databases": {
+            "databases": [{"id": DATABASE_ID}]
+        },
+        f"/api/v1/databases/{DATABASE_ID}": {
+            "db": {
+                "id": DATABASE_ID,
+                "name": "omni-cio-v10-production",
+                "status": "started",
+                "is_enabled_public_network": True,
+                "is_enabled_public_ipv6": False,
+                "is_secure_connection_enabled": True,
+                "domains": [{"fqdn": HOST, "cert_status": "issued"}],
+            }
+        },
+        f"/api/v1/firewall/service/dbaas/{DATABASE_ID}": {
+            "groups": [{"id": GROUP_ID}]
+        },
+        f"/api/v1/firewall/groups/{GROUP_ID}": {
+            "group": {"id": GROUP_ID, "policy": "DROP"}
+        },
+        f"/api/v1/firewall/groups/{GROUP_ID}/rules": {
+            "rules": [
+                {
+                    "direction": "ingress",
+                    "protocol": "tcp",
+                    "port": "5432",
+                    "cidr": CIDR,
+                }
+            ]
+        },
+        f"/api/v1/firewall/groups/{GROUP_ID}/resources": {
+            "resources": [{"id": DATABASE_ID, "type": "dbaas"}]
+        },
+    }
+
+
+def _verify(responses: dict[str, Any]) -> None:
+    scope.verify_network_scope(
+        FakeApi(responses),
+        project_id="project-1",
+        target_host=HOST,
+        verifier_cidr=CIDR,
+    )
+
+
+def test_accepts_exact_fail_closed_network_scope(capsys: pytest.CaptureFixture[str]) -> None:
+    _verify(_responses())
+    output = capsys.readouterr().out
+    assert "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY" in output
+    assert HOST not in output
+    assert CIDR not in output
+    assert DATABASE_ID not in output
+    assert GROUP_ID not in output
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("status", "starting", "TIMEWEB_PG_PRODUCTION_NETWORK_CLUSTER_NOT_READY"),
+        (
+            "is_enabled_public_network",
+            False,
+            "TIMEWEB_PG_PRODUCTION_PUBLIC_IPV4_DISABLED",
+        ),
+        (
+            "is_enabled_public_ipv6",
+            True,
+            "TIMEWEB_PG_PRODUCTION_PUBLIC_IPV6_FORBIDDEN",
+        ),
+        (
+            "is_secure_connection_enabled",
+            False,
+            "TIMEWEB_PG_PRODUCTION_TLS_NOT_READY",
+        ),
+    ],
+)
+def test_rejects_unready_cluster_state(field: str, value: object, code: str) -> None:
+    responses = _responses()
+    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"][field] = value
+    with pytest.raises(scope.NetworkScopeStopped, match=code):
+        _verify(responses)
+
+
+def test_rejects_synthetic_cluster() -> None:
+    responses = _responses()
+    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["name"] = (
+        scope.SYNTHETIC_CLUSTER_NAME
+    )
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_SYNTHETIC_TARGET_FORBIDDEN",
+    ):
+        _verify(responses)
+
+
+def test_rejects_unissued_target_certificate() -> None:
+    responses = _responses()
+    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0][
+        "cert_status"
+    ] = "pending"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_TLS_CERTIFICATE_NOT_READY",
+    ):
+        _verify(responses)
+
+
+def test_rejects_target_domain_not_found() -> None:
+    responses = _responses()
+    responses[f"/api/v1/databases/{DATABASE_ID}"]["db"]["domains"][0][
+        "fqdn"
+    ] = "different.twc1.net"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_NETWORK_TARGET_NOT_FOUND",
+    ):
+        _verify(responses)
+
+
+def test_rejects_multiple_firewall_groups() -> None:
+    responses = _responses()
+    responses[f"/api/v1/firewall/service/dbaas/{DATABASE_ID}"]["groups"].append(
+        {"id": "group-2"}
+    )
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE",
+    ):
+        _verify(responses)
+
+
+def test_rejects_allow_default_policy() -> None:
+    responses = _responses()
+    responses[f"/api/v1/firewall/groups/{GROUP_ID}"]["group"]["policy"] = "ACCEPT"
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED",
+    ):
+        _verify(responses)
+
+
+def test_rejects_verifier_cidr_drift() -> None:
+    responses = _responses()
+    responses[f"/api/v1/firewall/groups/{GROUP_ID}/rules"]["rules"][0]["cidr"] = (
+        "1.1.1.1/32"
+    )
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT",
+    ):
+        _verify(responses)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("direction", "egress"), ("protocol", "udp"), ("port", "5433")],
+)
+def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
+    responses = _responses()
+    responses[f"/api/v1/firewall/groups/{GROUP_ID}/rules"]["rules"][0][field] = value
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED",
+    ):
+        _verify(responses)
+
+
+def test_rejects_extra_firewall_resource() -> None:
+    responses = _responses()
+    responses[f"/api/v1/firewall/groups/{GROUP_ID}/resources"]["resources"].append(
+        {"id": "902", "type": "dbaas"}
+    )
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED",
+    ):
+        _verify(responses)
+
+
+@pytest.mark.parametrize(
+    "cidr",
+    ["0.0.0.0/0", "10.0.0.1/32", "8.8.8.0/24", "8.8.8.8", "::1/128"],
+)
+def test_rejects_non_exact_global_ipv4_32(cidr: str) -> None:
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_INVALID",
+    ):
+        scope.verify_network_scope(
+            FakeApi(_responses()),
+            project_id="project-1",
+            target_host=HOST,
+            verifier_cidr=cidr,
+        )
