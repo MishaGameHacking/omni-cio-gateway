@@ -108,7 +108,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     environment: timeweb-synthetic
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 15
+    timeout-minutes: 60
     env:
       EXPECTED_HEAD: ${{ github.sha }}
       EXPECTED_CONFIRMATION: CREATE_TIMEWEB_RU_PG_SYNTHETIC_790_RUB_MONTH

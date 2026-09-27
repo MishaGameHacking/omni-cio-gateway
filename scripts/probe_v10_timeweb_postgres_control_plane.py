@@ -178,9 +178,15 @@ def _select_project(payload: object) -> str:
     return _project_id(matches[0].get("id"))
 
 
-def verify_credential_health(api: TimewebReadOnlyApi) -> str:
+def verify_credential_health(
+    api: TimewebReadOnlyApi,
+    *,
+    timeout: float | None = None,
+) -> str:
     """Prove authenticated read access to the exact RU-PG-B project."""
-    return _select_project(api.get("/api/v1/projects"))
+    if timeout is None:
+        return _select_project(api.get("/api/v1/projects"))
+    return _select_project(api.get("/api/v1/projects", timeout=timeout))
 
 
 def _major_version(value: object) -> int | None:

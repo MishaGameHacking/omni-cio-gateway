@@ -107,6 +107,42 @@ def _find_assignment(function: ast.FunctionDef, name: str) -> ast.Assign:
     raise RuntimeError(_PROVISIONER_DRIFT)
 
 
+def _require_existing_target_lookup_timeout(function: ast.FunctionDef) -> None:
+    assignment = _find_assignment(function, "existing_cluster_id")
+    target_call = assignment.value
+    if (
+        not isinstance(target_call, ast.Call)
+        or not isinstance(target_call.func, ast.Name)
+        or target_call.func.id != "_target_cluster_id"
+        or len(target_call.args) != 1
+        or target_call.keywords
+    ):
+        raise RuntimeError(_PROVISIONER_DRIFT)
+
+    get_call = target_call.args[0]
+    if (
+        not isinstance(get_call, ast.Call)
+        or not isinstance(get_call.func, ast.Attribute)
+        or get_call.func.attr != "get"
+        or not isinstance(get_call.func.value, ast.Name)
+        or get_call.func.value.id != "read_api"
+        or len(get_call.args) != 1
+        or not isinstance(get_call.args[0], ast.Name)
+        or get_call.args[0].id != "project_path"
+    ):
+        raise RuntimeError(_PROVISIONER_DRIFT)
+
+    timeout_keywords = [
+        keyword
+        for keyword in get_call.keywords
+        if keyword.arg == "timeout"
+        and isinstance(keyword.value, ast.Name)
+        and keyword.value.id == "_CONTROL_PLANE_READ_TIMEOUT_SECONDS"
+    ]
+    if len(timeout_keywords) != 1 or len(get_call.keywords) != 1:
+        raise RuntimeError(_PROVISIONER_DRIFT)
+
+
 def _assignment_sequence(assignment: ast.Assign) -> ast.Tuple | ast.List:
     if isinstance(assignment.value, (ast.Tuple, ast.List)):
         return assignment.value
@@ -481,6 +517,11 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "starting_state_uses_bounded_state_aware_verification",
         "transient_control_plane_read_failures_retry_within_start_wait",
         "control_plane_only_timeout_has_distinct_sanitized_code",
+        "starting_timeout_has_distinct_sanitized_code",
+        "existing_target_retry_remains_get_only",
+        "nested_read_retry_worst_case_included_in_headroom",
+        "ambiguous_create_reconciliation_worst_case_included_in_headroom",
+        "full_provider_phase_worst_case_included_in_headroom",
         "starting_explicit_unsafe_values_fail_closed",
         "terminal_started_exact_shape_required",
         "field_specific_sanitized_drift_codes_required",
@@ -504,17 +545,42 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     )
     _require(
         verification.get("starting_minimum_wait_budget_seconds"),
-        240,
+        600,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
     _require(
         verification.get("starting_maximum_wait_budget_seconds"),
-        600,
+        780,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
     _require(
         verification.get("local_wait_budget_is_provider_sla"),
         False,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("provider_readiness_sla_seconds_documented"),
+        False,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("workflow_timeout_minutes"),
+        60,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("control_plane_read_timeout_seconds"),
+        10,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("create_request_timeout_seconds"),
+        30,
+        "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
+    )
+    _require(
+        verification.get("minimum_workflow_headroom_seconds"),
+        1200,
         "TIMEWEB_SYNTHETIC_CREATE_VERIFICATION_INVALID",
     )
 
@@ -570,6 +636,8 @@ def _validate_read_only_probe_reuse() -> None:
             "TIMEWEB_CLUSTER_REPLICA_CUSTODY_DRIFT",
             "def _select_target_preset(payload: object, provider_type: str) -> int:",
             "TIMEWEB_BETA_PRESET_NOT_UNIQUE_OR_PRICE_DRIFT",
+            "timeout: float | None = None",
+            'api.get("/api/v1/projects", timeout=timeout)',
         ),
         "TIMEWEB_SYNTHETIC_CREATE_READ_ONLY_REUSE_DRIFT",
     )
@@ -590,9 +658,14 @@ def _validate_provisioner() -> None:
             "def _reconcile_cluster_id(",
             "_RECONCILE_DELAYS_SECONDS = (",
             "_START_DELAYS_SECONDS = (",
+            "_CONTROL_PLANE_READ_TIMEOUT_SECONDS = 10.0",
+            "_CREATE_REQUEST_TIMEOUT_SECONDS = 30.0",
+            "api.get(path, timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS)",
+            "timeout=_CREATE_REQUEST_TIMEOUT_SECONDS",
+            "TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT",
             "def _create_or_reconcile(",
-            "read_only.verify_credential_health(read_api)",
-            "existing_cluster_id = _target_cluster_id(read_api.get(project_path))",
+            "read_only.verify_credential_health(",
+            "timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS",
             "mutation_api = TimewebCreateApi(token)",
             "read_only.raise_timeweb_auth_failure(status)",
             '"existing-recovery"',
@@ -629,8 +702,13 @@ def _validate_provisioner() -> None:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_AUTHORITY_WIDENED")
     if source.count('method="POST"') != 1:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_POST_SURFACE_INVALID")
+    if source.count("timeout=_CONTROL_PLANE_READ_TIMEOUT_SECONDS") != 7:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_READ_TIMEOUT_SURFACE_INVALID")
+    if source.count("timeout=_CREATE_REQUEST_TIMEOUT_SECONDS") != 1:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_CREATE_TIMEOUT_SURFACE_INVALID")
     tree = _parse_python_source(source)
     provision = _find_function(tree, "provision")
+    _require_existing_target_lookup_timeout(provision)
 
     credential = call_lines(
         provision,
@@ -704,6 +782,7 @@ def _validate_workflow() -> None:
             "environment-policy-proof:",
             "needs: environment-policy-proof",
             "environment: timeweb-synthetic",
+            "timeout-minutes: 60",
             _SYNTHETIC_GUARD_MODULE,
             _SYNTHETIC_GUARD_MODULE + " --require-parity-transport-ready",
             "python -m scripts.verify_v10_timeweb_github_environment",
@@ -715,6 +794,8 @@ def _validate_workflow() -> None:
     )
     if source.count(_SYNTHETIC_GUARD_MODULE) != 3:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
+    if source.count("timeout-minutes: 60") != 1:
+        raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_TIMEOUT_INVALID")
     if _SYNTHETIC_GUARD_SCRIPT in source:
         raise RuntimeError("TIMEWEB_SYNTHETIC_CREATE_WORKFLOW_ENTRYPOINT_INVALID")
     if source.count(f"secrets.{_TIMEWEB_BINDING}") != 1:
@@ -747,6 +828,9 @@ def _validate_runbook() -> None:
             "Reconciliation",
             _CONFIRMATION,
             "TIMEWEB_RU_PG_SYNTHETIC_CREATE=READY",
+            "TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT",
+            "single-create / no-blind-replay authority unchanged",
+            "existing-recovery",
             "20971520 KB",
             "provider replica-list baseline count is exactly `1`",
             "additional paid replication remains unauthorized",

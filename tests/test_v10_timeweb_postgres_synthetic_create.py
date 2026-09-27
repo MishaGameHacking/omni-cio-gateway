@@ -33,6 +33,19 @@ class TimewebSyntheticCreateTests(unittest.TestCase):
     def test_source_contract_passes(self) -> None:
         guard.validate()
 
+    def test_existing_target_lookup_guard_rejects_unbounded_read(self) -> None:
+        source = """
+def provision():
+    existing_cluster_id = _target_cluster_id(read_api.get(project_path))
+"""
+        tree = guard._parse_python_source(source)
+        function = guard._find_function(tree, "provision")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_SYNTHETIC_CREATE_PROVISIONER_DRIFT",
+        ):
+            guard._require_existing_target_lookup_timeout(function)
+
     def test_terminal_invariant_guard_accepts_equivalent_tuple_syntax(self) -> None:
         source = """
 def _verify_terminal_shape():
@@ -246,8 +259,31 @@ def _verify_terminal_shape():
         start_budget = sum(provisioner._START_DELAYS_SECONDS)
         self.assertGreaterEqual(reconcile_budget, 180.0)
         self.assertLess(reconcile_budget, 10 * 60)
-        self.assertGreaterEqual(start_budget, 240.0)
-        self.assertLess(start_budget, 10 * 60)
+        self.assertGreaterEqual(start_budget, 600.0)
+        self.assertLess(start_budget, 13 * 60)
+
+        read_attempts = len(read_only._RETRY_DELAYS_SECONDS) + 1
+        read_retry_sleep_budget = sum(read_only._RETRY_DELAYS_SECONDS)
+        per_read_budget = (
+            read_attempts * provisioner._CONTROL_PLANE_READ_TIMEOUT_SECONDS
+            + read_retry_sleep_budget
+        )
+        fixed_control_plane_reads = 5
+        reconcile_observations = len(provisioner._RECONCILE_DELAYS_SECONDS) + 1
+        start_observations = len(provisioner._START_DELAYS_SECONDS) + 1
+        worst_case_provider_phase = (
+            provisioner._CREATE_REQUEST_TIMEOUT_SECONDS
+            + fixed_control_plane_reads * per_read_budget
+            + reconcile_observations * per_read_budget
+            + reconcile_budget
+            + start_observations * per_read_budget
+            + start_budget
+        )
+        workflow_budget = 60 * 60
+        self.assertGreaterEqual(
+            workflow_budget - worst_case_provider_phase,
+            1200.0,
+        )
 
     def test_ambiguous_post_reconciles_by_get_without_second_post(self) -> None:
         mutation_opener = _sequence_opener(OSError("lost response"))
@@ -515,6 +551,13 @@ def _verify_terminal_shape():
             delays=(0.0,),
         )
         self.assertEqual(api.get.call_count, 2)
+        self.assertEqual(
+            [call.kwargs for call in api.get.call_args_list],
+            [
+                {"timeout": provisioner._CONTROL_PLANE_READ_TIMEOUT_SECONDS},
+                {"timeout": provisioner._CONTROL_PLANE_READ_TIMEOUT_SECONDS},
+            ],
+        )
         self.assertEqual(sleeps, [0.0])
 
     def test_start_wait_classifies_control_plane_only_timeout(self) -> None:
@@ -538,6 +581,85 @@ def _verify_terminal_shape():
             raised.exception.code,
             "TIMEWEB_CLUSTER_START_CONTROL_PLANE_READ_TIMEOUT",
         )
+
+    def test_start_wait_classifies_persistent_starting_state_separately(self) -> None:
+        api = mock.Mock()
+        starting = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "status": "starting",
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+            }
+        }
+        api.get.side_effect = [starting, starting]
+        with self.assertRaises(
+            provisioner._provider_base.ProvisioningStopped
+        ) as raised:
+            provisioner._wait_for_started(
+                api,
+                91,
+                provider_type="postgres18",
+                preset_id=777,
+                sleeper=lambda _seconds: None,
+                delays=(0.0,),
+            )
+        self.assertEqual(
+            raised.exception.code,
+            "TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT",
+        )
+        self.assertEqual(api.get.call_count, 2)
+
+    def test_start_wait_can_converge_after_many_safe_starting_observations(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        starting = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "status": "starting",
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+            }
+        }
+        started = {
+            "db": {
+                "id": 91,
+                "name": read_only.TARGET_CLUSTER_NAME,
+                "type": "postgres18",
+                "location": "ru-3",
+                "availability_zone": "msk-1",
+                "cpu": 1,
+                "ram": 2048,
+                "preset_id": 777,
+                "disk": {"size": 20_971_520, "used": 0},
+                "is_enabled_public_network": False,
+                "is_enabled_public_ipv6": False,
+                "is_autobackups_enabled": False,
+                "is_backup_schedule_enabled": False,
+                "replica_list": [{"id": 501, "db_id": 91}],
+                "disk_autoscaling": {"is_enabled": False},
+                "status": "started",
+            }
+        }
+        api.get.side_effect = [starting] * 6 + [started]
+        sleeps: list[float] = []
+        provisioner._wait_for_started(
+            api,
+            91,
+            provider_type="postgres18",
+            preset_id=777,
+            sleeper=sleeps.append,
+            delays=(0.0,) * 6,
+        )
+        self.assertEqual(api.get.call_count, 7)
+        self.assertEqual(sleeps, [0.0] * 6)
 
     def test_post_create_shape_requires_no_paid_addons(self) -> None:
         payload = {
@@ -798,7 +920,7 @@ def _verify_terminal_shape():
                 }
             },
         }
-        read_api.get.side_effect = responses.__getitem__
+        read_api.get.side_effect = lambda path, **_kwargs: responses[path]
         with (
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(

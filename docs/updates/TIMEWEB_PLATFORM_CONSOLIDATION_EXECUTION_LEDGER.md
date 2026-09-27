@@ -625,3 +625,106 @@ into canonical style, decomposes the two high-complexity validators, removes the
 parameter and leaves setup outside expected-exception scopes. No quality threshold,
 security control, provider boundary, TLS verification, public-user state or money
 authority is weakened. Fresh exact-head verification is required.
+
+### RU-PG-B synthetic create #6 start-readiness repair — 2026-09-27
+
+Accepted main `dee72c4fadd775ffcf878ce7dd7484aa57ed35f1` reached the manual
+`V10 RU-PG-B Timeweb Synthetic Create #6` provider step and stopped with
+`TIMEWEB_CLUSTER_START_TIMEOUT`. The source-defined waiter totalled 288 seconds.
+Because the provisioner had already observed provider state and accepts only safe
+`starting` or exact terminal `started`, this is an eventual-consistency/readiness
+boundary rather than authority to replay the create mutation.
+
+Focused branch `fix/timeweb-synthetic-start-readiness` repairs the complete local
+defect class without widening provider authority:
+
+- the start-readiness GET-only budget is extended to 708 seconds;
+- every synthetic-create control-plane GET is bounded to a 10-second socket-attempt timeout while the existing finite control-plane retry policy remains intact;
+- the single create POST is explicitly bounded to 30 seconds;
+- the enclosing create job gets a 60-minute ceiling and at least 1,200 seconds of worst-case headroom after accounting for pre-create reads, one ambiguous POST, GET-only reconciliation, the 708-second startup delay vector, nested read retries and final project-custody verification;
+- persistent safe `starting` receives the distinct sanitized code
+  `TIMEWEB_CLUSTER_STARTING_READY_TIMEOUT`;
+- control-plane-only read failure remains separately classified;
+- exact-target reruns remain `existing-recovery` and GET-only;
+- unsafe state/configuration drift remains immediately terminal;
+- contract, guard, regression tests, runbook and FL-174 are updated together.
+
+No second POST, delete, resize, public-network widening, production DB/DNS/TLS
+cutover, Telegram activation, broker write or Real Trading is authorized by this
+repair. Fresh exact-head verification is required before the source can be accepted.
+
+A later pre-merge challenge of the same defect class found that the first headroom proof
+counted explicit sleeps only. The reused read-only client may perform three network
+attempts per observation, with its own bounded retry sleeps. A further full-path challenge
+found that startup is not the only consumer: credential/type/preset/target reads, an
+ambiguous create's GET-only reconciliation and final custody verification all share the
+same control-plane failure domain. Under a sustained provider/network incident the prior
+workflow ceiling could therefore suppress the provisioner's own sanitized reconciliation
+or readiness result. The replacement source bounds all synthetic-create reads to 10
+seconds, the single POST to 30 seconds and calculates workflow headroom from the complete
+provider phase. No provider mutation authority changes.
+
+### Full Timeweb provider-chain audit after current OWNER screenshot — 2026-09-27
+
+A full source/evidence pass was extended beyond the synthetic-create timeout through the
+next Timeweb delivery gates.
+
+The current OWNER screenshot is recorded only as non-authorizing external observation:
+two PostgreSQL services are visible; the only visible public IPv4 is attached to the
+production PostgreSQL target; the synthetic target has no displayed public IPv4; and
+`omnicio.ru` is present as an externally managed domain.
+
+The existing repository fails closed for this topology. A managed IPv4 bound to another
+target is not an eligible synthetic resource, and current custody logic emits
+`TIMEWEB_IPV4_CUSTODY_BOUND_ELSEWHERE` rather than reassigning it. The production-bound
+resource must therefore never be borrowed for RU-PG-B proof.
+
+The same pass found a separate execution-chain gap that is intentionally not folded into
+the focused #595 readiness repair:
+
+- RU-PG-B parity remains `SOURCE_READY_PROVIDER_EVIDENCE_PENDING`;
+- no accepted live `RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS` evidence was found;
+- the Python parity harness exists, but no dedicated protected-main GitHub workflow owns
+  its synthetic DSN/certificate custody and real execution;
+- P2/P3/P4/P5/P6 source controllers are present and guarded, but their source readiness
+  does not retroactively satisfy RU-PG-B parity or prove physical provider execution.
+
+After #595 lands, the next repository change must be a separate governed database-parity
+execution gate from fresh accepted main. It must re-observe current transport state and
+must not silently fall back from the historical public-IPv4 route. A replacement transport
+such as public IPv6 requires its own network/security proof; the production IPv4 cannot be
+moved merely to make the synthetic proof convenient.
+
+Automatic continuation is permitted only for observation/reconciliation. Paid/network
+mutation, production database prepare/accept, DNS/TLS cutover and Telegram public
+activation remain explicit fail-closed one-shot gates.
+
+### Hosted-runtime PostgreSQL route audit — 2026-09-27
+
+The same sequential pass found a future live-outage class between P3 and P2.
+
+Current P3 source accepts production PostgreSQL network scope only when the Timeweb
+firewall is default DROP with exactly one ingress TCP/5432 rule from the current
+self-hosted verifier IPv4 /32. P2/hosted runtime later connects from Timeweb App
+Platform with `OMNI_V10_POSTGRES_DSN`. No accepted source or provider evidence proves
+that App Platform outbound traffic originates from that verifier /32.
+
+Consequently `TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY ... source=/32` proves the
+verification runner route only; it is not proof that the deployed application can reach
+PostgreSQL. Accepting P3 and then deploying P2 without a separate hosted-runtime route
+proof could produce a healthy container process whose database connections are blocked by
+the production firewall.
+
+Current official Timeweb documentation adds an irreversible design constraint: a
+backend/Docker App Platform private network is selected only at application creation and
+cannot be changed later without recreating/copying the application. The App Platform
+application must therefore not be physically created until the final application-to-
+PostgreSQL network path is accepted.
+
+This is a mandatory network/security split after #595, not authority to widen the current
+PR. The owning follow-up must prove one durable Timeweb route end to end, including
+provider identity, PostgreSQL 18, TLS/hostname verification, firewall/private-network
+scope, reconnect/failover and recovery. It must not assume a stable App Platform public
+egress IP, widen PostgreSQL to `0.0.0.0/0`, move the production IPv4, or weaken
+`sslmode=verify-full`.
+

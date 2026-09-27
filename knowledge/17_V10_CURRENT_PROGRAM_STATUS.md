@@ -4,9 +4,42 @@ Updated: 2026-09-27
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `2bfa6c2b55caab0d474f890792f4e44c745a7744` VIA PR #593 / REPOSITORY REGRESSION-GOVERNANCE-SECURITY BASELINE GREEN / TIMEWEB READ-ONLY PROOF #24 RED AT `TIMEWEB_IPV4_TARGET_NOT_FOUND` AFTER CONTROL-PLANE `existing_target=false` / CURRENT FOCUSED DEFECT CLASS READ-ONLY TARGET-ABSENT PRODUCER-CONSUMER CONTRACT SKEW / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `dee72c4fadd775ffcf878ce7dd7484aa57ed35f1` VIA PR #594 / TIMEWEB SYNTHETIC CREATE #6 STOPPED AT `TIMEWEB_CLUSTER_START_TIMEOUT` AFTER PROVIDER STATE WAS OBSERVED BUT TERMINAL `started` WAS NOT PROVED WITHIN THE OLD 288-SECOND LOCAL WAITER / CURRENT FOCUSED DEFECT CLASS ASYNCHRONOUS PROVIDER READINESS BUDGET / BRANCH `fix/timeweb-synthetic-start-readiness` / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**. The PR #584 merge does not by itself invent a new percentage; this ledger changes the percentage only through explicit accepted program authority.
+
+### 2026-09-27 synthetic create #6 start-readiness defect
+
+PR #594 is accepted on protected `main = dee72c4fadd775ffcf878ce7dd7484aa57ed35f1`.
+The subsequent manual `V10 RU-PG-B Timeweb Synthetic Create #6` reached the provider mutation/recovery step and stopped with the sanitized code `TIMEWEB_CLUSTER_START_TIMEOUT`.
+
+Current source proves that this code is emitted only after provider state has been observed while terminal `status=started` has not been proved before the local start-readiness budget expires. The accepted source budget was only 288 seconds. This is therefore an asynchronous-provider readiness defect class, not evidence that a second create POST is safe or required.
+
+The focused repair branch is `fix/timeweb-synthetic-start-readiness`. It may change only observation/recovery semantics needed to make the existing single-create state machine robust: extend the GET-only readiness budget, bound nested control-plane read retries so the GitHub workflow cannot preempt semantic timeout classification, preserve complete wall-clock workflow headroom, add a specific persistent-`starting` sanitized timeout class, strengthen tests/guards/runbook/failure-learning evidence, and keep restart recovery GET-only for an already-existing exact target.
+
+The repair must not issue another create for an existing target, delete or resize the cluster, widen network exposure, enable IPv6/backups/replication, mutate production DSN/DNS/TLS, activate Telegram/public users, enable broker write or enable Real Trading. A remaining `starting` state after the new bounded waiter is still fail-closed and requires read-only reconciliation.
+
+Pre-merge full-path review found a second defect in the same readiness-budget class: the first 20-minute workflow correction counted only the 708 seconds of explicit sleeps, while every readiness GET can itself perform up to three bounded control-plane attempts. A subsequent challenge expanded that calculation to the complete provider phase: credential/type/preset/target reads, the one create request, ambiguous-create GET-only reconciliation, startup observation and final project-custody verification. The branch now bounds every synthetic-create control-plane read to 10 seconds, the one create request to 30 seconds, and the job ceiling to 60 minutes; regression math requires at least 1,200 seconds of worst-case headroom after the complete provider phase. This prevents Actions from killing the job before sanitized reconciliation/readiness semantics can be emitted.
+
+### 2026-09-27 downstream topology / executable-chain audit
+
+The current OWNER-provided Timeweb project screenshot is treated as external provider observation, not API acceptance evidence. It shows two PostgreSQL services present, the single current public IPv4 attached to the production PostgreSQL target, the synthetic PostgreSQL target without a displayed public IPv4, and `omnicio.ru` present as an externally managed domain.
+
+Repository authority must not infer from that screenshot that the production-bound IPv4 may be moved. Current IPv4 custody code already treats a managed resource bound to another target as `TIMEWEB_IPV4_CUSTODY_BOUND_ELSEWHERE`; production transport must remain protected from synthetic-test reuse.
+
+The full sequential audit also found a live evidence gap beyond the current create waiter: the RU-PG-B parity contract still says `SOURCE_READY_PROVIDER_EVIDENCE_PENDING`, and no accepted live `RU_PG_TIMEWEB_SYNTHETIC_PARITY=PASS` evidence is present in the owning issue/repository history. The parity Python harness exists, but there is no dedicated protected-main GitHub workflow that binds its synthetic DSN/certificate custody and executes the real parity proof. Therefore source-level P2/P3/P4/P5/P6 machinery must not be interpreted as proof that the complete provider sequence has already executed.
+
+This gap is a mandatory split after the current focused #595 repair: database parity execution and any replacement network transport require their own reviewed authority. Do not move the production IPv4 back to the synthetic cluster, buy a replacement IP, enable IPv6, mutate production PostgreSQL, attach DNS, or activate Telegram merely to close the sequence. Observation/reconciliation may be automated; network, database-cutover, DNS and public-login mutations stay fail-closed one-shot gates.
+
+### 2026-09-27 hosted-runtime database route defect class
+
+The sequential audit found a separate pre-publication production-network defect class in accepted source contracts. P3 currently proves production PostgreSQL ingress as `DROP + one TCP/5432 verifier /32` where the allowed source is the current self-hosted verification runner. P2/hosted runtime later expects Timeweb App Platform to open `OMNI_V10_POSTGRES_DSN` to that same production PostgreSQL endpoint. No accepted contract proves that App Platform outbound traffic will originate from that verifier /32, and current official Timeweb documentation does not provide that guarantee.
+
+Therefore P3 verifier reachability is not application-runtime reachability. A production cutover must not be accepted merely because the self-hosted verifier can connect while the future App Platform container may remain blocked by the exact firewall rule.
+
+Official Timeweb App Platform documentation also makes private-network selection an application-creation decision that cannot be changed in place later. This creates a mandatory network/security split **before physical App Platform creation**: the final App-to-PostgreSQL route must be selected and proved first. A preferred target may use a shared Timeweb private network only after an owning contract proves provider compatibility, TLS/hostname verification, PostgreSQL identity, recovery and routing; it must not silently replace the currently accepted public verify-full path.
+
+Until that gate is accepted, do not create the production App Platform application with an arbitrary/no-private-network choice, widen the production PostgreSQL firewall, assume a stable App Platform public egress IP, or treat P3 `source=/32` evidence as hosted-runtime connectivity proof.
 
 ### 2026-09-27 accepted-main read-only proof #24 defect
 
