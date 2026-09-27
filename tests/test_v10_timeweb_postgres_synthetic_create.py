@@ -907,7 +907,7 @@ def _verify_terminal_shape():
                 }
             },
         }
-        read_api.get.side_effect = responses.__getitem__
+        read_api.get.side_effect = lambda path, **_kwargs: responses[path]
         with (
             mock.patch.object(provisioner, "_required_confirmation"),
             mock.patch.object(
