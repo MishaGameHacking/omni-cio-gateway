@@ -401,7 +401,7 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
         {"id": "P1_SOURCE_RUNTIME_CONVERGENCE", "state": "CERTIFIED_GREEN_SOURCE_BASE"},
         {
             "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
-            "state": "CERTIFIED_GREEN_BRANCH_LOCAL",
+            "state": "REPAIR_SOURCE_IMPLEMENTED_EXACT_HEAD_VERIFICATION_REQUIRED",
         },
         {
             "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
