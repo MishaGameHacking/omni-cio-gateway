@@ -475,7 +475,7 @@ def verify_network_scope(
 ) -> None:
     host = _hostname(target_host)
     cidr = _verifier_cidr(verifier_cidr)
-    witnesses = tuple(
+    witnesses = {
         _collect_network_scope_witness(
             api,
             project_id=project_id,
@@ -483,8 +483,8 @@ def verify_network_scope(
             verifier_cidr=cidr,
         )
         for _ in range(_NETWORK_SCOPE_STABILITY_PASSES)
-    )
-    if len(set(witnesses)) != 1:
+    }
+    if len(witnesses) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT")
     print(
         "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY "
