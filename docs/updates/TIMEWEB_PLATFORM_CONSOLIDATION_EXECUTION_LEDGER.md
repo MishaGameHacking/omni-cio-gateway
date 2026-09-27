@@ -686,3 +686,32 @@ Automatic continuation is permitted only for observation/reconciliation. Paid/ne
 mutation, production database prepare/accept, DNS/TLS cutover and Telegram public
 activation remain explicit fail-closed one-shot gates.
 
+### Hosted-runtime PostgreSQL route audit — 2026-09-27
+
+The same sequential pass found a future live-outage class between P3 and P2.
+
+Current P3 source accepts production PostgreSQL network scope only when the Timeweb
+firewall is default DROP with exactly one ingress TCP/5432 rule from the current
+self-hosted verifier IPv4 /32. P2/hosted runtime later connects from Timeweb App
+Platform with `OMNI_V10_POSTGRES_DSN`. No accepted source or provider evidence proves
+that App Platform outbound traffic originates from that verifier /32.
+
+Consequently `TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY ... source=/32` proves the
+verification runner route only; it is not proof that the deployed application can reach
+PostgreSQL. Accepting P3 and then deploying P2 without a separate hosted-runtime route
+proof could produce a healthy container process whose database connections are blocked by
+the production firewall.
+
+Current official Timeweb documentation adds an irreversible design constraint: a
+backend/Docker App Platform private network is selected only at application creation and
+cannot be changed later without recreating/copying the application. The App Platform
+application must therefore not be physically created until the final application-to-
+PostgreSQL network path is accepted.
+
+This is a mandatory network/security split after #595, not authority to widen the current
+PR. The owning follow-up must prove one durable Timeweb route end to end, including
+provider identity, PostgreSQL 18, TLS/hostname verification, firewall/private-network
+scope, reconnect/failover and recovery. It must not assume a stable App Platform public
+egress IP, widen PostgreSQL to `0.0.0.0/0`, move the production IPv4, or weaken
+`sslmode=verify-full`.
+
