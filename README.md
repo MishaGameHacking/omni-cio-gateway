@@ -23,13 +23,13 @@ Repository-front-door snapshot of accepted/current program authority:
 - WEB-VISUAL remains paused during platform consolidation; WP23+ remains locked;
 - broker-write / Real-execution authority remains unchanged;
 - `trading_methods=false`, `REAL_TRADING_ENABLED=false` and tenant/RLS protections remain intact;
-- PR #584 is accepted on main as `a3e96287f6f29f9a17f14758223a653b37abb50c`; PR #587 and PR #588 are accepted, with current main `86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8`. Live Public IPv4/TLS #6 no longer hits the prior HTTP 400; it now stops only at bounded TLS/domain readiness timeout. Current focused repair is `fix/timeweb-tls-readiness-timeout`; no live rerun is authorized until that source is certified and accepted.
+- mutable exact-main / current-defect checkpoints are intentionally not duplicated in this durable front door; resolve them from GitHub and `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; historical PR/SHA evidence remains in the canonical status and failure-learning ledgers.
 
 This box is not a second progress ledger. Exact state is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## Accepted V9→V10 convergence from PR #584
 
-P1–P6 repository-side production-delivery machinery from PR #584 is now accepted source history on protected `main`; the historical internal checkpoint SHAs remain provenance in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Current accepted main is `86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8` after PR #588. Live Timeweb transport has advanced past the prior combined-transition HTTP 400: workflow #6 entered the separated public-IPv4/TLS path and stopped at `TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT` after the source's fixed 83-second GET-only readiness budget. The focused repair extends only bounded TLS/domain reconciliation and diagnostics; no blind mutation retry or additional IPv4 authority is added. External database cutover, DNS/TLS, Telegram/legal/privacy/capacity/live-user and destructive provider actions remain independently fail-closed. Protected V9 compatibility remains isolated at `app:app`; Git history remains the historical archive.
+P1–P6 repository-side production-delivery machinery from PR #584 is accepted source history on protected `main`; historical internal checkpoint SHAs remain provenance in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. This README deliberately does not freeze a mutable current-main SHA or focused-repair branch. External database cutover, DNS/TLS, Telegram/legal/privacy/capacity/live-user and destructive provider actions remain independently fail-closed. Protected V9 compatibility remains isolated at `app:app`; Git history remains the historical archive.
 
 A stale `v9/*` branch merge is explicitly forbidden: the accepted V9 target is already an ancestor of current main.
 

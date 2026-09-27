@@ -1,12 +1,38 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-09-26
+Updated: 2026-09-27
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / AMENDMENT 18 ACCEPTED ON MAIN VIA PR #581 / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / PR #584 ACCEPTED ON MAIN `a3e96287f6f29f9a17f14758223a653b37abb50c` WITH EXACT-MAIN POST-MERGE GREEN / PR #587 + PR #588 ACCEPTED / CURRENT MAIN `86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8` / EXISTING IPV4 CUSTODY PROVEN `managed_unbound=1 unproven_unbound=0` / PUBLIC IPV4 TLS LIVE WORKFLOW #6 RED AT `TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT` AFTER FIXED 83-SECOND GET-ONLY TLS/DOMAIN WAIT / CURRENT FOCUSED REPAIR `fix/timeweb-tls-readiness-timeout` IN `RED_REPAIR_ONLY` / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `2bfa6c2b55caab0d474f890792f4e44c745a7744` VIA PR #593 / REPOSITORY REGRESSION-GOVERNANCE-SECURITY BASELINE GREEN / TIMEWEB READ-ONLY PROOF #24 RED AT `TIMEWEB_IPV4_TARGET_NOT_FOUND` AFTER CONTROL-PLANE `existing_target=false` / CURRENT FOCUSED DEFECT CLASS READ-ONLY TARGET-ABSENT PRODUCER-CONSUMER CONTRACT SKEW / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**. The PR #584 merge does not by itself invent a new percentage; this ledger changes the percentage only through explicit accepted program authority.
+
+### 2026-09-27 accepted-main read-only proof #24 defect
+
+PR #593 was squash-merged to accepted `main = 2bfa6c2b55caab0d474f890792f4e44c745a7744`.
+On that exact SHA the repository-owned regression/governance/security baseline is GREEN:
+Engineering Governance and the full Windows quality/contracts/coverage job succeeded;
+the whole-tree Timeweb verifier read 1,768 tracked files and reported
+`V10_TIMEWEB_REPOSITORY_INTEGRITY=PASS` plus
+`V10_TIMEWEB_PLATFORM_INVENTORY=PASS`; the full Python suite reported 3,959 passing tests,
+962 passing subtests and 65.21% measured coverage.
+
+The post-merge `V10 RU-PG-B Timeweb Read-Only Proof #24` then stopped only in its
+provider-observation job. The control-plane probe successfully proved PostgreSQL 18/project/
+preset authority and reported
+`cluster_name_available=true existing_target=false`. The immediately following IPv4
+custody observer interpreted that same valid pre-create state as fatal
+`TIMEWEB_IPV4_TARGET_NOT_FOUND`. This is a repository producer/consumer contract defect,
+not a Timeweb authentication failure, PostgreSQL authentication failure, Telegram defect or
+permission-expansion request.
+
+The correction must keep provider access GET-only, inspect the complete account-level
+floating-IP inventory even when the target database does not exist, report target-specific
+recovery as explicitly BLOCKED, and never synthesize a target id, custody marker, binding,
+network readiness or mutation authority. Malformed/truncated provider inventory remains
+terminal. No production database mutation, DNS/TLS change, Telegram activation, broker write
+or Real-money authority is granted by this correction.
 
 ### 2026-09-26 accepted-main / live-cutover continuation
 

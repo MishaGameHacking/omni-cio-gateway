@@ -299,6 +299,18 @@ correctly report BLOCKED; it proves observation, not transport or SQL readiness.
 Malformed/unavailable evidence makes the observer itself fail, rather than making
 an empty-inventory or activation claim.
 
+The exact synthetic database target may legitimately be absent at this earlier read-only
+checkpoint. The control-plane probe already treats that state as
+`existing_target=false` / `cluster_name_available=true`; the IPv4 observer must therefore
+treat the same provider state consistently. It still reads and structurally validates the
+complete account-level `/api/v1/floating-ips` inventory, emits only aggregate counts with
+`target=absent`, and emits
+`TIMEWEB_RU_PG_IPV4_RECOVERY=BLOCKED code=TIMEWEB_IPV4_TARGET_ABSENT` while returning a
+successful observation result. It must not fabricate a cluster id, management marker,
+target binding, custody, network readiness or mutation authority. Truncated/malformed
+inventory remains terminal. Once the exact target exists, the existing target-bound
+marker/binding/provenance checks remain unchanged and fail closed.
+
 For today's unmarked IPv4, first obtain this sanitized observation on accepted
 main. If provenance remains unproved, stop. Do not request keys, addresses, account
 IDs or DSNs in chat, purchase another IP, delete it, or stamp a guessed association.

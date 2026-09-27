@@ -152,6 +152,89 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
                 with self.assertRaises(provisioner._provider_base.ProvisioningStopped):
                     provisioner._numeric_id(value, "TARGET_INVALID")
 
+    def test_observer_target_absent_is_nonfatal_but_custody_stays_blocked(
+        self,
+    ) -> None:
+        api = mock.Mock()
+        api.get.side_effect = [{}, {}, {"ips": [ip_row()]}]
+        with (
+            mock.patch.object(
+                observer.provider_base,
+                "_required_env",
+                return_value="fixture-token",
+            ),
+            mock.patch.object(
+                observer.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(observer.read_only, "_select_project", return_value=5),
+            mock.patch.object(
+                observer.read_only,
+                "_target_cluster_id",
+                return_value=None,
+            ),
+            mock.patch.object(observer.provider_base, "_emit") as emit,
+        ):
+            result = observer.main()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            [call.args[0] for call in api.get.call_args_list],
+            [
+                "/api/v1/projects",
+                "/api/v1/projects/5/resources/databases",
+                "/api/v1/floating-ips",
+            ],
+        )
+        output = " ".join(call.args[0] for call in emit.call_args_list)
+        self.assertIn("INVENTORY=OBSERVED total=1 unbound=1", output)
+        self.assertIn("target=absent", output)
+        self.assertIn(
+            "RECOVERY=BLOCKED code=TIMEWEB_IPV4_TARGET_ABSENT",
+            output,
+        )
+        for forbidden in (
+            "8.8.8.8",
+            "fixture-ip-2",
+            "fixture-token",
+            "=READY",
+            "=PASS",
+            "managed_unbound=",
+            "target_bound=",
+        ):
+            self.assertNotIn(forbidden, output)
+
+    def test_observer_target_absent_rejects_truncated_account_inventory(self) -> None:
+        api = mock.Mock()
+        api.get.side_effect = [{}, {}, {"ips": [], "meta": {"total": 1}}]
+        with (
+            mock.patch.object(
+                observer.provider_base,
+                "_required_env",
+                return_value="fixture-token",
+            ),
+            mock.patch.object(
+                observer.read_only,
+                "TimewebReadOnlyApi",
+                return_value=api,
+            ),
+            mock.patch.object(observer.read_only, "_select_project", return_value=5),
+            mock.patch.object(
+                observer.read_only,
+                "_target_cluster_id",
+                return_value=None,
+            ),
+            mock.patch.object(observer.provider_base, "_emit") as emit,
+        ):
+            result = observer.main()
+
+        self.assertEqual(result, 1)
+        emit.assert_called_once_with(
+            "TIMEWEB_RU_PG_IPV4_INVENTORY=STOPPED "
+            "code=TIMEWEB_IPV4_INVENTORY_INCOMPLETE"
+        )
+
     def test_observer_reports_blocked_without_mutation_or_ready_claim(self) -> None:
         api = mock.Mock()
         target = {
@@ -268,6 +351,10 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
                 'api.post("/api/v1/floating-ips")',
             ),
             source + "\n# TIMEWEB_RU_PG_PUBLIC_IPV4_TLS=READY\n",
+            source.replace(
+                "TIMEWEB_IPV4_TARGET_ABSENT",
+                "TIMEWEB_IPV4_TARGET_NOT_FOUND",
+            ),
         ):
             with self.subTest(kind="diagnostic-boundary"):
                 with self.assertRaises(RuntimeError):
@@ -281,6 +368,8 @@ class Ipv4CustodyIntegrationTests(unittest.TestCase):
             "create_and_stamp_are_atomic",
             "marker_is_cryptographic_authentication",
             "ambiguous_create_delta_is_ownership_proof",
+            "target_absent_grants_custody",
+            "target_absent_grants_mutation_authority",
         ):
             changed = copy.deepcopy(original)
             changed["ipv4_custody"][field] = True

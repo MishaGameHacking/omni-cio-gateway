@@ -152,6 +152,18 @@ def raw_inventory(payload: object) -> list[dict[str, object]]:
     return rows
 
 
+def pretarget_observation(rows: tuple[Address, ...]) -> str:
+    """Report account-level IPv4 shape without inventing target custody."""
+    free = tuple(row for row in rows if row.unbound)
+    return (
+        "TIMEWEB_RU_PG_IPV4_INVENTORY=OBSERVED "
+        f"total={len(rows)} unbound={len(free)} "
+        f"wrong_zone_unbound={sum(row.zone != ZONE for row in free)} "
+        f"ddos_unbound={sum(row.ddos for row in free)} "
+        "target=absent"
+    )
+
+
 def _target(cluster_id: int) -> str:
     if type(cluster_id) is not int or cluster_id <= 0:
         raise CustodyStopped("TIMEWEB_IPV4_CUSTODY_TARGET_INVALID")
