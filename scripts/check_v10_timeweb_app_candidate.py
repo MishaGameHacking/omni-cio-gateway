@@ -54,6 +54,22 @@ def _string_set(value: object, code: str) -> set[str]:
     return set(value)
 
 
+def _strict_field_matches(value: object, expected: object) -> bool:
+    if isinstance(expected, bool):
+        return value is expected
+    return value == expected
+
+
+def _require_strict_fields(
+    payload: dict[str, Any],
+    expected: dict[str, object],
+    code: str,
+) -> None:
+    for key, expected_value in expected.items():
+        if not _strict_field_matches(payload.get(key), expected_value):
+            raise RuntimeError(code)
+
+
 def _validate_root(payload: dict[str, Any]) -> None:
     expected_root = {
         "schema": "omni-cio.v10.timeweb-app-exact-sha-candidate.v1",
@@ -182,35 +198,30 @@ def _validate_runtime_contract(payload: dict[str, Any]) -> None:
         raise RuntimeError(_RUNTIME_ENV_INVALID)
     if runtime.get("release_sha_must_equal_expected_sha") is not True:
         raise RuntimeError(_RUNTIME_ENV_INVALID)
-    postgres_ready = (
-        runtime.get("postgres_dsn_env") == "OMNI_V10_POSTGRES_DSN"
-        and runtime.get("postgres_dsn_required") is True
-        and runtime.get("postgres_private_hostaddr_env")
-        == "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"
-        and runtime.get("postgres_private_hostaddr_required") is True
-        and runtime.get("postgres_private_network_cidr_env")
-        == "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"
-        and runtime.get("postgres_private_network_cidr_required") is True
-        and runtime.get("postgres_private_route_rfc1918_required") is True
-        and runtime.get("postgres_private_hostaddr_must_be_inside_cidr") is True
-        and runtime.get("postgres_tls_hostname_identity_must_remain_dsn_host") is True
-        and runtime.get("postgres_binding_sha256_env")
-        == "OMNI_V10_POSTGRES_BINDING_SHA256"
-        and runtime.get("postgres_binding_sha256_required") is True
-        and runtime.get("postgres_binding_sha256_is_secret") is False
-        and runtime.get("postgres_binding_sha256_excludes_password") is True
-        and runtime.get("postgres_binding_sha256_binds_host_port_database_user_tls")
-        is True
-        and runtime.get("provider_masked_secret_value_allowed")
-        == "hidden-by-api-key-policy"
+    _require_strict_fields(
+        runtime,
+        {
+            "postgres_dsn_env": "OMNI_V10_POSTGRES_DSN",
+            "postgres_dsn_required": True,
+            "postgres_private_hostaddr_env": "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+            "postgres_private_hostaddr_required": True,
+            "postgres_private_network_cidr_env": "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+            "postgres_private_network_cidr_required": True,
+            "postgres_private_route_rfc1918_required": True,
+            "postgres_private_hostaddr_must_be_inside_cidr": True,
+            "postgres_tls_hostname_identity_must_remain_dsn_host": True,
+            "postgres_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
+            "postgres_binding_sha256_required": True,
+            "postgres_binding_sha256_is_secret": False,
+            "postgres_binding_sha256_excludes_password": True,
+            "postgres_binding_sha256_binds_host_port_database_user_tls": True,
+            "provider_masked_secret_value_allowed": "hidden-by-api-key-policy",
+            "vk_login_must_be_false_or_absent": True,
+            "retired_provider_env_forbidden": True,
+            "telegram_runtime_credential_custody_accepted_by_p2": False,
+        },
+        _RUNTIME_ENV_INVALID,
     )
-    flags_ready = (
-        runtime.get("vk_login_must_be_false_or_absent") is True
-        and runtime.get("retired_provider_env_forbidden") is True
-        and runtime.get("telegram_runtime_credential_custody_accepted_by_p2") is False
-    )
-    if not postgres_ready or not flags_ready:
-        raise RuntimeError(_RUNTIME_ENV_INVALID)
 
 
 def _validate_acceptance(payload: dict[str, Any]) -> None:
