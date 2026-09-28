@@ -200,6 +200,19 @@ def test_accepts_exact_fail_closed_network_scope(
     assert api.calls.count(FLOATING_IPS_PATH) == 2
 
 
+def test_scope_proof_returns_exact_provider_bound_public_ipv4() -> None:
+    api = FakeApi(_responses())
+
+    actual = scope.verify_network_scope(
+        api,
+        project_id=PROJECT_ID,
+        target_host=HOST,
+        verifier_cidr=CIDR,
+    )
+
+    assert actual == "8.8.4.4"
+
+
 def test_rejects_provider_snapshot_drift_between_valid_passes() -> None:
     api = DriftingApi(_responses())
     with pytest.raises(
