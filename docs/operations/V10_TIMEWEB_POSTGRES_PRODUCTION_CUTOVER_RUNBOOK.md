@@ -70,9 +70,28 @@ Timeweb documents that external PostgreSQL access requires public-IP access and 
 
 ### Provider network-scope gate
 
-Before any operation-specific database controller step receives production DSNs, the workflow validates all dispatch authority without secrets, validates and masks the exact current `verifier_cidr` as one global IPv4 `/32`, and then performs a **read-only** Timeweb provider-state proof.
+Before any operation-specific database controller step receives production DSNs, the workflow validates all dispatch authority without secrets and validates/masks the exact current `verifier_cidr` as one global IPv4 `/32`. Ordinary `observe`, `prepare`, and `accept` then perform the existing **read-only** Timeweb provider-state proof. The bounded `bootstrap_prepare` recovery operation is the only exception: after explicit confirmation it may create the missing production firewall group/rule/resource link, and it must immediately pass the same read-only proof before any database authentication.
 
 The provider proof binds the bootstrap DSN technical hostname to exactly one non-synthetic project database and requires: cluster `started`; PostgreSQL port `5432`; public IPv4 enabled and uniquely bound to that database; the public IPv4 in the same availability zone with DDoS add-on disabled; public IPv6 disabled; protected connection enabled with the exact hostname certificate issued; at least one attached firewall service group; every attached group must use policy `DROP` and link only the same production database resource; and the **effective union** of all attached-group rules must contain at least one rule while containing no semantic rule other than `ingress tcp/5432` from the supplied global `/32`. An individual same-type group may contain zero rules or a duplicate equivalent rule because Timeweb documents that a rule-less group is not applied and that rules from multiple same-type groups are combined. Duplicate group identities and duplicate provider rule identities are rejected. Firewall collection reads use bounded provider pagination and fail closed on total drift or truncation.
+
+### Live P3 observe #5 — missing production firewall bootstrap
+
+Accepted main `d440cdf859e34edb3b8727ef763347eab9a70803` reached the corrected provider-scope classifier and stopped before database authentication with `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING`. This narrows the earlier #4 ambiguity: the old `...NOT_EXCLUSIVE` classifier represented both zero groups and multiple groups, so #4 never proved that multiple groups existed. The current provider observation proves the production database has **zero attached firewall groups** at the exact #5 observation.
+
+Timeweb's current Firewall documentation states that a service with no effective firewall filtering remains reachable according to its underlying public-network configuration, and that allowlist groups deny traffic except for explicitly listed rules. Because the production database already has a public IPv4, a missing firewall group is a security prerequisite defect, not a condition to ignore in order to reach PostgreSQL faster.
+
+The focused recovery path is `operation=bootstrap_prepare` with confirmation `BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. It is intentionally one-shot and narrow:
+
+- it first proves the exact non-synthetic production target, public-IPv4 binding, TLS/certificate state, and verifier `/32`;
+- if **any** firewall group is already attached, it performs no firewall mutation and lets the normal effective-union verifier decide whether the state is safe;
+- only when zero groups are attached may it create/reuse the dedicated `omni-cio-v10-production-verifier` group with policy `DROP`;
+- the dedicated group may contain only the exact ingress TCP/5432 rule from the current verifier `/32` and only the exact production DBaaS resource;
+- existing wrong rules/resources or widened scope are terminal; the recovery path does not PATCH, DELETE, unlink, replace, or broaden them;
+- ambiguous POST results are reconciled with bounded GET-only observations rather than blind mutation retry;
+- after mutation, the ordinary two-pass `TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY` proof must pass;
+- only then does the same workflow execute SQL-read-only `observe` followed by the existing bounded `prepare` migrations/ACL/RLS path.
+
+This operation does not create App Platform, change DNS, enable Telegram/public users, change broker authority, or enable Real Trading.
 
 A live P3 observe on accepted main `f57e088d4188da4ceec387c82f8b3b847fc6e0bb` exposed a verifier/provider semantic mismatch: the repository rejected the production database solely because more than one same-type Timeweb firewall group was attached, even though Timeweb explicitly allows that state and unions the rules. The corrected gate therefore evaluates the complete effective group union instead of requiring an invented single-group cardinality or an invented per-group rule cardinality. This does not weaken the network boundary: the union must still contain the exact verifier rule and nothing else; any attached group with a non-DROP policy, wrong/extra semantic rule, different CIDR, extra resource, malformed identity, duplicate provider identity, or snapshot drift remains terminal before database authentication.
 
@@ -99,9 +118,9 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 1. PR #584 P2 source and exact-head verification is GREEN and the implementation is accepted on protected `main`.
 2. Establish the dedicated production PostgreSQL 18 database and the pre-existing `omni_cio_hosted_api` login without exposing credentials.
 3. Establish the `timeweb-production` GitHub Environment, exact-main branch policy, and the two production DSN secrets described above.
-4. Invoke the P3 workflow with the exact accepted main SHA, the current global verifier `verifier_cidr` `/32`, and `operation=observe`. Dispatch authority is validated without secrets, then the read-only provider network-scope gate must return `TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY` before the credential-free transport ladder or any PostgreSQL authentication. The observe phase is SQL read-only: it verifies target identity, PostgreSQL 18, TLS, bootstrap/runtime role authority and absence of product-data residue without applying migrations, ACLs, RLS, or cross-tenant write probes.
-5. Run `operation=prepare` with confirmation `PREPARE_TIMEWEB_PRODUCTION_POSTGRES`.
-6. The controller verifies PostgreSQL 18/TLS, applies canonical migrations twice to prove retry idempotence, applies the canonical runtime ACL bootstrap, verifies the least-privilege runtime role, RLS/FORCE-RLS, tenant security constraints, and requires clean product identity/session/broker tables.
+4. Invoke the P3 workflow with the exact accepted main SHA and the current global verifier `verifier_cidr` `/32`. When the production firewall already passes the provider-scope gate, `operation=observe` remains the read-only path. When the exact stop is `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING`, use `operation=bootstrap_prepare` with confirmation `BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. That bounded operation converges only the missing DROP + TCP/5432 + verifier-/32 + exact-production-resource firewall boundary, re-runs the full provider-scope proof, runs SQL-read-only observe, and then proceeds directly into prepare.
+5. If `observe` was used separately and succeeded, run `operation=prepare` with confirmation `PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. Do not run a second prepare merely because `bootstrap_prepare` already completed it.
+6. The controller verifies PostgreSQL 18/TLS, applies canonical migrations twice to prove retry idempotence, applies the canonical runtime ACL bootstrap, verifies the least-privilege runtime role, RLS/FORCE-RLS, tenant security constraints, and requires clean product identity/session/broker tables. A successful prepare emits the non-secret `postgres_binding_sha256` required for App bootstrap.
 7. Create a Timeweb physical backup recovery point. Physical backup is mandatory and additive to the repository logical recovery contract.
 8. Perform a separate restore rehearsal. If Timeweb exposes no documented safe API for the required recovery operation, use the bounded Timeweb panel action. Do not invent an undocumented endpoint.
 9. Record recovery acceptance through the manual workflow input `recovery_attestation=TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED` and provide `recovery_evidence_sha256` as the SHA-256 of sanitized external recovery evidence. The attestation and digest are not credentials and must not be stored as Actions secrets. Never record provider backup IDs, raw backup payloads, credentials, or private account identifiers in source or CI output.
@@ -111,6 +130,10 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 13. Only after P3 acceptance may P4 canonical `omnicio.ru` DNS/TLS cutover begin.
 
 ## Failure and recovery
+
+### Current live stop — no production firewall attached
+
+Run #5 on accepted main `d440cdf859e34edb3b8727ef763347eab9a70803` stopped with `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING` before database authentication. Do not rerun the same `observe` expecting a different outcome and do not disable the provider-scope guard. The repair is to land the reviewed `bootstrap_prepare` chain, then execute that exact accepted-main operation once with the current verifier `/32`. If it finds any attached group at execution time, it refuses to bootstrap around it and falls back to the normal fail-closed effective-union proof.
 
 ### Live P3 observe RED #2 — bootstrap transport collapse
 
