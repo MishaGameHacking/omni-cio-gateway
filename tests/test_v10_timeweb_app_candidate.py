@@ -157,6 +157,18 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         ):
             guard.validate(root)
 
+    def test_requires_timeweb_panel_livez_precedence(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["acceptance"]["panel_healthcheck_overrides_dockerfile_healthcheck"] = False
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID",
+        ):
+            guard.validate(root)
+
     def test_rejects_database_readiness_as_docker_platform_liveness(self) -> None:
         root = self._fixture()
         path = root / "Dockerfile"
