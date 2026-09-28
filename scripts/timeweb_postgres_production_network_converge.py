@@ -142,8 +142,7 @@ def _resource_matches(row: dict[str, Any], database_id: str) -> bool:
     except scope.NetworkScopeStopped:
         return False
     return (
-        resource_id == database_id
-        and row.get("type") in scope._FIREWALL_RESOURCE_TYPES
+        resource_id == database_id and row.get("type") in scope._FIREWALL_RESOURCE_TYPES
     )
 
 
