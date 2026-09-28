@@ -222,11 +222,12 @@ The repository source is aligned as follows, without granting TW-C provider-muta
 - Dockerfile deployment is the selected App Platform source mode. Timeweb requires an
   `EXPOSE` declaration so the platform can identify the application port; the current
   source explicitly exposes `8080`.
-- Timeweb allows an App Platform health-check path, but for Dockerfile deployments its
-  current documentation states that Dockerfile `HEALTHCHECK` takes precedence and the
-  panel path is ignored when `HEALTHCHECK` is present. The root Dockerfile therefore owns
-  platform liveness and probes process-only `/livez`; database-aware `/healthz` remains
-  an independent release-readiness check and must never become container liveness.
+- Timeweb allows an App Platform health-check path and its current documentation states
+  that the panel path takes precedence over Dockerfile `HEALTHCHECK`. The creation form
+  must therefore set the panel path to process-only `/livez`, while the root Dockerfile
+  keeps the same `/livez` fallback so both platform paths have identical liveness
+  semantics. Database-aware `/healthz` remains an independent release-readiness check
+  and must never become container liveness.
 - App Platform starts a fresh container environment on each deploy, so durable product
   state must stay outside the application container. PostgreSQL remains the relational
   state boundary; no local-container persistence is accepted as product storage.
