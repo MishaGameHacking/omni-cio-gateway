@@ -216,6 +216,8 @@ def _validate_runtime_contract(payload: dict[str, Any]) -> None:
             "postgres_binding_sha256_is_secret": False,
             "postgres_binding_sha256_excludes_password": True,
             "postgres_binding_sha256_binds_host_port_database_user_tls": True,
+            "postgres_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
+            "postgres_binding_sha256_required_before_app_bootstrap": True,
             "provider_masked_secret_value_allowed": "hidden-by-api-key-policy",
             "vk_login_must_be_false_or_absent": True,
             "retired_provider_env_forbidden": True,
