@@ -382,6 +382,14 @@
     "tests/test_v10_timeweb_runtime_reachability.py": {
       "classification": "KEEP",
       "reason": "Current reachability regression evidence."
+    },
+    "scripts/timeweb_postgres_production_network_converge.py": {
+      "classification": "KEEP",
+      "reason": "Current P3 Timeweb production firewall bootstrap controller; bounded to missing-group recovery and followed by the full provider-scope verifier."
+    },
+    "tests/test_v10_timeweb_postgres_production_network_converge.py": {
+      "classification": "KEEP",
+      "reason": "Current regression evidence for fail-closed production firewall bootstrap, ambiguous-mutation reconciliation and no-widening authority."
     }
   },
   "path_rules": [
@@ -537,7 +545,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 260,
+  "expected_provider_named_file_count": 262,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
