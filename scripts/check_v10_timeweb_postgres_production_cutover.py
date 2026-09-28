@@ -683,14 +683,54 @@ def _validate_network_converge_source(source: str) -> None:
         ),
         "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_SOURCE_DRIFT",
     )
-    forbidden = (
-        '"PATCH"',
-        '"PUT"',
-        '"DELETE"',
-        "0.0.0.0/0",
-        "firewall_resource_unlink",
-    )
-    if any(marker in source for marker in forbidden):
+    if "0.0.0.0/0" in source or "firewall_resource_unlink" in source:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+        )
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_SOURCE_DRIFT"
+        ) from exc
+    allowed_operations = {
+        "PRODUCTION_FIREWALL_GROUP_CREATE",
+        "PRODUCTION_FIREWALL_RULE_CREATE",
+        "PRODUCTION_FIREWALL_RESOURCE_LINK",
+    }
+    observed_operations: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "mutate_once":
+            continue
+        if (
+            not node.args
+            or not isinstance(node.args[0], ast.Constant)
+            or node.args[0].value != "POST"
+        ):
+            raise CutoverContractError(
+                "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+            )
+        operation = next(
+            (
+                keyword.value.value
+                for keyword in node.keywords
+                if keyword.arg == "operation"
+                and isinstance(keyword.value, ast.Constant)
+                and isinstance(keyword.value.value, str)
+            ),
+            None,
+        )
+        if operation not in allowed_operations:
+            raise CutoverContractError(
+                "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+            )
+        observed_operations.append(operation)
+    if (
+        len(observed_operations) != len(allowed_operations)
+        or set(observed_operations) != allowed_operations
+    ):
         raise CutoverContractError(
             "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
         )
