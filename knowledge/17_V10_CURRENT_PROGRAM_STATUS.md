@@ -4,9 +4,21 @@ Updated: 2026-09-28
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `f57e088d4188da4ceec387c82f8b3b847fc6e0bb` VIA ACCEPTED APP-PLATFORM PRIVATE POSTGRESQL ROUTE REPAIR / CURRENT LIVE P3 OBSERVE STOP `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE` IS A REPOSITORY/PROVIDER-SEMANTICS DEFECT / FOCUSED RED REPAIR PR #597 `fix/timeweb-production-firewall-group-union` / PHYSICAL APP CREATION REMAINS PAUSED UNTIL P3 OBSERVE -> PREPARE -> RECOVERY PREREQUISITES ARE PROVED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `d440cdf859e34edb3b8727ef763347eab9a70803` VIA ACCEPTED PR #597 EFFECTIVE FIREWALL-UNION REPAIR / CURRENT LIVE P3 OBSERVE #5 STOP `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING` PROVES ZERO FIREWALL GROUPS ATTACHED TO THE PRODUCTION DATABASE AT OBSERVATION TIME / CURRENT FOCUSED RED REPAIR `fix/timeweb-production-firewall-bootstrap-chain` ADDS BOUNDED MISSING-FIREWALL BOOTSTRAP -> READ-ONLY SCOPE PROOF -> OBSERVE -> PREPARE / PHYSICAL APP CREATION REMAINS PAUSED UNTIL P3 PREPARE + RECOVERY PREREQUISITES ARE PROVED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**. The PR #584 merge does not by itself invent a new percentage; this ledger changes the percentage only through explicit accepted program authority.
+
+### 2026-09-28 P3 observe #5 — missing production firewall
+
+PR #597 was accepted on protected main as squash `d440cdf859e34edb3b8727ef763347eab9a70803`. Its exact source head completed both DRAFT and READY repository verification cycles with all 14 applicable workflows `success`, zero unresolved review threads, and the supplemental Sonar Quality Gate passed with zero new issues and zero Security Hotspots.
+
+Fresh manual `V10 Timeweb PostgreSQL Production Cutover #5` on that accepted main passed exact-main/source/environment/input authority and reached the corrected provider network-scope classifier. It stopped before PostgreSQL authentication with `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING`.
+
+This materially narrows the earlier #4 evidence. The retired #4 classifier emitted `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE` for **both** zero groups and more than one group, so #4 did not prove a multi-group provider state. The corrected #5 classifier proves that the production database had zero attached Timeweb firewall groups at the exact observation. Because the database already has a public IPv4, current Timeweb Firewall semantics make this a missing security-boundary prerequisite, not a reason to bypass the gate.
+
+Current focused RED repair is `fix/timeweb-production-firewall-bootstrap-chain`. It adds an explicit one-shot `bootstrap_prepare` operation gated by confirmation `BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. The operation may mutate Timeweb only when the exact production target has **zero** attached groups. It creates/reuses one dedicated `DROP` group, one exact ingress TCP/5432 verifier `/32` rule, and one exact production DBaaS resource link. Any already-attached group, wrong/widened rule, extra resource, policy drift, duplicate identity, or ambiguous unsafe state remains fail-closed. Ambiguous POST outcomes reconcile through GET only; PATCH/DELETE/unlink/broadening are forbidden. After convergence the existing two-pass provider-scope verifier must pass, then SQL-read-only `observe` and the existing bounded P3 `prepare` run in the same dispatch.
+
+No verifier address is committed to source or ledgers; it remains an ephemeral masked workflow input. No App Platform creation, DNS/TLS cutover, Telegram/public-user activation, broker write, or Real-money authority is granted by this repair. Physical `omni-cio-v10` creation still waits for accepted P3 prepare plus recovery evidence because Timeweb private-network choice is immutable at application creation.
 
 ### 2026-09-28 P3 observe #4 firewall-group cardinality defect
 

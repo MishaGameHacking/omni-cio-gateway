@@ -26,6 +26,9 @@ WORKFLOW_RELATIVE = Path(
     ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 )
 NETWORK_SCOPE_RELATIVE = Path("scripts/timeweb_postgres_production_network_scope.py")
+NETWORK_CONVERGE_RELATIVE = Path(
+    "scripts/timeweb_postgres_production_network_converge.py"
+)
 TRANSPORT_KEY = "transport"
 TRANSPORT_INVALID = "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID"
 TEXT_ENCODING = "utf-8"
@@ -48,6 +51,7 @@ DEPENDENCIES = (
     HOSTED_RUNTIME_RELATIVE,
     "apps/api/timeweb_postgres_tls.py",
     NETWORK_SCOPE_RELATIVE.as_posix(),
+    NETWORK_CONVERGE_RELATIVE.as_posix(),
     "scripts/discover_v10_ru_pg_verifier_ipv4.py",
     WORKFLOW_RELATIVE.as_posix(),
     "infrastructure/postgres/hosted-postgres-runtime-contract.json",
@@ -821,6 +825,76 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
                 "TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_MUTATION_FORBIDDEN",
+            ):
+                guard.validate(root)
+
+    def test_rejects_missing_production_firewall_converge_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / NETWORK_CONVERGE_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "def converge_missing_firewall(",
+                "def converge_missing_firewall_removed(",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_SOURCE_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_production_firewall_converge_patch_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / NETWORK_CONVERGE_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            path.write_text(
+                source
+                + "\n\ndef _forbidden_patch(provider: object) -> None:\n"
+                + "    provider.mutate_once('PATCH', '/api/v1/firewall/groups/1')\n",
+                encoding=TEXT_ENCODING,
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED",
+            ):
+                guard.validate(root)
+
+    def test_rejects_bootstrap_prepare_without_explicit_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / WORKFLOW_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES",
+                "WRONG_BOOTSTRAP_CONFIRMATION",
+            )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT|"
+                "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_SECRET_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_network_bootstrap_contract_authority_widening(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["network_bootstrap"]["firewall_rule_patch_allowed"] = True
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_NETWORK_BOOTSTRAP_INVALID",
             ):
                 guard.validate(root)
 
