@@ -662,6 +662,55 @@ def _validate_network_scope_source(source: str) -> None:
         )
 
 
+_NETWORK_CONVERGE_OPERATIONS = frozenset(
+    {
+        "PRODUCTION_FIREWALL_GROUP_CREATE",
+        "PRODUCTION_FIREWALL_RULE_CREATE",
+        "PRODUCTION_FIREWALL_RESOURCE_LINK",
+    }
+)
+
+
+def _network_converge_mutation_operation(node: ast.Call) -> str | None:
+    if not isinstance(node.func, ast.Attribute) or node.func.attr != "mutate_once":
+        return None
+    if (
+        not node.args
+        or not isinstance(node.args[0], ast.Constant)
+        or node.args[0].value != "POST"
+    ):
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+        )
+    for keyword in node.keywords:
+        if keyword.arg != "operation":
+            continue
+        value = keyword.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            return value.value
+        break
+    raise CutoverContractError(
+        "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+    )
+
+
+def _validate_network_converge_mutations(tree: ast.AST) -> None:
+    observed = [
+        operation
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (operation := _network_converge_mutation_operation(node)) is not None
+    ]
+    if len(observed) != len(_NETWORK_CONVERGE_OPERATIONS):
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+        )
+    if set(observed) != _NETWORK_CONVERGE_OPERATIONS:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+        )
+
+
 def _validate_network_converge_source(source: str) -> None:
     _markers(
         source,
@@ -693,47 +742,7 @@ def _validate_network_converge_source(source: str) -> None:
         raise CutoverContractError(
             "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_SOURCE_DRIFT"
         ) from exc
-    allowed_operations = {
-        "PRODUCTION_FIREWALL_GROUP_CREATE",
-        "PRODUCTION_FIREWALL_RULE_CREATE",
-        "PRODUCTION_FIREWALL_RESOURCE_LINK",
-    }
-    observed_operations: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        if not isinstance(node.func, ast.Attribute) or node.func.attr != "mutate_once":
-            continue
-        if (
-            not node.args
-            or not isinstance(node.args[0], ast.Constant)
-            or node.args[0].value != "POST"
-        ):
-            raise CutoverContractError(
-                "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
-            )
-        operation = next(
-            (
-                keyword.value.value
-                for keyword in node.keywords
-                if keyword.arg == "operation"
-                and isinstance(keyword.value, ast.Constant)
-                and isinstance(keyword.value.value, str)
-            ),
-            None,
-        )
-        if operation not in allowed_operations:
-            raise CutoverContractError(
-                "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
-            )
-        observed_operations.append(operation)
-    if (
-        len(observed_operations) != len(allowed_operations)
-        or set(observed_operations) != allowed_operations
-    ):
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
-        )
+    _validate_network_converge_mutations(tree)
 
 
 def _validate_workflow_network_scope_order(workflow: str) -> None:
