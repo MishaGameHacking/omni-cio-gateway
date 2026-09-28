@@ -4,9 +4,19 @@ Updated: 2026-09-28
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `3326da2314010f510fb48775e21209a3ba165b0f` VIA ACCEPTED SYNTHETIC-START READINESS REPAIR / EXACT-MAIN POST-MERGE REPOSITORY EVIDENCE GREEN / CURRENT FOCUSED DEFECT CLASS TIMEWEB APP PLATFORM PRIVATE POSTGRESQL ROUTE + TRUE DATABASE READINESS / PHYSICAL APP CREATION PAUSED UNTIL THE FOCUSED SOURCE REPAIR IS ACCEPTED AND THE ORDERED P3 PREPARE/RECOVERY PREREQUISITES ARE PROVED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `f57e088d4188da4ceec387c82f8b3b847fc6e0bb` VIA ACCEPTED APP-PLATFORM PRIVATE POSTGRESQL ROUTE REPAIR / CURRENT LIVE P3 OBSERVE STOP `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE` IS A REPOSITORY/PROVIDER-SEMANTICS DEFECT / FOCUSED RED REPAIR PR #597 `fix/timeweb-production-firewall-group-union` / PHYSICAL APP CREATION REMAINS PAUSED UNTIL P3 OBSERVE -> PREPARE -> RECOVERY PREREQUISITES ARE PROVED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**. The PR #584 merge does not by itself invent a new percentage; this ledger changes the percentage only through explicit accepted program authority.
+
+### 2026-09-28 P3 observe #4 firewall-group cardinality defect
+
+Accepted protected main is `f57e088d4188da4ceec387c82f8b3b847fc6e0bb`, the squash merge of PR #596. That repair preserves the Timeweb technical PostgreSQL hostname for `verify-full` TLS identity while binding App Platform runtime TCP to the scoped private PostgreSQL address, and requires technical-candidate `/healthz database=READY` before P3 acceptance.
+
+Manual `V10 Timeweb PostgreSQL Production Cutover #4` on that exact main passed exact-main authority, P3 source, GitHub Environment and input validation, then stopped before database authentication with sanitized code `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE`.
+
+Fresh official Timeweb Firewall documentation proves the repository assumption behind that code is invalid: a service may belong to multiple firewall groups of the same type and the rules are combined. The focused RED repair is PR #597 / branch `fix/timeweb-production-firewall-group-union`. It replaces invented single-group and per-group-rule cardinality with a complete effective-union proof: all attached groups must remain allowlist/`DROP`, all group identities and provider rule identities must be unique, each group must link only the exact production database resource, and the effective rule union must contain the exact ingress TCP/5432 verifier `/32` rule and no other semantic rule. Rule-less same-type groups and duplicate equivalent rules are tolerated only because they do not widen the documented effective union. Two-pass provider snapshot stability remains mandatory.
+
+This repair is read-only provider verification. It does not mutate Timeweb firewall state, PostgreSQL, App Platform, DNS/TLS, Telegram/public-user state, broker authority or Real Trading. Do not rerun P3 from old main. Exact-head repository verification, squash merge, exact-main post-merge verification and then a fresh P3 `observe` are required.
 
 ### 2026-09-27 synthetic create #6 start-readiness defect
 
