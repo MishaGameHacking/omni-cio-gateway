@@ -62,6 +62,43 @@ def test_dataplane_proof_exports_only_after_live_bound_transport(
     )
 
 
+def test_dataplane_rejects_probe_target_drift_before_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    github_env = tmp_path / "github-env"
+    monkeypatch.setenv("GITHUB_ENV", str(github_env))
+    monkeypatch.setattr(
+        scope,
+        "verify_network_scope",
+        lambda *_args, **_kwargs: _PUBLIC_ADDRESS,
+    )
+    monkeypatch.setattr(
+        timeweb_postgres_tls,
+        "install_timeweb_postgres_ca",
+        lambda: tmp_path / "provider-ca.crt",
+    )
+    monkeypatch.setattr(
+        timeweb_postgres_tls,
+        "probe_timeweb_postgres_bound_public_transport",
+        lambda *_args, **_kwargs: _OTHER_PUBLIC_ADDRESS,
+    )
+
+    with pytest.raises(
+        dataplane.ProductionDataplaneStopped,
+        match="TIMEWEB_PG_PRODUCTION_DATAPLANE_PROBE_TARGET_DRIFT",
+    ):
+        dataplane.prove_production_dataplane(
+            api=_Api(),
+            project_id="42",
+            target_host="db.twc1.net",
+            verifier_cidr="8.8.4.4/32",
+            bootstrap_dsn="provider-dsn",
+        )
+
+    assert not github_env.exists()
+
+
 def test_dataplane_timeout_rechecks_stable_control_plane(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
