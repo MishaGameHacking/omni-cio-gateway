@@ -741,3 +741,27 @@ Repair scope: explicit scoped RFC1918 App-to-PostgreSQL transport with technical
 
 Next evidence: focused source verification -> Draft PR exact-head CI/Sonar/review -> READY verification -> explicit landing confirmation -> squash merge -> exact-main post-merge verification. After that, execution is deliberately interleaved rather than treating P2 and P3 as a linear all-or-nothing chain: run current-main P3 observe, complete P3 prepare plus recovery prerequisites, create the Timeweb App once in the accepted private network, bootstrap its provider technical domain, prove the exact-SHA P2 candidate with both /livez and /healthz database readiness, and only then run P3 accept. This ordering prevents the candidate health gate from depending on an unprepared database while also preventing P3 final acceptance from trusting a candidate that does not yet exist.
 
+
+
+### Private-route pre-merge challenge closure — 2026-09-28
+
+The continuing exact-source review found and repaired two downstream defects before physical
+App creation:
+
+- candidate database readiness now distinguishes a bounded hosted-runtime JSON 503 from an
+  anonymous proxy/provider 503. A real application `status=unavailable` response retains
+  exact release identity through the retry budget and terminates as database-not-ready;
+  malformed or intermediary 503 bodies remain generic transient HTTP failures;
+- P3 application lookup now reuses the same canonical repository-by-URL identity predicate
+  as P2. Provider-decorated repository presentation metadata can no longer make a valid
+  URL-connected App pass P2 and disappear at P3 final acceptance.
+
+Both fixes are covered by focused regressions and machine guards. They do not alter the
+selected private network, production public IPv4/firewall verifier path, PostgreSQL
+credentials, DNS, Telegram/public-user state, broker authority or Real Trading.
+
+The physical sequence remains fail-closed: certify and accept the source repair; prove P3
+observe; complete P3 prepare and recovery prerequisites; create the App once in the
+already selected private network; add the provider technical hostname after creation and
+redeploy the same accepted source; require both `/livez` exact release identity and
+`/healthz database=READY synthetic_preview=false`; only then permit P3 final acceptance.
