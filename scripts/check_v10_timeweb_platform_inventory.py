@@ -671,7 +671,7 @@ def _validate_known_transitive_consumers(payload: dict[str, Any]) -> None:
             "scripts/check_v10_ru_postgres_data_residency_migration.py",
             "scripts/check_v10_ru_postgres_timeweb_parity.py",
             "scripts/check_v10_wp17_web_security.py",
-            "scripts/discover_v10_ru_pg_verifier_ipv4.py",
+            "scripts/validate_v10_ru_pg_verifier_cidr.py",
             "scripts/postgres_runtime_primitives.py",
             "scripts/probe_v10_timeweb_ipv4_custody.py",
             "scripts/probe_v10_timeweb_postgres_control_plane.py",
