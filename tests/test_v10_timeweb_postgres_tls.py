@@ -99,13 +99,13 @@ def test_postgres_binding_digest_excludes_password_but_binds_target_identity() -
 
 
 def test_postgres_binding_digest_preserves_strict_transport_contract() -> None:
+    downgraded_dsn = VALID_DSN.replace("sslmode=verify-full", "sslmode=require")
+
     with pytest.raises(
         tls.TimewebPostgresTlsError,
         match="TIMEWEB_PG_TLS_VERIFY_FULL_REQUIRED",
     ):
-        tls.timeweb_postgres_binding_sha256(
-            VALID_DSN.replace("sslmode=verify-full", "sslmode=require")
-        )
+        tls.timeweb_postgres_binding_sha256(downgraded_dsn)
 
 
 def test_resolve_rewrites_only_local_ca_path(
