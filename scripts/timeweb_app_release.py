@@ -716,29 +716,10 @@ def _healthz_unavailable_payload(raw: bytes) -> dict[str, Any] | None:
     return value
 
 
-def _healthz_attempt(
-    active: Any,
-    request: Request,
+def _classify_healthz_response(
+    status: int,
+    raw: bytes,
 ) -> tuple[dict[str, Any] | None, str | None, int | None]:
-    try:
-        with active.open(request, timeout=30.0) as response:
-            status = int(response.status)
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-    except HTTPError as exc:
-        status = int(exc.code)
-        if status == 503:
-            try:
-                raw = exc.read(MAX_RESPONSE_BYTES + 1)
-            except OSError:
-                raw = b""
-            payload = _healthz_unavailable_payload(raw)
-            if payload is not None:
-                return payload, None, status
-        if status in _TRANSIENT:
-            return None, "http", status
-        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
-    except OSError:
-        return None, "transport", None
     if status == 503:
         payload = _healthz_unavailable_payload(raw)
         if payload is not None:
@@ -748,6 +729,30 @@ def _healthz_attempt(
     if status != 200:
         _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
     return _decode(status, raw, 200, "TIMEWEB_APP_RELEASE_HEALTHZ"), None, None
+
+
+def _http_error_body(exc: HTTPError) -> bytes:
+    if int(exc.code) != 503:
+        return b""
+    try:
+        return exc.read(MAX_RESPONSE_BYTES + 1)
+    except OSError:
+        return b""
+
+
+def _healthz_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+    except HTTPError as exc:
+        return _classify_healthz_response(int(exc.code), _http_error_body(exc))
+    except OSError:
+        return None, "transport", None
+    return _classify_healthz_response(status, raw)
 
 
 def _stop_healthz_retry(failure: str | None, status: int | None) -> NoReturn:
