@@ -9,6 +9,7 @@ from typing import Any
 
 _NETWORK_SCOPE_RELATIVE = "scripts/timeweb_postgres_production_network_scope.py"
 _NETWORK_CONVERGE_RELATIVE = "scripts/timeweb_postgres_production_network_converge.py"
+_NETWORK_DATAPLANE_RELATIVE = "scripts/timeweb_postgres_production_dataplane.py"
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
@@ -20,7 +21,8 @@ HOSTED_RUNTIME = ROOT / "apps/api/hosted_runtime.py"
 TIMEWEB_TLS = ROOT / "apps/api/timeweb_postgres_tls.py"
 NETWORK_SCOPE = ROOT / _NETWORK_SCOPE_RELATIVE
 NETWORK_CONVERGE = ROOT / _NETWORK_CONVERGE_RELATIVE
-DISCOVERER = ROOT / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
+NETWORK_DATAPLANE = ROOT / _NETWORK_DATAPLANE_RELATIVE
+VERIFIER_VALIDATOR = ROOT / "scripts/validate_v10_ru_pg_verifier_cidr.py"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 RUNTIME = ROOT / "infrastructure/postgres/hosted-postgres-runtime-contract.json"
 RECOVERY = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
