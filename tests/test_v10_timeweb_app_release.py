@@ -119,10 +119,7 @@ def _app(
         "repository": {
             "full_name": release.CANONICAL_REPOSITORY,
             "name": release.CANONICAL_REPOSITORY_NAME,
-            "url": (
-                "https://github.com/"
-                f"{release.CANONICAL_REPOSITORY}.git"
-            ),
+            "url": (f"https://github.com/{release.CANONICAL_REPOSITORY}.git"),
         },
         "domains": domains,
         "envs": {
