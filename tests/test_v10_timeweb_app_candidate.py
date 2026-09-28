@@ -146,7 +146,9 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         root = self._fixture()
         path = root / "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md"
         source = path.read_text(encoding="utf-8")
-        mutated = source.replace("OMNI_V10_POSTGRES_BINDING_SHA256", "REMOVED_BINDING", 1)
+        mutated = source.replace(
+            "OMNI_V10_POSTGRES_BINDING_SHA256", "REMOVED_BINDING", 1
+        )
         self.assertNotEqual(mutated, source)
         path.write_text(mutated, encoding="utf-8")
         with self.assertRaisesRegex(
