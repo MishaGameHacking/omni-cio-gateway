@@ -385,19 +385,20 @@ def test_rejects_incomplete_floating_ip_inventory() -> None:
         _verify(responses)
 
 
-def _add_equivalent_second_firewall_group(
+def _add_second_firewall_group(
     responses: dict[str, Any],
     *,
     cidr: str = CIDR,
+    include_rule: bool = True,
 ) -> None:
     responses[SERVICE_GROUPS_PATH]["groups"].append({"id": GROUP_ID_2})
     responses[SERVICE_GROUPS_PATH]["meta"][TOTAL_KEY] = 2
     responses[FIREWALL_GROUP_PATH_2] = {
         GROUP_KEY: {"id": GROUP_ID_2, "policy": "DROP"}
     }
-    responses[FIREWALL_RULES_PATH_2] = _page(
-        RULES_KEY,
-        [
+    rules = []
+    if include_rule:
+        rules.append(
             {
                 "id": "rule-2",
                 "direction": "ingress",
@@ -405,8 +406,8 @@ def _add_equivalent_second_firewall_group(
                 "port": "5432",
                 "cidr": cidr,
             }
-        ],
-    )
+        )
+    responses[FIREWALL_RULES_PATH_2] = _page(RULES_KEY, rules)
     responses[FIREWALL_RESOURCES_PATH_2] = _page(
         RESOURCES_KEY,
         [{"id": DATABASE_ID, "type": DBAAS_RESOURCE_TYPE}],
@@ -415,7 +416,7 @@ def _add_equivalent_second_firewall_group(
 
 def test_accepts_multiple_equivalent_firewall_groups() -> None:
     responses = _responses()
-    _add_equivalent_second_firewall_group(responses)
+    _add_second_firewall_group(responses)
 
     api = _verify(responses)
 
@@ -424,13 +425,32 @@ def test_accepts_multiple_equivalent_firewall_groups() -> None:
     assert api.calls.count(FIREWALL_RESOURCES_PATH_2) == 2
 
 
+def test_accepts_empty_same_type_group_when_effective_union_stays_exact() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses, include_rule=False)
+
+    _verify(responses)
+
+
 def test_rejects_multiple_firewall_groups_when_effective_scope_widens() -> None:
     responses = _responses()
-    _add_equivalent_second_firewall_group(responses, cidr="1.1.1.1/32")
+    _add_second_firewall_group(responses, cidr="1.1.1.1/32")
 
     with pytest.raises(
         scope.NetworkScopeStopped,
         match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT",
+    ):
+        _verify(responses)
+
+
+def test_rejects_missing_effective_firewall_rule() -> None:
+    responses = _responses()
+    responses[FIREWALL_RULES_PATH] = _page(RULES_KEY, [])
+    _add_second_firewall_group(responses, include_rule=False)
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_EFFECTIVE_RULE_MISSING",
     ):
         _verify(responses)
 
@@ -515,6 +535,13 @@ def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED",
     ):
         _verify(responses)
+
+
+def test_accepts_duplicate_semantic_rule_across_groups() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+
+    _verify(responses)
 
 
 def test_rejects_truncated_firewall_rule_page() -> None:
