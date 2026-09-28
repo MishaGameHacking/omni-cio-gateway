@@ -1171,7 +1171,8 @@ def _validate_sources() -> None:
 
 def validate(root: Path = ROOT) -> None:
     global ROOT, CONTRACT, RUNBOOK, CONTROLLER, HOSTED_RUNTIME, TIMEWEB_TLS
-    global NETWORK_SCOPE, NETWORK_CONVERGE, DISCOVERER, WORKFLOW, RUNTIME, RECOVERY
+    global NETWORK_SCOPE, NETWORK_CONVERGE, NETWORK_DATAPLANE, VERIFIER_VALIDATOR
+    global WORKFLOW, RUNTIME, RECOVERY
     old = (
         ROOT,
         CONTRACT,
@@ -1181,7 +1182,8 @@ def validate(root: Path = ROOT) -> None:
         TIMEWEB_TLS,
         NETWORK_SCOPE,
         NETWORK_CONVERGE,
-        DISCOVERER,
+        NETWORK_DATAPLANE,
+        VERIFIER_VALIDATOR,
         WORKFLOW,
         RUNTIME,
         RECOVERY,
@@ -1200,7 +1202,8 @@ def validate(root: Path = ROOT) -> None:
         TIMEWEB_TLS = root / "apps/api/timeweb_postgres_tls.py"
         NETWORK_SCOPE = root / _NETWORK_SCOPE_RELATIVE
         NETWORK_CONVERGE = root / _NETWORK_CONVERGE_RELATIVE
-        DISCOVERER = root / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
+        NETWORK_DATAPLANE = root / _NETWORK_DATAPLANE_RELATIVE
+        VERIFIER_VALIDATOR = root / "scripts/validate_v10_ru_pg_verifier_cidr.py"
         WORKFLOW = (
             root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
         )
@@ -1219,7 +1222,8 @@ def validate(root: Path = ROOT) -> None:
             TIMEWEB_TLS,
             NETWORK_SCOPE,
             NETWORK_CONVERGE,
-            DISCOVERER,
+            NETWORK_DATAPLANE,
+            VERIFIER_VALIDATOR,
             WORKFLOW,
             RUNTIME,
             RECOVERY,
