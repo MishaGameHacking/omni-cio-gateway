@@ -401,14 +401,18 @@ def _validate_github(payload: dict[str, Any]) -> None:
         "environment_branch_policy_pattern": "main",
         "environment_branch_policy_type": "branch",
         "verifier_cidr_input": "verifier_cidr",
-        "verifier_cidr_source": "WORKFLOW_DISPATCH_INPUT",
+        "verifier_cidr_source": "WORKFLOW_DISPATCH_INPUT_NOT_OBSERVED_EGRESS",
+        "verifier_cidr_validator_script": "scripts/validate_v10_ru_pg_verifier_cidr.py",
         "provider_network_converge_script": _NETWORK_CONVERGE_RELATIVE,
         "provider_network_scope_script": _NETWORK_SCOPE_RELATIVE,
+        "provider_dataplane_script": _NETWORK_DATAPLANE_RELATIVE,
         "network_bootstrap_operation_only": "bootstrap_prepare",
         "network_bootstrap_confirmation_required": _BOOTSTRAP_PREPARE_CONFIRMATION,
         "shared_provider_network_concurrency_group": (
             "v10-timeweb-postgres-public-ipv4-tls"
         ),
+        "public_hostaddr_env": "OMNI_V10_TIMEWEB_PROD_PUBLIC_HOSTADDR",
+        "public_hostaddr_source": "PROVIDER_SCOPE_PLUS_LIVE_BOUND_TRANSPORT",
     }
     if any(github.get(key) != value for key, value in expected.items()):
         raise CutoverContractError(_GITHUB_INVALID)
@@ -424,6 +428,7 @@ def _validate_github(payload: dict[str, Any]) -> None:
             "environment_policy_reverified_before_secret_access",
             "verifier_cidr_must_be_global_ipv4_32",
             "provider_network_scope_read_only",
+            "provider_dataplane_before_database_auth_required",
             "input_authority_validation_before_secret_access_required",
         ),
         _GITHUB_INVALID,
@@ -435,6 +440,8 @@ def _validate_github(payload: dict[str, Any]) -> None:
             "environment_administration_by_workflow_allowed",
             "provider_token_accept_only",
             "provider_token_network_preflight_and_accept_only",
+            "verifier_cidr_external_discovery_allowed",
+            "public_hostaddr_value_may_be_logged",
         ),
         _GITHUB_INVALID,
     )
