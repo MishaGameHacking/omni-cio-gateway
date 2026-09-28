@@ -307,6 +307,16 @@ def _private_ipv4_address(
     return address
 
 
+def _public_ipv4_address(value: str) -> ipaddress.IPv4Address:
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID) from None
+    if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
+        raise TimewebPostgresTlsError(_TLS_VERIFIED_HOSTADDR_INVALID)
+    return address
+
+
 def _prepared_hostaddr(
     raw_hostaddr: str,
     *,
@@ -607,6 +617,41 @@ def _probe_transport_once(
     raise TimewebPostgresTlsError(_TLS_TCP_FAILED)
 
 
+def _probe_bound_public_transport_with_retry(
+    hostname: str,
+    address: str,
+    context: Any,
+    *,
+    connector: Any,
+    sleeper: Sleep,
+    delays: tuple[float, ...],
+) -> str:
+    attempts = len(delays) + 1
+    for attempt in range(attempts):
+        try:
+            _probe_postgres_tls_endpoint(
+                hostname,
+                address,
+                context,
+                connector=connector,
+            )
+        except TimewebPostgresTlsError as exc:
+            if exc.code not in _TRANSIENT_TRANSPORT_CODES or attempt + 1 >= attempts:
+                raise
+            _emit(
+                "TIMEWEB_PG_TLS_BOUND_PUBLIC_TRANSPORT_RETRY "
+                f"code={exc.code} attempt={attempt + 2}/{attempts}"
+            )
+            sleeper(delays[attempt])
+            continue
+        _emit(
+            "TIMEWEB_PG_TLS_BOUND_PUBLIC_TRANSPORT=READY "
+            "tcp=5432 tls=verify-full route=provider-bound"
+        )
+        return address
+    raise AssertionError("bounded Timeweb PostgreSQL public transport retry exhausted")
+
+
 def _probe_private_transport_with_retry(
     hostname: str,
     address: str,
@@ -705,6 +750,32 @@ def probe_timeweb_postgres_transport(
         hostname,
         context,
         resolver=resolver,
+        connector=connector,
+        sleeper=sleeper,
+        delays=delays,
+    )
+
+
+def probe_timeweb_postgres_bound_public_transport(
+    dsn: str,
+    ca_path: Path,
+    *,
+    public_hostaddr: str,
+    connector: Any = socket.create_connection,
+    context_factory: Any = _tls_client_context,
+    sleeper: Sleep = time.sleep,
+    delays: tuple[float, ...] = _TRANSPORT_RETRY_DELAYS_SECONDS,
+) -> str:
+    _reject_ambient_libpq_environment()
+    params = _connection_params(dsn)
+    address = _public_ipv4_address(public_hostaddr)
+    _validate_probe_ca(ca_path)
+    context = context_factory(ca_path)
+    hostname = params["host"].strip().lower().rstrip(".")
+    return _probe_bound_public_transport_with_retry(
+        hostname,
+        address.compressed,
+        context,
         connector=connector,
         sleeper=sleeper,
         delays=delays,
