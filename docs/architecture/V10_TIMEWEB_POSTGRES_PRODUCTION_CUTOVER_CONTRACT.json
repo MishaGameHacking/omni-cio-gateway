@@ -39,7 +39,7 @@
     "ca_redirect_allowed": false,
     "ca_materialization_before_connect_required": true,
     "credential_free_transport_preflight_required": true,
-    "dns_public_resolution_required": true,
+    "dns_public_resolution_required": false,
     "private_or_reserved_resolution_allowed": false,
     "postgres_sslrequest_required": true,
     "tls_minimum_version": "TLSv1.2",
@@ -85,7 +85,17 @@
     "provider_network_scope_stability_witness_required": true,
     "provider_network_scope_malformed_provider_rows_fail_closed": true,
     "provider_network_scope_project_identity_required": true,
-    "public_ipv4_list_detail_consistency_required": true
+    "public_ipv4_list_detail_consistency_required": true,
+    "provider_bound_public_hostaddr_transport_required": true,
+    "provider_bound_public_hostaddr_source": "TIMEWEB_CONTROL_PLANE",
+    "provider_bound_public_hostaddr_live_tls_proof_required": true,
+    "provider_bound_public_hostaddr_stability_recheck_required": true,
+    "requested_verifier_cidr_is_egress_observation": false,
+    "firewall_source_must_be_proved_by_live_transport": true,
+    "dataplane_readiness_bounded_retry_required": true,
+    "dataplane_retry_control_plane_revalidation_required": true,
+    "firewall_applies_to_private_networks": false,
+    "hosted_private_route_firewall_dependency_allowed": false
   },
   "network_bootstrap": {
     "operation": "bootstrap_prepare",
@@ -128,7 +138,15 @@
       "57P03"
     ],
     "invalid_authorization_sqlstate_retry_allowed": false,
-    "unknown_server_sqlstate_retry_allowed": false
+    "unknown_server_sqlstate_retry_allowed": false,
+    "dataplane_transient_codes": [
+      "TIMEWEB_PG_TLS_TCP_FAILED",
+      "TIMEWEB_PG_TLS_TCP_REFUSED",
+      "TIMEWEB_PG_TLS_TCP_TIMEOUT",
+      "TIMEWEB_PG_TLS_ROUTE_UNREACHABLE"
+    ],
+    "dataplane_final_failure_requires_control_plane_recheck": true,
+    "dataplane_blind_mutation_retry_allowed": false
   },
   "runtime_role": {
     "name": "omni_cio_hosted_api",
@@ -230,13 +248,20 @@
     "network_bootstrap_operation_only": "bootstrap_prepare",
     "network_bootstrap_confirmation_required": "BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES",
     "verifier_cidr_input": "verifier_cidr",
-    "verifier_cidr_source": "WORKFLOW_DISPATCH_INPUT",
+    "verifier_cidr_source": "WORKFLOW_DISPATCH_INPUT_NOT_OBSERVED_EGRESS",
     "verifier_cidr_must_be_global_ipv4_32": true,
     "provider_network_converge_script": "scripts/timeweb_postgres_production_network_converge.py",
     "provider_network_scope_script": "scripts/timeweb_postgres_production_network_scope.py",
     "provider_network_scope_read_only": true,
     "input_authority_validation_before_secret_access_required": true,
-    "shared_provider_network_concurrency_group": "v10-timeweb-postgres-public-ipv4-tls"
+    "shared_provider_network_concurrency_group": "v10-timeweb-postgres-public-ipv4-tls",
+    "verifier_cidr_validator_script": "scripts/validate_v10_ru_pg_verifier_cidr.py",
+    "verifier_cidr_external_discovery_allowed": false,
+    "provider_dataplane_script": "scripts/timeweb_postgres_production_dataplane.py",
+    "provider_dataplane_before_database_auth_required": true,
+    "public_hostaddr_env": "OMNI_V10_TIMEWEB_PROD_PUBLIC_HOSTADDR",
+    "public_hostaddr_source": "PROVIDER_SCOPE_PLUS_LIVE_BOUND_TRANSPORT",
+    "public_hostaddr_value_may_be_logged": false
   },
   "success": {
     "sanitized_marker": "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED",
