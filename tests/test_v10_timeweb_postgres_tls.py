@@ -80,6 +80,34 @@ def test_connection_contract_accepts_valid_domain() -> None:
     assert params["sslmode"] == "verify-full"
 
 
+def test_postgres_binding_digest_excludes_password_but_binds_target_identity() -> None:
+    original = tls.timeweb_postgres_binding_sha256(VALID_DSN)
+    rotated_password = tls.timeweb_postgres_binding_sha256(
+        VALID_DSN.replace(f"{_CONNINFO_FIELD}=x ", f"{_CONNINFO_FIELD}=rotated ")
+    )
+    other_database = tls.timeweb_postgres_binding_sha256(
+        VALID_DSN.replace("dbname=default_db", "dbname=product_db")
+    )
+    other_host = tls.timeweb_postgres_binding_sha256(
+        VALID_DSN.replace("host=db.twc1.net", "host=db2.twc1.net")
+    )
+
+    assert len(original) == 64
+    assert original == rotated_password
+    assert original != other_database
+    assert original != other_host
+
+
+def test_postgres_binding_digest_preserves_strict_transport_contract() -> None:
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_VERIFY_FULL_REQUIRED",
+    ):
+        tls.timeweb_postgres_binding_sha256(
+            VALID_DSN.replace("sslmode=verify-full", "sslmode=require")
+        )
+
+
 def test_resolve_rewrites_only_local_ca_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
