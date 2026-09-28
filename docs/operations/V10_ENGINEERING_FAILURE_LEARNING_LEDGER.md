@@ -1113,3 +1113,25 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** live provider normalization learned by an upstream gate must be consumed through one shared predicate by every downstream gate. Do not duplicate presentation-field assumptions across release and acceptance controllers.
 
 **Dependency/tooling knowledge change:** Timeweb supports repository connection by URL as a first-class App Platform source; that path must remain exact-target and autodeploy-off in this release model.
+
+---
+
+## FL-048 — Timeweb panel health path overrides Dockerfile HEALTHCHECK
+
+**Date:** 2026-09-28  
+**Scope:** Timeweb App Platform creation-time liveness contract
+
+**Symptom / finding:** the focused private-route repair correctly separated process-only `/livez` from database-aware `/healthz`, but the candidate and full-delivery contracts still encoded the opposite precedence between the Timeweb panel health path and Dockerfile `HEALTHCHECK`. The runbook and execution ledger repeated that stale assumption. A live App could therefore be configured according to current Timeweb behavior while repository guards certified a contradictory provider model.
+
+**Root cause:** provider behavior was copied from an older assumption instead of being revalidated against the current App Platform health-check specification at the moment the physical creation form became an active consumer. The Dockerfile and panel happened to target the same endpoint, which hid the contradiction from source/runtime tests.
+
+**Blast radius searched:** P2 candidate contract/guard/tests/runbook, full-production delivery contract/guard/tests, Timeweb execution ledger, physical App creation form, Dockerfile healthcheck, `/livez` process semantics and `/healthz` database readiness.
+
+**Corrective change:** make the Timeweb panel path the authoritative platform liveness source, require the panel value `/livez`, retain Dockerfile `HEALTHCHECK` on the same `/livez` endpoint as a safe fallback, and keep `/healthz` exclusively as release/database readiness evidence.
+
+**Permanent regression/guard:** both P2 and full-delivery machine contracts now fail when panel-over-Dockerfile precedence is reversed; runbook guards use line-safe semantic markers so Markdown wrapping cannot create a false RED.
+
+**Future prevention rule:** revalidate provider-sensitive precedence and immutable creation-time behavior from current official documentation immediately before the provider field becomes operational. Do not let two agreeing endpoint values mask a wrong model of which control plane owns the setting.
+
+**Dependency/tooling knowledge change:** current Timeweb App Platform documentation states that the panel health-check path has priority over Dockerfile `HEALTHCHECK`; the Dockerfile check is used only when the panel field is empty.
+
