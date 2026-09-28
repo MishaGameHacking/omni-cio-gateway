@@ -194,6 +194,15 @@ def _validate_runtime_contract(payload: dict[str, Any]) -> None:
         and runtime.get("postgres_private_route_rfc1918_required") is True
         and runtime.get("postgres_private_hostaddr_must_be_inside_cidr") is True
         and runtime.get("postgres_tls_hostname_identity_must_remain_dsn_host") is True
+        and runtime.get("postgres_binding_sha256_env")
+        == "OMNI_V10_POSTGRES_BINDING_SHA256"
+        and runtime.get("postgres_binding_sha256_required") is True
+        and runtime.get("postgres_binding_sha256_is_secret") is False
+        and runtime.get("postgres_binding_sha256_excludes_password") is True
+        and runtime.get("postgres_binding_sha256_binds_host_port_database_user_tls")
+        is True
+        and runtime.get("provider_masked_secret_value_allowed")
+        == "hidden-by-api-key-policy"
     )
     flags_ready = (
         runtime.get("vk_login_must_be_false_or_absent") is True
@@ -333,6 +342,9 @@ def _validate_controller(path: Path) -> None:
         "RUNTIME_MODE_LIVE_OPERABLE",
         "TIMEWEB_APP_RELEASE_P5_LIVE_EVIDENCE_REQUIRED",
         "TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED",
+        "POSTGRES_BINDING_SHA256_ENV",
+        "TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID",
+        'TIMEWEB_HIDDEN_BY_API_KEY_POLICY = "hidden-by-api-key-policy"',
         "TIMEWEB_APP_RELEASE_RETIRED_PROVIDER_ENV_PRESENT",
         "TIMEWEB_APP_RELEASE_AMBIGUOUS_UNRESOLVED",
         "TIMEWEB_APP_RELEASE_MULTIPLE_INFLIGHT_EXACT_SHA",
