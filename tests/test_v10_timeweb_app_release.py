@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from io import BytesIO
 import json
+from urllib.error import HTTPError
 from urllib.request import Request
 
 import pytest
@@ -52,6 +54,21 @@ class _Opener:
         del timeout
         self.requests.append(request)
         return self.responses.pop(0)
+
+
+class _Http503Healthz:
+    def __init__(self, payload: object) -> None:
+        self._raw = json.dumps(payload).encode("utf-8")
+
+    def open(self, request: Request, *, timeout: float) -> _Response:
+        del timeout
+        raise HTTPError(
+            request.full_url,
+            503,
+            "Service Unavailable",
+            {},
+            BytesIO(self._raw),
+        )
 
 
 class _Livez:
@@ -405,6 +422,38 @@ def test_healthz_requires_real_database_readiness(
         stale_release,
         "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT",
     )
+
+
+def test_healthz_classifies_runtime_http_503_as_database_not_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
+    opener = _Http503Healthz(
+        {
+            "status": "unavailable",
+            "release_sha": EXPECTED_SHA,
+            "synthetic_preview": False,
+        }
+    )
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY",
+    ):
+        release._verify_healthz(CANDIDATE_HOST, EXPECTED_SHA, opener=opener)
+
+
+def test_healthz_keeps_untrusted_http_503_body_as_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
+    opener = _Http503Healthz({"status": "proxy-unavailable"})
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR",
+    ):
+        release._verify_healthz(CANDIDATE_HOST, EXPECTED_SHA, opener=opener)
 
 
 def test_healthz_retries_transient_unavailability_until_ready(
