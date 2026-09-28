@@ -38,6 +38,7 @@ Required runtime configuration for P2:
 - `OMNI_V10_POSTGRES_RUNTIME_ROLE=omni_cio_hosted_api`
 - `OMNI_V10_POSTGRES_PRIVATE_HOSTADDR=<production PostgreSQL private IPv4>`
 - `OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR=<exact Timeweb private-network CIDR>`
+- `OMNI_V10_POSTGRES_BINDING_SHA256=<non-secret digest emitted by accepted P3 prepare>`
 - `OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED=true`
 - `PUBLIC_MULTI_USER_ENABLED=false`
 - `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`
@@ -45,8 +46,11 @@ Required runtime configuration for P2:
 
 The provider-assigned App technical domain does not exist until the application has been
 created. During that one creation-time bootstrap only, `OMNI_V10_CANDIDATE_HOSTNAME`
-may be absent so the container can start and Timeweb can perform its localhost
-`/livez` health check. Startup intentionally does not open PostgreSQL merely to satisfy
+may be absent so the container can start. For Dockerfile deployments the root
+`Dockerfile` `HEALTHCHECK` is the authoritative Timeweb container-health probe and
+targets localhost `/livez`; Timeweb's current documentation says the panel health path
+is ignored when Dockerfile `HEALTHCHECK` is present. Startup intentionally does not open
+PostgreSQL merely to satisfy
 liveness; the bounded database pool connects lazily and `/healthz` owns the real
 database readiness probe. This prevents a transient database outage from turning a
 process-liveness check into a container restart loop. This is **not** P2 acceptance. As soon as Timeweb assigns the
@@ -54,6 +58,13 @@ technical domain, add it as `OMNI_V10_CANDIDATE_HOSTNAME`, keep autodeploy disab
 the selected private network unchanged, redeploy the same exact accepted-main SHA, and
 only then run P2 `observe`/`deploy`. P2 remains fail-closed while that hostname is
 missing or not attached to the application.
+
+The binding digest is not a credential and excludes the PostgreSQL password. It binds the
+expected runtime host, port, database, user, TLS mode and canonical CA-path contract.
+The hosted runtime recomputes it from the real provider-side DSN before serving the App;
+a missing or mismatched digest stops startup with `HOSTED_RUNTIME_DATABASE_BINDING_DRIFT`.
+Use only the digest emitted by the exact accepted P3 `prepare` run for the same runtime
+DSN; do not calculate it from the Timeweb panel's PHP/PDO presentation.
 
 The DSN keeps the Timeweb PostgreSQL technical hostname, `sslmode=verify-full` and
 the canonical relative CA path. The private address is supplied separately. The runtime
