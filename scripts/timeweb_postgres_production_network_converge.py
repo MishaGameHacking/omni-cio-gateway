@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import os
 import sys
 import time
-from collections.abc import Callable
 from typing import Any, NoReturn
 from urllib.parse import urlencode
 
