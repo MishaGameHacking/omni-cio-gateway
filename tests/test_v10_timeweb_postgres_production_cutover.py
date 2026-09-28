@@ -127,10 +127,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                     source = controller.read_text(encoding=TEXT_ENCODING)
                     marker = "        _verify_bootstrap_database_authority(bootstrap)\n"
                     self.assertEqual(source.count(marker), 2)
-                    parts = source.split(marker)
-                    mutated = marker.join(parts[:occurrence]) + "".join(
-                        [parts[occurrence], *parts[occurrence + 1 :]]
-                    )
+                    if occurrence == 1:
+                        mutated = source.replace(marker, "", 1)
+                    else:
+                        left, right = source.rsplit(marker, 1)
+                        mutated = left + right
                     self.assertEqual(mutated.count(marker), 1)
                     controller.write_text(mutated, encoding=TEXT_ENCODING)
                     with self.assertRaisesRegex(
