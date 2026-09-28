@@ -1067,6 +1067,31 @@ def test_candidate_hostname_is_optional_and_validated(
         _optional_candidate_hostname()
 
 
+def test_hosted_runtime_rejects_database_binding_drift_before_pool_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = {
+        "OMNI_V10_HOSTED_RUNTIME": "1",
+        "OMNI_V10_PUBLIC_HOSTNAME": HOSTNAME,
+        "OMNI_V10_RELEASE_SHA": RELEASE_SHA,
+        "OMNI_V10_POSTGRES_RUNTIME_ROLE": "runtime",
+        "OMNI_V10_POSTGRES_DSN": "external-dsn",
+        "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR": "10.0.0.10",
+        "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR": "10.0.0.0/24",
+        "OMNI_V10_POSTGRES_BINDING_SHA256": "a" * 64,
+    }
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        hosted_runtime,
+        "timeweb_postgres_binding_sha256",
+        lambda _dsn: "b" * 64,
+    )
+
+    with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_BINDING_DRIFT"):
+        hosted_runtime.create_app()
+
+
 def test_hosted_runtime_reproves_private_transport_for_each_database_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1201,6 +1226,8 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "prepare_timeweb_postgres_private_target" in runtime
     assert "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR" in runtime
     assert "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR" in runtime
+    assert "OMNI_V10_POSTGRES_BINDING_SHA256" in runtime
+    assert "timeweb_postgres_binding_sha256" in runtime
     assert "prepare_timeweb_postgres_tls" not in runtime
     assert 'failure_prefix="HOSTED_RUNTIME_DATABASE"' in runtime
     assert "connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS" in runtime
