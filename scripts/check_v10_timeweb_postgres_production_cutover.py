@@ -955,7 +955,8 @@ def _validate_sources() -> None:
             "_PRODUCTION_CONNECT_RETRY_DELAYS = (",
             "retry_delays=_PRODUCTION_CONNECT_RETRY_DELAYS",
             "timeweb_postgres_tls.install_timeweb_postgres_ca()",
-            "timeweb_postgres_tls.probe_timeweb_postgres_transport(",
+            'PUBLIC_HOSTADDR_ENV = "OMNI_V10_TIMEWEB_PROD_PUBLIC_HOSTADDR"',
+            "timeweb_postgres_tls.probe_timeweb_postgres_bound_public_transport(",
             "timeweb_postgres_tls.resolve_timeweb_postgres_dsn(",
             "timeweb_postgres_tls.connect_prepared_timeweb_postgres(",
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
@@ -1034,6 +1035,8 @@ def _validate_sources() -> None:
             "TIMEWEB_PG_TLS_VERIFY_FULL_REQUIRED",
             "TIMEWEB_PG_TLS_ROOT_CERT_PATH_INVALID",
             "probe_timeweb_postgres_transport(",
+            "probe_timeweb_postgres_bound_public_transport(",
+            "_public_ipv4_address(",
             "prepare_timeweb_postgres_target(",
             "prepare_timeweb_postgres_private_target(",
             "probe_timeweb_postgres_private_transport(",
@@ -1050,12 +1053,14 @@ def _validate_sources() -> None:
 
     _validate_network_scope_source(_text(NETWORK_SCOPE))
     _validate_network_converge_source(_text(NETWORK_CONVERGE))
+    _validate_network_dataplane_source(_text(NETWORK_DATAPLANE))
     _markers(
-        _text(DISCOVERER),
+        _text(VERIFIER_VALIDATOR),
         (
             'CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"',
+            "does not discover NAT egress",
             "::add-mask::",
-            "RU_PG_VERIFIER_EGRESS=READY source=/32",
+            "RU_PG_VERIFIER_CIDR=READY source=workflow_input mask=/32",
         ),
         "TIMEWEB_PG_CUTOVER_VERIFIER_CIDR_GUARD_DRIFT",
     )
