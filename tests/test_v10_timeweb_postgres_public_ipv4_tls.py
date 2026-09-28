@@ -12,7 +12,7 @@ from unittest import mock
 from urllib.error import HTTPError
 
 from scripts import check_v10_timeweb_postgres_public_ipv4_tls as guard
-from scripts import discover_v10_ru_pg_verifier_ipv4 as discoverer
+from scripts import validate_v10_ru_pg_verifier_cidr as verifier_validator
 from scripts import provision_v10_timeweb_postgres_public_ipv4_tls as provisioner
 
 
@@ -1428,7 +1428,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "code=TIMEWEB_FIREWALL_RESOURCE_LINK_REJECTED http_status=400",
         )
 
-    def test_discoverer_validates_explicit_cidr_and_masks_value(self) -> None:
+    def test_verifier_validator_validates_explicit_cidr_and_masks_value(self) -> None:
         with tempfile.NamedTemporaryFile(delete=False) as handle:
             env_path = handle.name
         self.addCleanup(lambda: Path(env_path).unlink(missing_ok=True))
@@ -1437,40 +1437,40 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 os.environ,
                 {
                     "GITHUB_ENV": env_path,
-                    discoverer.CIDR_ENV: "8.8.8.8/32",
+                    verifier_validator.CIDR_ENV: "8.8.8.8/32",
                 },
                 clear=True,
             ),
             mock.patch("builtins.print") as output,
         ):
-            cidr = discoverer.discover()
+            cidr = verifier_validator.validate()
         self.assertEqual(cidr, "8.8.8.8/32")
         self.assertEqual(
             Path(env_path).read_text(encoding="utf-8"),
-            f"{discoverer.CIDR_ENV}=8.8.8.8/32\n",
+            f"{verifier_validator.CIDR_ENV}=8.8.8.8/32\n",
         )
         rendered = " ".join(str(call) for call in output.call_args_list)
         self.assertIn("::add-mask::8.8.8.8", rendered)
         self.assertIn("::add-mask::8.8.8.8/32", rendered)
         self.assertIn(
-            "RU_PG_VERIFIER_EGRESS=READY source=/32",
+            "RU_PG_VERIFIER_CIDR=READY source=workflow_input mask=/32",
             rendered,
         )
 
-    def test_discoverer_rejects_missing_non_global_or_non_32_input(self) -> None:
+    def test_verifier_validator_rejects_missing_non_global_or_non_32_input(self) -> None:
         for env, reason in (
             ({}, "RU_PG_VERIFIER_CIDR_REQUIRED"),
-            ({discoverer.CIDR_ENV: "203.0.113.7/32"}, "RU_PG_VERIFIER_CIDR_INVALID"),
-            ({discoverer.CIDR_ENV: "8.8.8.0/24"}, "RU_PG_VERIFIER_CIDR_INVALID"),
-            ({discoverer.CIDR_ENV: "8.8.8.8"}, "RU_PG_VERIFIER_CIDR_INVALID"),
+            ({verifier_validator.CIDR_ENV: "203.0.113.7/32"}, "RU_PG_VERIFIER_CIDR_INVALID"),
+            ({verifier_validator.CIDR_ENV: "8.8.8.0/24"}, "RU_PG_VERIFIER_CIDR_INVALID"),
+            ({verifier_validator.CIDR_ENV: "8.8.8.8"}, "RU_PG_VERIFIER_CIDR_INVALID"),
         ):
             with self.subTest(env=env, reason=reason):
                 with mock.patch.dict(os.environ, env, clear=True):
-                    with self.assertRaisesRegex(discoverer.EgressStopped, reason):
-                        discoverer.discover()
+                    with self.assertRaisesRegex(verifier_validator.VerifierCidrStopped, reason):
+                        verifier_validator.validate()
 
-    def test_discoverer_has_no_retired_provider_network_dependency(self) -> None:
-        source = Path(discoverer.__file__).read_text(encoding="utf-8").casefold()
+    def test_verifier_validator_has_no_retired_provider_network_dependency(self) -> None:
+        source = Path(verifier_validator.__file__).read_text(encoding="utf-8").casefold()
         self.assertNotIn("cloudflare.com", source)
         self.assertNotIn("urllib.request", source)
         self.assertNotIn("http://", source)
