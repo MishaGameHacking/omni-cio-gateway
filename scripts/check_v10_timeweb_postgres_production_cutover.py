@@ -293,6 +293,13 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
         "runtime_private_route_must_preserve_tls_hostname": True,
         "runtime_private_route_must_be_proved_by_candidate_healthz": True,
         "runtime_private_route_firewall_dependency_allowed": False,
+        "runtime_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
+        "runtime_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
+        "runtime_binding_sha256_is_secret": False,
+        "runtime_binding_sha256_excludes_password": True,
+        "runtime_binding_sha256_required_before_app_creation": True,
+        "provider_masked_runtime_dsn_value_allowed": "hidden-by-api-key-policy",
+        "provider_masked_runtime_dsn_requires_exact_binding_sha256": True,
         "public_multi_user_env": "PUBLIC_MULTI_USER_ENABLED",
         "telegram_login_env": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
         "accepted_binding_must_equal_verified_runtime_dsn": True,
@@ -755,7 +762,11 @@ def _validate_sources() -> None:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_REPOSITORY_IDENTITY_DRIFT")
 
     app_binding_calls = _direct_call_names(controller, "_verify_app_binding")
-    required_app_binding_calls = {"validate_private_route_env", "observe"}
+    required_app_binding_calls = {
+        "timeweb_postgres_binding_sha256",
+        "validate_private_route_env",
+        "observe",
+    }
     if not required_app_binding_calls.issubset(app_binding_calls):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_PRIVATE_ROUTE_UNVERIFIED")
 
