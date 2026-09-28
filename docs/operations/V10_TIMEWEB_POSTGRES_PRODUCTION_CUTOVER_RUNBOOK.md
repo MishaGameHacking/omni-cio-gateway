@@ -148,6 +148,8 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 
 ## Ordered execution
 
+The observe phase is SQL read-only. The new provider-bound data-plane proof remains credential-free and must complete before any PostgreSQL authentication.
+
 1. PR #584 P2 source and exact-head verification is GREEN and the implementation is accepted on protected `main`.
 2. Establish the dedicated production PostgreSQL 18 database and the pre-existing `omni_cio_hosted_api` login without exposing credentials.
 3. Establish the `timeweb-production` GitHub Environment, exact-main branch policy, and the two production DSN secrets described above.
