@@ -8,6 +8,7 @@ from typing import Any
 
 
 _NETWORK_SCOPE_RELATIVE = "scripts/timeweb_postgres_production_network_scope.py"
+_NETWORK_CONVERGE_RELATIVE = "scripts/timeweb_postgres_production_network_converge.py"
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
@@ -18,12 +19,14 @@ CONTROLLER = ROOT / "scripts/timeweb_postgres_production_cutover.py"
 HOSTED_RUNTIME = ROOT / "apps/api/hosted_runtime.py"
 TIMEWEB_TLS = ROOT / "apps/api/timeweb_postgres_tls.py"
 NETWORK_SCOPE = ROOT / _NETWORK_SCOPE_RELATIVE
+NETWORK_CONVERGE = ROOT / _NETWORK_CONVERGE_RELATIVE
 DISCOVERER = ROOT / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
 RUNTIME = ROOT / "infrastructure/postgres/hosted-postgres-runtime-contract.json"
 RECOVERY = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
 
 _PREPARE_CONFIRMATION = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+_BOOTSTRAP_PREPARE_CONFIRMATION = "BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
 _HOSTED_RUNTIME_TLS_DRIFT = "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT"
 _CALL_PREPARE_TARGET = "prepare_timeweb_postgres_target"
 _CALL_PREPARE_PRIVATE_TARGET = "prepare_timeweb_postgres_private_target"
@@ -171,6 +174,38 @@ def _validate_transport(payload: dict[str, Any]) -> None:
     }
     if transport != expected:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID")
+
+
+def _validate_network_bootstrap(payload: dict[str, Any]) -> None:
+    bootstrap = _mapping(
+        payload.get("network_bootstrap"),
+        "TIMEWEB_PG_CUTOVER_NETWORK_BOOTSTRAP_INVALID",
+    )
+    expected = {
+        "operation": "bootstrap_prepare",
+        "confirmation": _BOOTSTRAP_PREPARE_CONFIRMATION,
+        "runs_before_network_scope_verification": True,
+        "only_when_no_firewall_group_attached": True,
+        "dedicated_firewall_group_name": "omni-cio-v10-production-verifier",
+        "dedicated_firewall_policy": "DROP",
+        "exact_ingress_tcp_5432_source_32_required": True,
+        "link_only_verified_production_database_required": True,
+        "existing_attached_groups_mutation_allowed": False,
+        "existing_named_group_reuse_requires_exact_safe_shape": True,
+        "firewall_group_create_allowed": True,
+        "firewall_rule_create_allowed": True,
+        "firewall_resource_link_allowed": True,
+        "firewall_rule_patch_allowed": False,
+        "firewall_group_delete_allowed": False,
+        "firewall_rule_delete_allowed": False,
+        "firewall_resource_unlink_allowed": False,
+        "blind_mutation_retry_allowed": False,
+        "ambiguous_mutation_get_only_reconciliation_required": True,
+        "post_mutation_full_network_scope_verification_required": True,
+        "output_sanitized_required": True,
+    }
+    if bootstrap != expected:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_BOOTSTRAP_INVALID")
 
 
 def _validate_connection_retry(payload: dict[str, Any]) -> None:
@@ -347,7 +382,10 @@ def _validate_github(payload: dict[str, Any]) -> None:
         "environment_branch_policy_type": "branch",
         "verifier_cidr_input": "verifier_cidr",
         "verifier_cidr_source": "WORKFLOW_DISPATCH_INPUT",
+        "provider_network_converge_script": _NETWORK_CONVERGE_RELATIVE,
         "provider_network_scope_script": _NETWORK_SCOPE_RELATIVE,
+        "network_bootstrap_operation_only": "bootstrap_prepare",
+        "network_bootstrap_confirmation_required": _BOOTSTRAP_PREPARE_CONFIRMATION,
         "shared_provider_network_concurrency_group": (
             "v10-timeweb-postgres-public-ipv4-tls"
         ),
@@ -361,7 +399,7 @@ def _validate_github(payload: dict[str, Any]) -> None:
             "provider_token_step_scope_only",
             "database_bindings_step_scope_only",
             "operation_specific_secret_injection_required",
-            "provider_token_network_preflight_and_accept_only",
+            "provider_token_network_bootstrap_scope_allowed",
             "production_dsns_step_scoped",
             "environment_policy_reverified_before_secret_access",
             "verifier_cidr_must_be_global_ipv4_32",
@@ -376,6 +414,7 @@ def _validate_github(payload: dict[str, Any]) -> None:
             "recovery_attestation_as_actions_secret_allowed",
             "environment_administration_by_workflow_allowed",
             "provider_token_accept_only",
+            "provider_token_network_preflight_and_accept_only",
         ),
         _GITHUB_INVALID,
     )
@@ -435,6 +474,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_IDENTITY_DRIFT")
     _validate_target(payload)
     _validate_transport(payload)
+    _validate_network_bootstrap(payload)
     _validate_connection_retry(payload)
     _validate_runtime_role(payload)
     _validate_prepare(payload)
@@ -448,9 +488,9 @@ def _validate_contract(payload: dict[str, Any]) -> None:
 
 def _validate_workflow_secret_scope(workflow: str) -> None:
     expected_counts = {
-        _CONTROL_PLANE_SECRET: 2,
-        _BOOTSTRAP_DSN_SECRET: 4,
-        _RUNTIME_DSN_SECRET: 3,
+        _CONTROL_PLANE_SECRET: 3,
+        _BOOTSTRAP_DSN_SECRET: 6,
+        _RUNTIME_DSN_SECRET: 4,
     }
     for reference, expected_count in expected_counts.items():
         if workflow.count(reference) != expected_count:
@@ -622,30 +662,84 @@ def _validate_network_scope_source(source: str) -> None:
         )
 
 
+def _validate_network_converge_source(source: str) -> None:
+    _markers(
+        source,
+        (
+            'CONFIRMATION = "BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES"',
+            'FIREWALL_NAME = "omni-cio-v10-production-verifier"',
+            'FIREWALL_DESCRIPTION = "Omni-CIO V10 production verifier only"',
+            'RULE_DESCRIPTION = "Omni-CIO V10 production verifier PostgreSQL"',
+            "def converge_missing_firewall(",
+            "if attached:",
+            '"/api/v1/firewall/groups?policy=DROP"',
+            'operation="PRODUCTION_FIREWALL_GROUP_CREATE"',
+            'operation="PRODUCTION_FIREWALL_RULE_CREATE"',
+            'operation="PRODUCTION_FIREWALL_RESOURCE_LINK"',
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_BOOTSTRAP_RULE_DRIFT",
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED",
+            "scope.verify_network_scope(",
+            "TIMEWEB_PG_PRODUCTION_NETWORK_CONVERGE=READY",
+        ),
+        "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_SOURCE_DRIFT",
+    )
+    forbidden = (
+        '"PATCH"',
+        '"PUT"',
+        '"DELETE"',
+        "0.0.0.0/0",
+        "firewall_resource_unlink",
+    )
+    if any(marker in source for marker in forbidden):
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
+        )
+
+
 def _validate_workflow_network_scope_order(workflow: str) -> None:
     authority = "Validate operation input authority before production bindings"
     mask = "Validate and mask production verifier egress IPv4 /32"
+    converge = "Converge missing production firewall before database authentication"
     network = "Verify production network scope before database authentication"
     operations = (
         "Observe verified production database",
+        "Observe and prepare verified production database after firewall bootstrap",
         "Prepare verified production database",
         "Accept verified production database",
     )
     try:
         authority_index = workflow.index(authority)
         mask_index = workflow.index(mask)
+        converge_index = workflow.index(converge)
         network_index = workflow.index(network)
         operation_indexes = tuple(workflow.index(value) for value in operations)
     except ValueError as exc:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT") from exc
-    if not (authority_index < mask_index < network_index < min(operation_indexes)):
+    if not (
+        authority_index
+        < mask_index
+        < converge_index
+        < network_index
+        < min(operation_indexes)
+    ):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_ORDER_INVALID")
 
     authority_block = workflow[authority_index:mask_index]
-    mask_block = workflow[mask_index:network_index]
-    network_block = workflow[network_index : operation_indexes[0]]
+    mask_block = workflow[mask_index:converge_index]
+    converge_block = workflow[converge_index:network_index]
+    network_block = workflow[network_index : min(operation_indexes)]
     if "${{ secrets." in authority_block or "${{ secrets." in mask_block:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_SECRET_BEFORE_INPUT_VALIDATION")
+    if (
+        _CONTROL_PLANE_SECRET not in converge_block
+        or _BOOTSTRAP_DSN_SECRET not in converge_block
+        or _RUNTIME_DSN_SECRET in converge_block
+        or "inputs.operation == 'bootstrap_prepare'" not in converge_block
+        or _BOOTSTRAP_PREPARE_CONFIRMATION not in workflow
+        or "python -m scripts.timeweb_postgres_production_network_converge"
+        not in converge_block
+    ):
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_SECRET_DRIFT")
     if (
         _CONTROL_PLANE_SECRET not in network_block
         or _BOOTSTRAP_DSN_SECRET not in network_block
@@ -831,6 +925,7 @@ def _validate_sources() -> None:
     )
 
     _validate_network_scope_source(_text(NETWORK_SCOPE))
+    _validate_network_converge_source(_text(NETWORK_CONVERGE))
     _markers(
         _text(DISCOVERER),
         (
@@ -872,7 +967,11 @@ def _validate_sources() -> None:
             "recovery_evidence_sha256:",
             _PRODUCTION_ENVIRONMENT,
             _PREPARE_CONFIRMATION,
+            _BOOTSTRAP_PREPARE_CONFIRMATION,
+            "bootstrap_prepare",
+            "Converge missing production firewall before database authentication",
             "Observe verified production database",
+            "Observe and prepare verified production database after firewall bootstrap",
             "Prepare verified production database",
             "Accept verified production database",
             "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN",
@@ -882,6 +981,7 @@ def _validate_sources() -> None:
             "Validate and mask production verifier egress IPv4 /32",
             "Verify production network scope before database authentication",
             "scripts.discover_v10_ru_pg_verifier_ipv4",
+            "scripts.timeweb_postgres_production_network_converge",
             "scripts.timeweb_postgres_production_network_scope",
             "group: v10-timeweb-postgres-public-ipv4-tls",
             "scripts.timeweb_postgres_production_cutover",
@@ -940,7 +1040,7 @@ def _validate_sources() -> None:
 
 def validate(root: Path = ROOT) -> None:
     global ROOT, CONTRACT, RUNBOOK, CONTROLLER, HOSTED_RUNTIME, TIMEWEB_TLS
-    global NETWORK_SCOPE, DISCOVERER, WORKFLOW, RUNTIME, RECOVERY
+    global NETWORK_SCOPE, NETWORK_CONVERGE, DISCOVERER, WORKFLOW, RUNTIME, RECOVERY
     old = (
         ROOT,
         CONTRACT,
@@ -949,6 +1049,7 @@ def validate(root: Path = ROOT) -> None:
         HOSTED_RUNTIME,
         TIMEWEB_TLS,
         NETWORK_SCOPE,
+        NETWORK_CONVERGE,
         DISCOVERER,
         WORKFLOW,
         RUNTIME,
@@ -967,6 +1068,7 @@ def validate(root: Path = ROOT) -> None:
         HOSTED_RUNTIME = root / "apps/api/hosted_runtime.py"
         TIMEWEB_TLS = root / "apps/api/timeweb_postgres_tls.py"
         NETWORK_SCOPE = root / _NETWORK_SCOPE_RELATIVE
+        NETWORK_CONVERGE = root / _NETWORK_CONVERGE_RELATIVE
         DISCOVERER = root / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
         WORKFLOW = (
             root / ".github/workflows/v10-timeweb-postgres-production-cutover.yml"
@@ -985,6 +1087,7 @@ def validate(root: Path = ROOT) -> None:
             HOSTED_RUNTIME,
             TIMEWEB_TLS,
             NETWORK_SCOPE,
+            NETWORK_CONVERGE,
             DISCOVERER,
             WORKFLOW,
             RUNTIME,
