@@ -20,6 +20,7 @@ TOKEN_ENV = "TIMEWEB_CLOUD_API_TOKEN"
 TIMEWEB_HIDDEN_BY_API_KEY_POLICY = "hidden-by-api-key-policy"
 CANONICAL_APP_NAME = "omni-cio-v10"
 CANONICAL_REPOSITORY = "MishaGameHacking/omni-cio-gateway"
+CANONICAL_REPOSITORY_NAME = CANONICAL_REPOSITORY.rsplit("/", 1)[-1]
 CANONICAL_REPOSITORY_PATH = "/MishaGameHacking/omni-cio-gateway"
 CANONICAL_BRANCH = "main"
 CANONICAL_FRAMEWORK = "docker"
