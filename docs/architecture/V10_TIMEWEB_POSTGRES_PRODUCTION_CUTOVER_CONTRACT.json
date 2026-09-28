@@ -178,7 +178,9 @@
     "bootstrap_database_owner_required": true,
     "bootstrap_database_connect_privilege_required": true,
     "bootstrap_database_create_privilege_required": true,
-    "existing_product_schema_owner_must_equal_bootstrap": true
+    "existing_product_schema_owner_must_equal_bootstrap": true,
+    "clean_product_state_preflight_before_mutation_required": true,
+    "clean_product_state_reverified_after_prepare": true
   },
   "recovery": {
     "timeweb_physical_backup_required": true,
