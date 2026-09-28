@@ -444,10 +444,23 @@ def _verify_app_binding(expected_sha: str, runtime_dsn: str) -> None:
     api = app_release.TimewebAppApi(token)
     envs = _app_envs(api)
     app_release.validate_private_route_env(envs)
+
+    expected_binding = timeweb_postgres_tls.timeweb_postgres_binding_sha256(
+        runtime_dsn
+    )
+    if envs.get(app_release.POSTGRES_BINDING_SHA256_ENV, "") != expected_binding:
+        _stop("TIMEWEB_PG_PRODUCTION_APP_BINDING_SHA256_DRIFT")
+
     observed_dsn = envs.get(app_release.POSTGRES_DSN_ENV, "")
     _mask(observed_dsn)
-    if not observed_dsn or observed_dsn != runtime_dsn:
+    if not observed_dsn:
         _stop("TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED")
+    if observed_dsn not in {
+        runtime_dsn,
+        app_release.TIMEWEB_HIDDEN_BY_API_KEY_POLICY,
+    }:
+        _stop("TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED")
+
     if envs.get(app_release.RELEASE_SHA_ENV, "").lower() != expected_sha:
         _stop("TIMEWEB_PG_PRODUCTION_APP_RELEASE_SHA_DRIFT")
     for name in (
@@ -508,9 +521,13 @@ def run(
             runtime_dsn,
         )
         _prepare_database(bootstrap_connect_dsn, runtime_connect_dsn)
+        binding_sha256 = timeweb_postgres_tls.timeweb_postgres_binding_sha256(
+            runtime_dsn
+        )
         print(
             "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=PREPARED "
-            f"sha={expected} postgres=18 tls=verify-full public_users=false"
+            f"sha={expected} postgres=18 tls=verify-full public_users=false "
+            f"postgres_binding_sha256={binding_sha256}"
         )
         return
 
@@ -529,7 +546,7 @@ def run(
     print(
         "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED "
         f"sha={expected} recovery=accepted evidence_sha256={evidence_digest} "
-        "app_dsn=verified public_users=false"
+        "app_binding=verified public_users=false"
     )
 
 
