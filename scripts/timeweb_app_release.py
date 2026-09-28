@@ -29,6 +29,7 @@ RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 POSTGRES_DSN_ENV = "OMNI_V10_POSTGRES_DSN"
 POSTGRES_PRIVATE_HOSTADDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"
 POSTGRES_PRIVATE_NETWORK_CIDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"
+POSTGRES_BINDING_SHA256_ENV = "OMNI_V10_POSTGRES_BINDING_SHA256"
 POSTGRES_RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
 PUBLIC_MULTI_USER_ENV = "PUBLIC_MULTI_USER_ENABLED"
@@ -577,6 +578,13 @@ def _validate_runtime_env(app: dict[str, Any], expected: str, runtime_mode: str)
     if not isinstance(dsn, str) or not dsn.strip():
         _stop("TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED")
     _mask(dsn)
+
+    binding_sha256 = envs.get(POSTGRES_BINDING_SHA256_ENV)
+    if (
+        not isinstance(binding_sha256, str)
+        or _DIGEST_RE.fullmatch(binding_sha256) is None
+    ):
+        _stop("TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID")
 
     validate_private_route_env(envs)
 
