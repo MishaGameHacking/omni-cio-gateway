@@ -1469,6 +1469,16 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                     with self.assertRaisesRegex(verifier_validator.VerifierCidrStopped, reason):
                         verifier_validator.validate()
 
+    def test_runbook_does_not_claim_verifier_egress_discovery(self) -> None:
+        source = guard.RUNBOOK.read_text(encoding="utf-8")
+        self.assertNotIn("verifier egress discovery", source)
+        self.assertIn("verifier CIDR input validation", source)
+        self.assertIn("does not discover NAT egress", source)
+        self.assertIn(
+            "RU_PG_VERIFIER_CIDR=READY source=workflow_input mask=/32",
+            source,
+        )
+
     def test_verifier_validator_has_no_retired_provider_network_dependency(self) -> None:
         source = Path(verifier_validator.__file__).read_text(encoding="utf-8").casefold()
         self.assertNotIn("cloudflare.com", source)
