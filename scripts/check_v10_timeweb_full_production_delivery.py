@@ -24,6 +24,7 @@ DOCKERFILE = ROOT / "Dockerfile"
 _CANONICAL_ORIGIN = "https://omnicio.ru"
 _CANONICAL_CALLBACK = "https://omnicio.ru/api/v10/web/auth/telegram/callback"
 _EXPECTED_BRANCH = "system/timeweb-platform-consolidation-tw-b"
+_LIVEZ_PATH = "/livez"
 _SECRET_ENV_NAMES = {
     "OMNI_V10_POSTGRES_DSN",
     "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
@@ -111,10 +112,10 @@ def _validate_release(payload: dict[str, Any]) -> None:
         "exact_commit_sha_required": True,
         "production_autodeploy_allowed": False,
         "runtime_release_env": "OMNI_V10_RELEASE_SHA",
-        "liveness_path": "/livez",
+        "liveness_path": _LIVEZ_PATH,
         "platform_liveness_source": "TIMEWEB_PANEL_HEALTHCHECK",
-        "panel_healthcheck_path": "/livez",
-        "dockerfile_healthcheck_path": "/livez",
+        "panel_healthcheck_path": _LIVEZ_PATH,
+        "dockerfile_healthcheck_path": _LIVEZ_PATH,
         "panel_healthcheck_overrides_dockerfile_healthcheck": True,
         "database_readiness_path": "/healthz",
         "candidate_database_readiness_required": True,
@@ -179,7 +180,7 @@ def _validate_runtime_sources() -> None:
         (
             "EXPOSE 8080",
             "apps.api.hosted_runtime:create_app",
-            "http://localhost:8080/livez",
+            f"http://localhost:8080{_LIVEZ_PATH}",
         ),
         error_prefix="TIMEWEB_FULL_DELIVERY_DOCKER_DRIFT",
     )

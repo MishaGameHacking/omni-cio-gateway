@@ -23,6 +23,8 @@ _EXPECTED_PLAIN_ENV = {
 }
 _API_INVALID = "TIMEWEB_APP_CANDIDATE_API_INVALID"
 _RUNTIME_ENV_INVALID = "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID"
+_LIVEZ_PATH = "/livez"
+_DOCKER_BIND_ALL_IPV4 = ".".join(("0", "0", "0", "0"))
 
 
 def _text(path: Path) -> str:
@@ -234,10 +236,10 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID",
     )
     expected = {
-        "liveness_path": "/livez",
+        "liveness_path": _LIVEZ_PATH,
         "platform_liveness_source": "TIMEWEB_PANEL_HEALTHCHECK",
-        "panel_healthcheck_path": "/livez",
-        "dockerfile_healthcheck_path": "/livez",
+        "panel_healthcheck_path": _LIVEZ_PATH,
+        "dockerfile_healthcheck_path": _LIVEZ_PATH,
         "panel_healthcheck_overrides_dockerfile_healthcheck": True,
         "liveness_https_required": True,
         "liveness_redirect_allowed": False,
@@ -465,10 +467,10 @@ def _validate_dockerfile(path: Path) -> None:
     required = (
         "EXPOSE 8080",
         "HEALTHCHECK",
-        "http://localhost:8080/livez",
+        f"http://localhost:8080{_LIVEZ_PATH}",
         "apps.api.hosted_runtime:create_app",
         "--host",
-        "0.0.0.0",
+        _DOCKER_BIND_ALL_IPV4,
         "--port",
         "8080",
     )

@@ -71,9 +71,9 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
                 / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
             )
             payload = json.loads(contract_path.read_text(encoding="utf-8"))
-            payload["release"][
-                "panel_healthcheck_overrides_dockerfile_healthcheck"
-            ] = False
+            payload["release"]["panel_healthcheck_overrides_dockerfile_healthcheck"] = (
+                False
+            )
             contract_path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
