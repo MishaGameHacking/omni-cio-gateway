@@ -559,6 +559,22 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_app_binding_without_runtime_fingerprint_custody(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["app_binding"]["runtime_binding_sha256_required_before_app_creation"] = (
+                False
+            )
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
+            ):
+                guard.validate(root)
+
     def test_rejects_hosted_runtime_eager_ca_materialization(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
