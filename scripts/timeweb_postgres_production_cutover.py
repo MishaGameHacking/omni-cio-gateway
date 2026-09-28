@@ -394,6 +394,7 @@ def _prepare_database(bootstrap_dsn: str, runtime_dsn: str) -> None:
         require_postgres_18(bootstrap)
         _verify_bootstrap_role(bootstrap)
         _verify_bootstrap_database_authority(bootstrap)
+        _require_observed_clean_product_state(bootstrap)
         apply_migrations(bootstrap)
         first_state = current_migration_state(bootstrap)
         if first_state != _expected_migration_state():
