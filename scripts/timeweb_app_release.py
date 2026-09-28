@@ -505,8 +505,7 @@ def _matching_app_row(api: ApiLike) -> dict[str, Any]:
     matches = [
         row
         for row in _rows(api.list_apps(), "apps", "TIMEWEB_APP_RELEASE_APPS_INVALID")
-        if row.get("name") == CANONICAL_APP_NAME
-        and is_canonical_repository(row)
+        if row.get("name") == CANONICAL_APP_NAME and is_canonical_repository(row)
     ]
     if len(matches) != 1:
         _stop("TIMEWEB_APP_RELEASE_TARGET_NOT_UNIQUE")
