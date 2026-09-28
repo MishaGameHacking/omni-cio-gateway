@@ -1486,6 +1486,17 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         self.assertNotIn("http://", source)
         self.assertNotIn("https://", source)
 
+    def test_contract_uses_cidr_authority_not_egress_observation(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        self.assertNotIn("verifier_egress", payload)
+        authority = payload["verifier_cidr_authority"]
+        self.assertEqual(authority["source"], "GITHUB_WORKFLOW_DISPATCH_INPUT")
+        self.assertFalse(authority["external_discovery_allowed"])
+        self.assertEqual(
+            authority["observation_type"],
+            "EXPLICIT_AUTHORITY_INPUT_NOT_NAT_EGRESS_DISCOVERY",
+        )
+
     def test_contract_does_not_record_full_base_sha_literal(self) -> None:
         source = Path(guard.CONTRACT).read_text(encoding="utf-8")
         payload = json.loads(source)
