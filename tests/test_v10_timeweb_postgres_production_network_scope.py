@@ -81,6 +81,16 @@ class DriftingApi(FakeApi):
         return value
 
 
+class ReorderingFirewallApi(FakeApi):
+    def get(self, path: str, *, timeout: float = 30.0) -> Any:
+        value = deepcopy(super().get(path, timeout=timeout))
+        if path == SERVICE_GROUPS_PATH and self.calls.count(path) == 2:
+            value["groups"].reverse()
+        if path == FIREWALL_RULES_PATH and self.calls.count(path) == 2:
+            value[RULES_KEY].reverse()
+        return value
+
+
 def _page(key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {key: rows, "meta": {TOTAL_KEY: len(rows)}}
 
@@ -423,6 +433,29 @@ def test_accepts_multiple_equivalent_firewall_groups() -> None:
     assert api.calls.count(FIREWALL_GROUP_PATH_2) == 2
     assert api.calls.count(FIREWALL_RULES_PATH_2) == 2
     assert api.calls.count(FIREWALL_RESOURCES_PATH_2) == 2
+
+
+def test_accepts_provider_group_and_rule_reordering() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+    responses[FIREWALL_RULES_PATH][RULES_KEY].append(
+        {
+            "id": "rule-3",
+            "direction": "ingress",
+            "protocol": "tcp",
+            "port": "5432",
+            "cidr": CIDR,
+        }
+    )
+    responses[FIREWALL_RULES_PATH]["meta"][TOTAL_KEY] = 2
+    api = ReorderingFirewallApi(responses)
+
+    scope.verify_network_scope(
+        api,
+        project_id=PROJECT_ID,
+        target_host=HOST,
+        verifier_cidr=CIDR,
+    )
 
 
 def test_accepts_empty_same_type_group_when_effective_union_stays_exact() -> None:
