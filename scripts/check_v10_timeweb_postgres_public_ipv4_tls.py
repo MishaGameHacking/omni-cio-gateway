@@ -14,7 +14,7 @@ CONTRACT = (
     ROOT / "docs/architecture/V10_RU_POSTGRES_TIMEWEB_PUBLIC_IPV4_TLS_CONTRACT.json"
 )
 PROVISIONER = ROOT / "scripts/provision_v10_timeweb_postgres_public_ipv4_tls.py"
-DISCOVERER = ROOT / "scripts/discover_v10_ru_pg_verifier_ipv4.py"
+VERIFIER_VALIDATOR = ROOT / "scripts/validate_v10_ru_pg_verifier_cidr.py"
 WORKFLOW = ROOT / ".github/workflows/v10-timeweb-postgres-public-ipv4-tls.yml"
 RUNBOOK = ROOT / "docs/operations/V10_RU_POSTGRES_TIMEWEB_PUBLIC_IPV4_TLS_RUNBOOK.md"
 CREATE_CONTRACT = (
@@ -586,7 +586,7 @@ def _validate_provisioner_safety(provisioner: str) -> None:
 def _validate_sources() -> None:
     provisioner = _read(PROVISIONER)
     read_only_probe = _read(READ_ONLY_PROBE)
-    discoverer = _read(DISCOVERER)
+    verifier_validator = _read(VERIFIER_VALIDATOR)
     workflow = _read(WORKFLOW)
     runbook = _read(RUNBOOK)
 
@@ -702,7 +702,7 @@ def _validate_sources() -> None:
             "environment: timeweb-synthetic",
             _PUBLIC_IPV4_GUARD_MODULE,
             "OMNI_V10_RU_PG_VERIFIER_CIDR: ${{ inputs.verifier_cidr }}",
-            "python -m scripts.discover_v10_ru_pg_verifier_ipv4",
+            "python -m scripts.validate_v10_ru_pg_verifier_cidr",
             "python -m scripts.provision_v10_timeweb_postgres_public_ipv4_tls",
             "TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}",
             "TIMEWEB_ALLOCATION_PLAN_ID: ${{ inputs.allocation_plan_id }}",
