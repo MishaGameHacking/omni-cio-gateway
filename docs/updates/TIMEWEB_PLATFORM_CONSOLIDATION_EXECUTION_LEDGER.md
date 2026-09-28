@@ -222,10 +222,12 @@ The repository source is aligned as follows, without granting TW-C provider-muta
 - Dockerfile deployment is the selected App Platform source mode. Timeweb requires an
   `EXPOSE` declaration so the platform can identify the application port; the current
   source explicitly exposes `8080`.
-- Timeweb allows an App Platform health-check path and documents that the panel setting
-  takes precedence over Dockerfile `HEALTHCHECK`. The current runtime therefore keeps
-  `/livez` process-only and `/healthz` database-aware; TW-C must configure the platform
-  health path to `/livez` rather than making platform liveness depend on PostgreSQL.
+- Timeweb allows an App Platform health-check path and its current documentation states
+  that the panel path takes precedence over Dockerfile `HEALTHCHECK`. The creation form
+  must therefore set the panel path to process-only `/livez`, while the root Dockerfile
+  keeps the same `/livez` fallback so both platform paths have identical liveness
+  semantics. Database-aware `/healthz` remains an independent release-readiness check
+  and must never become container liveness.
 - App Platform starts a fresh container environment on each deploy, so durable product
   state must stay outside the application container. PostgreSQL remains the relational
   state boundary; no local-container persistence is accepted as product storage.
@@ -728,3 +730,40 @@ scope, reconnect/failover and recovery. It must not assume a stable App Platform
 egress IP, widen PostgreSQL to `0.0.0.0/0`, move the production IPv4, or weaken
 `sslmode=verify-full`.
 
+### App Platform private PostgreSQL route — 2026-09-27
+
+Accepted base: `3326da2314010f510fb48775e21209a3ba165b0f`.
+Focused branch: `fix/timeweb-app-private-postgres-route`.
+
+Sanitized OWNER provider observation proves the production PostgreSQL target and prospective `omni-cio-v10` App can be placed in the same existing Timeweb private network and that PostgreSQL exposes a private TCP/5432 connection path with protected connection enabled. No credential, DSN, private address, provider resource identifier or token is recorded in the repository. The existing production public IPv4 remains immutable for this repair.
+
+Source defect: P3 verifies the production database through the self-hosted verifier/public `/32` path, while the hosted runtime previously forced the same public-hostaddr model. That does not prove the Timeweb App can traverse its own route. P2 also accepted process-only `/livez`, allowing database-route failure to escape until a later gate.
+
+Repair scope: explicit scoped RFC1918 App-to-PostgreSQL transport with technical-domain `verify-full` identity, per-connection SSLRequest/TLS re-proof, unchanged P3 public verifier route, exact candidate `/livez` plus `/healthz database=READY synthetic_preview=false`, contract/guard/runbook/test updates and FL-045. App creation, paid capacity, DNS, database cutover, public-user activation, Telegram activation, broker write and Real-money execution are not performed by this branch.
+
+Next evidence: focused source verification -> Draft PR exact-head CI/Sonar/review -> READY verification -> explicit landing confirmation -> squash merge -> exact-main post-merge verification. After that, execution is deliberately interleaved rather than treating P2 and P3 as a linear all-or-nothing chain: run current-main P3 observe, complete P3 prepare plus recovery prerequisites, create the Timeweb App once in the accepted private network, bootstrap its provider technical domain, prove the exact-SHA P2 candidate with both /livez and /healthz database readiness, and only then run P3 accept. This ordering prevents the candidate health gate from depending on an unprepared database while also preventing P3 final acceptance from trusting a candidate that does not yet exist.
+
+
+
+### Private-route pre-merge challenge closure — 2026-09-28
+
+The continuing exact-source review found and repaired two downstream defects before physical
+App creation:
+
+- candidate database readiness now distinguishes a bounded hosted-runtime JSON 503 from an
+  anonymous proxy/provider 503. A real application `status=unavailable` response retains
+  exact release identity through the retry budget and terminates as database-not-ready;
+  malformed or intermediary 503 bodies remain generic transient HTTP failures;
+- P3 application lookup now reuses the same canonical repository-by-URL identity predicate
+  as P2. Provider-decorated repository presentation metadata can no longer make a valid
+  URL-connected App pass P2 and disappear at P3 final acceptance.
+
+Both fixes are covered by focused regressions and machine guards. They do not alter the
+selected private network, production public IPv4/firewall verifier path, PostgreSQL
+credentials, DNS, Telegram/public-user state, broker authority or Real Trading.
+
+The physical sequence remains fail-closed: certify and accept the source repair; prove P3
+observe; complete P3 prepare and recovery prerequisites; create the App once in the
+already selected private network; add the provider technical hostname after creation and
+redeploy the same accepted source; require both `/livez` exact release identity and
+`/healthz database=READY synthetic_preview=false`; only then permit P3 final acceptance.

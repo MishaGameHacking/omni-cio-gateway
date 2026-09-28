@@ -62,6 +62,25 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_full_delivery_healthcheck_precedence_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["release"]["panel_healthcheck_overrides_dockerfile_healthcheck"] = (
+                False
+            )
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_RELEASE_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_rejects_canonical_domain_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -106,7 +125,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
         states = {row["id"]: row["state"] for row in payload["branch_milestones"]}
         self.assertEqual(
             states["P2_TIMEWEB_EXACT_SHA_CANDIDATE"],
-            "CERTIFIED_GREEN_BRANCH_LOCAL",
+            "REPAIR_SOURCE_IMPLEMENTED_EXACT_HEAD_VERIFICATION_REQUIRED",
         )
         self.assertEqual(
             states["P3_POSTGRES18_PRODUCTION_CUTOVER"],
@@ -150,10 +169,83 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         runtime = payload["runtime"]
+        self.assertTrue(runtime["private_postgres_route_required"])
+        self.assertEqual(
+            runtime["private_postgres_hostaddr_env"],
+            "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        )
+        self.assertEqual(
+            runtime["private_postgres_network_cidr_env"],
+            "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        )
+        self.assertTrue(runtime["private_postgres_tls_hostname_identity_from_dsn"])
+        self.assertEqual(
+            runtime["postgres_binding_sha256_env"],
+            "OMNI_V10_POSTGRES_BINDING_SHA256",
+        )
+        self.assertTrue(runtime["postgres_binding_sha256_required"])
+        self.assertFalse(runtime["postgres_binding_sha256_sensitive"])
+        self.assertEqual(
+            runtime["postgres_binding_sha256_source"],
+            "P3_PREPARE_ACCEPTED_OUTPUT",
+        )
+        self.assertFalse(runtime["liveness_startup_database_dependency_allowed"])
+        self.assertTrue(runtime["database_pool_lazy_initialization_required"])
         self.assertEqual(runtime["postgres_pool_max_size"], 4)
         self.assertEqual(runtime["postgres_pool_acquire_timeout_seconds"], 5)
         self.assertFalse(runtime["single_serialized_runtime_connection_allowed"])
         self.assertFalse(runtime["session_lookup_event_loop_blocking_allowed"])
+
+    def test_rejects_liveness_database_startup_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["runtime"]["liveness_startup_database_dependency_allowed"] = True
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_database_binding_fingerprint_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["runtime"]["postgres_binding_sha256_required"] = False
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_private_database_route_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["runtime"]["private_postgres_route_required"] = False
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT",
+            ):
+                guard.validate(root)
 
     def test_identity_binding_continuity_is_fail_closed(self) -> None:
         payload = json.loads(
@@ -281,6 +373,47 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "TIMEWEB_FULL_DELIVERY_PROVIDER_CONVERGENCE_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_execution_sequence_has_no_p2_p3_deadlock(self) -> None:
+        payload = json.loads(
+            (
+                ROOT
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            payload["execution_sequence"],
+            [
+                "P2_SOURCE_REPAIR_ACCEPTED_MAIN",
+                "P3_OBSERVE",
+                "P3_PREPARE",
+                "P3_RECOVERY_EVIDENCE",
+                "TIMEWEB_APP_CREATE_IN_ACCEPTED_PRIVATE_NETWORK",
+                "TIMEWEB_TECHNICAL_DOMAIN_BOOTSTRAP",
+                "P2_PHYSICAL_EXACT_SHA_CANDIDATE",
+                "P3_ACCEPT",
+                "P4_CANONICAL_DOMAIN_TLS",
+            ],
+        )
+
+    def test_rejects_execution_sequence_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["execution_sequence"] = list(
+                reversed(payload["execution_sequence"])
+            )
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_EXECUTION_SEQUENCE_DRIFT",
             ):
                 guard.validate(root)
 

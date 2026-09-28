@@ -13,6 +13,22 @@ from `MishaGameHacking/omni-cio-gateway` branch `main`, with autodeploy disabled
 The controller accepts only one explicit 40-character protected-main SHA. It does not
 create, resize, delete, stop, or patch the application.
 
+The current OWNER bootstrap uses Timeweb's documented repository-by-URL flow because the
+interactive GitHub provider handoff did not converge. Timeweb may decorate repository
+display/full-name metadata for a URL-connected source, so release identity is not based on
+that presentation string alone. The controller requires the repository name plus the exact
+canonical HTTPS clone URL for `MishaGameHacking/omni-cio-gateway`; alternate hosts,
+repositories, embedded credentials, query parameters and fragments are rejected. URL
+connections intentionally keep autodeploy unavailable, which matches the exact-SHA manual
+release authority.
+
+Initial App creation is an OWNER/provider-panel action. The current documented public
+Timeweb CreateApp schema does not expose the immutable private-network selection that the
+Docker App requires, while Timeweb documents that the selected private network cannot be
+changed in place after creation. Therefore do not replace the panel creation step with an
+API create call that cannot bind the accepted network. After the application exists, this
+controller may manage only the separately authorized exact-SHA deploy operation.
+
 Required runtime configuration for P2:
 
 - `OMNI_V10_HOSTED_RUNTIME=1`
@@ -20,19 +36,74 @@ Required runtime configuration for P2:
 - `OMNI_V10_CANDIDATE_HOSTNAME=<Timeweb technical domain>`
 - `OMNI_V10_RELEASE_SHA=<exact protected-main SHA>`
 - `OMNI_V10_POSTGRES_RUNTIME_ROLE=omni_cio_hosted_api`
+- `OMNI_V10_POSTGRES_PRIVATE_HOSTADDR=<production PostgreSQL private IPv4>`
+- `OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR=<exact Timeweb private-network CIDR>`
+- `OMNI_V10_POSTGRES_BINDING_SHA256=<non-secret digest emitted by accepted P3 prepare>`
 - `OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED=true`
 - `PUBLIC_MULTI_USER_ENABLED=false`
 - `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false`
 - `OMNI_V10_POSTGRES_DSN` present in Timeweb runtime custody.
 
+The provider-assigned App technical domain does not exist until the application has been
+created. During that one creation-time bootstrap only, `OMNI_V10_CANDIDATE_HOSTNAME`
+may be absent so the container can start. For Dockerfile deployments the creation form must set the Timeweb panel health path
+to `/livez`. Timeweb's current documentation states that the panel path has priority over
+the Dockerfile `HEALTHCHECK`; both are intentionally kept on the same localhost
+process-liveness endpoint so either platform path has identical semantics. Startup
+intentionally does not open PostgreSQL merely to satisfy liveness; the bounded database
+pool connects lazily and `/healthz` owns the real database readiness probe. This prevents a transient database outage from turning a
+process-liveness check into a container restart loop. This is **not** P2 acceptance. As soon as Timeweb assigns the
+technical domain, add it as `OMNI_V10_CANDIDATE_HOSTNAME`, keep autodeploy disabled and
+the selected private network unchanged, redeploy the same exact accepted-main SHA, and
+only then run P2 `observe`/`deploy`. P2 remains fail-closed while that hostname is
+missing or not attached to the application.
+
+The binding digest is not a credential and excludes the PostgreSQL password. It binds the
+expected runtime host, port, database, user, TLS mode and canonical CA-path contract.
+The hosted runtime recomputes it from the real provider-side DSN before serving the App;
+a missing or mismatched digest stops startup with `HOSTED_RUNTIME_DATABASE_BINDING_DRIFT`.
+Use only the digest emitted by the exact accepted P3 `prepare` run for the same runtime
+DSN; do not calculate it from the Timeweb panel's PHP/PDO presentation.
+
+The DSN keeps the Timeweb PostgreSQL technical hostname, `sslmode=verify-full` and
+the canonical relative CA path. The private address is supplied separately. The runtime
+uses the private address only as the TCP `hostaddr` while preserving the technical
+hostname for SNI/certificate identity. The private host must be IPv4, inside the exact
+RFC1918 Timeweb network CIDR selected for the App, and must not use Timeweb-reserved
+service addresses. Do not replace the DSN host with a private IP and do not weaken TLS.
+
 In `preactivation` mode, P2 does not accept Telegram credential custody and both public-user activation flags must remain false even if credentials were pre-provisioned outside this gate. A later `live-operable` continuous release preserves an already accepted P5 activation and requires its live-evidence digest; it does not create or rotate Telegram credentials.
+
+## Cross-gate execution ordering
+
+P2 repository certification and P3 database execution are interleaved deliberately to
+avoid a circular dependency:
+
+1. P2 source implementation may be certified and merged before any paid App exists.
+2. P3 `observe` may run before App creation because it is a read-only production-target
+   prerequisite proof.
+3. P3 `prepare` and the required recovery evidence must complete before physical App
+   creation/candidate execution, because `/healthz database=READY` depends on the
+   canonical schema, runtime ACL and RLS/FORCE-RLS state.
+4. Create the Timeweb App once, in the already accepted private network, then complete the
+   technical-domain bootstrap and exact-SHA P2 `/livez` plus `/healthz` candidate proof.
+5. P3 `accept` runs only after that current physical candidate proof and independently
+   repeats it. P3 acceptance is therefore downstream of physical P2 evidence, while P3
+   preparation is upstream of physical P2 evidence.
+
+A source-GREEN P2 result is not permission to skip P3 preparation, and a successful P3
+prepare is not P3 acceptance.
 
 ## Observe mode
 
 The manual workflow `.github/workflows/v10-timeweb-app-candidate.yml` first proves that
 the requested SHA equals protected `main`, verifies the `timeweb-production` GitHub
 Environment policy, then checks Timeweb application identity, autodeploy-off state,
-runtime configuration, exact active commit, and HTTPS `/livez` release identity.
+runtime configuration, exact active commit, HTTPS `/livez` release identity, and
+HTTPS `/healthz` database readiness. Candidate acceptance requires
+`status=ok`, the exact release SHA, `database=READY`, and
+`synthetic_preview=false`. A process-only `/livez` success is never sufficient proof
+that the App Platform container can reach PostgreSQL on its own network path.
 
 The Timeweb technical domain is allowed only as an additional trusted Host for candidate
 verification. Browser Origin/CSRF authority remains canonical `https://omnicio.ru`.
@@ -68,7 +139,8 @@ The controller records the most recent distinct successful provider deployment S
 `last_known_good_sha`, but P2 does not perform automatic rollback. Rollback remains a
 later explicit acceptance transition to an exact previously successful SHA.
 
-P2 is `CERTIFIED_GREEN` only after its repository implementation passes the complete
-exact-head DRAFT verification. Physical candidate execution occurs only after accepted
-main plus the independent Timeweb application/environment gates. P3 PostgreSQL production
-cutover remains blocked until then.
+P2 source implementation is `CERTIFIED_GREEN` only after complete exact-head DRAFT
+verification. Physical candidate execution additionally requires accepted main, completed
+P3 preparation/recovery prerequisites, and the independent Timeweb application/environment
+gates. P3 final acceptance remains blocked until the current physical P2 technical-domain
+candidate proves both exact-SHA liveness and real database readiness.

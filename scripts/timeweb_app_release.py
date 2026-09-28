@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 from collections.abc import Callable
 from datetime import datetime
 import json
@@ -10,19 +11,26 @@ import sys
 import time
 from typing import Any, NoReturn, Protocol
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 API_BASE = "https://api.timeweb.cloud"
 TOKEN_ENV = "TIMEWEB_CLOUD_API_TOKEN"
+TIMEWEB_MASKED_SENSITIVE_VALUE = "-".join(("hidden", "by", "api", "key", "policy"))
 CANONICAL_APP_NAME = "omni-cio-v10"
 CANONICAL_REPOSITORY = "MishaGameHacking/omni-cio-gateway"
+CANONICAL_REPOSITORY_NAME = CANONICAL_REPOSITORY.rsplit("/", 1)[-1]
+CANONICAL_REPOSITORY_PATH = "/MishaGameHacking/omni-cio-gateway"
 CANONICAL_BRANCH = "main"
 CANONICAL_FRAMEWORK = "docker"
 CANONICAL_PUBLIC_HOSTNAME = "omnicio.ru"
 CANDIDATE_HOSTNAME_ENV = "OMNI_V10_CANDIDATE_HOSTNAME"
 RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 POSTGRES_DSN_ENV = "OMNI_V10_POSTGRES_DSN"
+POSTGRES_PRIVATE_HOSTADDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"
+POSTGRES_PRIVATE_NETWORK_CIDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"
+POSTGRES_BINDING_SHA256_ENV = "OMNI_V10_POSTGRES_BINDING_SHA256"
 POSTGRES_RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
 PUBLIC_MULTI_USER_ENV = "PUBLIC_MULTI_USER_ENABLED"
@@ -37,6 +45,7 @@ _PAGE_SIZE = 100
 _MAX_DEPLOY_HISTORY_PAGES = 100
 _GET_DELAYS = (1.0, 2.0)
 _LIVEZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
+_HEALTHZ_RETRY_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 _DEPLOY_RECONCILE_DELAYS = (0.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0)
 _POLL_DELAYS = (
     0.0,
@@ -80,6 +89,12 @@ _HOST_RE = re.compile(
     r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
     re.ASCII,
 )
+_RFC1918_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network((0x0A000000, 8)),
+    ipaddress.IPv4Network((0xAC100000, 12)),
+    ipaddress.IPv4Network((0xC0A80000, 16)),
+)
+_TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS = frozenset({1, 2, 3})
 _RETIRED_ENV_MARKERS = ("CLOUDFLARE", "NEON", "RENDER", "CLOUDRU")
 _APP_ID_INVALID = "TIMEWEB_APP_RELEASE_APP_ID_INVALID"
 _DEPLOYS_INVALID = "TIMEWEB_APP_RELEASE_DEPLOYS_INVALID"
@@ -378,14 +393,51 @@ class TimewebAppApi:
             raise
 
 
+def _canonical_repository_url(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except ValueError:
+        return False
+    path = parsed.path.rstrip("/")
+    if path.casefold().endswith(".git"):
+        path = path[:-4]
+    return (
+        parsed.scheme.casefold() == "https"
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.hostname == "github.com"
+        and port in {None, 443}
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and path.casefold() == CANONICAL_REPOSITORY_PATH.casefold()
+    )
+
+
 def _repository(app: dict[str, Any]) -> str:
     repository = _mapping(
         app.get("repository"), "TIMEWEB_APP_RELEASE_REPOSITORY_INVALID"
     )
     full_name = repository.get("full_name")
-    if not isinstance(full_name, str):
+    name = repository.get("name")
+    if (
+        not isinstance(full_name, str)
+        or not full_name.strip()
+        or not isinstance(name, str)
+        or not name.strip()
+        or not _canonical_repository_url(repository.get("url"))
+    ):
         _stop("TIMEWEB_APP_RELEASE_REPOSITORY_INVALID")
-    return full_name
+    return CANONICAL_REPOSITORY
+
+
+def is_canonical_repository(app: dict[str, Any]) -> bool:
+    try:
+        return _repository(app) == CANONICAL_REPOSITORY
+    except ReleaseStopped:
+        return False
 
 
 def _deploy(row: dict[str, Any]) -> tuple[str, str, str]:
@@ -453,8 +505,7 @@ def _matching_app_row(api: ApiLike) -> dict[str, Any]:
     matches = [
         row
         for row in _rows(api.list_apps(), "apps", "TIMEWEB_APP_RELEASE_APPS_INVALID")
-        if row.get("name") == CANONICAL_APP_NAME
-        and _repository(row) == CANONICAL_REPOSITORY
+        if row.get("name") == CANONICAL_APP_NAME and is_canonical_repository(row)
     ]
     if len(matches) != 1:
         _stop("TIMEWEB_APP_RELEASE_TARGET_NOT_UNIQUE")
@@ -489,6 +540,32 @@ def _expected_runtime_env(expected: str, runtime_mode: str) -> dict[str, str]:
     }
 
 
+def validate_private_route_env(envs: dict[str, Any]) -> None:
+    raw_hostaddr = envs.get(POSTGRES_PRIVATE_HOSTADDR_ENV)
+    raw_cidr = envs.get(POSTGRES_PRIVATE_NETWORK_CIDR_ENV)
+    if (
+        not isinstance(raw_hostaddr, str)
+        or not raw_hostaddr.strip()
+        or not isinstance(raw_cidr, str)
+        or not raw_cidr.strip()
+    ):
+        _stop("TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_REQUIRED")
+    try:
+        network = ipaddress.ip_network(raw_cidr.strip(), strict=True)
+        address = ipaddress.ip_address(raw_hostaddr.strip())
+    except ValueError:
+        _stop("TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID")
+    if (
+        not isinstance(network, ipaddress.IPv4Network)
+        or not any(network.subnet_of(parent) for parent in _RFC1918_NETWORKS)
+        or not isinstance(address, ipaddress.IPv4Address)
+        or address not in network
+        or address in {network.network_address, network.broadcast_address}
+        or (int(address) & 0xFF) in _TIMEWEB_RESERVED_PRIVATE_HOST_OCTETS
+    ):
+        _stop("TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID")
+
+
 def _validate_runtime_env(app: dict[str, Any], expected: str, runtime_mode: str) -> str:
     envs = _mapping(app.get("envs"), "TIMEWEB_APP_RELEASE_ENV_INVALID")
     for name, value in _expected_runtime_env(expected, runtime_mode).items():
@@ -501,6 +578,15 @@ def _validate_runtime_env(app: dict[str, Any], expected: str, runtime_mode: str)
     if not isinstance(dsn, str) or not dsn.strip():
         _stop("TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED")
     _mask(dsn)
+
+    binding_sha256 = envs.get(POSTGRES_BINDING_SHA256_ENV)
+    if (
+        not isinstance(binding_sha256, str)
+        or _DIGEST_RE.fullmatch(binding_sha256) is None
+    ):
+        _stop("TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID")
+
+    validate_private_route_env(envs)
 
     retired_names = [
         str(name)
@@ -613,6 +699,120 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
     raise AssertionError("bounded liveness verification exhausted")
 
 
+def _healthz_unavailable_payload(raw: bytes) -> dict[str, Any] | None:
+    if not raw or len(raw) > MAX_RESPONSE_BYTES:
+        return None
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    if value.get("status") != "unavailable":
+        return None
+    if not isinstance(value.get("release_sha"), str):
+        return None
+    if not isinstance(value.get("synthetic_preview"), bool):
+        return None
+    return value
+
+
+def _classify_healthz_response(
+    status: int,
+    raw: bytes,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    if status == 503:
+        payload = _healthz_unavailable_payload(raw)
+        if payload is not None:
+            return payload, None, status
+    if status in _TRANSIENT:
+        return None, "http", status
+    if status != 200:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
+    return _decode(status, raw, 200, "TIMEWEB_APP_RELEASE_HEALTHZ"), None, None
+
+
+def _http_error_body(exc: HTTPError) -> bytes:
+    if int(exc.code) != 503:
+        return b""
+    try:
+        return exc.read(MAX_RESPONSE_BYTES + 1)
+    except OSError:
+        return b""
+
+
+def _healthz_attempt(
+    active: Any,
+    request: Request,
+) -> tuple[dict[str, Any] | None, str | None, int | None]:
+    try:
+        with active.open(request, timeout=30.0) as response:
+            status = int(response.status)
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+    except HTTPError as exc:
+        return _classify_healthz_response(int(exc.code), _http_error_body(exc))
+    except OSError:
+        return None, "transport", None
+    return _classify_healthz_response(status, raw)
+
+
+def _stop_healthz_retry(failure: str | None, status: int | None) -> NoReturn:
+    if failure == "http" and status is not None:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
+    _stop("TIMEWEB_APP_RELEASE_HEALTHZ_TRANSPORT_FAILED")
+
+
+def _healthz_state(payload: dict[str, Any], expected: str) -> tuple[bool, bool]:
+    if payload.get("synthetic_preview") is not False:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN")
+    observed = _sha(
+        payload.get("release_sha"),
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_INVALID",
+    )
+    database_ready = (
+        payload.get("status") == "ok" and payload.get("database") == "READY"
+    )
+    return database_ready, observed == expected
+
+
+def _stop_healthz_terminal(*, database_ready: bool, release_matches: bool) -> NoReturn:
+    if not release_matches:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT")
+    if not database_ready:
+        _stop("TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY")
+    raise AssertionError("unreachable healthz terminal state")
+
+
+def _verify_healthz(hostname: str, expected: str, *, opener: Any | None = None) -> None:
+    request = Request(
+        f"https://{hostname}/healthz",
+        headers={
+            "Accept": _JSON_CONTENT_TYPE,
+            "User-Agent": "omni-cio-v10-timeweb-healthz",
+        },
+        method="GET",
+    )
+    active = opener or _NO_REDIRECT_OPENER
+    last_attempt = len(_HEALTHZ_RETRY_DELAYS)
+    for attempt in range(last_attempt + 1):
+        payload, failure, status = _healthz_attempt(active, request)
+        if payload is None:
+            if attempt == last_attempt:
+                _stop_healthz_retry(failure, status)
+            time.sleep(_HEALTHZ_RETRY_DELAYS[attempt])
+            continue
+        database_ready, release_matches = _healthz_state(payload, expected)
+        if database_ready and release_matches:
+            return
+        if attempt == last_attempt:
+            _stop_healthz_terminal(
+                database_ready=database_ready,
+                release_matches=release_matches,
+            )
+        time.sleep(_HEALTHZ_RETRY_DELAYS[attempt])
+    raise AssertionError("bounded database readiness verification exhausted")
+
+
 def _reconcile(api: ApiLike, app_id: str, before: frozenset[str], expected: str) -> str:
     for delay in _DEPLOY_RECONCILE_DELAYS:
         if delay:
@@ -675,6 +875,7 @@ def observe(
     ):
         _stop("TIMEWEB_APP_RELEASE_NOT_ACTIVE_EXACT_SHA")
     _verify_livez(hostname, expected, opener=livez_opener)
+    _verify_healthz(hostname, expected, opener=livez_opener)
     return _last_known_good(_deploys(api, app_id), expected)
 
 
@@ -771,6 +972,7 @@ def deploy(
             )
 
     _verify_livez(hostname, expected, opener=livez_opener)
+    _verify_healthz(hostname, expected, opener=livez_opener)
     return last_known_good
 
 

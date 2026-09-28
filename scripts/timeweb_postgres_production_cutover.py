@@ -400,15 +400,10 @@ def _verify_runtime_database(runtime_dsn: str, bootstrap_dsn: str) -> None:
 
 
 def _is_canonical_app_row(value: object) -> bool:
-    if (
-        not isinstance(value, dict)
-        or value.get("name") != app_release.CANONICAL_APP_NAME
-    ):
-        return False
-    repository = value.get("repository")
     return (
-        isinstance(repository, dict)
-        and repository.get("full_name") == app_release.CANONICAL_REPOSITORY
+        isinstance(value, dict)
+        and value.get("name") == app_release.CANONICAL_APP_NAME
+        and app_release.is_canonical_repository(value)
     )
 
 
@@ -448,10 +443,22 @@ def _verify_app_binding(expected_sha: str, runtime_dsn: str) -> None:
     token = _required_env(app_release.TOKEN_ENV)
     api = app_release.TimewebAppApi(token)
     envs = _app_envs(api)
+    app_release.validate_private_route_env(envs)
+
+    expected_binding = timeweb_postgres_tls.timeweb_postgres_binding_sha256(runtime_dsn)
+    if envs.get(app_release.POSTGRES_BINDING_SHA256_ENV, "") != expected_binding:
+        _stop("TIMEWEB_PG_PRODUCTION_APP_BINDING_SHA256_DRIFT")
+
     observed_dsn = envs.get(app_release.POSTGRES_DSN_ENV, "")
     _mask(observed_dsn)
-    if not observed_dsn or observed_dsn != runtime_dsn:
+    if not observed_dsn:
         _stop("TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED")
+    if observed_dsn not in {
+        runtime_dsn,
+        app_release.TIMEWEB_MASKED_SENSITIVE_VALUE,
+    }:
+        _stop("TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED")
+
     if envs.get(app_release.RELEASE_SHA_ENV, "").lower() != expected_sha:
         _stop("TIMEWEB_PG_PRODUCTION_APP_RELEASE_SHA_DRIFT")
     for name in (
@@ -460,6 +467,11 @@ def _verify_app_binding(expected_sha: str, runtime_dsn: str) -> None:
     ):
         if envs.get(name, "").strip().lower() != "false":
             _stop(f"TIMEWEB_PG_PRODUCTION_PREMATURE_ACTIVATION:{name}")
+    app_release.observe(
+        api,
+        expected_sha,
+        runtime_mode=app_release.RUNTIME_MODE_PREACTIVATION,
+    )
 
 
 def run(
@@ -507,9 +519,13 @@ def run(
             runtime_dsn,
         )
         _prepare_database(bootstrap_connect_dsn, runtime_connect_dsn)
+        binding_sha256 = timeweb_postgres_tls.timeweb_postgres_binding_sha256(
+            runtime_dsn
+        )
         print(
             "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=PREPARED "
-            f"sha={expected} postgres=18 tls=verify-full public_users=false"
+            f"sha={expected} postgres=18 tls=verify-full public_users=false "
+            f"postgres_binding_sha256={binding_sha256}"
         )
         return
 
@@ -528,7 +544,7 @@ def run(
     print(
         "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED "
         f"sha={expected} recovery=accepted evidence_sha256={evidence_digest} "
-        "app_dsn=verified public_users=false"
+        "app_binding=verified public_users=false"
     )
 
 

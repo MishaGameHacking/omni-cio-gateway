@@ -1048,3 +1048,90 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** when a preflight and a client library perform separate handshakes, security proof must cover both. A preflight may establish provider reachability and identity, but the authenticated client must independently prohibit alternate encryption, client-credential and protocol-version channels that could make the real session differ from the proven path.
 
 **Dependency/tooling knowledge change:** PostgreSQL 18 libpq documentation states that GSSAPI encryption may take precedence over SSL and that the default client certificate location can be used when the server requests a certificate; these semantics are now treated as part of the P3 transport threat model.
+---
+
+## FL-045 — Verifier transport success cannot stand in for the deployed App-to-database route
+
+**Date:** 2026-09-27  
+**WP / PR / reference:** TIMEWEB-PLATFORM-CONSOLIDATION / post-#595 App Platform bootstrap / branch `fix/timeweb-app-private-postgres-route`
+
+**Symptom / finding:** fresh Timeweb panel evidence showed that the production PostgreSQL target and the prospective `omni-cio-v10` App Platform instance can share one private network, with separate service addresses. The existing source nevertheless forced every hosted-runtime prepared `hostaddr` to be globally routable and P2 accepted a candidate from HTTPS `/livez` alone. A P3 verifier could therefore be GREEN on its public `/32` path while the real App container had no accepted database route, and P2 could still declare the process alive without proving PostgreSQL readiness.
+
+**Root cause:** one transport adapter encoded the P3 self-hosted verifier's public-network assumption as a universal runtime invariant. The release gate also treated process liveness as sufficient candidate acceptance even though `/livez` intentionally does not probe PostgreSQL. Provider network identity, transport identity and application readiness were therefore conflated across two different execution environments.
+
+**Blast radius searched:** Timeweb PostgreSQL TLS/conninfo preparation, hosted-runtime startup and reconnects, P3 production cutover guard/contract/runbook, P2 exact-SHA candidate controller/contract/workflow/tests, full-production delivery contract/guard, App Platform immutable-network selection, `/livez` and `/healthz`, secret/DSN custody, public IPv4/firewall verifier scope and downstream P4/P5/P6 acceptance. The production public IPv4 is preserved; no firewall widening, DNS mutation, public-user activation, Telegram activation, broker write or Real-money authority is introduced.
+
+**Why prior guards missed it:** tests proved that a public `hostaddr` was pinned before authentication and that every hosted reconnect re-probed that public path. They did not model App Platform as a distinct producer of database traffic. The P2 contract froze exact-SHA `/livez`, while database-aware readiness was deferred to later public-ingress gates. Both sets of guards therefore certified internally consistent but incomplete assumptions.
+
+**Corrective change:** preserve the portable Timeweb technical-domain DSN as credential and TLS hostname authority; supply the hosted runtime with a separate private PostgreSQL IPv4 and exact RFC1918 network CIDR; validate that the address belongs to that network and is not a provider-reserved service address; perform credential-free PostgreSQL SSLRequest plus CA/technical-hostname `verify-full` directly over the private address before each pooled connection; keep the P3 verifier/public transport unchanged by default. Strengthen P2 to require both exact-SHA `/livez` and `/healthz status=ok database=READY synthetic_preview=false`, and make P3 final acceptance independently repeat that live candidate observation instead of trusting only configuration bindings or an earlier P2 result.
+
+**Permanent regression/guard:** public prepared connections still reject private `hostaddr` unless an explicit RFC1918 scope is supplied; private preparation rejects public/out-of-scope/reserved addresses; tests prove the private TCP destination retains the Timeweb technical hostname for TLS SNI/hostname verification; hosted-runtime tests require private preparation on every connection; P3 guards forbid silently falling back to the public preparation path; P2 and full-delivery guards freeze private-route bindings and database-aware candidate readiness.
+
+**Future prevention rule:** never promote an observer/verifier route into a runtime-route assumption. For every deployed execution environment, separately prove network reachability, authenticated transport identity and application-level dependency readiness. A process liveness endpoint must never be accepted as proof that mandatory external dependencies are reachable.
+
+**Dependency/tooling knowledge change:** current Timeweb documentation supports PostgreSQL connections by private IP and allows Dockerfile Apps to be placed in a private network selected at creation time; that App network cannot be changed after deployment. PostgreSQL libpq permits `hostaddr` to select the numeric TCP destination while retaining `host` for `verify-full` hostname validation.
+
+
+---
+
+## FL-046 — HTTP 503 from the real application health endpoint must not be collapsed into an anonymous proxy failure
+
+**Date:** 2026-09-28  
+**Scope:** Timeweb App Platform exact-SHA candidate database-readiness gate
+
+**Symptom / finding:** the candidate controller correctly added `/healthz` as a mandatory database-readiness proof, but its HTTP helper classified every 503 as a generic transient transport response before inspecting the bounded body. The hosted application intentionally returns a sanitized JSON 503 while PostgreSQL is not ready. As written, the retry budget would end in `TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR` instead of the materially more precise `TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY`.
+
+**Root cause:** provider/proxy HTTP status and application dependency state were treated as one signal. A 503 from an intermediary is retryable transport evidence; a 503 carrying the exact hosted-runtime unavailable schema is application evidence and must retain exact release identity while the database remains not ready.
+
+**Blast radius searched:** technical-domain candidate observation, deploy completion, exact release-SHA validation, database readiness, proxy/error-page handling, retry budget, P3 final candidate revalidation and downstream public-ingress acceptance.
+
+**Corrective change:** accept a 503 body as hosted-runtime evidence only when it is bounded JSON with `status=unavailable`, a release SHA field and a boolean `synthetic_preview`. Preserve all other 503 bodies as generic transient HTTP failures. The verified hosted payload continues through exact-SHA/synthetic checks and can terminate specifically as database-not-ready after the bounded retry budget.
+
+**Permanent regression/guard:** tests now exercise both the normal response-object path and the real urllib `HTTPError(503)` path, and separately prove that an untrusted proxy-shaped 503 body is not promoted into application state.
+
+**Future prevention rule:** status codes alone are not sufficient provenance. When an owning application deliberately uses a transient HTTP status for dependency readiness, distinguish its authenticated/schema-bounded response from intermediary failures before assigning the terminal failure class.
+
+**Dependency/tooling knowledge change:** none.
+
+---
+
+## FL-047 — URL-connected repository identity must be shared across P2 and P3 consumers
+
+**Date:** 2026-09-28  
+**Scope:** Timeweb App Platform repository identity and PostgreSQL final acceptance
+
+**Symptom / finding:** P2 had already been hardened for Timeweb's repository-by-URL presentation, where provider metadata may decorate repository display/full-name fields while the exact canonical HTTPS clone URL remains authoritative. P3 still selected the application by exact `repository.full_name`. A real URL-connected `omni-cio-v10` could therefore pass P2 identity checks and then be invisible to P3 final acceptance.
+
+**Root cause:** two sequential gates implemented repository identity independently. The producer was corrected after live provider evidence, but the downstream consumer retained the older GitHub-provider metadata assumption.
+
+**Blast radius searched:** application list selection, exact application detail validation, P2 observe/deploy, P3 final app binding, repository-by-URL flow, autodeploy state and exact-SHA candidate proof.
+
+**Corrective change:** expose one fail-closed canonical repository predicate from the App release controller and reuse it in P3. Identity requires the canonical HTTPS GitHub clone target, no embedded credentials/query/fragment, default HTTPS port only, and non-empty provider metadata; provider-decorated display/full-name values no longer become independent authority.
+
+**Permanent regression/guard:** P3 tests model decorated Timeweb URL-connection metadata and a wrong clone target; its structural guard now rejects replacing the shared repository predicate with a permissive condition.
+
+**Future prevention rule:** live provider normalization learned by an upstream gate must be consumed through one shared predicate by every downstream gate. Do not duplicate presentation-field assumptions across release and acceptance controllers.
+
+**Dependency/tooling knowledge change:** Timeweb supports repository connection by URL as a first-class App Platform source; that path must remain exact-target and autodeploy-off in this release model.
+
+---
+
+## FL-048 — Timeweb panel health path overrides Dockerfile HEALTHCHECK
+
+**Date:** 2026-09-28  
+**Scope:** Timeweb App Platform creation-time liveness contract
+
+**Symptom / finding:** the focused private-route repair correctly separated process-only `/livez` from database-aware `/healthz`, but the candidate and full-delivery contracts still encoded the opposite precedence between the Timeweb panel health path and Dockerfile `HEALTHCHECK`. The runbook and execution ledger repeated that stale assumption. A live App could therefore be configured according to current Timeweb behavior while repository guards certified a contradictory provider model.
+
+**Root cause:** provider behavior was copied from an older assumption instead of being revalidated against the current App Platform health-check specification at the moment the physical creation form became an active consumer. The Dockerfile and panel happened to target the same endpoint, which hid the contradiction from source/runtime tests.
+
+**Blast radius searched:** P2 candidate contract/guard/tests/runbook, full-production delivery contract/guard/tests, Timeweb execution ledger, physical App creation form, Dockerfile healthcheck, `/livez` process semantics and `/healthz` database readiness.
+
+**Corrective change:** make the Timeweb panel path the authoritative platform liveness source, require the panel value `/livez`, retain Dockerfile `HEALTHCHECK` on the same `/livez` endpoint as a safe fallback, and keep `/healthz` exclusively as release/database readiness evidence.
+
+**Permanent regression/guard:** both P2 and full-delivery machine contracts now fail when panel-over-Dockerfile precedence is reversed; runbook guards use line-safe semantic markers so Markdown wrapping cannot create a false RED.
+
+**Future prevention rule:** revalidate provider-sensitive precedence and immutable creation-time behavior from current official documentation immediately before the provider field becomes operational. Do not let two agreeing endpoint values mask a wrong model of which control plane owns the setting.
+
+**Dependency/tooling knowledge change:** current Timeweb App Platform documentation states that the panel health-check path has priority over Dockerfile `HEALTHCHECK`; the Dockerfile check is used only when the panel field is empty.
+

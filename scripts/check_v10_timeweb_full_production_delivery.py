@@ -24,6 +24,7 @@ DOCKERFILE = ROOT / "Dockerfile"
 _CANONICAL_ORIGIN = "https://omnicio.ru"
 _CANONICAL_CALLBACK = "https://omnicio.ru/api/v10/web/auth/telegram/callback"
 _EXPECTED_BRANCH = "system/timeweb-platform-consolidation-tw-b"
+_LIVEZ_PATH = "/livez"
 _SECRET_ENV_NAMES = {
     "OMNI_V10_POSTGRES_DSN",
     "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID",
@@ -111,8 +112,15 @@ def _validate_release(payload: dict[str, Any]) -> None:
         "exact_commit_sha_required": True,
         "production_autodeploy_allowed": False,
         "runtime_release_env": "OMNI_V10_RELEASE_SHA",
-        "liveness_path": "/livez",
+        "liveness_path": _LIVEZ_PATH,
+        "platform_liveness_source": "TIMEWEB_PANEL_HEALTHCHECK",
+        "panel_healthcheck_path": _LIVEZ_PATH,
+        "dockerfile_healthcheck_path": _LIVEZ_PATH,
+        "panel_healthcheck_overrides_dockerfile_healthcheck": True,
         "database_readiness_path": "/healthz",
+        "candidate_database_readiness_required": True,
+        "candidate_database_ready_value": "READY",
+        "candidate_synthetic_preview_required": False,
         "deployed_sha_must_equal_accepted_main_sha": True,
         "last_known_good_rollback_required": True,
         "mismatch_state": "OUT_OF_SYNC/DEPLOYMENT_BLOCKED",
@@ -142,6 +150,16 @@ def _validate_runtime_contract(runtime: dict[str, Any]) -> None:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_SECRET_POLICY_DRIFT")
 
     expected_capacity = {
+        "private_postgres_hostaddr_env": "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        "private_postgres_network_cidr_env": "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        "private_postgres_route_required": True,
+        "private_postgres_tls_hostname_identity_from_dsn": True,
+        "postgres_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
+        "postgres_binding_sha256_required": True,
+        "postgres_binding_sha256_sensitive": False,
+        "postgres_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
+        "liveness_startup_database_dependency_allowed": False,
+        "database_pool_lazy_initialization_required": True,
         "postgres_pool_max_size": 4,
         "postgres_pool_acquire_timeout_seconds": 5,
         "single_serialized_runtime_connection_allowed": False,
@@ -162,7 +180,7 @@ def _validate_runtime_sources() -> None:
         (
             "EXPOSE 8080",
             "apps.api.hosted_runtime:create_app",
-            "http://localhost:8080/livez",
+            f"http://localhost:8080{_LIVEZ_PATH}",
         ),
         error_prefix="TIMEWEB_FULL_DELIVERY_DOCKER_DRIFT",
     )
@@ -175,11 +193,16 @@ def _validate_runtime_sources() -> None:
             "OMNI_V10_PUBLIC_HOSTNAME",
             "OMNI_V10_RELEASE_SHA",
             "OMNI_V10_POSTGRES_DSN",
+            "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+            "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+            "OMNI_V10_POSTGRES_BINDING_SHA256",
             "OMNI_V10_POSTGRES_RUNTIME_ROLE",
+            "prepare_timeweb_postgres_private_target",
             'canonical_origin=f"https://{hostname}"',
             "provider_route_installer=install_telegram_auth_routes_v1",
             "_BoundedWebConnectionPool",
             "_DATABASE_POOL_MAX_SIZE = 4",
+            "_BoundedWebConnectionPool(\n        None,",
             "_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS = 5.0",
             "connect=lambda:",
         ),
@@ -391,7 +414,7 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
         {"id": "P1_SOURCE_RUNTIME_CONVERGENCE", "state": "CERTIFIED_GREEN_SOURCE_BASE"},
         {
             "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
-            "state": "CERTIFIED_GREEN_BRANCH_LOCAL",
+            "state": "REPAIR_SOURCE_IMPLEMENTED_EXACT_HEAD_VERIFICATION_REQUIRED",
         },
         {
             "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
@@ -416,6 +439,22 @@ def _validate_milestones(payload: dict[str, Any]) -> None:
     ]
     if payload.get("branch_milestones") != expected:
         raise RuntimeError("TIMEWEB_FULL_DELIVERY_MILESTONE_DRIFT")
+
+
+def _validate_execution_sequence(payload: dict[str, Any]) -> None:
+    expected = [
+        "P2_SOURCE_REPAIR_ACCEPTED_MAIN",
+        "P3_OBSERVE",
+        "P3_PREPARE",
+        "P3_RECOVERY_EVIDENCE",
+        "TIMEWEB_APP_CREATE_IN_ACCEPTED_PRIVATE_NETWORK",
+        "TIMEWEB_TECHNICAL_DOMAIN_BOOTSTRAP",
+        "P2_PHYSICAL_EXACT_SHA_CANDIDATE",
+        "P3_ACCEPT",
+        "P4_CANONICAL_DOMAIN_TLS",
+    ]
+    if payload.get("execution_sequence") != expected:
+        raise RuntimeError("TIMEWEB_FULL_DELIVERY_EXECUTION_SEQUENCE_DRIFT")
 
 
 def _validate_merge_readiness(payload: dict[str, Any]) -> None:
@@ -502,6 +541,7 @@ def validate(root: Path = ROOT) -> None:
         _validate_external_gates(payload)
         _validate_provider_convergence_policy(payload)
         _validate_milestones(payload)
+        _validate_execution_sequence(payload)
         _validate_merge_readiness(payload)
         _validate_protected_invariants(payload)
     finally:

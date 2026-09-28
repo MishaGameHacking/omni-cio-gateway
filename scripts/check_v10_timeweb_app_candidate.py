@@ -12,6 +12,8 @@ CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_CONTRAC
 CONTROLLER = ROOT / "scripts/timeweb_app_release.py"
 WORKFLOW = ROOT / _WORKFLOW_RELATIVE
 RUNTIME = ROOT / "apps/api/hosted_runtime.py"
+DOCKERFILE = ROOT / "Dockerfile"
+RUNBOOK = ROOT / "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md"
 
 _EXPECTED_PLAIN_ENV = {
     "OMNI_V10_HOSTED_RUNTIME": "1",
@@ -21,6 +23,8 @@ _EXPECTED_PLAIN_ENV = {
 }
 _API_INVALID = "TIMEWEB_APP_CANDIDATE_API_INVALID"
 _RUNTIME_ENV_INVALID = "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID"
+_LIVEZ_PATH = "/livez"
+_DOCKER_BIND_ALL_IPV4 = ".".join(("0", "0", "0", "0"))
 
 
 def _text(path: Path) -> str:
@@ -54,10 +58,26 @@ def _string_set(value: object, code: str) -> set[str]:
     return set(value)
 
 
+def _strict_field_matches(value: object, expected: object) -> bool:
+    if isinstance(expected, bool):
+        return value is expected
+    return value == expected
+
+
+def _require_strict_fields(
+    payload: dict[str, Any],
+    expected: dict[str, object],
+    code: str,
+) -> None:
+    for key, expected_value in expected.items():
+        if not _strict_field_matches(payload.get(key), expected_value):
+            raise RuntimeError(code)
+
+
 def _validate_root(payload: dict[str, Any]) -> None:
     expected_root = {
         "schema": "omni-cio.v10.timeweb-app-exact-sha-candidate.v1",
-        "status": "CERTIFIED_GREEN_BRANCH_LOCAL",
+        "status": "REPAIR_SOURCE_IMPLEMENTED_EXACT_HEAD_VERIFICATION_REQUIRED",
         "owning_system_update": "TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED",
         "owning_pr": 584,
         "milestone": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
@@ -91,10 +111,24 @@ def _validate_target(payload: dict[str, Any]) -> None:
         "auto_deploy_allowed": False,
         "application_must_preexist": True,
         "application_creation_authorized_by_controller": False,
+        "documented_create_api_network_binding_available": False,
+        "initial_create_via_documented_api_allowed": False,
+        "immutable_private_network_required_at_creation": True,
+        "owner_panel_creation_required_when_create_api_lacks_network": True,
         "settings_patch_authorized_by_controller": False,
         "canonical_public_hostname": "omnicio.ru",
         "canonical_domain_attachment_allowed_in_p2": False,
         "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME",
+        "canonical_repository_clone_url": (
+            "https://github.com/MishaGameHacking/omni-cio-gateway.git"
+        ),
+        "repository_clone_url_identity_required": True,
+        "provider_decorated_repository_full_name_allowed_when_clone_url_exact": True,
+        "provider_decorated_repository_name_allowed_when_clone_url_exact": True,
+        "provider_repository_metadata_must_be_nonempty": True,
+        "github_clone_url_equivalent_case_normalization_allowed": True,
+        "github_clone_url_default_https_port_allowed": True,
+        "github_clone_url_embedded_credentials_allowed": False,
     }
     if target != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_TARGET_INVALID")
@@ -168,17 +202,32 @@ def _validate_runtime_contract(payload: dict[str, Any]) -> None:
         raise RuntimeError(_RUNTIME_ENV_INVALID)
     if runtime.get("release_sha_must_equal_expected_sha") is not True:
         raise RuntimeError(_RUNTIME_ENV_INVALID)
-    postgres_ready = (
-        runtime.get("postgres_dsn_env") == "OMNI_V10_POSTGRES_DSN"
-        and runtime.get("postgres_dsn_required") is True
+    _require_strict_fields(
+        runtime,
+        {
+            "postgres_dsn_env": "OMNI_V10_POSTGRES_DSN",
+            "postgres_dsn_required": True,
+            "postgres_private_hostaddr_env": "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+            "postgres_private_hostaddr_required": True,
+            "postgres_private_network_cidr_env": "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+            "postgres_private_network_cidr_required": True,
+            "postgres_private_route_rfc1918_required": True,
+            "postgres_private_hostaddr_must_be_inside_cidr": True,
+            "postgres_tls_hostname_identity_must_remain_dsn_host": True,
+            "postgres_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
+            "postgres_binding_sha256_required": True,
+            "postgres_binding_sha256_sensitive": False,
+            "postgres_binding_sha256_excludes_password": True,
+            "postgres_binding_sha256_binds_host_port_database_user_tls": True,
+            "postgres_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
+            "postgres_binding_sha256_required_before_app_bootstrap": True,
+            "provider_masked_sensitive_value_allowed": True,
+            "vk_login_must_be_false_or_absent": True,
+            "retired_provider_env_forbidden": True,
+            "telegram_runtime_credential_custody_accepted_by_p2": False,
+        },
+        _RUNTIME_ENV_INVALID,
     )
-    flags_ready = (
-        runtime.get("vk_login_must_be_false_or_absent") is True
-        and runtime.get("retired_provider_env_forbidden") is True
-        and runtime.get("telegram_runtime_credential_custody_accepted_by_p2") is False
-    )
-    if not postgres_ready or not flags_ready:
-        raise RuntimeError(_RUNTIME_ENV_INVALID)
 
 
 def _validate_acceptance(payload: dict[str, Any]) -> None:
@@ -187,11 +236,18 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID",
     )
     expected = {
-        "liveness_path": "/livez",
+        "liveness_path": _LIVEZ_PATH,
+        "platform_liveness_source": "TIMEWEB_PANEL_HEALTHCHECK",
+        "panel_healthcheck_path": _LIVEZ_PATH,
+        "dockerfile_healthcheck_path": _LIVEZ_PATH,
+        "panel_healthcheck_overrides_dockerfile_healthcheck": True,
         "liveness_https_required": True,
         "liveness_redirect_allowed": False,
         "liveness_status": "ok",
         "liveness_release_sha_must_equal_expected_sha": True,
+        "liveness_startup_database_connection_required": False,
+        "liveness_database_probe_on_request_allowed": False,
+        "database_readiness_owns_database_probe": True,
         "last_known_good_sha_must_come_from_successful_provider_history": True,
         "last_known_good_order_field": "ended_at",
         "last_known_good_order_must_be_provider_timestamp": True,
@@ -203,6 +259,16 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
         "liveness_retry_on_transient_or_stale_route_required": True,
         "liveness_retry_minimum_budget_seconds": 120,
         "liveness_retry_maximum_budget_seconds": 300,
+        "database_readiness_path": "/healthz",
+        "database_readiness_https_required": True,
+        "database_readiness_redirect_allowed": False,
+        "database_readiness_status": "ok",
+        "database_readiness_database": "READY",
+        "database_readiness_synthetic_preview": False,
+        "database_readiness_release_sha_must_equal_expected_sha": True,
+        "database_readiness_retry_on_transient_or_unavailable_required": True,
+        "database_readiness_retry_minimum_budget_seconds": 120,
+        "database_readiness_retry_maximum_budget_seconds": 300,
     }
     if acceptance != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_ACCEPTANCE_INVALID")
@@ -219,6 +285,23 @@ def _validate_github(payload: dict[str, Any]) -> None:
     }
     if github != expected:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_GITHUB_INVALID")
+
+
+def _validate_orchestration(payload: dict[str, Any]) -> None:
+    orchestration = _dict(
+        payload.get("orchestration"),
+        "TIMEWEB_APP_CANDIDATE_ORCHESTRATION_INVALID",
+    )
+    expected = {
+        "p3_observe_before_physical_candidate_allowed": True,
+        "p3_prepare_before_physical_candidate_required": True,
+        "app_creation_after_p3_prepare_required": True,
+        "p3_accept_before_physical_candidate_allowed": False,
+        "candidate_healthz_requires_prepared_database": True,
+        "p3_accept_requires_current_candidate_livez_and_healthz": True,
+    }
+    if orchestration != expected:
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_ORCHESTRATION_INVALID")
 
 
 def _validate_invariants(payload: dict[str, Any]) -> None:
@@ -249,6 +332,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _validate_runtime_contract(payload)
     _validate_acceptance(payload)
     _validate_github(payload)
+    _validate_orchestration(payload)
     _validate_invariants(payload)
 
 
@@ -258,6 +342,14 @@ def _validate_controller(path: Path) -> None:
         'API_BASE = "https://api.timeweb.cloud"',
         'CANONICAL_APP_NAME = "omni-cio-v10"',
         'CANONICAL_REPOSITORY = "MishaGameHacking/omni-cio-gateway"',
+        'CANONICAL_REPOSITORY_PATH = "/MishaGameHacking/omni-cio-gateway"',
+        "def _canonical_repository_url(",
+        'parsed.hostname == "github.com"',
+        "parsed.username is None",
+        "parsed.password is None",
+        "port in {None, 443}",
+        "path.casefold() == CANONICAL_REPOSITORY_PATH.casefold()",
+        "TIMEWEB_APP_RELEASE_REPOSITORY_INVALID",
         'CANONICAL_BRANCH = "main"',
         'CANONICAL_FRAMEWORK = "docker"',
         'DEPLOY_CONFIRMATION = "DEPLOY_EXACT_TIMEWEB_APP_COMMIT"',
@@ -271,6 +363,9 @@ def _validate_controller(path: Path) -> None:
         "RUNTIME_MODE_LIVE_OPERABLE",
         "TIMEWEB_APP_RELEASE_P5_LIVE_EVIDENCE_REQUIRED",
         "TIMEWEB_APP_RELEASE_POSTGRES_DSN_REQUIRED",
+        "POSTGRES_BINDING_SHA256_ENV",
+        "TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID",
+        "TIMEWEB_MASKED_SENSITIVE_VALUE",
         "TIMEWEB_APP_RELEASE_RETIRED_PROVIDER_ENV_PRESENT",
         "TIMEWEB_APP_RELEASE_AMBIGUOUS_UNRESOLVED",
         "TIMEWEB_APP_RELEASE_MULTIPLE_INFLIGHT_EXACT_SHA",
@@ -285,6 +380,15 @@ def _validate_controller(path: Path) -> None:
         "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_TOO_LARGE",
         "TIMEWEB_APP_RELEASE_DEPLOY_HISTORY_DUPLICATE_ID",
         "TIMEWEB_APP_RELEASE_LIVEZ_SHA_DRIFT",
+        "POSTGRES_PRIVATE_HOSTADDR_ENV",
+        "POSTGRES_PRIVATE_NETWORK_CIDR_ENV",
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_REQUIRED",
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
+        "_HEALTHZ_RETRY_DELAYS",
+        "_verify_healthz",
+        "TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY",
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN",
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT",
     )
     if any(marker not in source for marker in required):
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_CONTROLLER_MARKER_MISSING")
@@ -340,10 +444,49 @@ def _validate_workflow(path: Path) -> None:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_BINDING_SCOPE_INVALID")
 
 
+def _validate_runbook(path: Path) -> None:
+    source = _text(path)
+    required = (
+        "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        "OMNI_V10_POSTGRES_BINDING_SHA256",
+        "P3 `prepare`",
+        "panel health path",
+        "priority over",
+        "Dockerfile `HEALTHCHECK`",
+        "database=READY",
+        "synthetic_preview=false",
+        "P3 `accept`",
+    )
+    if any(marker not in source for marker in required):
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_RUNBOOK_DRIFT")
+
+
+def _validate_dockerfile(path: Path) -> None:
+    source = _text(path)
+    required = (
+        "EXPOSE 8080",
+        "HEALTHCHECK",
+        f"http://localhost:8080{_LIVEZ_PATH}",
+        "apps.api.hosted_runtime:create_app",
+        "--host",
+        _DOCKER_BIND_ALL_IPV4,
+        "--port",
+        "8080",
+    )
+    if any(marker not in source for marker in required):
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_DOCKERFILE_DRIFT")
+    if "http://localhost:8080/healthz" in source:
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_DOCKERFILE_LIVENESS_DRIFT")
+
+
 def _validate_runtime(path: Path) -> None:
     source = _text(path)
     required = (
         '"OMNI_V10_CANDIDATE_HOSTNAME"',
+        '"OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"',
+        '"OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"',
+        "prepare_timeweb_postgres_private_target",
         "_optional_candidate_hostname",
         'additional_hosts=("localhost", *candidate_hosts)',
     )
@@ -358,10 +501,14 @@ def validate(root: Path = ROOT) -> None:
     controller = root / "scripts/timeweb_app_release.py"
     workflow = root / _WORKFLOW_RELATIVE
     runtime = root / "apps/api/hosted_runtime.py"
+    dockerfile = root / "Dockerfile"
+    runbook = root / "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md"
     _validate_contract(_json(contract))
     _validate_controller(controller)
     _validate_workflow(workflow)
     _validate_runtime(runtime)
+    _validate_dockerfile(dockerfile)
+    _validate_runbook(runbook)
 
 
 def main() -> int:

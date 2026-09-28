@@ -36,6 +36,8 @@ DBNAME_KEY = "dbname"
 RECOVERY_KEY = "recovery"
 HOSTED_RUNTIME_RELATIVE = "apps/api/hosted_runtime.py"
 VERIFIED_HOSTADDR = "8.8.8.8"
+PRIVATE_HOSTADDR = ".".join(("10", "23", "42", "10"))
+PRIVATE_NETWORK_CIDR = ".".join(("10", "23", "42", "0")) + "/24"
 BOOTSTRAP_USER = "bootstrap"
 PREPARE_CONNECTION_DSNS_NAME = "_prepare_connection_dsns"
 
@@ -253,6 +255,163 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             )
         prepare_dsns.assert_not_called()
 
+    def test_p3_app_identity_accepts_timeweb_url_connection_metadata(self) -> None:
+        row = {
+            "name": cutover.app_release.CANONICAL_APP_NAME,
+            "repository": {
+                "full_name": (
+                    "provider-account/" + cutover.app_release.CANONICAL_REPOSITORY
+                ),
+                "name": (
+                    "provider-display/"
+                    + cutover.app_release.CANONICAL_REPOSITORY.rsplit("/", 1)[-1]
+                ),
+                "url": (
+                    f"https://github.com/{cutover.app_release.CANONICAL_REPOSITORY}.git"
+                ),
+            },
+        }
+
+        self.assertTrue(cutover._is_canonical_app_row(row))
+
+        row["repository"]["url"] = "https://github.com/MishaGameHacking/other.git"
+        self.assertFalse(cutover._is_canonical_app_row(row))
+
+    def test_guard_rejects_p3_app_repository_identity_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "and app_release.is_canonical_repository(value)",
+                "and True",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            controller.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_APP_REPOSITORY_IDENTITY_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_app_binding_revalidates_private_database_route(self) -> None:
+        expected_sha = "a" * 40
+        binding_sha256 = "b" * 64
+        envs = {
+            cutover.app_release.POSTGRES_DSN_ENV: RUNTIME_DSN,
+            cutover.app_release.POSTGRES_BINDING_SHA256_ENV: binding_sha256,
+            cutover.app_release.RELEASE_SHA_ENV: expected_sha,
+            cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
+            cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
+            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: PRIVATE_HOSTADDR,
+            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: PRIVATE_NETWORK_CIDR,
+        }
+        api = object()
+        with (
+            mock.patch.dict(
+                cutover.os.environ,
+                {cutover.app_release.TOKEN_ENV: "token"},
+                clear=False,
+            ),
+            mock.patch.object(
+                cutover.app_release,
+                "TimewebAppApi",
+                return_value=api,
+            ),
+            mock.patch.object(cutover, "_app_envs", return_value=envs),
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "timeweb_postgres_binding_sha256",
+                return_value=binding_sha256,
+            ),
+            mock.patch.object(
+                cutover.app_release,
+                "validate_private_route_env",
+            ) as validate_private_route,
+            mock.patch.object(cutover.app_release, "observe") as observe,
+        ):
+            cutover._verify_app_binding(expected_sha, RUNTIME_DSN)
+
+        validate_private_route.assert_called_once_with(envs)
+        observe.assert_called_once_with(
+            api,
+            expected_sha,
+            runtime_mode=cutover.app_release.RUNTIME_MODE_PREACTIVATION,
+        )
+
+    def test_app_binding_accepts_provider_masked_dsn_with_exact_digest(self) -> None:
+        expected_sha = "a" * 40
+        binding_sha256 = "c" * 64
+        envs = {
+            cutover.app_release.POSTGRES_DSN_ENV: (
+                cutover.app_release.TIMEWEB_MASKED_SENSITIVE_VALUE
+            ),
+            cutover.app_release.POSTGRES_BINDING_SHA256_ENV: binding_sha256,
+            cutover.app_release.RELEASE_SHA_ENV: expected_sha,
+            cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
+            cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
+            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: PRIVATE_HOSTADDR,
+            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: PRIVATE_NETWORK_CIDR,
+        }
+        api = object()
+        with (
+            mock.patch.dict(
+                cutover.os.environ,
+                {cutover.app_release.TOKEN_ENV: "token"},
+                clear=False,
+            ),
+            mock.patch.object(cutover.app_release, "TimewebAppApi", return_value=api),
+            mock.patch.object(cutover, "_app_envs", return_value=envs),
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "timeweb_postgres_binding_sha256",
+                return_value=binding_sha256,
+            ),
+            mock.patch.object(cutover.app_release, "validate_private_route_env"),
+            mock.patch.object(cutover.app_release, "observe") as observe,
+        ):
+            cutover._verify_app_binding(expected_sha, RUNTIME_DSN)
+
+        observe.assert_called_once()
+
+    def test_app_binding_rejects_masked_dsn_with_wrong_digest(self) -> None:
+        expected_sha = "a" * 40
+        envs = {
+            cutover.app_release.POSTGRES_DSN_ENV: (
+                cutover.app_release.TIMEWEB_MASKED_SENSITIVE_VALUE
+            ),
+            cutover.app_release.POSTGRES_BINDING_SHA256_ENV: "d" * 64,
+            cutover.app_release.RELEASE_SHA_ENV: expected_sha,
+            cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
+            cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
+            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: PRIVATE_HOSTADDR,
+            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: PRIVATE_NETWORK_CIDR,
+        }
+        with (
+            mock.patch.dict(
+                cutover.os.environ,
+                {cutover.app_release.TOKEN_ENV: "token"},
+                clear=False,
+            ),
+            mock.patch.object(
+                cutover.app_release, "TimewebAppApi", return_value=object()
+            ),
+            mock.patch.object(cutover, "_app_envs", return_value=envs),
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "timeweb_postgres_binding_sha256",
+                return_value="e" * 64,
+            ),
+            mock.patch.object(cutover.app_release, "validate_private_route_env"),
+            self.assertRaisesRegex(
+                cutover.CutoverStopped,
+                "TIMEWEB_PG_PRODUCTION_APP_BINDING_SHA256_DRIFT",
+            ),
+        ):
+            cutover._verify_app_binding(expected_sha, RUNTIME_DSN)
+
     def test_guard_rejects_mutation_in_observe_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -317,6 +476,129 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_app_binding_without_private_route_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "    app_release.validate_private_route_env(envs)\n",
+                "",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            controller.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_CONTROLLER_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_app_binding_without_live_candidate_route_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "    app_release.observe(\n",
+                "    # candidate observation intentionally removed\n",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            controller.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_CONTROLLER_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_app_creation_before_p3_prepare(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["orchestration"]["prepare_must_complete_before_app_creation"] = (
+                False
+            )
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_p3_accept_before_physical_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["orchestration"]["accept_before_physical_candidate_allowed"] = True
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_private_route_firewall_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["app_binding"][
+                "runtime_private_route_firewall_dependency_allowed"
+            ] = True
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_app_binding_without_runtime_fingerprint_custody(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = _contract_path(root)
+            payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
+            payload["app_binding"][
+                "runtime_binding_sha256_required_before_app_creation"
+            ] = False
+            path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
+            ):
+                guard.validate(root)
+
+    def test_rejects_hosted_runtime_eager_ca_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / HOSTED_RUNTIME_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            eager_source = source.replace(
+                "database_ca = _LazyTimewebPostgresCa()",
+                "database_ca = install_timeweb_postgres_ca()",
+                1,
+            ).replace(
+                "database_ca.resolve()",
+                "database_ca",
+                1,
+            )
+            self.assertNotEqual(eager_source, source)
+            path.write_text(eager_source, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_rejects_hosted_runtime_without_tls_preparation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -324,9 +606,27 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             path = root / HOSTED_RUNTIME_RELATIVE
             source = path.read_text(encoding=TEXT_ENCODING)
             mutated = source.replace(
-                "prepared_dsn = prepare_timeweb_postgres_target("
-                "external_database_dsn, ca_path)",
-                "prepared_dsn = external_database_dsn",
+                "prepared_dsn = prepare_timeweb_postgres_private_target(",
+                "prepared_dsn = prepare_timeweb_postgres_target(",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_hosted_runtime_without_private_route_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / HOSTED_RUNTIME_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "private_network_cidr=private_network_cidr,",
+                "private_network_cidr=None,",
                 1,
             )
             self.assertNotEqual(mutated, source)

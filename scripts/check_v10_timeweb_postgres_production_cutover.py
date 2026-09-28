@@ -26,6 +26,7 @@ RECOVERY = ROOT / "infrastructure/postgres/hosted-recovery-contract.json"
 _PREPARE_CONFIRMATION = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
 _HOSTED_RUNTIME_TLS_DRIFT = "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_TLS_DRIFT"
 _CALL_PREPARE_TARGET = "prepare_timeweb_postgres_target"
+_CALL_PREPARE_PRIVATE_TARGET = "prepare_timeweb_postgres_private_target"
 _CALL_CONNECT_PREPARED = "connect_prepared_timeweb_postgres"
 _CALL_INSTALL_CA = "install_timeweb_postgres_ca"
 _RECOVERY_ATTESTATION = (
@@ -282,6 +283,33 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
         payload.get("app_binding"),
         "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
     )
+    expected = {
+        "application_name": "omni-cio-v10",
+        "runtime_dsn_env": "OMNI_V10_POSTGRES_DSN",
+        "runtime_release_env": "OMNI_V10_RELEASE_SHA",
+        "runtime_private_hostaddr_env": "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        "runtime_private_network_cidr_env": "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        "runtime_private_route_required": True,
+        "runtime_private_route_must_preserve_tls_hostname": True,
+        "runtime_private_route_must_be_proved_by_candidate_healthz": True,
+        "runtime_private_route_firewall_dependency_allowed": False,
+        "runtime_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
+        "runtime_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
+        "runtime_binding_sha256_is_secret": False,
+        "runtime_binding_sha256_excludes_password": True,
+        "runtime_binding_sha256_required_before_app_creation": True,
+        "provider_masked_runtime_dsn_value_allowed": "hidden-by-api-key-policy",
+        "provider_masked_runtime_dsn_requires_exact_binding_sha256": True,
+        "public_multi_user_env": "PUBLIC_MULTI_USER_ENABLED",
+        "telegram_login_env": "OMNI_V10_TELEGRAM_LOGIN_ENABLED",
+        "accepted_binding_must_equal_verified_runtime_dsn": True,
+        "accepted_release_sha_must_equal_exact_main_sha": True,
+        "public_multi_user_must_remain_false": True,
+        "telegram_login_must_remain_false": True,
+    }
+    for key, value in expected.items():
+        if binding.get(key) != value:
+            raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID")
     _false_map(
         binding,
         (
@@ -290,6 +318,23 @@ def _validate_app_binding(payload: dict[str, Any]) -> None:
         ),
         "TIMEWEB_PG_CUTOVER_APP_BINDING_INVALID",
     )
+
+
+def _validate_orchestration(payload: dict[str, Any]) -> None:
+    orchestration = _mapping(
+        payload.get("orchestration"),
+        "TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID",
+    )
+    expected = {
+        "observe_may_run_before_app_creation": True,
+        "prepare_must_complete_before_app_creation": True,
+        "recovery_must_complete_before_app_creation": True,
+        "physical_candidate_must_complete_before_accept": True,
+        "accept_repeats_candidate_livez_and_healthz": True,
+        "accept_before_physical_candidate_allowed": False,
+    }
+    if orchestration != expected:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_ORCHESTRATION_INVALID")
 
 
 def _validate_github(payload: dict[str, Any]) -> None:
@@ -394,6 +439,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
     _validate_prepare(payload)
     _validate_recovery(payload)
     _validate_app_binding(payload)
+    _validate_orchestration(payload)
     _validate_github(payload)
     _validate_observe(payload)
     _validate_protected_invariants(payload)
@@ -449,6 +495,78 @@ def _direct_call_names(source: str, function_name: str) -> set[str]:
         function_name,
         syntax_code="TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID",
         function_code="TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID",
+    )
+
+
+def _runtime_function(source: str, name: str) -> ast.FunctionDef:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID"
+        ) from exc
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    ]
+    if len(functions) != 1:
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+    return functions[0]
+
+
+def _named_calls(
+    function: ast.FunctionDef,
+    names: tuple[str, ...],
+) -> dict[str, list[ast.Call]]:
+    calls = {name: [] for name in names}
+    for node in ast.walk(function):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            bucket = calls.get(node.func.id)
+            if bucket is not None:
+                bucket.append(node)
+    return calls
+
+
+def _keyword_arguments(call: ast.Call) -> dict[str, ast.expr]:
+    return {
+        keyword.arg: keyword.value
+        for keyword in call.keywords
+        if keyword.arg is not None
+    }
+
+
+def _require_name_argument(
+    arguments: dict[str, ast.expr],
+    argument: str,
+    expected_name: str,
+) -> None:
+    value = arguments.get(argument)
+    if not isinstance(value, ast.Name) or value.id != expected_name:
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+
+def _require_hosted_runtime_private_call_shape(source: str) -> None:
+    function = _runtime_function(source, "_open_runtime_database")
+    calls = _named_calls(
+        function,
+        (_CALL_PREPARE_PRIVATE_TARGET, _CALL_CONNECT_PREPARED),
+    )
+    if any(len(values) != 1 for values in calls.values()):
+        raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+    prepare_keywords = _keyword_arguments(calls[_CALL_PREPARE_PRIVATE_TARGET][0])
+    connect_keywords = _keyword_arguments(calls[_CALL_CONNECT_PREPARED][0])
+    _require_name_argument(prepare_keywords, "private_hostaddr", "private_hostaddr")
+    _require_name_argument(
+        prepare_keywords,
+        "private_network_cidr",
+        "private_network_cidr",
+    )
+    _require_name_argument(
+        connect_keywords,
+        "private_network_cidr",
+        "private_network_cidr",
     )
 
 
@@ -534,6 +652,7 @@ def _validate_workflow_network_scope_order(workflow: str) -> None:
 
 
 def _validate_hosted_runtime_tls_flow(source: str) -> None:
+    _require_hosted_runtime_private_call_shape(source)
     runtime_calls = _function_call_names(
         source,
         "_open_runtime_database",
@@ -541,7 +660,7 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
     )
     required_runtime_calls = {
-        _CALL_PREPARE_TARGET,
+        _CALL_PREPARE_PRIVATE_TARGET,
         _CALL_CONNECT_PREPARED,
         "_configure_long_lived_web_connection",
         "probe_hosted_runtime_database",
@@ -551,6 +670,7 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
     forbidden_runtime_calls = {
         "connect_postgres",
         "prepare_timeweb_postgres_tls",
+        _CALL_PREPARE_TARGET,
         _CALL_INSTALL_CA,
     }
     if runtime_calls & forbidden_runtime_calls:
@@ -562,15 +682,33 @@ def _validate_hosted_runtime_tls_flow(source: str) -> None:
         syntax_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_SYNTAX_INVALID",
         function_code="TIMEWEB_PG_CUTOVER_HOSTED_RUNTIME_FUNCTION_INVALID",
     )
-    if not {_CALL_INSTALL_CA, "_open_runtime_database"}.issubset(create_calls):
+    if not {"_LazyTimewebPostgresCa", "_open_runtime_database"}.issubset(create_calls):
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
     forbidden_create_calls = {
+        _CALL_INSTALL_CA,
         _CALL_PREPARE_TARGET,
+        _CALL_PREPARE_PRIVATE_TARGET,
         _CALL_CONNECT_PREPARED,
         "prepare_timeweb_postgres_tls",
     }
     if create_calls & forbidden_create_calls:
         raise CutoverContractError(_HOSTED_RUNTIME_TLS_DRIFT)
+
+    _markers(
+        source,
+        (
+            "class _LazyTimewebPostgresCa:",
+            "installer: Callable[[], Path] = install_timeweb_postgres_ca",
+            "path = self._installer()",
+            "database_ca = _LazyTimewebPostgresCa()",
+            "database_ca.resolve()",
+            '"OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"',
+            '"OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"',
+            "private_hostaddr=private_hostaddr",
+            "private_network_cidr=private_network_cidr",
+        ),
+        _HOSTED_RUNTIME_TLS_DRIFT,
+    )
 
 
 def _validate_sources() -> None:
@@ -600,6 +738,8 @@ def _validate_sources() -> None:
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",
+            "app_release.validate_private_route_env(envs)",
+            "app_release.observe(",
             "--recovery-attestation",
             "--recovery-evidence-sha256",
             "TIMEWEB_POSTGRES_PRODUCTION_CUTOVER=ACCEPTED",
@@ -616,6 +756,19 @@ def _validate_sources() -> None:
     }
     if observe_calls & forbidden_observe_calls:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_MUTATION_PATH")
+
+    app_identity_calls = _direct_call_names(controller, "_is_canonical_app_row")
+    if "is_canonical_repository" not in app_identity_calls:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_REPOSITORY_IDENTITY_DRIFT")
+
+    app_binding_calls = _direct_call_names(controller, "_verify_app_binding")
+    required_app_binding_calls = {
+        "timeweb_postgres_binding_sha256",
+        "validate_private_route_env",
+        "observe",
+    }
+    if not required_app_binding_calls.issubset(app_binding_calls):
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_PRIVATE_ROUTE_UNVERIFIED")
 
     if any(
         item in controller
@@ -659,6 +812,9 @@ def _validate_sources() -> None:
             "TIMEWEB_PG_TLS_ROOT_CERT_PATH_INVALID",
             "probe_timeweb_postgres_transport(",
             "prepare_timeweb_postgres_target(",
+            "prepare_timeweb_postgres_private_target(",
+            "probe_timeweb_postgres_private_transport(",
+            "_private_ipv4_network(",
             "_prepared_connection_params(",
             "connect_prepared_timeweb_postgres(",
             "os.replace(temporary, target)",
@@ -686,10 +842,13 @@ def _validate_sources() -> None:
         (
             _CALL_CONNECT_PREPARED,
             _CALL_INSTALL_CA,
-            _CALL_PREPARE_TARGET,
+            _CALL_PREPARE_PRIVATE_TARGET,
             "external_database_dsn = _required_env(_DSN_ENV)",
-            "database_ca_path = install_timeweb_postgres_ca()",
-            "prepared_dsn = prepare_timeweb_postgres_target(",
+            "private_hostaddr = _required_env(_PRIVATE_HOSTADDR_ENV)",
+            "private_network_cidr = _required_env(_PRIVATE_NETWORK_CIDR_ENV)",
+            "database_ca = _LazyTimewebPostgresCa()",
+            "database_ca.resolve()",
+            "prepared_dsn = prepare_timeweb_postgres_private_target(",
             "connect=lambda: _open_runtime_database(",
             'failure_prefix="HOSTED_RUNTIME_DATABASE"',
         ),
@@ -746,7 +905,7 @@ def _validate_sources() -> None:
             "Selected branches and tags",
             "Branch `main`",
             "Portable CA / DSN rule",
-            "Credential-free connection-readiness ladder",
+            "Credential-free connection-readiness ladders",
             "Provider network-scope gate",
             "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY",
             "two consecutive read-only provider snapshots",
@@ -755,7 +914,10 @@ def _validate_sources() -> None:
             "database project identity",
             "verifier_cidr",
             "v10-timeweb-postgres-public-ipv4-tls",
-            "re-proves the current provider address before every new pooled connection",
+            "re-proves its private PostgreSQL route before every new pooled connection",
+            "TIMEWEB_PG_TLS_PRIVATE_TRANSPORT=READY",
+            "/healthz",
+            "database=READY",
             "sslrootcert=.omni-cio/timeweb-postgres-root.crt",
             "TIMEWEB_PG_TLS_TRANSPORT=READY",
             "pgsql:host=...",

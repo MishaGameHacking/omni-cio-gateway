@@ -471,6 +471,88 @@ def test_serialized_web_connection_never_replays_failed_operation() -> None:
     assert replacement.execute_calls == 1
 
 
+def test_lazy_timeweb_postgres_ca_materializes_once(tmp_path: Path) -> None:
+    ca_path = tmp_path / "timeweb-postgres-root.crt"
+    calls: list[str] = []
+
+    def install() -> Path:
+        calls.append("install")
+        return ca_path
+
+    lazy_ca = hosted_runtime._LazyTimewebPostgresCa(install)
+
+    assert calls == []
+    assert lazy_ca.resolve() == ca_path
+    assert lazy_ca.resolve() == ca_path
+    assert calls == ["install"]
+
+
+def test_lazy_timeweb_postgres_ca_retries_after_failed_materialization(
+    tmp_path: Path,
+) -> None:
+    ca_path = tmp_path / "timeweb-postgres-root.crt"
+    attempts = 0
+
+    def install() -> Path:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("simulated CA fetch failure")
+        return ca_path
+
+    lazy_ca = hosted_runtime._LazyTimewebPostgresCa(install)
+
+    with pytest.raises(RuntimeError, match="simulated CA fetch failure"):
+        lazy_ca.resolve()
+    assert lazy_ca.resolve() == ca_path
+    assert lazy_ca.resolve() == ca_path
+    assert attempts == 2
+
+
+def test_bounded_pool_lazy_initializes_on_first_checkout() -> None:
+    replacement = _PoolRawConnection("replacement")
+    connect_calls: list[str] = []
+
+    def connect() -> _PoolRawConnection:
+        connect_calls.append("connect")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        None,
+        connect=connect,
+        max_size=1,
+        acquire_timeout_seconds=1.0,
+    )
+
+    assert connect_calls == []
+    assert _execute_pool_transaction(pool, "SELECT 1") == ("replacement",)
+    assert connect_calls == ["connect"]
+
+
+def test_bounded_pool_lazy_connect_failure_releases_slot() -> None:
+    replacement = _PoolRawConnection("replacement")
+    attempts = 0
+
+    def connect() -> _PoolRawConnection:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("simulated connect failure")
+        return replacement
+
+    pool = _BoundedWebConnectionPool(
+        None,
+        connect=connect,
+        max_size=1,
+        acquire_timeout_seconds=1.0,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated connect failure"):
+        _execute_pool_transaction(pool, "SELECT 1")
+    assert _execute_pool_transaction(pool, "SELECT 1") == ("replacement",)
+    assert attempts == 2
+
+
 def test_bounded_pool_allows_two_concurrent_transactions() -> None:
     initial = _PoolRawConnection("initial")
     replacement = _PoolRawConnection("replacement")
@@ -784,19 +866,19 @@ def test_livez_is_process_only_after_runtime_startup(tmp_path: Path) -> None:
         provider_start_paths=frozenset(),
         provider_route_installer=lambda app, *, services: None,
     )
-    assert state["calls"] == 1
+    assert state["calls"] == 0
     state["fail"] = True
 
     client = TestClient(app, base_url="http://localhost")
     live = client.get("/livez")
     assert live.status_code == 200
     assert live.json() == {"status": "ok", "release_sha": RELEASE_SHA}
-    assert state["calls"] == 1
+    assert state["calls"] == 0
 
     ready = client.get("/healthz")
     assert ready.status_code == 503
     assert ready.json()["status"] == "unavailable"
-    assert state["calls"] == 2
+    assert state["calls"] == 1
 
 
 def test_livez_can_use_plain_http_only_from_explicit_loopback(tmp_path: Path) -> None:
@@ -985,33 +1067,72 @@ def test_candidate_hostname_is_optional_and_validated(
         _optional_candidate_hostname()
 
 
-def test_hosted_runtime_reproves_transport_for_each_database_open(
+def test_hosted_runtime_rejects_database_binding_drift_before_pool_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = {
+        "OMNI_V10_HOSTED_RUNTIME": "1",
+        "OMNI_V10_PUBLIC_HOSTNAME": HOSTNAME,
+        "OMNI_V10_RELEASE_SHA": RELEASE_SHA,
+        "OMNI_V10_POSTGRES_RUNTIME_ROLE": "runtime",
+        "OMNI_V10_POSTGRES_DSN": "external-dsn",
+        "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR": "10.0.0.10",
+        "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR": "10.0.0.0/24",
+        "OMNI_V10_POSTGRES_BINDING_SHA256": "a" * 64,
+    }
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        hosted_runtime,
+        "timeweb_postgres_binding_sha256",
+        lambda _dsn: "b" * 64,
+    )
+
+    with pytest.raises(RuntimeError, match="HOSTED_RUNTIME_DATABASE_BINDING_DRIFT"):
+        hosted_runtime.create_app()
+
+
+def test_hosted_runtime_reproves_private_transport_for_each_database_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ca_path = tmp_path / "timeweb-postgres-root.crt"
     prepared_dsns = iter(("prepared-a", "prepared-b"))
-    preparation_calls: list[tuple[str, Path]] = []
-    connection_calls: list[str] = []
+    preparation_calls: list[tuple[str, Path, str, str]] = []
+    connection_calls: list[tuple[str, str]] = []
     configured: list[object] = []
     probed_roles: list[str] = []
     connections = [object(), object()]
 
-    def prepare_target(external_dsn: str, observed_ca_path: Path) -> str:
-        preparation_calls.append((external_dsn, observed_ca_path))
+    def prepare_target(
+        external_dsn: str,
+        observed_ca_path: Path,
+        *,
+        private_hostaddr: str,
+        private_network_cidr: str,
+    ) -> str:
+        preparation_calls.append(
+            (
+                external_dsn,
+                observed_ca_path,
+                private_hostaddr,
+                private_network_cidr,
+            )
+        )
         return next(prepared_dsns)
 
     def connect_prepared(
         prepared_dsn: str,
         **kwargs: object,
     ) -> object:
-        del kwargs
-        connection_calls.append(prepared_dsn)
+        private_network_cidr = str(kwargs.pop("private_network_cidr"))
+        kwargs.clear()
+        connection_calls.append((prepared_dsn, private_network_cidr))
         return connections[len(connection_calls) - 1]
 
     monkeypatch.setattr(
         hosted_runtime,
-        "prepare_timeweb_postgres_target",
+        "prepare_timeweb_postgres_private_target",
         prepare_target,
     )
     monkeypatch.setattr(
@@ -1036,20 +1157,27 @@ def test_hosted_runtime_reproves_transport_for_each_database_open(
         "external-dsn",
         ca_path,
         "runtime",
+        "10.0.0.10",
+        "10.0.0.0/24",
     )
     second = hosted_runtime._open_runtime_database(
         "external-dsn",
         ca_path,
         "runtime",
+        "10.0.0.10",
+        "10.0.0.0/24",
     )
 
     assert first is connections[0]
     assert second is connections[1]
     assert preparation_calls == [
-        ("external-dsn", ca_path),
-        ("external-dsn", ca_path),
+        ("external-dsn", ca_path, "10.0.0.10", "10.0.0.0/24"),
+        ("external-dsn", ca_path, "10.0.0.10", "10.0.0.0/24"),
     ]
-    assert connection_calls == ["prepared-a", "prepared-b"]
+    assert connection_calls == [
+        ("prepared-a", "10.0.0.0/24"),
+        ("prepared-b", "10.0.0.0/24"),
+    ]
     assert configured == connections
     assert probed_roles == ["runtime", "runtime"]
 
@@ -1093,7 +1221,13 @@ def test_timeweb_runtime_source_has_no_retired_provider_dependency() -> None:
     assert "OMNI_V10_POSTGRES_RUNTIME_ROLE" in runtime
     assert "connect_prepared_timeweb_postgres" in runtime
     assert "install_timeweb_postgres_ca" in runtime
-    assert "prepare_timeweb_postgres_target" in runtime
+    assert "_LazyTimewebPostgresCa" in runtime
+    assert "database_ca.resolve()" in runtime
+    assert "prepare_timeweb_postgres_private_target" in runtime
+    assert "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR" in runtime
+    assert "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR" in runtime
+    assert "OMNI_V10_POSTGRES_BINDING_SHA256" in runtime
+    assert "timeweb_postgres_binding_sha256" in runtime
     assert "prepare_timeweb_postgres_tls" not in runtime
     assert 'failure_prefix="HOSTED_RUNTIME_DATABASE"' in runtime
     assert "connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS" in runtime

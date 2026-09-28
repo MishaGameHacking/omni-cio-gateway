@@ -15,7 +15,14 @@
     "production_autodeploy_allowed": false,
     "runtime_release_env": "OMNI_V10_RELEASE_SHA",
     "liveness_path": "/livez",
+    "platform_liveness_source": "TIMEWEB_PANEL_HEALTHCHECK",
+    "panel_healthcheck_path": "/livez",
+    "dockerfile_healthcheck_path": "/livez",
+    "panel_healthcheck_overrides_dockerfile_healthcheck": true,
     "database_readiness_path": "/healthz",
+    "candidate_database_readiness_required": true,
+    "candidate_database_ready_value": "READY",
+    "candidate_synthetic_preview_required": false,
     "deployed_sha_must_equal_accepted_main_sha": true,
     "last_known_good_rollback_required": true,
     "mismatch_state": "OUT_OF_SYNC/DEPLOYMENT_BLOCKED",
@@ -42,6 +49,16 @@
     ],
     "credential_values_in_repository_allowed": false,
     "candidate_hostname_env": "OMNI_V10_CANDIDATE_HOSTNAME",
+    "private_postgres_hostaddr_env": "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+    "private_postgres_network_cidr_env": "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+    "private_postgres_route_required": true,
+    "private_postgres_tls_hostname_identity_from_dsn": true,
+    "postgres_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
+    "postgres_binding_sha256_required": true,
+    "postgres_binding_sha256_sensitive": false,
+    "postgres_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
+    "liveness_startup_database_dependency_allowed": false,
+    "database_pool_lazy_initialization_required": true,
     "postgres_pool_max_size": 4,
     "postgres_pool_acquire_timeout_seconds": 5,
     "single_serialized_runtime_connection_allowed": false,
@@ -134,7 +151,7 @@
     },
     {
       "id": "P2_TIMEWEB_EXACT_SHA_CANDIDATE",
-      "state": "CERTIFIED_GREEN_BRANCH_LOCAL"
+      "state": "REPAIR_SOURCE_IMPLEMENTED_EXACT_HEAD_VERIFICATION_REQUIRED"
     },
     {
       "id": "P3_POSTGRES18_PRODUCTION_CUTOVER",
@@ -182,6 +199,17 @@
     "acceptance_seal_algorithm": "SHA-256",
     "rollback_evidence_required": true
   },
+  "execution_sequence": [
+    "P2_SOURCE_REPAIR_ACCEPTED_MAIN",
+    "P3_OBSERVE",
+    "P3_PREPARE",
+    "P3_RECOVERY_EVIDENCE",
+    "TIMEWEB_APP_CREATE_IN_ACCEPTED_PRIVATE_NETWORK",
+    "TIMEWEB_TECHNICAL_DOMAIN_BOOTSTRAP",
+    "P2_PHYSICAL_EXACT_SHA_CANDIDATE",
+    "P3_ACCEPT",
+    "P4_CANONICAL_DOMAIN_TLS"
+  ],
   "merge_readiness": {
     "repository_implementation_complete": true,
     "exact_head_ci_required": true,

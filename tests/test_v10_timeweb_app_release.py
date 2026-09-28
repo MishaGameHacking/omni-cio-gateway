@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from urllib.error import HTTPError
 from urllib.request import Request
 
 import pytest
@@ -54,12 +56,46 @@ class _Opener:
         return self.responses.pop(0)
 
 
-class _Livez:
-    def __init__(self, sha: str = EXPECTED_SHA) -> None:
-        self.sha = sha
+class _Http503Healthz:
+    def __init__(self, payload: object) -> None:
+        self._raw = json.dumps(payload).encode("utf-8")
 
     def open(self, request: Request, *, timeout: float) -> _Response:
-        del request, timeout
+        del timeout
+        raise HTTPError(
+            request.full_url,
+            503,
+            "Service Unavailable",
+            {},
+            BytesIO(self._raw),
+        )
+
+
+class _Livez:
+    def __init__(
+        self,
+        sha: str = EXPECTED_SHA,
+        *,
+        health_status: str = "ok",
+        database: str = "READY",
+        synthetic_preview: bool = False,
+    ) -> None:
+        self.sha = sha
+        self.health_status = health_status
+        self.database = database
+        self.synthetic_preview = synthetic_preview
+
+    def open(self, request: Request, *, timeout: float) -> _Response:
+        del timeout
+        if request.full_url.endswith("/healthz"):
+            return _Response(
+                {
+                    "status": self.health_status,
+                    "release_sha": self.sha,
+                    "database": self.database,
+                    "synthetic_preview": self.synthetic_preview,
+                }
+            )
         return _Response({"status": "ok", "release_sha": self.sha})
 
 
@@ -97,7 +133,11 @@ def _app(
         "branch_name": "main",
         "is_auto_deploy": False,
         "commit_sha": active_sha,
-        "repository": {"full_name": release.CANONICAL_REPOSITORY},
+        "repository": {
+            "full_name": release.CANONICAL_REPOSITORY,
+            "name": release.CANONICAL_REPOSITORY_NAME,
+            "url": (f"https://github.com/{release.CANONICAL_REPOSITORY}.git"),
+        },
         "domains": domains,
         "envs": {
             "OMNI_V10_HOSTED_RUNTIME": "1",
@@ -109,6 +149,9 @@ def _app(
             "PUBLIC_MULTI_USER_ENABLED": activation,
             "OMNI_V10_TELEGRAM_LOGIN_ENABLED": activation,
             "OMNI_V10_POSTGRES_DSN": "postgresql://opaque",
+            "OMNI_V10_POSTGRES_BINDING_SHA256": "c" * 64,
+            "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR": "10.0.0.10",
+            "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR": "10.0.0.0/24",
         },
     }
 
@@ -185,6 +228,95 @@ class _MalformedSuccessApi(_Api):
         return {"deploy": {"unexpected": "successful-but-unprovable-response"}}
 
 
+def _assert_observe_stops(app: dict[str, object], code: str) -> None:
+    api = _Api(app)
+    livez = _Livez()
+    with pytest.raises(release.ReleaseStopped, match=code):
+        release.run(
+            operation="observe",
+            expected_sha=EXPECTED_SHA,
+            observed_main_sha=EXPECTED_SHA,
+            token="token",
+            api=api,
+            livez_opener=livez,
+        )
+
+
+def _assert_healthz_stops(opener: _Livez, code: str) -> None:
+    with pytest.raises(release.ReleaseStopped, match=code):
+        release._verify_healthz(
+            CANDIDATE_HOST,
+            EXPECTED_SHA,
+            opener=opener,
+        )
+
+
+def test_url_connected_repository_accepts_provider_decorated_metadata() -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository["full_name"] = "provider-account/" + release.CANONICAL_REPOSITORY
+    repository["name"] = "provider-display/" + release.CANONICAL_REPOSITORY_NAME
+
+    assert release._repository(app) == release.CANONICAL_REPOSITORY
+
+
+@pytest.mark.parametrize("field", ("name", "full_name"))
+def test_url_connected_repository_rejects_empty_provider_metadata(field: str) -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository[field] = ""
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_REPOSITORY_INVALID",
+    ):
+        release._repository(app)
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://github.com/mishagamehacking/OMNI-CIO-GATEWAY.GIT",
+        "HTTPS://GITHUB.COM:443/MishaGameHacking/omni-cio-gateway/",
+    ),
+)
+def test_url_connected_repository_accepts_github_equivalent_clone_url(
+    url: str,
+) -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository["url"] = url
+
+    assert release._repository(app) == release.CANONICAL_REPOSITORY
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "http://github.com/MishaGameHacking/omni-cio-gateway.git",
+        "https://example.invalid/MishaGameHacking/omni-cio-gateway.git",
+        "https://github.com/MishaGameHacking/other.git",
+        "https://github.com/MishaGameHacking/omni-cio-gateway.git?ref=main",
+        "https://github.com:444/MishaGameHacking/omni-cio-gateway.git",
+        "https://user@github.com/MishaGameHacking/omni-cio-gateway.git",
+    ),
+)
+def test_url_connected_repository_rejects_noncanonical_clone_url(url: str) -> None:
+    app = _app(active_sha=EXPECTED_SHA)
+    repository = app["repository"]
+    assert isinstance(repository, dict)
+    repository["url"] = url
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_REPOSITORY_INVALID",
+    ):
+        release._repository(app)
+
+
 def test_provider_ids_reject_bool_none_and_fractional_values() -> None:
     for value in (True, False, None, 1.5, [], {}):
         with pytest.raises(
@@ -241,6 +373,130 @@ def test_observe_rejects_release_sha_drift() -> None:
             api=api,
             livez_opener=livez,
         )
+
+
+def test_candidate_requires_scoped_private_database_route() -> None:
+    missing = _app(active_sha=EXPECTED_SHA)
+    assert isinstance(missing["envs"], dict)
+    missing["envs"].pop("OMNI_V10_POSTGRES_PRIVATE_HOSTADDR")
+    _assert_observe_stops(
+        missing,
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_REQUIRED",
+    )
+
+    public_target = _app(active_sha=EXPECTED_SHA)
+    assert isinstance(public_target["envs"], dict)
+    public_target["envs"]["OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"] = "8.8.8.8"
+    _assert_observe_stops(
+        public_target,
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
+    )
+
+    mismatched = _app(active_sha=EXPECTED_SHA)
+    assert isinstance(mismatched["envs"], dict)
+    mismatched["envs"]["OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"] = "10.0.1.0/24"
+    _assert_observe_stops(
+        mismatched,
+        "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
+    )
+
+
+def test_candidate_requires_valid_postgres_binding_digest() -> None:
+    missing = _app(active_sha=EXPECTED_SHA)
+    assert isinstance(missing["envs"], dict)
+    missing["envs"].pop("OMNI_V10_POSTGRES_BINDING_SHA256")
+    _assert_observe_stops(
+        missing,
+        "TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID",
+    )
+
+    malformed = _app(active_sha=EXPECTED_SHA)
+    assert isinstance(malformed["envs"], dict)
+    malformed["envs"]["OMNI_V10_POSTGRES_BINDING_SHA256"] = "not-a-digest"
+    _assert_observe_stops(
+        malformed,
+        "TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID",
+    )
+
+
+def test_healthz_requires_real_database_readiness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
+
+    unavailable = _Livez(health_status="unavailable", database="NOT_READY")
+    _assert_healthz_stops(
+        unavailable,
+        "TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY",
+    )
+
+    synthetic = _Livez(synthetic_preview=True)
+    _assert_healthz_stops(
+        synthetic,
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SYNTHETIC_PREVIEW_FORBIDDEN",
+    )
+
+    stale_release = _Livez(sha=LKG_SHA)
+    _assert_healthz_stops(
+        stale_release,
+        "TIMEWEB_APP_RELEASE_HEALTHZ_SHA_DRIFT",
+    )
+
+
+def test_healthz_classifies_runtime_http_503_as_database_not_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
+    opener = _Http503Healthz(
+        {
+            "status": "unavailable",
+            "release_sha": EXPECTED_SHA,
+            "synthetic_preview": False,
+        }
+    )
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY",
+    ):
+        release._verify_healthz(CANDIDATE_HOST, EXPECTED_SHA, opener=opener)
+
+
+def test_healthz_keeps_untrusted_http_503_body_as_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
+    opener = _Http503Healthz({"status": "proxy-unavailable"})
+
+    with pytest.raises(
+        release.ReleaseStopped,
+        match="TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR",
+    ):
+        release._verify_healthz(CANDIDATE_HOST, EXPECTED_SHA, opener=opener)
+
+
+def test_healthz_retries_transient_unavailability_until_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opener = _SequenceLivez(
+        [
+            _Response({"status": "unavailable"}, status=503),
+            _Response(
+                {
+                    "status": "ok",
+                    "release_sha": EXPECTED_SHA,
+                    "database": "READY",
+                    "synthetic_preview": False,
+                }
+            ),
+        ]
+    )
+    sleeps: list[float] = []
+    monkeypatch.setattr(release.time, "sleep", sleeps.append)
+
+    release._verify_healthz(CANDIDATE_HOST, EXPECTED_SHA, opener=opener)
+
+    assert sleeps == [release._HEALTHZ_RETRY_DELAYS[0]]
 
 
 def test_candidate_rejects_autodeploy_and_public_activation() -> None:
@@ -433,11 +689,14 @@ def test_livez_reconciles_transport_and_stale_release_propagation(
 def test_deploy_wait_budget_is_multi_minute_and_workflow_bounded() -> None:
     budget = sum(release._POLL_DELAYS)
     livez_budget = sum(release._LIVEZ_RETRY_DELAYS)
+    healthz_budget = sum(release._HEALTHZ_RETRY_DELAYS)
     assert budget >= 300.0
     assert budget < 15 * 60
     assert sum(release._DEPLOY_RECONCILE_DELAYS) >= 60.0
     assert livez_budget >= 120.0
     assert livez_budget < 5 * 60
+    assert healthz_budget >= 120.0
+    assert healthz_budget < 5 * 60
 
 
 def test_last_known_good_uses_provider_completion_time_not_list_order() -> None:

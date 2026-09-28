@@ -48,11 +48,19 @@ A later milestone may be implemented before an earlier external action is physic
 performed, but its mutation path must refuse to execute until the earlier gate has
 verifiable accepted evidence.
 
+The physical Timeweb execution order for the repaired App/database boundary is explicit:
+accepted P2 source on main -> P3 observe -> P3 prepare -> P3 recovery evidence -> App
+creation in the accepted private network -> provider technical-domain bootstrap -> physical
+P2 exact-SHA candidate proof -> P3 accept -> P4 canonical-domain/TLS acceptance. P3
+prepare is therefore an upstream prerequisite for database-aware candidate health, while
+P3 accept is downstream of the current physical candidate proof. Neither gate may claim
+the other has completed merely from source certification.
+
 ## 3. Exact-SHA release law
 
 Production identity is:
 
-`accepted GitHub main SHA -> exact Timeweb deploy -> runtime /livez SHA -> accepted production`.
+`accepted GitHub main SHA -> exact Timeweb deploy -> runtime /livez SHA -> runtime /healthz database READY -> accepted production`.
 
 Autodeploy is not production authority. Production deployment must target one explicit
 40-character Git commit SHA. A Timeweb deploy whose `commit_sha`, runtime
@@ -75,6 +83,14 @@ requires the owning explicit confirmation/evidence and must never be guessed by 
 
 App Platform variables/secrets remain provider-side runtime inputs; real secret values
 must not enter source, PR text, CI artifacts or logs.
+
+The production App and production PostgreSQL must use one explicitly selected Timeweb
+private network. The portable PostgreSQL DSN retains the Timeweb technical hostname for
+TLS `verify-full` identity; the runtime receives the private PostgreSQL address and
+exact private-network CIDR as separate provider-side bindings. The application must prove
+that private route through HTTPS `/healthz` with `database=READY` and
+`synthetic_preview=false` before the candidate is accepted. A successful process-only
+`/livez` check is not database reachability evidence.
 
 ## 5. PostgreSQL 18 production cutover
 
