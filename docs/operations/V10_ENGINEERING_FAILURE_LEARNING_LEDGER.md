@@ -1070,3 +1070,46 @@ Dependency/tooling knowledge change:
 **Future prevention rule:** never promote an observer/verifier route into a runtime-route assumption. For every deployed execution environment, separately prove network reachability, authenticated transport identity and application-level dependency readiness. A process liveness endpoint must never be accepted as proof that mandatory external dependencies are reachable.
 
 **Dependency/tooling knowledge change:** current Timeweb documentation supports PostgreSQL connections by private IP and allows Dockerfile Apps to be placed in a private network selected at creation time; that App network cannot be changed after deployment. PostgreSQL libpq permits `hostaddr` to select the numeric TCP destination while retaining `host` for `verify-full` hostname validation.
+
+
+---
+
+## FL-046 — HTTP 503 from the real application health endpoint must not be collapsed into an anonymous proxy failure
+
+**Date:** 2026-09-28  
+**Scope:** Timeweb App Platform exact-SHA candidate database-readiness gate
+
+**Symptom / finding:** the candidate controller correctly added `/healthz` as a mandatory database-readiness proof, but its HTTP helper classified every 503 as a generic transient transport response before inspecting the bounded body. The hosted application intentionally returns a sanitized JSON 503 while PostgreSQL is not ready. As written, the retry budget would end in `TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR` instead of the materially more precise `TIMEWEB_APP_RELEASE_HEALTHZ_DATABASE_NOT_READY`.
+
+**Root cause:** provider/proxy HTTP status and application dependency state were treated as one signal. A 503 from an intermediary is retryable transport evidence; a 503 carrying the exact hosted-runtime unavailable schema is application evidence and must retain exact release identity while the database remains not ready.
+
+**Blast radius searched:** technical-domain candidate observation, deploy completion, exact release-SHA validation, database readiness, proxy/error-page handling, retry budget, P3 final candidate revalidation and downstream public-ingress acceptance.
+
+**Corrective change:** accept a 503 body as hosted-runtime evidence only when it is bounded JSON with `status=unavailable`, a release SHA field and a boolean `synthetic_preview`. Preserve all other 503 bodies as generic transient HTTP failures. The verified hosted payload continues through exact-SHA/synthetic checks and can terminate specifically as database-not-ready after the bounded retry budget.
+
+**Permanent regression/guard:** tests now exercise both the normal response-object path and the real urllib `HTTPError(503)` path, and separately prove that an untrusted proxy-shaped 503 body is not promoted into application state.
+
+**Future prevention rule:** status codes alone are not sufficient provenance. When an owning application deliberately uses a transient HTTP status for dependency readiness, distinguish its authenticated/schema-bounded response from intermediary failures before assigning the terminal failure class.
+
+**Dependency/tooling knowledge change:** none.
+
+---
+
+## FL-047 — URL-connected repository identity must be shared across P2 and P3 consumers
+
+**Date:** 2026-09-28  
+**Scope:** Timeweb App Platform repository identity and PostgreSQL final acceptance
+
+**Symptom / finding:** P2 had already been hardened for Timeweb's repository-by-URL presentation, where provider metadata may decorate repository display/full-name fields while the exact canonical HTTPS clone URL remains authoritative. P3 still selected the application by exact `repository.full_name`. A real URL-connected `omni-cio-v10` could therefore pass P2 identity checks and then be invisible to P3 final acceptance.
+
+**Root cause:** two sequential gates implemented repository identity independently. The producer was corrected after live provider evidence, but the downstream consumer retained the older GitHub-provider metadata assumption.
+
+**Blast radius searched:** application list selection, exact application detail validation, P2 observe/deploy, P3 final app binding, repository-by-URL flow, autodeploy state and exact-SHA candidate proof.
+
+**Corrective change:** expose one fail-closed canonical repository predicate from the App release controller and reuse it in P3. Identity requires the canonical HTTPS GitHub clone target, no embedded credentials/query/fragment, default HTTPS port only, and non-empty provider metadata; provider-decorated display/full-name values no longer become independent authority.
+
+**Permanent regression/guard:** P3 tests model decorated Timeweb URL-connection metadata and a wrong clone target; its structural guard now rejects replacing the shared repository predicate with a permissive condition.
+
+**Future prevention rule:** live provider normalization learned by an upstream gate must be consumed through one shared predicate by every downstream gate. Do not duplicate presentation-field assumptions across release and acceptance controllers.
+
+**Dependency/tooling knowledge change:** Timeweb supports repository connection by URL as a first-class App Platform source; that path must remain exact-target and autodeploy-off in this release model.
