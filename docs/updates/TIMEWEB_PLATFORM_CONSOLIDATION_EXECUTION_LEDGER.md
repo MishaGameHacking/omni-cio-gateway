@@ -9,9 +9,9 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
 - Initial TW-A branch: `system/timeweb-platform-consolidation` (squash-merged via PR #583)
 - Accepted integrated delivery PR: #584 -> main `a3e96287f6f29f9a17f14758223a653b37abb50c`
-- Current focused live-cutover repair branch: `fix/timeweb-production-firewall-bootstrap-chain`
+- Current focused live-cutover repair branch: `fix/timeweb-p3-dataplane-readiness`
 - TW-A accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current accepted-main SHA after accepted PR #597: `d440cdf859e34edb3b8727ef763347eab9a70803`
+- Current accepted-main SHA after accepted PR #598: `dd0a127c3f6b9ac6f98377a63b89b3ced96041d7`
 - OWNER authority: Amendment 18 accepted through PR #581; Amendment 21 branch-local full production-delivery implementation authority
 - GitHub dashboard issue: #580
 - Accepted split-boundary PR: #582
@@ -58,20 +58,22 @@ PR #584 is accepted on protected `main`; its former integrated branch is histori
 
 ## 3. Current execution state
 
-- Accepted main: `d440cdf859e34edb3b8727ef763347eab9a70803` (PR #597).
-- PR #597 accepted the effective Timeweb firewall-union verifier after two complete 14/14 exact-head repository workflow cycles succeeded, with zero unresolved review threads and supplemental Sonar Quality Gate success.
-- Manual `V10 Timeweb PostgreSQL Production Cutover #5` on that exact main passed exact-main/source/GitHub-Environment/input authority and stopped before database authentication at `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING`.
-- This corrects the interpretation of #4: the retired `...NOT_EXCLUSIVE` stop covered both zero and multiple groups. Run #5 specifically proves zero firewall groups were attached to the production database at observation time.
-- Current Timeweb Firewall semantics make this material because the database already has a public IPv4 and a missing effective firewall boundary must not be bypassed.
-- Current focused RED repair: `fix/timeweb-production-firewall-bootstrap-chain`.
-- The repair adds a single explicit `bootstrap_prepare` operation with confirmation `BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. It is allowed to act only when the exact production target has zero attached groups.
-- The bounded mutation sequence is: create/reuse dedicated `DROP` group -> create the exact ingress TCP/5432 verifier `/32` rule -> link only the exact production DBaaS resource -> run the existing two-pass effective-union network proof -> run SQL-read-only observe -> run bounded P3 prepare.
-- If any firewall group is already attached at execution time, the convergence step performs no mutation. Any wrong/widened rule, extra resource, non-DROP policy, duplicate identity or unsafe pre-existing named group remains terminal.
-- The convergence path never PATCHes or DELETEs firewall state, never unlinks resources, never broadens CIDR/port/protocol, and never blind-retries an ambiguous mutation. Ambiguous POST outcomes reconcile with bounded GET-only observations.
-- The verifier CIDR remains an ephemeral masked workflow input and is not persisted in repository status/ledger/source.
-- Current execution state: `RED_REPAIR_ONLY`. Do not rerun run #5 unchanged and do not switch to the synthetic PostgreSQL target.
-- Next lawful sequence after this focused repair is exact-head GREEN -> Ready GREEN -> squash merge -> fresh exact-main `bootstrap_prepare` -> physical backup/separate restore rehearsal -> one-time manual creation of `omni-cio-v10` in the already accepted shared Timeweb private network -> exact-SHA P2 deploy -> technical-domain `/livez` + `/healthz database=READY` -> P3 `accept`.
-- Physical App creation remains an OWNER panel action because the accepted App contract and Timeweb documentation make private-network choice immutable at creation and no reviewed documented CreateApp API binding is accepted for that immutable choice.
+- Accepted main: `dd0a127c3f6b9ac6f98377a63b89b3ced96041d7` (PR #598).
+- PR #598 accepted the bounded missing-firewall bootstrap chain. Its final exact head `291a6aa7baa3fb0f02ac525597c5087a75134d6b` completed two full 14/14 applicable repository workflow cycles with every observed conclusion `success`; supplemental Sonar reported 0 new issues and 0 Security Hotspots.
+- Manual `V10 Timeweb PostgreSQL Production Cutover #6` on that exact main passed exact-main/source/environment/input authority, converged the missing production firewall, and completed two provider network-scope proofs.
+- The first credential-free PostgreSQL transport stage then exhausted bounded TCP attempts with `TIMEWEB_PG_TLS_TCP_TIMEOUT`. PostgreSQL authentication was not reached and migrations/runtime ACL/RLS/cross-tenant prepare mutation did not run.
+- Current focused RED repair: `fix/timeweb-p3-dataplane-readiness`.
+- Root defect class: provider control-plane correctness and live packet-path readiness were not bound into one evidence object. The former verifier helper also labelled a manually supplied workflow `/32` as `RU_PG_VERIFIER_EGRESS=READY` even though no actual NAT-source observation existed.
+- Replacement design validates the verifier CIDR only as explicit workflow authority; it never claims discovery. The two-pass Timeweb provider scope now yields the exact bound public IPv4 internally without logging it.
+- Before any database authentication, a dedicated data-plane proof performs PostgreSQL SSLRequest + `verify-full` TLS directly to that exact provider-bound IPv4 while preserving the Timeweb technical hostname as TLS certificate identity.
+- Data-plane readiness uses a bounded asynchronous-provider budget. After live success or terminal transient TCP/route failure, the full provider network-scope proof is repeated and public-IP drift is terminal.
+- A successful live proof writes the proved public hostaddr only to the masked GitHub job environment. The P3 SQL controller then probes and connects using that same hostaddr, eliminating a second DNS route decision between preflight and authentication.
+- If the final live transport still times out while the provider control plane remains stable, the workflow emits a dedicated `TIMEWEB_PG_PRODUCTION_DATAPLANE_*_CONTROL_PLANE_STABLE` class. It does not guess that the verifier input is wrong or that Timeweb propagation is delayed; the selected documented Timeweb/GitHub surfaces do not expose caller-source-IP observation.
+- No third-party/retired IP-echo dependency is introduced. The current target stack remains ChatGPT + GitHub + Timeweb + Telegram Login.
+- Current Timeweb documentation explicitly states that Firewall does not work in private networks. Therefore the P3 public verifier firewall is not allowed to become a dependency of the future App Platform -> PostgreSQL private route; hosted private reachability remains independently proved by candidate `/healthz database=READY`.
+- Current execution state: `RED_REPAIR_ONLY`; run #6 is frozen and must not be rerun unchanged.
+- Next lawful sequence: full repository/semantic-twin audit -> exact-head DRAFT verification -> Ready verification -> squash merge -> exact-main post-merge verification -> fresh P3 `bootstrap_prepare` or `observe/prepare` as applicable -> physical backup/separate restore rehearsal -> one-time OWNER App Platform creation in the already accepted private network -> exact-SHA P2 deploy -> technical-domain `/livez` + `/healthz database=READY` -> P3 `accept`.
+- Physical App creation remains an OWNER panel action because private-network selection is immutable after App creation and no accepted documented CreateApp network binding exists in current source authority.
 - Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
 
 ## 4. Accepted MAIN_RED_STOP repair provenance
