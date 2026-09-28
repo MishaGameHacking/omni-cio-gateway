@@ -132,8 +132,10 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "TIMEWEB_PUBLIC_IPV4_ALLOCATION_PREREQUISITE_INVALID",
     )
 
+    if "verifier_egress" in payload:
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RETIRED_VERIFIER_EGRESS_KEY")
     verifier = _mapping(
-        payload.get("verifier_egress"),
+        payload.get("verifier_cidr_authority"),
         "TIMEWEB_PUBLIC_IPV4_VERIFIER_INVALID",
     )
     expected_verifier = {
@@ -146,6 +148,7 @@ def _validate_contract(payload: dict[str, Any]) -> None:
         "value_may_be_logged": False,
         "value_may_be_persisted": False,
         "purpose": "RU_PG_B_SYNTHETIC_VERIFIER_ONLY",
+        "observation_type": "EXPLICIT_AUTHORITY_INPUT_NOT_NAT_EGRESS_DISCOVERY",
     }
     _require(
         verifier,
