@@ -29,6 +29,9 @@ NETWORK_SCOPE_RELATIVE = Path("scripts/timeweb_postgres_production_network_scope
 NETWORK_CONVERGE_RELATIVE = Path(
     "scripts/timeweb_postgres_production_network_converge.py"
 )
+NETWORK_DATAPLANE_RELATIVE = Path(
+    "scripts/timeweb_postgres_production_dataplane.py"
+)
 TRANSPORT_KEY = "transport"
 TRANSPORT_INVALID = "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID"
 TEXT_ENCODING = "utf-8"
@@ -52,7 +55,8 @@ DEPENDENCIES = (
     "apps/api/timeweb_postgres_tls.py",
     NETWORK_SCOPE_RELATIVE.as_posix(),
     NETWORK_CONVERGE_RELATIVE.as_posix(),
-    "scripts/discover_v10_ru_pg_verifier_ipv4.py",
+    NETWORK_DATAPLANE_RELATIVE.as_posix(),
+    "scripts/validate_v10_ru_pg_verifier_cidr.py",
     WORKFLOW_RELATIVE.as_posix(),
     "infrastructure/postgres/hosted-postgres-runtime-contract.json",
     "infrastructure/postgres/hosted-recovery-contract.json",
@@ -86,8 +90,13 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 return_value=ca_path,
             ),
             mock.patch.object(
+                cutover,
+                "_required_env",
+                return_value=VERIFIED_HOSTADDR,
+            ) as required_env,
+            mock.patch.object(
                 cutover.timeweb_postgres_tls,
-                "probe_timeweb_postgres_transport",
+                "probe_timeweb_postgres_bound_public_transport",
                 return_value=VERIFIED_HOSTADDR,
             ) as probe,
             mock.patch.object(
@@ -102,7 +111,13 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             )
 
         self.assertEqual(actual, ("bootstrap-prepared", "runtime-prepared"))
-        probe.assert_called_once_with(BOOTSTRAP_DSN, ca_path)
+        required_env.assert_called_once_with(cutover.PUBLIC_HOSTADDR_ENV)
+        probe.assert_called_once_with(
+            BOOTSTRAP_DSN,
+            ca_path,
+            public_hostaddr=VERIFIED_HOSTADDR,
+            delays=cutover._PRODUCTION_CONNECT_RETRY_DELAYS,
+        )
         self.assertEqual(
             resolve.call_args_list,
             [
