@@ -685,14 +685,13 @@ a fresh complete certification batch before TW-B can leave `RED_REPAIR_ONLY`.
 
 ## Current next action
 
-1. treat exact head `2d16dbe20e558c33fed6f8b130847f71149e2ade` as the completed V9C-B branch-local GREEN checkpoint only; every new commit invalidates it for final acceptance;
-2. implement Amendment 21 production-delivery contracts/guards first, then continue the six ordered milestones in the same PR #584 branch without creating a competing Web/runtime stack;
-3. keep every provider/payment/network/database/DNS/secret/legal/public-activation mutation behind its explicit evidence gate; repository implementation may advance, external state may not be invented;
-4. require exact accepted-main SHA binding for Timeweb deployment and runtime `/livez`; production autodeploy is not authority;
-5. keep `PUBLIC_MULTI_USER_ENABLED=false` and `OMNI_V10_TELEGRAM_LOGIN_ENABLED=false` until the final Telegram activation gate; VK stays absent;
-6. keep broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, tenant/RLS/FORCE-RLS protections intact;
-7. after each material checkpoint, require a fresh exact-head verification batch before advancing; final PR landing still requires the normal explicit exact-head merge confirmation.
-
+1. finish the focused Timeweb App-to-PostgreSQL private-route source repair and require a fresh exact-head Draft verification cycle after every corrective commit;
+2. keep the physical App Platform order paused until the source repair is accepted on protected main and its exact-main post-merge regression/governance shield is GREEN;
+3. on accepted main, execute the production PostgreSQL sequence in its owning gate: read-only observe, prepare the canonical schema/runtime ACL/RLS state, then complete the required physical-backup and separate-restore recovery evidence;
+4. create `omni-cio-v10` once through the Timeweb panel in the already selected production private network, with Dockerfile deployment, autodeploy off and `/livez` process health; do not attach `omnicio.ru` yet;
+5. after Timeweb assigns the technical HTTPS hostname, add it to the App runtime configuration, redeploy the same accepted main identity and require both exact-SHA `/livez` and `/healthz database=READY synthetic_preview=false`;
+6. only after that current physical candidate proof may P3 final acceptance proceed, followed by the later canonical-domain/TLS and Telegram public-activation gates;
+7. preserve the production public IPv4/firewall verifier route, tenant/RLS/FORCE-RLS boundaries, broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, and fail closed on any provider or runtime ambiguity.
 
 ### P5 source certification / P5.5 worktree-convergence transition — 2026-09-25
 
@@ -724,6 +723,8 @@ Fresh accepted protected `main` for this checkpoint is `3326da2314010f510fb48775
 OWNER panel evidence confirms, without recording credential values or private provider identifiers, that the canonical production PostgreSQL target already belongs to the same Timeweb private network offered by the `omni-cio-v10` App Platform creation flow, that PostgreSQL exposes a private TCP/5432 endpoint, and that protected connection remains enabled. The existing production public IPv4 stays attached and is not repurposed.
 
 The prior hosted runtime incorrectly inherited the P3 self-hosted verifier's public-address invariant and P2 accepted exact-SHA `/livez` without proving App-to-PostgreSQL reachability. The focused repair now separates the two routes: P3 remains public/firewall-scoped; the Timeweb App runtime uses an explicit scoped private PostgreSQL address while retaining the technical-domain DSN for `verify-full` TLS identity. P2 candidate acceptance is being strengthened to require `/healthz status=ok database=READY synthetic_preview=false` in addition to exact-SHA `/livez`.
+
+The pre-merge challenge also found two downstream live-only contract defects and repaired them in the same route/readiness class. First, a real hosted-runtime JSON 503 from `/healthz` was previously collapsed into a generic transient HTTP failure before its sanitized dependency state could be classified; runtime 503 evidence is now schema-bounded and terminates specifically as database-not-ready, while proxy-shaped 503 responses remain generic. Second, P3 still assumed undecorated GitHub-provider `repository.full_name` metadata even though the accepted Timeweb bootstrap uses repository-by-URL; P3 now consumes the same canonical clone-URL identity predicate as P2 so a valid URL-connected App cannot disappear at final database acceptance.
 
 Physical `omni-cio-v10` creation remains paused until this branch is fully certified, accepted, squash-merged and exact-new-main post-merge GREEN. The subsequent live order is now fail-closed and non-circular: current-main P3 observe -> P3 prepare -> required recovery evidence -> one App creation in the already accepted private network -> technical-domain bootstrap -> exact-SHA P2 `/livez` plus `/healthz database=READY` proof -> P3 accept -> later P4 canonical-domain/TLS gate. The intended App creation parameters already observed are Dockerfile backend, `main`, autodeploy off, Moscow MSK-1, selected production private network, provider-assigned private App address, `/livez` platform health path and technical Timeweb HTTPS hostname first. `omnicio.ru`, public users and Telegram activation remain later gates.
 
