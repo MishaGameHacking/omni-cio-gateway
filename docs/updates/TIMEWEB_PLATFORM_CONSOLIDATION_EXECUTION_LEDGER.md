@@ -9,9 +9,9 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
 - Initial TW-A branch: `system/timeweb-platform-consolidation` (squash-merged via PR #583)
 - Accepted integrated delivery PR: #584 -> main `a3e96287f6f29f9a17f14758223a653b37abb50c`
-- Current focused live-cutover repair branch: `fix/timeweb-tls-readiness-timeout`
+- Current focused live-cutover repair branch: `fix/timeweb-production-firewall-group-union` (PR #597)
 - TW-A accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current accepted-main SHA after focused PR #588: `86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8`
+- Current accepted-main SHA after accepted PR #596: `f57e088d4188da4ceec387c82f8b3b847fc6e0bb`
 - OWNER authority: Amendment 18 accepted through PR #581; Amendment 21 branch-local full production-delivery implementation authority
 - GitHub dashboard issue: #580
 - Accepted split-boundary PR: #582
@@ -58,16 +58,17 @@ PR #584 is accepted on protected `main`; its former integrated branch is histori
 
 ## 3. Current execution state
 
-- Accepted main: `86294ebb0e5b6eb0a56aa8d4b28f1692f483a8d8` (PR #588).
-- PR #584 production-delivery source is accepted on main as `a3e96287f6f29f9a17f14758223a653b37abb50c`; historical P1–P6 checkpoint SHAs remain provenance only.
-- The existing IPv4 remains under accepted managed custody; no second purchase/delete/stamp authority exists in current transport.
-- PR #588 fixed live workflow #5's deterministic `TIMEWEB_DATABASE_PUBLIC_NETWORK_PATCH_REJECTED http_status=400` by separating public IPv4 and TLS transitions, GET-reconciling between them and removing legacy create/stamp/delete authority from post-allocation transport.
-- Live Public IPv4/TLS workflow #6 on exact main `86294ebb...` passed source/main, verifier `/32`, GitHub Environment, cost and allocation-prerequisite gates and then stopped at `TIMEWEB_PUBLIC_IPV4_TLS_READY_TIMEOUT`.
-- The source waiter allowed only 83 seconds of GET-only TLS/domain readiness reconciliation. Current Timeweb API semantics permit a successful mutation response while resource readiness is still pending; no provider 83-second SLA is documented.
-- Current focused repair branch: `fix/timeweb-tls-readiness-timeout`.
-- Current execution state: `RED_REPAIR_ONLY`; no live provider rerun is permitted until the replacement source is exact-head certified, merged and post-merge accepted.
-- Repair scope: preserve one mutation per transition and fail-closed rollback; extend only bounded TLS/domain GET reconciliation under the existing 20-minute workflow ceiling; add sanitized timeout classification for public-network drift, secure-connection enablement pending and certificate/domain issuance pending.
-- No second IPv4 purchase/delete/stamp, production PostgreSQL cutover, `omnicio.ru` DNS/TLS mutation, Telegram public activation, broker write or Real-money authority is introduced.
+- Accepted main: `f57e088d4188da4ceec387c82f8b3b847fc6e0bb` (PR #596).
+- PR #596 accepted the App Platform private PostgreSQL route and true technical-candidate database-readiness interlock. It does not itself prove physical App deployment or P3 production acceptance.
+- Manual `V10 Timeweb PostgreSQL Production Cutover #4` on exact accepted main passed exact-main/source/GitHub-Environment/input authority and stopped before database authentication at `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE`.
+- Fresh Timeweb Firewall specification proves the stop is a repository/provider-semantics defect: one service may belong to multiple firewall groups of the same type and those rules are combined.
+- Current focused RED repair: PR #597 / `fix/timeweb-production-firewall-group-union`.
+- Replacement proof enumerates every attached group with bounded pagination; requires all group policies to remain allowlist/`DROP`; requires each group to link only the production database resource; rejects duplicate group/rule identities; and validates the complete effective rule union rather than an invented one-group cardinality.
+- The effective union must include the exact ingress TCP/5432 verifier `/32` and no other semantic rule. A same-type group may be rule-less and equivalent exact rules may repeat without widening the union, matching documented Timeweb behavior.
+- Two-pass provider snapshot stability, public IPv4 binding, IPv6-off, protected TLS, hostname certificate, exact project/database identity and credential-free TLS preflight remain mandatory.
+- Current execution state: `RED_REPAIR_ONLY`; do not rerun P3 from old main.
+- Next lawful sequence after #597 exact-head GREEN and squash merge: exact-main post-merge verification -> fresh P3 `observe` -> P3 `prepare` -> physical backup/separate restore rehearsal -> create `omni-cio-v10` once in the accepted shared Timeweb private network -> exact-SHA technical-domain `/livez` + `/healthz database=READY` proof -> P3 `accept`.
+- No firewall widening/deletion, production DB mutation, App creation, `omnicio.ru` DNS/TLS cutover, Telegram/public activation, broker write or Real-money authority is introduced by #597.
 - Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
 
 ## 4. Accepted MAIN_RED_STOP repair provenance

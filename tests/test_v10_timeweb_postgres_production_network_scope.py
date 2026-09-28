@@ -27,6 +27,7 @@ PROJECT_ID = "project-1"
 DATABASE_ID = "901"
 FLOATING_IP_ID = "float-1"
 GROUP_ID = "group-1"
+GROUP_ID_2 = "group-2"
 PAGE = "?limit=100&offset=0"
 PROJECT_DATABASES_PATH = f"/api/v1/projects/{PROJECT_ID}/resources/databases"
 DATABASE_PATH = f"/api/v1/databases/{DATABASE_ID}"
@@ -36,6 +37,9 @@ SERVICE_GROUPS_PATH = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
 FIREWALL_GROUP_PATH = f"/api/v1/firewall/groups/{GROUP_ID}"
 FIREWALL_RULES_PATH = f"{FIREWALL_GROUP_PATH}/rules{PAGE}"
 FIREWALL_RESOURCES_PATH = f"{FIREWALL_GROUP_PATH}/resources{PAGE}"
+FIREWALL_GROUP_PATH_2 = f"/api/v1/firewall/groups/{GROUP_ID_2}"
+FIREWALL_RULES_PATH_2 = f"{FIREWALL_GROUP_PATH_2}/rules{PAGE}"
+FIREWALL_RESOURCES_PATH_2 = f"{FIREWALL_GROUP_PATH_2}/resources{PAGE}"
 DRIFT_IP = "1.1.1.1"
 AVAILABILITY_ZONE_KEY = "availability_zone"
 RESOURCE_ID_KEY = "resource_id"
@@ -74,6 +78,16 @@ class DriftingApi(FakeApi):
             value["ips"][0]["ip"] = DRIFT_IP
         if self._drifted and path == FLOATING_IP_DETAIL_PATH:
             value["ip"]["ip"] = DRIFT_IP
+        return value
+
+
+class ReorderingFirewallApi(FakeApi):
+    def get(self, path: str, *, timeout: float = 30.0) -> Any:
+        value = deepcopy(super().get(path, timeout=timeout))
+        if path == SERVICE_GROUPS_PATH and self.calls.count(path) == 2:
+            value["groups"].reverse()
+        if path == FIREWALL_RULES_PATH and self.calls.count(path) == 2:
+            value[RULES_KEY].reverse()
         return value
 
 
@@ -381,14 +395,132 @@ def test_rejects_incomplete_floating_ip_inventory() -> None:
         _verify(responses)
 
 
-def test_rejects_multiple_firewall_groups() -> None:
+def _add_second_firewall_group(
+    responses: dict[str, Any],
+    *,
+    cidr: str = CIDR,
+    include_rule: bool = True,
+) -> None:
+    responses[SERVICE_GROUPS_PATH]["groups"].append({"id": GROUP_ID_2})
+    responses[SERVICE_GROUPS_PATH]["meta"][TOTAL_KEY] = 2
+    responses[FIREWALL_GROUP_PATH_2] = {GROUP_KEY: {"id": GROUP_ID_2, "policy": "DROP"}}
+    rules = []
+    if include_rule:
+        rules.append(
+            {
+                "id": "rule-2",
+                "direction": "ingress",
+                "protocol": "tcp",
+                "port": "5432",
+                "cidr": cidr,
+            }
+        )
+    responses[FIREWALL_RULES_PATH_2] = _page(RULES_KEY, rules)
+    responses[FIREWALL_RESOURCES_PATH_2] = _page(
+        RESOURCES_KEY,
+        [{"id": DATABASE_ID, "type": DBAAS_RESOURCE_TYPE}],
+    )
+
+
+def test_accepts_multiple_equivalent_firewall_groups() -> None:
     responses = _responses()
-    path = SERVICE_GROUPS_PATH
-    responses[path]["groups"].append({"id": "group-2"})
-    responses[path]["meta"][TOTAL_KEY] = 2
+    _add_second_firewall_group(responses)
+
+    api = _verify(responses)
+
+    assert api.calls.count(FIREWALL_GROUP_PATH_2) == 2
+    assert api.calls.count(FIREWALL_RULES_PATH_2) == 2
+    assert api.calls.count(FIREWALL_RESOURCES_PATH_2) == 2
+
+
+def test_accepts_provider_group_and_rule_reordering() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+    responses[FIREWALL_RULES_PATH][RULES_KEY].append(
+        {
+            "id": "rule-3",
+            "direction": "ingress",
+            "protocol": "tcp",
+            "port": "5432",
+            "cidr": CIDR,
+        }
+    )
+    responses[FIREWALL_RULES_PATH]["meta"][TOTAL_KEY] = 2
+    api = ReorderingFirewallApi(responses)
+
+    scope.verify_network_scope(
+        api,
+        project_id=PROJECT_ID,
+        target_host=HOST,
+        verifier_cidr=CIDR,
+    )
+
+
+def test_accepts_empty_same_type_group_when_effective_union_stays_exact() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses, include_rule=False)
+
+    _verify(responses)
+
+
+def test_rejects_multiple_firewall_groups_when_effective_scope_widens() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses, cidr="1.1.1.1/32")
+
     with pytest.raises(
         scope.NetworkScopeStopped,
-        match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE",
+        match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT",
+    ):
+        _verify(responses)
+
+
+def test_rejects_non_drop_policy_on_second_firewall_group() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+    responses[FIREWALL_GROUP_PATH_2][GROUP_KEY]["policy"] = "ACCEPT"
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED",
+    ):
+        _verify(responses)
+
+
+def test_rejects_extra_resource_on_second_firewall_group() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+    responses[FIREWALL_RESOURCES_PATH_2][RESOURCES_KEY].append(
+        {"id": "902", "type": DBAAS_RESOURCE_TYPE}
+    )
+    responses[FIREWALL_RESOURCES_PATH_2]["meta"][TOTAL_KEY] = 2
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED",
+    ):
+        _verify(responses)
+
+
+def test_rejects_missing_effective_firewall_rule() -> None:
+    responses = _responses()
+    responses[FIREWALL_RULES_PATH] = _page(RULES_KEY, [])
+    _add_second_firewall_group(responses, include_rule=False)
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_EFFECTIVE_RULE_MISSING",
+    ):
+        _verify(responses)
+
+
+def test_rejects_duplicate_firewall_group_identity() -> None:
+    responses = _responses()
+    responses[SERVICE_GROUPS_PATH]["groups"].append({"id": GROUP_ID})
+    responses[SERVICE_GROUPS_PATH]["meta"][TOTAL_KEY] = 2
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_ID_DUPLICATE",
     ):
         _verify(responses)
 
@@ -461,6 +593,13 @@ def test_rejects_widened_or_wrong_rule(field: str, value: str) -> None:
         match="TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED",
     ):
         _verify(responses)
+
+
+def test_accepts_duplicate_semantic_rule_across_groups() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+
+    _verify(responses)
 
 
 def test_rejects_truncated_firewall_rule_page() -> None:

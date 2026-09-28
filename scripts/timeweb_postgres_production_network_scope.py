@@ -341,19 +341,25 @@ def _require_bound_public_ipv4(
     return listed[0], listed[1]
 
 
-def _service_group_id(api: ReadOnlyApi, database_id: str) -> str:
+def _service_group_ids(api: ReadOnlyApi, database_id: str) -> tuple[str, ...]:
     rows = _paged_rows(
         api,
         f"/api/v1/firewall/service/dbaas/{database_id}",
         "groups",
         "TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUPS_INVALID",
     )
-    if len(rows) != 1:
-        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE")
-    return _safe_id(
-        rows[0].get("id"),
-        "TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_INVALID",
+    if not rows:
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING")
+    group_ids = tuple(
+        _safe_id(
+            row.get("id"),
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_INVALID",
+        )
+        for row in rows
     )
+    if len(set(group_ids)) != len(group_ids):
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_ID_DUPLICATE")
+    return tuple(sorted(group_ids))
 
 
 def _require_default_drop(api: ReadOnlyApi, group_id: str) -> None:
@@ -377,37 +383,39 @@ def _require_default_drop(api: ReadOnlyApi, group_id: str) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED")
 
 
-def _require_exact_rule(
+def _effective_group_rules(
     api: ReadOnlyApi,
     group_id: str,
     verifier_cidr: str,
-) -> str:
+) -> tuple[str, ...]:
     rules = _paged_rows(
         api,
         f"/api/v1/firewall/groups/{group_id}/rules",
         "rules",
         "TIMEWEB_PG_PRODUCTION_FIREWALL_RULES_INVALID",
     )
-    if len(rules) != 1:
-        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED")
-    rule = rules[0]
-    rule_id = _safe_id(
-        rule.get("id"),
-        "TIMEWEB_PG_PRODUCTION_FIREWALL_RULE_ID_INVALID",
-    )
-    shape = (
-        str(rule.get("direction", "")).lower(),
-        str(rule.get("protocol", "")).lower(),
-        str(rule.get("port", "")),
-    )
-    if shape != ("ingress", "tcp", POSTGRES_PORT):
-        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED")
-    observed_cidr = str(rule.get("cidr", "")).strip()
-    if observed_cidr != verifier_cidr:
-        _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT")
-    if _verifier_cidr(observed_cidr) != verifier_cidr:
-        _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT")
-    return rule_id
+    rule_ids: list[str] = []
+    for rule in rules:
+        rule_id = _safe_id(
+            rule.get("id"),
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_RULE_ID_INVALID",
+        )
+        shape = (
+            str(rule.get("direction", "")).lower(),
+            str(rule.get("protocol", "")).lower(),
+            str(rule.get("port", "")),
+        )
+        if shape != ("ingress", "tcp", POSTGRES_PORT):
+            _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_RULESET_WIDENED")
+        observed_cidr = str(rule.get("cidr", "")).strip()
+        if observed_cidr != verifier_cidr:
+            _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT")
+        if _verifier_cidr(observed_cidr) != verifier_cidr:
+            _stop("TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT")
+        rule_ids.append(rule_id)
+    if len(set(rule_ids)) != len(rule_ids):
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_RULE_ID_DUPLICATE")
+    return tuple(sorted(rule_ids))
 
 
 def _require_exact_resource(
@@ -442,7 +450,7 @@ def _collect_network_scope_witness(
     project_id: str,
     target_host: str,
     verifier_cidr: str,
-) -> tuple[str, str, str, str, str, str, str, str]:
+) -> tuple[object, ...]:
     database_id, cluster = _select_target_cluster(api, project_id, target_host)
     availability_zone = _require_target_network(cluster, target_host)
     floating_ip_id, public_ipv4 = _require_bound_public_ipv4(
@@ -450,18 +458,22 @@ def _collect_network_scope_witness(
         database_id,
         availability_zone,
     )
-    group_id = _service_group_id(api, database_id)
-    _require_default_drop(api, group_id)
-    rule_id = _require_exact_rule(api, group_id, verifier_cidr)
-    resource_id = _require_exact_resource(api, group_id, database_id)
+    firewall_witnesses: list[tuple[str, tuple[str, ...], str]] = []
+    effective_rule_count = 0
+    for group_id in _service_group_ids(api, database_id):
+        _require_default_drop(api, group_id)
+        rule_ids = _effective_group_rules(api, group_id, verifier_cidr)
+        resource_id = _require_exact_resource(api, group_id, database_id)
+        effective_rule_count += len(rule_ids)
+        firewall_witnesses.append((group_id, rule_ids, resource_id))
+    if effective_rule_count == 0:
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_EFFECTIVE_RULE_MISSING")
     return (
         database_id,
         availability_zone,
         floating_ip_id,
         public_ipv4,
-        group_id,
-        rule_id,
-        resource_id,
+        tuple(firewall_witnesses),
         verifier_cidr,
     )
 

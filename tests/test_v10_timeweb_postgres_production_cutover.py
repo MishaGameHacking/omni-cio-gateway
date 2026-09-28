@@ -824,6 +824,25 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_rejects_missing_effective_firewall_union_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            path = root / NETWORK_SCOPE_RELATIVE
+            source = path.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "def _effective_group_rules(",
+                "def _effective_group_rules_removed(",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            path.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_SOURCE_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_rejects_provider_network_concurrency_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
