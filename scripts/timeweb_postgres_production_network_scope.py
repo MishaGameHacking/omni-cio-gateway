@@ -484,7 +484,7 @@ def verify_network_scope(
     project_id: str,
     target_host: str,
     verifier_cidr: str,
-) -> None:
+) -> str:
     host = _hostname(target_host)
     cidr = _verifier_cidr(verifier_cidr)
     witnesses = {
@@ -498,11 +498,14 @@ def verify_network_scope(
     }
     if len(witnesses) != 1:
         _stop("TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT")
+    witness = next(iter(witnesses))
+    public_ipv4 = str(witness[3])
     print(
         "TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY "
         "public_ipv4=bound ipv6=off tls=enabled "
         "firewall=drop ingress=tcp/5432 source=/32"
     )
+    return public_ipv4
 
 
 def _runtime_inputs() -> tuple[ReadOnlyApi, str, str, str]:
