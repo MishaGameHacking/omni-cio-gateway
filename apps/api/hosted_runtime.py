@@ -28,6 +28,7 @@ from apps.api.timeweb_postgres_tls import (
     connect_prepared_timeweb_postgres,
     install_timeweb_postgres_ca,
     prepare_timeweb_postgres_private_target,
+    timeweb_postgres_binding_sha256,
 )
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
@@ -44,6 +45,7 @@ _RELEASE_SHA_ENV = "OMNI_V10_RELEASE_SHA"
 _DSN_ENV = "OMNI_V10_POSTGRES_DSN"
 _PRIVATE_HOSTADDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR"
 _PRIVATE_NETWORK_CIDR_ENV = "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR"
+_BINDING_SHA256_ENV = "OMNI_V10_POSTGRES_BINDING_SHA256"
 _RUNTIME_ROLE_ENV = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 _TRUSTED_EDGE_TLS_ENV = "OMNI_V10_TRUSTED_EDGE_TLS_TERMINATED"
 _CANDIDATE_HOSTNAME_ENV = "OMNI_V10_CANDIDATE_HOSTNAME"
@@ -133,6 +135,9 @@ def create_app() -> FastAPI:
     external_database_dsn = _required_env(_DSN_ENV)
     private_hostaddr = _required_env(_PRIVATE_HOSTADDR_ENV)
     private_network_cidr = _required_env(_PRIVATE_NETWORK_CIDR_ENV)
+    binding_sha256 = _required_env(_BINDING_SHA256_ENV).lower()
+    if binding_sha256 != timeweb_postgres_binding_sha256(external_database_dsn):
+        raise RuntimeError("HOSTED_RUNTIME_DATABASE_BINDING_DRIFT")
     database_ca = _LazyTimewebPostgresCa()
     candidate_hostname = _optional_candidate_hostname()
     candidate_hosts = () if candidate_hostname is None else (candidate_hostname,)
