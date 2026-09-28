@@ -46,13 +46,12 @@ Required runtime configuration for P2:
 
 The provider-assigned App technical domain does not exist until the application has been
 created. During that one creation-time bootstrap only, `OMNI_V10_CANDIDATE_HOSTNAME`
-may be absent so the container can start. For Dockerfile deployments the root
-`Dockerfile` `HEALTHCHECK` is the authoritative Timeweb container-health probe and
-targets localhost `/livez`; Timeweb's current documentation says the panel health path
-is ignored when Dockerfile `HEALTHCHECK` is present. Startup intentionally does not open
-PostgreSQL merely to satisfy
-liveness; the bounded database pool connects lazily and `/healthz` owns the real
-database readiness probe. This prevents a transient database outage from turning a
+may be absent so the container can start. For Dockerfile deployments the creation form must set the Timeweb panel health path
+to `/livez`. Timeweb's current documentation states that the panel path has priority over
+the Dockerfile `HEALTHCHECK`; both are intentionally kept on the same localhost
+process-liveness endpoint so either platform path has identical semantics. Startup
+intentionally does not open PostgreSQL merely to satisfy liveness; the bounded database
+pool connects lazily and `/healthz` owns the real database readiness probe. This prevents a transient database outage from turning a
 process-liveness check into a container restart loop. This is **not** P2 acceptance. As soon as Timeweb assigns the
 technical domain, add it as `OMNI_V10_CANDIDATE_HOSTNAME`, keep autodeploy disabled and
 the selected private network unchanged, redeploy the same exact accepted-main SHA, and
