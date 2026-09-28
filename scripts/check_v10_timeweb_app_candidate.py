@@ -13,6 +13,7 @@ CONTROLLER = ROOT / "scripts/timeweb_app_release.py"
 WORKFLOW = ROOT / _WORKFLOW_RELATIVE
 RUNTIME = ROOT / "apps/api/hosted_runtime.py"
 DOCKERFILE = ROOT / "Dockerfile"
+RUNBOOK = ROOT / "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md"
 
 _EXPECTED_PLAIN_ENV = {
     "OMNI_V10_HOSTED_RUNTIME": "1",
@@ -440,6 +441,22 @@ def _validate_workflow(path: Path) -> None:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_BINDING_SCOPE_INVALID")
 
 
+def _validate_runbook(path: Path) -> None:
+    source = _text(path)
+    required = (
+        "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR",
+        "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
+        "OMNI_V10_POSTGRES_BINDING_SHA256",
+        "P3 `prepare`",
+        "Dockerfile` `HEALTHCHECK",
+        "panel health path",
+        "database=READY",
+        "synthetic_preview=false",
+        "P3 `accept`",
+    )
+    if any(marker not in source for marker in required):
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_RUNBOOK_DRIFT")
+
 def _validate_dockerfile(path: Path) -> None:
     source = _text(path)
     required = (
@@ -480,11 +497,13 @@ def validate(root: Path = ROOT) -> None:
     workflow = root / _WORKFLOW_RELATIVE
     runtime = root / "apps/api/hosted_runtime.py"
     dockerfile = root / "Dockerfile"
+    runbook = root / "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md"
     _validate_contract(_json(contract))
     _validate_controller(controller)
     _validate_workflow(workflow)
     _validate_runtime(runtime)
     _validate_dockerfile(dockerfile)
+    _validate_runbook(runbook)
 
 
 def main() -> int:
