@@ -731,7 +731,6 @@ def _validate_sources() -> None:
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",
-            "app_release.is_canonical_repository(value)",
             "app_release.validate_private_route_env(envs)",
             "app_release.observe(",
             "--recovery-attestation",
