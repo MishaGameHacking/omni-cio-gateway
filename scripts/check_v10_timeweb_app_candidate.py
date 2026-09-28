@@ -12,6 +12,7 @@ CONTRACT = ROOT / "docs/architecture/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_CONTRAC
 CONTROLLER = ROOT / "scripts/timeweb_app_release.py"
 WORKFLOW = ROOT / _WORKFLOW_RELATIVE
 RUNTIME = ROOT / "apps/api/hosted_runtime.py"
+DOCKERFILE = ROOT / "Dockerfile"
 
 _EXPECTED_PLAIN_ENV = {
     "OMNI_V10_HOSTED_RUNTIME": "1",
@@ -231,6 +232,9 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
     )
     expected = {
         "liveness_path": "/livez",
+        "platform_liveness_source": "DOCKERFILE_HEALTHCHECK",
+        "dockerfile_healthcheck_path": "/livez",
+        "panel_healthcheck_overrides_dockerfile_healthcheck": False,
         "liveness_https_required": True,
         "liveness_redirect_allowed": False,
         "liveness_status": "ok",
@@ -434,6 +438,24 @@ def _validate_workflow(path: Path) -> None:
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_BINDING_SCOPE_INVALID")
 
 
+def _validate_dockerfile(path: Path) -> None:
+    source = _text(path)
+    required = (
+        "EXPOSE 8080",
+        "HEALTHCHECK",
+        "http://localhost:8080/livez",
+        "apps.api.hosted_runtime:create_app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+    )
+    if any(marker not in source for marker in required):
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_DOCKERFILE_DRIFT")
+    if "http://localhost:8080/healthz" in source:
+        raise RuntimeError("TIMEWEB_APP_CANDIDATE_DOCKERFILE_LIVENESS_DRIFT")
+
+
 def _validate_runtime(path: Path) -> None:
     source = _text(path)
     required = (
@@ -455,10 +477,12 @@ def validate(root: Path = ROOT) -> None:
     controller = root / "scripts/timeweb_app_release.py"
     workflow = root / _WORKFLOW_RELATIVE
     runtime = root / "apps/api/hosted_runtime.py"
+    dockerfile = root / "Dockerfile"
     _validate_contract(_json(contract))
     _validate_controller(controller)
     _validate_workflow(workflow)
     _validate_runtime(runtime)
+    _validate_dockerfile(dockerfile)
 
 
 def main() -> int:
