@@ -27,6 +27,7 @@ PROJECT_ID = "project-1"
 DATABASE_ID = "901"
 FLOATING_IP_ID = "float-1"
 GROUP_ID = "group-1"
+GROUP_ID_2 = "group-2"
 PAGE = "?limit=100&offset=0"
 PROJECT_DATABASES_PATH = f"/api/v1/projects/{PROJECT_ID}/resources/databases"
 DATABASE_PATH = f"/api/v1/databases/{DATABASE_ID}"
@@ -36,6 +37,9 @@ SERVICE_GROUPS_PATH = f"/api/v1/firewall/service/dbaas/{DATABASE_ID}{PAGE}"
 FIREWALL_GROUP_PATH = f"/api/v1/firewall/groups/{GROUP_ID}"
 FIREWALL_RULES_PATH = f"{FIREWALL_GROUP_PATH}/rules{PAGE}"
 FIREWALL_RESOURCES_PATH = f"{FIREWALL_GROUP_PATH}/resources{PAGE}"
+FIREWALL_GROUP_PATH_2 = f"/api/v1/firewall/groups/{GROUP_ID_2}"
+FIREWALL_RULES_PATH_2 = f"{FIREWALL_GROUP_PATH_2}/rules{PAGE}"
+FIREWALL_RESOURCES_PATH_2 = f"{FIREWALL_GROUP_PATH_2}/resources{PAGE}"
 DRIFT_IP = "1.1.1.1"
 AVAILABILITY_ZONE_KEY = "availability_zone"
 RESOURCE_ID_KEY = "resource_id"
@@ -381,14 +385,64 @@ def test_rejects_incomplete_floating_ip_inventory() -> None:
         _verify(responses)
 
 
-def test_rejects_multiple_firewall_groups() -> None:
+def _add_equivalent_second_firewall_group(
+    responses: dict[str, Any],
+    *,
+    cidr: str = CIDR,
+) -> None:
+    responses[SERVICE_GROUPS_PATH]["groups"].append({"id": GROUP_ID_2})
+    responses[SERVICE_GROUPS_PATH]["meta"][TOTAL_KEY] = 2
+    responses[FIREWALL_GROUP_PATH_2] = {
+        GROUP_KEY: {"id": GROUP_ID_2, "policy": "DROP"}
+    }
+    responses[FIREWALL_RULES_PATH_2] = _page(
+        RULES_KEY,
+        [
+            {
+                "id": "rule-2",
+                "direction": "ingress",
+                "protocol": "tcp",
+                "port": "5432",
+                "cidr": cidr,
+            }
+        ],
+    )
+    responses[FIREWALL_RESOURCES_PATH_2] = _page(
+        RESOURCES_KEY,
+        [{"id": DATABASE_ID, "type": DBAAS_RESOURCE_TYPE}],
+    )
+
+
+def test_accepts_multiple_equivalent_firewall_groups() -> None:
     responses = _responses()
-    path = SERVICE_GROUPS_PATH
-    responses[path]["groups"].append({"id": "group-2"})
-    responses[path]["meta"][TOTAL_KEY] = 2
+    _add_equivalent_second_firewall_group(responses)
+
+    api = _verify(responses)
+
+    assert api.calls.count(FIREWALL_GROUP_PATH_2) == 2
+    assert api.calls.count(FIREWALL_RULES_PATH_2) == 2
+    assert api.calls.count(FIREWALL_RESOURCES_PATH_2) == 2
+
+
+def test_rejects_multiple_firewall_groups_when_effective_scope_widens() -> None:
+    responses = _responses()
+    _add_equivalent_second_firewall_group(responses, cidr="1.1.1.1/32")
+
     with pytest.raises(
         scope.NetworkScopeStopped,
-        match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE",
+        match="TIMEWEB_PG_PRODUCTION_VERIFIER_CIDR_DRIFT",
+    ):
+        _verify(responses)
+
+
+def test_rejects_duplicate_firewall_group_identity() -> None:
+    responses = _responses()
+    responses[SERVICE_GROUPS_PATH]["groups"].append({"id": GROUP_ID})
+    responses[SERVICE_GROUPS_PATH]["meta"][TOTAL_KEY] = 2
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_ID_DUPLICATE",
     ):
         _verify(responses)
 
