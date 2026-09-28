@@ -81,6 +81,64 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
     def test_repository_contract_passes(self) -> None:
         guard.validate(ROOT)
 
+    def test_bootstrap_database_authority_accepts_exact_owner_capabilities(
+        self,
+    ) -> None:
+        connection = mock.Mock()
+        connection.execute.return_value.fetchone.return_value = (
+            True,
+            True,
+            True,
+            True,
+        )
+
+        cutover._verify_bootstrap_database_authority(connection)
+
+        connection.execute.assert_called_once()
+
+    def test_bootstrap_database_authority_rejects_each_missing_capability(
+        self,
+    ) -> None:
+        for row in (
+            (False, True, True, True),
+            (True, False, True, True),
+            (True, True, False, True),
+            (True, True, True, False),
+            None,
+        ):
+            with self.subTest(row=row):
+                connection = mock.Mock()
+                connection.execute.return_value.fetchone.return_value = row
+                with self.assertRaisesRegex(
+                    cutover.CutoverStopped,
+                    "TIMEWEB_PG_PRODUCTION_BOOTSTRAP_DATABASE_AUTHORITY_INVALID",
+                ):
+                    cutover._verify_bootstrap_database_authority(connection)
+
+    def test_guard_requires_bootstrap_database_preflight_in_observe_and_prepare(
+        self,
+    ) -> None:
+        for occurrence in (1, 2):
+            with self.subTest(occurrence=occurrence):
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    _copy(root)
+                    controller = root / "scripts/timeweb_postgres_production_cutover.py"
+                    source = controller.read_text(encoding=TEXT_ENCODING)
+                    marker = "        _verify_bootstrap_database_authority(bootstrap)\n"
+                    self.assertEqual(source.count(marker), 2)
+                    parts = source.split(marker)
+                    mutated = marker.join(parts[:occurrence]) + "".join(
+                        [parts[occurrence], *parts[occurrence + 1 :]]
+                    )
+                    self.assertEqual(mutated.count(marker), 1)
+                    controller.write_text(mutated, encoding=TEXT_ENCODING)
+                    with self.assertRaisesRegex(
+                        guard.CutoverContractError,
+                        "TIMEWEB_PG_CUTOVER_BOOTSTRAP_DATABASE_PREFLIGHT_MISSING",
+                    ):
+                        guard.validate(root)
+
     def test_prepare_connection_dsns_probes_transport_before_auth(self) -> None:
         ca_path = Path("ca.crt")
         with (
