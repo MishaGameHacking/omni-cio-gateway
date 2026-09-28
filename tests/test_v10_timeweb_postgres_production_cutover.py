@@ -36,8 +36,8 @@ DBNAME_KEY = "dbname"
 RECOVERY_KEY = "recovery"
 HOSTED_RUNTIME_RELATIVE = "apps/api/hosted_runtime.py"
 VERIFIED_HOSTADDR = "8.8.8.8"
-PRIVATE_HOSTADDR = ".".join(("192", "168", "0", "5"))
-PRIVATE_NETWORK_CIDR = ".".join(("192", "168", "0", "0")) + "/24"
+PRIVATE_HOSTADDR = ".".join(("10", "23", "42", "10"))
+PRIVATE_NETWORK_CIDR = ".".join(("10", "23", "42", "0")) + "/24"
 BOOTSTRAP_USER = "bootstrap"
 PREPARE_CONNECTION_DSNS_NAME = "_prepare_connection_dsns"
 
