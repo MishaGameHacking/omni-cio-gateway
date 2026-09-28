@@ -70,7 +70,7 @@ Timeweb documents that external PostgreSQL access requires public-IP access and 
 
 ### Provider network-scope gate
 
-Before any operation-specific database controller step receives production DSNs, the workflow validates all dispatch authority without secrets and validates/masks the exact current `verifier_cidr` as one global IPv4 `/32`. Ordinary `observe`, `prepare`, and `accept` then perform the existing **read-only** Timeweb provider-state proof. The bounded `bootstrap_prepare` recovery operation is the only exception: after explicit confirmation it may create the missing production firewall group/rule/resource link, and it must immediately pass the same read-only proof before any database authentication.
+Before any operation-specific database controller step receives production DSNs, the workflow validates all dispatch authority without secrets and validates/masks the requested `verifier_cidr` as one global IPv4 `/32`. This value is an explicit workflow authority input, **not an observation of the runner's NAT egress**. Ordinary `observe`, `prepare`, and `accept` then perform the existing **read-only** Timeweb provider-state proof. The bounded `bootstrap_prepare` recovery operation is the only exception: after explicit confirmation it may create the missing production firewall group/rule/resource link, and it must immediately pass the same read-only proof before any database authentication.
 
 The provider proof binds the bootstrap DSN technical hostname to exactly one non-synthetic project database and requires: cluster `started`; PostgreSQL port `5432`; public IPv4 enabled and uniquely bound to that database; the public IPv4 in the same availability zone with DDoS add-on disabled; public IPv6 disabled; protected connection enabled with the exact hostname certificate issued; at least one attached firewall service group; every attached group must use policy `DROP` and link only the same production database resource; and the **effective union** of all attached-group rules must contain at least one rule while containing no semantic rule other than `ingress tcp/5432` from the supplied global `/32`. An individual same-type group may contain zero rules or a duplicate equivalent rule because Timeweb documents that a rule-less group is not applied and that rules from multiple same-type groups are combined. Duplicate group identities and duplicate provider rule identities are rejected. Firewall collection reads use bounded provider pagination and fail closed on total drift or truncation.
 
@@ -93,6 +93,39 @@ The focused recovery path is `operation=bootstrap_prepare` with confirmation `BO
 
 This operation does not create App Platform, change DNS, enable Telegram/public users, change broker authority, or enable Real Trading.
 
+### Live P3 bootstrap_prepare #6 — provider control plane READY, public data plane timed out
+
+Accepted main `dd0a127c3f6b9ac6f98377a63b89b3ced96041d7` successfully converged the missing production firewall and then passed two independent provider network-scope checks. The subsequent credential-free PostgreSQL SSLRequest/TLS preflight exhausted every bounded attempt with `TIMEWEB_PG_TLS_TCP_TIMEOUT` before PostgreSQL authentication. No migration, runtime ACL, RLS or cross-tenant prepare mutation ran.
+
+The root defect exposed by this run is a **control-plane/data-plane evidence gap** in repository orchestration:
+
+- the verifier helper accepted and masked a manually supplied global `/32`, but its old `RU_PG_VERIFIER_EGRESS=READY` marker falsely sounded as though actual NAT egress had been measured;
+- the provider gate proved that Timeweb stored the intended public IPv4 binding and firewall rule, but did not prove that the rule had become live in the packet path;
+- the TLS preflight resolved the technical hostname independently and did not bind the socket target to the exact public IPv4 just proved by the Timeweb control plane;
+- therefore a stable provider configuration and a TCP timeout could not distinguish delayed firewall/public-route propagation, stale verifier-source authority, or a route/endpoint mismatch.
+
+The corrected chain removes that ambiguity as far as the selected providers can prove it without introducing an external IP-echo dependency. The workflow now:
+
+1. validates the verifier `/32` explicitly as **input authority**, without claiming egress discovery;
+2. proves the Timeweb target/firewall/public-IPv4 control plane;
+3. takes the exact provider-bound public IPv4 from that proof and performs a credential-free PostgreSQL SSLRequest plus `verify-full` TLS handshake directly to that address while preserving the technical hostname as certificate identity;
+4. waits with a bounded readiness budget for asynchronous data-plane propagation;
+5. re-runs the full provider scope proof after either success or a terminal transient transport failure;
+6. exports the proved public hostaddr only through the masked GitHub job environment;
+7. binds the subsequent authenticated libpq connection to that same hostaddr so no second DNS route decision can diverge from the proved provider target.
+
+A successful data-plane proof emits only:
+
+`TIMEWEB_PG_PRODUCTION_DATAPLANE=READY route=provider-bound tcp=5432 tls=verify-full firewall-source=proved-by-live-transport`
+
+and the TLS primitive emits:
+
+`TIMEWEB_PG_TLS_BOUND_PUBLIC_TRANSPORT=READY tcp=5432 tls=verify-full route=provider-bound`
+
+If a transient TCP/route failure remains after the bounded window and a fresh Timeweb control-plane proof is still identical, the failure is classified as `TIMEWEB_PG_PRODUCTION_DATAPLANE_*_CONTROL_PLANE_STABLE`. That result deliberately does **not** guess whether the remaining cause is a stale verifier `/32` or provider packet-path reachability; Timeweb's documented API/panel surfaces used by this project do not expose a supported caller-source-IP observation. The repair therefore does not invent an undocumented API or depend on a retired/external IP-echo service.
+
+Timeweb documents that Firewall does not operate inside private networks. The production verifier firewall therefore constrains the public P3 verification path; it is not a dependency of the future App Platform -> PostgreSQL private route. The hosted candidate must still prove that private route independently with `/healthz database=READY`.
+
 A live P3 observe on accepted main `f57e088d4188da4ceec387c82f8b3b847fc6e0bb` exposed a verifier/provider semantic mismatch: the repository rejected the production database solely because more than one same-type Timeweb firewall group was attached, even though Timeweb explicitly allows that state and unions the rules. The corrected gate therefore evaluates the complete effective group union instead of requiring an invented single-group cardinality or an invented per-group rule cardinality. This does not weaken the network boundary: the union must still contain the exact verifier rule and nothing else; any attached group with a non-DROP policy, wrong/extra semantic rule, different CIDR, extra resource, malformed identity, duplicate provider identity, or snapshot drift remains terminal before database authentication.
 
 The proof is intentionally not a single composite read. It performs **two consecutive read-only provider snapshots** and builds an in-memory stability witness from the production database identity, availability zone, floating-IP identity/address, firewall group, firewall rule, linked resource, and verifier CIDR. Every individual pass must be valid, and both witnesses must be identical. A mismatch stops with `TIMEWEB_PG_PRODUCTION_NETWORK_SNAPSHOT_DRIFT` before database authentication. Witness values are never printed. The database detail must also preserve the exact project identity selected through the authenticated project resource list. For the bound public IPv4, each pass reconciles the account-level floating-IP list row with a second exact floating-IP detail GET; any network-identity disagreement stops with `TIMEWEB_PG_PRODUCTION_FLOATING_IP_LIST_DETAIL_DRIFT`. Malformed provider domain, floating-IP, firewall-rule, or firewall-resource identities fail closed instead of being silently skipped. This prevents a valid-looking READY result assembled from stale list data, cross-project drift, or mutually inconsistent control-plane states while an external actor is changing the provider configuration.
@@ -101,7 +134,7 @@ A successful provider-scope proof emits only:
 
 `TIMEWEB_PG_PRODUCTION_NETWORK_SCOPE=READY public_ipv4=bound ipv6=off tls=enabled firewall=drop ingress=tcp/5432 source=/32`
 
-It never prints the hostname, verifier CIDR, database ID, firewall ID or public IP. The floating-IP list/detail comparison and database project identity are provider-side control-plane evidence only; their raw values also remain private. A provider-scope STOP occurs **before database authentication**. Only after this read-only provider proof may the credential-free DNS/TCP/SSLRequest/verify-full ladder run and then present PostgreSQL credentials.
+It never prints the hostname, verifier CIDR, database ID, firewall ID or public IP. The floating-IP list/detail comparison and database project identity are provider-side control-plane evidence only; their raw values also remain private. A provider-scope STOP occurs **before database authentication**. Only after this read-only provider proof may the credential-free provider-bound TCP/SSLRequest/verify-full data-plane ladder run. PostgreSQL credentials are presented only after that exact public hostaddr has passed live TLS proof and has been revalidated against the Timeweb control plane.
 
 The production cutover workflow shares the `v10-timeweb-postgres-public-ipv4-tls` concurrency group with the existing Timeweb network/allocation workflows so repository-controlled public-IP/firewall mutation cannot race the preflight. The double-read stability witness additionally detects provider-state drift that occurs during the preflight itself. Neither mechanism can serialize an unrelated external writer after the second snapshot, so manual Timeweb dashboard changes and unrelated API writers must remain frozen during P3 execution. The subsequent credential-free transport probe is still mandatory because a stable, correct provider configuration does not prove that the current verifier route is reachable.
 
@@ -118,7 +151,7 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 1. PR #584 P2 source and exact-head verification is GREEN and the implementation is accepted on protected `main`.
 2. Establish the dedicated production PostgreSQL 18 database and the pre-existing `omni_cio_hosted_api` login without exposing credentials.
 3. Establish the `timeweb-production` GitHub Environment, exact-main branch policy, and the two production DSN secrets described above.
-4. Invoke the P3 workflow with the exact accepted main SHA and the current global verifier `verifier_cidr` `/32`. The observe phase is SQL read-only. When the production firewall already passes the provider-scope gate, `operation=observe` remains the read-only path. When the exact stop is `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING`, use `operation=bootstrap_prepare` with confirmation `BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. That bounded operation converges only the missing DROP + TCP/5432 + verifier-/32 + exact-production-resource firewall boundary, re-runs the full provider-scope proof, runs SQL-read-only observe, and then proceeds directly into prepare.
+4. Invoke the P3 workflow with the exact accepted main SHA and the current explicitly supplied verifier `verifier_cidr` `/32`. The input is validated but is not called observed egress. Before SQL-read-only observe, the workflow must prove the exact provider-bound public data plane with SSLRequest + verify-full TLS and a post-proof provider stability recheck. When the production firewall already passes the provider-scope gate, `operation=observe` remains the read-only path. When the exact stop is `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING`, use `operation=bootstrap_prepare` with confirmation `BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. That bounded operation converges only the missing DROP + TCP/5432 + verifier-/32 + exact-production-resource firewall boundary, re-runs the full provider-scope proof, runs SQL-read-only observe, and then proceeds directly into prepare.
 5. If `observe` was used separately and succeeded, run `operation=prepare` with confirmation `PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. Do not run a second prepare merely because `bootstrap_prepare` already completed it.
 6. The controller verifies PostgreSQL 18/TLS, applies canonical migrations twice to prove retry idempotence, applies the canonical runtime ACL bootstrap, verifies the least-privilege runtime role, RLS/FORCE-RLS, tenant security constraints, and requires clean product identity/session/broker tables. A successful prepare emits the non-secret `postgres_binding_sha256` required for App bootstrap.
 7. Create a Timeweb physical backup recovery point. Physical backup is mandatory and additive to the repository logical recovery contract.
@@ -130,6 +163,10 @@ A first-run `TIMEWEB_GITHUB_ENVIRONMENT_GATE_NOT_FOUND` means the environment ha
 13. Only after P3 acceptance may P4 canonical `omnicio.ru` DNS/TLS cutover begin.
 
 ## Failure and recovery
+
+### Current live stop — P3 public data plane timeout after successful firewall convergence
+
+Run #6 on accepted main `dd0a127c3f6b9ac6f98377a63b89b3ced96041d7` proved the production target/firewall/public-IPv4 control plane and then stopped before PostgreSQL authentication with `TIMEWEB_PG_TLS_TCP_TIMEOUT`. Do not rerun that source unchanged and do not weaken the firewall or TLS contract. The focused repair is the provider-bound data-plane readiness chain described above. It preserves the created narrow firewall, adds a longer bounded GET/TCP/TLS reconciliation window, ties the socket to the exact Timeweb-bound public IPv4, and makes stable-control-plane timeout a distinct terminal class.
 
 ### Current live stop — no production firewall attached
 
