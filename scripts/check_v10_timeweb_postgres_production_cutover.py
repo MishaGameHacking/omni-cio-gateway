@@ -689,9 +689,7 @@ def _network_converge_mutation_operation(node: ast.Call) -> str | None:
         if isinstance(value, ast.Constant) and isinstance(value.value, str):
             return value.value
         break
-    raise CutoverContractError(
-        "TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED"
-    )
+    raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_CONVERGE_AUTHORITY_WIDENED")
 
 
 def _validate_network_converge_mutations(tree: ast.AST) -> None:
