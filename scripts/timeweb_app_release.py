@@ -684,6 +684,24 @@ def _verify_livez(hostname: str, expected: str, *, opener: Any | None = None) ->
     raise AssertionError("bounded liveness verification exhausted")
 
 
+def _healthz_unavailable_payload(raw: bytes) -> dict[str, Any] | None:
+    if not raw or len(raw) > MAX_RESPONSE_BYTES:
+        return None
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    if value.get("status") != "unavailable":
+        return None
+    if not isinstance(value.get("release_sha"), str):
+        return None
+    if not isinstance(value.get("synthetic_preview"), bool):
+        return None
+    return value
+
+
 def _healthz_attempt(
     active: Any,
     request: Request,
@@ -694,11 +712,23 @@ def _healthz_attempt(
             raw = response.read(MAX_RESPONSE_BYTES + 1)
     except HTTPError as exc:
         status = int(exc.code)
+        if status == 503:
+            try:
+                raw = exc.read(MAX_RESPONSE_BYTES + 1)
+            except OSError:
+                raw = b""
+            payload = _healthz_unavailable_payload(raw)
+            if payload is not None:
+                return payload, None, status
         if status in _TRANSIENT:
             return None, "http", status
         _stop("TIMEWEB_APP_RELEASE_HEALTHZ_HTTP_ERROR", status=status)
     except OSError:
         return None, "transport", None
+    if status == 503:
+        payload = _healthz_unavailable_payload(raw)
+        if payload is not None:
+            return payload, None, status
     if status in _TRANSIENT:
         return None, "http", status
     if status != 200:
