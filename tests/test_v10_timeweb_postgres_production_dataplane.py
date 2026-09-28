@@ -99,6 +99,65 @@ def test_dataplane_rejects_probe_target_drift_before_export(
     assert not github_env.exists()
 
 
+@pytest.mark.parametrize(
+    ("tls_code", "terminal_code"),
+    (
+        (
+            "TIMEWEB_PG_TLS_TCP_FAILED",
+            "TIMEWEB_PG_PRODUCTION_DATAPLANE_TCP_FAILED_CONTROL_PLANE_STABLE",
+        ),
+        (
+            "TIMEWEB_PG_TLS_TCP_REFUSED",
+            "TIMEWEB_PG_PRODUCTION_DATAPLANE_TCP_REFUSED_CONTROL_PLANE_STABLE",
+        ),
+        (
+            "TIMEWEB_PG_TLS_ROUTE_UNREACHABLE",
+            "TIMEWEB_PG_PRODUCTION_DATAPLANE_ROUTE_UNREACHABLE_CONTROL_PLANE_STABLE",
+        ),
+    ),
+)
+def test_dataplane_transient_failures_recheck_control_plane_without_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tls_code: str,
+    terminal_code: str,
+) -> None:
+    github_env = tmp_path / "github-env"
+    monkeypatch.setenv("GITHUB_ENV", str(github_env))
+    calls = 0
+
+    def stable(*_args: object, **_kwargs: object) -> str:
+        nonlocal calls
+        calls += 1
+        return _PUBLIC_ADDRESS
+
+    monkeypatch.setattr(scope, "verify_network_scope", stable)
+    monkeypatch.setattr(
+        timeweb_postgres_tls,
+        "install_timeweb_postgres_ca",
+        lambda: tmp_path / "provider-ca.crt",
+    )
+    monkeypatch.setattr(
+        timeweb_postgres_tls,
+        "probe_timeweb_postgres_bound_public_transport",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            timeweb_postgres_tls.TimewebPostgresTlsError(tls_code)
+        ),
+    )
+
+    with pytest.raises(dataplane.ProductionDataplaneStopped, match=terminal_code):
+        dataplane.prove_production_dataplane(
+            api=_Api(),
+            project_id="42",
+            target_host="db.twc1.net",
+            verifier_cidr="8.8.4.4/32",
+            bootstrap_dsn="provider-dsn",
+        )
+
+    assert calls == 2
+    assert not github_env.exists()
+
+
 def test_dataplane_timeout_rechecks_stable_control_plane(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -222,6 +281,18 @@ def test_dataplane_nontransient_tls_failure_is_not_hidden(
         )
 
     assert calls == 1
+
+
+def test_dataplane_export_rejects_relative_github_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GITHUB_ENV", "relative-github-env")
+
+    with pytest.raises(
+        dataplane.ProductionDataplaneStopped,
+        match="TIMEWEB_PG_PRODUCTION_DATAPLANE_GITHUB_ENV_INVALID",
+    ):
+        dataplane._export_public_hostaddr(_PUBLIC_ADDRESS)
 
 
 def test_dataplane_export_requires_github_env(
