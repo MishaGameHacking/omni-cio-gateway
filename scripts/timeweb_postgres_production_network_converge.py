@@ -94,8 +94,7 @@ def _require_group_shape(api: scope.ReadOnlyApi, group_id: str) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_BOOTSTRAP_GROUP_NAME_DRIFT")
     if group.get("policy") != "DROP":
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED")
-    description = group.get("description")
-    if description not in {None, "", FIREWALL_DESCRIPTION}:
+    if group.get("description") != FIREWALL_DESCRIPTION:
         _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_BOOTSTRAP_GROUP_DESCRIPTION_DRIFT")
 
 
