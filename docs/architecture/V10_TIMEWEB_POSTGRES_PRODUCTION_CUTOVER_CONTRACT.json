@@ -173,7 +173,12 @@
     "cross_tenant_negative_required": true,
     "data_deletion_allowed": false,
     "drop_schema_allowed": false,
-    "truncate_allowed": false
+    "truncate_allowed": false,
+    "bootstrap_authority_preflight_before_mutation_required": true,
+    "bootstrap_database_owner_required": true,
+    "bootstrap_database_connect_privilege_required": true,
+    "bootstrap_database_create_privilege_required": true,
+    "existing_product_schema_owner_must_equal_bootstrap": true
   },
   "recovery": {
     "timeweb_physical_backup_required": true,
