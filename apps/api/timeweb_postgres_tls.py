@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import ipaddress
 import os
 import re
@@ -254,6 +255,22 @@ def _connection_params(dsn: str) -> dict[str, str]:
     if params.get(_SSLROOTCERT_KEY, "").strip() != TIMEWEB_POSTGRES_SSLROOTCERT:
         raise TimewebPostgresTlsError("TIMEWEB_PG_TLS_ROOT_CERT_PATH_INVALID")
     return params
+
+
+def timeweb_postgres_binding_sha256(dsn: str) -> str:
+    """Return a non-secret target/user binding digest for a strict external DSN."""
+
+    params = _connection_params(dsn)
+    identity = (
+        "omni-cio.v10.timeweb-postgres-binding.v1",
+        f"host={_validate_provider_identity(params)}",
+        f"port={params['port'].strip()}",
+        f"dbname={params['dbname'].strip()}",
+        f"user={params['user'].strip()}",
+        f"sslmode={params['sslmode'].strip().lower()}",
+        f"sslrootcert={params[_SSLROOTCERT_KEY].strip()}",
+    )
+    return hashlib.sha256("\n".join(identity).encode("utf-8")).hexdigest()
 
 
 def _private_ipv4_network(cidr: str) -> ipaddress.IPv4Network:
