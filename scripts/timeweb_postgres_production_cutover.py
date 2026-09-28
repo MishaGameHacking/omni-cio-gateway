@@ -400,15 +400,10 @@ def _verify_runtime_database(runtime_dsn: str, bootstrap_dsn: str) -> None:
 
 
 def _is_canonical_app_row(value: object) -> bool:
-    if (
-        not isinstance(value, dict)
-        or value.get("name") != app_release.CANONICAL_APP_NAME
-    ):
-        return False
-    repository = value.get("repository")
     return (
-        isinstance(repository, dict)
-        and repository.get("full_name") == app_release.CANONICAL_REPOSITORY
+        isinstance(value, dict)
+        and value.get("name") == app_release.CANONICAL_APP_NAME
+        and app_release.is_canonical_repository(value)
     )
 
 
