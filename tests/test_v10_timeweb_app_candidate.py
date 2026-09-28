@@ -161,7 +161,9 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         root = self._fixture()
         path = root / CONTRACT_RELATIVE
         payload = json.loads(path.read_text(encoding="utf-8"))
-        payload["acceptance"]["panel_healthcheck_overrides_dockerfile_healthcheck"] = False
+        payload["acceptance"][
+            "panel_healthcheck_overrides_dockerfile_healthcheck"
+        ] = False
         path.write_text(json.dumps(payload), encoding="utf-8")
         with self.assertRaisesRegex(
             RuntimeError,
