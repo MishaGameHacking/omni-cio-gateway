@@ -149,6 +149,7 @@ def _app(
             "PUBLIC_MULTI_USER_ENABLED": activation,
             "OMNI_V10_TELEGRAM_LOGIN_ENABLED": activation,
             "OMNI_V10_POSTGRES_DSN": "postgresql://opaque",
+            "OMNI_V10_POSTGRES_BINDING_SHA256": "c" * 64,
             "OMNI_V10_POSTGRES_PRIVATE_HOSTADDR": "10.0.0.10",
             "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR": "10.0.0.0/24",
         },
@@ -397,6 +398,24 @@ def test_candidate_requires_scoped_private_database_route() -> None:
     _assert_observe_stops(
         mismatched,
         "TIMEWEB_APP_RELEASE_PRIVATE_ROUTE_INVALID",
+    )
+
+
+def test_candidate_requires_valid_postgres_binding_digest() -> None:
+    missing = _app(active_sha=EXPECTED_SHA)
+    assert isinstance(missing["envs"], dict)
+    missing["envs"].pop("OMNI_V10_POSTGRES_BINDING_SHA256")
+    _assert_observe_stops(
+        missing,
+        "TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID",
+    )
+
+    malformed = _app(active_sha=EXPECTED_SHA)
+    assert isinstance(malformed["envs"], dict)
+    malformed["envs"]["OMNI_V10_POSTGRES_BINDING_SHA256"] = "not-a-digest"
+    _assert_observe_stops(
+        malformed,
+        "TIMEWEB_APP_RELEASE_POSTGRES_BINDING_INVALID",
     )
 
 
