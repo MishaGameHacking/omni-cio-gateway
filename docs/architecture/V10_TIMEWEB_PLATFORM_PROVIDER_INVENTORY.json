@@ -159,10 +159,6 @@
       "classification": "KEEP",
       "reason": "Current Timeweb IPv4 custody probe uses provider-neutral transport primitives."
     },
-    "scripts/discover_v10_ru_pg_verifier_ipv4.py": {
-      "classification": "KEEP",
-      "reason": "Current verifier /32 is accepted only as an explicit validated GitHub workflow input; no retired-provider echo/discovery service participates."
-    },
     "scripts/timeweb_ipv4_allocation_provider.py": {
       "classification": "KEEP",
       "reason": "Current Timeweb IPv4 allocation adapter uses provider-neutral transport primitives."
@@ -390,6 +386,18 @@
     "tests/test_v10_timeweb_postgres_production_network_converge.py": {
       "classification": "KEEP",
       "reason": "Current regression evidence for fail-closed production firewall bootstrap, ambiguous-mutation reconciliation and no-widening authority."
+    },
+    "scripts/validate_v10_ru_pg_verifier_cidr.py": {
+      "classification": "KEEP",
+      "reason": "Current verifier /32 is an explicit validated GitHub workflow authority input; the validator intentionally does not claim to discover NAT egress."
+    },
+    "scripts/timeweb_postgres_production_dataplane.py": {
+      "classification": "KEEP",
+      "reason": "Current P3 credential-free provider-bound PostgreSQL data-plane readiness proof and control-plane stability classifier."
+    },
+    "tests/test_v10_timeweb_postgres_production_dataplane.py": {
+      "classification": "KEEP",
+      "reason": "Regression proof for P3 provider-bound data-plane readiness, timeout classification, drift detection and GitHub environment handoff."
     }
   },
   "path_rules": [
@@ -545,7 +553,7 @@
     "web_visual_started": false,
     "wp23_unlocked": false
   },
-  "expected_provider_named_file_count": 262,
+  "expected_provider_named_file_count": 264,
   "accepted_base_pr": 582,
   "provider_path_keywords": [
     "cloudflare",
