@@ -394,7 +394,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                 {cutover.app_release.TOKEN_ENV: "token"},
                 clear=False,
             ),
-            mock.patch.object(cutover.app_release, "TimewebAppApi", return_value=object()),
+            mock.patch.object(
+                cutover.app_release, "TimewebAppApi", return_value=object()
+            ),
             mock.patch.object(cutover, "_app_envs", return_value=envs),
             mock.patch.object(
                 cutover.timeweb_postgres_tls,
