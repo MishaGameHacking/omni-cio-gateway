@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from io import BytesIO
 import json
+from io import BytesIO
 from urllib.error import HTTPError
 from urllib.request import Request
 
