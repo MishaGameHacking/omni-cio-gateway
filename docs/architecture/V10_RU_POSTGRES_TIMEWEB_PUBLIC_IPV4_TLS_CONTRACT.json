@@ -23,17 +23,6 @@
     "synthetic_cluster_must_preexist": true,
     "production_data_allowed": false
   },
-  "verifier_egress": {
-    "source": "GITHUB_WORKFLOW_DISPATCH_INPUT",
-    "input_name": "verifier_cidr",
-    "external_discovery_allowed": false,
-    "exact_ipv4_32_required": true,
-    "ipv4_global_unicast_required": true,
-    "source_prefix_length": 32,
-    "value_may_be_logged": false,
-    "value_may_be_persisted": false,
-    "purpose": "RU_PG_B_SYNTHETIC_VERIFIER_ONLY"
-  },
   "firewall": {
     "group_name": "omni-cio-v10-ru-pg-synthetic-verifier",
     "policy": "DROP",
@@ -293,5 +282,17 @@
     "network_state_is_not_receipt_identity": true,
     "provider_custody_rechecked_before_network_mutation": true,
     "plan_handle_is_non_authorizing_reference": true
+  },
+  "verifier_cidr_authority": {
+    "source": "GITHUB_WORKFLOW_DISPATCH_INPUT",
+    "input_name": "verifier_cidr",
+    "external_discovery_allowed": false,
+    "exact_ipv4_32_required": true,
+    "ipv4_global_unicast_required": true,
+    "source_prefix_length": 32,
+    "value_may_be_logged": false,
+    "value_may_be_persisted": false,
+    "purpose": "RU_PG_B_SYNTHETIC_VERIFIER_ONLY",
+    "observation_type": "EXPLICIT_AUTHORITY_INPUT_NOT_NAT_EGRESS_DISCOVERY"
   }
 }
