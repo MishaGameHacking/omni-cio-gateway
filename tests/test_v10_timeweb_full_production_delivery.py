@@ -160,6 +160,16 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             "OMNI_V10_POSTGRES_PRIVATE_NETWORK_CIDR",
         )
         self.assertTrue(runtime["private_postgres_tls_hostname_identity_from_dsn"])
+        self.assertEqual(
+            runtime["postgres_binding_sha256_env"],
+            "OMNI_V10_POSTGRES_BINDING_SHA256",
+        )
+        self.assertTrue(runtime["postgres_binding_sha256_required"])
+        self.assertFalse(runtime["postgres_binding_sha256_is_secret"])
+        self.assertEqual(
+            runtime["postgres_binding_sha256_source"],
+            "P3_PREPARE_ACCEPTED_OUTPUT",
+        )
         self.assertFalse(runtime["liveness_startup_database_dependency_allowed"])
         self.assertTrue(runtime["database_pool_lazy_initialization_required"])
         self.assertEqual(runtime["postgres_pool_max_size"], 4)
@@ -177,6 +187,23 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             )
             payload = json.loads(contract_path.read_text(encoding="utf-8"))
             payload["runtime"]["liveness_startup_database_dependency_allowed"] = True
+            contract_path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "TIMEWEB_FULL_DELIVERY_RUNTIME_CAPACITY_DRIFT",
+            ):
+                guard.validate(root)
+
+    def test_rejects_database_binding_fingerprint_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            contract_path = (
+                root
+                / "docs/architecture/V10_TIMEWEB_FULL_PRODUCTION_DELIVERY_CONTRACT.json"
+            )
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+            payload["runtime"]["postgres_binding_sha256_required"] = False
             contract_path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 RuntimeError,
