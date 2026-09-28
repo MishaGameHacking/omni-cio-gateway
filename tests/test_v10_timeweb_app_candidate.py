@@ -128,6 +128,18 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         ):
             guard.validate(root)
 
+    def test_runtime_contract_rejects_integer_for_boolean_invariant(self) -> None:
+        root = self._fixture()
+        path = root / CONTRACT_RELATIVE
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["runtime"]["postgres_private_route_rfc1918_required"] = 1
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID",
+        ):
+            guard.validate(root)
+
     def test_rejects_liveness_database_startup_dependency(self) -> None:
         root = self._fixture()
         path = root / CONTRACT_RELATIVE
