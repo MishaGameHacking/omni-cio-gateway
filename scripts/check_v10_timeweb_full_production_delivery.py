@@ -154,7 +154,7 @@ def _validate_runtime_contract(runtime: dict[str, Any]) -> None:
         "private_postgres_tls_hostname_identity_from_dsn": True,
         "postgres_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
         "postgres_binding_sha256_required": True,
-        "postgres_binding_sha256_is_secret": False,
+        "postgres_binding_sha256_sensitive": False,
         "postgres_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
         "liveness_startup_database_dependency_allowed": False,
         "database_pool_lazy_initialization_required": True,
