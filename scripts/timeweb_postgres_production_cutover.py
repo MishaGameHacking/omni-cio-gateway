@@ -445,9 +445,7 @@ def _verify_app_binding(expected_sha: str, runtime_dsn: str) -> None:
     envs = _app_envs(api)
     app_release.validate_private_route_env(envs)
 
-    expected_binding = timeweb_postgres_tls.timeweb_postgres_binding_sha256(
-        runtime_dsn
-    )
+    expected_binding = timeweb_postgres_tls.timeweb_postgres_binding_sha256(runtime_dsn)
     if envs.get(app_release.POSTGRES_BINDING_SHA256_ENV, "") != expected_binding:
         _stop("TIMEWEB_PG_PRODUCTION_APP_BINDING_SHA256_DRIFT")
 
