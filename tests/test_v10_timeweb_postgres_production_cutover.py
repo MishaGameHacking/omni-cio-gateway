@@ -273,9 +273,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
 
         self.assertTrue(cutover._is_canonical_app_row(row))
 
-        row["repository"]["url"] = (
-            "https://github.com/MishaGameHacking/other.git"
-        )
+        row["repository"]["url"] = "https://github.com/MishaGameHacking/other.git"
         self.assertFalse(cutover._is_canonical_app_row(row))
 
     def test_guard_rejects_p3_app_repository_identity_downgrade(self) -> None:
@@ -299,8 +297,10 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
 
     def test_app_binding_revalidates_private_database_route(self) -> None:
         expected_sha = "a" * 40
+        binding_sha256 = "b" * 64
         envs = {
             cutover.app_release.POSTGRES_DSN_ENV: RUNTIME_DSN,
+            cutover.app_release.POSTGRES_BINDING_SHA256_ENV: binding_sha256,
             cutover.app_release.RELEASE_SHA_ENV: expected_sha,
             cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
             cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
@@ -321,6 +321,11 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ),
             mock.patch.object(cutover, "_app_envs", return_value=envs),
             mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "timeweb_postgres_binding_sha256",
+                return_value=binding_sha256,
+            ),
+            mock.patch.object(
                 cutover.app_release,
                 "validate_private_route_env",
             ) as validate_private_route,
@@ -334,6 +339,75 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             expected_sha,
             runtime_mode=cutover.app_release.RUNTIME_MODE_PREACTIVATION,
         )
+
+    def test_app_binding_accepts_provider_masked_dsn_with_exact_digest(self) -> None:
+        expected_sha = "a" * 40
+        binding_sha256 = "c" * 64
+        envs = {
+            cutover.app_release.POSTGRES_DSN_ENV: (
+                cutover.app_release.TIMEWEB_HIDDEN_BY_API_KEY_POLICY
+            ),
+            cutover.app_release.POSTGRES_BINDING_SHA256_ENV: binding_sha256,
+            cutover.app_release.RELEASE_SHA_ENV: expected_sha,
+            cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
+            cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
+            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: PRIVATE_HOSTADDR,
+            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: PRIVATE_NETWORK_CIDR,
+        }
+        api = object()
+        with (
+            mock.patch.dict(
+                cutover.os.environ,
+                {cutover.app_release.TOKEN_ENV: "token"},
+                clear=False,
+            ),
+            mock.patch.object(cutover.app_release, "TimewebAppApi", return_value=api),
+            mock.patch.object(cutover, "_app_envs", return_value=envs),
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "timeweb_postgres_binding_sha256",
+                return_value=binding_sha256,
+            ),
+            mock.patch.object(cutover.app_release, "validate_private_route_env"),
+            mock.patch.object(cutover.app_release, "observe") as observe,
+        ):
+            cutover._verify_app_binding(expected_sha, RUNTIME_DSN)
+
+        observe.assert_called_once()
+
+    def test_app_binding_rejects_masked_dsn_with_wrong_digest(self) -> None:
+        expected_sha = "a" * 40
+        envs = {
+            cutover.app_release.POSTGRES_DSN_ENV: (
+                cutover.app_release.TIMEWEB_HIDDEN_BY_API_KEY_POLICY
+            ),
+            cutover.app_release.POSTGRES_BINDING_SHA256_ENV: "d" * 64,
+            cutover.app_release.RELEASE_SHA_ENV: expected_sha,
+            cutover.app_release.PUBLIC_MULTI_USER_ENV: "false",
+            cutover.app_release.TELEGRAM_LOGIN_ENV: "false",
+            cutover.app_release.POSTGRES_PRIVATE_HOSTADDR_ENV: PRIVATE_HOSTADDR,
+            cutover.app_release.POSTGRES_PRIVATE_NETWORK_CIDR_ENV: PRIVATE_NETWORK_CIDR,
+        }
+        with (
+            mock.patch.dict(
+                cutover.os.environ,
+                {cutover.app_release.TOKEN_ENV: "token"},
+                clear=False,
+            ),
+            mock.patch.object(cutover.app_release, "TimewebAppApi", return_value=object()),
+            mock.patch.object(cutover, "_app_envs", return_value=envs),
+            mock.patch.object(
+                cutover.timeweb_postgres_tls,
+                "timeweb_postgres_binding_sha256",
+                return_value="e" * 64,
+            ),
+            mock.patch.object(cutover.app_release, "validate_private_route_env"),
+            self.assertRaisesRegex(
+                cutover.CutoverStopped,
+                "TIMEWEB_PG_PRODUCTION_APP_BINDING_SHA256_DRIFT",
+            ),
+        ):
+            cutover._verify_app_binding(expected_sha, RUNTIME_DSN)
 
     def test_guard_rejects_mutation_in_observe_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
