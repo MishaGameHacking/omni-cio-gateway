@@ -443,6 +443,33 @@ def test_rejects_multiple_firewall_groups_when_effective_scope_widens() -> None:
         _verify(responses)
 
 
+def test_rejects_non_drop_policy_on_second_firewall_group() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+    responses[FIREWALL_GROUP_PATH_2][GROUP_KEY]["policy"] = "ACCEPT"
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_DEFAULT_DROP_REQUIRED",
+    ):
+        _verify(responses)
+
+
+def test_rejects_extra_resource_on_second_firewall_group() -> None:
+    responses = _responses()
+    _add_second_firewall_group(responses)
+    responses[FIREWALL_RESOURCES_PATH_2][RESOURCES_KEY].append(
+        {"id": "902", "type": DBAAS_RESOURCE_TYPE}
+    )
+    responses[FIREWALL_RESOURCES_PATH_2]["meta"][TOTAL_KEY] = 2
+
+    with pytest.raises(
+        scope.NetworkScopeStopped,
+        match="TIMEWEB_PG_PRODUCTION_FIREWALL_RESOURCE_SCOPE_WIDENED",
+    ):
+        _verify(responses)
+
+
 def test_rejects_missing_effective_firewall_rule() -> None:
     responses = _responses()
     responses[FIREWALL_RULES_PATH] = _page(RULES_KEY, [])
