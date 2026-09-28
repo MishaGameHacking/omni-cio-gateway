@@ -9,9 +9,9 @@ Status: **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
 - Execution unit: `INTEGRATED_SYSTEM_UPDATE`
 - Initial TW-A branch: `system/timeweb-platform-consolidation` (squash-merged via PR #583)
 - Accepted integrated delivery PR: #584 -> main `a3e96287f6f29f9a17f14758223a653b37abb50c`
-- Current focused live-cutover repair branch: `fix/timeweb-production-firewall-group-union` (PR #597)
+- Current focused live-cutover repair branch: `fix/timeweb-production-firewall-bootstrap-chain`
 - TW-A accepted base SHA: `82e3a45c7016f2956c9b3761d10d15e433375f3c`
-- Current accepted-main SHA after accepted PR #596: `f57e088d4188da4ceec387c82f8b3b847fc6e0bb`
+- Current accepted-main SHA after accepted PR #597: `d440cdf859e34edb3b8727ef763347eab9a70803`
 - OWNER authority: Amendment 18 accepted through PR #581; Amendment 21 branch-local full production-delivery implementation authority
 - GitHub dashboard issue: #580
 - Accepted split-boundary PR: #582
@@ -58,17 +58,20 @@ PR #584 is accepted on protected `main`; its former integrated branch is histori
 
 ## 3. Current execution state
 
-- Accepted main: `f57e088d4188da4ceec387c82f8b3b847fc6e0bb` (PR #596).
-- PR #596 accepted the App Platform private PostgreSQL route and true technical-candidate database-readiness interlock. It does not itself prove physical App deployment or P3 production acceptance.
-- Manual `V10 Timeweb PostgreSQL Production Cutover #4` on exact accepted main passed exact-main/source/GitHub-Environment/input authority and stopped before database authentication at `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE`.
-- Fresh Timeweb Firewall specification proves the stop is a repository/provider-semantics defect: one service may belong to multiple firewall groups of the same type and those rules are combined.
-- Current focused RED repair: PR #597 / `fix/timeweb-production-firewall-group-union`.
-- Replacement proof enumerates every attached group with bounded pagination; requires all group policies to remain allowlist/`DROP`; requires each group to link only the production database resource; rejects duplicate group/rule identities; and validates the complete effective rule union rather than an invented one-group cardinality.
-- The effective union must include the exact ingress TCP/5432 verifier `/32` and no other semantic rule. A same-type group may be rule-less and equivalent exact rules may repeat without widening the union, matching documented Timeweb behavior.
-- Two-pass provider snapshot stability, public IPv4 binding, IPv6-off, protected TLS, hostname certificate, exact project/database identity and credential-free TLS preflight remain mandatory.
-- Current execution state: `RED_REPAIR_ONLY`; do not rerun P3 from old main.
-- Next lawful sequence after #597 exact-head GREEN and squash merge: exact-main post-merge verification -> fresh P3 `observe` -> P3 `prepare` -> physical backup/separate restore rehearsal -> create `omni-cio-v10` once in the accepted shared Timeweb private network -> exact-SHA technical-domain `/livez` + `/healthz database=READY` proof -> P3 `accept`.
-- No firewall widening/deletion, production DB mutation, App creation, `omnicio.ru` DNS/TLS cutover, Telegram/public activation, broker write or Real-money authority is introduced by #597.
+- Accepted main: `d440cdf859e34edb3b8727ef763347eab9a70803` (PR #597).
+- PR #597 accepted the effective Timeweb firewall-union verifier after two complete 14/14 exact-head repository workflow cycles succeeded, with zero unresolved review threads and supplemental Sonar Quality Gate success.
+- Manual `V10 Timeweb PostgreSQL Production Cutover #5` on that exact main passed exact-main/source/GitHub-Environment/input authority and stopped before database authentication at `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING`.
+- This corrects the interpretation of #4: the retired `...NOT_EXCLUSIVE` stop covered both zero and multiple groups. Run #5 specifically proves zero firewall groups were attached to the production database at observation time.
+- Current Timeweb Firewall semantics make this material because the database already has a public IPv4 and a missing effective firewall boundary must not be bypassed.
+- Current focused RED repair: `fix/timeweb-production-firewall-bootstrap-chain`.
+- The repair adds a single explicit `bootstrap_prepare` operation with confirmation `BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES`. It is allowed to act only when the exact production target has zero attached groups.
+- The bounded mutation sequence is: create/reuse dedicated `DROP` group -> create the exact ingress TCP/5432 verifier `/32` rule -> link only the exact production DBaaS resource -> run the existing two-pass effective-union network proof -> run SQL-read-only observe -> run bounded P3 prepare.
+- If any firewall group is already attached at execution time, the convergence step performs no mutation. Any wrong/widened rule, extra resource, non-DROP policy, duplicate identity or unsafe pre-existing named group remains terminal.
+- The convergence path never PATCHes or DELETEs firewall state, never unlinks resources, never broadens CIDR/port/protocol, and never blind-retries an ambiguous mutation. Ambiguous POST outcomes reconcile with bounded GET-only observations.
+- The verifier CIDR remains an ephemeral masked workflow input and is not persisted in repository status/ledger/source.
+- Current execution state: `RED_REPAIR_ONLY`. Do not rerun run #5 unchanged and do not switch to the synthetic PostgreSQL target.
+- Next lawful sequence after this focused repair is exact-head GREEN -> Ready GREEN -> squash merge -> fresh exact-main `bootstrap_prepare` -> physical backup/separate restore rehearsal -> one-time manual creation of `omni-cio-v10` in the already accepted shared Timeweb private network -> exact-SHA P2 deploy -> technical-domain `/livez` + `/healthz database=READY` -> P3 `accept`.
+- Physical App creation remains an OWNER panel action because the accepted App contract and Timeweb documentation make private-network choice immutable at creation and no reviewed documented CreateApp API binding is accepted for that immutable choice.
 - Protected flags remain false: `PUBLIC_MULTI_USER_ENABLED`, `OMNI_V10_TELEGRAM_LOGIN_ENABLED`, broker write, `trading_methods`, `REAL_TRADING_ENABLED`.
 
 ## 4. Accepted MAIN_RED_STOP repair provenance
