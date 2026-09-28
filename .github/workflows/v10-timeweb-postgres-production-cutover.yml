@@ -210,11 +210,11 @@ jobs:
               ;;
           esac
 
-      - name: Validate and mask production verifier egress IPv4 /32
+      - name: Validate and mask requested production verifier IPv4 /32
         shell: cmd
         env:
           OMNI_V10_RU_PG_VERIFIER_CIDR: ${{ inputs.verifier_cidr }}
-        run: python -m scripts.discover_v10_ru_pg_verifier_ipv4
+        run: python -m scripts.validate_v10_ru_pg_verifier_cidr
 
       - name: Converge missing production firewall before database authentication
         if: ${{ inputs.operation == 'bootstrap_prepare' }}
@@ -231,6 +231,13 @@ jobs:
           TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
           OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
         run: python -m scripts.timeweb_postgres_production_network_scope
+
+      - name: Prove production PostgreSQL data plane before database authentication
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
+          OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
+        run: python -m scripts.timeweb_postgres_production_dataplane
 
       - name: Observe verified production database
         if: ${{ inputs.operation == 'observe' }}
