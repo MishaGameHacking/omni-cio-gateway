@@ -28,6 +28,7 @@ from scripts import timeweb_app_release as app_release
 
 BOOTSTRAP_DSN_ENV = "OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN"
 RUNTIME_DSN_ENV = "OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN"
+PUBLIC_HOSTADDR_ENV = "OMNI_V10_TIMEWEB_PROD_PUBLIC_HOSTADDR"
 RECOVERY_ATTESTATION_VALUE = (
     "TIMEWEB_PHYSICAL_BACKUP_AND_SEPARATE_RESTORE_REHEARSAL_ACCEPTED"
 )
@@ -127,11 +128,16 @@ def _prepare_connection_dsns(
     bootstrap_dsn: str,
     runtime_dsn: str,
 ) -> tuple[str, str]:
+    public_hostaddr = _required_env(PUBLIC_HOSTADDR_ENV)
     try:
         ca_path = timeweb_postgres_tls.install_timeweb_postgres_ca()
-        verified_address = timeweb_postgres_tls.probe_timeweb_postgres_transport(
-            bootstrap_dsn,
-            ca_path,
+        verified_address = (
+            timeweb_postgres_tls.probe_timeweb_postgres_bound_public_transport(
+                bootstrap_dsn,
+                ca_path,
+                public_hostaddr=public_hostaddr,
+                delays=_PRODUCTION_CONNECT_RETRY_DELAYS,
+            )
         )
         return (
             timeweb_postgres_tls.resolve_timeweb_postgres_dsn(
