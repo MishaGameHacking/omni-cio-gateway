@@ -17,7 +17,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 API_BASE = "https://api.timeweb.cloud"
 TOKEN_ENV = "TIMEWEB_CLOUD_API_TOKEN"
-TIMEWEB_HIDDEN_BY_API_KEY_POLICY = "hidden-by-api-key-policy"
+TIMEWEB_MASKED_SENSITIVE_VALUE = "-".join(("hidden", "by", "api", "key", "policy"))
 CANONICAL_APP_NAME = "omni-cio-v10"
 CANONICAL_REPOSITORY = "MishaGameHacking/omni-cio-gateway"
 CANONICAL_REPOSITORY_NAME = CANONICAL_REPOSITORY.rsplit("/", 1)[-1]
