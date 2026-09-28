@@ -591,18 +591,19 @@ def _validate_sources() -> None:
     runbook = _read(RUNBOOK)
 
     _markers(
-        discoverer,
+        verifier_validator,
         (
             'CIDR_ENV = "OMNI_V10_RU_PG_VERIFIER_CIDR"',
+            "does not discover NAT egress",
             "def _required_verifier_cidr() -> str:",
             "ipaddress.ip_network(raw, strict=True)",
             "network.prefixlen != 32",
             "raw != str(network)",
             "network.network_address.is_global",
             "::add-mask::",
-            "RU_PG_VERIFIER_EGRESS=READY source=/32",
+            "RU_PG_VERIFIER_CIDR=READY source=workflow_input mask=/32",
         ),
-        "TIMEWEB_PUBLIC_IPV4_DISCOVERER_DRIFT",
+        "TIMEWEB_PUBLIC_IPV4_VERIFIER_VALIDATOR_DRIFT",
     )
     for retired_endpoint in (
         "cloudflare.com/cdn-cgi/trace",
@@ -610,9 +611,9 @@ def _validate_sources() -> None:
         "urllib.request",
         "_NO_REDIRECT_OPENER",
     ):
-        if retired_endpoint in discoverer:
+        if retired_endpoint in verifier_validator:
             raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RETIRED_DISCOVERY_FORBIDDEN")
-    if "print(cidr)" in discoverer or "print(address)" in discoverer:
+    if "print(cidr)" in verifier_validator or "print(address)" in verifier_validator:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_VERIFIER_LOGGING_FORBIDDEN")
 
     _markers(
