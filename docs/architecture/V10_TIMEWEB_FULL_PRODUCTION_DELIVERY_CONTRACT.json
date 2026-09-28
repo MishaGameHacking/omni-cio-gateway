@@ -54,7 +54,7 @@
     "private_postgres_tls_hostname_identity_from_dsn": true,
     "postgres_binding_sha256_env": "OMNI_V10_POSTGRES_BINDING_SHA256",
     "postgres_binding_sha256_required": true,
-    "postgres_binding_sha256_is_secret": false,
+    "postgres_binding_sha256_sensitive": false,
     "postgres_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
     "liveness_startup_database_dependency_allowed": false,
     "database_pool_lazy_initialization_required": true,
