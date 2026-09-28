@@ -166,11 +166,11 @@ jobs:
         shell: cmd
         run: python -m scripts.check_v10_timeweb_postgres_public_ipv4_tls
 
-      - name: Validate and mask exact verifier egress IPv4 /32
+      - name: Validate and mask requested verifier IPv4 /32
         shell: cmd
         env:
           OMNI_V10_RU_PG_VERIFIER_CIDR: ${{ inputs.verifier_cidr }}
-        run: python -m scripts.discover_v10_ru_pg_verifier_ipv4
+        run: python -m scripts.validate_v10_ru_pg_verifier_cidr
 
       - name: Re-verify GitHub environment policy before provider access
         shell: cmd
