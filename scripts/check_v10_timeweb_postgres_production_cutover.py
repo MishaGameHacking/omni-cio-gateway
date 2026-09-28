@@ -296,6 +296,11 @@ def _validate_prepare(payload: dict[str, Any]) -> None:
             "provider_neutral_runtime_acl_required",
             "force_rls_required",
             "cross_tenant_negative_required",
+            "bootstrap_authority_preflight_before_mutation_required",
+            "bootstrap_database_owner_required",
+            "bootstrap_database_connect_privilege_required",
+            "bootstrap_database_create_privilege_required",
+            "existing_product_schema_owner_must_equal_bootstrap",
         ),
         _PREPARE_INVALID,
     )
@@ -951,6 +956,8 @@ def _validate_sources() -> None:
             "postgres_runtime.render_runtime_sql(RUNTIME_ROLE)",
             "probe_hosted_runtime_database",
             "_verify_runtime_role_identity",
+            "_verify_bootstrap_database_authority",
+            "TIMEWEB_PG_PRODUCTION_BOOTSTRAP_DATABASE_AUTHORITY_INVALID",
             "_require_observed_clean_product_state",
             "_observe_database",
             "_verify_cross_tenant_negative(runtime)",
@@ -982,6 +989,15 @@ def _validate_sources() -> None:
     }
     if observe_calls & forbidden_observe_calls:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_MUTATION_PATH")
+    if "_verify_bootstrap_database_authority" not in observe_calls:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_BOOTSTRAP_DATABASE_PREFLIGHT_MISSING"
+        )
+    prepare_calls = _direct_call_names(controller, "_prepare_database")
+    if "_verify_bootstrap_database_authority" not in prepare_calls:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_BOOTSTRAP_DATABASE_PREFLIGHT_MISSING"
+        )
 
     app_identity_calls = _direct_call_names(controller, "_is_canonical_app_row")
     if "is_canonical_repository" not in app_identity_calls:
