@@ -346,7 +346,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         binding_sha256 = "c" * 64
         envs = {
             cutover.app_release.POSTGRES_DSN_ENV: (
-                cutover.app_release.TIMEWEB_HIDDEN_BY_API_KEY_POLICY
+                cutover.app_release.TIMEWEB_MASKED_SENSITIVE_VALUE
             ),
             cutover.app_release.POSTGRES_BINDING_SHA256_ENV: binding_sha256,
             cutover.app_release.RELEASE_SHA_ENV: expected_sha,
@@ -380,7 +380,7 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
         expected_sha = "a" * 40
         envs = {
             cutover.app_release.POSTGRES_DSN_ENV: (
-                cutover.app_release.TIMEWEB_HIDDEN_BY_API_KEY_POLICY
+                cutover.app_release.TIMEWEB_MASKED_SENSITIVE_VALUE
             ),
             cutover.app_release.POSTGRES_BINDING_SHA256_ENV: "d" * 64,
             cutover.app_release.RELEASE_SHA_ENV: expected_sha,
