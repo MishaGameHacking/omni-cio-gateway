@@ -82,6 +82,8 @@
     "postgres_binding_sha256_is_secret": false,
     "postgres_binding_sha256_excludes_password": true,
     "postgres_binding_sha256_binds_host_port_database_user_tls": true,
+    "postgres_binding_sha256_source": "P3_PREPARE_ACCEPTED_OUTPUT",
+    "postgres_binding_sha256_required_before_app_bootstrap": true,
     "provider_masked_secret_value_allowed": "hidden-by-api-key-policy",
     "telegram_runtime_credential_custody_accepted_by_p2": false,
     "vk_login_must_be_false_or_absent": true,
