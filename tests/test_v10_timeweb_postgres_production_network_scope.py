@@ -403,9 +403,7 @@ def _add_second_firewall_group(
 ) -> None:
     responses[SERVICE_GROUPS_PATH]["groups"].append({"id": GROUP_ID_2})
     responses[SERVICE_GROUPS_PATH]["meta"][TOTAL_KEY] = 2
-    responses[FIREWALL_GROUP_PATH_2] = {
-        GROUP_KEY: {"id": GROUP_ID_2, "policy": "DROP"}
-    }
+    responses[FIREWALL_GROUP_PATH_2] = {GROUP_KEY: {"id": GROUP_ID_2, "policy": "DROP"}}
     rules = []
     if include_rule:
         rules.append(
