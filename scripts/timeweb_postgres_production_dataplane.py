@@ -88,13 +88,15 @@ def prove_production_dataplane(
             _stop("TIMEWEB_PG_PRODUCTION_DATAPLANE_PUBLIC_IPV4_DRIFT")
         _stop(_stable_dataplane_failure(exc.code))
 
+    if verified != public_hostaddr:
+        _stop("TIMEWEB_PG_PRODUCTION_DATAPLANE_PROBE_TARGET_DRIFT")
     current_hostaddr = scope.verify_network_scope(
         api,
         project_id=project_id,
         target_host=target_host,
         verifier_cidr=verifier_cidr,
     )
-    if current_hostaddr != verified:
+    if current_hostaddr != public_hostaddr:
         _stop("TIMEWEB_PG_PRODUCTION_DATAPLANE_PUBLIC_IPV4_DRIFT")
     _export_public_hostaddr(verified)
     print(
