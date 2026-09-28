@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_main_sha:
-        description: Exact accepted protected-main SHA to observe, prepare, or accept
+        description: Exact accepted protected-main SHA to observe, bootstrap+prepare, prepare, or accept
         required: true
         type: string
       verifier_cidr:
@@ -12,16 +12,17 @@ on:
         required: true
         type: string
       operation:
-        description: Read-only observation, bounded database preparation, or final acceptance
+        description: Read-only observe, safe firewall bootstrap+prepare, prepare, or final acceptance
         required: true
         default: observe
         type: choice
         options:
           - observe
+          - bootstrap_prepare
           - prepare
           - accept
       confirmation:
-        description: Required only for prepare; use PREPARE_TIMEWEB_PRODUCTION_POSTGRES
+        description: For bootstrap_prepare use BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES; for prepare use PREPARE_TIMEWEB_PRODUCTION_POSTGRES
         required: false
         default: ""
         type: string
@@ -121,7 +122,7 @@ jobs:
     needs: exact-main-policy
     environment: timeweb-production
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       EXPECTED_HEAD: ${{ inputs.expected_main_sha }}
       EXPECTED_BRANCH: ${{ github.ref_name }}
@@ -186,6 +187,11 @@ jobs:
               test -z "$REQUESTED_RECOVERY_ATTESTATION"
               test -z "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
               ;;
+            bootstrap_prepare)
+              test "$REQUESTED_CONFIRMATION" = "BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+              test -z "$REQUESTED_RECOVERY_ATTESTATION"
+              test -z "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
+              ;;
             prepare)
               test "$REQUESTED_CONFIRMATION" = "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
               test -z "$REQUESTED_RECOVERY_ATTESTATION"
@@ -210,6 +216,15 @@ jobs:
           OMNI_V10_RU_PG_VERIFIER_CIDR: ${{ inputs.verifier_cidr }}
         run: python -m scripts.discover_v10_ru_pg_verifier_ipv4
 
+      - name: Converge missing production firewall before database authentication
+        if: ${{ inputs.operation == 'bootstrap_prepare' }}
+        shell: cmd
+        env:
+          TIMEWEB_CLOUD_API_TOKEN: ${{ secrets.TIMEWEB_CLOUD_API_TOKEN }}
+          OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
+          OMNI_V10_TIMEWEB_PROD_NETWORK_CONFIRMATION: ${{ inputs.confirmation }}
+        run: python -m scripts.timeweb_postgres_production_network_converge
+
       - name: Verify production network scope before database authentication
         shell: cmd
         env:
@@ -233,6 +248,28 @@ jobs:
             --operation observe \
             --expected-sha "$EXPECTED_HEAD" \
             --observed-main-sha "$OBSERVED_MAIN"
+
+      - name: Observe and prepare verified production database after firewall bootstrap
+        if: ${{ inputs.operation == 'bootstrap_prepare' }}
+        shell: bash
+        env:
+          OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_BOOTSTRAP_DSN }}
+          OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN: ${{ secrets.OMNI_V10_TIMEWEB_PROD_RUNTIME_DSN }}
+        run: |
+          set -euo pipefail
+          test "$REQUESTED_CONFIRMATION" = "BOOTSTRAP_AND_PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
+          test -z "$REQUESTED_RECOVERY_ATTESTATION"
+          test -z "$REQUESTED_RECOVERY_EVIDENCE_SHA256"
+          OBSERVED_MAIN="$(git rev-parse refs/remotes/origin/main)"
+          python -m scripts.timeweb_postgres_production_cutover \
+            --operation observe \
+            --expected-sha "$EXPECTED_HEAD" \
+            --observed-main-sha "$OBSERVED_MAIN"
+          python -m scripts.timeweb_postgres_production_cutover \
+            --operation prepare \
+            --expected-sha "$EXPECTED_HEAD" \
+            --observed-main-sha "$OBSERVED_MAIN" \
+            --confirmation "PREPARE_TIMEWEB_PRODUCTION_POSTGRES"
 
       - name: Prepare verified production database
         if: ${{ inputs.operation == 'prepare' }}
