@@ -95,7 +95,8 @@
     "dataplane_readiness_bounded_retry_required": true,
     "dataplane_retry_control_plane_revalidation_required": true,
     "firewall_applies_to_private_networks": false,
-    "hosted_private_route_firewall_dependency_allowed": false
+    "hosted_private_route_firewall_dependency_allowed": false,
+    "provider_bound_public_probe_return_must_equal_initial_hostaddr": true
   },
   "network_bootstrap": {
     "operation": "bootstrap_prepare",
