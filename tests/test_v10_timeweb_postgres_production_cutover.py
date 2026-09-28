@@ -140,6 +140,30 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                     ):
                         guard.validate(root)
 
+    def test_guard_requires_clean_state_preflight_before_prepare_mutation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            prepare_start = source.index("def _prepare_database(")
+            prepare_end = source.index("\ndef _verify_runtime_database", prepare_start)
+            prepare_source = source[prepare_start:prepare_end]
+            marker = "        _require_observed_clean_product_state(bootstrap)\n"
+            self.assertIn(marker, prepare_source)
+            mutated_prepare = prepare_source.replace(marker, "", 1)
+            controller.write_text(
+                source[:prepare_start] + mutated_prepare + source[prepare_end:],
+                encoding=TEXT_ENCODING,
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_PREPARE_CLEAN_PREFLIGHT_MISSING",
+            ):
+                guard.validate(root)
+
     def test_prepare_connection_dsns_probes_transport_before_auth(self) -> None:
         ca_path = Path("ca.crt")
         with (
