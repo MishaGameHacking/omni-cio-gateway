@@ -492,6 +492,64 @@ def test_transport_probe_proves_public_tcp_sslrequest_and_verify_full(
     assert _PUBLIC_ADDRESS not in output
 
 
+def test_bound_public_transport_probe_uses_provider_address_and_tls_hostname(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ca_path = tmp_path / "root.crt"
+    ca_path.write_bytes(b"provider-ca")
+    monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
+    raw_socket = _RawProbeSocket()
+    context = _ProbeContext()
+
+    def connector(address: tuple[str, int], *, timeout: float) -> _RawProbeSocket:
+        assert address == (_PUBLIC_ADDRESS, tls.TIMEWEB_POSTGRES_PORT)
+        assert timeout == 15.0
+        return raw_socket
+
+    verified_address = tls.probe_timeweb_postgres_bound_public_transport(
+        VALID_DSN,
+        ca_path,
+        public_hostaddr=_PUBLIC_ADDRESS,
+        connector=connector,
+        context_factory=lambda _path: context,
+        delays=(),
+    )
+
+    assert verified_address == _PUBLIC_ADDRESS
+    assert raw_socket.sent == tls._POSTGRES_SSL_REQUEST
+    assert context.server_names == ["db.twc1.net"]
+    output = capsys.readouterr().out
+    assert "TIMEWEB_PG_TLS_BOUND_PUBLIC_TRANSPORT=READY" in output
+    assert "db.twc1.net" not in output
+    assert _PUBLIC_ADDRESS not in output
+
+
+def test_bound_public_transport_rejects_non_global_ipv4_before_tcp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ca_path = tmp_path / "root.crt"
+    ca_path.write_bytes(b"provider-ca")
+    monkeypatch.setattr(tls, "_validate_ca", lambda _raw: None)
+
+    with pytest.raises(
+        tls.TimewebPostgresTlsError,
+        match="TIMEWEB_PG_TLS_VERIFIED_HOSTADDR_INVALID",
+    ):
+        tls.probe_timeweb_postgres_bound_public_transport(
+            VALID_DSN,
+            ca_path,
+            public_hostaddr=_PRIVATE_ADDRESS,
+            connector=lambda *_args, **_kwargs: pytest.fail(
+                "TCP must not run for a private public-route target"
+            ),
+            context_factory=lambda _path: _ProbeContext(),
+            delays=(),
+        )
+
+
 def test_transport_probe_rejects_ambient_libpq_target_override(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
