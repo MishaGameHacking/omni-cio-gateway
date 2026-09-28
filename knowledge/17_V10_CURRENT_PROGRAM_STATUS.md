@@ -4,9 +4,30 @@ Updated: 2026-09-28
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `d440cdf859e34edb3b8727ef763347eab9a70803` VIA ACCEPTED PR #597 EFFECTIVE FIREWALL-UNION REPAIR / CURRENT LIVE P3 OBSERVE #5 STOP `TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING` PROVES ZERO FIREWALL GROUPS ATTACHED TO THE PRODUCTION DATABASE AT OBSERVATION TIME / CURRENT FOCUSED RED REPAIR `fix/timeweb-production-firewall-bootstrap-chain` ADDS BOUNDED MISSING-FIREWALL BOOTSTRAP -> READ-ONLY SCOPE PROOF -> OBSERVE -> PREPARE / PHYSICAL APP CREATION REMAINS PAUSED UNTIL P3 PREPARE + RECOVERY PREREQUISITES ARE PROVED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `dd0a127c3f6b9ac6f98377a63b89b3ced96041d7` VIA ACCEPTED PR #598 MISSING-PRODUCTION-FIREWALL BOOTSTRAP / LIVE P3 `bootstrap_prepare` #6 PASSED FIREWALL CONVERGENCE + TWO PROVIDER NETWORK-SCOPE PROOFS THEN STOPPED BEFORE POSTGRESQL AUTHENTICATION WITH `TIMEWEB_PG_TLS_TCP_TIMEOUT` / CURRENT FOCUSED RED REPAIR `fix/timeweb-p3-dataplane-readiness` BINDS THE EXACT PROVIDER PUBLIC IPv4 TO A CREDENTIAL-FREE LIVE TLS DATA-PLANE PROOF, REMOVES FALSE EGRESS-DISCOVERY WORDING, AND REVALIDATES CONTROL-PLANE STABILITY BEFORE SQL AUTH / NO MIGRATIONS OR RLS PREPARE RAN / PHYSICAL APP CREATION REMAINS PAUSED UNTIL P3 PREPARE + RECOVERY PREREQUISITES ARE PROVED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**. The PR #584 merge does not by itself invent a new percentage; this ledger changes the percentage only through explicit accepted program authority.
+
+### 2026-09-28 P3 bootstrap_prepare #6 — provider control plane READY, PostgreSQL data plane timed out
+
+PR #598 was accepted on protected main as squash `dd0a127c3f6b9ac6f98377a63b89b3ced96041d7`. Its final exact source head `291a6aa7baa3fb0f02ac525597c5087a75134d6b` completed two full 14/14 applicable repository workflow cycles with every observed conclusion `success`; Sonar Quality Gate reported 0 new issues and 0 Security Hotspots.
+
+Manual `V10 Timeweb PostgreSQL Production Cutover #6` on that exact accepted main successfully validated authority, converged the previously missing production firewall, and completed two provider network-scope proofs. The first credential-free PostgreSQL transport stage then exhausted all bounded TCP attempts with `TIMEWEB_PG_TLS_TCP_TIMEOUT`. PostgreSQL authentication was never reached and the SQL-mutating `prepare` path did not execute.
+
+Root cause is now narrowed to a repository evidence/orchestration defect class rather than a generic SQL failure. The old verifier helper validated the explicitly supplied workflow `/32` but emitted `RU_PG_VERIFIER_EGRESS=READY`, falsely implying actual NAT egress had been observed. Separately, the provider gate proved the Timeweb-bound public IPv4 and firewall state while the TLS probe independently resolved the technical hostname, so control-plane identity and live socket identity were not bound into one witness.
+
+Current focused RED repair is `fix/timeweb-p3-dataplane-readiness`. It:
+- renames the verifier helper to explicit CIDR validation and removes the false egress-discovery claim;
+- returns the exact Timeweb-bound public IPv4 from the two-pass provider witness without logging it;
+- performs bounded credential-free PostgreSQL SSLRequest + `verify-full` TLS directly to that provider-bound address while retaining the technical hostname as TLS identity;
+- re-runs the full provider network-scope proof after data-plane success or terminal transient failure and detects public-IP drift;
+- exports the proved public hostaddr only through the masked GitHub job environment;
+- forces the subsequent authenticated libpq connection to the same proved hostaddr, preventing a second DNS route decision;
+- leaves the private hosted-runtime route independent because current Timeweb documentation states Firewall does not operate inside private networks.
+
+A stable control-plane + terminal TCP timeout remains fail-closed and is intentionally not mislabelled as definite firewall propagation or definite verifier-IP drift: the selected documented Timeweb/GitHub surfaces do not expose a supported caller-source-IP observation. No external/retired IP-echo service is introduced merely to fabricate that evidence.
+
+No App Platform creation, DNS/TLS cutover, Telegram/public-user activation, broker-write authority or Real Trading is granted by this repair.
 
 ### 2026-09-28 P3 observe #5 — missing production firewall
 
