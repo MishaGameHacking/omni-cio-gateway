@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sys
-import time
 from typing import NoReturn
 
 from apps.api import timeweb_postgres_tls
