@@ -263,7 +263,8 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                     "provider-account/" + cutover.app_release.CANONICAL_REPOSITORY
                 ),
                 "name": (
-                    "provider-display/" + cutover.app_release.CANONICAL_REPOSITORY_NAME
+                    "provider-display/"
+                    + cutover.app_release.CANONICAL_REPOSITORY.rsplit("/", 1)[-1]
                 ),
                 "url": (
                     f"https://github.com/{cutover.app_release.CANONICAL_REPOSITORY}.git"
@@ -565,9 +566,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             _copy(root)
             path = _contract_path(root)
             payload = json.loads(path.read_text(encoding=TEXT_ENCODING))
-            payload["app_binding"]["runtime_binding_sha256_required_before_app_creation"] = (
-                False
-            )
+            payload["app_binding"][
+                "runtime_binding_sha256_required_before_app_creation"
+            ] = False
             path.write_text(json.dumps(payload), encoding=TEXT_ENCODING)
             with self.assertRaisesRegex(
                 guard.CutoverContractError,
