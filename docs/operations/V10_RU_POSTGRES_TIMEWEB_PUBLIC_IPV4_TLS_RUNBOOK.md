@@ -37,6 +37,8 @@ success marker. This /32 is RU-PG-B synthetic-proof authority only and is not
 inherited by RU-PG-C. A missing, malformed, non-global or non-/32 value fails
 closed before Timeweb provider authority is constructed.
 
+The validator does not discover NAT egress; successful live TCP/TLS through the exact firewall `/32` is the only repository-owned data-plane evidence that this source authority actually admits the verifier path.
+
 ## Provider disk unit contract
 
 The pre-mutation cluster-shape proof reuses the same Timeweb unit contract as the
@@ -181,7 +183,7 @@ Manual workflow run `35515788859` on exact protected main
 after all pre-mutation gates passed:
 
 - source contract: PASS;
-- verifier egress discovery: `RU_PG_VERIFIER_EGRESS=READY source=/32`;
+- verifier CIDR input validation: `RU_PG_VERIFIER_CIDR=READY source=workflow_input mask=/32`;
 - GitHub Environment gate: `TIMEWEB_GITHUB_ENVIRONMENT_GATE=READY`;
 - exact cost confirmation: PASS.
 
