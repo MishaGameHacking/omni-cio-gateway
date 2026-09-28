@@ -515,8 +515,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
 
 def _validate_workflow_secret_scope(workflow: str) -> None:
     expected_counts = {
-        _CONTROL_PLANE_SECRET: 3,
-        _BOOTSTRAP_DSN_SECRET: 6,
+        _CONTROL_PLANE_SECRET: 4,
+        _BOOTSTRAP_DSN_SECRET: 7,
         _RUNTIME_DSN_SECRET: 4,
     }
     for reference, expected_count in expected_counts.items():
