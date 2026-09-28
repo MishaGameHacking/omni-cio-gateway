@@ -255,6 +255,48 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             )
         prepare_dsns.assert_not_called()
 
+    def test_p3_app_identity_accepts_timeweb_url_connection_metadata(self) -> None:
+        row = {
+            "name": cutover.app_release.CANONICAL_APP_NAME,
+            "repository": {
+                "full_name": (
+                    "provider-account/" + cutover.app_release.CANONICAL_REPOSITORY
+                ),
+                "name": (
+                    "provider-display/" + cutover.app_release.CANONICAL_REPOSITORY_NAME
+                ),
+                "url": (
+                    f"https://github.com/{cutover.app_release.CANONICAL_REPOSITORY}.git"
+                ),
+            },
+        }
+
+        self.assertTrue(cutover._is_canonical_app_row(row))
+
+        row["repository"]["url"] = (
+            "https://github.com/MishaGameHacking/other.git"
+        )
+        self.assertFalse(cutover._is_canonical_app_row(row))
+
+    def test_guard_rejects_p3_app_repository_identity_downgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            mutated = source.replace(
+                "and app_release.is_canonical_repository(value)",
+                "and True",
+                1,
+            )
+            self.assertNotEqual(mutated, source)
+            controller.write_text(mutated, encoding=TEXT_ENCODING)
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_APP_REPOSITORY_IDENTITY_DRIFT",
+            ):
+                guard.validate(root)
+
     def test_app_binding_revalidates_private_database_route(self) -> None:
         expected_sha = "a" * 40
         envs = {
