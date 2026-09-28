@@ -1155,7 +1155,7 @@ def _validate_sources() -> None:
             "/healthz",
             "database=READY",
             "sslrootcert=.omni-cio/timeweb-postgres-root.crt",
-            "TIMEWEB_PG_TLS_TRANSPORT=READY",
+            "TIMEWEB_PG_TLS_BOUND_PUBLIC_TRANSPORT=READY",
             "pgsql:host=...",
             "The observe phase is SQL read-only",
             "36276384123",
