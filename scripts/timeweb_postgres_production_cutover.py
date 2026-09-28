@@ -455,7 +455,7 @@ def _verify_app_binding(expected_sha: str, runtime_dsn: str) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED")
     if observed_dsn not in {
         runtime_dsn,
-        app_release.TIMEWEB_HIDDEN_BY_API_KEY_POLICY,
+        app_release.TIMEWEB_MASKED_SENSITIVE_VALUE,
     }:
         _stop("TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED")
 
