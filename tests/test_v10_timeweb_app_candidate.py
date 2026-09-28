@@ -29,6 +29,7 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
             CONTRACT_RELATIVE,
             "scripts/timeweb_app_release.py",
             ".github/workflows/v10-timeweb-app-candidate.yml",
+            "Dockerfile",
         ):
             source = ROOT / relative
             target = root / relative
@@ -137,6 +138,23 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(
             RuntimeError,
             "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID",
+        ):
+            guard.validate(root)
+
+    def test_rejects_database_readiness_as_docker_platform_liveness(self) -> None:
+        root = self._fixture()
+        path = root / "Dockerfile"
+        source = path.read_text(encoding="utf-8")
+        mutated = source.replace(
+            "http://localhost:8080/livez",
+            "http://localhost:8080/healthz",
+            1,
+        )
+        self.assertNotEqual(mutated, source)
+        path.write_text(mutated, encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_DOCKERFILE",
         ):
             guard.validate(root)
 
