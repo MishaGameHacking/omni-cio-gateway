@@ -172,6 +172,28 @@ def _verify_bootstrap_role(connection: Any) -> None:
         _stop("TIMEWEB_PG_PRODUCTION_BOOTSTRAP_AUTHORITY_INVALID")
 
 
+def _verify_bootstrap_database_authority(connection: Any) -> None:
+    row = connection.execute(
+        "SELECT "
+        "database_record.datdba = role_record.oid AS database_owned, "
+        "pg_catalog.has_database_privilege("
+        "current_user, current_database(), 'CONNECT') AS can_connect, "
+        "pg_catalog.has_database_privilege("
+        "current_user, current_database(), 'CREATE') AS can_create, "
+        "COALESCE(("
+        "SELECT schema_record.nspowner = role_record.oid "
+        "FROM pg_catalog.pg_namespace schema_record "
+        "WHERE schema_record.nspname = 'omni_cio_v10'"
+        "), true) AS product_schema_owned "
+        "FROM pg_catalog.pg_database database_record "
+        "JOIN pg_catalog.pg_roles role_record "
+        "ON role_record.rolname = current_user "
+        "WHERE database_record.datname = current_database()"
+    ).fetchone()
+    if row != (True, True, True, True):
+        _stop("TIMEWEB_PG_PRODUCTION_BOOTSTRAP_DATABASE_AUTHORITY_INVALID")
+
+
 def _expected_migration_state() -> tuple[tuple[int, str], ...]:
     return tuple((item.version, item.sha256) for item in discover_migrations())
 
@@ -270,6 +292,7 @@ def _observe_database(bootstrap_dsn: str, runtime_dsn: str) -> None:
         _verify_tls(bootstrap)
         require_postgres_18(bootstrap)
         _verify_bootstrap_role(bootstrap)
+        _verify_bootstrap_database_authority(bootstrap)
         _require_observed_clean_product_state(bootstrap)
 
     runtime = _connect(
@@ -370,6 +393,7 @@ def _prepare_database(bootstrap_dsn: str, runtime_dsn: str) -> None:
         _verify_tls(bootstrap)
         require_postgres_18(bootstrap)
         _verify_bootstrap_role(bootstrap)
+        _verify_bootstrap_database_authority(bootstrap)
         apply_migrations(bootstrap)
         first_state = current_migration_state(bootstrap)
         if first_state != _expected_migration_state():
