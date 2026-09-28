@@ -457,6 +457,7 @@ def _validate_runbook(path: Path) -> None:
     if any(marker not in source for marker in required):
         raise RuntimeError("TIMEWEB_APP_CANDIDATE_RUNBOOK_DRIFT")
 
+
 def _validate_dockerfile(path: Path) -> None:
     source = _text(path)
     required = (
