@@ -165,7 +165,7 @@ class TimewebFullProductionDeliveryGuardTests(unittest.TestCase):
             "OMNI_V10_POSTGRES_BINDING_SHA256",
         )
         self.assertTrue(runtime["postgres_binding_sha256_required"])
-        self.assertFalse(runtime["postgres_binding_sha256_is_secret"])
+        self.assertFalse(runtime["postgres_binding_sha256_sensitive"])
         self.assertEqual(
             runtime["postgres_binding_sha256_source"],
             "P3_PREPARE_ACCEPTED_OUTPUT",
