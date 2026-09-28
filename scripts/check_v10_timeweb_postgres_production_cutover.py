@@ -770,11 +770,50 @@ def _validate_network_converge_source(source: str) -> None:
     _validate_network_converge_mutations(tree)
 
 
+def _validate_network_dataplane_source(source: str) -> None:
+    _markers(
+        source,
+        (
+            'PUBLIC_HOSTADDR_ENV = "OMNI_V10_TIMEWEB_PROD_PUBLIC_HOSTADDR"',
+            "_DATAPLANE_RETRY_DELAYS_SECONDS = (",
+            "def prove_production_dataplane(",
+            "scope.verify_network_scope(",
+            "probe_timeweb_postgres_bound_public_transport(",
+            "TIMEWEB_PG_PRODUCTION_DATAPLANE_PUBLIC_IPV4_DRIFT",
+            "TIMEWEB_PG_PRODUCTION_DATAPLANE=READY",
+            "firewall-source=proved-by-live-transport",
+            "::add-mask::",
+            "GITHUB_ENV",
+        ),
+        "TIMEWEB_PG_CUTOVER_NETWORK_DATAPLANE_SOURCE_DRIFT",
+    )
+    forbidden = (
+        "mutate_once(",
+        ".post(",
+        ".patch(",
+        ".put(",
+        ".delete(",
+        'method="POST"',
+        'method="PATCH"',
+        'method="PUT"',
+        'method="DELETE"',
+    )
+    if any(marker in source for marker in forbidden):
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_DATAPLANE_MUTATION_FORBIDDEN"
+        )
+    if source.count("scope.verify_network_scope(") < 2:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_NETWORK_DATAPLANE_STABILITY_RECHECK_MISSING"
+        )
+
+
 def _validate_workflow_network_scope_order(workflow: str) -> None:
     authority = "Validate operation input authority before production bindings"
-    mask = "Validate and mask production verifier egress IPv4 /32"
+    mask = "Validate and mask requested production verifier IPv4 /32"
     converge = "Converge missing production firewall before database authentication"
     network = "Verify production network scope before database authentication"
+    dataplane = "Prove production PostgreSQL data plane before database authentication"
     operations = (
         "Observe verified production database",
         "Observe and prepare verified production database after firewall bootstrap",
@@ -786,6 +825,7 @@ def _validate_workflow_network_scope_order(workflow: str) -> None:
         mask_index = workflow.index(mask)
         converge_index = workflow.index(converge)
         network_index = workflow.index(network)
+        dataplane_index = workflow.index(dataplane)
         operation_indexes = tuple(workflow.index(value) for value in operations)
     except ValueError as exc:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_WORKFLOW_DRIFT") from exc
@@ -794,6 +834,7 @@ def _validate_workflow_network_scope_order(workflow: str) -> None:
         < mask_index
         < converge_index
         < network_index
+        < dataplane_index
         < min(operation_indexes)
     ):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_ORDER_INVALID")
@@ -801,7 +842,8 @@ def _validate_workflow_network_scope_order(workflow: str) -> None:
     authority_block = workflow[authority_index:mask_index]
     mask_block = workflow[mask_index:converge_index]
     converge_block = workflow[converge_index:network_index]
-    network_block = workflow[network_index : min(operation_indexes)]
+    network_block = workflow[network_index:dataplane_index]
+    dataplane_block = workflow[dataplane_index : min(operation_indexes)]
     if "${{ secrets." in authority_block or "${{ secrets." in mask_block:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_SECRET_BEFORE_INPUT_VALIDATION")
     if (
@@ -822,6 +864,14 @@ def _validate_workflow_network_scope_order(workflow: str) -> None:
         not in network_block
     ):
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_SCOPE_SECRET_DRIFT")
+    if (
+        _CONTROL_PLANE_SECRET not in dataplane_block
+        or _BOOTSTRAP_DSN_SECRET not in dataplane_block
+        or _RUNTIME_DSN_SECRET in dataplane_block
+        or "python -m scripts.timeweb_postgres_production_dataplane"
+        not in dataplane_block
+    ):
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_NETWORK_DATAPLANE_SECRET_DRIFT")
 
 
 def _validate_hosted_runtime_tls_flow(source: str) -> None:
