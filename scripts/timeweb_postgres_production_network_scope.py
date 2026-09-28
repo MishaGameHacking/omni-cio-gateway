@@ -341,19 +341,25 @@ def _require_bound_public_ipv4(
     return listed[0], listed[1]
 
 
-def _service_group_id(api: ReadOnlyApi, database_id: str) -> str:
+def _service_group_ids(api: ReadOnlyApi, database_id: str) -> tuple[str, ...]:
     rows = _paged_rows(
         api,
         f"/api/v1/firewall/service/dbaas/{database_id}",
         "groups",
         "TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUPS_INVALID",
     )
-    if len(rows) != 1:
-        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_NOT_EXCLUSIVE")
-    return _safe_id(
-        rows[0].get("id"),
-        "TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_INVALID",
+    if not rows:
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_MISSING")
+    group_ids = tuple(
+        _safe_id(
+            row.get("id"),
+            "TIMEWEB_PG_PRODUCTION_FIREWALL_GROUP_ID_INVALID",
+        )
+        for row in rows
     )
+    if len(set(group_ids)) != len(group_ids):
+        _stop("TIMEWEB_PG_PRODUCTION_FIREWALL_SERVICE_GROUP_ID_DUPLICATE")
+    return tuple(sorted(group_ids))
 
 
 def _require_default_drop(api: ReadOnlyApi, group_id: str) -> None:
@@ -442,7 +448,7 @@ def _collect_network_scope_witness(
     project_id: str,
     target_host: str,
     verifier_cidr: str,
-) -> tuple[str, str, str, str, str, str, str, str]:
+) -> tuple[object, ...]:
     database_id, cluster = _select_target_cluster(api, project_id, target_host)
     availability_zone = _require_target_network(cluster, target_host)
     floating_ip_id, public_ipv4 = _require_bound_public_ipv4(
@@ -450,18 +456,18 @@ def _collect_network_scope_witness(
         database_id,
         availability_zone,
     )
-    group_id = _service_group_id(api, database_id)
-    _require_default_drop(api, group_id)
-    rule_id = _require_exact_rule(api, group_id, verifier_cidr)
-    resource_id = _require_exact_resource(api, group_id, database_id)
+    firewall_witnesses: list[tuple[str, str, str]] = []
+    for group_id in _service_group_ids(api, database_id):
+        _require_default_drop(api, group_id)
+        rule_id = _require_exact_rule(api, group_id, verifier_cidr)
+        resource_id = _require_exact_resource(api, group_id, database_id)
+        firewall_witnesses.append((group_id, rule_id, resource_id))
     return (
         database_id,
         availability_zone,
         floating_ip_id,
         public_ipv4,
-        group_id,
-        rule_id,
-        resource_id,
+        tuple(firewall_witnesses),
         verifier_cidr,
     )
 
