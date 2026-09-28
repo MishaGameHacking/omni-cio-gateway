@@ -486,14 +486,14 @@
     {
       "surface": "Timeweb Cloud App Platform",
       "classification": "KEEP",
-      "state": "EXACT_SHA_CANDIDATE_CERTIFIED_BRANCH_LOCAL",
-      "authority": "P2 exact-SHA implementation certified GREEN on PR #584 head ba43fa4be350340557fcf6d8532b6c089022a8ca; provider execution remains post-acceptance"
+      "state": "SOURCE_READY_PHYSICAL_CREATION_BLOCKED_BY_P3_PREPARE_RECOVERY",
+      "authority": "P2 exact-SHA source is certified; physical omni-cio-v10 creation remains blocked until P3 prepare and recovery evidence complete because private-network choice is immutable at App creation."
     },
     {
       "surface": "Timeweb Cloud Managed PostgreSQL 18",
       "classification": "KEEP",
-      "state": "PRODUCTION_CUTOVER_CERTIFIED_BRANCH_LOCAL",
-      "authority": "P3 repository-side cutover/recovery implementation certified GREEN on PR #584 head 7a9051bf8775977b1ae1324fe6d1b460c1d21aec; physical cutover remains independently gated"
+      "state": "LIVE_P3_DATAPLANE_READINESS_REPAIR_IN_PROGRESS",
+      "authority": "Accepted main dd0a127c3f6b9ac6f98377a63b89b3ced96041d7 completed firewall convergence and provider-scope proof in P3 run #6 but live TCP/TLS timed out before PostgreSQL authentication; current focused repair requires provider-bound credential-free data-plane proof before SQL."
     },
     {
       "surface": "omnicio.ru",
