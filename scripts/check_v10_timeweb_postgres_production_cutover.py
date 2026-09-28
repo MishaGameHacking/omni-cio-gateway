@@ -731,6 +731,7 @@ def _validate_sources() -> None:
             "TIMEWEB_PG_PRODUCTION_TARGET_NOT_CLEAN",
             "TIMEWEB_PG_PRODUCTION_APP_SHAPE_DRIFT",
             "TIMEWEB_PG_PRODUCTION_APP_DSN_NOT_PROMOTED",
+            "app_release.is_canonical_repository(value)",
             "app_release.validate_private_route_env(envs)",
             "app_release.observe(",
             "--recovery-attestation",
@@ -749,6 +750,10 @@ def _validate_sources() -> None:
     }
     if observe_calls & forbidden_observe_calls:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_OBSERVE_MUTATION_PATH")
+
+    app_identity_calls = _direct_call_names(controller, "_is_canonical_app_row")
+    if "is_canonical_repository" not in app_identity_calls:
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_APP_REPOSITORY_IDENTITY_DRIFT")
 
     app_binding_calls = _direct_call_names(controller, "_verify_app_binding")
     required_app_binding_calls = {"validate_private_route_env", "observe"}
