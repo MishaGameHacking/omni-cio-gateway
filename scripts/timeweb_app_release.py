@@ -431,6 +431,13 @@ def _repository(app: dict[str, Any]) -> str:
     return CANONICAL_REPOSITORY
 
 
+def is_canonical_repository(app: dict[str, Any]) -> bool:
+    try:
+        return _repository(app) == CANONICAL_REPOSITORY
+    except ReleaseStopped:
+        return False
+
+
 def _deploy(row: dict[str, Any]) -> tuple[str, str, str]:
     deploy_id = _safe_id(row.get("id"), "TIMEWEB_APP_RELEASE_DEPLOY_ID_INVALID")
     commit = _sha(row.get(_COMMIT_SHA_KEY), "TIMEWEB_APP_RELEASE_DEPLOY_SHA_INVALID")
@@ -497,7 +504,7 @@ def _matching_app_row(api: ApiLike) -> dict[str, Any]:
         row
         for row in _rows(api.list_apps(), "apps", "TIMEWEB_APP_RELEASE_APPS_INVALID")
         if row.get("name") == CANONICAL_APP_NAME
-        and _repository(row) == CANONICAL_REPOSITORY
+        and is_canonical_repository(row)
     ]
     if len(matches) != 1:
         _stop("TIMEWEB_APP_RELEASE_TARGET_NOT_UNIQUE")
