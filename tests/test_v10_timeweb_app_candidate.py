@@ -29,6 +29,7 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
             CONTRACT_RELATIVE,
             "scripts/timeweb_app_release.py",
             ".github/workflows/v10-timeweb-app-candidate.yml",
+            "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md",
             "Dockerfile",
         ):
             source = ROOT / relative
@@ -138,6 +139,19 @@ class TimewebAppCandidateGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(
             RuntimeError,
             "TIMEWEB_APP_CANDIDATE_RUNTIME_ENV_INVALID",
+        ):
+            guard.validate(root)
+
+    def test_rejects_runbook_missing_database_binding_fingerprint(self) -> None:
+        root = self._fixture()
+        path = root / "docs/operations/V10_TIMEWEB_APP_EXACT_SHA_CANDIDATE_RUNBOOK.md"
+        source = path.read_text(encoding="utf-8")
+        mutated = source.replace("OMNI_V10_POSTGRES_BINDING_SHA256", "REMOVED_BINDING", 1)
+        self.assertNotEqual(mutated, source)
+        path.write_text(mutated, encoding="utf-8")
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TIMEWEB_APP_CANDIDATE_RUNBOOK_DRIFT",
         ):
             guard.validate(root)
 
