@@ -235,9 +235,10 @@ def _validate_acceptance(payload: dict[str, Any]) -> None:
     )
     expected = {
         "liveness_path": "/livez",
-        "platform_liveness_source": "DOCKERFILE_HEALTHCHECK",
+        "platform_liveness_source": "TIMEWEB_PANEL_HEALTHCHECK",
+        "panel_healthcheck_path": "/livez",
         "dockerfile_healthcheck_path": "/livez",
-        "panel_healthcheck_overrides_dockerfile_healthcheck": False,
+        "panel_healthcheck_overrides_dockerfile_healthcheck": True,
         "liveness_https_required": True,
         "liveness_redirect_allowed": False,
         "liveness_status": "ok",
@@ -449,7 +450,7 @@ def _validate_runbook(path: Path) -> None:
         "OMNI_V10_POSTGRES_BINDING_SHA256",
         "P3 `prepare`",
         "Dockerfile` `HEALTHCHECK",
-        "panel health path",
+        "panel path has priority over the Dockerfile",
         "database=READY",
         "synthetic_preview=false",
         "P3 `accept`",
