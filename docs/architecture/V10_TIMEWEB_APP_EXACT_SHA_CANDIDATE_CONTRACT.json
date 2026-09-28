@@ -103,6 +103,9 @@
   },
   "acceptance": {
     "liveness_path": "/livez",
+    "platform_liveness_source": "DOCKERFILE_HEALTHCHECK",
+    "dockerfile_healthcheck_path": "/livez",
+    "panel_healthcheck_overrides_dockerfile_healthcheck": false,
     "liveness_https_required": true,
     "liveness_redirect_allowed": false,
     "liveness_status": "ok",
