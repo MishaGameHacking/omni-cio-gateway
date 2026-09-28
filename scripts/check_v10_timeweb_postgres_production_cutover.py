@@ -301,6 +301,8 @@ def _validate_prepare(payload: dict[str, Any]) -> None:
             "bootstrap_database_connect_privilege_required",
             "bootstrap_database_create_privilege_required",
             "existing_product_schema_owner_must_equal_bootstrap",
+            "clean_product_state_preflight_before_mutation_required",
+            "clean_product_state_reverified_after_prepare",
         ),
         _PREPARE_INVALID,
     )
@@ -997,6 +999,10 @@ def _validate_sources() -> None:
     if "_verify_bootstrap_database_authority" not in prepare_calls:
         raise CutoverContractError(
             "TIMEWEB_PG_CUTOVER_BOOTSTRAP_DATABASE_PREFLIGHT_MISSING"
+        )
+    if "_require_observed_clean_product_state" not in prepare_calls:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_PREPARE_CLEAN_PREFLIGHT_MISSING"
         )
 
     app_identity_calls = _direct_call_names(controller, "_is_canonical_app_row")
