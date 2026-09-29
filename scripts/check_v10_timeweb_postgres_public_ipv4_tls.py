@@ -575,6 +575,11 @@ def _validate_provisioner_safety(provisioner: str) -> None:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_AUTH_CLASSIFICATION_DRIFT")
     if "exc.read(" in provisioner:
         raise RuntimeError("TIMEWEB_PUBLIC_IPV4_RESPONSE_BODY_READ_FORBIDDEN")
+    if (
+        "_verify_exclusive_firewall" in provisioner
+        or "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE" in provisioner
+    ):
+        raise RuntimeError("TIMEWEB_PUBLIC_IPV4_PROVIDER_SEMANTICS_REGRESSION")
 
     forbidden_markers = (
         '"is_ddos_guard": True',
@@ -670,6 +675,16 @@ def _validate_sources() -> None:
             "_ROLLBACK_STATE_DELAYS_SECONDS = (",
             "_RECONCILE_DELAYS_SECONDS = (",
             "_verify_exact_rule",
+            "def _attached_group_ids(",
+            "def _verify_drop_group(",
+            "def _effective_group_rule_count(",
+            "def _verify_effective_firewall(",
+            "_verify_effective_firewall(api, group_id, cluster_id, cidr)",
+            "TIMEWEB_FIREWALL_SERVICE_GROUP_MISSING",
+            "TIMEWEB_FIREWALL_SERVICE_GROUP_ID_DUPLICATE",
+            "TIMEWEB_FIREWALL_RULE_ID_DUPLICATE",
+            "TIMEWEB_FIREWALL_DEFAULT_DROP_REQUIRED",
+            "TIMEWEB_FIREWALL_EFFECTIVE_RULE_MISSING",
             "for attempt in range(len(delays) + 1):",
             "_is_transient_control_plane_failure",
             "TIMEWEB_TLS_CONTROL_PLANE_READ_TIMEOUT",
