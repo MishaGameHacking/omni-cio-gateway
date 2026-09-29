@@ -393,18 +393,19 @@ def _prepare_database(bootstrap_dsn: str, runtime_dsn: str) -> None:
         _verify_tls(bootstrap)
         require_postgres_18(bootstrap)
         _verify_bootstrap_role(bootstrap)
-        _verify_bootstrap_database_authority(bootstrap)
-        _require_observed_clean_product_state(bootstrap)
-        apply_migrations(bootstrap)
-        first_state = current_migration_state(bootstrap)
-        if first_state != _expected_migration_state():
-            _stop("TIMEWEB_PG_PRODUCTION_MIGRATION_STATE_INVALID")
-        apply_migrations(bootstrap)
-        if current_migration_state(bootstrap) != first_state:
-            _stop("TIMEWEB_PG_PRODUCTION_MIGRATION_RETRY_DRIFT")
-        _require_clean_product_state(bootstrap)
-        runtime_sql = postgres_runtime.render_runtime_sql(RUNTIME_ROLE)
-        bootstrap.execute(runtime_sql, prepare=False)
+        with bootstrap.transaction():
+            _verify_bootstrap_database_authority(bootstrap)
+            _require_observed_clean_product_state(bootstrap)
+            apply_migrations(bootstrap)
+            first_state = current_migration_state(bootstrap)
+            if first_state != _expected_migration_state():
+                _stop("TIMEWEB_PG_PRODUCTION_MIGRATION_STATE_INVALID")
+            apply_migrations(bootstrap)
+            if current_migration_state(bootstrap) != first_state:
+                _stop("TIMEWEB_PG_PRODUCTION_MIGRATION_RETRY_DRIFT")
+            _require_clean_product_state(bootstrap)
+            runtime_sql = postgres_runtime.render_runtime_sql(RUNTIME_ROLE)
+            bootstrap.execute(runtime_sql, prepare=False)
 
     _verify_runtime_database(runtime_dsn, bootstrap_dsn)
 
