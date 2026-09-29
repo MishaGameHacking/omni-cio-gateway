@@ -1,12 +1,22 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-09-28
+Updated: 2026-09-29
 
 ## Executive state
 
 Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / ACCEPTED IMPLEMENTATION 54% / CURRENT AUTHORIZED SYSTEM UPDATE TIMEWEB-PLATFORM-CONSOLIDATION-INTEGRATED / CURRENT ACCEPTED MAIN `dd0a127c3f6b9ac6f98377a63b89b3ced96041d7` VIA ACCEPTED PR #598 MISSING-PRODUCTION-FIREWALL BOOTSTRAP / LIVE P3 `bootstrap_prepare` #6 PASSED FIREWALL CONVERGENCE + TWO PROVIDER NETWORK-SCOPE PROOFS THEN STOPPED BEFORE POSTGRESQL AUTHENTICATION WITH `TIMEWEB_PG_TLS_TCP_TIMEOUT` / CURRENT FOCUSED RED REPAIR `fix/timeweb-p3-dataplane-readiness` BINDS THE EXACT PROVIDER PUBLIC IPv4 TO A CREDENTIAL-FREE LIVE TLS DATA-PLANE PROOF, REMOVES FALSE EGRESS-DISCOVERY WORDING, AND REVALIDATES CONTROL-PLANE STABILITY BEFORE SQL AUTH / NO MIGRATIONS OR RLS PREPARE RAN / PHYSICAL APP CREATION REMAINS PAUSED UNTIL P3 PREPARE + RECOVERY PREREQUISITES ARE PROVED / WEB-VISUAL PAUSED / WP23+ LOCKED / PUBLIC USER ACTIVATION FAIL-CLOSED**.
 
 Accepted implementation progress is **54%**. The PR #584 merge does not by itself invent a new percentage; this ledger changes the percentage only through explicit accepted program authority.
+
+### 2026-09-29 PR #599 deep failure-class hardening
+
+The focused P3 data-plane repair review found and closed two semantic twins before another live provider run.
+
+First, the RU-PG-B synthetic Timeweb transport still encoded the same invalid single-firewall-group assumption previously removed from production P3. Current Timeweb semantics allow multiple same-type firewall groups and combine their rules. The branch now evaluates the complete effective allowlist union: the canonical group must be attached, every attached group must remain DROP, every effective semantic rule must equal the current ingress TCP/5432 verifier /32, duplicate group/rule identities are terminal, and every attached group remains scoped only to the exact DBaaS target. A stale-but-narrow old /32 is no longer accepted merely because it is global. The synthetic TLS probe is also bound to the exact provider-selected public IPv4 while the technical hostname remains the verify-full certificate identity, eliminating the same second-DNS-route defect class exposed by P3 #6.
+
+Second, the P3 prepare controller previously allowed canonical migrations to commit before the runtime ACL bootstrap completed. The branch now wraps bootstrap database authority, clean-state preflight, both migration/idempotence passes and runtime ACL application in one outer PostgreSQL transaction. A failure in that mutation set rolls it back atomically. Separate runtime-login verification remains post-commit because it requires a second connection; its failure leaves a safe prepared state requiring reconciliation rather than a half-applied schema/ACL mutation.
+
+The machine contracts, AST/source guards, regression tests and runbooks are updated together. No wildcard ingress, TLS downgrade, external IP-echo provider, destructive database recovery, App creation, public login, broker-write or Real-money authority is introduced.
 
 ### 2026-09-28 P3 bootstrap_prepare #6 — provider control plane READY, PostgreSQL data plane timed out
 
