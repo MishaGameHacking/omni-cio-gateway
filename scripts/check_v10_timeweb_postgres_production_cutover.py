@@ -303,6 +303,8 @@ def _validate_prepare(payload: dict[str, Any]) -> None:
             "existing_product_schema_owner_must_equal_bootstrap",
             "clean_product_state_preflight_before_mutation_required",
             "clean_product_state_reverified_after_prepare",
+            "schema_acl_mutation_single_transaction_required",
+            "runtime_connection_verification_after_commit_required",
         ),
         _PREPARE_INVALID,
     )
@@ -572,6 +574,74 @@ def _direct_call_names(source: str, function_name: str) -> set[str]:
         syntax_code="TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID",
         function_code="TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID",
     )
+
+
+def _validate_prepare_transaction(source: str) -> None:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_CONTROLLER_SYNTAX_INVALID"
+        ) from exc
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_prepare_database"
+    ]
+    if len(functions) != 1:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID"
+        )
+
+    transaction_blocks: list[ast.With] = []
+    for node in ast.walk(functions[0]):
+        if not isinstance(node, ast.With):
+            continue
+        for item in node.items:
+            context = item.context_expr
+            if (
+                isinstance(context, ast.Call)
+                and isinstance(context.func, ast.Attribute)
+                and isinstance(context.func.value, ast.Name)
+                and context.func.value.id == "bootstrap"
+                and context.func.attr == "transaction"
+                and not context.args
+                and not context.keywords
+            ):
+                transaction_blocks.append(node)
+    if len(transaction_blocks) != 1:
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID"
+        )
+
+    counts: dict[str, int] = {}
+    for node in ast.walk(transaction_blocks[0]):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        else:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+
+    required = {
+        "_verify_bootstrap_database_authority": 1,
+        "_require_observed_clean_product_state": 1,
+        "apply_migrations": 2,
+        "_require_clean_product_state": 1,
+        "render_runtime_sql": 1,
+        "execute": 1,
+    }
+    if any(counts.get(name) != count for name, count in required.items()):
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID"
+        )
+    if counts.get("_verify_runtime_database", 0):
+        raise CutoverContractError(
+            "TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID"
+        )
 
 
 def _runtime_function(source: str, name: str) -> ast.FunctionDef:
@@ -995,6 +1065,7 @@ def _validate_sources() -> None:
         raise CutoverContractError(
             "TIMEWEB_PG_CUTOVER_BOOTSTRAP_DATABASE_PREFLIGHT_MISSING"
         )
+    _validate_prepare_transaction(controller)
     prepare_calls = _direct_call_names(controller, "_prepare_database")
     if "_verify_bootstrap_database_authority" not in prepare_calls:
         raise CutoverContractError(
