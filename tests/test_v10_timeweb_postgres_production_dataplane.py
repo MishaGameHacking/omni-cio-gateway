@@ -180,9 +180,7 @@ def test_dataplane_timeout_rechecks_stable_control_plane(
         timeweb_postgres_tls,
         "probe_timeweb_postgres_bound_public_transport",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            timeweb_postgres_tls.TimewebPostgresTlsError(
-                "TIMEWEB_PG_TLS_TCP_TIMEOUT"
-            )
+            timeweb_postgres_tls.TimewebPostgresTlsError("TIMEWEB_PG_TLS_TCP_TIMEOUT")
         ),
     )
 
@@ -221,9 +219,7 @@ def test_dataplane_timeout_prefers_public_binding_drift(
         timeweb_postgres_tls,
         "probe_timeweb_postgres_bound_public_transport",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            timeweb_postgres_tls.TimewebPostgresTlsError(
-                "TIMEWEB_PG_TLS_TCP_TIMEOUT"
-            )
+            timeweb_postgres_tls.TimewebPostgresTlsError("TIMEWEB_PG_TLS_TCP_TIMEOUT")
         ),
     )
 
