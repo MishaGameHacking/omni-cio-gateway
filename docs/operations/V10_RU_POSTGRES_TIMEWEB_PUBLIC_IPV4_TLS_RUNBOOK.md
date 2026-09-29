@@ -63,22 +63,32 @@ Before public networking may be enabled, provider evidence must prove:
 5. port `5432`;
 6. source equal to the current verifier `/32`;
 7. the group linked only to the target Timeweb DBaaS resource;
-8. the target DBaaS service belongs to exactly this one firewall group, so no second
-   whitelist group can union additional ingress authority;
-9. no wildcard rule and no unrelated resource link.
+8. the canonical verifier group is attached to the target and every attached
+   firewall group is an allowlist/DROP group;
+9. Timeweb may attach the service to multiple same-type allowlist groups, but the
+   **effective union** of every attached group's rules may contain no semantic rule
+   other than the current ingress TCP/5432 verifier `/32`; duplicate group/rule
+   identities are rejected and a rule-less attached group cannot widen authority;
+10. every attached group is linked only to the exact target DBaaS resource, with no
+    wildcard rule and no unrelated resource link.
 
 The Timeweb API uses `resource_type=dbaas` for this firewall association. The
 provider CLI exposes the user-facing name `database` but maps it to `dbaas`.
+Current Timeweb Firewall documentation explicitly permits one service in multiple
+groups of the same type and combines their rules, so single-group cardinality is not
+used as a safety proof.
 
-The firewall rule, resource link and exclusive service-to-firewall membership are
-verified before public access and again after public access is enabled.
+The canonical rule, effective rule union, resource links and attached-group identity
+set are verified before public access and again after public access is enabled.
 
 If the target is unexpectedly already public when the workflow starts, it may
-continue only when public IPv6 is off and the existing named group is DROP, contains
-exactly one narrow global IPv4 /32 TCP/5432 rule, is linked only to the target DBaaS
-resource, and is the target's only firewall group. Any pre-existing public IPv6 is
-disabled immediately and treated as a blocking unsafe state. Any other unsafe public
-state is also returned to public-network OFF before the run stops for reconciliation.
+continue only when public IPv6 is off, the canonical verifier group is attached and
+exact, every attached group is DROP, every effective semantic rule is exactly the
+current verifier `/32` on TCP/5432, and every group is scoped only to the target
+DBaaS resource. A stale but otherwise narrow `/32` is not accepted. Any
+pre-existing public IPv6 is disabled immediately and treated as a blocking unsafe
+state. Any other unsafe public state is also returned to public-network OFF before
+the run stops for reconciliation.
 
 ## Public IPv4 mutation
 
@@ -357,7 +367,7 @@ The repair therefore splits the transition:
 
 1. PATCH only the existing floating IPv4 plus public IPv4 enabled / IPv6 disabled;
 2. GET-reconcile cluster state and exact managed-IP binding;
-3. re-prove the DROP TCP/5432 verifier-only firewall and exclusive resource link;
+3. re-prove the DROP TCP/5432 verifier-only effective firewall union and exact resource links;
 4. PATCH only `is_secure_connection_enable=true`;
 5. wait for secure connection plus issued technical domain;
 6. re-prove firewall, binding and TLS `verify-full`.
