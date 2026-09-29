@@ -67,6 +67,8 @@
     "minimum_tls_version": "TLSv1.2",
     "hostname_verification_required": true,
     "postgres_sslrequest_probe_required": true,
+    "provider_bound_ipv4_probe_required": true,
+    "second_dns_route_decision_allowed": false,
     "public_ipv4_required_before_enable": true,
     "separate_provider_transition_required": true
   },
