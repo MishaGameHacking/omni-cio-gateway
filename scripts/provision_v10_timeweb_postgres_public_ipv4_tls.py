@@ -634,23 +634,116 @@ def _verify_resource_link(
         )
 
 
-def _verify_exclusive_firewall(
+def _attached_group_ids(
+    api: read_only.TimewebReadOnlyApi,
+    cluster_id: int,
+) -> tuple[str, ...]:
+    groups = _service_groups(api, cluster_id)
+    if not groups:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_SERVICE_GROUP_MISSING"
+        )
+    identifiers = tuple(
+        _safe_id(row.get("id"), "TIMEWEB_FIREWALL_GROUP_ID_INVALID")
+        for row in groups
+    )
+    if len(set(identifiers)) != len(identifiers):
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_SERVICE_GROUP_ID_DUPLICATE"
+        )
+    return tuple(sorted(identifiers))
+
+
+def _verify_drop_group(
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+) -> None:
+    payload = _provider_base._json_object(
+        api.get(f"/api/v1/firewall/groups/{group_id}"),
+        "TIMEWEB_FIREWALL_GROUP_RESPONSE_INVALID",
+    )
+    group = _provider_base._json_object(
+        payload.get("group"),
+        "TIMEWEB_FIREWALL_GROUP_RESPONSE_INVALID",
+    )
+    observed_id = _safe_id(
+        group.get("id"),
+        "TIMEWEB_FIREWALL_GROUP_ID_INVALID",
+    )
+    if observed_id != group_id:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_GROUP_ID_DRIFT"
+        )
+    if group.get("policy") != "DROP":
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_DEFAULT_DROP_REQUIRED"
+        )
+
+
+def _effective_group_rule_count(
+    api: read_only.TimewebReadOnlyApi,
+    group_id: str,
+    cidr: str,
+) -> int:
+    rules = _rules(api, group_id)
+    rule_ids: list[str] = []
+    for rule in rules:
+        rule_ids.append(
+            _safe_id(
+                rule.get("id"),
+                "TIMEWEB_FIREWALL_RULE_ID_INVALID",
+            )
+        )
+        actual = {
+            key: rule.get(key)
+            for key in ("direction", "port", "protocol", "cidr")
+        }
+        expected = {
+            "direction": "ingress",
+            "port": POSTGRES_PORT,
+            "protocol": "tcp",
+            "cidr": cidr,
+        }
+        if actual != expected:
+            raise _provider_base.ProvisioningStopped(
+                "TIMEWEB_FIREWALL_EFFECTIVE_RULESET_WIDENED"
+            )
+    if len(set(rule_ids)) != len(rule_ids):
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_FIREWALL_RULE_ID_DUPLICATE"
+        )
+    return len(rule_ids)
+
+
+def _verify_effective_firewall(
     api: read_only.TimewebReadOnlyApi,
     group_id: str,
     cluster_id: int,
+    cidr: str,
 ) -> None:
-    groups = _service_groups(api, cluster_id)
-    if len(groups) != 1:
+    attached = _attached_group_ids(api, cluster_id)
+    if group_id not in attached:
         raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE"
+            "TIMEWEB_FIREWALL_CANONICAL_GROUP_NOT_ATTACHED"
         )
-    actual = _safe_id(
-        groups[0].get("id"),
-        "TIMEWEB_FIREWALL_GROUP_ID_INVALID",
-    )
-    if actual != group_id:
+
+    effective_rule_count = 0
+    for attached_group_id in attached:
+        if attached_group_id == group_id:
+            _verify_group(api, attached_group_id)
+            _verify_exact_rule(api, attached_group_id, cidr)
+        else:
+            _verify_drop_group(api, attached_group_id)
+        effective_rule_count += _effective_group_rule_count(
+            api,
+            attached_group_id,
+            cidr,
+        )
+        _verify_resource_link(api, attached_group_id, cluster_id)
+
+    if effective_rule_count == 0:
         raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE"
+            "TIMEWEB_FIREWALL_EFFECTIVE_RULE_MISSING"
         )
 
 
@@ -718,45 +811,6 @@ def _ensure_resource_link(
         sleeper=sleeper,
         delays=delays,
     )
-
-
-def _verify_safe_narrow_rule(
-    api: read_only.TimewebReadOnlyApi,
-    group_id: str,
-) -> None:
-    rules = _rules(api, group_id)
-    if len(rules) != 1:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PREEXISTING_FIREWALL_NOT_NARROW"
-        )
-    rule = rules[0]
-    expected = {
-        "description": "Omni-CIO RU-PG-B verifier PostgreSQL",
-        "direction": "ingress",
-        "port": POSTGRES_PORT,
-        "protocol": "tcp",
-    }
-    actual = {
-        key: rule.get(key) for key in ("description", "direction", "port", "protocol")
-    }
-    if actual != expected:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PREEXISTING_FIREWALL_NOT_NARROW"
-        )
-    try:
-        network = ipaddress.ip_network(str(rule.get("cidr", "")), strict=True)
-    except ValueError:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PREEXISTING_FIREWALL_NOT_NARROW"
-        ) from None
-    if (
-        not isinstance(network, ipaddress.IPv4Network)
-        or network.prefixlen != 32
-        or not network.network_address.is_global
-    ):
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_PREEXISTING_FIREWALL_NOT_NARROW"
-        )
 
 
 def _floating_ips(api: read_only.TimewebReadOnlyApi) -> list[dict[str, Any]]:
@@ -1241,6 +1295,7 @@ def _prepare_preexisting_exposure(
     api: read_only.TimewebReadOnlyApi,
     cluster_id: int,
     initial: dict[str, Any],
+    cidr: str,
 ) -> bool:
     if initial.get("is_enabled_public_ipv6") is True:
         _close_public_network(mutation, api, cluster_id)
@@ -1258,10 +1313,12 @@ def _prepare_preexisting_exposure(
             raise _provider_base.ProvisioningStopped(
                 "TIMEWEB_PREEXISTING_PUBLIC_NETWORK_UNSAFE"
             )
-        _verify_group(api, existing_group)
-        _verify_safe_narrow_rule(api, existing_group)
-        _verify_resource_link(api, existing_group, cluster_id)
-        _verify_exclusive_firewall(api, existing_group, cluster_id)
+        _verify_effective_firewall(
+            api,
+            existing_group,
+            cluster_id,
+            cidr,
+        )
     except _provider_base.ProvisioningStopped:
         _close_public_network(mutation, api, cluster_id)
         raise _provider_base.ProvisioningStopped(
@@ -1279,8 +1336,7 @@ def _converge_firewall(
     group_id = _ensure_group(mutation, api)
     _ensure_rule(mutation, api, group_id, cidr)
     _ensure_resource_link(mutation, api, group_id, cluster_id)
-    _verify_group(api, group_id)
-    _verify_exclusive_firewall(api, group_id, cluster_id)
+    _verify_effective_firewall(api, group_id, cluster_id, cidr)
     return group_id
 
 
@@ -1354,10 +1410,7 @@ def _verify_transport_scope(
     cidr: str,
     address: str,
 ) -> None:
-    _verify_group(api, group_id)
-    _verify_exact_rule(api, group_id, cidr)
-    _verify_resource_link(api, group_id, cluster_id)
-    _verify_exclusive_firewall(api, group_id, cluster_id)
+    _verify_effective_firewall(api, group_id, cluster_id, cidr)
     _verify_bound_ipv4(api, cluster_id, address)
 
 
@@ -1497,6 +1550,7 @@ def _provision_transport() -> None:
         api,
         cluster_id,
         initial,
+        cidr,
     )
     _configure_transport(
         mutation,
