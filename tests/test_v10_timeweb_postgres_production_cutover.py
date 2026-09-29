@@ -29,9 +29,7 @@ NETWORK_SCOPE_RELATIVE = Path("scripts/timeweb_postgres_production_network_scope
 NETWORK_CONVERGE_RELATIVE = Path(
     "scripts/timeweb_postgres_production_network_converge.py"
 )
-NETWORK_DATAPLANE_RELATIVE = Path(
-    "scripts/timeweb_postgres_production_dataplane.py"
-)
+NETWORK_DATAPLANE_RELATIVE = Path("scripts/timeweb_postgres_production_dataplane.py")
 TRANSPORT_KEY = "transport"
 TRANSPORT_INVALID = "TIMEWEB_PG_CUTOVER_TRANSPORT_INVALID"
 TEXT_ENCODING = "utf-8"
