@@ -118,13 +118,19 @@ therefore never combined with first-time public IPv4 attachment.
 The Timeweb technical database domain must reach certificate status `issued`.
 The verifier downloads the provider CA from
 `https://st.timeweb.com/cloud-static/ca.crt` to a temporary permission-hardened
-file. It then sends the PostgreSQL SSLRequest on TCP/5432 and enforces
-`sslmode=verify-full` semantics by upgrading the socket using
-`ssl.PROTOCOL_TLS_CLIENT`, a minimum protocol version of TLS 1.2,
-`ssl.CERT_REQUIRED`, and hostname verification.
+file. It then sends the PostgreSQL SSLRequest on TCP/5432 to the **exact public
+IPv4 already selected and re-proved through the Timeweb control plane**, while
+retaining the technical database domain as the TLS server name and certificate
+identity. The probe therefore makes no second DNS route decision after provider
+binding proof. It enforces `sslmode=verify-full` semantics by upgrading that
+provider-bound socket using `ssl.PROTOCOL_TLS_CLIENT`, a minimum protocol version
+of TLS 1.2, `ssl.CERT_REQUIRED`, and hostname verification. A non-global,
+malformed or IPv6 probe address is rejected before opening the socket.
 
 This is a credential-free network/TLS proof. Database credentials remain outside
-this checkpoint.
+this checkpoint. The same provider-bound-hostaddr principle is now shared with the
+production P3 verifier so the synthetic and production paths cannot regress into
+different target-selection semantics.
 
 If TLS, firewall re-verification or IPv4 binding verification fails after public
 access may have been enabled, the workflow immediately attempts to disable public
