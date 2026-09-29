@@ -386,6 +386,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         ):
             provisioner._probe_postgres_tls(
                 "example.twc1.net",
+                "8.8.4.4",
                 Path("provider-ca.crt"),
                 sleeper=sleeps.append,
                 delays=(0.0,),
@@ -410,6 +411,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             ) as raised:
                 provisioner._probe_postgres_tls(
                     "example.twc1.net",
+                    "8.8.4.4",
                     Path("provider-ca.crt"),
                     sleeper=sleeps.append,
                     delays=(0.0,),
@@ -442,6 +444,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
         ):
             provisioner._probe_postgres_tls(
                 "example.twc1.net",
+                "8.8.4.4",
                 Path("provider-ca.crt"),
                 sleeper=sleeps.append,
                 delays=(0.0,),
@@ -470,6 +473,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             ) as raised:
                 provisioner._probe_postgres_tls(
                     "example.twc1.net",
+                    "8.8.4.4",
                     Path("provider-ca.crt"),
                     delays=(),
                 )
@@ -477,6 +481,20 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             raised.exception.code,
             "TIMEWEB_POSTGRES_TLS_TRANSPORT_TIMEOUT",
         )
+
+    def test_tls_probe_rejects_unbound_or_non_public_hostaddr(self) -> None:
+        for address in ("", "not-an-ip", "10.0.0.5", "2001:4860:4860::8888"):
+            with self.subTest(address=address):
+                with self.assertRaisesRegex(
+                    provisioner._provider_base.ProvisioningStopped,
+                    "TIMEWEB_POSTGRES_TLS_HOSTADDR_INVALID",
+                ):
+                    provisioner._probe_postgres_tls(
+                        "example.twc1.net",
+                        address,
+                        Path("provider-ca.crt"),
+                        delays=(),
+                    )
 
     def test_rollback_reconciles_through_transient_control_plane_read(self) -> None:
         api = mock.Mock()
