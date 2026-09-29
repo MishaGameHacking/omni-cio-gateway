@@ -1223,11 +1223,15 @@ def _tls_client_context(ca_path: Path) -> ssl.SSLContext:
     return context
 
 
-def _probe_postgres_tls_once(hostname: str, context: ssl.SSLContext) -> None:
+def _probe_postgres_tls_once(
+    hostname: str,
+    address: str,
+    context: ssl.SSLContext,
+) -> None:
     raw_socket: socket.socket | None = None
     try:
         raw_socket = socket.create_connection(
-            (hostname, int(POSTGRES_PORT)),
+            (address, int(POSTGRES_PORT)),
             timeout=15.0,
         )
         raw_socket.sendall(struct.pack("!II", 8, 80877103))
@@ -1246,10 +1250,11 @@ def _probe_postgres_tls_once(hostname: str, context: ssl.SSLContext) -> None:
 
 def _probe_postgres_tls_attempt(
     hostname: str,
+    address: str,
     context: ssl.SSLContext,
 ) -> str | None:
     try:
-        _probe_postgres_tls_once(hostname, context)
+        _probe_postgres_tls_once(hostname, address, context)
     except ssl.SSLCertVerificationError:
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_POSTGRES_TLS_VERIFY_FULL_FAILED"
@@ -1265,14 +1270,33 @@ def _probe_postgres_tls_attempt(
 
 def _probe_postgres_tls(
     hostname: str,
+    address: str,
     ca_path: Path,
     *,
     sleeper: Sleep = time.sleep,
     delays: tuple[float, ...] = _TLS_SOCKET_RETRY_DELAYS_SECONDS,
 ) -> None:
+    try:
+        parsed_address = ipaddress.ip_address(address)
+    except ValueError:
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_POSTGRES_TLS_HOSTADDR_INVALID"
+        ) from None
+    if (
+        not isinstance(parsed_address, ipaddress.IPv4Address)
+        or not parsed_address.is_global
+    ):
+        raise _provider_base.ProvisioningStopped(
+            "TIMEWEB_POSTGRES_TLS_HOSTADDR_INVALID"
+        )
+    bound_address = str(parsed_address)
     context = _tls_client_context(ca_path)
     for attempt in range(len(delays) + 1):
-        timeout_code = _probe_postgres_tls_attempt(hostname, context)
+        timeout_code = _probe_postgres_tls_attempt(
+            hostname,
+            bound_address,
+            context,
+        )
         if timeout_code is None:
             return
         if attempt >= len(delays):
@@ -1381,13 +1405,16 @@ def _resolve_transport_ipv4(
     return selected.ip_address
 
 
-def _verify_tls_transport(cluster: dict[str, Any]) -> None:
+def _verify_tls_transport(
+    cluster: dict[str, Any],
+    address: str,
+) -> None:
     hostname = _issued_domain(cluster)
     if hostname is None:
         raise _provider_base.ProvisioningStopped("TIMEWEB_CLUSTER_DOMAIN_NOT_READY")
     ca_path = _fetch_ca_file()
     try:
-        _probe_postgres_tls(hostname, ca_path)
+        _probe_postgres_tls(hostname, address, ca_path)
     finally:
         ca_path.unlink(missing_ok=True)
 
@@ -1496,7 +1523,7 @@ def _configure_transport(
             cidr,
             address,
         )
-        _verify_tls_transport(cluster)
+        _verify_tls_transport(cluster, address)
     except Exception:
         _rollback_failed_transport(
             mutation,
