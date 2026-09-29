@@ -162,6 +162,24 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             ):
                 guard.validate(root)
 
+    def test_guard_requires_atomic_prepare_transaction(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy(root)
+            controller = root / "scripts/timeweb_postgres_production_cutover.py"
+            source = controller.read_text(encoding=TEXT_ENCODING)
+            marker = "        with bootstrap.transaction():\n"
+            self.assertIn(marker, source)
+            controller.write_text(
+                source.replace(marker, "        if True:\n", 1),
+                encoding=TEXT_ENCODING,
+            )
+            with self.assertRaisesRegex(
+                guard.CutoverContractError,
+                "TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID",
+            ):
+                guard.validate(root)
+
     def test_prepare_connection_dsns_probes_transport_before_auth(self) -> None:
         ca_path = Path("ca.crt")
         with (
