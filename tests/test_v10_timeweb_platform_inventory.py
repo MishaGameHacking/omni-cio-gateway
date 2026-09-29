@@ -210,10 +210,12 @@ class TimewebPlatformInventoryTests(unittest.TestCase):
                 'TRACE_URL = "https://cloudflare.com/cdn-cgi/trace"'
             )
         )
-        verifier_validator = (ROOT / "scripts/validate_v10_ru_pg_verifier_cidr.py").read_text(
-            encoding="utf-8"
+        verifier_validator = (
+            ROOT / "scripts/validate_v10_ru_pg_verifier_cidr.py"
+        ).read_text(encoding="utf-8")
+        self.assertFalse(
+            inventory._contains_retired_execution_marker(verifier_validator)
         )
-        self.assertFalse(inventory._contains_retired_execution_marker(verifier_validator))
 
     def test_current_database_authority_cannot_reassert_retired_neon(self) -> None:
         self.assertTrue(
