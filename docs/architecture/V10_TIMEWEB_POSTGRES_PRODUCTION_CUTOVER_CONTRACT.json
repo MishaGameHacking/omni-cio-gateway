@@ -180,7 +180,9 @@
     "bootstrap_database_create_privilege_required": true,
     "existing_product_schema_owner_must_equal_bootstrap": true,
     "clean_product_state_preflight_before_mutation_required": true,
-    "clean_product_state_reverified_after_prepare": true
+    "clean_product_state_reverified_after_prepare": true,
+    "schema_acl_mutation_single_transaction_required": true,
+    "runtime_connection_verification_after_commit_required": true
   },
   "recovery": {
     "timeweb_physical_backup_required": true,
