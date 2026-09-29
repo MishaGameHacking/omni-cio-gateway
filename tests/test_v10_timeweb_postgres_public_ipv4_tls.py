@@ -601,16 +601,10 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
     def test_post_exposure_transport_scope_is_read_only(self) -> None:
         api = mock.Mock()
         with (
-            mock.patch.object(provisioner, "_verify_group") as verify_group,
-            mock.patch.object(provisioner, "_verify_exact_rule") as verify_rule,
             mock.patch.object(
                 provisioner,
-                "_verify_resource_link",
-            ) as verify_resource,
-            mock.patch.object(
-                provisioner,
-                "_verify_exclusive_firewall",
-            ) as verify_exclusive,
+                "_verify_effective_firewall",
+            ) as verify_firewall,
             mock.patch.object(provisioner, "_verify_bound_ipv4") as verify_ipv4,
         ):
             provisioner._verify_transport_scope(
@@ -620,10 +614,12 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 "8.8.8.8/32",
                 "8.8.4.4",
             )
-        verify_group.assert_called_once_with(api, "group-1")
-        verify_rule.assert_called_once_with(api, "group-1", "8.8.8.8/32")
-        verify_resource.assert_called_once_with(api, "group-1", 91)
-        verify_exclusive.assert_called_once_with(api, "group-1", 91)
+        verify_firewall.assert_called_once_with(
+            api,
+            "group-1",
+            91,
+            "8.8.8.8/32",
+        )
         verify_ipv4.assert_called_once_with(api, 91, "8.8.4.4")
 
     def test_firewall_reconciliation_budget_is_bounded_but_not_eager(self) -> None:
@@ -805,39 +801,79 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             )
         )
 
-    def test_multiple_firewall_groups_are_rejected(self) -> None:
+    def test_effective_firewall_allows_multiple_exact_allowlist_groups(self) -> None:
+        api = mock.Mock()
+        with (
+            mock.patch.object(
+                provisioner,
+                "_attached_group_ids",
+                return_value=("group-1", "group-2"),
+            ),
+            mock.patch.object(provisioner, "_verify_group") as verify_canonical,
+            mock.patch.object(provisioner, "_verify_exact_rule") as verify_exact,
+            mock.patch.object(provisioner, "_verify_drop_group") as verify_drop,
+            mock.patch.object(
+                provisioner,
+                "_effective_group_rule_count",
+                side_effect=[1, 1],
+            ),
+            mock.patch.object(provisioner, "_verify_resource_link") as verify_resource,
+        ):
+            provisioner._verify_effective_firewall(
+                api,
+                "group-1",
+                91,
+                "8.8.8.8/32",
+            )
+        verify_canonical.assert_called_once_with(api, "group-1")
+        verify_exact.assert_called_once_with(api, "group-1", "8.8.8.8/32")
+        verify_drop.assert_called_once_with(api, "group-2")
+        self.assertEqual(verify_resource.call_count, 2)
+
+    def test_effective_firewall_rejects_duplicate_group_identity(self) -> None:
         api = mock.Mock()
         with mock.patch.object(
             provisioner,
             "_service_groups",
-            return_value=[{"id": "group-1"}, {"id": "group-2"}],
+            return_value=[{"id": "group-1"}, {"id": "group-1"}],
         ):
             with self.assertRaisesRegex(
                 provisioner._provider_base.ProvisioningStopped,
-                "TIMEWEB_FIREWALL_SERVICE_GROUPS_NOT_EXCLUSIVE",
+                "TIMEWEB_FIREWALL_SERVICE_GROUP_ID_DUPLICATE",
             ):
-                provisioner._verify_exclusive_firewall(api, "group-1", 91)
+                provisioner._attached_group_ids(api, 91)
 
-    def test_safe_preexisting_rule_must_be_single_global_ipv4_32(self) -> None:
+    def test_effective_firewall_rejects_widened_or_stale_rule(self) -> None:
         api = mock.Mock()
         safe = {
-            "description": "Omni-CIO RU-PG-B verifier PostgreSQL",
+            "id": "rule-1",
             "direction": "ingress",
             "port": "5432",
             "protocol": "tcp",
             "cidr": "8.8.8.8/32",
         }
         with mock.patch.object(provisioner, "_rules", return_value=[safe]):
-            provisioner._verify_safe_narrow_rule(api, "group-1")
+            self.assertEqual(
+                provisioner._effective_group_rule_count(
+                    api,
+                    "group-1",
+                    "8.8.8.8/32",
+                ),
+                1,
+            )
 
         unsafe = dict(safe)
-        unsafe["cidr"] = "0.0.0.0/0"
+        unsafe["cidr"] = "8.8.4.4/32"
         with mock.patch.object(provisioner, "_rules", return_value=[unsafe]):
             with self.assertRaisesRegex(
                 provisioner._provider_base.ProvisioningStopped,
-                "TIMEWEB_PREEXISTING_FIREWALL_NOT_NARROW",
+                "TIMEWEB_FIREWALL_EFFECTIVE_RULESET_WIDENED",
             ):
-                provisioner._verify_safe_narrow_rule(api, "group-1")
+                provisioner._effective_group_rule_count(
+                    api,
+                    "group-1",
+                    "8.8.8.8/32",
+                )
 
     def test_preexisting_public_ipv6_is_closed_and_rejected(self) -> None:
         api = mock.Mock()
@@ -927,7 +963,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             mock.patch.object(provisioner, "_ensure_rule"),
             mock.patch.object(provisioner, "_ensure_resource_link"),
             mock.patch.object(provisioner, "_verify_group"),
-            mock.patch.object(provisioner, "_verify_exclusive_firewall"),
+            mock.patch.object(provisioner, "_verify_effective_firewall"),
             mock.patch.object(
                 provisioner,
                 "_floating_ips",
@@ -1170,10 +1206,7 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
                 "_group_id_by_name",
                 return_value="group-1",
             ),
-            mock.patch.object(provisioner, "_verify_group"),
-            mock.patch.object(provisioner, "_verify_safe_narrow_rule"),
-            mock.patch.object(provisioner, "_verify_resource_link"),
-            mock.patch.object(provisioner, "_verify_exclusive_firewall"),
+            mock.patch.object(provisioner, "_verify_effective_firewall"),
             mock.patch.object(
                 provisioner,
                 "_ensure_group",
