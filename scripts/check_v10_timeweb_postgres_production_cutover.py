@@ -1001,9 +1001,7 @@ def _validate_sources() -> None:
             "TIMEWEB_PG_CUTOVER_BOOTSTRAP_DATABASE_PREFLIGHT_MISSING"
         )
     if "_require_observed_clean_product_state" not in prepare_calls:
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_PREPARE_CLEAN_PREFLIGHT_MISSING"
-        )
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_PREPARE_CLEAN_PREFLIGHT_MISSING")
 
     app_identity_calls = _direct_call_names(controller, "_is_canonical_app_row")
     if "is_canonical_repository" not in app_identity_calls:
