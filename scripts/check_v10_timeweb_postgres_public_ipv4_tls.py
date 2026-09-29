@@ -256,6 +256,8 @@ def _validate_contract(payload: dict[str, Any]) -> None:
             "minimum_tls_version": "TLSv1.2",
             "hostname_verification_required": True,
             "postgres_sslrequest_probe_required": True,
+            "provider_bound_ipv4_probe_required": True,
+            "second_dns_route_decision_allowed": False,
         },
         "TIMEWEB_PUBLIC_IPV4_TLS_INVALID",
     )
@@ -659,6 +661,9 @@ def _validate_sources() -> None:
             "context.check_hostname = True",
             "context.verify_mode = ssl.CERT_REQUIRED",
             'struct.pack("!II", 8, 80877103)',
+            "(address, int(POSTGRES_PORT))",
+            "TIMEWEB_POSTGRES_TLS_HOSTADDR_INVALID",
+            "_verify_tls_transport(cluster, address)",
             "_RECONCILABLE_MUTATION_HTTP_STATUSES = frozenset({409, 423})",
             'if body is not None or method in {"POST", "PUT", "PATCH"}:',
             'f"TIMEWEB_{operation}_REJECTED"',
