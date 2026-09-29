@@ -1457,16 +1457,30 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             rendered,
         )
 
-    def test_verifier_validator_rejects_missing_non_global_or_non_32_input(self) -> None:
+    def test_verifier_validator_rejects_missing_non_global_or_non_32_input(
+        self,
+    ) -> None:
         for env, reason in (
             ({}, "RU_PG_VERIFIER_CIDR_REQUIRED"),
-            ({verifier_validator.CIDR_ENV: "203.0.113.7/32"}, "RU_PG_VERIFIER_CIDR_INVALID"),
-            ({verifier_validator.CIDR_ENV: "8.8.8.0/24"}, "RU_PG_VERIFIER_CIDR_INVALID"),
-            ({verifier_validator.CIDR_ENV: "8.8.8.8"}, "RU_PG_VERIFIER_CIDR_INVALID"),
+            (
+                {verifier_validator.CIDR_ENV: "203.0.113.7/32"},
+                "RU_PG_VERIFIER_CIDR_INVALID",
+            ),
+            (
+                {verifier_validator.CIDR_ENV: "8.8.8.0/24"},
+                "RU_PG_VERIFIER_CIDR_INVALID",
+            ),
+            (
+                {verifier_validator.CIDR_ENV: "8.8.8.8"},
+                "RU_PG_VERIFIER_CIDR_INVALID",
+            ),
         ):
             with self.subTest(env=env, reason=reason):
                 with mock.patch.dict(os.environ, env, clear=True):
-                    with self.assertRaisesRegex(verifier_validator.VerifierCidrStopped, reason):
+                    with self.assertRaisesRegex(
+                        verifier_validator.VerifierCidrStopped,
+                        reason,
+                    ):
                         verifier_validator.validate()
 
     def test_runbook_does_not_claim_verifier_egress_discovery(self) -> None:
@@ -1479,8 +1493,12 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             source,
         )
 
-    def test_verifier_validator_has_no_retired_provider_network_dependency(self) -> None:
-        source = Path(verifier_validator.__file__).read_text(encoding="utf-8").casefold()
+    def test_verifier_validator_has_no_retired_provider_network_dependency(
+        self,
+    ) -> None:
+        source = (
+            Path(verifier_validator.__file__).read_text(encoding="utf-8").casefold()
+        )
         self.assertNotIn("cloudflare.com", source)
         self.assertNotIn("urllib.request", source)
         self.assertNotIn("http://", source)
