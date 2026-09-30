@@ -123,13 +123,14 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                     _copy(root)
                     controller = root / "scripts/timeweb_postgres_production_cutover.py"
                     source = controller.read_text(encoding=TEXT_ENCODING)
-                    marker = "        _verify_bootstrap_database_authority(bootstrap)\n"
+                    marker = "_verify_bootstrap_database_authority(bootstrap)"
+                    replacement = "_verify_bootstrap_database_authority_removed(bootstrap)"
                     self.assertEqual(source.count(marker), 2)
                     if occurrence == 1:
-                        mutated = source.replace(marker, "", 1)
+                        mutated = source.replace(marker, replacement, 1)
                     else:
                         left, right = source.rsplit(marker, 1)
-                        mutated = left + right
+                        mutated = left + replacement + right
                     self.assertEqual(mutated.count(marker), 1)
                     controller.write_text(mutated, encoding=TEXT_ENCODING)
                     with self.assertRaisesRegex(
@@ -149,9 +150,13 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
             prepare_start = source.index("def _prepare_database(")
             prepare_end = source.index("\ndef _verify_runtime_database", prepare_start)
             prepare_source = source[prepare_start:prepare_end]
-            marker = "        _require_observed_clean_product_state(bootstrap)\n"
+            marker = "_require_observed_clean_product_state(bootstrap)"
             self.assertIn(marker, prepare_source)
-            mutated_prepare = prepare_source.replace(marker, "", 1)
+            mutated_prepare = prepare_source.replace(
+                marker,
+                "_require_observed_clean_product_state_removed(bootstrap)",
+                1,
+            )
             controller.write_text(
                 source[:prepare_start] + mutated_prepare + source[prepare_end:],
                 encoding=TEXT_ENCODING,
