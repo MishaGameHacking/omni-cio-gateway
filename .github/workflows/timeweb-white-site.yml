@@ -34,9 +34,6 @@ on:
         default: ""
         type: string
 
-permissions:
-  contents: read
-
 concurrency:
   group: timeweb-white-site
   cancel-in-progress: false
@@ -44,6 +41,8 @@ concurrency:
 jobs:
   tests:
     name: Test reconciler
+    permissions:
+      contents: read
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -61,6 +60,8 @@ jobs:
 
   timeweb:
     name: Reconcile desired state
+    permissions:
+      contents: read
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-24.04
@@ -91,7 +92,6 @@ jobs:
           fi
 
       - name: Reconcile Timeweb white site
-        id: reconcile
         shell: bash
         run: |
           set -euo pipefail
@@ -103,15 +103,3 @@ jobs:
             --max-server-price-rub "${MAX_SERVER_PRICE_RUB}" \
             --target-location "${TARGET_LOCATION}" \
             --target-availability-zone "${TARGET_AVAILABILITY_ZONE}"
-
-      - name: Surface pending budget state
-        if: steps.reconcile.outputs.status == 'pending_budget'
-        shell: bash
-        run: |
-          echo "::warning title=Timeweb budget pending::Cheapest compatible Moscow server is ${{ steps.reconcile.outputs.cheapest_server_price_rub }} RUB/month, above the approved ${MAX_SERVER_PRICE_RUB} RUB ceiling. No resource was created."
-
-      - name: Surface transient capacity state
-        if: steps.reconcile.outputs.status == 'pending_capacity'
-        shell: bash
-        run: |
-          echo "::warning title=Timeweb capacity pending::No approved placement currently has a free node. The scheduled reconciler will retry without raising the server budget."
