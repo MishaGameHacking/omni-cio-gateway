@@ -374,6 +374,48 @@ class TimewebWhiteSiteTests(unittest.TestCase):
 
         self.assertEqual(len(client.create_payloads), 1)
 
+    def test_wait_for_web_port_uses_canonical_ipv4_only(self) -> None:
+        calls: list[tuple[tuple[str, int], int]] = []
+
+        class FakeConnection:
+            def __enter__(self) -> "FakeConnection":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        original_create_connection = MODULE.socket.create_connection
+
+        def fake_create_connection(
+            address: tuple[str, int],
+            timeout: int,
+        ) -> FakeConnection:
+            calls.append((address, timeout))
+            return FakeConnection()
+
+        MODULE.socket.create_connection = fake_create_connection
+        try:
+            MODULE.wait_for_web_port(
+                "194.087.151.244".replace(".087.", ".87."),
+                attempts=1,
+                sleep_seconds=0,
+            )
+        finally:
+            MODULE.socket.create_connection = original_create_connection
+
+        self.assertEqual(
+            calls,
+            [(("194.87.151.244", 80), 5)],
+        )
+
+    def test_wait_for_web_port_rejects_ipv6(self) -> None:
+        with self.assertRaises(MODULE.DeploymentError):
+            MODULE.wait_for_web_port(
+                "2001:db8::1",
+                attempts=1,
+                sleep_seconds=0,
+            )
+
     def test_private_ipv4_is_not_reported_as_public(self) -> None:
         server = {
             "networks": [
