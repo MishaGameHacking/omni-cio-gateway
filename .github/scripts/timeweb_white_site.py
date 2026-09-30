@@ -793,7 +793,7 @@ def reconcile(
     latest, ip = wait_for_ipv4(client, created_id)
     add_summary(
         f"- Server status: `{latest.get('status', 'unknown')}`; "
-        f"IPv4: http://{ip}/"
+        f"IPv4: {ip}"
     )
     wait_for_web_port(ip)
     add_summary(f"- Result: managed server web port is ready on {ip}.")
