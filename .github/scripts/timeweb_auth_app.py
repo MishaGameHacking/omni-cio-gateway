@@ -128,6 +128,32 @@ def write_product_environment(ssh: EphemeralSsh) -> None:
     )
 
 
+def verify_smsaero_test_api(repository_root: pathlib.Path) -> bool:
+    login = os.environ.get("SMS_PROVIDER_LOGIN", "").strip()
+    token = os.environ.get("SMS_PROVIDER_TOKEN", "").strip()
+    sender = os.environ.get("SMS_SENDER", "").strip()
+    phone = os.environ.get("SMS_TEST_NUMBER", "").strip()
+    values = (login, token, sender, phone)
+    if not any(values):
+        return False
+    if not all(values):
+        raise InfraError("SMS Aero test configuration is incomplete")
+
+    source_root = str(repository_root / "src")
+    sys.path.insert(0, source_root)
+    try:
+        from omnicio.sms import SmsAeroSmsProvider, SmsDeliveryError
+
+        provider = SmsAeroSmsProvider(login=login, api_key=token, sender=sender)
+        try:
+            provider.test_send(phone)
+        except SmsDeliveryError as exc:
+            raise InfraError("SMS Aero test API rejected the configuration") from exc
+    finally:
+        sys.path.remove(source_root)
+    return True
+
+
 REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
 
 SHA="$1"
@@ -435,6 +461,8 @@ def reconcile(
         raise InfraError("Release SHA must be a full lowercase 40-character SHA")
 
     add_summary("## OmniCIO auth application deploy")
+    if verify_smsaero_test_api(repository_root):
+        add_summary("- SMS Aero test API accepted the request; no SMS was sent.")
     server_summary = find_managed_server(
         client.get_servers(),
         name=server_name,
