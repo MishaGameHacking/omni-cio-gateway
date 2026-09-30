@@ -71,6 +71,7 @@ class Database:
                     WHERE created_at >= %(since)s
                     """,
                     {
+                        "challenge_id": challenge_id,
                         "phone_lookup": phone_lookup,
                         "client_ip_hash": client_ip_hash,
                         "since": since,
@@ -100,6 +101,7 @@ class Database:
     def create_challenge(
         self,
         *,
+        challenge_id: UUID,
         phone_lookup: bytes,
         phone_ciphertext: bytes,
         code_digest: bytes,
@@ -112,6 +114,7 @@ class Database:
                 cur.execute(
                     """
                     INSERT INTO otp_challenges (
+                        id,
                         phone_lookup,
                         phone_ciphertext,
                         code_digest,
@@ -120,6 +123,7 @@ class Database:
                         expires_at
                     )
                     VALUES (
+                        %(challenge_id)s,
                         %(phone_lookup)s,
                         %(phone_ciphertext)s,
                         %(code_digest)s,
