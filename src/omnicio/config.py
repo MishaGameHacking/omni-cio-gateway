@@ -106,5 +106,5 @@ def load_settings() -> Settings:
         otp_resend_cooldown_seconds=positive_int("OTP_RESEND_COOLDOWN_SECONDS", 60),
         otp_phone_hourly_limit=positive_int("OTP_PHONE_HOURLY_LIMIT", 5),
         otp_ip_hourly_limit=positive_int("OTP_IP_HOURLY_LIMIT", 20),
-        session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", 2592000),
+        session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", 34_560_000),
     )

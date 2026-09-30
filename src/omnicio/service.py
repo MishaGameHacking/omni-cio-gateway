@@ -176,10 +176,13 @@ class AuthService:
             expires_in_seconds=self.settings.session_ttl_seconds,
         )
 
-    def user_from_session(self, token: str) -> UserRecord | None:
+    def refresh_session(self, token: str) -> UserRecord | None:
         if not token:
             return None
-        return self.database.user_from_session_digest(session_digest(token))
+        return self.database.refresh_session_digest(
+            session_digest(token),
+            session_ttl_seconds=self.settings.session_ttl_seconds,
+        )
 
     def logout(self, token: str) -> None:
         if token:
