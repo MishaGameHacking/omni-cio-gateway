@@ -385,18 +385,13 @@ def public_ipv4_addresses(server: dict[str, Any]) -> list[str]:
 
 
 def add_summary(line: str) -> None:
+    """Emit operational context to the workflow log.
+
+    GitHub-provided output/summary file paths are intentionally not opened from
+    Python. The workflow log is the canonical diagnostic surface for this
+    reconciler and avoids treating environment-controlled paths as file sinks.
+    """
     print(line)
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary_path:
-        with open(summary_path, "a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-
-
-def set_output(name: str, value: str) -> None:
-    output_path = os.environ.get("GITHUB_OUTPUT")
-    if output_path:
-        with open(output_path, "a", encoding="utf-8") as handle:
-            handle.write(f"{name}={value}\n")
 
 
 def reconcile_after_ambiguous_create(
@@ -435,29 +430,32 @@ def wait_for_ipv4(
     )
 
 
-def wait_for_site(
+def wait_for_web_port(
     ip: str,
     *,
     attempts: int = 36,
     sleep_seconds: int = 10,
 ) -> None:
-    url = f"http://{ip}/"
+    """Wait until Nginx accepts TCP connections on the bootstrap HTTP port.
+
+    No credentials or application data are sent over clear text. Content and
+    certificate readiness are verified later by the dedicated HTTPS workflow.
+    """
+    address = ipaddress.ip_address(ip)
+    if address.version != 4:
+        raise DeploymentError("Bootstrap web readiness requires a public IPv4.")
+
     last_error = "not attempted"
     for _ in range(attempts):
         try:
-            with urllib.request.urlopen(url, timeout=5) as response:
-                body = response.read().decode("utf-8", errors="replace")
-                if response.status == 200 and SITE_MARKER in body:
-                    return
-                last_error = (
-                    f"HTTP {response.status}; expected site marker not found"
-                )
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            with socket.create_connection((str(address), 80), timeout=5):
+                return
+        except (OSError, TimeoutError, socket.timeout) as exc:
             last_error = f"{type(exc).__name__}: {exc}"
         time.sleep(sleep_seconds)
     raise DeploymentError(
-        "Server control plane is reachable, but the HTTP site did not become "
-        f"ready within the readiness window: {last_error}"
+        "Server control plane is reachable, but the Nginx TCP port did not "
+        f"become ready within the readiness window: {last_error}"
     )
 
 
@@ -669,9 +667,6 @@ def reconcile(
             "- No Timeweb resource was created or changed. Increase the "
             "versioned budget ceiling only after explicit approval."
         )
-        set_output("status", "pending_budget")
-        set_output("cheapest_server_price_rub", str(cheapest_price))
-        set_output("cheapest_preset_id", str(integer_value(cheapest["id"])))
         return 0
 
     placements = build_placements(
@@ -732,7 +727,6 @@ def reconcile(
                 "- Plan result: managed server already exists; no resource "
                 "would be created."
             )
-            set_output("status", "present")
             return 0
 
         latest, ip = wait_for_ipv4(client, existing_id)
@@ -740,10 +734,8 @@ def reconcile(
             f"- Server status: `{latest.get('status', 'unknown')}`; "
             f"IPv4: http://{ip}/"
         )
-        wait_for_site(ip)
+        wait_for_web_port(ip)
         add_summary(f"- Result: existing managed site is ready at http://{ip}/")
-        set_output("status", "ready")
-        set_output("ipv4", ip)
         return 0
 
     if mode == "plan":
@@ -752,7 +744,6 @@ def reconcile(
             "create at most one server within the budget ceiling."
         )
         add_summary("- No Timeweb resource was created or changed.")
-        set_output("status", "absent")
         return 0
 
     if mode == "deploy" and confirm != "CREATE":
@@ -779,7 +770,6 @@ def reconcile(
             "- No server was created. Scheduled reconciliation will retry "
             "without increasing the approved server budget."
         )
-        set_output("status", "pending_capacity")
         return 0
 
     if "id" not in created:
@@ -796,10 +786,8 @@ def reconcile(
         f"- Server status: `{latest.get('status', 'unknown')}`; "
         f"IPv4: http://{ip}/"
     )
-    wait_for_site(ip)
+    wait_for_web_port(ip)
     add_summary(f"- Result: site is ready and verified at http://{ip}/")
-    set_output("status", "ready")
-    set_output("ipv4", ip)
     return 0
 
 
