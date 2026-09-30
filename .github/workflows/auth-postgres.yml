@@ -105,6 +105,11 @@ jobs:
         run: |
           echo "::warning title=VDS private network required::PostgreSQL was not created. Attach omni-cio-white-site to omni-cio-private, then rerun this accepted-main workflow."
 
+      - name: Surface DBaaS token permission gate
+        if: steps.postgres.outputs.status == 'pending_token_permission'
+        run: |
+          echo "::warning title=Timeweb DBaaS permission required::The existing TIMEWEB_CLOUD_TOKEN needs management access to cloud databases before PostgreSQL can be created."
+
       - name: Confirm database readiness
         if: steps.postgres.outputs.status == 'database_ready'
         run: |
