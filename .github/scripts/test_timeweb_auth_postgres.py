@@ -120,7 +120,9 @@ class PostgresTests(unittest.TestCase):
         self.assertIn('if [ "$PRIVATE_IF" = "$PUBLIC_IF" ]', script)
         self.assertIn("/etc/netplan/99-omnicio-private.yaml", script)
         self.assertIn('ip addr add "$CIDR" dev "$PRIVATE_IF"', script)
+        self.assertIn('ip link set dev "$PRIVATE_IF" up', script)
         self.assertIn("netplan generate", script)
+        self.assertNotIn('case "$state" in', script)
 
     def test_private_database_endpoint_uses_private_ipv4(self) -> None:
         cluster = {
