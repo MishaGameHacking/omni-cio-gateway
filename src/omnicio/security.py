@@ -38,7 +38,7 @@ def format_public_id(value: int) -> str:
 
 
 def _key_bytes(value: str, *, name: str) -> bytes:
-    data = value.encode("utf-8")
+    data = value.encode()
     if len(data) < 32:
         raise SecurityValueError(f"{name} must contain at least 32 bytes")
     return data
