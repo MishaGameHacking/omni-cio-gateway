@@ -223,10 +223,11 @@ PostgreSQL является relational authority после принятого p
 4. при однозначном success прочитать состояние снова;
 5. catalog/preset/configurator presence не считать доказательством runtime capacity;
 6. capacity моделировать на уровне фактического placement candidate: конфигурация + регион + availability zone, если provider разделяет эти понятия;
-7. при timeout/423/ambiguous response и при 409 без детерминированного доказательства результата не повторять mutation вслепую;
-8. детерминированный capacity refusal, который однозначно доказывает отсутствие созданного ресурса (например, Timeweb `no_free_node`), разрешает перейти только к следующему заранее допустимому placement candidate без повышения утвержденного cost/security/configuration contract;
-9. persistent desired-state retry разрешен только когда desired state и cost ceiling явно versioned в репозитории и одобрены OWNER; retry должен быть serialized, bounded по каждому run и прекращать provider mutation сразу после достижения desired state;
-10. после ambiguous/conflict результата выполнить bounded read-only reconciliation и только после доказательства состояния принимать следующее решение.
+7. при timeout/423/ambiguous response и при любом provider error без детерминированного доказательства результата не повторять mutation вслепую;
+8. capacity классифицировать по документированному/наблюдаемому provider `error_code`, а не только по HTTP status; placement-level refusal (например, Timeweb `no_free_node`) разрешает перейти к следующему заранее допустимому placement, а location-level refusal (например, `servers_is_run_out_error`) закрывает остальные candidates этой location без новых mutation;
+9. capacity fallback не может повышать утвержденный cost/security/configuration contract;
+10. persistent desired-state retry разрешен только когда desired state и cost ceiling явно versioned в репозитории и одобрены OWNER; retry должен быть serialized, bounded по каждому run и прекращать provider mutation сразу после достижения desired state;
+11. после ambiguous/conflict результата выполнить bounded read-only reconciliation и только после доказательства состояния принимать следующее решение.
 
 Никогда не ослаблять TLS, firewall или tenant security ради успешного deployment.
 
@@ -254,6 +255,8 @@ PostgreSQL является relational authority после принятого p
 - Timeweb credentials.
 
 Secrets находятся только в защищённом GitHub/Timeweb custody.
+
+Код из pull request / feature branch никогда не получает production provider secrets. Secret-bearing deploy/reconcile job может исполнять только accepted `main` (или отдельный явно одобренный release ref с эквивалентной защитой).
 
 Никогда не печатать secrets в logs, exceptions, screenshots, fixtures или test output.
 

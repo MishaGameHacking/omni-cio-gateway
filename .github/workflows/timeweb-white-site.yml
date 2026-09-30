@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/timeweb-white-site.yml"
       - ".github/scripts/timeweb_white_site.py"
+      - ".github/scripts/test_timeweb_white_site.py"
   pull_request:
     branches:
       - main
@@ -40,27 +41,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  timeweb:
-    name: Reconcile desired state
+  tests:
+    name: Test reconciler
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    env:
-      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-      ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event_name == 'pull_request' && 'plan' || 'reconcile' }}
-      DEPLOY_CONFIRM: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
-      SERVER_NAME: omni-cio-white-site
-      SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
-      MAX_SERVER_PRICE_RUB: "149"
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout accepted repository state
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Checkout candidate repository state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Run Timeweb reconciler regression tests
         shell: bash
         run: |
           set -euo pipefail
           python3 .github/scripts/test_timeweb_white_site.py
+
+  timeweb:
+    name: Reconcile desired state
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'reconcile' }}
+      DEPLOY_CONFIRM: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
+      SERVER_NAME: omni-cio-white-site
+      SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
+      MAX_SERVER_PRICE_RUB: "149"
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Validate Timeweb secret
         shell: bash

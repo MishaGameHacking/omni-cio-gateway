@@ -125,7 +125,7 @@ class TimewebWhiteSiteTests(unittest.TestCase):
     def test_no_free_node_falls_back_to_next_zone(self) -> None:
         capacity_error = MODULE.TimewebApiError(
             status_code=409,
-            error_code=MODULE.CAPACITY_ERROR_CODE,
+            error_code=MODULE.PLACEMENT_CAPACITY_ERROR_CODE,
             message="No free node",
             response_id="test-response",
         )
@@ -174,6 +174,97 @@ class TimewebWhiteSiteTests(unittest.TestCase):
                 for payload in client.create_payloads
             )
         )
+
+    def test_location_run_out_skips_remaining_zones_in_location(self) -> None:
+        location_error = MODULE.TimewebApiError(
+            status_code=400,
+            error_code=MODULE.LOCATION_CAPACITY_ERROR_CODE,
+            message="Servers in location: ru-1 is run out",
+            response_id="region-capacity",
+        )
+        client = FakeClient([location_error])
+        os_info = {"id": 61}
+        placements = [
+            MODULE.Placement(
+                preset_id=2573,
+                location="ru-1",
+                availability_zone="spb-1",
+                price_rub=Decimal("149"),
+                cpu=1,
+                ram_mb=1024,
+                disk_mb=15360,
+                bandwidth_mbps=100,
+            ),
+            MODULE.Placement(
+                preset_id=2573,
+                location="ru-1",
+                availability_zone="spb-2",
+                price_rub=Decimal("149"),
+                cpu=1,
+                ram_mb=1024,
+                disk_mb=15360,
+                bandwidth_mbps=100,
+            ),
+            MODULE.Placement(
+                preset_id=3000,
+                location="ru-3",
+                availability_zone="msk-1",
+                price_rub=Decimal("149"),
+                cpu=1,
+                ram_mb=1024,
+                disk_mb=15360,
+                bandwidth_mbps=100,
+            ),
+        ]
+
+        client.create_results.append({"id": 84})
+        created, failures = MODULE.create_with_capacity_fallback(
+            client=client,
+            os_info=os_info,
+            placements=placements,
+            server_name="omni-cio-white-site",
+            server_comment="Managed by GitHub Actions: timeweb-white-site",
+        )
+
+        self.assertEqual(created["id"], 84)
+        self.assertEqual(
+            failures,
+            ["2573@spb-1", "2573@spb-2"],
+        )
+        self.assertEqual(
+            [payload["availability_zone"] for payload in client.create_payloads],
+            ["spb-1", "msk-1"],
+        )
+
+    def test_unrelated_bad_request_is_not_treated_as_capacity(self) -> None:
+        bad_request = MODULE.TimewebApiError(
+            status_code=400,
+            error_code="validation_error",
+            message="Invalid payload",
+            response_id="bad-request",
+        )
+        client = FakeClient([bad_request])
+        placement = MODULE.Placement(
+            preset_id=2573,
+            location="ru-1",
+            availability_zone="spb-1",
+            price_rub=Decimal("149"),
+            cpu=1,
+            ram_mb=1024,
+            disk_mb=15360,
+            bandwidth_mbps=100,
+        )
+
+        with self.assertRaises(MODULE.TimewebApiError):
+            MODULE.create_with_capacity_fallback(
+                client=client,
+                os_info={"id": 61},
+                placements=[placement],
+                server_name="omni-cio-white-site",
+                server_comment="Managed by GitHub Actions: timeweb-white-site",
+            )
+
+        self.assertEqual(len(client.create_payloads), 1)
 
     def test_ambiguous_create_never_blindly_tries_next_zone(self) -> None:
         client = FakeClient(
