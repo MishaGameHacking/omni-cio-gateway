@@ -28,6 +28,8 @@ SITE_MARKER = 'name="omni-cio-white-site"'
 DOMAIN_NAME = "omnicio.ru"
 SERVER_NAME = "omni-cio-white-site"
 SERVER_COMMENT = "Managed by GitHub Actions: timeweb-white-site"
+EXPECTED_SERVER_ID = 9235089
+EXPECTED_SERVER_IPV4 = "194.87.151.244"
 
 
 class DeploymentError(RuntimeError):
@@ -324,19 +326,10 @@ systemctl reload nginx
 """
 
 
-def capture_host_key(ipv4: str, known_hosts: pathlib.Path) -> None:
-    """Capture the server key once, then require strict matching for SSH.
-
-    The target address is the canonical IPv4 proven by the Timeweb HTTPS API.
-    The captured key is scoped to this ephemeral runner and every SSH command
-    in the run uses StrictHostKeyChecking=yes.
-    """
-    address = ipaddress.ip_address(ipv4)
-    if address.version != 4:
-        raise DeploymentError("SSH host-key capture requires a public IPv4.")
-
+def capture_host_key(known_hosts: pathlib.Path) -> None:
+    """Capture the pinned server key, then require strict matching for SSH."""
     result = subprocess.run(
-        ["ssh-keyscan", "-T", "10", "-t", "ed25519", str(address)],
+        ["ssh-keyscan", "-T", "10", "-t", "ed25519", EXPECTED_SERVER_IPV4],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -380,15 +373,10 @@ def wait_for_ssh(
     *,
     private_key: pathlib.Path,
     known_hosts: pathlib.Path,
-    ipv4: str,
     attempts: int = 18,
 ) -> None:
-    address = ipaddress.ip_address(ipv4)
-    if address.version != 4:
-        raise DeploymentError("SSH readiness requires a public IPv4.")
-
     command = ssh_base_args(private_key, known_hosts) + [
-        f"root@{address}",
+        f"root@{EXPECTED_SERVER_IPV4}",
         "true",
     ]
     last_error = "SSH not attempted"
@@ -415,14 +403,9 @@ def configure_remote_https(
     *,
     private_key: pathlib.Path,
     known_hosts: pathlib.Path,
-    ipv4: str,
 ) -> None:
-    address = ipaddress.ip_address(ipv4)
-    if address.version != 4:
-        raise DeploymentError("Remote HTTPS configuration requires a public IPv4.")
-
     command = ssh_base_args(private_key, known_hosts) + [
-        f"root@{address}",
+        f"root@{EXPECTED_SERVER_IPV4}",
         "bash",
         "-s",
     ]
@@ -468,6 +451,91 @@ def cleanup_ephemeral_key(
         print(f"::warning::{detach_error}", file=sys.stderr)
 
 
+def validate_managed_server_identity(
+    server: dict[str, Any],
+) -> tuple[int, set[str]]:
+    server_id = int(float(server["id"]))
+    server_ipv4, server_ipv6 = public_addresses(server)
+
+    if server_id != EXPECTED_SERVER_ID:
+        raise DeploymentError(
+            "Managed server identity changed. Update the pinned server ID "
+            "through reviewed repository state before remote administration."
+        )
+    if server_ipv4 != {EXPECTED_SERVER_IPV4}:
+        raise DeploymentError(
+            "Managed server IPv4 changed. Update the pinned IPv4 through "
+            "reviewed repository state before remote administration."
+        )
+
+    return server_id, server_ipv6
+
+
+def configure_with_ephemeral_key(
+    *,
+    client: TimewebClient,
+    server_id: int,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="omni-cio-tls-") as tempdir:
+        temp_path = pathlib.Path(tempdir)
+        private_key = temp_path / "id_ed25519"
+        known_hosts = temp_path / "known_hosts"
+
+        subprocess.run(
+            [
+                "ssh-keygen",
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                "omni-cio-github-actions-ephemeral",
+                "-f",
+                str(private_key),
+            ],
+            check=True,
+            timeout=30,
+        )
+        public_key = private_key.with_suffix(".pub").read_text(
+            encoding="utf-8"
+        ).strip()
+        capture_host_key(known_hosts)
+
+        run_id = os.environ.get("GITHUB_RUN_ID", "")
+        if run_id and not run_id.isdigit():
+            raise DeploymentError("GITHUB_RUN_ID must contain digits only.")
+        key_name = f"gha-omnicio-tls-{run_id or int(time.time())}"
+        ssh_key_id = client.create_ssh_key(public_key, key_name)
+        attached = False
+        try:
+            client.attach_ssh_key(server_id, ssh_key_id)
+            attached = True
+            add_summary(
+                "- Temporary SSH public key attached for server configuration."
+            )
+            wait_for_ssh(
+                private_key=private_key,
+                known_hosts=known_hosts,
+            )
+            configure_remote_https(
+                private_key=private_key,
+                known_hosts=known_hosts,
+            )
+        finally:
+            if attached:
+                cleanup_ephemeral_key(
+                    client=client,
+                    server_id=server_id,
+                    ssh_key_id=ssh_key_id,
+                )
+            else:
+                try:
+                    client.delete_ssh_key(ssh_key_id)
+                except Exception:
+                    pass
+
+
 def run(*, client: TimewebClient) -> int:
     add_summary("## omnicio.ru HTTPS bootstrap")
 
@@ -480,17 +548,8 @@ def run(*, client: TimewebClient) -> int:
         server_name=SERVER_NAME,
         server_comment=SERVER_COMMENT,
     )
-    server_id = int(float(server["id"]))
-    server_ipv4, server_ipv6 = public_addresses(server)
-
-    if not server_ipv4:
-        raise DeploymentError("Managed server has no public IPv4.")
-    if len(server_ipv4) != 1:
-        raise DeploymentError(
-            "Managed server has multiple public IPv4 addresses; refusing to guess."
-        )
-
-    ipv4 = next(iter(server_ipv4))
+    server_id, server_ipv6 = validate_managed_server_identity(server)
+    ipv4 = EXPECTED_SERVER_IPV4
     dns_ipv4 = resolve_addresses(DOMAIN_NAME, socket.AF_INET)
     dns_ipv6 = resolve_addresses(DOMAIN_NAME, socket.AF_INET6)
 
@@ -522,66 +581,10 @@ def run(*, client: TimewebClient) -> int:
         )
         return 0
 
-    with tempfile.TemporaryDirectory(prefix="omni-cio-tls-") as tempdir:
-        temp_path = pathlib.Path(tempdir)
-        private_key = temp_path / "id_ed25519"
-        known_hosts = temp_path / "known_hosts"
-
-        subprocess.run(
-            [
-                "ssh-keygen",
-                "-q",
-                "-t",
-                "ed25519",
-                "-N",
-                "",
-                "-C",
-                "omni-cio-github-actions-ephemeral",
-                "-f",
-                str(private_key),
-            ],
-            check=True,
-            timeout=30,
-        )
-        public_key = private_key.with_suffix(".pub").read_text(
-            encoding="utf-8"
-        ).strip()
-        capture_host_key(ipv4, known_hosts)
-
-        run_id = os.environ.get("GITHUB_RUN_ID", "")
-        if run_id and not run_id.isdigit():
-            raise DeploymentError("GITHUB_RUN_ID must contain digits only.")
-        key_name = f"gha-omnicio-tls-{run_id or int(time.time())}"
-        ssh_key_id = client.create_ssh_key(public_key, key_name)
-        attached = False
-        try:
-            client.attach_ssh_key(server_id, ssh_key_id)
-            attached = True
-            add_summary(
-                "- Temporary SSH public key attached for server configuration."
-            )
-            wait_for_ssh(
-                private_key=private_key,
-                known_hosts=known_hosts,
-                ipv4=ipv4,
-            )
-            configure_remote_https(
-                private_key=private_key,
-                known_hosts=known_hosts,
-                ipv4=ipv4,
-            )
-        finally:
-            if attached:
-                cleanup_ephemeral_key(
-                    client=client,
-                    server_id=server_id,
-                    ssh_key_id=ssh_key_id,
-                )
-            else:
-                try:
-                    client.delete_ssh_key(ssh_key_id)
-                except Exception:
-                    pass
+    configure_with_ephemeral_key(
+        client=client,
+        server_id=server_id,
+    )
 
     if not verify_https():
         raise DeploymentError(
