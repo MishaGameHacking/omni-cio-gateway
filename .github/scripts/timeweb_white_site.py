@@ -214,6 +214,7 @@ def select_budget_presets(
     os_info: dict[str, Any],
     presets: list[dict[str, Any]],
     max_server_price_rub: Decimal,
+    target_location: str,
 ) -> list[dict[str, Any]]:
     requirements = dict(os_info.get("requirements") or {})
     cpu_min = decimal_value(requirements.get("cpu_min") or 0)
@@ -221,8 +222,13 @@ def select_budget_presets(
     disk_min_mb = os_disk_min_mb(requirements.get("disk_min") or 0)
     bandwidth_min = decimal_value(requirements.get("bandwidth_min") or 0)
 
+    normalized_target_location = target_location.strip().lower()
     eligible: list[dict[str, Any]] = []
     for preset in presets:
+        preset_location = str(preset.get("location") or "").strip().lower()
+        if preset_location != normalized_target_location:
+            continue
+
         price = decimal_value(preset.get("price") or 0)
         if price <= 0 or price > max_server_price_rub:
             continue
@@ -262,7 +268,7 @@ def availability_zones_by_location(
             for zone in (item.get("availability_zones") or [])
             if str(zone).strip()
         )
-        result[location] = zones
+        result[location.lower()] = zones
     return result
 
 
@@ -270,35 +276,53 @@ def build_placements(
     *,
     presets: list[dict[str, Any]],
     locations: list[dict[str, Any]],
+    target_location: str,
+    target_availability_zone: str,
 ) -> list[Placement]:
     zone_map = availability_zones_by_location(locations)
+    normalized_target_location = target_location.strip().lower()
+    normalized_target_zone = target_availability_zone.strip().lower()
+
+    provider_zones = zone_map.get(normalized_target_location) or ()
+    matching_zone = next(
+        (
+            zone
+            for zone in provider_zones
+            if zone.strip().lower() == normalized_target_zone
+        ),
+        None,
+    )
+    if matching_zone is None:
+        raise DeploymentError(
+            f"Timeweb location {target_location!r} does not currently expose "
+            f"availability zone {target_availability_zone!r}."
+        )
+
     placements: list[Placement] = []
-    seen: set[tuple[int, str | None]] = set()
+    seen: set[int] = set()
 
     for preset in presets:
         preset_id = integer_value(preset["id"])
         location = str(preset.get("location") or "").strip()
-        zones = zone_map.get(location) or (None,)
-
-        for availability_zone in zones:
-            key = (preset_id, availability_zone)
-            if key in seen:
-                continue
-            seen.add(key)
-            placements.append(
-                Placement(
-                    preset_id=preset_id,
-                    location=location or "unknown",
-                    availability_zone=availability_zone,
-                    price_rub=decimal_value(preset.get("price") or 0),
-                    cpu=integer_value(preset.get("cpu") or 0),
-                    ram_mb=integer_value(preset.get("ram") or 0),
-                    disk_mb=integer_value(preset.get("disk") or 0),
-                    bandwidth_mbps=integer_value(
-                        preset.get("bandwidth") or 100
-                    ),
-                )
+        if location.lower() != normalized_target_location:
+            continue
+        if preset_id in seen:
+            continue
+        seen.add(preset_id)
+        placements.append(
+            Placement(
+                preset_id=preset_id,
+                location=location,
+                availability_zone=matching_zone,
+                price_rub=decimal_value(preset.get("price") or 0),
+                cpu=integer_value(preset.get("cpu") or 0),
+                ram_mb=integer_value(preset.get("ram") or 0),
+                disk_mb=integer_value(preset.get("disk") or 0),
+                bandwidth_mbps=integer_value(
+                    preset.get("bandwidth") or 100
+                ),
             )
+        )
 
     return placements
 
@@ -586,12 +610,15 @@ def reconcile(
     server_name: str,
     server_comment: str,
     max_server_price_rub: Decimal,
+    target_location: str,
+    target_availability_zone: str,
 ) -> int:
     add_summary("## Timeweb white site")
     add_summary(f"- Mode: `{mode}`")
     add_summary(
-        f"- Desired state: `present`; server budget ceiling: "
-        f"{max_server_price_rub} RUB/month API price."
+        f"- Desired state: `present`; Moscow placement "
+        f"`{target_location}/{target_availability_zone}`; server budget "
+        f"ceiling: {max_server_price_rub} RUB/month API price."
     )
 
     ubuntu = select_ubuntu_2404(client)
@@ -599,16 +626,20 @@ def reconcile(
         os_info=ubuntu,
         presets=client.get_server_presets(),
         max_server_price_rub=max_server_price_rub,
+        target_location=target_location,
     )
     if not presets:
         raise DeploymentError(
             "No Ubuntu 24.04 server preset satisfies the current requirements "
-            f"within the {max_server_price_rub} RUB server budget ceiling."
+            f"in location {target_location!r} within the "
+            f"{max_server_price_rub} RUB server budget ceiling."
         )
 
     placements = build_placements(
         presets=presets,
         locations=client.get_locations(),
+        target_location=target_location,
+        target_availability_zone=target_availability_zone,
     )
     if not placements:
         raise DeploymentError(
@@ -641,6 +672,20 @@ def reconcile(
             raise DeploymentError(
                 "A same-name server already exists but is not marked as "
                 "managed by this reconciler. Refusing to mutate it."
+            )
+
+        existing_location = str(existing.get("location") or "").lower()
+        existing_zone = str(existing.get("availability_zone") or "").lower()
+        if (
+            existing_location != target_location.lower()
+            or existing_zone != target_availability_zone.lower()
+        ):
+            raise DeploymentError(
+                "Managed server exists outside the required Moscow placement: "
+                f"actual={existing_location or 'unknown'}/"
+                f"{existing_zone or 'unknown'}, required="
+                f"{target_location}/{target_availability_zone}. "
+                "Automatic cross-region migration/deletion is not permitted."
             )
 
         if mode == "plan":
@@ -730,6 +775,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--server-name", required=True)
     parser.add_argument("--server-comment", required=True)
     parser.add_argument("--max-server-price-rub", required=True)
+    parser.add_argument("--target-location", required=True)
+    parser.add_argument("--target-availability-zone", required=True)
     return parser.parse_args(argv)
 
 
@@ -748,6 +795,8 @@ def main(argv: list[str] | None = None) -> int:
             server_name=args.server_name,
             server_comment=args.server_comment,
             max_server_price_rub=max_price,
+            target_location=args.target_location,
+            target_availability_zone=args.target_availability_zone,
         )
     except (DeploymentError, TimewebApiError) as exc:
         print(f"::error::{exc}", file=sys.stderr)

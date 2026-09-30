@@ -78,17 +78,18 @@ class TimewebWhiteSiteTests(unittest.TestCase):
         result = MODULE.select_budget_presets(
             os_info=os_info,
             presets=presets,
-            max_server_price_rub=Decimal("149"),
+            max_server_price_rub=Decimal("199"),
+            target_location="ru-3",
         )
 
-        self.assertEqual([item["id"] for item in result], [2573])
+        self.assertEqual([item["id"] for item in result], [3000])
 
-    def test_build_placements_expands_all_provider_zones(self) -> None:
+    def test_build_placements_restricts_to_moscow_zone(self) -> None:
         presets = [
             {
-                "id": 2573,
-                "location": "ru-1",
-                "price": 149,
+                "id": 3000,
+                "location": "ru-3",
+                "price": 199,
                 "cpu": 1,
                 "ram": 1024,
                 "disk": 15360,
@@ -97,30 +98,56 @@ class TimewebWhiteSiteTests(unittest.TestCase):
         ]
         locations = [
             {
+                "location": "ru-3",
+                "availability_zones": ["msk-1"],
+            },
+            {
                 "location": "ru-1",
-                "availability_zones": [
-                    "spb-1",
-                    "spb-2",
-                    "spb-3",
-                    "spb-4",
-                ],
-            }
+                "availability_zones": ["spb-1", "spb-2"],
+            },
         ]
 
         placements = MODULE.build_placements(
             presets=presets,
             locations=locations,
+            target_location="ru-3",
+            target_availability_zone="msk-1",
         )
 
         self.assertEqual(
             [item.label for item in placements],
-            [
-                "2573@spb-1",
-                "2573@spb-2",
-                "2573@spb-3",
-                "2573@spb-4",
-            ],
+            ["3000@msk-1"],
         )
+        self.assertTrue(
+            all(item.location == "ru-3" for item in placements)
+        )
+
+    def test_build_placements_rejects_missing_moscow_zone(self) -> None:
+        presets = [
+            {
+                "id": 3000,
+                "location": "ru-3",
+                "price": 199,
+                "cpu": 1,
+                "ram": 1024,
+                "disk": 15360,
+                "bandwidth": 100,
+            }
+        ]
+        locations = [
+            {
+                "location": "ru-3",
+                "availability_zones": ["msk-2"],
+            }
+        ]
+
+        with self.assertRaises(MODULE.DeploymentError):
+            MODULE.build_placements(
+                presets=presets,
+                locations=locations,
+                target_location="ru-3",
+                target_availability_zone="msk-1",
+            )
 
     def test_no_free_node_falls_back_to_next_zone(self) -> None:
         capacity_error = MODULE.TimewebApiError(
