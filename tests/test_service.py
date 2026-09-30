@@ -62,10 +62,14 @@ class FakeDatabase:
             return self.challenge
         return None
 
-    def consume_challenge(self, challenge_id, *, code_matches):
+    def record_failed_challenge_attempt(self, challenge_id):
+        return self.challenge is not None and self.challenge.id == challenge_id
+
+    def complete_verified_challenge(self, **kwargs):
+        challenge_id = kwargs["challenge_id"]
         if not self.challenge or self.challenge.id != challenge_id:
             return None
-        if not code_matches or self.challenge.consumed_at is not None:
+        if self.challenge.consumed_at is not None:
             return None
         self.challenge = ChallengeRecord(
             id=self.challenge.id,
@@ -77,9 +81,6 @@ class FakeDatabase:
             consumed_at=utcnow(),
             legal_versions=self.challenge.legal_versions,
         )
-        return self.challenge
-
-    def resolve_user_and_create_session(self, **kwargs):
         self.session_digest = kwargs["session_token_digest"]
         return self.user, True
 
