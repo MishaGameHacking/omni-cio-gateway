@@ -1,0 +1,102 @@
+name: Auth application deploy
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/timeweb_auth_app.py"
+      - ".github/scripts/test_timeweb_auth_app.py"
+      - ".github/scripts/timeweb_auth_postgres.py"
+      - "src/omnicio/**"
+      - "web/**"
+      - "pyproject.toml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/timeweb_auth_app.py"
+      - ".github/scripts/test_timeweb_auth_app.py"
+      - ".github/scripts/timeweb_auth_postgres.py"
+      - "src/omnicio/**"
+      - "web/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auth-app-deploy
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Test auth deployer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout candidate state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Compile deploy scripts
+        run: |
+          python3 -m py_compile \
+            .github/scripts/timeweb_auth_postgres.py \
+            .github/scripts/timeweb_auth_app.py
+
+      - name: Run deployer tests
+        run: python3 .github/scripts/test_timeweb_auth_app.py
+
+      - name: Verify HTTPS marker remains in auth page
+        run: grep -F 'name="omni-cio-white-site"' web/index.html
+
+  deploy:
+    name: Deploy auth application
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      SERVER_NAME: omni-cio-white-site
+      SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate Timeweb secret
+        run: |
+          set -euo pipefail
+          test -n "${TIMEWEB_CLOUD_TOKEN:-}" || {
+            echo "::error::TIMEWEB_CLOUD_TOKEN is missing"
+            exit 1
+          }
+
+      - name: Deploy accepted auth release
+        id: app
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/timeweb_auth_app.py \
+            --server-name "${SERVER_NAME}" \
+            --server-comment "${SERVER_COMMENT}" \
+            --release-sha "${GITHUB_SHA}" \
+            --repository-root "${GITHUB_WORKSPACE}"
+
+      - name: Surface database gate
+        if: steps.app.outputs.status == 'pending_database'
+        run: |
+          echo "::warning title=Private PostgreSQL required::Auth application was not changed because the private PostgreSQL/runtime environment is not ready."
+
+      - name: Confirm application readiness
+        if: steps.app.outputs.status == 'app_ready'
+        run: |
+          echo "OmniCIO auth application is healthy over HTTPS. Registration remains disabled."
