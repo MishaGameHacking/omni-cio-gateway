@@ -451,18 +451,9 @@ def cleanup_ephemeral_key(
         print(f"::warning::{detach_error}", file=sys.stderr)
 
 
-def run(*, client: TimewebClient) -> int:
-    add_summary("## omnicio.ru HTTPS bootstrap")
-
-    if verify_https():
-        add_summary(f"- HTTPS is already ready: https://{DOMAIN_NAME}/")
-        return 0
-
-    server = find_managed_server(
-        client,
-        server_name=SERVER_NAME,
-        server_comment=SERVER_COMMENT,
-    )
+def validate_managed_server_identity(
+    server: dict[str, Any],
+) -> tuple[int, set[str]]:
     server_id = int(float(server["id"]))
     server_ipv4, server_ipv6 = public_addresses(server)
 
@@ -477,38 +468,14 @@ def run(*, client: TimewebClient) -> int:
             "reviewed repository state before remote administration."
         )
 
-    ipv4 = EXPECTED_SERVER_IPV4
-    dns_ipv4 = resolve_addresses(DOMAIN_NAME, socket.AF_INET)
-    dns_ipv6 = resolve_addresses(DOMAIN_NAME, socket.AF_INET6)
+    return server_id, server_ipv6
 
-    add_summary(f"- Managed server: id `{server_id}`, IPv4 `{ipv4}`.")
-    add_summary(
-        f"- DNS A: `{', '.join(sorted(dns_ipv4)) or 'none'}`; "
-        f"AAAA: `{', '.join(sorted(dns_ipv6)) or 'none'}`."
-    )
-    if server_ipv6:
-        add_summary(
-            f"- Server currently reports IPv6: "
-            f"`{', '.join(sorted(server_ipv6))}`."
-        )
 
-    assessment = assess_dns(
-        expected_ipv4=ipv4,
-        dns_ipv4=dns_ipv4,
-        dns_ipv6=dns_ipv6,
-    )
-    if not assessment.ready:
-        add_summary(f"- Result: `pending_dns`. {assessment.reason}")
-        add_summary(
-            "- No SSH key was created and no server configuration was changed. "
-            "A scheduled accepted-main run will retry after DNS delegation/propagation."
-        )
-        print(
-            "::warning title=DNS pending::omnicio.ru is not yet publicly "
-            "delegated/resolved to the managed Timeweb IPv4."
-        )
-        return 0
-
+def configure_with_ephemeral_key(
+    *,
+    client: TimewebClient,
+    server_id: int,
+) -> None:
     with tempfile.TemporaryDirectory(prefix="omni-cio-tls-") as tempdir:
         temp_path = pathlib.Path(tempdir)
         private_key = temp_path / "id_ed25519"
@@ -567,6 +534,57 @@ def run(*, client: TimewebClient) -> int:
                     client.delete_ssh_key(ssh_key_id)
                 except Exception:
                     pass
+
+
+def run(*, client: TimewebClient) -> int:
+    add_summary("## omnicio.ru HTTPS bootstrap")
+
+    if verify_https():
+        add_summary(f"- HTTPS is already ready: https://{DOMAIN_NAME}/")
+        return 0
+
+    server = find_managed_server(
+        client,
+        server_name=SERVER_NAME,
+        server_comment=SERVER_COMMENT,
+    )
+    server_id, server_ipv6 = validate_managed_server_identity(server)
+    ipv4 = EXPECTED_SERVER_IPV4
+    dns_ipv4 = resolve_addresses(DOMAIN_NAME, socket.AF_INET)
+    dns_ipv6 = resolve_addresses(DOMAIN_NAME, socket.AF_INET6)
+
+    add_summary(f"- Managed server: id `{server_id}`, IPv4 `{ipv4}`.")
+    add_summary(
+        f"- DNS A: `{', '.join(sorted(dns_ipv4)) or 'none'}`; "
+        f"AAAA: `{', '.join(sorted(dns_ipv6)) or 'none'}`."
+    )
+    if server_ipv6:
+        add_summary(
+            f"- Server currently reports IPv6: "
+            f"`{', '.join(sorted(server_ipv6))}`."
+        )
+
+    assessment = assess_dns(
+        expected_ipv4=ipv4,
+        dns_ipv4=dns_ipv4,
+        dns_ipv6=dns_ipv6,
+    )
+    if not assessment.ready:
+        add_summary(f"- Result: `pending_dns`. {assessment.reason}")
+        add_summary(
+            "- No SSH key was created and no server configuration was changed. "
+            "A scheduled accepted-main run will retry after DNS delegation/propagation."
+        )
+        print(
+            "::warning title=DNS pending::omnicio.ru is not yet publicly "
+            "delegated/resolved to the managed Timeweb IPv4."
+        )
+        return 0
+
+    configure_with_ephemeral_key(
+        client=client,
+        server_id=server_id,
+    )
 
     if not verify_https():
         raise DeploymentError(
