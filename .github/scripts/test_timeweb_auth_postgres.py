@@ -115,6 +115,16 @@ class PostgresTests(unittest.TestCase):
         self.assertEqual(endpoint.host, "10.77.0.10")
         self.assertEqual(endpoint.port, 5432)
 
+    def test_timeweb_database_password_policy(self) -> None:
+        self.assertTrue(MODULE.is_valid_timeweb_db_password("Abcdef1234567890_-"))
+        self.assertFalse(MODULE.is_valid_timeweb_db_password("short"))
+        self.assertFalse(MODULE.is_valid_timeweb_db_password("A" * 31))
+        self.assertFalse(MODULE.is_valid_timeweb_db_password("valid-length but space"))
+
+    def test_secret_bootstrap_uses_provider_compatible_password_length(self) -> None:
+        self.assertIn("secrets.token_urlsafe(18)", MODULE.REMOTE_SECRET_BOOTSTRAP)
+        self.assertNotIn("secrets.token_urlsafe(36)", MODULE.REMOTE_SECRET_BOOTSTRAP)
+
     def test_secret_bundle_requires_all_runtime_keys(self) -> None:
         raw = (
             "OMNICIO_DB_ADMIN_PASSWORD=pw\n"
