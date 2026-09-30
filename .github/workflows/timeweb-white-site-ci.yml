@@ -1,0 +1,44 @@
+name: Timeweb white site CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-white-site.yml"
+      - ".github/workflows/timeweb-white-site-ci.yml"
+      - ".github/scripts/timeweb_white_site.py"
+      - ".github/scripts/test_timeweb_white_site.py"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-white-site.yml"
+      - ".github/workflows/timeweb-white-site-ci.yml"
+      - ".github/scripts/timeweb_white_site.py"
+      - ".github/scripts/test_timeweb_white_site.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timeweb-white-site-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Test reconciler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout candidate repository state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run Timeweb reconciler regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/test_timeweb_white_site.py
