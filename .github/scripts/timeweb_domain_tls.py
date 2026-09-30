@@ -488,7 +488,7 @@ def configure_with_ephemeral_key(
                 "-t",
                 "ed25519",
                 "-N",
-                "",
+                str(""),
                 "-C",
                 "omni-cio-github-actions-ephemeral",
                 "-f",
