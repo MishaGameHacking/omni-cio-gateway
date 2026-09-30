@@ -104,6 +104,12 @@ jobs:
             --target-location "${TARGET_LOCATION}" \
             --target-availability-zone "${TARGET_AVAILABILITY_ZONE}"
 
+      - name: Surface pending budget state
+        if: steps.reconcile.outputs.status == 'pending_budget'
+        shell: bash
+        run: |
+          echo "::warning title=Timeweb budget pending::Cheapest compatible Moscow server is ${{ steps.reconcile.outputs.cheapest_server_price_rub }} RUB/month, above the approved ${MAX_SERVER_PRICE_RUB} RUB ceiling. No resource was created."
+
       - name: Surface transient capacity state
         if: steps.reconcile.outputs.status == 'pending_capacity'
         shell: bash
