@@ -124,7 +124,9 @@ class TimewebPostgresProductionCutoverGuardTests(unittest.TestCase):
                     controller = root / "scripts/timeweb_postgres_production_cutover.py"
                     source = controller.read_text(encoding=TEXT_ENCODING)
                     marker = "_verify_bootstrap_database_authority(bootstrap)"
-                    replacement = "_verify_bootstrap_database_authority_removed(bootstrap)"
+                    replacement = (
+                        "_verify_bootstrap_database_authority_removed(bootstrap)"
+                    )
                     self.assertEqual(source.count(marker), 2)
                     if occurrence == 1:
                         mutated = source.replace(marker, replacement, 1)
