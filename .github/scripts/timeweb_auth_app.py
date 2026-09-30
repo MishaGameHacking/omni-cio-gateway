@@ -26,8 +26,8 @@ from timeweb_auth_postgres import (
     InfraError,
     TimewebApiError,
     TimewebClient,
-    find_database_cluster,
     find_managed_server,
+    find_vpc,
     integer_value,
     public_ipv4,
 )
@@ -385,6 +385,9 @@ def reconcile(
     release_sha: str,
     repository_root: pathlib.Path,
     cluster_name: str,
+    vpc_name: str,
+    location: str,
+    availability_zone: str,
 ) -> int:
     if not RELEASE_RE.fullmatch(release_sha):
         raise InfraError("Release SHA must be a full lowercase 40-character SHA")
@@ -398,17 +401,28 @@ def reconcile(
     server_id = integer_value(server_summary["id"])
     server = client.get_server(server_id)
 
-    database = find_database_cluster(
-        client.get_database_clusters(),
-        cluster_name=cluster_name,
+    vpc = find_vpc(
+        client.get_vpcs(),
+        name=vpc_name,
+        location=location,
+        availability_zone=availability_zone,
     )
-    if database is None:
+    services = client.get_vpc_services(str(vpc["id"]))
+    databases = [
+        service
+        for service in services
+        if str(service.get("name") or "") == cluster_name
+    ]
+    if not databases:
         add_summary(
-            "- Result: pending_database. Managed PostgreSQL does not exist yet; "
-            "no SSH key, application, or Nginx configuration was changed."
+            "- Result: pending_database. Managed PostgreSQL is not present in "
+            "the approved VPC; no SSH key, application, or Nginx configuration "
+            "was changed."
         )
         set_output("status", "pending_database")
         return 0
+    if len(databases) != 1:
+        raise InfraError("Multiple same-name database services exist in the VPC")
 
     archive_b64 = build_release_archive(repository_root)
 
@@ -456,6 +470,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--release-sha", required=True)
     parser.add_argument("--repository-root", required=True)
     parser.add_argument("--cluster-name", required=True)
+    parser.add_argument("--vpc-name", required=True)
+    parser.add_argument("--location", required=True)
+    parser.add_argument("--availability-zone", required=True)
     return parser.parse_args()
 
 
@@ -470,6 +487,9 @@ def main() -> int:
             release_sha=args.release_sha,
             repository_root=pathlib.Path(args.repository_root).resolve(),
             cluster_name=args.cluster_name,
+            vpc_name=args.vpc_name,
+            location=args.location,
+            availability_zone=args.availability_zone,
         )
     except (
         InfraError,
