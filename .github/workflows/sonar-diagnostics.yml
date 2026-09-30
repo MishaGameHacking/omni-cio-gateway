@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Query public SonarQube Cloud issue API
+      - name: Query public SonarQube Cloud APIs
         shell: bash
         run: |
           set -euo pipefail
@@ -23,27 +23,48 @@ jobs:
           import json
           import urllib.parse
           import urllib.request
-          params = urllib.parse.urlencode({
-              "componentKeys": "MishaGameHacking_omni-cio-gateway",
-              "branch": "main",
-              "issueStatuses": "OPEN,CONFIRMED",
-              "sinceLeakPeriod": "true",
-              "ps": "100",
-          })
-          url = "https://sonarcloud.io/api/issues/search?" + params
-          request = urllib.request.Request(
-              url,
-              headers={"Accept": "application/json", "User-Agent": "omni-cio-sonar-diagnostics/1.0"},
-          )
-          try:
+
+          PROJECT = "MishaGameHacking_omni-cio-gateway"
+
+          def get(path, params):
+              query = urllib.parse.urlencode(params)
+              url = "https://sonarcloud.io" + path + "?" + query
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/json",
+                      "User-Agent": "omni-cio-sonar-diagnostics/1.0",
+                  },
+              )
               with urllib.request.urlopen(request, timeout=20) as response:
-                  raw = response.read().decode("utf-8")
-                  data = json.loads(raw)
-          except Exception as exc:
-              print("QUERY_FAILED", type(exc).__name__, str(exc))
-              raise
+                  return json.loads(response.read().decode("utf-8"))
+
+          issues = get(
+              "/api/issues/search",
+              {
+                  "componentKeys": PROJECT,
+                  "branch": "main",
+                  "ps": "500",
+              },
+          )
+          measures = get(
+              "/api/measures/component",
+              {
+                  "component": PROJECT,
+                  "branch": "main",
+                  "metricKeys": (
+                      "security_rating,new_security_rating,"
+                      "vulnerabilities,new_vulnerabilities,"
+                      "security_issues,new_security_issues"
+                  ),
+              },
+          )
+
+          print("MEASURES")
+          print(json.dumps(measures, indent=2, sort_keys=True))
+          print("ISSUES")
           print(json.dumps({
-              "total": data.get("total"),
+              "total": issues.get("total"),
               "issues": [
                   {
                       "key": item.get("key"),
@@ -54,10 +75,13 @@ jobs:
                       "line": item.get("line"),
                       "message": item.get("message"),
                       "status": item.get("status"),
+                      "issueStatus": item.get("issueStatus"),
+                      "creationDate": item.get("creationDate"),
+                      "updateDate": item.get("updateDate"),
                       "cleanCodeAttribute": item.get("cleanCodeAttribute"),
                       "impacts": item.get("impacts"),
                   }
-                  for item in data.get("issues", [])
+                  for item in issues.get("issues", [])
               ],
           }, indent=2, sort_keys=True))
           PY
