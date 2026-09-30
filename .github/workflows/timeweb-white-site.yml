@@ -1,10 +1,25 @@
 name: Timeweb white site
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-white-site.yml"
+      - ".github/scripts/timeweb_white_site.py"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-white-site.yml"
+      - ".github/scripts/timeweb_white_site.py"
+      - ".github/scripts/test_timeweb_white_site.py"
+  schedule:
+    - cron: "17,47 * * * *"
   workflow_dispatch:
     inputs:
       mode:
-        description: "plan = read-only check; deploy = create the server"
+        description: "plan = read-only check; deploy = reconcile desired state now"
         required: true
         default: plan
         type: choice
@@ -12,7 +27,7 @@ on:
           - plan
           - deploy
       confirm:
-        description: "For deploy, type CREATE exactly"
+        description: "For manual deploy, type CREATE exactly"
         required: false
         default: ""
         type: string
@@ -26,18 +41,28 @@ concurrency:
 
 jobs:
   timeweb:
-    name: Plan or deploy
-    runs-on: ubuntu-latest
+    name: Reconcile desired state
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-      ACTION_MODE: ${{ inputs.mode }}
-      DEPLOY_CONFIRM: ${{ inputs.confirm }}
+      ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event_name == 'pull_request' && 'plan' || 'reconcile' }}
+      DEPLOY_CONFIRM: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
+      MAX_SERVER_PRICE_RUB: "149"
 
     steps:
-      - name: Validate secret
+      - name: Checkout accepted repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Run Timeweb reconciler regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/test_timeweb_white_site.py
+
+      - name: Validate Timeweb secret
         shell: bash
         run: |
           set -euo pipefail
@@ -46,349 +71,20 @@ jobs:
             exit 1
           fi
 
-      - name: Plan or deploy Timeweb server
+      - name: Reconcile Timeweb white site
+        id: reconcile
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import ipaddress
-          import json
-          import os
-          import socket
-          import sys
-          import time
-          import urllib.error
-          import urllib.request
+          python3 .github/scripts/timeweb_white_site.py \
+            --mode "${ACTION_MODE}" \
+            --confirm "${DEPLOY_CONFIRM}" \
+            --server-name "${SERVER_NAME}" \
+            --server-comment "${SERVER_COMMENT}" \
+            --max-server-price-rub "${MAX_SERVER_PRICE_RUB}"
 
-          API_BASE = "https://api.timeweb.cloud/api/v1"
-          TOKEN = os.environ["TIMEWEB_CLOUD_TOKEN"]
-          MODE = os.environ["ACTION_MODE"]
-          CONFIRM = os.environ.get("DEPLOY_CONFIRM", "")
-          SERVER_NAME = os.environ["SERVER_NAME"]
-          SERVER_COMMENT = os.environ["SERVER_COMMENT"]
-          SUMMARY_PATH = os.environ.get("GITHUB_STEP_SUMMARY")
-
-          def add_summary(line: str) -> None:
-              print(line)
-              if SUMMARY_PATH:
-                  with open(SUMMARY_PATH, "a", encoding="utf-8") as handle:
-                      handle.write(line + "\n")
-
-          def request(method: str, path: str, payload: dict | None = None, timeout: int = 30) -> dict:
-              data = None
-              headers = {
-                  "Authorization": f"Bearer {TOKEN}",
-                  "Accept": "application/json",
-              }
-              if payload is not None:
-                  data = json.dumps(payload).encode("utf-8")
-                  headers["Content-Type"] = "application/json"
-
-              req = urllib.request.Request(
-                  API_BASE + path,
-                  data=data,
-                  headers=headers,
-                  method=method,
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=timeout) as response:
-                      body = response.read().decode("utf-8")
-                      return json.loads(body) if body else {}
-              except urllib.error.HTTPError as exc:
-                  body = exc.read().decode("utf-8", errors="replace")
-                  raise RuntimeError(
-                      f"Timeweb API {method} {path} returned HTTP {exc.code}: {body}"
-                  ) from exc
-
-          def get_servers() -> list[dict]:
-              return request("GET", "/servers").get("servers", [])
-
-          def find_named_server() -> dict | None:
-              for server in get_servers():
-                  if server.get("name") == SERVER_NAME:
-                      return server
-              return None
-
-          def server_id(server: dict) -> int:
-              return int(float(server["id"]))
-
-          def ipv4_addresses(server: dict) -> list[str]:
-              result: list[str] = []
-              for network in server.get("networks") or []:
-                  for item in network.get("ips") or []:
-                      value = item.get("ip")
-                      if not value:
-                          continue
-                      try:
-                          address = ipaddress.ip_address(value)
-                      except ValueError:
-                          continue
-                      if address.version == 4:
-                          result.append(value)
-              return result
-
-          def get_server(server_id_value: int) -> dict:
-              return request("GET", f"/servers/{server_id_value}").get("server", {})
-
-          def select_ubuntu_2404() -> dict:
-              items = request("GET", "/os/servers").get("servers_os", [])
-              matches = [
-                  item
-                  for item in items
-                  if str(item.get("name", "")).lower() == "ubuntu"
-                  and str(item.get("version", "")) == "24.04"
-              ]
-              if not matches:
-                  raise RuntimeError("Ubuntu 24.04 is not available in the current Timeweb OS list.")
-              return max(matches, key=lambda item: float(item.get("id", 0)))
-
-          def select_eligible_presets(os_info: dict) -> list[dict]:
-              presets = request("GET", "/presets/servers").get("server_presets", [])
-              requirements = os_info.get("requirements") or {}
-
-              cpu_min = float(requirements.get("cpu_min") or 0)
-              ram_min = float(requirements.get("ram_min") or 0)
-              disk_min = float(requirements.get("disk_min") or 0)
-              bandwidth_min = float(requirements.get("bandwidth_min") or 0)
-
-              # Timeweb preset RAM/disk values are returned in MB. OS disk requirements
-              # are commonly expressed in GB (for example, Windows requires 35).
-              disk_min_mb = disk_min * 1024 if 0 < disk_min < 1024 else disk_min
-
-              eligible = []
-              for preset in presets:
-                  price = float(preset.get("price") or 0)
-                  if price <= 0:
-                      continue
-                  if float(preset.get("cpu") or 0) < cpu_min:
-                      continue
-                  if float(preset.get("ram") or 0) < ram_min:
-                      continue
-                  if float(preset.get("disk") or 0) < disk_min_mb:
-                      continue
-                  if float(preset.get("bandwidth") or 0) < bandwidth_min:
-                      continue
-                  eligible.append(preset)
-
-              if not eligible:
-                  raise RuntimeError("No current Timeweb server preset satisfies Ubuntu 24.04 requirements.")
-
-              return sorted(
-                  eligible,
-                  key=lambda item: (
-                      float(item.get("price") or 0),
-                      float(item.get("ram") or 0),
-                      float(item.get("disk") or 0),
-                      float(item.get("cpu") or 0),
-                      str(item.get("location") or ""),
-                      float(item.get("id") or 0),
-                  ),
-              )
-
-          def reconcile_after_ambiguous_create() -> dict | None:
-              for _ in range(6):
-                  time.sleep(10)
-                  server = find_named_server()
-                  if server and server.get("comment") == SERVER_COMMENT:
-                      return server
-              return None
-
-          def wait_for_ipv4(server_id_value: int) -> tuple[dict, str]:
-              latest: dict = {}
-              for _ in range(30):
-                  latest = get_server(server_id_value)
-                  addresses = ipv4_addresses(latest)
-                  if addresses:
-                      return latest, addresses[0]
-                  time.sleep(10)
-              raise RuntimeError(
-                  f"Server {server_id_value} was created, but no IPv4 appeared within 5 minutes."
-              )
-
-          def wait_for_site(ip: str) -> None:
-              url = f"http://{ip}/"
-              last_error = "not attempted"
-              for _ in range(36):
-                  try:
-                      with urllib.request.urlopen(url, timeout=5) as response:
-                          body = response.read().decode("utf-8", errors="replace")
-                          if response.status == 200 and 'name="omni-cio-white-site"' in body:
-                              return
-                          last_error = f"HTTP {response.status}, marker not found"
-                  except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
-                      last_error = str(exc)
-                  time.sleep(10)
-              raise RuntimeError(
-                  f"Server is reachable by API, but the site did not become ready within 6 minutes: {last_error}"
-              )
-
-          add_summary("## Timeweb white site")
-          add_summary(f"- Mode: `{MODE}`")
-
-          ubuntu = select_ubuntu_2404()
-          eligible_presets = select_eligible_presets(ubuntu)
-          minimum_price = float(eligible_presets[0].get("price") or 0)
-          same_price_presets = [
-              item
-              for item in eligible_presets
-              if float(item.get("price") or 0) == minimum_price
-          ]
-          preset = same_price_presets[0]
-          add_summary(
-              "- Selected: Ubuntu 24.04; "
-              f"preset `{int(float(preset['id']))}`; "
-              f"location `{preset.get('location', 'unknown')}`; "
-              f"CPU {preset.get('cpu')}; RAM {preset.get('ram')} MB; "
-              f"disk {preset.get('disk')} MB; "
-              f"bandwidth {preset.get('bandwidth')} Mbps; "
-              f"price {preset.get('price')} RUB (Timeweb API value)"
-          )
-          add_summary(
-              f"- Same-price capacity candidates: {len(same_price_presets)}; "
-              "deploy may try another candidate only after an explicit no_free_node response."
-          )
-          add_summary("- Public IPv4: requested automatically by Timeweb; billed separately.")
-
-          existing = find_named_server()
-          if existing:
-              existing_id = server_id(existing)
-              addresses = ipv4_addresses(existing)
-              add_summary(
-                  f"- Existing server: `{SERVER_NAME}` (id `{existing_id}`, "
-                  f"status `{existing.get('status', 'unknown')}`)"
-              )
-              if addresses:
-                  add_summary(f"- IPv4: http://{addresses[0]}/")
-
-              if existing.get("comment") != SERVER_COMMENT:
-                  if MODE == "deploy":
-                      raise RuntimeError(
-                          "A server with the target name already exists but is not marked as managed "
-                          "by this workflow. Refusing to mutate it."
-                      )
-                  add_summary("- Plan result: name collision detected; deploy would be blocked.")
-                  sys.exit(0)
-
-              if MODE == "deploy":
-                  latest, ip = wait_for_ipv4(existing_id)
-                  wait_for_site(ip)
-                  add_summary(f"- Result: existing managed site is ready at http://{ip}/")
-              else:
-                  add_summary("- Plan result: managed server already exists; no resource would be created.")
-              sys.exit(0)
-
-          if MODE == "plan":
-              add_summary("- Plan result: no matching server exists. Deploy would create exactly one server.")
-              add_summary("- No Timeweb resource was created or changed.")
-              sys.exit(0)
-
-          if MODE != "deploy":
-              raise RuntimeError(f"Unsupported mode: {MODE}")
-
-          if CONFIRM != "CREATE":
-              raise RuntimeError(
-                  "Deploy mode requires the confirmation input to be exactly CREATE."
-              )
-
-          cloud_init = """#!/bin/sh
-          set -eu
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y nginx
-          cat > /var/www/html/index.html <<'EOF'
-          <!doctype html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta name="omni-cio-white-site" content="1">
-            <title></title>
-            <style>
-              html, body {
-                width: 100%;
-                height: 100%;
-                margin: 0;
-                background: #fff;
-              }
-            </style>
-          </head>
-          <body></body>
-          </html>
-          EOF
-          systemctl enable nginx
-          systemctl restart nginx
-          """
-
-          created = {}
-          capacity_failures = []
-
-          for candidate in same_price_presets:
-              preset = candidate
-              payload = {
-                  "name": SERVER_NAME,
-                  "comment": SERVER_COMMENT,
-                  "os_id": int(float(ubuntu["id"])),
-                  "preset_id": int(float(preset["id"])),
-                  "bandwidth": int(float(preset.get("bandwidth") or 100)),
-                  "is_ddos_guard": False,
-                  "network": {"floating_ip": "create_ip"},
-                  "cloud_init": cloud_init,
-              }
-
-              try:
-                  created = request("POST", "/servers", payload=payload, timeout=45).get("server", {})
-                  if created:
-                      break
-              except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
-                  add_summary(f"- Create response was ambiguous: {type(exc).__name__}. Reconciling read-only.")
-                  created = reconcile_after_ambiguous_create()
-                  if not created:
-                      raise RuntimeError(
-                          "Create request had an ambiguous network result and reconciliation did not find "
-                          "the managed server. The workflow will not retry the create mutation."
-                      ) from exc
-                  break
-              except RuntimeError as exc:
-                  message = str(exc)
-                  if "HTTP 409" in message and '"error_code":"no_free_node"' in message:
-                      candidate_id = int(float(candidate["id"]))
-                      candidate_location = candidate.get("location", "unknown")
-                      capacity_failures.append((candidate_id, candidate_location))
-                      add_summary(
-                          f"- No free node for preset `{candidate_id}` in "
-                          f"`{candidate_location}`; trying the next candidate at the same price."
-                      )
-                      continue
-                  if "HTTP 409" in message or "HTTP 423" in message:
-                      add_summary("- Create returned a conflict/locked response. Reconciling read-only.")
-                      created = reconcile_after_ambiguous_create()
-                      if not created:
-                          raise
-                      break
-                  raise
-
-          if not created and capacity_failures:
-              attempted = ", ".join(
-                  f"{preset_id}@{location}" for preset_id, location in capacity_failures
-              )
-              raise RuntimeError(
-                  "Timeweb reported no_free_node for every eligible preset at the approved "
-                  f"minimum price ({minimum_price:g} RUB): {attempted}. No server was created."
-              )
-
-          if not created or "id" not in created:
-              created = find_named_server()
-          if not created or "id" not in created:
-              raise RuntimeError("Timeweb did not return or reconcile a created server ID.")
-
-          created_id = server_id(created)
-          add_summary(f"- Created server id: `{created_id}`")
-
-          latest, ip = wait_for_ipv4(created_id)
-          add_summary(
-              f"- Server status: `{latest.get('status', 'unknown')}`; IPv4: http://{ip}/"
-          )
-
-          wait_for_site(ip)
-          add_summary(f"- Result: site is ready and verified at http://{ip}/")
-          PY
+      - name: Surface transient capacity state
+        if: steps.reconcile.outputs.status == 'pending_capacity'
+        shell: bash
+        run: |
+          echo "::warning title=Timeweb capacity pending::No approved placement currently has a free node. The scheduled reconciler will retry without raising the server budget."
