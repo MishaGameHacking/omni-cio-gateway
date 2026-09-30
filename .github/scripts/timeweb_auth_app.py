@@ -26,6 +26,7 @@ from timeweb_auth_postgres import (
     InfraError,
     TimewebApiError,
     TimewebClient,
+    find_database_cluster,
     find_managed_server,
     integer_value,
     public_ipv4,
@@ -383,6 +384,7 @@ def reconcile(
     server_comment: str,
     release_sha: str,
     repository_root: pathlib.Path,
+    cluster_name: str,
 ) -> int:
     if not RELEASE_RE.fullmatch(release_sha):
         raise InfraError("Release SHA must be a full lowercase 40-character SHA")
@@ -395,6 +397,19 @@ def reconcile(
     )
     server_id = integer_value(server_summary["id"])
     server = client.get_server(server_id)
+
+    database = find_database_cluster(
+        client.get_database_clusters(),
+        cluster_name=cluster_name,
+    )
+    if database is None:
+        add_summary(
+            "- Result: pending_database. Managed PostgreSQL does not exist yet; "
+            "no SSH key, application, or Nginx configuration was changed."
+        )
+        set_output("status", "pending_database")
+        return 0
+
     archive_b64 = build_release_archive(repository_root)
 
     with EphemeralSsh(
@@ -440,6 +455,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-comment", required=True)
     parser.add_argument("--release-sha", required=True)
     parser.add_argument("--repository-root", required=True)
+    parser.add_argument("--cluster-name", required=True)
     return parser.parse_args()
 
 
@@ -453,6 +469,7 @@ def main() -> int:
             server_comment=args.server_comment,
             release_sha=args.release_sha,
             repository_root=pathlib.Path(args.repository_root).resolve(),
+            cluster_name=args.cluster_name,
         )
     except (
         InfraError,
