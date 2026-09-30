@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -144,7 +145,7 @@ class Database:
                         "client_ip_hash": client_ip_hash,
                         "attempts_remaining": attempts_remaining,
                         "ttl_seconds": ttl_seconds,
-                        "legal_versions": __import__("json").dumps(legal_versions),
+                        "legal_versions": json.dumps(legal_versions),
                     },
                 )
                 row = cur.fetchone()
