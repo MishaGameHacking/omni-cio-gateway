@@ -482,6 +482,34 @@ class TimewebPublicIpv4TlsTests(unittest.TestCase):
             "TIMEWEB_POSTGRES_TLS_TRANSPORT_TIMEOUT",
         )
 
+    def test_tls_socket_uses_provider_bound_ip_and_hostname_identity(self) -> None:
+        raw_socket = mock.MagicMock()
+        raw_socket.recv.return_value = b"S"
+        tls_socket = mock.MagicMock()
+        tls_socket.getpeercert.return_value = {"subject": "fixture"}
+        wrapped = mock.MagicMock()
+        wrapped.__enter__.return_value = tls_socket
+        context = mock.Mock(spec=ssl.SSLContext)
+        context.wrap_socket.return_value = wrapped
+        with mock.patch.object(
+            provisioner.socket,
+            "create_connection",
+            return_value=raw_socket,
+        ) as create:
+            provisioner._probe_postgres_tls_once(
+                "example.twc1.net",
+                "8.8.4.4",
+                context,
+            )
+        create.assert_called_once_with(
+            ("8.8.4.4", int(provisioner.POSTGRES_PORT)),
+            timeout=15.0,
+        )
+        context.wrap_socket.assert_called_once_with(
+            raw_socket,
+            server_hostname="example.twc1.net",
+        )
+
     def test_tls_probe_rejects_unbound_or_non_public_hostaddr(self) -> None:
         for address in ("", "not-an-ip", "10.0.0.5", "2001:4860:4860::8888"):
             with self.subTest(address=address):
