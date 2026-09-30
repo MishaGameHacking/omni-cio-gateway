@@ -237,7 +237,7 @@ def assess_dns(
     return DnsAssessment(True, "DNS is ready for IPv4 HTTP-01 validation.")
 
 
-def verify_https(domain: str) -> bool:
+def verify_https() -> bool:
     request = urllib.request.Request(
         f"https://{DOMAIN_NAME}/",
         headers={"User-Agent": "omni-cio-deploy-verifier/1.0"},
@@ -471,7 +471,7 @@ def cleanup_ephemeral_key(
 def run(*, client: TimewebClient) -> int:
     add_summary("## omnicio.ru HTTPS bootstrap")
 
-    if verify_https(DOMAIN_NAME):
+    if verify_https():
         add_summary(f"- HTTPS is already ready: https://{DOMAIN_NAME}/")
         return 0
 
@@ -583,7 +583,7 @@ def run(*, client: TimewebClient) -> int:
                 except Exception:
                     pass
 
-    if not verify_https(DOMAIN_NAME):
+    if not verify_https():
         raise DeploymentError(
             "Nginx/Certbot completed, but public HTTPS verification failed."
         )
