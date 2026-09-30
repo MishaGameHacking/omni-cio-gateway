@@ -142,7 +142,7 @@ jobs:
                   raise RuntimeError("Ubuntu 24.04 is not available in the current Timeweb OS list.")
               return max(matches, key=lambda item: float(item.get("id", 0)))
 
-          def select_minimum_preset(os_info: dict) -> dict:
+          def select_eligible_presets(os_info: dict) -> list[dict]:
               presets = request("GET", "/presets/servers").get("server_presets", [])
               requirements = os_info.get("requirements") or {}
 
@@ -173,13 +173,15 @@ jobs:
               if not eligible:
                   raise RuntimeError("No current Timeweb server preset satisfies Ubuntu 24.04 requirements.")
 
-              return min(
+              return sorted(
                   eligible,
                   key=lambda item: (
                       float(item.get("price") or 0),
                       float(item.get("ram") or 0),
                       float(item.get("disk") or 0),
                       float(item.get("cpu") or 0),
+                      str(item.get("location") or ""),
+                      float(item.get("id") or 0),
                   ),
               )
 
@@ -224,7 +226,14 @@ jobs:
           add_summary(f"- Mode: `{MODE}`")
 
           ubuntu = select_ubuntu_2404()
-          preset = select_minimum_preset(ubuntu)
+          eligible_presets = select_eligible_presets(ubuntu)
+          minimum_price = float(eligible_presets[0].get("price") or 0)
+          same_price_presets = [
+              item
+              for item in eligible_presets
+              if float(item.get("price") or 0) == minimum_price
+          ]
+          preset = same_price_presets[0]
           add_summary(
               "- Selected: Ubuntu 24.04; "
               f"preset `{int(float(preset['id']))}`; "
@@ -234,6 +243,11 @@ jobs:
               f"bandwidth {preset.get('bandwidth')} Mbps; "
               f"price {preset.get('price')} RUB (Timeweb API value)"
           )
+          add_summary(
+              f"- Same-price capacity candidates: {len(same_price_presets)}; "
+              "deploy may try another candidate only after an explicit no_free_node response."
+          )
+          add_summary("- Public IPv4: requested automatically by Timeweb; billed separately.")
 
           existing = find_named_server()
           if existing:
@@ -305,36 +319,62 @@ jobs:
           systemctl restart nginx
           """
 
-          payload = {
-              "name": SERVER_NAME,
-              "comment": SERVER_COMMENT,
-              "os_id": int(float(ubuntu["id"])),
-              "preset_id": int(float(preset["id"])),
-              "bandwidth": int(float(preset.get("bandwidth") or 100)),
-              "is_ddos_guard": False,
-              "is_local_network": False,
-              "cloud_init": cloud_init,
-          }
+          created = {}
+          capacity_failures = []
 
-          try:
-              created = request("POST", "/servers", payload=payload, timeout=45).get("server", {})
-          except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
-              add_summary(f"- Create response was ambiguous: {type(exc).__name__}. Reconciling read-only.")
-              created = reconcile_after_ambiguous_create()
-              if not created:
-                  raise RuntimeError(
-                      "Create request had an ambiguous network result and reconciliation did not find "
-                      "the managed server. The workflow will not retry the create mutation."
-                  ) from exc
-          except RuntimeError as exc:
-              message = str(exc)
-              if "HTTP 409" in message or "HTTP 423" in message:
-                  add_summary("- Create returned a conflict/locked response. Reconciling read-only.")
+          for candidate in same_price_presets:
+              preset = candidate
+              payload = {
+                  "name": SERVER_NAME,
+                  "comment": SERVER_COMMENT,
+                  "os_id": int(float(ubuntu["id"])),
+                  "preset_id": int(float(preset["id"])),
+                  "bandwidth": int(float(preset.get("bandwidth") or 100)),
+                  "is_ddos_guard": False,
+                  "network": {"floating_ip": "create_ip"},
+                  "cloud_init": cloud_init,
+              }
+
+              try:
+                  created = request("POST", "/servers", payload=payload, timeout=45).get("server", {})
+                  if created:
+                      break
+              except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+                  add_summary(f"- Create response was ambiguous: {type(exc).__name__}. Reconciling read-only.")
                   created = reconcile_after_ambiguous_create()
                   if not created:
-                      raise
-              else:
+                      raise RuntimeError(
+                          "Create request had an ambiguous network result and reconciliation did not find "
+                          "the managed server. The workflow will not retry the create mutation."
+                      ) from exc
+                  break
+              except RuntimeError as exc:
+                  message = str(exc)
+                  if "HTTP 409" in message and '"error_code":"no_free_node"' in message:
+                      candidate_id = int(float(candidate["id"]))
+                      candidate_location = candidate.get("location", "unknown")
+                      capacity_failures.append((candidate_id, candidate_location))
+                      add_summary(
+                          f"- No free node for preset `{candidate_id}` in "
+                          f"`{candidate_location}`; trying the next candidate at the same price."
+                      )
+                      continue
+                  if "HTTP 409" in message or "HTTP 423" in message:
+                      add_summary("- Create returned a conflict/locked response. Reconciling read-only.")
+                      created = reconcile_after_ambiguous_create()
+                      if not created:
+                          raise
+                      break
                   raise
+
+          if not created and capacity_failures:
+              attempted = ", ".join(
+                  f"{preset_id}@{location}" for preset_id, location in capacity_failures
+              )
+              raise RuntimeError(
+                  "Timeweb reported no_free_node for every eligible preset at the approved "
+                  f"minimum price ({minimum_price:g} RUB): {attempted}. No server was created."
+              )
 
           if not created or "id" not in created:
               created = find_named_server()
