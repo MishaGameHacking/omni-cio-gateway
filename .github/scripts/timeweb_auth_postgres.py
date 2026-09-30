@@ -787,11 +787,26 @@ def reconcile(
         set_output("status", "pending_server_network")
         return 0
 
+    try:
+        database_types = client.get_database_types()
+        database_presets = client.get_database_presets()
+        database_clusters = client.get_database_clusters()
+    except TimewebApiError as exc:
+        if exc.status_code == 403:
+            add_summary(
+                "- Result: pending_token_permission. The Timeweb API token "
+                "does not currently have DBaaS access; no database was created "
+                "or changed."
+            )
+            set_output("status", "pending_token_permission")
+            return 0
+        raise
+
     db_type = select_postgres_type(
-        client.get_database_types(),
+        database_types,
         version=desired.postgres_version,
     )
-    preset = select_database_preset(client.get_database_presets(), desired)
+    preset = select_database_preset(database_presets, desired)
     preset_id = integer_value(preset["id"])
     preset_price = decimal_value(preset.get("price") or 0)
     add_summary(
@@ -803,7 +818,7 @@ def reconcile(
     )
 
     existing = find_database_cluster(
-        client.get_database_clusters(),
+        database_clusters,
         cluster_name=desired.cluster_name,
     )
 
