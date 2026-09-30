@@ -71,7 +71,7 @@ jobs:
       DEPLOY_CONFIRM: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
-      MAX_SERVER_PRICE_RUB: "199"
+      MAX_SERVER_PRICE_RUB: "800"
       TARGET_LOCATION: "ru-3"
       TARGET_AVAILABILITY_ZONE: "msk-1"
 
