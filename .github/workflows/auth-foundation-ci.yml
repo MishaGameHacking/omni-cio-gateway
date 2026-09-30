@@ -77,13 +77,13 @@ jobs:
       matrix:
         include:
           - name: Ruff
-            task: ruff
+            command: '"%OMNICIO_PYTHON%" -m ruff check src tests'
           - name: Mypy
-            task: mypy
+            command: '"%OMNICIO_PYTHON%" -m mypy src'
           - name: Security tests
-            task: security
+            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_security.py'
           - name: Service and support tests
-            task: service-support
+            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_support.py'
 
     steps:
       - name: Checkout accepted main state
@@ -93,85 +93,54 @@ jobs:
           clean: true
 
       - name: Resolve installed Python and isolate job environment
-        shell: powershell
+        shell: cmd
         run: |
-          $ErrorActionPreference = "Stop"
-          $python = $null
+          @echo off
+          setlocal EnableExtensions
+          set "PYTHON_CMD="
 
-          $launcher = Get-Command py -ErrorAction SilentlyContinue
-          if ($launcher) {
-            foreach ($version in @("3.13", "3.12")) {
-              try {
-                $candidate = (
-                  & $launcher.Source "-$version" -c "import sys; print(sys.executable)" 2>$null |
-                    Select-Object -Last 1
-                )
-                if ($LASTEXITCODE -eq 0 -and $candidate) {
-                  $python = $candidate.Trim()
-                  break
-                }
-              } catch {
-                # Try the next supported interpreter.
-              }
-            }
-          }
+          where py >nul 2>nul
+          if not errorlevel 1 (
+            py -3.13 -c "import sys; assert sys.version_info[:2] == (3, 13)" >nul 2>nul
+            if not errorlevel 1 set "PYTHON_CMD=py -3.13"
+            if not defined PYTHON_CMD (
+              py -3.12 -c "import sys; assert sys.version_info[:2] == (3, 12)" >nul 2>nul
+              if not errorlevel 1 set "PYTHON_CMD=py -3.12"
+            )
+          )
 
-          if (-not $python) {
-            $command = Get-Command python -ErrorAction SilentlyContinue
-            if ($command) {
-              try {
-                $version = (
-                  & $command.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" |
-                    Select-Object -Last 1
-                ).Trim()
-                if ($LASTEXITCODE -eq 0 -and $version -in @("3.12", "3.13")) {
-                  $python = $command.Source
-                }
-              } catch {
-                # Fall through to the explicit diagnostic below.
-              }
-            }
-          }
+          if not defined PYTHON_CMD (
+            where python >nul 2>nul
+            if not errorlevel 1 (
+              python -c "import sys; assert sys.version_info[:2] in ((3, 12), (3, 13))" >nul 2>nul
+              if not errorlevel 1 set "PYTHON_CMD=python"
+            )
+          )
 
-          if (-not $python) {
-            Write-Host "PowerShell execution policy:"
-            Get-ExecutionPolicy -List | Format-Table | Out-String | Write-Host
-            throw "Python 3.12 or 3.13 is not installed on this self-hosted runner."
-          }
+          if not defined PYTHON_CMD (
+            echo ::error::Python 3.12 or 3.13 is not installed or visible to the runner service.
+            where py 2>nul
+            where python 2>nul
+            exit /b 1
+          )
 
-          & $python -m venv .venv-ci
-          $venvPython = Join-Path $PWD ".venv-ci\Scripts\python.exe"
-          & $venvPython -c "import sys; print(sys.version)"
-          "OMNICIO_PYTHON=$venvPython" |
-            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          call %PYTHON_CMD% -m venv .venv-ci
+          if errorlevel 1 exit /b 1
+
+          set "VENV_PYTHON=%CD%\.venv-ci\Scripts\python.exe"
+          "%VENV_PYTHON%" -c "import sys; print(sys.version)"
+          if errorlevel 1 exit /b 1
+
+          >>"%GITHUB_ENV%" echo OMNICIO_PYTHON=%VENV_PYTHON%
 
       - name: Install project and test tooling
-        shell: powershell
+        shell: cmd
         run: |
-          & $env:OMNICIO_PYTHON -m pip install --upgrade pip
-          & $env:OMNICIO_PYTHON -m pip install -e ".[dev]"
+          "%OMNICIO_PYTHON%" -m pip install --upgrade pip
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" -m pip install -e ".[dev]"
+          if errorlevel 1 exit /b 1
 
       - name: Run ${{ matrix.name }}
-        shell: powershell
-        run: |
-          switch ("${{ matrix.task }}") {
-            "ruff" {
-              & $env:OMNICIO_PYTHON -m ruff check src tests
-              break
-            }
-            "mypy" {
-              & $env:OMNICIO_PYTHON -m mypy src
-              break
-            }
-            "security" {
-              & $env:OMNICIO_PYTHON -m pytest tests/test_security.py
-              break
-            }
-            "service-support" {
-              & $env:OMNICIO_PYTHON -m pytest tests/test_service.py tests/test_support.py
-              break
-            }
-            default {
-              throw "Unknown self-hosted CI task: ${{ matrix.task }}"
-            }
-          }
+        shell: cmd
+        run: ${{ matrix.command }}
