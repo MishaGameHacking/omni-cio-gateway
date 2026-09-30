@@ -46,12 +46,12 @@ def _key_bytes(value: str, *, name: str) -> bytes:
 
 def phone_lookup(phone: str, lookup_key: str) -> bytes:
     key = _key_bytes(lookup_key, name="lookup key")
-    return hmac.new(key, phone.encode("utf-8"), hashlib.sha256).digest()
+    return hmac.new(key, phone.encode(), hashlib.sha256).digest()
 
 
 def encrypt_phone(phone: str, crypto_key: str) -> bytes:
     try:
-        return Fernet(crypto_key.encode("ascii")).encrypt(phone.encode("utf-8"))
+        return Fernet(crypto_key.encode("ascii")).encrypt(phone.encode())
     except (ValueError, UnicodeError) as exc:
         raise SecurityValueError("invalid phone encryption key") from exc
 
@@ -69,7 +69,7 @@ def generate_otp() -> str:
 
 def otp_digest(challenge_id: str, code: str, otp_key: str) -> bytes:
     key = _key_bytes(otp_key, name="otp key")
-    payload = f"{challenge_id}:{code}".encode("utf-8")
+    payload = f"{challenge_id}:{code}".encode()
     return hmac.new(key, payload, hashlib.sha256).digest()
 
 
@@ -88,9 +88,9 @@ def generate_session_token() -> str:
 
 
 def session_digest(token: str) -> bytes:
-    return hashlib.sha256(token.encode("utf-8")).digest()
+    return hashlib.sha256(token.encode()).digest()
 
 
 def client_ip_digest(ip_address: str, ip_key: str) -> bytes:
     key = _key_bytes(ip_key, name="client ip key")
-    return hmac.new(key, ip_address.encode("utf-8"), hashlib.sha256).digest()
+    return hmac.new(key, ip_address.encode(), hashlib.sha256).digest()
