@@ -99,6 +99,29 @@ class PostgresTests(unittest.TestCase):
         self.assertNotIn("floating_ip", payload["network"])
         self.assertEqual(payload["disk_autoscaling"], {"is_enabled": False})
 
+    def test_private_server_cidr_uses_vpc_prefix(self) -> None:
+        vpc = {"subnet_v4": "10.77.0.0/24"}
+        service = {"local_ip": "10.77.0.4"}
+
+        self.assertEqual(
+            MODULE.private_server_cidr(vpc, service),
+            "10.77.0.4/24",
+        )
+
+    def test_private_server_cidr_rejects_outside_subnet(self) -> None:
+        with self.assertRaises(MODULE.InfraError):
+            MODULE.private_server_cidr(
+                {"subnet_v4": "10.77.0.0/24"},
+                {"local_ip": "10.88.0.4"},
+            )
+
+    def test_private_network_script_never_targets_public_interface(self) -> None:
+        script = MODULE.REMOTE_PRIVATE_NETWORK_CONFIG
+        self.assertIn('if [ "$PRIVATE_IF" = "$PUBLIC_IF" ]', script)
+        self.assertIn("/etc/netplan/99-omnicio-private.yaml", script)
+        self.assertIn('ip addr add "$CIDR" dev "$PRIVATE_IF"', script)
+        self.assertIn("netplan generate", script)
+
     def test_private_database_endpoint_uses_private_ipv4(self) -> None:
         cluster = {
             "port": 5432,
