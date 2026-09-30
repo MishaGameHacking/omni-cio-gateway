@@ -221,9 +221,12 @@ PostgreSQL является relational authority после принятого p
 2. проверить precondition;
 3. выполнить минимальную mutation;
 4. при однозначном success прочитать состояние снова;
-5. при timeout/409/423/ambiguous response не повторять mutation вслепую;
-6. выполнить bounded read-only reconciliation;
-7. только после доказательства состояния принимать следующее решение.
+5. catalog/preset/configurator presence не считать доказательством runtime capacity;
+6. capacity моделировать на уровне фактического placement candidate: конфигурация + регион + availability zone, если provider разделяет эти понятия;
+7. при timeout/423/ambiguous response и при 409 без детерминированного доказательства результата не повторять mutation вслепую;
+8. детерминированный capacity refusal, который однозначно доказывает отсутствие созданного ресурса (например, Timeweb `no_free_node`), разрешает перейти только к следующему заранее допустимому placement candidate без повышения утвержденного cost/security/configuration contract;
+9. persistent desired-state retry разрешен только когда desired state и cost ceiling явно versioned в репозитории и одобрены OWNER; retry должен быть serialized, bounded по каждому run и прекращать provider mutation сразу после достижения desired state;
+10. после ambiguous/conflict результата выполнить bounded read-only reconciliation и только после доказательства состояния принимать следующее решение.
 
 Никогда не ослаблять TLS, firewall или tenant security ради успешного deployment.
 
