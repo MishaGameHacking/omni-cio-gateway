@@ -246,7 +246,7 @@ def verify_https() -> bool:
     )
     try:
         with urllib.request.urlopen(
-            request,
+            url=request,
             timeout=15,
             context=ssl.create_default_context(),
         ) as response:
