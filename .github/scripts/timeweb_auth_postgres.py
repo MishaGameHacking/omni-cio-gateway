@@ -289,20 +289,65 @@ def service_matches(
     )
 
 
+def find_vpc_service(
+    services: list[dict[str, Any]],
+    *,
+    resource_id: int,
+    resource_name: str,
+) -> dict[str, Any] | None:
+    matches = [
+        service
+        for service in services
+        if service_matches(
+            service,
+            resource_id=resource_id,
+            resource_name=resource_name,
+        )
+    ]
+    if len(matches) > 1:
+        raise InfraError(
+            f"Multiple VPC services match {resource_name!r} id {resource_id}"
+        )
+    return matches[0] if matches else None
+
+
 def server_is_attached(
     services: list[dict[str, Any]],
     *,
     server_id: int,
     server_name: str,
 ) -> bool:
-    return any(
-        service_matches(
-            service,
+    return (
+        find_vpc_service(
+            services,
             resource_id=server_id,
             resource_name=server_name,
         )
-        for service in services
+        is not None
     )
+
+
+def private_server_cidr(
+    vpc: dict[str, Any],
+    service: dict[str, Any],
+) -> str:
+    raw_subnet = str(vpc.get("subnet_v4") or "").strip()
+    raw_local_ip = str(service.get("local_ip") or "").strip()
+    if not raw_subnet or not raw_local_ip:
+        raise InfraError("VPC service inventory does not expose server private IPv4")
+
+    try:
+        subnet = ipaddress.ip_network(raw_subnet, strict=False)
+        address = ipaddress.ip_address(raw_local_ip)
+    except ValueError as exc:
+        raise InfraError("Invalid private network address returned by Timeweb") from exc
+
+    if subnet.version != 4 or address.version != 4 or address not in subnet:
+        raise InfraError("Server private IPv4 is outside the managed VPC subnet")
+    if address in {subnet.network_address, subnet.broadcast_address}:
+        raise InfraError("Server private IPv4 is not a usable host address")
+
+    return f"{address}/{subnet.prefixlen}"
 
 
 def select_postgres_type(
@@ -593,6 +638,98 @@ class EphemeralSsh:
         return completed.stdout
 
 
+REMOTE_PRIVATE_NETWORK_CONFIG = r"""set -euo pipefail
+
+CIDR="$1"
+PRIVATE_IP="${CIDR%/*}"
+
+PUBLIC_IF="$(
+    ip route get 1.1.1.1 2>/dev/null |
+    awk '{for (i=1; i<=NF; i++) if ($i == "dev") {print $(i+1); exit}}'
+)"
+if [ -z "$PUBLIC_IF" ]; then
+    echo "Unable to identify public network interface" >&2
+    exit 51
+fi
+
+EXISTING_IF="$(
+    ip -4 -o addr show scope global |
+    awk -v target="$PRIVATE_IP" '
+        {
+            split($4, parts, "/")
+            if (parts[1] == target) print $2
+        }
+    '
+)"
+
+if [ -n "$EXISTING_IF" ]; then
+    if [ "$(printf '%s\n' "$EXISTING_IF" | sed '/^$/d' | wc -l)" -ne 1 ]; then
+        echo "Private IPv4 is assigned to multiple interfaces" >&2
+        exit 52
+    fi
+    PRIVATE_IF="$EXISTING_IF"
+else
+    CANDIDATES=""
+    for sys_path in /sys/class/net/*; do
+        iface="${sys_path##*/}"
+        [ "$iface" = "lo" ] && continue
+        [ "$iface" = "$PUBLIC_IF" ] && continue
+        [ -e "/sys/devices/virtual/net/$iface" ] && continue
+        [ "$(cat "$sys_path/type" 2>/dev/null || true)" = "1" ] || continue
+
+        state="$(cat "$sys_path/operstate" 2>/dev/null || true)"
+        case "$state" in
+            up|unknown) CANDIDATES="$CANDIDATES $iface" ;;
+        esac
+    done
+
+    set -- $CANDIDATES
+    if [ "$#" -ne 1 ]; then
+        echo "Expected exactly one unconfigured physical private interface" >&2
+        exit 53
+    fi
+    PRIVATE_IF="$1"
+
+    ip link set dev "$PRIVATE_IF" up
+    ip addr add "$CIDR" dev "$PRIVATE_IF"
+fi
+
+if [ "$PRIVATE_IF" = "$PUBLIC_IF" ]; then
+    echo "Refusing to configure the public interface as private" >&2
+    exit 54
+fi
+
+install -d -m 0755 /etc/netplan
+cat > /etc/netplan/99-omnicio-private.yaml <<EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $PRIVATE_IF:
+      dhcp4: false
+      dhcp6: false
+      optional: true
+      addresses:
+        - "$CIDR"
+EOF
+chmod 600 /etc/netplan/99-omnicio-private.yaml
+netplan generate
+
+ip -4 addr show dev "$PRIVATE_IF" | grep -Fq "inet $CIDR"
+"""
+
+
+def ensure_server_private_network(
+    ssh: EphemeralSsh,
+    *,
+    private_cidr: str,
+) -> None:
+    ssh.run(
+        f"bash -s -- {shlex.quote(private_cidr)}",
+        input_text=REMOTE_PRIVATE_NETWORK_CONFIG,
+    )
+
+
 def is_valid_timeweb_db_password(value: str) -> bool:
     return (
         TIMEWEB_DB_PASSWORD_MIN <= len(value) <= TIMEWEB_DB_PASSWORD_MAX
@@ -764,6 +901,8 @@ def run_schema_migration(
     command = (
         f"set -a; . {secret_file}; set +a; "
         'export PGPASSWORD="$OMNICIO_DB_ADMIN_PASSWORD"; '
+        'export PGCONNECT_TIMEOUT=10; '
+        'export PGOPTIONS="-c statement_timeout=30000 -c lock_timeout=5000"; '
         f"psql -h {host} -p {port} -U {user} -d {database} "
         "-v ON_ERROR_STOP=1 -q"
     )
@@ -844,11 +983,12 @@ def reconcile(
     vpc_id = str(vpc["id"])
     services = client.get_vpc_services(vpc_id)
 
-    if not server_is_attached(
+    server_vpc_service = find_vpc_service(
         services,
-        server_id=server_id,
-        server_name=server_name,
-    ):
+        resource_id=server_id,
+        resource_name=server_name,
+    )
+    if server_vpc_service is None:
         add_summary(
             "- Result: pending_server_network. The managed VDS is not yet "
             "attached to the approved private VPC."
@@ -856,6 +996,8 @@ def reconcile(
         add_summary("- No database was created or changed.")
         set_output("status", "pending_server_network")
         return 0
+
+    server_private_cidr = private_server_cidr(vpc, server_vpc_service)
 
     try:
         database_types = client.get_database_types()
@@ -897,6 +1039,14 @@ def reconcile(
         server_id=server_id,
         server_ip=public_ipv4(server),
     ) as ssh:
+        ensure_server_private_network(
+            ssh,
+            private_cidr=server_private_cidr,
+        )
+        add_summary(
+            f"- Managed VDS private IPv4 configured as {server_private_cidr}."
+        )
+
         secret_bundle = load_or_create_server_secrets(
             ssh,
             allow_db_password_rotation=existing is None,
