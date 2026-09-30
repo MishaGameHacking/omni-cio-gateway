@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import sys
 import unittest
 from decimal import Decimal
 from typing import Any
@@ -14,6 +15,7 @@ SPEC = importlib.util.spec_from_file_location("timeweb_white_site", MODULE_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("Unable to load timeweb_white_site.py for tests.")
 MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
