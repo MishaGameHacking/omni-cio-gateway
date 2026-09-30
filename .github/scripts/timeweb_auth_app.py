@@ -96,12 +96,14 @@ def _environment_value(value: str) -> str:
 
 
 def build_product_environment() -> str:
+    sms_login = os.environ.get("SMS_PROVIDER_LOGIN", "").strip()
     sms_token = os.environ.get("SMS_PROVIDER_TOKEN", "").strip()
     sms_sender = os.environ.get("SMS_SENDER", "").strip()
-    sms_provider = "mts_exolve" if sms_token and sms_sender else "disabled"
+    sms_provider = "smsaero" if sms_login and sms_token and sms_sender else "disabled"
 
     values = {
         "SMS_PROVIDER": sms_provider,
+        "SMS_PROVIDER_LOGIN": sms_login,
         "SMS_PROVIDER_TOKEN": sms_token,
         "SMS_SENDER": sms_sender,
         "REGISTRATION_ENABLED": "false",
