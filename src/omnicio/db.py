@@ -20,6 +20,7 @@ class ChallengeRecord:
     attempts_remaining: int
     expires_at: datetime
     consumed_at: datetime | None
+    legal_versions: dict[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +108,7 @@ class Database:
         client_ip_hash: bytes,
         attempts_remaining: int,
         ttl_seconds: int,
+        legal_versions: dict[str, str],
     ) -> UUID:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
@@ -119,7 +121,8 @@ class Database:
                         code_digest,
                         client_ip_hash,
                         attempts_remaining,
-                        expires_at
+                        expires_at,
+                        legal_versions
                     )
                     VALUES (
                         %(challenge_id)s,
@@ -128,7 +131,8 @@ class Database:
                         %(code_digest)s,
                         %(client_ip_hash)s,
                         %(attempts_remaining)s,
-                        now() + make_interval(secs => %(ttl_seconds)s)
+                        now() + make_interval(secs => %(ttl_seconds)s),
+                        %(legal_versions)s::jsonb
                     )
                     RETURNING id
                     """,
@@ -140,6 +144,7 @@ class Database:
                         "client_ip_hash": client_ip_hash,
                         "attempts_remaining": attempts_remaining,
                         "ttl_seconds": ttl_seconds,
+                        "legal_versions": __import__("json").dumps(legal_versions),
                     },
                 )
                 row = cur.fetchone()
@@ -356,6 +361,7 @@ def _challenge(row: dict[str, Any]) -> ChallengeRecord:
         attempts_remaining=int(row["attempts_remaining"]),
         expires_at=row["expires_at"],
         consumed_at=row["consumed_at"],
+        legal_versions=dict(row["legal_versions"]),
     )
 
 
