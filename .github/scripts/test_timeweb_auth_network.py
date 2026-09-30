@@ -41,6 +41,18 @@ class NetworkTests(unittest.TestCase):
         )
         self.assertEqual(server["id"], 9235089)
 
+    def test_server_preset_must_allow_private_network(self) -> None:
+        server = {"preset_id": 42}
+        allowed = [{"id": 42, "is_allowed_local_network": True}]
+        blocked = [{"id": 42, "is_allowed_local_network": False}]
+
+        self.assertTrue(MODULE.server_supports_private_network(server, allowed))
+        self.assertFalse(MODULE.server_supports_private_network(server, blocked))
+
+    def test_server_preset_lookup_must_be_unambiguous(self) -> None:
+        with self.assertRaises(MODULE.InfraError):
+            MODULE.server_supports_private_network({"preset_id": 42}, [])
+
     def test_vpc_rejects_same_name_with_wrong_subnet(self) -> None:
         vpcs = [
             {
