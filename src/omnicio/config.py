@@ -80,8 +80,16 @@ class Settings:
         )
 
     @property
+    def sms_ready(self) -> bool:
+        return (
+            self.sms_provider == "mts_exolve"
+            and bool(self.sms_token)
+            and bool(self.sms_sender)
+        )
+
+    @property
     def registration_ready(self) -> bool:
-        return self.registration_enabled and self.legal_ready
+        return self.registration_enabled and self.legal_ready and self.sms_ready
 
 
 def load_settings() -> Settings:
