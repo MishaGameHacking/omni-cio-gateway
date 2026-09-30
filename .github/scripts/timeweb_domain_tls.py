@@ -382,7 +382,7 @@ def wait_for_ssh(
     last_error = "SSH not attempted"
     for _ in range(attempts):
         result = subprocess.run(
-            command,
+            tuple(command),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
