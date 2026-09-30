@@ -8,11 +8,10 @@ key is temporarily registered in Timeweb and attached to the server.
 
 from __future__ import annotations
 
-import argparse
 import ipaddress
 import json
 import os
-import re
+import pathlib
 import socket
 import ssl
 import subprocess
@@ -26,7 +25,9 @@ from typing import Any
 
 API_ROOT = "https://api.timeweb.cloud/api/v1"
 SITE_MARKER = 'name="omni-cio-white-site"'
-DOMAIN_RE = re.compile(r"^[A-Za-z0-9.-]+$")
+DOMAIN_NAME = "omnicio.ru"
+SERVER_NAME = "omni-cio-white-site"
+SERVER_COMMENT = "Managed by GitHub Actions: timeweb-white-site"
 
 
 class DeploymentError(RuntimeError):
@@ -141,18 +142,8 @@ class TimewebClient:
 
 
 def add_summary(line: str) -> None:
+    """Emit operational context to the workflow log only."""
     print(line)
-    path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if path:
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-
-
-def set_output(name: str, value: str) -> None:
-    path = os.environ.get("GITHUB_OUTPUT")
-    if path:
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(f"{name}={value}\n")
 
 
 def find_managed_server(
@@ -195,10 +186,11 @@ def public_addresses(server: dict[str, Any]) -> tuple[set[str], set[str]]:
                 address = ipaddress.ip_address(value)
             except ValueError:
                 continue
+            canonical = str(address)
             if address.version == 4:
-                ipv4.add(value)
+                ipv4.add(canonical)
             else:
-                ipv6.add(value)
+                ipv6.add(canonical)
 
     return ipv4, ipv6
 
@@ -247,7 +239,7 @@ def assess_dns(
 
 def verify_https(domain: str) -> bool:
     request = urllib.request.Request(
-        f"https://{domain}/",
+        f"https://{DOMAIN_NAME}/",
         headers={"User-Agent": "omni-cio-deploy-verifier/1.0"},
     )
     try:
@@ -264,7 +256,7 @@ def verify_https(domain: str) -> bool:
 
 REMOTE_SCRIPT = r"""set -euo pipefail
 
-DOMAIN="$1"
+DOMAIN="omnicio.ru"
 WEBROOT="/var/www/${DOMAIN}/html"
 NGINX_SITE="/etc/nginx/sites-available/${DOMAIN}"
 
@@ -332,17 +324,51 @@ systemctl reload nginx
 """
 
 
-def ssh_base_args(private_key: str, known_hosts: str) -> list[str]:
+def capture_host_key(ipv4: str, known_hosts: pathlib.Path) -> None:
+    """Capture the server key once, then require strict matching for SSH.
+
+    The target address is the canonical IPv4 proven by the Timeweb HTTPS API.
+    The captured key is scoped to this ephemeral runner and every SSH command
+    in the run uses StrictHostKeyChecking=yes.
+    """
+    address = ipaddress.ip_address(ipv4)
+    if address.version != 4:
+        raise DeploymentError("SSH host-key capture requires a public IPv4.")
+
+    result = subprocess.run(
+        ["ssh-keyscan", "-T", "10", "-t", "ed25519", str(address)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    host_keys = [
+        line
+        for line in result.stdout.splitlines()
+        if line and not line.startswith("#")
+    ]
+    if result.returncode != 0 or not host_keys:
+        detail = (result.stderr or "no ED25519 host key returned").strip()
+        raise DeploymentError(
+            "Unable to capture the managed server SSH host key: "
+            + detail[:300]
+        )
+
+    known_hosts.write_text("\n".join(host_keys) + "\n", encoding="utf-8")
+
+
+def ssh_base_args(private_key: pathlib.Path, known_hosts: pathlib.Path) -> list[str]:
     return [
         "ssh",
         "-i",
-        private_key,
+        str(private_key),
         "-o",
         "BatchMode=yes",
         "-o",
         "ConnectTimeout=10",
         "-o",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=yes",
         "-o",
         f"UserKnownHostsFile={known_hosts}",
         "-o",
@@ -352,13 +378,17 @@ def ssh_base_args(private_key: str, known_hosts: str) -> list[str]:
 
 def wait_for_ssh(
     *,
-    private_key: str,
-    known_hosts: str,
+    private_key: pathlib.Path,
+    known_hosts: pathlib.Path,
     ipv4: str,
     attempts: int = 18,
 ) -> None:
+    address = ipaddress.ip_address(ipv4)
+    if address.version != 4:
+        raise DeploymentError("SSH readiness requires a public IPv4.")
+
     command = ssh_base_args(private_key, known_hosts) + [
-        f"root@{ipv4}",
+        f"root@{address}",
         "true",
     ]
     last_error = "SSH not attempted"
@@ -383,17 +413,18 @@ def wait_for_ssh(
 
 def configure_remote_https(
     *,
-    private_key: str,
-    known_hosts: str,
+    private_key: pathlib.Path,
+    known_hosts: pathlib.Path,
     ipv4: str,
-    domain: str,
 ) -> None:
+    address = ipaddress.ip_address(ipv4)
+    if address.version != 4:
+        raise DeploymentError("Remote HTTPS configuration requires a public IPv4.")
+
     command = ssh_base_args(private_key, known_hosts) + [
-        f"root@{ipv4}",
+        f"root@{address}",
         "bash",
         "-s",
-        "--",
-        domain,
     ]
     result = subprocess.run(
         command,
@@ -437,26 +468,17 @@ def cleanup_ephemeral_key(
         print(f"::warning::{detach_error}", file=sys.stderr)
 
 
-def run(
-    *,
-    client: TimewebClient,
-    domain: str,
-    server_name: str,
-    server_comment: str,
-) -> int:
-    if not DOMAIN_RE.fullmatch(domain):
-        raise DeploymentError(f"Invalid domain: {domain!r}")
-
+def run(*, client: TimewebClient) -> int:
     add_summary("## omnicio.ru HTTPS bootstrap")
 
-    if verify_https(domain):
-        add_summary(f"- HTTPS is already ready: https://{domain}/")
+    if verify_https(DOMAIN_NAME):
+        add_summary(f"- HTTPS is already ready: https://{DOMAIN_NAME}/")
         return 0
 
     server = find_managed_server(
         client,
-        server_name=server_name,
-        server_comment=server_comment,
+        server_name=SERVER_NAME,
+        server_comment=SERVER_COMMENT,
     )
     server_id = int(float(server["id"]))
     server_ipv4, server_ipv6 = public_addresses(server)
@@ -469,8 +491,8 @@ def run(
         )
 
     ipv4 = next(iter(server_ipv4))
-    dns_ipv4 = resolve_addresses(domain, socket.AF_INET)
-    dns_ipv6 = resolve_addresses(domain, socket.AF_INET6)
+    dns_ipv4 = resolve_addresses(DOMAIN_NAME, socket.AF_INET)
+    dns_ipv6 = resolve_addresses(DOMAIN_NAME, socket.AF_INET6)
 
     add_summary(f"- Managed server: id `{server_id}`, IPv4 `{ipv4}`.")
     add_summary(
@@ -494,12 +516,16 @@ def run(
             "- No SSH key was created and no server configuration was changed. "
             "A scheduled accepted-main run will retry after DNS delegation/propagation."
         )
-        set_output("status", "pending_dns")
+        print(
+            "::warning title=DNS pending::omnicio.ru is not yet publicly "
+            "delegated/resolved to the managed Timeweb IPv4."
+        )
         return 0
 
     with tempfile.TemporaryDirectory(prefix="omni-cio-tls-") as tempdir:
-        private_key = os.path.join(tempdir, "id_ed25519")
-        known_hosts = os.path.join(tempdir, "known_hosts")
+        temp_path = pathlib.Path(tempdir)
+        private_key = temp_path / "id_ed25519"
+        known_hosts = temp_path / "known_hosts"
 
         subprocess.run(
             [
@@ -512,18 +538,20 @@ def run(
                 "-C",
                 "omni-cio-github-actions-ephemeral",
                 "-f",
-                private_key,
+                str(private_key),
             ],
             check=True,
             timeout=30,
         )
-        with open(private_key + ".pub", "r", encoding="utf-8") as handle:
-            public_key = handle.read().strip()
+        public_key = private_key.with_suffix(".pub").read_text(
+            encoding="utf-8"
+        ).strip()
+        capture_host_key(ipv4, known_hosts)
 
-        key_name = (
-            "gha-omnicio-tls-"
-            + str(os.environ.get("GITHUB_RUN_ID") or int(time.time()))
-        )
+        run_id = os.environ.get("GITHUB_RUN_ID", "")
+        if run_id and not run_id.isdigit():
+            raise DeploymentError("GITHUB_RUN_ID must contain digits only.")
+        key_name = f"gha-omnicio-tls-{run_id or int(time.time())}"
         ssh_key_id = client.create_ssh_key(public_key, key_name)
         attached = False
         try:
@@ -541,7 +569,6 @@ def run(
                 private_key=private_key,
                 known_hosts=known_hosts,
                 ipv4=ipv4,
-                domain=domain,
             )
         finally:
             if attached:
@@ -556,36 +583,21 @@ def run(
                 except Exception:
                     pass
 
-    if not verify_https(domain):
+    if not verify_https(DOMAIN_NAME):
         raise DeploymentError(
             "Nginx/Certbot completed, but public HTTPS verification failed."
         )
 
-    add_summary(f"- HTTPS verified successfully: https://{domain}/")
+    add_summary(f"- HTTPS verified successfully: https://{DOMAIN_NAME}/")
     add_summary("- HTTP is redirected to HTTPS by Certbot/Nginx.")
     add_summary("- Certbot renewal timer is enabled on the server.")
-    set_output("status", "ready")
     return 0
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--domain", required=True)
-    parser.add_argument("--server-name", required=True)
-    parser.add_argument("--server-comment", required=True)
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
     try:
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
-        return run(
-            client=client,
-            domain=args.domain,
-            server_name=args.server_name,
-            server_comment=args.server_comment,
-        )
+        return run(client=client)
     except (DeploymentError, TimewebApiError, subprocess.SubprocessError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
