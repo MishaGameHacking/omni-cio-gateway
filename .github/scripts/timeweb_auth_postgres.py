@@ -677,10 +677,12 @@ else
         [ -e "/sys/devices/virtual/net/$iface" ] && continue
         [ "$(cat "$sys_path/type" 2>/dev/null || true)" = "1" ] || continue
 
-        state="$(cat "$sys_path/operstate" 2>/dev/null || true)"
-        case "$state" in
-            up|unknown) CANDIDATES="$CANDIDATES $iface" ;;
-        esac
+        # A newly attached Timeweb BGP NIC may legitimately report operstate
+        # "down" until an address is assigned. Excluding down interfaces here
+        # makes the exact interface we need invisible. Provider ownership,
+        # non-virtual Ethernet type, and exclusion of the public route interface
+        # are the safety boundaries; the link is brought up immediately below.
+        CANDIDATES="$CANDIDATES $iface"
     done
 
     set -- $CANDIDATES
