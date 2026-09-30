@@ -7,6 +7,13 @@ on:
     paths:
       - ".github/workflows/timeweb-white-site.yml"
       - ".github/scripts/timeweb_white_site.py"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-white-site.yml"
+      - ".github/scripts/timeweb_white_site.py"
+      - ".github/scripts/test_timeweb_white_site.py"
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:
@@ -39,7 +46,7 @@ jobs:
     timeout-minutes: 15
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-      ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'reconcile' }}
+      ACTION_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event_name == 'pull_request' && 'plan' || 'reconcile' }}
       DEPLOY_CONFIRM: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
