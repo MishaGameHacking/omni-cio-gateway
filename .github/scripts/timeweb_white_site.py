@@ -209,11 +209,10 @@ def select_ubuntu_2404(client: TimewebClient) -> dict[str, Any]:
     return max(matches, key=lambda item: decimal_value(item.get("id", 0)))
 
 
-def select_budget_presets(
+def select_compatible_presets(
     *,
     os_info: dict[str, Any],
     presets: list[dict[str, Any]],
-    max_server_price_rub: Decimal,
     target_location: str,
 ) -> list[dict[str, Any]]:
     requirements = dict(os_info.get("requirements") or {})
@@ -223,14 +222,14 @@ def select_budget_presets(
     bandwidth_min = decimal_value(requirements.get("bandwidth_min") or 0)
 
     normalized_target_location = target_location.strip().lower()
-    eligible: list[dict[str, Any]] = []
+    compatible: list[dict[str, Any]] = []
     for preset in presets:
         preset_location = str(preset.get("location") or "").strip().lower()
         if preset_location != normalized_target_location:
             continue
 
         price = decimal_value(preset.get("price") or 0)
-        if price <= 0 or price > max_server_price_rub:
+        if price <= 0:
             continue
         if decimal_value(preset.get("cpu") or 0) < cpu_min:
             continue
@@ -240,10 +239,10 @@ def select_budget_presets(
             continue
         if decimal_value(preset.get("bandwidth") or 0) < bandwidth_min:
             continue
-        eligible.append(preset)
+        compatible.append(preset)
 
     return sorted(
-        eligible,
+        compatible,
         key=lambda item: (
             decimal_value(item.get("price") or 0),
             decimal_value(item.get("ram") or 0),
@@ -253,6 +252,24 @@ def select_budget_presets(
             decimal_value(item.get("id") or 0),
         ),
     )
+
+
+def select_budget_presets(
+    *,
+    os_info: dict[str, Any],
+    presets: list[dict[str, Any]],
+    max_server_price_rub: Decimal,
+    target_location: str,
+) -> list[dict[str, Any]]:
+    return [
+        preset
+        for preset in select_compatible_presets(
+            os_info=os_info,
+            presets=presets,
+            target_location=target_location,
+        )
+        if decimal_value(preset.get("price") or 0) <= max_server_price_rub
+    ]
 
 
 def availability_zones_by_location(
@@ -622,18 +639,40 @@ def reconcile(
     )
 
     ubuntu = select_ubuntu_2404(client)
-    presets = select_budget_presets(
+    server_presets = client.get_server_presets()
+    compatible_presets = select_compatible_presets(
         os_info=ubuntu,
-        presets=client.get_server_presets(),
-        max_server_price_rub=max_server_price_rub,
+        presets=server_presets,
         target_location=target_location,
     )
-    if not presets:
+    if not compatible_presets:
         raise DeploymentError(
             "No Ubuntu 24.04 server preset satisfies the current requirements "
-            f"in location {target_location!r} within the "
-            f"{max_server_price_rub} RUB server budget ceiling."
+            f"in Timeweb location {target_location!r}."
         )
+
+    presets = [
+        preset
+        for preset in compatible_presets
+        if decimal_value(preset.get("price") or 0) <= max_server_price_rub
+    ]
+    if not presets:
+        cheapest = compatible_presets[0]
+        cheapest_price = decimal_value(cheapest.get("price") or 0)
+        add_summary(
+            "- Result: `pending_budget`. Cheapest compatible Moscow preset "
+            f"is `{integer_value(cheapest['id'])}` at "
+            f"{cheapest_price} RUB/month server price, above the approved "
+            f"{max_server_price_rub} RUB ceiling."
+        )
+        add_summary(
+            "- No Timeweb resource was created or changed. Increase the "
+            "versioned budget ceiling only after explicit approval."
+        )
+        set_output("status", "pending_budget")
+        set_output("cheapest_server_price_rub", str(cheapest_price))
+        set_output("cheapest_preset_id", str(integer_value(cheapest["id"])))
+        return 0
 
     placements = build_placements(
         presets=presets,
