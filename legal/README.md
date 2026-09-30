@@ -1,18 +1,18 @@
-# Legal release gate
+# Legal publication source
 
-These documents are source templates for the phone-registration launch.
+Current user-facing legal documents are published directly from:
 
-They MUST NOT be published with placeholders. Production registration remains
-disabled until the owner supplies the operator details and a final legal review
-confirms the text applicable to the actual business model.
+- `web/legal/privacy.html`;
+- `web/legal/consent.html`;
+- `web/legal/terms.html`.
 
-Required operator data:
+Version: `2026-09-30`.
 
-- legal form: individual / ИП / ООО;
-- full legal name / ФИО;
-- INN and OGRN/OGRNIP when applicable;
-- legal/postal address;
-- privacy contact email;
-- Roskomnadzor operator notification details when applicable.
+The personal-data consent is intentionally separate from the terms and privacy
+policy. Production registration must remain fail-closed until all operational
+gates are satisfied: current legal versions, SMS provider token + sender,
+required Roskomnadzor/operator formalities, and successful end-to-end SMS test.
 
-The runtime legal version values must match the exact published document versions.
+Do not store passport details, scans, or other identity-document data in Git.
+Only the operator details intentionally published in the legal pages belong in
+the repository.
