@@ -17,6 +17,7 @@ on:
       - ".github/scripts/test_timeweb_white_site.py"
   schedule:
     - cron: "17,47 * * * *"
+      timezone: "Europe/Moscow"
   workflow_dispatch:
     inputs:
       mode:
