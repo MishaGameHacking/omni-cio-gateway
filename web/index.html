@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>OmniCIO</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="card" id="auth-card" aria-labelledby="auth-title">
+      <h1 id="auth-title">Вход в OmniCIO</h1>
+      <p class="muted">Используйте российский мобильный номер в формате +79XXXXXXXXX.</p>
+
+      <form id="phone-form" novalidate>
+        <label for="phone">Номер телефона</label>
+        <input
+          id="phone"
+          name="phone"
+          type="tel"
+          inputmode="tel"
+          autocomplete="tel"
+          placeholder="+79161234567"
+          maxlength="12"
+          required
+        >
+
+        <label class="check">
+          <input id="accept-privacy" type="checkbox">
+          <span>Я ознакомился с Политикой обработки персональных данных</span>
+        </label>
+        <label class="check">
+          <input id="accept-pd" type="checkbox">
+          <span>Я даю отдельное согласие на обработку персональных данных</span>
+        </label>
+        <label class="check">
+          <input id="accept-terms" type="checkbox">
+          <span>Я принимаю Пользовательское соглашение</span>
+        </label>
+
+        <button type="submit" id="send-code">Получить код</button>
+      </form>
+
+      <form id="code-form" class="hidden" novalidate>
+        <label for="code">Код из SMS</label>
+        <input
+          id="code"
+          name="code"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          placeholder="000000"
+          required
+        >
+        <button type="submit">Войти</button>
+      </form>
+
+      <p id="auth-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <aside class="profile hidden" id="profile-panel" aria-label="Профиль">
+      <div class="profile-title">Профиль</div>
+      <div class="profile-id">
+        <span class="muted">ID профиля</span>
+        <strong id="profile-id">000000000</strong>
+      </div>
+      <button id="logout" class="secondary" type="button">Выйти</button>
+    </aside>
+  </main>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
