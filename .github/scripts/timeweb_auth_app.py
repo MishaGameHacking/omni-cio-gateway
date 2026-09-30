@@ -35,6 +35,7 @@ from timeweb_auth_postgres import (
 DOMAIN = "omnicio.ru"
 SITE_MARKER = 'name="omni-cio-white-site"'
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
+PRODUCT_ENV = "/etc/omnicio/product.env"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -85,6 +86,44 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         return True
     except InfraError:
         return False
+
+
+def _environment_value(value: str) -> str:
+    if "\n" in value or "\r" in value:
+        raise InfraError("Runtime environment value contains a newline")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def build_product_environment() -> str:
+    sms_token = os.environ.get("SMS_PROVIDER_TOKEN", "").strip()
+    sms_sender = os.environ.get("SMS_SENDER", "").strip()
+    sms_provider = "mts_exolve" if sms_token and sms_sender else "disabled"
+
+    values = {
+        "SMS_PROVIDER": sms_provider,
+        "SMS_PROVIDER_TOKEN": sms_token,
+        "SMS_SENDER": sms_sender,
+        "REGISTRATION_ENABLED": "false",
+        "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
+        "LEGAL_OPERATOR_ADDRESS": os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),
+        "LEGAL_PRIVACY_CONTACT": os.environ.get("LEGAL_PRIVACY_CONTACT", "").strip(),
+        "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
+        "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
+        "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
+        "SESSION_TTL_SECONDS": os.environ.get("SESSION_TTL_SECONDS", "34560000").strip(),
+    }
+    return "".join(
+        f"{name}={_environment_value(value)}\n"
+        for name, value in values.items()
+    )
+
+
+def write_product_environment(ssh: EphemeralSsh) -> None:
+    ssh.run(
+        f"umask 077; cat > {PRODUCT_ENV}; chmod 600 {PRODUCT_ENV}",
+        input_text=build_product_environment(),
+    )
 
 
 REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
@@ -142,6 +181,7 @@ User=omnicio
 Group=omnicio
 WorkingDirectory=/opt/omnicio/current
 EnvironmentFile=/etc/omnicio/runtime.env
+EnvironmentFile=/etc/omnicio/product.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app --host 127.0.0.1 --port 8001 --workers 2 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
@@ -439,6 +479,7 @@ def reconcile(
             set_output("status", "pending_database")
             return 0
 
+        write_product_environment(ssh)
         upload_release(ssh, archive_b64=archive_b64, release_sha=release_sha)
         deploy_remote(ssh, release_sha=release_sha)
 

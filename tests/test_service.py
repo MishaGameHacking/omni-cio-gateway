@@ -103,9 +103,9 @@ def settings() -> Settings:
         lookup_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
         otp_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
         ip_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
-        sms_provider="disabled",
-        sms_token="",
-        sms_sender="",
+        sms_provider="mts_exolve",
+        sms_token="test-token",
+        sms_sender="79990000000",
         registration_enabled=True,
         operator_name="Test Operator",
         operator_address="Moscow",
@@ -133,6 +133,7 @@ def test_issue_and_verify_creates_public_id_and_session() -> None:
         accepted_privacy=True,
         accepted_personal_data=True,
         accepted_terms=True,
+        confirmed_age_18=True,
     )
 
     assert db.sent

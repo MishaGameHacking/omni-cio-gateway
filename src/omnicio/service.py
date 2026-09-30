@@ -74,11 +74,14 @@ class AuthService:
         accepted_privacy: bool,
         accepted_personal_data: bool,
         accepted_terms: bool,
+        confirmed_age_18: bool,
     ) -> ChallengeIssued:
         if not self.settings.registration_ready:
             raise RegistrationClosed("registration is not enabled")
         if not (accepted_privacy and accepted_personal_data and accepted_terms):
             raise RegistrationClosed("required legal documents are not accepted")
+        if not confirmed_age_18:
+            raise RegistrationClosed("service is available only to users aged 18+")
 
         phone = normalize_russian_mobile(phone_raw)
         lookup = phone_lookup(phone, self.settings.lookup_key)

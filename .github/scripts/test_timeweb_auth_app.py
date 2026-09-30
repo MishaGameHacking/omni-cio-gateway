@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import io
+import os
 import pathlib
 import sys
 import tarfile
@@ -70,6 +71,40 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("src/omnicio/__init__.py", names)
         self.assertIn("web/index.html", names)
         self.assertNotIn("tests/secret-test.txt", names)
+
+    def test_product_environment_keeps_registration_closed_without_sender(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
+            os.environ.pop("SMS_SENDER", None)
+            os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
+            os.environ["LEGAL_OPERATOR_ADDRESS"] = "Test Address"
+            os.environ["LEGAL_PRIVACY_CONTACT"] = "privacy@example.test"
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-09-30"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-09-30"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-09-30"
+
+            product_env = MODULE.build_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        self.assertIn('SMS_PROVIDER="disabled"', product_env)
+        self.assertIn('SMS_PROVIDER_TOKEN="secret-token"', product_env)
+        self.assertIn('REGISTRATION_ENABLED="false"', product_env)
+
+    def test_product_environment_enables_provider_only_with_sender(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
+            os.environ["SMS_SENDER"] = "79990000000"
+            product_env = MODULE.build_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        self.assertIn('SMS_PROVIDER="mts_exolve"', product_env)
+        self.assertIn('SMS_SENDER="79990000000"', product_env)
 
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
