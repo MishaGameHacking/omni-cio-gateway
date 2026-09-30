@@ -93,7 +93,7 @@ jobs:
           clean: true
 
       - name: Resolve installed Python and isolate job environment
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
           $python = $null
@@ -146,13 +146,13 @@ jobs:
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install project and test tooling
-        shell: pwsh
+        shell: powershell
         run: |
           & $env:OMNICIO_PYTHON -m pip install --upgrade pip
           & $env:OMNICIO_PYTHON -m pip install -e ".[dev]"
 
       - name: Run ${{ matrix.name }}
-        shell: pwsh
+        shell: powershell
         run: |
           switch ("${{ matrix.task }}") {
             "ruff" {
