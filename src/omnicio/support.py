@@ -62,34 +62,29 @@ def run_command(database: Database, args: argparse.Namespace) -> str:
         )
         return serialize_user(user, changed=True)
 
-    transitions = {
-        "block": {
-            "target_status": "blocked",
-            "allowed_from": frozenset({"active"}),
-            "event_type": "support_account_blocked",
-            "revoke_sessions": True,
-        },
-        "unblock": {
-            "target_status": "active",
-            "allowed_from": frozenset({"blocked"}),
-            "event_type": "support_account_unblocked",
-            "revoke_sessions": False,
-        },
-        "mark-delete": {
-            "target_status": "deletion_pending",
-            "allowed_from": frozenset({"active", "blocked"}),
-            "event_type": "support_deletion_requested",
-            "revoke_sessions": True,
-        },
-    }
-    transition = transitions[args.command]
+    if args.command == "block":
+        target_status = "blocked"
+        allowed_from = frozenset({"active"})
+        event_type = "support_account_blocked"
+        revoke_sessions = True
+    elif args.command == "unblock":
+        target_status = "active"
+        allowed_from = frozenset({"blocked"})
+        event_type = "support_account_unblocked"
+        revoke_sessions = False
+    else:
+        target_status = "deletion_pending"
+        allowed_from = frozenset({"active", "blocked"})
+        event_type = "support_deletion_requested"
+        revoke_sessions = True
+
     result = database.support_change_status(
         public_id=public_id,
-        target_status=str(transition["target_status"]),
-        allowed_from=transition["allowed_from"],
-        event_type=str(transition["event_type"]),
+        target_status=target_status,
+        allowed_from=allowed_from,
+        event_type=event_type,
         reason=reason,
-        revoke_sessions=bool(transition["revoke_sessions"]),
+        revoke_sessions=revoke_sessions,
     )
     if result is None:
         raise SupportCommandError("profile ID was not found")
