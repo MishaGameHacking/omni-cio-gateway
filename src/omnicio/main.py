@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import cast
 from uuid import UUID
 
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
@@ -47,15 +49,15 @@ def require_same_origin(request: Request) -> None:
 
 
 def service(request: Request) -> AuthService:
-    return request.app.state.auth_service
+    return cast(AuthService, request.app.state.auth_service)
 
 
 def settings(request: Request) -> Settings:
-    return request.app.state.settings
+    return cast(Settings, request.app.state.settings)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cfg = load_settings()
     database = Database(cfg.database_url)
     database.open()
