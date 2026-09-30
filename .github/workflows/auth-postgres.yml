@@ -1,0 +1,111 @@
+name: Auth PostgreSQL
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/auth-postgres.yml"
+      - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/test_timeweb_auth_postgres.py"
+      - "migrations/0001_phone_auth.sql"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/auth-postgres.yml"
+      - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/test_timeweb_auth_postgres.py"
+      - "migrations/0001_phone_auth.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auth-postgres
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Test PostgreSQL reconciler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout candidate state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Compile reconciler
+        run: python3 -m py_compile .github/scripts/timeweb_auth_postgres.py
+
+      - name: Run reconciler tests
+        run: python3 .github/scripts/test_timeweb_auth_postgres.py
+
+  reconcile:
+    name: Reconcile private PostgreSQL
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      SERVER_NAME: omni-cio-white-site
+      SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
+      VPC_NAME: omni-cio-private
+      DB_CLUSTER_NAME: omnicio-auth-postgres
+      DB_INSTANCE_NAME: omnicio
+      DB_ADMIN_LOGIN: omnicio_app
+      POSTGRES_VERSION: "18"
+      TARGET_LOCATION: ru-3
+      TARGET_ZONE: msk-1
+      MAX_DB_PRICE_RUB: "1110"
+      MIN_DB_CPU: "1"
+      MIN_DB_RAM_MB: "2048"
+      MIN_DB_DISK_MB: "20480"
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate Timeweb secret
+        run: |
+          set -euo pipefail
+          test -n "${TIMEWEB_CLOUD_TOKEN:-}" || {
+            echo "::error::TIMEWEB_CLOUD_TOKEN is missing"
+            exit 1
+          }
+
+      - name: Reconcile PostgreSQL and schema
+        id: postgres
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/timeweb_auth_postgres.py \
+            --server-name "${SERVER_NAME}" \
+            --server-comment "${SERVER_COMMENT}" \
+            --vpc-name "${VPC_NAME}" \
+            --cluster-name "${DB_CLUSTER_NAME}" \
+            --instance-name "${DB_INSTANCE_NAME}" \
+            --admin-login "${DB_ADMIN_LOGIN}" \
+            --postgres-version "${POSTGRES_VERSION}" \
+            --location "${TARGET_LOCATION}" \
+            --availability-zone "${TARGET_ZONE}" \
+            --max-price-rub "${MAX_DB_PRICE_RUB}" \
+            --min-cpu "${MIN_DB_CPU}" \
+            --min-ram-mb "${MIN_DB_RAM_MB}" \
+            --min-disk-mb "${MIN_DB_DISK_MB}" \
+            --migration migrations/0001_phone_auth.sql
+
+      - name: Surface private network gate
+        if: steps.postgres.outputs.status == 'pending_server_network'
+        run: |
+          echo "::warning title=VDS private network required::PostgreSQL was not created. Attach omni-cio-white-site to omni-cio-private, then rerun this accepted-main workflow."
+
+      - name: Confirm database readiness
+        if: steps.postgres.outputs.status == 'database_ready'
+        run: |
+          echo "Private PostgreSQL cluster ${{ steps.postgres.outputs.cluster_id }} is ready and schema migration completed."
