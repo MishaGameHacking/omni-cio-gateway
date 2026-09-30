@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS otp_challenges (
     sent_at timestamptz,
     consumed_at timestamptz,
     provider_message_id text,
+    legal_versions jsonb NOT NULL,
+    consented_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT otp_expiry_after_creation CHECK (expires_at > created_at)
 );
 
