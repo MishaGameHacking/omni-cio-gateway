@@ -148,6 +148,13 @@ def add_summary(line: str) -> None:
             handle.write(line + "\n")
 
 
+def set_output(name: str, value: str) -> None:
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(f"{name}={value}\n")
+
+
 def find_managed_server(
     client: TimewebClient,
     *,
@@ -482,7 +489,13 @@ def run(
         dns_ipv6=dns_ipv6,
     )
     if not assessment.ready:
-        raise DeploymentError(assessment.reason)
+        add_summary(f"- Result: `pending_dns`. {assessment.reason}")
+        add_summary(
+            "- No SSH key was created and no server configuration was changed. "
+            "A scheduled accepted-main run will retry after DNS delegation/propagation."
+        )
+        set_output("status", "pending_dns")
+        return 0
 
     with tempfile.TemporaryDirectory(prefix="omni-cio-tls-") as tempdir:
         private_key = os.path.join(tempdir, "id_ed25519")
@@ -551,6 +564,7 @@ def run(
     add_summary(f"- HTTPS verified successfully: https://{domain}/")
     add_summary("- HTTP is redirected to HTTPS by Certbot/Nginx.")
     add_summary("- Certbot renewal timer is enabled on the server.")
+    set_output("status", "ready")
     return 0
 
 

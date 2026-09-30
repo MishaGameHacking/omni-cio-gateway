@@ -15,6 +15,9 @@ on:
       - ".github/workflows/timeweb-domain-tls.yml"
       - ".github/scripts/timeweb_domain_tls.py"
       - ".github/scripts/test_timeweb_domain_tls.py"
+  schedule:
+    - cron: "*/15 * * * *"
+      timezone: "Europe/Moscow"
 
 permissions:
   contents: read
@@ -43,7 +46,7 @@ jobs:
 
   configure:
     name: Configure omnicio.ru HTTPS
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -69,6 +72,7 @@ jobs:
           fi
 
       - name: Configure domain and TLS
+        id: tls
         shell: bash
         run: |
           set -euo pipefail
@@ -76,3 +80,9 @@ jobs:
             --domain "${DOMAIN_NAME}" \
             --server-name "${SERVER_NAME}" \
             --server-comment "${SERVER_COMMENT}"
+
+      - name: Surface pending DNS state
+        if: steps.tls.outputs.status == 'pending_dns'
+        shell: bash
+        run: |
+          echo "::warning title=DNS pending::omnicio.ru is not yet publicly delegated/resolved to the managed server. No SSH/provider mutation was performed; the scheduled job will retry automatically."
