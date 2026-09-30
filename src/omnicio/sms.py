@@ -33,13 +33,11 @@ class SmsAeroSmsProvider:
     sender: str
     timeout_seconds: int = 10
 
-    endpoint: str = "https://gate.smsaero.ru/v2/sms/send"
+    base_url: str = "https://gate.smsaero.ru/v2"
 
     def send_otp(self, phone: str, code: str) -> str | None:
-        if not self.login or not self.api_key or not self.sender:
-            raise SmsDeliveryError("SMS provider credentials are incomplete")
-
-        encoded = urllib.parse.urlencode(
+        payload = self._request(
+            "sms/send",
             {
                 "number": phone.lstrip("+"),
                 "sign": self.sender,
@@ -47,14 +45,32 @@ class SmsAeroSmsProvider:
                     f"OmniCIO: код входа {code}. "
                     "Никому не сообщайте этот код."
                 ),
-            }
-        ).encode("utf-8")
+            },
+        )
+        return _message_id(payload)
+
+    def test_send(self, phone: str) -> str | None:
+        """Exercise SMS Aero test delivery without sending an SMS or charging balance."""
+        payload = self._request(
+            "sms/testsend",
+            {
+                "number": phone.lstrip("+"),
+                "sign": self.sender,
+                "text": "OmniCIO API test",
+            },
+        )
+        return _message_id(payload)
+
+    def _request(self, method: str, params: dict[str, str]) -> object:
+        if not self.login or not self.api_key or not self.sender:
+            raise SmsDeliveryError("SMS provider credentials are incomplete")
+
         credentials = base64.b64encode(
             f"{self.login}:{self.api_key}".encode("utf-8")
         ).decode("ascii")
         request = urllib.request.Request(
-            self.endpoint,
-            data=encoded,
+            f"{self.base_url}/{method}",
+            data=urllib.parse.urlencode(params).encode("utf-8"),
             method="POST",
             headers={
                 "Authorization": f"Basic {credentials}",
@@ -69,7 +85,7 @@ class SmsAeroSmsProvider:
         except urllib.error.HTTPError as exc:
             raise SmsDeliveryError(f"SMS provider HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
-            # Do not auto-retry an ambiguous send. A retry may duplicate the SMS.
+            # Do not auto-retry an ambiguous send. A retry may duplicate a live SMS.
             raise SmsDeliveryError(
                 f"SMS provider result is ambiguous: {type(exc).__name__}"
             ) from exc
@@ -79,17 +95,19 @@ class SmsAeroSmsProvider:
         except json.JSONDecodeError as exc:
             raise SmsDeliveryError("SMS provider returned invalid JSON") from exc
 
-        if parsed.get("success") is not True:
-            raise SmsDeliveryError("SMS provider rejected the message")
+        if not isinstance(parsed, dict) or parsed.get("success") is not True:
+            raise SmsDeliveryError("SMS provider rejected the request")
+        return parsed.get("data")
 
-        data = parsed.get("data")
-        if isinstance(data, list) and data:
-            message_id = data[0].get("id")
-        elif isinstance(data, dict):
-            message_id = data.get("id")
-        else:
-            message_id = None
-        return str(message_id) if message_id is not None else None
+
+def _message_id(data: object) -> str | None:
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        message_id = data[0].get("id")
+    elif isinstance(data, dict):
+        message_id = data.get("id")
+    else:
+        message_id = None
+    return str(message_id) if message_id is not None else None
 
 
 def build_sms_provider(
