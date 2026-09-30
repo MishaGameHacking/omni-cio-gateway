@@ -96,6 +96,14 @@ class TimewebClient:
     def get_vpcs(self) -> list[dict[str, Any]]:
         return list(self.request("GET", "/vpcs", api_version="v2").get("vpcs") or [])
 
+    def get_server_presets(self) -> list[dict[str, Any]]:
+        return list(
+            self.request("GET", "/presets/servers", api_version="v1").get(
+                "server_presets"
+            )
+            or []
+        )
+
     def create_vpc(self, desired: DesiredNetwork) -> dict[str, Any]:
         response = self.request(
             "POST",
@@ -150,6 +158,26 @@ def find_managed_server(
     if server.get("comment") != comment:
         raise InfraError("Same-name server is not owned by this reconciler")
     return server
+
+
+def server_supports_private_network(
+    server: dict[str, Any],
+    presets: list[dict[str, Any]],
+) -> bool:
+    preset_id = int(float(server.get("preset_id") or 0))
+    if preset_id <= 0:
+        raise InfraError("Managed VDS has no preset_id; cannot prove VPC compatibility")
+
+    matches = [
+        preset
+        for preset in presets
+        if int(float(preset.get("id") or 0)) == preset_id
+    ]
+    if len(matches) != 1:
+        raise InfraError(
+            f"Expected exactly one server preset {preset_id}; found {len(matches)}"
+        )
+    return bool(matches[0].get("is_allowed_local_network"))
 
 
 def find_vpc(vpcs: list[dict[str, Any]], desired: DesiredNetwork) -> dict[str, Any] | None:
@@ -209,6 +237,18 @@ def reconcile(
     )
     server_id = int(float(server["id"]))
     add_summary(f"- Managed VDS: `{server_name}` (id `{server_id}`).")
+
+    if not server_supports_private_network(server, client.get_server_presets()):
+        add_summary(
+            "- Result: `pending_server_preset`. The current VDS tariff does not "
+            "allow a private network."
+        )
+        add_summary(
+            "- No VPC or database was created. The VDS must first be moved to a "
+            "Timeweb tariff with `is_allowed_local_network=true`."
+        )
+        set_output("status", "pending_server_preset")
+        return 0
 
     vpc = find_vpc(client.get_vpcs(), desired)
     if vpc is None:
