@@ -30,7 +30,7 @@ Green CI необходим, но сам по себе не означает, ч
 
 - GitHub — код, ветки, pull request, CI, review и release provenance;
 - Timeweb Cloud — production runtime, App Platform, сеть, секреты и PostgreSQL;
-- Telegram Login — единственный выбранный human login provider;
+- авторизация по российскому мобильному номеру `+79XXXXXXXXX` через одноразовый SMS-код — выбранный human login;
 - Python — основной backend/runtime язык, если задача не требует другого языка;
 - браузерный frontend — только тот код, который реально нужен сайту.
 
@@ -172,7 +172,7 @@ Python-код должен следовать принципам PEP 8 и PEP 20
 
 Browser input никогда не является источником tenant authority.
 
-Telegram Login подтверждает внешнюю identity. После проверки сервер разрешает internal user/tenant/session.
+SMS OTP подтверждает владение конкретным российским мобильным номером в формате `+79XXXXXXXXX`. После успешной проверки сервер сам разрешает internal user/session. Публичный 9-значный profile ID является только идентификатором для UI/поддержки и никогда не предоставляет authority.
 
 Login не предоставляет broker write authority.
 
@@ -201,7 +201,12 @@ PostgreSQL является relational authority после принятого p
 - retry/idempotence проверять там, где workflow допускает повтор;
 - частично применённая migration не должна оставлять систему в неизвестном состоянии;
 - destructive migration требует отдельного recovery plan;
-- перед production schema mutation иметь проверяемую recovery точку.
+- перед production schema mutation иметь проверяемую recovery точку;
+- публичный profile ID генерировать сервером/БД из монотонной sequence, не принимать его от browser;
+- телефон хранить encrypted-at-rest, а поиск/unique constraint выполнять по keyed blind index; полный телефон и OTP запрещены в логах;
+- OTP хранить только как keyed digest, ограничивать TTL, число попыток, resend и hourly rate;
+- session token хранить у клиента только в Secure + HttpOnly + SameSite cookie, а в БД хранить только digest;
+- production registration fail-closed: до готовых legal documents, реквизитов оператора ПД и SMS provider registration должна оставаться выключенной.
 
 ## 10. Timeweb
 
