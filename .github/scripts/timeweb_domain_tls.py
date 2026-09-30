@@ -38,13 +38,12 @@ class DeploymentError(RuntimeError):
 
 class TimewebApiError(RuntimeError):
     def __init__(self, status_code: int, error_code: str, message: str) -> None:
-        super().__init__(
-            f"Timeweb API HTTP {status_code}"
-            f" error_code={error_code or 'unknown'}"
-            f" message={message or 'unknown'}"
-        )
+        # Provider-controlled strings are retained for programmatic decisions,
+        # but are deliberately excluded from the printable exception text.
+        super().__init__(f"Timeweb API HTTP {status_code}")
         self.status_code = status_code
         self.error_code = error_code
+        self.provider_message = message
 
 
 @dataclass(frozen=True)
@@ -211,8 +210,12 @@ def resolve_addresses(domain: str, family: socket.AddressFamily) -> set[str]:
     result: set[str] = set()
     for row in rows:
         sockaddr = row[4]
-        if sockaddr:
-            result.add(str(sockaddr[0]))
+        if not sockaddr:
+            continue
+        try:
+            result.add(str(ipaddress.ip_address(sockaddr[0])))
+        except ValueError:
+            continue
     return result
 
 
@@ -342,10 +345,8 @@ def capture_host_key(known_hosts: pathlib.Path) -> None:
         if line and not line.startswith("#")
     ]
     if result.returncode != 0 or not host_keys:
-        detail = (result.stderr or "no ED25519 host key returned").strip()
         raise DeploymentError(
-            "Unable to capture the managed server SSH host key: "
-            + detail[:300]
+            "Unable to capture the managed server SSH host key."
         )
 
     known_hosts.write_text("\n".join(host_keys) + "\n", encoding="utf-8")
@@ -379,23 +380,29 @@ def wait_for_ssh(
         f"root@{EXPECTED_SERVER_IPV4}",
         "true",
     ]
-    last_error = "SSH not attempted"
+    last_returncode: int | None = None
     for _ in range(attempts):
         result = subprocess.run(
             command,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
             timeout=20,
             check=False,
         )
         if result.returncode == 0:
             return
-        last_error = (result.stderr or "SSH failed").strip()
+        last_returncode = result.returncode
         time.sleep(10)
+
+    suffix = (
+        f" Last SSH exit code: {last_returncode}."
+        if last_returncode is not None
+        else ""
+    )
     raise DeploymentError(
-        "Ephemeral SSH key was attached but SSH did not become ready: "
-        + last_error[:300]
+        "Ephemeral SSH key was attached but SSH did not become ready."
+        + suffix
     )
 
 
@@ -429,11 +436,9 @@ def cleanup_ephemeral_key(
     server_id: int,
     ssh_key_id: int,
 ) -> None:
-    detach_error: Exception | None = None
     try:
         client.detach_ssh_key(server_id, ssh_key_id)
-    except Exception as exc:
-        detach_error = exc
+    except Exception:
         add_summary(
             "- Warning: failed to detach the ephemeral SSH public key from "
             "the server; its private half no longer exists after this runner."
@@ -446,9 +451,6 @@ def cleanup_ephemeral_key(
             "- Warning: failed to delete the ephemeral SSH public key record "
             "from Timeweb."
         )
-
-    if detach_error:
-        print(f"::warning::{detach_error}", file=sys.stderr)
 
 
 def validate_managed_server_identity(
