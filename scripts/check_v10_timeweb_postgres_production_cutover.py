@@ -589,9 +589,7 @@ def _validate_prepare_transaction(source: str) -> None:
         if isinstance(node, ast.FunctionDef) and node.name == "_prepare_database"
     ]
     if len(functions) != 1:
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID"
-        )
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_CONTROLLER_FUNCTION_INVALID")
 
     transaction_blocks: list[ast.With] = []
     for node in ast.walk(functions[0]):
@@ -610,9 +608,7 @@ def _validate_prepare_transaction(source: str) -> None:
             ):
                 transaction_blocks.append(node)
     if len(transaction_blocks) != 1:
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID"
-        )
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID")
 
     counts: dict[str, int] = {}
     for node in ast.walk(transaction_blocks[0]):
@@ -635,13 +631,9 @@ def _validate_prepare_transaction(source: str) -> None:
         "execute": 1,
     }
     if any(counts.get(name) != count for name, count in required.items()):
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID"
-        )
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID")
     if counts.get("_verify_runtime_database", 0):
-        raise CutoverContractError(
-            "TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID"
-        )
+        raise CutoverContractError("TIMEWEB_PG_CUTOVER_PREPARE_TRANSACTION_INVALID")
 
 
 def _runtime_function(source: str, name: str) -> ast.FunctionDef:
