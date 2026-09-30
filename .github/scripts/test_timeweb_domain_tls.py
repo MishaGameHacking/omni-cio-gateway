@@ -80,6 +80,21 @@ class TimewebDomainTlsTests(unittest.TestCase):
         self.assertIn("--redirect", script)
         self.assertIn("systemctl enable --now certbot.timer", script)
 
+    def test_remote_script_uses_fixed_approved_domain(self) -> None:
+        script = MODULE.REMOTE_SCRIPT
+
+        self.assertIn('DOMAIN="omnicio.ru"', script)
+        self.assertNotIn('DOMAIN="$1"', script)
+
+    def test_ssh_requires_strict_host_key_checking(self) -> None:
+        args = MODULE.ssh_base_args(
+            pathlib.Path("/tmp/id_ed25519"),
+            pathlib.Path("/tmp/known_hosts"),
+        )
+
+        self.assertIn("StrictHostKeyChecking=yes", args)
+        self.assertNotIn("StrictHostKeyChecking=accept-new", args)
+
 
 if __name__ == "__main__":
     unittest.main()
