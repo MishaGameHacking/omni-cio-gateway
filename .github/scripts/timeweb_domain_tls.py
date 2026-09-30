@@ -329,7 +329,7 @@ systemctl reload nginx
 def capture_host_key(known_hosts: pathlib.Path) -> None:
     """Capture the pinned server key, then require strict matching for SSH."""
     result = subprocess.run(
-        ["ssh-keyscan", "-T", "10", "-t", "ed25519", EXPECTED_SERVER_IPV4],
+        ("ssh-keyscan", "-T", "10", "-t", "ed25519", EXPECTED_SERVER_IPV4),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -482,7 +482,7 @@ def configure_with_ephemeral_key(
         known_hosts = temp_path / "known_hosts"
 
         subprocess.run(
-            [
+            (
                 "ssh-keygen",
                 "-q",
                 "-t",
@@ -493,7 +493,7 @@ def configure_with_ephemeral_key(
                 "omni-cio-github-actions-ephemeral",
                 "-f",
                 str(private_key),
-            ],
+            ),
             check=True,
             timeout=30,
         )
