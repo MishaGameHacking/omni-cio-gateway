@@ -28,6 +28,8 @@ SITE_MARKER = 'name="omni-cio-white-site"'
 DOMAIN_NAME = "omnicio.ru"
 SERVER_NAME = "omni-cio-white-site"
 SERVER_COMMENT = "Managed by GitHub Actions: timeweb-white-site"
+EXPECTED_SERVER_ID = 9235089
+EXPECTED_SERVER_IPV4 = "194.87.151.244"
 
 
 class DeploymentError(RuntimeError):
@@ -324,19 +326,10 @@ systemctl reload nginx
 """
 
 
-def capture_host_key(ipv4: str, known_hosts: pathlib.Path) -> None:
-    """Capture the server key once, then require strict matching for SSH.
-
-    The target address is the canonical IPv4 proven by the Timeweb HTTPS API.
-    The captured key is scoped to this ephemeral runner and every SSH command
-    in the run uses StrictHostKeyChecking=yes.
-    """
-    address = ipaddress.ip_address(ipv4)
-    if address.version != 4:
-        raise DeploymentError("SSH host-key capture requires a public IPv4.")
-
+def capture_host_key(known_hosts: pathlib.Path) -> None:
+    """Capture the pinned server key, then require strict matching for SSH."""
     result = subprocess.run(
-        ["ssh-keyscan", "-T", "10", "-t", "ed25519", str(address)],
+        ["ssh-keyscan", "-T", "10", "-t", "ed25519", EXPECTED_SERVER_IPV4],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -380,15 +373,10 @@ def wait_for_ssh(
     *,
     private_key: pathlib.Path,
     known_hosts: pathlib.Path,
-    ipv4: str,
     attempts: int = 18,
 ) -> None:
-    address = ipaddress.ip_address(ipv4)
-    if address.version != 4:
-        raise DeploymentError("SSH readiness requires a public IPv4.")
-
     command = ssh_base_args(private_key, known_hosts) + [
-        f"root@{address}",
+        f"root@{EXPECTED_SERVER_IPV4}",
         "true",
     ]
     last_error = "SSH not attempted"
@@ -415,14 +403,9 @@ def configure_remote_https(
     *,
     private_key: pathlib.Path,
     known_hosts: pathlib.Path,
-    ipv4: str,
 ) -> None:
-    address = ipaddress.ip_address(ipv4)
-    if address.version != 4:
-        raise DeploymentError("Remote HTTPS configuration requires a public IPv4.")
-
     command = ssh_base_args(private_key, known_hosts) + [
-        f"root@{address}",
+        f"root@{EXPECTED_SERVER_IPV4}",
         "bash",
         "-s",
     ]
@@ -483,14 +466,18 @@ def run(*, client: TimewebClient) -> int:
     server_id = int(float(server["id"]))
     server_ipv4, server_ipv6 = public_addresses(server)
 
-    if not server_ipv4:
-        raise DeploymentError("Managed server has no public IPv4.")
-    if len(server_ipv4) != 1:
+    if server_id != EXPECTED_SERVER_ID:
         raise DeploymentError(
-            "Managed server has multiple public IPv4 addresses; refusing to guess."
+            "Managed server identity changed. Update the pinned server ID "
+            "through reviewed repository state before remote administration."
+        )
+    if server_ipv4 != {EXPECTED_SERVER_IPV4}:
+        raise DeploymentError(
+            "Managed server IPv4 changed. Update the pinned IPv4 through "
+            "reviewed repository state before remote administration."
         )
 
-    ipv4 = next(iter(server_ipv4))
+    ipv4 = EXPECTED_SERVER_IPV4
     dns_ipv4 = resolve_addresses(DOMAIN_NAME, socket.AF_INET)
     dns_ipv6 = resolve_addresses(DOMAIN_NAME, socket.AF_INET6)
 
@@ -546,7 +533,7 @@ def run(*, client: TimewebClient) -> int:
         public_key = private_key.with_suffix(".pub").read_text(
             encoding="utf-8"
         ).strip()
-        capture_host_key(ipv4, known_hosts)
+        capture_host_key(known_hosts)
 
         run_id = os.environ.get("GITHUB_RUN_ID", "")
         if run_id and not run_id.isdigit():
@@ -563,12 +550,10 @@ def run(*, client: TimewebClient) -> int:
             wait_for_ssh(
                 private_key=private_key,
                 known_hosts=known_hosts,
-                ipv4=ipv4,
             )
             configure_remote_https(
                 private_key=private_key,
                 known_hosts=known_hosts,
-                ipv4=ipv4,
             )
         finally:
             if attached:
