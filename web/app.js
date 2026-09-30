@@ -76,6 +76,7 @@
       accept_privacy: document.querySelector("#accept-privacy").checked,
       accept_personal_data: document.querySelector("#accept-pd").checked,
       accept_terms: document.querySelector("#accept-terms").checked,
+      confirm_age_18: document.querySelector("#confirm-age-18").checked,
     };
 
     try {
