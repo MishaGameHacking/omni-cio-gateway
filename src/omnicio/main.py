@@ -176,11 +176,23 @@ def verify_code(
 @app.get("/api/me")
 def me(
     request: Request,
+    response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    user = service(request).user_from_session(session_token or "")
+    token = session_token or ""
+    user = service(request).refresh_session(token)
     if user is None:
         raise HTTPException(status_code=401, detail="authentication required")
+
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=settings(request).session_ttl_seconds,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/",
+    )
     return {
         "public_id": format_public_id(user.public_id),
         "status": user.status,
