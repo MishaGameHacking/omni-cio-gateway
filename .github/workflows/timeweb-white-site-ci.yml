@@ -9,15 +9,6 @@ on:
       - ".github/workflows/timeweb-white-site-ci.yml"
       - ".github/scripts/timeweb_white_site.py"
       - ".github/scripts/test_timeweb_white_site.py"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/timeweb-white-site.yml"
-      - ".github/workflows/timeweb-white-site-ci.yml"
-      - ".github/scripts/timeweb_white_site.py"
-      - ".github/scripts/test_timeweb_white_site.py"
-
 concurrency:
   group: timeweb-white-site-ci-${{ github.ref }}
   cancel-in-progress: true
