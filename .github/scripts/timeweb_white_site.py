@@ -666,6 +666,11 @@ def reconcile(
             "- No Timeweb resource was created or changed. Increase the "
             "versioned budget ceiling only after explicit approval."
         )
+        print(
+            "::warning title=Timeweb budget pending::Cheapest compatible "
+            f"Moscow server is {cheapest_price} RUB/month, above the approved "
+            f"{max_server_price_rub} RUB ceiling. No resource was created."
+        )
         return 0
 
     placements = build_placements(
@@ -768,6 +773,11 @@ def reconcile(
         add_summary(
             "- No server was created. Scheduled reconciliation will retry "
             "without increasing the approved server budget."
+        )
+        print(
+            "::warning title=Timeweb capacity pending::No approved Moscow "
+            "placement currently has a free node. Scheduled reconciliation "
+            "will retry without increasing the server budget."
         )
         return 0
 
