@@ -133,6 +133,7 @@ def test_issue_and_verify_creates_public_id_and_session() -> None:
         accepted_privacy=True,
         accepted_personal_data=True,
         accepted_terms=True,
+        confirmed_age_18=True,
     )
 
     assert db.sent
