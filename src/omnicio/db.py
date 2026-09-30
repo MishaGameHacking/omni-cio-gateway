@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from psycopg.rows import dict_row
@@ -76,9 +76,10 @@ class Database:
                     "since": since,
                 },
             )
-            row = cur.fetchone()
-            if row is None:
+            fetched = cur.fetchone()
+            if fetched is None:
                 return 0, 0
+            row = cast(dict[str, Any], fetched)
             return int(row["phone_count"]), int(row["ip_count"])
 
     def latest_challenge_created_at(self, phone_lookup: bytes) -> datetime | None:
@@ -93,8 +94,11 @@ class Database:
                 """,
                 (phone_lookup,),
             )
-            row = cur.fetchone()
-            return None if row is None else row["created_at"]
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            row = cast(dict[str, Any], fetched)
+            return cast(datetime, row["created_at"])
 
     def create_challenge(
         self,
@@ -144,10 +148,11 @@ class Database:
                     "legal_versions": json.dumps(legal_versions),
                 },
             )
-            row = cur.fetchone()
-            if row is None:
+            fetched = cur.fetchone()
+            if fetched is None:
                 raise RuntimeError("challenge insert returned no id")
-            return row["id"]
+            row = cast(dict[str, Any], fetched)
+            return cast(UUID, row["id"])
 
     def mark_challenge_sent(self, challenge_id: UUID, provider_message_id: str | None) -> None:
         with self.pool.connection() as conn, conn.cursor() as cur:
@@ -163,8 +168,10 @@ class Database:
     def load_challenge(self, challenge_id: UUID) -> ChallengeRecord | None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM otp_challenges WHERE id = %s", (challenge_id,))
-            row = cur.fetchone()
-            return None if row is None else _challenge(row)
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            return _challenge(cast(dict[str, Any], fetched))
 
     def record_failed_challenge_attempt(self, challenge_id: UUID) -> bool:
         with self.pool.connection() as conn, conn.cursor() as cur:
@@ -214,9 +221,10 @@ class Database:
                     "legal_versions": json.dumps(legal_versions),
                 },
             )
-            challenge_row = cur.fetchone()
-            if challenge_row is None:
+            fetched_challenge = cur.fetchone()
+            if fetched_challenge is None:
                 return None
+            challenge_row = cast(dict[str, Any], fetched_challenge)
 
             lookup = bytes(challenge_row["phone_lookup"])
             ciphertext = bytes(challenge_row["phone_ciphertext"])
@@ -240,17 +248,17 @@ class Database:
                 """,
                 (lookup,),
             )
-            row = cur.fetchone()
-            created = row is None
+            fetched_user = cur.fetchone()
+            created = fetched_user is None
 
-            if row is None:
+            if fetched_user is None:
                 cur.execute(
                     "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status"
                 )
-                row = cur.fetchone()
-                if row is None:
+                inserted = cur.fetchone()
+                if inserted is None:
                     raise RuntimeError("user insert returned no row")
-                user = _user(row)
+                user = _user(cast(dict[str, Any], inserted))
                 cur.execute(
                     """
                     INSERT INTO phone_identities (
@@ -264,7 +272,7 @@ class Database:
                     (user.id, lookup, ciphertext),
                 )
             else:
-                user = _user(row)
+                user = _user(cast(dict[str, Any], fetched_user))
 
             if user.status != "active":
                 raise PermissionError("account is not active")
@@ -337,8 +345,10 @@ class Database:
                 """,
                 (token_digest,),
             )
-            row = cur.fetchone()
-            return None if row is None else _user(row)
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            return _user(cast(dict[str, Any], fetched))
 
     def revoke_session(self, token_digest: bytes) -> None:
         with self.pool.connection() as conn, conn.cursor() as cur:
