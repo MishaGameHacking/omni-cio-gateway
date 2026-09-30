@@ -28,6 +28,7 @@ class FakeDatabase:
         self.challenge: ChallengeRecord | None = None
         self.sent = False
         self.session_digest: bytes | None = None
+        self.refreshed_ttl: int | None = None
         self.user = UserRecord(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
@@ -84,7 +85,8 @@ class FakeDatabase:
         self.session_digest = kwargs["session_token_digest"]
         return self.user, True
 
-    def user_from_session_digest(self, token_digest):
+    def refresh_session_digest(self, token_digest, *, session_ttl_seconds):
+        self.refreshed_ttl = session_ttl_seconds
         if token_digest == self.session_digest:
             return self.user
         return None
@@ -116,7 +118,7 @@ def settings() -> Settings:
         otp_resend_cooldown_seconds=60,
         otp_phone_hourly_limit=5,
         otp_ip_hourly_limit=20,
-        session_ttl_seconds=2_592_000,
+        session_ttl_seconds=34_560_000,
     )
 
 
@@ -145,4 +147,5 @@ def test_issue_and_verify_creates_public_id_and_session() -> None:
 
     assert result.public_id == "000000001"
     assert result.created is True
-    assert service.user_from_session(result.session_token) == db.user
+    assert service.refresh_session(result.session_token) == db.user
+    assert db.refreshed_ttl == 34_560_000
