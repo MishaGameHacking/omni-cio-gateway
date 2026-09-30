@@ -117,8 +117,7 @@ jobs:
               --output "%PYTHON_ARCHIVE%" "%PYTHON_ARCHIVE_URL%"
             if errorlevel 1 exit /b 1
 
-            certutil -hashfile "%PYTHON_ARCHIVE%" SHA256 |
-              findstr /i /c:"%PYTHON_ARCHIVE_SHA256%" >nul
+            certutil -hashfile "%PYTHON_ARCHIVE%" SHA256 | findstr /i /c:"%PYTHON_ARCHIVE_SHA256%" >nul
             if errorlevel 1 (
               echo ::error::Downloaded Python archive failed SHA256 verification.
               del /q "%PYTHON_ARCHIVE%" 2>nul
