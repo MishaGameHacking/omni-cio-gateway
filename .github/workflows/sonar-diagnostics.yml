@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Query public SonarQube Cloud APIs
+      - name: Query public SonarQube Cloud issue API
         shell: bash
         run: |
           set -euo pipefail
@@ -25,46 +25,24 @@ jobs:
           import urllib.request
 
           PROJECT = "MishaGameHacking_omni-cio-gateway"
-
-          def get(path, params):
-              query = urllib.parse.urlencode(params)
-              url = "https://sonarcloud.io" + path + "?" + query
-              request = urllib.request.Request(
-                  url,
-                  headers={
-                      "Accept": "application/json",
-                      "User-Agent": "omni-cio-sonar-diagnostics/1.0",
-                  },
-              )
-              with urllib.request.urlopen(request, timeout=20) as response:
-                  return json.loads(response.read().decode("utf-8"))
-
-          issues = get(
-              "/api/issues/search",
-              {
-                  "componentKeys": PROJECT,
-                  "branch": "main",
-                  "ps": "500",
+          params = urllib.parse.urlencode({
+              "componentKeys": PROJECT,
+              "branch": "main",
+              "ps": "500",
+          })
+          url = "https://sonarcloud.io/api/issues/search?" + params
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Accept": "application/json",
+                  "User-Agent": "omni-cio-sonar-diagnostics/1.0",
               },
           )
-          measures = get(
-              "/api/measures/component",
-              {
-                  "component": PROJECT,
-                  "branch": "main",
-                  "metricKeys": (
-                      "security_rating,new_security_rating,"
-                      "vulnerabilities,new_vulnerabilities,"
-                      "security_issues,new_security_issues"
-                  ),
-              },
-          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              data = json.loads(response.read().decode("utf-8"))
 
-          print("MEASURES")
-          print(json.dumps(measures, indent=2, sort_keys=True))
-          print("ISSUES")
           print(json.dumps({
-              "total": issues.get("total"),
+              "total": data.get("total"),
               "issues": [
                   {
                       "key": item.get("key"),
@@ -81,7 +59,7 @@ jobs:
                       "cleanCodeAttribute": item.get("cleanCodeAttribute"),
                       "impacts": item.get("impacts"),
                   }
-                  for item in issues.get("issues", [])
+                  for item in data.get("issues", [])
               ],
           }, indent=2, sort_keys=True))
           PY
