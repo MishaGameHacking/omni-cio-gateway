@@ -80,6 +80,11 @@ jobs:
             --location "${VPC_LOCATION}" \
             --availability-zone "${VPC_ZONE}"
 
+      - name: Surface incompatible VDS tariff gate
+        if: steps.network.outputs.status == 'pending_server_preset'
+        run: |
+          echo "::warning title=Private network tariff required::The existing VDS tariff cannot join a private network. No VPC or PostgreSQL resource was created."
+
       - name: Surface manual VDS attachment gate
         if: steps.network.outputs.status == 'pending_server_network'
         run: |
