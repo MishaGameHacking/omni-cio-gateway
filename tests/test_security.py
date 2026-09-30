@@ -12,8 +12,8 @@ from omnicio.security import (
     encrypt_phone,
     format_public_id,
     normalize_russian_mobile,
-    parse_public_id,
     otp_digest,
+    parse_public_id,
     verify_otp_digest,
 )
 
