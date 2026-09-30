@@ -24,6 +24,14 @@ from typing import Any
 API_ROOT = "https://api.timeweb.cloud/api"
 REMOTE_SECRET_PATH = "/etc/omnicio/auth-secrets.env"
 REMOTE_RUNTIME_PATH = "/etc/omnicio/runtime.env"
+TIMEWEB_DB_PASSWORD_MIN = 8
+TIMEWEB_DB_PASSWORD_MAX = 30
+TIMEWEB_DB_PASSWORD_SAFE = frozenset(
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789"
+    "_-"
+)
 DB_OWNERSHIP_MARKER = "Managed by GitHub Actions: omnicio-auth-postgres"
 
 
@@ -585,6 +593,13 @@ class EphemeralSsh:
         return completed.stdout
 
 
+def is_valid_timeweb_db_password(value: str) -> bool:
+    return (
+        TIMEWEB_DB_PASSWORD_MIN <= len(value) <= TIMEWEB_DB_PASSWORD_MAX
+        and all(char in TIMEWEB_DB_PASSWORD_SAFE for char in value)
+    )
+
+
 def parse_secret_bundle(raw: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in raw.splitlines():
@@ -620,7 +635,7 @@ path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
 if not path.exists():
     values = {
-        "OMNICIO_DB_ADMIN_PASSWORD": secrets.token_urlsafe(36),
+        "OMNICIO_DB_ADMIN_PASSWORD": secrets.token_urlsafe(18),
         "PHONE_CRYPTO_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),
         "PHONE_LOOKUP_KEY": secrets.token_urlsafe(48),
         "OTP_SIGNING_KEY": secrets.token_urlsafe(48),
@@ -637,9 +652,64 @@ print(path.read_text(), end="")
 """
 
 
-def load_or_create_server_secrets(ssh: EphemeralSsh) -> dict[str, str]:
+REMOTE_DB_PASSWORD_ROTATE = r"""
+from __future__ import annotations
+
+import os
+import pathlib
+import secrets
+
+path = pathlib.Path("/etc/omnicio/auth-secrets.env")
+if not path.is_file():
+    raise SystemExit("auth secret file does not exist")
+
+lines = path.read_text().splitlines()
+new_password = secrets.token_urlsafe(18)
+updated = []
+replaced = False
+
+for line in lines:
+    if line.startswith("OMNICIO_DB_ADMIN_PASSWORD="):
+        updated.append(f"OMNICIO_DB_ADMIN_PASSWORD={new_password}")
+        replaced = True
+    else:
+        updated.append(line)
+
+if not replaced:
+    raise SystemExit("database admin password key is missing")
+
+temp = path.with_suffix(".tmp")
+temp.write_text("\n".join(updated) + "\n")
+os.chmod(temp, 0o600)
+temp.replace(path)
+os.chmod(path, 0o600)
+print(path.read_text(), end="")
+"""
+
+
+def load_or_create_server_secrets(
+    ssh: EphemeralSsh,
+    *,
+    allow_db_password_rotation: bool,
+) -> dict[str, str]:
     raw = ssh.run("python3 -", input_text=REMOTE_SECRET_BOOTSTRAP)
-    return parse_secret_bundle(raw)
+    values = parse_secret_bundle(raw)
+    password = values["OMNICIO_DB_ADMIN_PASSWORD"]
+
+    if is_valid_timeweb_db_password(password):
+        return values
+
+    if not allow_db_password_rotation:
+        raise InfraError(
+            "Stored database admin password violates the provider policy and "
+            "cannot be rotated after a managed cluster exists"
+        )
+
+    rotated = ssh.run("python3 -", input_text=REMOTE_DB_PASSWORD_ROTATE)
+    values = parse_secret_bundle(rotated)
+    if not is_valid_timeweb_db_password(values["OMNICIO_DB_ADMIN_PASSWORD"]):
+        raise InfraError("Generated database admin password violates provider policy")
+    return values
 
 
 def write_runtime_env(
@@ -827,7 +897,10 @@ def reconcile(
         server_id=server_id,
         server_ip=public_ipv4(server),
     ) as ssh:
-        secret_bundle = load_or_create_server_secrets(ssh)
+        secret_bundle = load_or_create_server_secrets(
+            ssh,
+            allow_db_password_rotation=existing is None,
+        )
 
         if existing is None:
             payload = create_payload(
