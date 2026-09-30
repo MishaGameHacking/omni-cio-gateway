@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database.open()
     sms = build_sms_provider(
         cfg.sms_provider,
+        login=cfg.sms_login,
         token=cfg.sms_token,
         sender=cfg.sms_sender,
     )
