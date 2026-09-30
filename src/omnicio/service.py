@@ -6,13 +6,10 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-from psycopg.errors import UniqueViolation
-
 from .config import Settings
 from .db import Database, UserRecord, one_hour_ago, utcnow
 from .security import (
     client_ip_digest,
-    decrypt_phone,
     encrypt_phone,
     format_public_id,
     generate_otp,
@@ -153,63 +150,31 @@ class AuthService:
             challenge.code_digest,
             self.settings.otp_key,
         )
-        consumed = self.database.consume_challenge(
-            challenge.id,
-            code_matches=matches,
-        )
-        if not matches or consumed is None:
+        if not matches:
+            self.database.record_failed_challenge_attempt(challenge.id)
             raise InvalidChallenge("invalid verification code")
 
-        phone = decrypt_phone(challenge.phone_ciphertext, self.settings.crypto_key)
         ip_hash = client_ip_digest(client_ip, self.settings.ip_key)
         token = generate_session_token()
         token_hash = session_digest(token)
 
-        user, created = self._create_session_with_one_concurrency_retry(
-            phone=phone,
-            challenge=challenge,
-            ip_hash=ip_hash,
-            token_hash=token_hash,
+        completed = self.database.complete_verified_challenge(
+            challenge_id=challenge.id,
+            client_ip_hash=ip_hash,
+            session_token_digest=token_hash,
+            session_ttl_seconds=self.settings.session_ttl_seconds,
+            legal_versions=self.legal_versions(),
         )
+        if completed is None:
+            raise InvalidChallenge("challenge expired or already consumed")
+
+        user, created = completed
         return LoginSucceeded(
             session_token=token,
             public_id=format_public_id(user.public_id),
             created=created,
             expires_in_seconds=self.settings.session_ttl_seconds,
         )
-
-    def _create_session_with_one_concurrency_retry(
-        self,
-        *,
-        phone: str,
-        challenge: object,
-        ip_hash: bytes,
-        token_hash: bytes,
-    ) -> tuple[UserRecord, bool]:
-        lookup = phone_lookup(phone, self.settings.lookup_key)
-        ciphertext = encrypt_phone(phone, self.settings.crypto_key)
-        legal_versions = self.legal_versions()
-
-        try:
-            return self.database.resolve_user_and_create_session(
-                phone_lookup=lookup,
-                phone_ciphertext=ciphertext,
-                client_ip_hash=ip_hash,
-                session_token_digest=token_hash,
-                session_ttl_seconds=self.settings.session_ttl_seconds,
-                legal_versions=legal_versions,
-            )
-        except UniqueViolation:
-            # Only the phone unique constraint is expected to race. One bounded
-            # retry resolves to the concurrently created account.
-            return self.database.resolve_user_and_create_session(
-                phone_lookup=lookup,
-                phone_ciphertext=ciphertext,
-                client_ip_hash=ip_hash,
-                session_token_digest=token_hash,
-                session_ttl_seconds=self.settings.session_ttl_seconds,
-                legal_versions=legal_versions,
-            )
 
     def user_from_session(self, token: str) -> UserRecord | None:
         if not token:
