@@ -71,7 +71,6 @@ class Database:
                     WHERE created_at >= %(since)s
                     """,
                     {
-                        "challenge_id": challenge_id,
                         "phone_lookup": phone_lookup,
                         "client_ip_hash": client_ip_hash,
                         "since": since,
@@ -134,6 +133,7 @@ class Database:
                     RETURNING id
                     """,
                     {
+                        "challenge_id": challenge_id,
                         "phone_lookup": phone_lookup,
                         "phone_ciphertext": phone_ciphertext,
                         "code_digest": code_digest,
