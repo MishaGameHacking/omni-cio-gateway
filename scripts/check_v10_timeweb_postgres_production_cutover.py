@@ -1057,7 +1057,6 @@ def _validate_sources() -> None:
         raise CutoverContractError(
             "TIMEWEB_PG_CUTOVER_BOOTSTRAP_DATABASE_PREFLIGHT_MISSING"
         )
-    _validate_prepare_transaction(controller)
     prepare_calls = _direct_call_names(controller, "_prepare_database")
     if "_verify_bootstrap_database_authority" not in prepare_calls:
         raise CutoverContractError(
@@ -1065,6 +1064,7 @@ def _validate_sources() -> None:
         )
     if "_require_observed_clean_product_state" not in prepare_calls:
         raise CutoverContractError("TIMEWEB_PG_CUTOVER_PREPARE_CLEAN_PREFLIGHT_MISSING")
+    _validate_prepare_transaction(controller)
 
     app_identity_calls = _direct_call_names(controller, "_is_canonical_app_row")
     if "is_canonical_repository" not in app_identity_calls:
