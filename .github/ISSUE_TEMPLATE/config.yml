@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Политика безопасности
-    url: https://github.com/MishaGameHacking/omni-cio-gateway/blob/main/SECURITY.md
-    about: Не публикуйте секреты и финансовые данные в Issue.
-  - name: Карта проекта
-    url: https://github.com/MishaGameHacking/omni-cio-gateway/blob/main/docs/README.md
-    about: Сначала проверьте документацию и реестр компонентов.
