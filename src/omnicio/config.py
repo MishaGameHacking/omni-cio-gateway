@@ -61,6 +61,9 @@ class Settings:
     terms_version: str
     otp_ttl_seconds: int
     otp_max_attempts: int
+    otp_resend_cooldown_seconds: int
+    otp_phone_hourly_limit: int
+    otp_ip_hourly_limit: int
     session_ttl_seconds: int
 
     @property
@@ -100,5 +103,8 @@ def load_settings() -> Settings:
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
         otp_ttl_seconds=positive_int("OTP_TTL_SECONDS", 300),
         otp_max_attempts=positive_int("OTP_MAX_ATTEMPTS", 5),
+        otp_resend_cooldown_seconds=positive_int("OTP_RESEND_COOLDOWN_SECONDS", 60),
+        otp_phone_hourly_limit=positive_int("OTP_PHONE_HOURLY_LIMIT", 5),
+        otp_ip_hourly_limit=positive_int("OTP_IP_HOURLY_LIMIT", 20),
         session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", 2592000),
     )
