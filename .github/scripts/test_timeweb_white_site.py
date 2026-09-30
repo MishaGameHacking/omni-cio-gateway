@@ -84,6 +84,42 @@ class TimewebWhiteSiteTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in result], [3000])
 
+    def test_compatible_presets_can_exceed_current_budget(self) -> None:
+        os_info = {
+            "requirements": {
+                "cpu_min": 1,
+                "ram_min": 1024,
+                "disk_min": 15,
+                "bandwidth_min": 100,
+            }
+        }
+        presets = [
+            {
+                "id": 3000,
+                "location": "ru-3",
+                "price": 900,
+                "cpu": 2,
+                "ram": 2048,
+                "disk": 40960,
+                "bandwidth": 1000,
+            }
+        ]
+
+        compatible = MODULE.select_compatible_presets(
+            os_info=os_info,
+            presets=presets,
+            target_location="ru-3",
+        )
+        within_budget = MODULE.select_budget_presets(
+            os_info=os_info,
+            presets=presets,
+            max_server_price_rub=Decimal("199"),
+            target_location="ru-3",
+        )
+
+        self.assertEqual([item["id"] for item in compatible], [3000])
+        self.assertEqual(within_budget, [])
+
     def test_build_placements_restricts_to_moscow_zone(self) -> None:
         presets = [
             {
