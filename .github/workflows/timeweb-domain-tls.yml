@@ -1,13 +1,6 @@
 name: Timeweb domain TLS
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/timeweb-domain-tls.yml"
-      - ".github/scripts/timeweb_domain_tls.py"
-      - ".github/scripts/test_timeweb_domain_tls.py"
   push:
     branches:
       - main
@@ -47,7 +40,7 @@ jobs:
     name: Configure omnicio.ru HTTPS
     permissions:
       contents: read
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
