@@ -92,39 +92,60 @@ jobs:
           persist-credentials: false
           clean: true
 
-      - name: Resolve installed Python and isolate job environment
+      - name: Bootstrap pinned Python and isolate job environment
         shell: cmd
+        env:
+          PYTHON_ARCHIVE_URL: https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.zip
+          PYTHON_ARCHIVE_SHA256: 8649692de846c56a7189d6dae5c322ab20deb1b5908b6f39426b62a36f39415d
         run: |
           @echo off
           setlocal EnableExtensions
-          set "PYTHON_CMD="
 
-          where py >nul 2>nul
-          if not errorlevel 1 (
-            py -3.13 -c "import sys; assert sys.version_info[:2] == (3, 13)" >nul 2>nul
-            if not errorlevel 1 set "PYTHON_CMD=py -3.13"
-            if not defined PYTHON_CMD (
-              py -3.12 -c "import sys; assert sys.version_info[:2] == (3, 12)" >nul 2>nul
-              if not errorlevel 1 set "PYTHON_CMD=py -3.12"
+          set "PYTHON_HOME=%RUNNER_TOOL_CACHE%\omnicio-python-3.12.10"
+          set "PYTHON_EXE=%PYTHON_HOME%\python.exe"
+          set "PYTHON_ARCHIVE=%RUNNER_TEMP%\python-3.12.10-amd64.zip"
+
+          if not exist "%PYTHON_EXE%" (
+            where curl.exe >nul 2>nul
+            if errorlevel 1 (
+              echo ::error::curl.exe is required to bootstrap the pinned Python runtime.
+              exit /b 1
             )
-          )
 
-          if not defined PYTHON_CMD (
-            where python >nul 2>nul
-            if not errorlevel 1 (
-              python -c "import sys; assert sys.version_info[:2] in ((3, 12), (3, 13))" >nul 2>nul
-              if not errorlevel 1 set "PYTHON_CMD=python"
+            echo Downloading pinned CPython 3.12.10 from python.org...
+            curl.exe --fail --location --retry 3 --retry-delay 2 ^
+              --output "%PYTHON_ARCHIVE%" "%PYTHON_ARCHIVE_URL%"
+            if errorlevel 1 exit /b 1
+
+            certutil -hashfile "%PYTHON_ARCHIVE%" SHA256 |
+              findstr /i /c:"%PYTHON_ARCHIVE_SHA256%" >nul
+            if errorlevel 1 (
+              echo ::error::Downloaded Python archive failed SHA256 verification.
+              del /q "%PYTHON_ARCHIVE%" 2>nul
+              exit /b 1
             )
+
+            if exist "%PYTHON_HOME%" rmdir /s /q "%PYTHON_HOME%"
+            mkdir "%PYTHON_HOME%"
+            if errorlevel 1 exit /b 1
+
+            powershell.exe -NoLogo -NoProfile -NonInteractive -Command ^
+              "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:PYTHON_ARCHIVE, $env:PYTHON_HOME)"
+            if errorlevel 1 exit /b 1
+
+            del /q "%PYTHON_ARCHIVE%" 2>nul
           )
 
-          if not defined PYTHON_CMD (
-            echo ::error::Python 3.12 or 3.13 is not installed or visible to the runner service.
-            where py 2>nul
-            where python 2>nul
-            exit /b 1
+          "%PYTHON_EXE%" -c "import sys; assert sys.version_info[:2] == (3, 12); print(sys.version)"
+          if errorlevel 1 exit /b 1
+
+          "%PYTHON_EXE%" -m pip --version >nul 2>nul
+          if errorlevel 1 (
+            "%PYTHON_EXE%" -m ensurepip --upgrade
+            if errorlevel 1 exit /b 1
           )
 
-          call %PYTHON_CMD% -m venv .venv-ci
+          "%PYTHON_EXE%" -m venv .venv-ci
           if errorlevel 1 exit /b 1
 
           set "VENV_PYTHON=%CD%\.venv-ci\Scripts\python.exe"
@@ -132,6 +153,7 @@ jobs:
           if errorlevel 1 exit /b 1
 
           >>"%GITHUB_ENV%" echo OMNICIO_PYTHON=%VENV_PYTHON%
+          >>"%GITHUB_ENV%" echo PIP_CACHE_DIR=%RUNNER_TOOL_CACHE%\omnicio-pip-cache
 
       - name: Install project and test tooling
         shell: cmd
