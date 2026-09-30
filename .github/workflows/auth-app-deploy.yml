@@ -67,6 +67,9 @@ jobs:
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
       DB_CLUSTER_NAME: omnicio-auth-postgres
+      VPC_NAME: omni-cio-private
+      TARGET_LOCATION: ru-3
+      TARGET_ZONE: msk-1
 
     steps:
       - name: Checkout accepted main state
@@ -91,7 +94,10 @@ jobs:
             --server-comment "${SERVER_COMMENT}" \
             --release-sha "${GITHUB_SHA}" \
             --repository-root "${GITHUB_WORKSPACE}" \
-            --cluster-name "${DB_CLUSTER_NAME}"
+            --cluster-name "${DB_CLUSTER_NAME}" \
+            --vpc-name "${VPC_NAME}" \
+            --location "${TARGET_LOCATION}" \
+            --availability-zone "${TARGET_ZONE}"
 
       - name: Surface database gate
         if: steps.app.outputs.status == 'pending_database'
