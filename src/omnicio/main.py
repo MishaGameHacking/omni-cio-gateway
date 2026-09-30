@@ -25,6 +25,7 @@ class RequestCodeBody(BaseModel):
     accept_privacy: bool
     accept_personal_data: bool
     accept_terms: bool
+    confirm_age_18: bool
 
 
 class VerifyCodeBody(BaseModel):
@@ -121,6 +122,7 @@ def request_code(body: RequestCodeBody, request: Request) -> dict[str, object]:
             accepted_privacy=body.accept_privacy,
             accepted_personal_data=body.accept_personal_data,
             accepted_terms=body.accept_terms,
+            confirmed_age_18=body.confirm_age_18,
         )
     except SecurityValueError as exc:
         raise HTTPException(status_code=400, detail="invalid phone format") from exc
