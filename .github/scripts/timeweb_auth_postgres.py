@@ -519,12 +519,12 @@ class EphemeralSsh:
                 raise InfraError("Unable to capture managed VDS SSH host key")
             self._known_hosts.write_text(scan.stdout)
 
-            for _ in range(8):
+            for _ in range(18):
                 try:
                     self.run("true")
                     return self
                 except InfraError:
-                    time.sleep(3)
+                    time.sleep(10)
             raise InfraError("Ephemeral SSH key did not become usable in time")
         except Exception:
             self._cleanup()
