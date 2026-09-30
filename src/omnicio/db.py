@@ -331,19 +331,30 @@ class Database:
             )
             return user, created
 
-    def user_from_session_digest(self, token_digest: bytes) -> UserRecord | None:
+    def refresh_session_digest(
+        self,
+        token_digest: bytes,
+        *,
+        session_ttl_seconds: int,
+    ) -> UserRecord | None:
+        """Validate a session and extend its rolling expiry after real use."""
+
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT u.id, u.public_id, u.status
-                FROM sessions AS s
-                JOIN users AS u ON u.id = s.user_id
-                WHERE s.token_digest = %s
+                UPDATE sessions AS s
+                SET
+                    last_seen_at = now(),
+                    expires_at = now() + make_interval(secs => %s)
+                FROM users AS u
+                WHERE s.user_id = u.id
+                  AND s.token_digest = %s
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
                   AND u.status = 'active'
+                RETURNING u.id, u.public_id, u.status
                 """,
-                (token_digest,),
+                (session_ttl_seconds, token_digest),
             )
             fetched = cur.fetchone()
             if fetched is None:
