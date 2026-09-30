@@ -23,7 +23,8 @@ from typing import Any
 
 API_ROOT = "https://api.timeweb.cloud/api"
 SITE_MARKER = 'name="omni-cio-white-site"'
-CAPACITY_ERROR_CODE = "no_free_node"
+PLACEMENT_CAPACITY_ERROR_CODE = "no_free_node"
+LOCATION_CAPACITY_ERROR_CODE = "servers_is_run_out_error"
 
 
 class DeploymentError(RuntimeError):
@@ -481,8 +482,17 @@ def create_with_capacity_fallback(
     server_comment: str,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     capacity_failures: list[str] = []
+    exhausted_locations: set[str] = set()
 
     for placement in placements:
+        if placement.location in exhausted_locations:
+            capacity_failures.append(placement.label)
+            add_summary(
+                f"- Skipping `{placement.label}`: location "
+                f"`{placement.location}` is already proven out of capacity."
+            )
+            continue
+
         payload = create_payload(
             os_info=os_info,
             placement=placement,
@@ -516,11 +526,30 @@ def create_with_capacity_fallback(
                 )
             return created, capacity_failures
         except TimewebApiError as exc:
-            if exc.status_code == 409 and exc.error_code == CAPACITY_ERROR_CODE:
+            is_placement_capacity = (
+                exc.status_code == 409
+                and exc.error_code == PLACEMENT_CAPACITY_ERROR_CODE
+            )
+            is_location_capacity = (
+                exc.status_code in {400, 409}
+                and exc.error_code == LOCATION_CAPACITY_ERROR_CODE
+            )
+
+            if is_placement_capacity:
                 capacity_failures.append(placement.label)
                 add_summary(
                     f"- Capacity unavailable for `{placement.label}`; "
                     "trying the next pre-approved placement."
+                )
+                continue
+
+            if is_location_capacity:
+                capacity_failures.append(placement.label)
+                exhausted_locations.add(placement.location)
+                add_summary(
+                    f"- Location `{placement.location}` is out of server "
+                    "capacity; remaining candidates in that location will be "
+                    "skipped without provider mutations."
                 )
                 continue
 
@@ -657,10 +686,10 @@ def reconcile(
         server_comment=server_comment,
     )
     if not created:
-        attempted = ", ".join(capacity_failures) or "none"
+        blocked = ", ".join(capacity_failures) or "none"
         add_summary(
-            "- Result: `pending_capacity`. Timeweb reported no free node "
-            f"for every pre-approved placement ({attempted})."
+            "- Result: `pending_capacity`. Timeweb reported insufficient "
+            f"capacity for every pre-approved placement ({blocked})."
         )
         add_summary(
             "- No server was created. Scheduled reconciliation will retry "
