@@ -24,6 +24,11 @@ from typing import Any
 API_ROOT = "https://api.timeweb.cloud/api"
 PLACEMENT_CAPACITY_ERROR_CODE = "no_free_node"
 LOCATION_CAPACITY_ERROR_CODE = "servers_is_run_out_error"
+SERVER_NAME = "omni-cio-white-site"
+SERVER_COMMENT = "Managed by GitHub Actions: timeweb-white-site"
+MAX_SERVER_PRICE_RUB = Decimal("1045")
+TARGET_LOCATION = "ru-3"
+TARGET_AVAILABILITY_ZONE = "msk-1"
 
 
 class DeploymentError(RuntimeError):
@@ -45,12 +50,9 @@ class TimewebApiError(RuntimeError):
         message: str,
         response_id: str,
     ) -> None:
-        super().__init__(
-            f"Timeweb API returned HTTP {status_code}"
-            f" error_code={error_code or 'unknown'}"
-            f" response_id={response_id or 'unknown'}"
-            f" message={message or 'unknown'}"
-        )
+        # Provider-controlled strings are retained for decisions and
+        # diagnostics in memory, but never interpolated into printable errors.
+        super().__init__(f"Timeweb API returned HTTP {status_code}")
         self.status_code = status_code
         self.error_code = error_code
         self.provider_message = message
@@ -300,15 +302,11 @@ def build_placements(
     normalized_target_zone = target_availability_zone.strip().lower()
 
     provider_zones = zone_map.get(normalized_target_location) or ()
-    matching_zone = next(
-        (
-            zone
-            for zone in provider_zones
-            if zone.strip().lower() == normalized_target_zone
-        ),
-        None,
+    provider_has_target_zone = any(
+        zone.strip().lower() == normalized_target_zone
+        for zone in provider_zones
     )
-    if matching_zone is None:
+    if not provider_has_target_zone:
         raise DeploymentError(
             f"Timeweb location {target_location!r} does not currently expose "
             f"availability zone {target_availability_zone!r}."
@@ -329,7 +327,7 @@ def build_placements(
             Placement(
                 preset_id=preset_id,
                 location=location,
-                availability_zone=matching_zone,
+                availability_zone=target_availability_zone.strip(),
                 price_rub=decimal_value(preset.get("price") or 0),
                 cpu=integer_value(preset.get("cpu") or 0),
                 ram_mb=integer_value(preset.get("ram") or 0),
@@ -444,17 +442,17 @@ def wait_for_web_port(
     if address.version != 4:
         raise DeploymentError("Bootstrap web readiness requires a public IPv4.")
 
-    last_error = "not attempted"
+    last_error_type = "not-attempted"
     for _ in range(attempts):
         try:
             with socket.create_connection((str(address), 80), timeout=5):
                 return
         except OSError as exc:
-            last_error = f"{type(exc).__name__}: {exc}"
+            last_error_type = type(exc).__name__
         time.sleep(sleep_seconds)
     raise DeploymentError(
         "Server control plane is reachable, but the Nginx TCP port did not "
-        f"become ready within the readiness window: {last_error}"
+        f"become ready within the readiness window. Error type: {last_error_type}."
     )
 
 
@@ -700,11 +698,10 @@ def reconcile(
         existing_id = server_id(existing)
         addresses = public_ipv4_addresses(existing)
         add_summary(
-            f"- Existing server: `{server_name}` (id `{existing_id}`, "
-            f"status `{existing.get('status', 'unknown')}`)."
+            f"- Existing managed server id: `{existing_id}`."
         )
         if addresses:
-            add_summary(f"- IPv4: http://{addresses[0]}/")
+            add_summary(f"- Public IPv4: {addresses[0]}.")
 
         if existing.get("comment") != server_comment:
             raise DeploymentError(
@@ -719,10 +716,7 @@ def reconcile(
             or existing_zone != target_availability_zone.lower()
         ):
             raise DeploymentError(
-                "Managed server exists outside the required Moscow placement: "
-                f"actual={existing_location or 'unknown'}/"
-                f"{existing_zone or 'unknown'}, required="
-                f"{target_location}/{target_availability_zone}. "
+                "Managed server exists outside the required Moscow placement. "
                 "Automatic cross-region migration/deletion is not permitted."
             )
 
@@ -734,10 +728,7 @@ def reconcile(
             return 0
 
         latest, ip = wait_for_ipv4(client, existing_id)
-        add_summary(
-            f"- Server status: `{latest.get('status', 'unknown')}`; "
-            f"IPv4: {ip}"
-        )
+        add_summary(f"- Public IPv4: {ip}.")
         wait_for_web_port(ip)
         add_summary(f"- Result: existing managed server web port is ready on {ip}.")
         return 0
@@ -791,10 +782,7 @@ def reconcile(
     created_id = server_id(created)
     add_summary(f"- Created server id: `{created_id}`.")
     latest, ip = wait_for_ipv4(client, created_id)
-    add_summary(
-        f"- Server status: `{latest.get('status', 'unknown')}`; "
-        f"IPv4: {ip}"
-    )
+    add_summary(f"- Public IPv4: {ip}.")
     wait_for_web_port(ip)
     add_summary(f"- Result: managed server web port is ready on {ip}.")
     return 0
@@ -808,31 +796,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         required=True,
     )
     parser.add_argument("--confirm", default="")
-    parser.add_argument("--server-name", required=True)
-    parser.add_argument("--server-comment", required=True)
-    parser.add_argument("--max-server-price-rub", required=True)
-    parser.add_argument("--target-location", required=True)
-    parser.add_argument("--target-availability-zone", required=True)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        max_price = decimal_value(args.max_server_price_rub)
-        if max_price <= 0:
-            raise DeploymentError("Server budget ceiling must be positive.")
-
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client=client,
             mode=args.mode,
             confirm=args.confirm,
-            server_name=args.server_name,
-            server_comment=args.server_comment,
-            max_server_price_rub=max_price,
-            target_location=args.target_location,
-            target_availability_zone=args.target_availability_zone,
+            server_name=SERVER_NAME,
+            server_comment=SERVER_COMMENT,
+            max_server_price_rub=MAX_SERVER_PRICE_RUB,
+            target_location=TARGET_LOCATION,
+            target_availability_zone=TARGET_AVAILABILITY_ZONE,
         )
     except (DeploymentError, TimewebApiError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
