@@ -449,7 +449,7 @@ def wait_for_web_port(
         try:
             with socket.create_connection((str(address), 80), timeout=5):
                 return
-        except (OSError, TimeoutError, socket.timeout) as exc:
+        except OSError as exc:
             last_error = f"{type(exc).__name__}: {exc}"
         time.sleep(sleep_seconds)
     raise DeploymentError(
