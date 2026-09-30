@@ -172,56 +172,72 @@ class Database:
                 row = cur.fetchone()
                 return None if row is None else _challenge(row)
 
-    def consume_challenge(
-        self,
-        challenge_id: UUID,
-        *,
-        code_matches: bool,
-    ) -> ChallengeRecord | None:
+    def record_failed_challenge_attempt(self, challenge_id: UUID) -> bool:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                if code_matches:
-                    cur.execute(
-                        """
-                        UPDATE otp_challenges
-                        SET consumed_at = now()
-                        WHERE id = %s
-                          AND consumed_at IS NULL
-                          AND expires_at > now()
-                          AND attempts_remaining > 0
-                        RETURNING *
-                        """,
-                        (challenge_id,),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        UPDATE otp_challenges
-                        SET attempts_remaining = GREATEST(attempts_remaining - 1, 0)
-                        WHERE id = %s
-                          AND consumed_at IS NULL
-                          AND expires_at > now()
-                          AND attempts_remaining > 0
-                        RETURNING *
-                        """,
-                        (challenge_id,),
-                    )
-                row = cur.fetchone()
-                return None if row is None else _challenge(row)
+                cur.execute(
+                    """
+                    UPDATE otp_challenges
+                    SET attempts_remaining = GREATEST(attempts_remaining - 1, 0)
+                    WHERE id = %s
+                      AND consumed_at IS NULL
+                      AND expires_at > now()
+                      AND attempts_remaining > 0
+                    RETURNING id
+                    """,
+                    (challenge_id,),
+                )
+                return cur.fetchone() is not None
 
-    def resolve_user_and_create_session(
+    def complete_verified_challenge(
         self,
         *,
-        phone_lookup: bytes,
-        phone_ciphertext: bytes,
+        challenge_id: UUID,
         client_ip_hash: bytes,
         session_token_digest: bytes,
         session_ttl_seconds: int,
         legal_versions: dict[str, str],
-    ) -> tuple[UserRecord, bool]:
+    ) -> tuple[UserRecord, bool] | None:
+        """Atomically consume OTP, resolve account, record consent, and create session."""
+
         with self.pool.connection() as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE otp_challenges
+                        SET consumed_at = now()
+                        WHERE id = %(challenge_id)s
+                          AND consumed_at IS NULL
+                          AND expires_at > now()
+                          AND attempts_remaining > 0
+                          AND legal_versions = %(legal_versions)s::jsonb
+                        RETURNING phone_lookup, phone_ciphertext, legal_versions
+                        """,
+                        {
+                            "challenge_id": challenge_id,
+                            "legal_versions": json.dumps(legal_versions),
+                        },
+                    )
+                    challenge_row = cur.fetchone()
+                    if challenge_row is None:
+                        return None
+
+                    lookup = bytes(challenge_row["phone_lookup"])
+                    ciphertext = bytes(challenge_row["phone_ciphertext"])
+                    accepted_versions = dict(challenge_row["legal_versions"])
+
+                    # Serialize account creation for one phone without exposing the
+                    # phone itself to PostgreSQL advisory-lock metadata.
+                    cur.execute(
+                        """
+                        SELECT pg_advisory_xact_lock(
+                            hashtextextended(encode(%s::bytea, 'hex'), 0)
+                        )
+                        """,
+                        (lookup,),
+                    )
+
                     cur.execute(
                         """
                         SELECT u.id, u.public_id, u.status
@@ -229,11 +245,11 @@ class Database:
                         JOIN phone_identities AS p ON p.user_id = u.id
                         WHERE p.phone_lookup = %s
                         """,
-                        (phone_lookup,),
+                        (lookup,),
                     )
                     row = cur.fetchone()
-
                     created = row is None
+
                     if row is None:
                         cur.execute(
                             "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status"
@@ -252,7 +268,7 @@ class Database:
                             )
                             VALUES (%s, %s, %s, now())
                             """,
-                            (user.id, phone_lookup, phone_ciphertext),
+                            (user.id, lookup, ciphertext),
                         )
                     else:
                         user = _user(row)
@@ -260,7 +276,7 @@ class Database:
                     if user.status != "active":
                         raise PermissionError("account is not active")
 
-                    for document_type, version in legal_versions.items():
+                    for document_type, version in accepted_versions.items():
                         cur.execute(
                             """
                             INSERT INTO legal_acceptances (
