@@ -66,7 +66,7 @@ class SmsAeroSmsProvider:
             raise SmsDeliveryError("SMS provider credentials are incomplete")
 
         credentials = base64.b64encode(
-            f"{self.login}:{self.api_key}".encode("utf-8")
+            f"{self.login}:{self.api_key}".encode()
         ).decode("ascii")
         request = urllib.request.Request(
             f"{self.base_url}/{method}",
