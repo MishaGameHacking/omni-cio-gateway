@@ -24,6 +24,7 @@ from typing import Any
 API_ROOT = "https://api.timeweb.cloud/api"
 REMOTE_SECRET_PATH = "/etc/omnicio/auth-secrets.env"
 REMOTE_RUNTIME_PATH = "/etc/omnicio/runtime.env"
+DB_OWNERSHIP_MARKER = "Managed by GitHub Actions: omnicio-auth-postgres"
 
 
 class InfraError(RuntimeError):
@@ -428,6 +429,8 @@ def validate_existing_cluster(
         raise InfraError("Managed database exists in the wrong location")
     if str(cluster.get("availability_zone") or "") != desired.availability_zone:
         raise InfraError("Managed database exists in the wrong availability zone")
+    if str(cluster.get("description") or "") != DB_OWNERSHIP_MARKER:
+        raise InfraError("Same-name database is not owned by this reconciler")
     if bool(cluster.get("is_enabled_public_network")):
         raise InfraError("Managed auth database unexpectedly has public IPv4 enabled")
     if bool(cluster.get("is_enabled_public_ipv6")):
@@ -457,7 +460,7 @@ def create_payload(
         "preset_id": integer_value(preset["id"]),
         "network": {"id": vpc_id},
         "is_public_ipv6": False,
-        "description": "Managed by GitHub Actions: omnicio-auth-postgres",
+        "description": DB_OWNERSHIP_MARKER,
         "availability_zone": desired.availability_zone,
         "disk_autoscaling": {"is_enabled": False},
     }
@@ -503,28 +506,36 @@ class EphemeralSsh:
         public_key = self._key_path.with_suffix(".pub").read_text().strip()
         key_name = f"omnicio-auth-{os.environ.get('GITHUB_RUN_ID', 'manual')}"
         self._ssh_key_id = self.client.create_ssh_key(public_key, key_name)
-        self.client.attach_ssh_key(self.server_id, self._ssh_key_id)
+        try:
+            self.client.attach_ssh_key(self.server_id, self._ssh_key_id)
 
-        scan = subprocess.run(
-            ["ssh-keyscan", "-T", "10", "-H", self.server_ip],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if scan.returncode != 0 or not scan.stdout.strip():
-            raise InfraError("Unable to capture managed VDS SSH host key")
-        self._known_hosts.write_text(scan.stdout)
+            scan = subprocess.run(
+                ["ssh-keyscan", "-T", "10", "-H", self.server_ip],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if scan.returncode != 0 or not scan.stdout.strip():
+                raise InfraError("Unable to capture managed VDS SSH host key")
+            self._known_hosts.write_text(scan.stdout)
 
-        for _ in range(8):
-            try:
-                self.run("true")
-                return self
-            except InfraError:
-                time.sleep(3)
-        raise InfraError("Ephemeral SSH key did not become usable in time")
+            for _ in range(8):
+                try:
+                    self.run("true")
+                    return self
+                except InfraError:
+                    time.sleep(3)
+            raise InfraError("Ephemeral SSH key did not become usable in time")
+        except Exception:
+            self._cleanup()
+            raise
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self._cleanup()
+
+    def _cleanup(self) -> None:
         key_id = self._ssh_key_id
+        self._ssh_key_id = None
         if key_id is not None:
             try:
                 self.client.detach_ssh_key(self.server_id, key_id)
@@ -536,6 +547,7 @@ class EphemeralSsh:
                 pass
         if self._tmp is not None:
             self._tmp.cleanup()
+            self._tmp = None
 
     def run(self, command: str, *, input_text: str | None = None) -> str:
         if self._key_path is None or self._known_hosts is None:
@@ -836,7 +848,6 @@ def reconcile(
             cluster = client.get_database_cluster(cluster_id)
             add_summary(f"- Reusing managed PostgreSQL cluster id {cluster_id}.")
 
-        validate_existing_cluster(cluster, desired=desired, db_type=db_type)
         cluster, endpoint = wait_for_database_endpoint(client, cluster_id)
         validate_existing_cluster(cluster, desired=desired, db_type=db_type)
 
