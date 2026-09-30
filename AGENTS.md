@@ -231,6 +231,15 @@ PostgreSQL является relational authority после принятого p
 
 Никогда не ослаблять TLS, firewall или tenant security ради успешного deployment.
 
+Для post-provisioning доступа к Timeweb VDS из CI:
+
+- не хранить root-пароль в GitHub;
+- использовать краткоживущий SSH-ключ, приватная часть которого существует только на runner;
+- публичный ключ добавлять к точно идентифицированному managed server через provider API;
+- cleanup SSH-ключа выполнять даже при ошибке конфигурации;
+- secret-bearing SSH/provider job запускать только из accepted `main`;
+- перед выпуском TLS доказывать, что DNS указывает на управляемый сервер; stale AAAA не игнорировать.
+
 Для App Platform через Dockerfile:
 
 - production Dockerfile должен иметь понятный startup contract;

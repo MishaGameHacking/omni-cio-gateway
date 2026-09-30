@@ -1,0 +1,78 @@
+name: Timeweb domain TLS
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-domain-tls.yml"
+      - ".github/scripts/timeweb_domain_tls.py"
+      - ".github/scripts/test_timeweb_domain_tls.py"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-domain-tls.yml"
+      - ".github/scripts/timeweb_domain_tls.py"
+      - ".github/scripts/test_timeweb_domain_tls.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timeweb-domain-tls
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Test TLS bootstrap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout candidate repository state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run TLS bootstrap regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/test_timeweb_domain_tls.py
+
+  configure:
+    name: Configure omnicio.ru HTTPS
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      DOMAIN_NAME: omnicio.ru
+      SERVER_NAME: omni-cio-white-site
+      SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate Timeweb secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TIMEWEB_CLOUD_TOKEN:-}" ]; then
+            echo "::error::Repository secret TIMEWEB_CLOUD_TOKEN is missing or empty."
+            exit 1
+          fi
+
+      - name: Configure domain and TLS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/timeweb_domain_tls.py \
+            --domain "${DOMAIN_NAME}" \
+            --server-name "${SERVER_NAME}" \
+            --server-comment "${SERVER_COMMENT}"
