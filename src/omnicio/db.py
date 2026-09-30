@@ -372,6 +372,119 @@ class Database:
                 (token_digest,),
             )
 
+    def support_user_by_public_id(self, public_id: int) -> UserRecord | None:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, public_id, status
+                FROM users
+                WHERE public_id = %s
+                """,
+                (public_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            return _user(cast(dict[str, Any], fetched))
+
+    def support_revoke_all_sessions(
+        self,
+        *,
+        public_id: int,
+        reason: str,
+    ) -> UserRecord | None:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            user = self._support_locked_user(cur, public_id)
+            if user is None:
+                return None
+
+            cur.execute(
+                """
+                UPDATE sessions
+                SET revoked_at = COALESCE(revoked_at, now())
+                WHERE user_id = %s AND revoked_at IS NULL
+                """,
+                (user.id,),
+            )
+            cur.execute(
+                """
+                INSERT INTO audit_events (user_id, event_type, metadata)
+                VALUES (%s, 'support_sessions_revoked', %s::jsonb)
+                """,
+                (user.id, json.dumps({"reason": reason})),
+            )
+            return user
+
+    def support_change_status(
+        self,
+        *,
+        public_id: int,
+        target_status: str,
+        allowed_from: frozenset[str],
+        event_type: str,
+        reason: str,
+        revoke_sessions: bool,
+    ) -> tuple[UserRecord, bool] | None:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            user = self._support_locked_user(cur, public_id)
+            if user is None:
+                return None
+            if user.status == target_status:
+                return user, False
+            if user.status not in allowed_from:
+                raise PermissionError(
+                    f"cannot change account from {user.status} to {target_status}"
+                )
+
+            cur.execute(
+                """
+                UPDATE users
+                SET status = %s, updated_at = now()
+                WHERE id = %s
+                RETURNING id, public_id, status
+                """,
+                (target_status, user.id),
+            )
+            updated = cur.fetchone()
+            if updated is None:
+                raise RuntimeError("support status update returned no row")
+            updated_user = _user(cast(dict[str, Any], updated))
+
+            if revoke_sessions:
+                cur.execute(
+                    """
+                    UPDATE sessions
+                    SET revoked_at = COALESCE(revoked_at, now())
+                    WHERE user_id = %s AND revoked_at IS NULL
+                    """,
+                    (user.id,),
+                )
+
+            cur.execute(
+                """
+                INSERT INTO audit_events (user_id, event_type, metadata)
+                VALUES (%s, %s, %s::jsonb)
+                """,
+                (user.id, event_type, json.dumps({"reason": reason})),
+            )
+            return updated_user, True
+
+    @staticmethod
+    def _support_locked_user(cur: Any, public_id: int) -> UserRecord | None:
+        cur.execute(
+            """
+            SELECT id, public_id, status
+            FROM users
+            WHERE public_id = %s
+            FOR UPDATE
+            """,
+            (public_id,),
+        )
+        fetched = cur.fetchone()
+        if fetched is None:
+            return None
+        return _user(cast(dict[str, Any], fetched))
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)

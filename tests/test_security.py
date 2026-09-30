@@ -13,6 +13,7 @@ from omnicio.security import (
     format_public_id,
     normalize_russian_mobile,
     otp_digest,
+    parse_public_id,
     verify_otp_digest,
 )
 
@@ -40,6 +41,15 @@ def test_public_id_is_exactly_nine_digits() -> None:
         format_public_id(0)
     with pytest.raises(SecurityValueError):
         format_public_id(1_000_000_000)
+
+
+def test_public_id_parser_rejects_malformed_or_zero_values() -> None:
+    assert parse_public_id("000000001") == 1
+    assert parse_public_id("999999999") == 999_999_999
+
+    for value in ("1", "000000000", "1000000000", "00000000x"):
+        with pytest.raises(SecurityValueError):
+            parse_public_id(value)
 
 
 def test_phone_encryption_round_trip() -> None:

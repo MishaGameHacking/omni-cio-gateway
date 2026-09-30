@@ -31,6 +31,15 @@ def normalize_russian_mobile(raw: str) -> str:
     return candidate
 
 
+def parse_public_id(value: str) -> int:
+    if len(value) != 9 or not value.isdigit():
+        raise SecurityValueError("public id must contain exactly 9 digits")
+    parsed = int(value)
+    if not PUBLIC_ID_MIN <= parsed <= PUBLIC_ID_MAX:
+        raise SecurityValueError("public id is outside the supported range")
+    return parsed
+
+
 def format_public_id(value: int) -> str:
     if not PUBLIC_ID_MIN <= value <= PUBLIC_ID_MAX:
         raise SecurityValueError("public id is outside the 9-digit range")
