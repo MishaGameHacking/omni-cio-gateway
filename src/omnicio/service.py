@@ -7,7 +7,7 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 from .config import Settings
-from .db import Database, one_hour_ago, utcnow
+from .db import Database, UserRecord, one_hour_ago, utcnow
 from .security import (
     client_ip_digest,
     encrypt_phone,
