@@ -644,8 +644,7 @@ def _attached_group_ids(
             "TIMEWEB_FIREWALL_SERVICE_GROUP_MISSING"
         )
     identifiers = tuple(
-        _safe_id(row.get("id"), "TIMEWEB_FIREWALL_GROUP_ID_INVALID")
-        for row in groups
+        _safe_id(row.get("id"), "TIMEWEB_FIREWALL_GROUP_ID_INVALID") for row in groups
     )
     if len(set(identifiers)) != len(identifiers):
         raise _provider_base.ProvisioningStopped(
@@ -671,9 +670,7 @@ def _verify_drop_group(
         "TIMEWEB_FIREWALL_GROUP_ID_INVALID",
     )
     if observed_id != group_id:
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_GROUP_ID_DRIFT"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_GROUP_ID_DRIFT")
     if group.get("policy") != "DROP":
         raise _provider_base.ProvisioningStopped(
             "TIMEWEB_FIREWALL_DEFAULT_DROP_REQUIRED"
@@ -695,8 +692,7 @@ def _effective_group_rule_count(
             )
         )
         actual = {
-            key: rule.get(key)
-            for key in ("direction", "port", "protocol", "cidr")
+            key: rule.get(key) for key in ("direction", "port", "protocol", "cidr")
         }
         expected = {
             "direction": "ingress",
@@ -709,9 +705,7 @@ def _effective_group_rule_count(
                 "TIMEWEB_FIREWALL_EFFECTIVE_RULESET_WIDENED"
             )
     if len(set(rule_ids)) != len(rule_ids):
-        raise _provider_base.ProvisioningStopped(
-            "TIMEWEB_FIREWALL_RULE_ID_DUPLICATE"
-        )
+        raise _provider_base.ProvisioningStopped("TIMEWEB_FIREWALL_RULE_ID_DUPLICATE")
     return len(rule_ids)
 
 
