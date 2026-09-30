@@ -22,7 +22,6 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 API_ROOT = "https://api.timeweb.cloud/api"
-SITE_MARKER = 'name="omni-cio-white-site"'
 PLACEMENT_CAPACITY_ERROR_CODE = "no_free_node"
 LOCATION_CAPACITY_ERROR_CODE = "servers_is_run_out_error"
 
@@ -732,10 +731,10 @@ def reconcile(
         latest, ip = wait_for_ipv4(client, existing_id)
         add_summary(
             f"- Server status: `{latest.get('status', 'unknown')}`; "
-            f"IPv4: http://{ip}/"
+            f"IPv4: {ip}"
         )
         wait_for_web_port(ip)
-        add_summary(f"- Result: existing managed site is ready at http://{ip}/")
+        add_summary(f"- Result: existing managed server web port is ready on {ip}.")
         return 0
 
     if mode == "plan":
@@ -787,7 +786,7 @@ def reconcile(
         f"IPv4: http://{ip}/"
     )
     wait_for_web_port(ip)
-    add_summary(f"- Result: site is ready and verified at http://{ip}/")
+    add_summary(f"- Result: managed server web port is ready on {ip}.")
     return 0
 
 
