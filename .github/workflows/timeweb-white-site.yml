@@ -70,7 +70,9 @@ jobs:
       DEPLOY_CONFIRM: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
-      MAX_SERVER_PRICE_RUB: "149"
+      MAX_SERVER_PRICE_RUB: "199"
+      TARGET_LOCATION: "ru-3"
+      TARGET_AVAILABILITY_ZONE: "msk-1"
 
     steps:
       - name: Checkout accepted main state
@@ -97,7 +99,9 @@ jobs:
             --confirm "${DEPLOY_CONFIRM}" \
             --server-name "${SERVER_NAME}" \
             --server-comment "${SERVER_COMMENT}" \
-            --max-server-price-rub "${MAX_SERVER_PRICE_RUB}"
+            --max-server-price-rub "${MAX_SERVER_PRICE_RUB}" \
+            --target-location "${TARGET_LOCATION}" \
+            --target-availability-zone "${TARGET_AVAILABILITY_ZONE}"
 
       - name: Surface transient capacity state
         if: steps.reconcile.outputs.status == 'pending_capacity'
