@@ -52,6 +52,7 @@
   const positionsList = document.querySelector("#positions-list");
   const operationsList = document.querySelector("#operations-list");
   const operationsMoreNote = document.querySelector("#operations-more-note");
+  const operationsLoadMore = document.querySelector("#operations-load-more");
   const portfolioRetry = document.querySelector("[data-portfolio-retry]");
 
   const viewTitle = document.querySelector("#view-title");
@@ -82,6 +83,7 @@
   let tbankIsConnected = false;
   let portfolioLoaded = false;
   let portfolioRequestInFlight = false;
+  let nextOperationsCursor = "";
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -167,7 +169,11 @@
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
 
-    portfolioRefresh.addEventListener("click", () => {
+    operationsLoadMore.addEventListener("click", () => {
+    void loadMoreOperations();
+  });
+
+  portfolioRefresh.addEventListener("click", () => {
     void loadPortfolioData({force: true});
   });
 
@@ -442,10 +448,15 @@
     });
   };
 
-  const renderOperations = (payload) => {
-    operationsList.replaceChildren();
+  const renderOperations = (payload, {append = false} = {}) => {
+    if (!append) {
+      operationsList.replaceChildren();
+    }
     if (!payload || !payload.items?.length) {
-      appendEmptyState(operationsList, "Исполненных операций пока нет.");
+      if (!append) {
+        appendEmptyState(operationsList, "Исполненных операций пока нет.");
+      }
+      nextOperationsCursor = "";
       operationsMoreNote.classList.add("hidden");
       return;
     }
@@ -485,7 +496,36 @@
       operationsList.append(row);
     });
 
-    operationsMoreNote.classList.toggle("hidden", !payload.has_next);
+    nextOperationsCursor = payload.has_next ? String(payload.next_cursor || "") : "";
+    operationsMoreNote.classList.toggle("hidden", !nextOperationsCursor);
+  };
+
+  const loadMoreOperations = async () => {
+    if (!tbankIsConnected || !nextOperationsCursor || operationsLoadMore.disabled) {
+      return;
+    }
+    operationsLoadMore.disabled = true;
+    const originalText = operationsLoadMore.textContent;
+    operationsLoadMore.textContent = "Загружаем…";
+    try {
+      const payload = await api(
+        `/api/broker/tbank/operations?limit=30&cursor=${encodeURIComponent(nextOperationsCursor)}`,
+        {method: "GET"},
+      );
+      renderOperations(payload, {append: true});
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      operationsLoadMore.textContent = "Не удалось. Повторить";
+      return;
+    } finally {
+      operationsLoadMore.disabled = false;
+      if (operationsLoadMore.textContent === "Загружаем…") {
+        operationsLoadMore.textContent = originalText;
+      }
+    }
   };
 
   const showPortfolioMode = (mode) => {
