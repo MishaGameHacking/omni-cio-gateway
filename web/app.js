@@ -320,6 +320,183 @@
     container.append(empty);
   };
 
+  const updateOwlState = (timestamp) => {
+    if (!tbankIsConnected) {
+      setStateBadge(owlState, "Нет подключения", "state-next");
+      owlLastRefresh.textContent = "—";
+      return;
+    }
+
+    if (!timestamp) {
+      setStateBadge(owlState, "Ожидает данных", "");
+      owlLastRefresh.textContent = "—";
+      return;
+    }
+
+    setStateBadge(owlState, "Наблюдает", "state-ok");
+    owlLastRefresh.textContent = formatDateTime(timestamp);
+  };
+
+  const updateGuard = (snapshot) => {
+    if (!snapshot?.portfolio) {
+      setStateBadge(guardState, "Ожидает данных", "");
+      guardBlockedPositions.textContent = "—";
+      guardBlockedCash.textContent = "—";
+      guardLargestClass.textContent = "—";
+      return;
+    }
+
+    const positions = snapshot.portfolio.positions || [];
+    const blockedPositions = positions.filter((position) => position.blocked).length;
+    const blockedCash = (snapshot.blocked_cash || []).filter(
+      (money) => numericValue(money.value) !== 0
+    );
+
+    const totals = (snapshot.portfolio.asset_totals || []).filter(
+      (item) => numericValue(item.money?.value) > 0
+    );
+    const total = totals.reduce((sum, item) => sum + numericValue(item.money.value), 0);
+    const largest = totals.reduce((current, item) => {
+      if (!current || numericValue(item.money.value) > numericValue(current.money.value)) {
+        return item;
+      }
+      return current;
+    }, null);
+
+    guardBlockedPositions.textContent = String(blockedPositions);
+    guardBlockedCash.textContent = String(blockedCash.length);
+    if (largest && total > 0) {
+      const share = (numericValue(largest.money.value) / total) * 100;
+      guardLargestClass.textContent = `${ASSET_LABELS[largest.kind] || largest.kind} · ${share.toFixed(1)}%`;
+    } else {
+      guardLargestClass.textContent = "Нет данных";
+    }
+    setStateBadge(guardState, "Контролирует", "state-ok");
+  };
+
+  const renderHunterResults = (items) => {
+    hunterResults.replaceChildren();
+    if (!items?.length) {
+      appendEmptyState(hunterResults, "T-Invest не нашёл доступных инструментов по этому запросу.");
+      return;
+    }
+
+    items.forEach((instrument) => {
+      const card = document.createElement("article");
+      card.className = "hunter-result";
+
+      const main = document.createElement("div");
+      main.className = "hunter-result-main";
+
+      const identity = document.createElement("div");
+      identity.className = "hunter-result-identity";
+      const ticker = document.createElement("strong");
+      ticker.textContent = instrument.ticker || "—";
+      const name = document.createElement("span");
+      name.textContent = instrument.name || "Без названия";
+      identity.append(ticker, name);
+
+      const meta = document.createElement("div");
+      meta.className = "hunter-result-meta";
+      const type = document.createElement("span");
+      type.textContent = INSTRUMENT_LABELS[instrument.instrument_type]
+        || instrument.instrument_type
+        || "Инструмент";
+      const lot = document.createElement("span");
+      lot.textContent = `Лот: ${Number.isFinite(Number(instrument.lot)) ? instrument.lot : "—"}`;
+      meta.append(type, lot);
+
+      main.append(identity, meta);
+
+      const flags = document.createElement("div");
+      flags.className = "hunter-result-flags";
+      if (instrument.for_qual_investor) {
+        const flag = document.createElement("span");
+        flag.textContent = "Для квалифицированных инвесторов";
+        flags.append(flag);
+      }
+      if (instrument.for_iis) {
+        const flag = document.createElement("span");
+        flag.textContent = "Доступно для ИИС";
+        flags.append(flag);
+      }
+      if (instrument.weekend_trading) {
+        const flag = document.createElement("span");
+        flag.textContent = "Торги в выходные";
+        flags.append(flag);
+      }
+      if (!flags.childElementCount) {
+        const flag = document.createElement("span");
+        flag.textContent = "Доступен через T-Invest API";
+        flags.append(flag);
+      }
+
+      card.append(main, flags);
+      hunterResults.append(card);
+    });
+  };
+
+  const searchHunter = async () => {
+    const query = hunterQuery.value.trim();
+    showMessage(hunterMessage, "");
+    hunterResults.replaceChildren();
+
+    if (!tbankIsConnected) {
+      showMessage(hunterMessage, "Сначала подключите T-Invest.", true);
+      return;
+    }
+    if (!query || query.length > 64) {
+      showMessage(hunterMessage, "Введите тикер или название инструмента.", true);
+      return;
+    }
+
+    hunterSearch.disabled = true;
+    const originalText = hunterSearch.textContent;
+    hunterSearch.textContent = "Ищем…";
+    try {
+      const payload = await api(
+        `/api/broker/tbank/instruments/search?q=${encodeURIComponent(query)}`,
+        {method: "GET"},
+      );
+      renderHunterResults(payload.items || []);
+      showMessage(
+        hunterMessage,
+        payload.items?.length
+          ? `Найдено: ${payload.items.length}. Это поиск, а не инвестиционная рекомендация.`
+          : "Совпадений не найдено.",
+      );
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (error.status === 409) {
+        showMessage(hunterMessage, "Подключение T-Invest нужно обновить.", true);
+      } else {
+        showMessage(hunterMessage, "Поиск T-Invest временно недоступен.", true);
+      }
+    } finally {
+      hunterSearch.disabled = false;
+      hunterSearch.textContent = originalText;
+    }
+  };
+
+  const startOwl = () => {
+    if (owlTimer !== null) {
+      window.clearInterval(owlTimer);
+    }
+
+    owlTimer = window.setInterval(() => {
+      if (
+        document.visibilityState === "visible"
+        && tbankIsConnected
+        && !portfolioRequestInFlight
+      ) {
+        void loadPortfolioData({force: true, refreshOperations: false});
+      }
+    }, 5 * 60 * 1000);
+  };
+
   const renderAllocation = (totals) => {
     assetAllocation.replaceChildren();
     const positive = (totals || []).filter((item) => numericValue(item.money?.value) > 0);
