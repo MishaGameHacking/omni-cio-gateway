@@ -227,9 +227,9 @@ class AuthAppDeployTests(unittest.TestCase):
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text()
 
-        self.assertIn("Без вымышленных данных", page)
-        self.assertIn("График готов к реальным данным", page)
-        self.assertIn("Торговые действия выключены", page)
+        self.assertIn("Здесь не будет вымышленных цифр", page)
+        self.assertIn("Следующий этап", page)
+        self.assertIn("Без скрытых функций", page)
         self.assertNotIn("₽ 1 000 000", page)
         self.assertNotIn("+12.4%", page)
 
@@ -261,14 +261,33 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn('"purpose": "maskable"', manifest)
 
-    def test_personal_dashboard_motion_can_be_disabled(self) -> None:
+    def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
         root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
         stylesheet = (root / "web" / "app.css").read_text()
         script = (root / "web" / "app.js").read_text()
 
+        self.assertIn("viewport-fit=cover", page)
+        self.assertIn("interactive-widget=resizes-content", page)
+        self.assertIn("100dvh", stylesheet)
+        self.assertIn("safe-area-inset-bottom", stylesheet)
         self.assertIn("@media (prefers-reduced-motion: reduce)", stylesheet)
-        self.assertIn('matchMedia("(prefers-reduced-motion: reduce)")', script)
-        self.assertIn('dataset.motion = reduced ? "reduced" : "full"', script)
+        self.assertIn("beforeinstallprompt", script)
+        self.assertIn('"display": "standalone"', (root / "web" / "manifest.webmanifest").read_text())
+
+    def test_personal_dashboard_exposes_release_version(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        project = (root / "pyproject.toml").read_text()
+        deploy_script = MODULE.REMOTE_DEPLOY_SCRIPT
+
+        self.assertGreaterEqual(page.count("data-app-version"), 3)
+        self.assertIn("data-app-build", page)
+        self.assertIn("/version.js", page)
+        self.assertIn('version = "0.2.0"', project)
+        self.assertIn("window.OMNICIO_RELEASE", deploy_script)
+        self.assertIn("tomllib", deploy_script)
+        self.assertEqual(MODULE.VERSION_PUBLIC_PATH, "/version.js")
 
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
