@@ -75,11 +75,8 @@ jobs:
       VPC_NAME: omni-cio-private
       TARGET_LOCATION: ru-3
       TARGET_ZONE: msk-1
-      SMS_PROVIDER_LOGIN: ${{ secrets.SMS_PROVIDER_LOGIN }}
-      SMS_PROVIDER_TOKEN: ${{ secrets.SMS_PROVIDER_TOKEN }}
-      SMS_SENDER: ${{ vars.SMS_SENDER }}
-      SMS_TEST_NUMBER: ${{ secrets.SMS_TEST_NUMBER }}
-      OWNER_PHONE: ${{ secrets.SMS_TEST_NUMBER }}
+      VKID_APP_ID: ${{ vars.VKID_APP_ID }}
+      OWNER_VK_ID: ${{ secrets.OWNER_VK_ID }}
       LEGAL_PRIVACY_VERSION: "2026-10-01"
       LEGAL_CONSENT_VERSION: "2026-10-01"
       LEGAL_TERMS_VERSION: "2026-10-01"
@@ -121,4 +118,4 @@ jobs:
       - name: Confirm application readiness
         if: steps.app.outputs.status == 'app_ready'
         run: |
-          echo "OmniCIO is healthy over HTTPS. Owner login is enabled; public registration remains disabled."
+          echo "OmniCIO is healthy over HTTPS. VK ID auth is deployed; public registration remains disabled."
