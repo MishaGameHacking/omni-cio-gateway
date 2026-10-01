@@ -200,6 +200,41 @@
               </p>
             </div>
 
+            <article class="market-card" id="usd-rub-card" aria-labelledby="usd-rub-title">
+              <div class="market-primary">
+                <div class="market-heading">
+                  <div>
+                    <span class="card-label">Валютный рынок</span>
+                    <h3 id="usd-rub-title">USD / RUB</h3>
+                  </div>
+                  <span class="state-badge" id="usd-rub-state">Подключаем</span>
+                </div>
+                <div class="market-price-row">
+                  <strong id="usd-rub-price">—</strong>
+                  <span id="usd-rub-change">—</span>
+                </div>
+                <p id="usd-rub-note">
+                  Получаем оперативную котировку T-Invest.
+                </p>
+              </div>
+
+              <dl class="market-meta">
+                <div>
+                  <dt>Источник</dt>
+                  <dd id="usd-rub-source">T-Invest</dd>
+                </div>
+                <div>
+                  <dt>Время котировки</dt>
+                  <dd id="usd-rub-time">—</dd>
+                </div>
+                <div>
+                  <dt>Официальный курс ЦБ РФ</dt>
+                  <dd id="usd-rub-cbr">—</dd>
+                  <small id="usd-rub-cbr-date">—</small>
+                </div>
+              </dl>
+            </article>
+
             <article class="connection-card" id="home-connection-card">
               <div class="connection-summary">
                 <span class="connection-icon" aria-hidden="true">
@@ -246,6 +281,14 @@
                   </div>
                   <span class="state-badge" id="home-portfolio-state">Загружаем</span>
                 </div>
+
+                <div class="status-row">
+                  <div>
+                    <strong>USD/RUB</strong>
+                    <span>Оперативная котировка T-Invest + официальный курс ЦБ РФ</span>
+                  </div>
+                  <span class="state-badge" id="home-fx-state">Подключаем</span>
+                </div>
               </div>
             </section>
 
@@ -280,8 +323,12 @@
                       <dd id="owl-last-refresh">—</dd>
                     </div>
                     <div>
-                      <dt>Интервал</dt>
-                      <dd>5 минут</dd>
+                      <dt>USD/RUB</dt>
+                      <dd id="owl-fx-status">—</dd>
+                    </div>
+                    <div>
+                      <dt>Портфель</dt>
+                      <dd>каждые 5 минут</dd>
                     </div>
                   </dl>
                 </article>

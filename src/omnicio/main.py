@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,7 +10,7 @@ from dataclasses import asdict
 from typing import Literal, cast
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .broker import (
@@ -18,8 +19,10 @@ from .broker import (
     BrokerNotConnected,
     BrokerService,
 )
+from .cbr import CBRClient
 from .config import Settings, load_settings
 from .db import Database, UserRecord
+from .market import MarketService
 from .security import (
     SecurityValueError,
     format_public_id,
@@ -82,6 +85,10 @@ def settings(request: Request) -> Settings:
 
 def broker_service(request: Request) -> BrokerService:
     return cast(BrokerService, request.app.state.broker_service)
+
+
+def market_service(request: Request) -> MarketService:
+    return cast(MarketService, request.app.state.market_service)
 
 
 def vkid_client(request: Request) -> VKIDClient:
@@ -167,10 +174,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app_id=cfg.vkid_app_id,
         redirect_uri=VKID_CALLBACK,
     )
-    app.state.broker_service = BrokerService(
+    broker = BrokerService(
         database,
         credential_key=cfg.broker_token_crypto_key,
         tbank=TBankInvestClient(),
+    )
+    app.state.broker_service = broker
+    app.state.market_service = MarketService(
+        broker=broker,
+        cbr=CBRClient(),
     )
     try:
         yield
@@ -329,6 +341,82 @@ def me(
         "public_id": format_public_id(user.public_id),
         "status": user.status,
     }
+
+
+@app.get("/api/market/usd-rub")
+def usd_rub_market_snapshot(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        snapshot = market_service(request).usd_rub(user.id)
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="USD/RUB market quote unavailable",
+        ) from exc
+    return asdict(snapshot)
+
+
+@app.get("/api/market/usd-rub/stream")
+async def usd_rub_market_stream(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> StreamingResponse:
+    user = authenticated_user(request, session_token)
+    market = market_service(request)
+
+    async def events() -> AsyncIterator[str]:
+        retry_delay = 5
+        yield "retry: 5000\n\n"
+        while True:
+            if await request.is_disconnected():
+                break
+
+            payload: dict[str, object]
+            try:
+                snapshot = await asyncio.to_thread(market.usd_rub, user.id)
+            except BrokerNotConnected:
+                payload = {"state": "disconnected"}
+                event = "status"
+                delay = 15
+                retry_delay = 5
+            except TBankTokenRejected:
+                payload = {"state": "reconnect"}
+                event = "status"
+                delay = 30
+                retry_delay = 5
+            except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError):
+                payload = {"state": "unavailable"}
+                event = "status"
+                delay = retry_delay
+                retry_delay = min(retry_delay * 2, 30)
+            else:
+                payload = asdict(snapshot)
+                event = "quote"
+                delay = 5
+                retry_delay = 5
+
+            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            yield f"event: {event}\ndata: {data}\n\n"
+            await asyncio.sleep(delay)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/broker/tbank")

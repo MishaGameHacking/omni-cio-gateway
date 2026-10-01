@@ -32,6 +32,17 @@
   const topConnectionIndicator = document.querySelector("#top-connection-indicator");
   const topConnectionText = document.querySelector("#top-connection-text");
   const homePortfolioState = document.querySelector("#home-portfolio-state");
+  const homeFxState = document.querySelector("#home-fx-state");
+
+  const usdRubCard = document.querySelector("#usd-rub-card");
+  const usdRubState = document.querySelector("#usd-rub-state");
+  const usdRubPrice = document.querySelector("#usd-rub-price");
+  const usdRubChange = document.querySelector("#usd-rub-change");
+  const usdRubNote = document.querySelector("#usd-rub-note");
+  const usdRubSource = document.querySelector("#usd-rub-source");
+  const usdRubTime = document.querySelector("#usd-rub-time");
+  const usdRubCbr = document.querySelector("#usd-rub-cbr");
+  const usdRubCbrDate = document.querySelector("#usd-rub-cbr-date");
 
   const portfolioStateBadge = document.querySelector("#portfolio-state-badge");
   const portfolioRefresh = document.querySelector("#portfolio-refresh");
@@ -57,6 +68,7 @@
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
+  const owlFxStatus = document.querySelector("#owl-fx-status");
   const hunterForm = document.querySelector("#hunter-form");
   const hunterQuery = document.querySelector("#hunter-query");
   const hunterSearch = document.querySelector("#hunter-search");
@@ -99,6 +111,8 @@
   let lastPortfolioSnapshot = null;
   let lastPortfolioRefreshAt = 0;
   let owlTimer = null;
+  let usdRubEventSource = null;
+  let usdRubFallbackTimer = null;
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -300,6 +314,196 @@
       hour: "2-digit",
       minute: "2-digit",
     }).format(date);
+  };
+
+  const formatClock = (value) => {
+    if (!value) {
+      return "—";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(date);
+  };
+
+  const formatCalendarDate = (value) => {
+    if (!value) {
+      return "—";
+    }
+    const date = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(date);
+  };
+
+  const renderUsdRubStreamStatus = (state) => {
+    usdRubCard.classList.toggle("is-offline", state === "disconnected");
+    usdRubCard.classList.toggle("is-error", state === "unavailable");
+
+    if (state === "disconnected") {
+      setStateBadge(usdRubState, "Нет подключения", "state-next");
+      setStateBadge(homeFxState, "Нет подключения", "state-next");
+      usdRubNote.textContent = "Подключите T-Invest, чтобы получать оперативную котировку.";
+      owlFxStatus.textContent = "нет подключения";
+      return;
+    }
+
+    if (state === "reconnect") {
+      setStateBadge(usdRubState, "Нужен токен", "state-next");
+      setStateBadge(homeFxState, "Нужен токен", "state-next");
+      usdRubNote.textContent = "T-Invest отклонил сохранённый токен. Переподключите счёт.";
+      owlFxStatus.textContent = "нужно переподключение";
+      return;
+    }
+
+    setStateBadge(usdRubState, "Переподключение", "state-next");
+    setStateBadge(homeFxState, "Переподключение", "state-next");
+    usdRubNote.textContent = usdRubPrice.textContent === "—"
+      ? "T-Invest временно не отдаёт котировку. Повторяем запрос с паузой."
+      : "Поток временно недоступен. Показана последняя полученная котировка.";
+    owlFxStatus.textContent = "переподключение";
+  };
+
+  const renderUsdRubQuote = (snapshot) => {
+    usdRubCard.classList.remove("is-offline", "is-error");
+
+    usdRubPrice.textContent = formatMoney({
+      currency: snapshot.currency,
+      value: String(snapshot.price),
+    });
+
+    if (snapshot.change !== null && snapshot.change_percent !== null) {
+      const changeMoney = formatMoney(
+        {currency: snapshot.currency, value: String(snapshot.change)},
+        {sign: true},
+      );
+      usdRubChange.textContent = `${changeMoney} · ${formatPercent(
+        snapshot.change_percent,
+        {sign: true},
+      )}`;
+      applySignedClass(usdRubChange, snapshot.change);
+    } else {
+      usdRubChange.textContent = "Изменение к закрытию недоступно";
+      usdRubChange.classList.remove("value-positive", "value-negative");
+    }
+
+    const live = snapshot.status === "live";
+    setStateBadge(
+      usdRubState,
+      live ? "Оперативно" : "Последняя котировка",
+      live ? "state-ok" : "state-next",
+    );
+    setStateBadge(
+      homeFxState,
+      live ? "Работает" : "Последняя цена",
+      live ? "state-ok" : "state-next",
+    );
+
+    usdRubSource.textContent = snapshot.source === "dealer"
+      ? "T-Invest · дилер"
+      : "T-Invest · биржа";
+    usdRubTime.textContent = formatClock(snapshot.quote_time);
+    usdRubNote.textContent = live
+      ? "Котировка обновляется через защищённый поток OmniCIO примерно каждые 5 секунд."
+      : "Источник давно не обновлял цену — показываем последнюю доступную котировку.";
+    owlFxStatus.textContent = live
+      ? `оперативно · ${formatClock(snapshot.quote_time)}`
+      : `последняя · ${formatClock(snapshot.quote_time)}`;
+
+    if (snapshot.cbr_reference) {
+      usdRubCbr.textContent = formatMoney({
+        currency: snapshot.cbr_reference.currency,
+        value: String(snapshot.cbr_reference.value),
+      });
+      usdRubCbrDate.textContent = `действует на ${formatCalendarDate(
+        snapshot.cbr_reference.effective_date,
+      )}`;
+    } else {
+      usdRubCbr.textContent = "Недоступен";
+      usdRubCbrDate.textContent = "Справочный источник временно не отвечает";
+    }
+  };
+
+  const loadUsdRubSnapshot = async () => {
+    if (!tbankIsConnected) {
+      renderUsdRubStreamStatus("disconnected");
+      return;
+    }
+    try {
+      const snapshot = await api("/api/market/usd-rub", {method: "GET"});
+      renderUsdRubQuote(snapshot);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      renderUsdRubStreamStatus(error.status === 409 ? "reconnect" : "unavailable");
+    }
+  };
+
+  const stopUsdRubStream = () => {
+    if (usdRubEventSource) {
+      usdRubEventSource.close();
+      usdRubEventSource = null;
+    }
+    if (usdRubFallbackTimer !== null) {
+      window.clearInterval(usdRubFallbackTimer);
+      usdRubFallbackTimer = null;
+    }
+  };
+
+  const startUsdRubStream = () => {
+    if (!tbankIsConnected || usdRubEventSource || usdRubFallbackTimer !== null) {
+      if (!tbankIsConnected) {
+        renderUsdRubStreamStatus("disconnected");
+      }
+      return;
+    }
+
+    if (!("EventSource" in window)) {
+      void loadUsdRubSnapshot();
+      usdRubFallbackTimer = window.setInterval(() => {
+        if (document.visibilityState === "visible") {
+          void loadUsdRubSnapshot();
+        }
+      }, 5 * 1000);
+      return;
+    }
+
+    const stream = new EventSource("/api/market/usd-rub/stream");
+    usdRubEventSource = stream;
+
+    stream.addEventListener("quote", (event) => {
+      try {
+        renderUsdRubQuote(JSON.parse(event.data));
+      } catch {
+        renderUsdRubStreamStatus("unavailable");
+      }
+    });
+
+    stream.addEventListener("status", (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        renderUsdRubStreamStatus(payload.state || "unavailable");
+      } catch {
+        renderUsdRubStreamStatus("unavailable");
+      }
+    });
+
+    stream.onerror = () => {
+      renderUsdRubStreamStatus("unavailable");
+    };
   };
 
   const applySignedClass = (element, value) => {
@@ -834,6 +1038,8 @@
       setStateBadge(homeTbankState, "Не подключено", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+      stopUsdRubStream();
+      renderUsdRubStreamStatus("disconnected");
       updateOwlState(null);
       updateGuard(null);
       hunterResults.replaceChildren();
@@ -849,6 +1055,7 @@
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
     showMessage(hunterMessage, "");
+    startUsdRubStream();
     if (!portfolioLoaded) {
       setStateBadge(homePortfolioState, "Загружаем", "");
       setStateBadge(portfolioStateBadge, "Загружаем", "");
@@ -891,6 +1098,8 @@
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
     lastPortfolioRefreshAt = 0;
+    stopUsdRubStream();
+    renderUsdRubStreamStatus("unavailable");
     setStateBadge(homeTbankState, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
@@ -1012,13 +1221,18 @@
   });
 
   document.addEventListener("visibilitychange", () => {
+    const visible = document.visibilityState === "visible";
     const stale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
-    if (
-      document.visibilityState === "visible"
-      && tbankIsConnected
-      && stale
-      && !portfolioRequestInFlight
-    ) {
+
+    if (!visible) {
+      stopUsdRubStream();
+      return;
+    }
+
+    if (tbankIsConnected) {
+      startUsdRubStream();
+    }
+    if (tbankIsConnected && stale && !portfolioRequestInFlight) {
       void loadPortfolioData({force: true, refreshOperations: false});
     }
   });
@@ -1249,6 +1463,7 @@
   });
 
   logoutButton.addEventListener("click", async () => {
+    stopUsdRubStream();
     try {
       await api("/api/auth/logout", {method: "POST"});
     } finally {

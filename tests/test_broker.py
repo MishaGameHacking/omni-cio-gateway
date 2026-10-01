@@ -16,6 +16,7 @@ from omnicio.db import TBankConnectionRecord
 from omnicio.tbank import (
     TBankAccount,
     TBankAssetTotal,
+    TBankFxQuote,
     TBankInstrument,
     TBankInvestClient,
     TBankMoney,
@@ -152,6 +153,108 @@ def test_tbank_find_instruments_rejects_blank_query_before_network_call() -> Non
         )
 
     urlopen.assert_not_called()
+
+
+def test_tbank_reads_latest_usd_rub_quote_without_hardcoded_instrument_id() -> None:
+    credential = "t.fake-owner-credential-1234567890"
+    client = TBankInvestClient()
+    instruments_response = FakeResponse(
+        {
+            "instruments": [
+                {
+                    "uid": "uid-usd-rub",
+                    "figi": "FIGI-USDRUB",
+                    "ticker": "USDTEST",
+                    "name": "Доллар США / Российский рубль",
+                    "instrumentType": "currency",
+                    "classCode": "TEST",
+                    "lot": 1,
+                    "forQualInvestorFlag": False,
+                    "forIisFlag": True,
+                    "weekendFlag": True,
+                    "apiTradeAvailableFlag": True,
+                },
+                {
+                    "uid": "uid-eur-rub",
+                    "figi": "FIGI-EURRUB",
+                    "ticker": "EURTEST",
+                    "name": "Евро / Российский рубль",
+                    "instrumentType": "currency",
+                    "classCode": "TEST",
+                    "lot": 1,
+                    "forQualInvestorFlag": False,
+                    "forIisFlag": True,
+                    "weekendFlag": True,
+                    "apiTradeAvailableFlag": True,
+                },
+            ]
+        }
+    )
+    market_response = FakeResponse(
+        {
+            "instruments": [
+                {
+                    "instrumentUid": "uid-usd-rub",
+                    "ticker": "USDTEST",
+                    "classCode": "TEST",
+                    "priceCurrency": "rub",
+                    "values": [
+                        {
+                            "type": "INSTRUMENT_VALUE_LAST_PRICE",
+                            "value": {"units": "92", "nano": 100000000},
+                            "time": "2026-10-01T12:00:05Z",
+                        },
+                        {
+                            "type": "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
+                            "value": {"units": "92", "nano": 250000000},
+                            "time": "2026-10-01T12:00:07Z",
+                        },
+                        {
+                            "type": "INSTRUMENT_VALUE_CLOSE_PRICE",
+                            "value": {"units": "91", "nano": 900000000},
+                            "time": "2026-09-30T20:00:00Z",
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=[instruments_response, market_response],
+    ) as urlopen:
+        quote = client.get_usd_rub_quote(credential, "prod")
+
+    assert quote == TBankFxQuote(
+        instrument_uid="uid-usd-rub",
+        ticker="USDTEST",
+        name="Доллар США / Российский рубль",
+        class_code="TEST",
+        price="92.25",
+        currency="RUB",
+        quote_time="2026-10-01T12:00:07Z",
+        source="dealer",
+        previous_close="91.9",
+    )
+
+    find_request = urlopen.call_args_list[0].args[0]
+    market_request = urlopen.call_args_list[1].args[0]
+    assert find_request.full_url.endswith("InstrumentsService/FindInstrument")
+    assert json.loads(find_request.data.decode()) == {
+        "query": "USD",
+        "instrumentKind": "INSTRUMENT_TYPE_CURRENCY",
+        "apiTradeAvailableFlag": True,
+    }
+    assert market_request.full_url.endswith("MarketDataService/GetMarketValues")
+    assert json.loads(market_request.data.decode()) == {
+        "instrumentId": ["uid-usd-rub"],
+        "values": [
+            "INSTRUMENT_VALUE_LAST_PRICE",
+            "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
+            "INSTRUMENT_VALUE_CLOSE_PRICE",
+        ],
+    }
 
 
 def test_tbank_reads_portfolio_positions_and_operations() -> None:
@@ -297,6 +400,21 @@ class FakeTBank:
         assert environment == "prod"
         return self.accounts
 
+
+    def get_usd_rub_quote(self, credential: str, environment: str):
+        assert credential == "t.fake-owner-credential-1234567890"
+        assert environment == "prod"
+        return TBankFxQuote(
+            instrument_uid="uid-usd-rub",
+            ticker="USDTEST",
+            name="Доллар США / Российский рубль",
+            class_code="TEST",
+            price="92.25",
+            currency="RUB",
+            quote_time="2026-10-01T12:00:07Z",
+            source="dealer",
+            previous_close="91.9",
+        )
 
     def find_instruments(
         self,
@@ -458,11 +576,14 @@ def test_broker_service_decrypts_saved_credential_only_for_read_calls() -> None:
     portfolio = service.portfolio(owner_id)
     operations = service.operations(owner_id)
     instruments = service.search_instruments(owner_id, query="SBER")
+    quote = service.usd_rub_quote(owner_id)
 
     assert portfolio.portfolio.total.value == "1000"
     assert portfolio.positions.money[0].value == "100"
     assert operations.operations.items[0].id == "op-1"
     assert instruments[0].ticker == "SBER"
+    assert quote.price == "92.25"
+    assert quote.source == "dealer"
     assert not hasattr(portfolio, "credential")
     assert credential.encode() not in database.saved_ciphertext
 
