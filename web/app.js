@@ -55,6 +55,18 @@
   const operationsLoadMore = document.querySelector("#operations-load-more");
   const portfolioRetry = document.querySelector("[data-portfolio-retry]");
 
+  const owlState = document.querySelector("#owl-state");
+  const owlLastRefresh = document.querySelector("#owl-last-refresh");
+  const hunterForm = document.querySelector("#hunter-form");
+  const hunterQuery = document.querySelector("#hunter-query");
+  const hunterSearch = document.querySelector("#hunter-search");
+  const hunterMessage = document.querySelector("#hunter-message");
+  const hunterResults = document.querySelector("#hunter-results");
+  const guardState = document.querySelector("#guard-state");
+  const guardBlockedPositions = document.querySelector("#guard-blocked-positions");
+  const guardBlockedCash = document.querySelector("#guard-blocked-cash");
+  const guardLargestClass = document.querySelector("#guard-largest-class");
+
   const viewTitle = document.querySelector("#view-title");
   const desktopNavItems = [...document.querySelectorAll("[data-view]")];
   const mobileNavItems = [...document.querySelectorAll("[data-mobile-view]")];
@@ -84,6 +96,9 @@
   let portfolioLoaded = false;
   let portfolioRequestInFlight = false;
   let nextOperationsCursor = "";
+  let lastPortfolioSnapshot = null;
+  let lastPortfolioRefreshAt = 0;
+  let owlTimer = null;
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -169,7 +184,7 @@
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
 
-  desktopNavItems.forEach((item) => {
+    desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
       item.classList.toggle("is-active", active);
       if (active) {
