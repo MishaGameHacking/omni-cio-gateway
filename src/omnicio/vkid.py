@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -110,7 +109,7 @@ class VKIDClient:
             raise VKIDUnavailable(
                 f"VK ID unavailable: HTTP {exc.code}"
             ) from exc
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        except (urllib.error.URLError, TimeoutError) as exc:
             raise VKIDUnavailable(
                 f"VK ID unavailable: {type(exc).__name__}"
             ) from exc
