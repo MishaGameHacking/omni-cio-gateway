@@ -346,6 +346,7 @@ class Database:
         self,
         token_digest: bytes,
         *,
+        owner_phone_lookup: bytes,
         session_ttl_seconds: int,
     ) -> UserRecord | None:
         """Validate a session and extend its rolling expiry after real use."""
@@ -357,15 +358,17 @@ class Database:
                 SET
                     last_seen_at = now(),
                     expires_at = now() + make_interval(secs => %s)
-                FROM users AS u
+                FROM users AS u, phone_identities AS p
                 WHERE s.user_id = u.id
+                  AND p.user_id = u.id
+                  AND p.phone_lookup = %s
                   AND s.token_digest = %s
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
                   AND u.status = 'active'
                 RETURNING u.id, u.public_id, u.status
                 """,
-                (session_ttl_seconds, token_digest),
+                (session_ttl_seconds, owner_phone_lookup, token_digest),
             )
             fetched = cur.fetchone()
             if fetched is None:
