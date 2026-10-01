@@ -220,16 +220,24 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/auth/logout",
             "/api/broker/tbank",
             "/api/broker/tbank/accounts",
+            "/api/broker/tbank/portfolio",
+            "/api/broker/tbank/operations",
         ):
             self.assertIn(endpoint, script)
 
-    def test_personal_dashboard_uses_real_data_placeholders_not_fake_portfolio_values(self) -> None:
+    def test_personal_dashboard_uses_real_portfolio_data_without_fake_values(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
 
-        self.assertIn("Здесь не будет вымышленных цифр", page)
-        self.assertIn("Следующий этап", page)
-        self.assertIn("Без скрытых функций", page)
+        self.assertIn("Данные читаются напрямую из T-Invest", page)
+        self.assertIn('id="portfolio-content"', page)
+        self.assertIn('id="positions-list"', page)
+        self.assertIn('id="operations-list"', page)
+        self.assertIn("Системные модули", page)
+        self.assertIn("/api/broker/tbank/portfolio", script)
+        self.assertIn("/api/broker/tbank/operations?limit=30", script)
+        self.assertNotIn("innerHTML", script)
         self.assertNotIn("₽ 1 000 000", page)
         self.assertNotIn("+12.4%", page)
 
@@ -288,7 +296,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.2.1"', project)
+        self.assertIn('version = "0.3.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
