@@ -8,7 +8,7 @@ const path = require("node:path");
 const {chromium} = require("playwright");
 
 const root = path.resolve(__dirname, "../..");
-const analysis = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const analysis = JSON.parse(fs.readFileSync(path.join(__dirname, "portfolio-analysis.fixture.json"), "utf8"));
 
 const timestamp = new Date().toISOString();
 const fixture = {

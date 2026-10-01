@@ -75,7 +75,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/omnicio-ui" --no-save --ignore-scripts playwright@1.62.1
           export NODE_PATH="$RUNNER_TEMP/omnicio-ui/node_modules"
           node "$NODE_PATH/playwright/cli.js" install --with-deps chromium
-          python - <<'PY' > "$RUNNER_TEMP/portfolio-analysis.json"
+          python - <<'PY' > .github/scripts/portfolio-analysis.fixture.json
           import json
           from dataclasses import asdict
           from omnicio.portfolio import analyze_portfolio
@@ -99,7 +99,7 @@ jobs:
           )
           print(json.dumps(asdict(report)))
           PY
-          node .github/scripts/test_portfolio_ui.cjs "$RUNNER_TEMP/portfolio-analysis.json"
+          node .github/scripts/test_portfolio_ui.cjs
 
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
