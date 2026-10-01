@@ -1,11 +1,12 @@
 (() => {
   "use strict";
 
-  const vkidForm = document.querySelector("#vkid-form");
-  const vkidLogin = document.querySelector("#vkid-login");
   const authCard = document.querySelector("#auth-card");
   const profilePanel = document.querySelector("#profile-panel");
-  const message = document.querySelector("#auth-message");
+  const vkidForm = document.querySelector("#vkid-form");
+  const vkidLogin = document.querySelector("#vkid-login");
+  const authMessage = document.querySelector("#auth-message");
+
   const profileId = document.querySelector("#profile-id");
   const settingsProfileId = document.querySelector("#settings-profile-id");
   const logoutButton = document.querySelector("#logout");
@@ -24,44 +25,38 @@
   const tbankMessage = document.querySelector("#tbank-message");
   const tbankStatusBadge = document.querySelector("#tbank-status-badge");
 
-  const viewTitle = document.querySelector("#view-title");
-  const navItems = [...document.querySelectorAll("[data-view]")];
-  const viewPanels = [...document.querySelectorAll("[data-view-panel]")];
-  const viewLinks = [...document.querySelectorAll("[data-go-view]")];
-  const appearanceQuick = document.querySelector("#appearance-quick");
-  const themeButtons = [...document.querySelectorAll("[data-theme-option]")];
-  const motionToggle = document.querySelector("#motion-toggle");
-
   const overviewAccount = document.querySelector("#overview-account");
   const overviewConnectionText = document.querySelector("#overview-connection-text");
-  const overviewConnectionPill = document.querySelector("#overview-connection-pill");
+  const homeConnectionCard = document.querySelector("#home-connection-card");
+  const homeTbankState = document.querySelector("#home-tbank-state");
+  const topConnectionIndicator = document.querySelector("#top-connection-indicator");
+  const topConnectionText = document.querySelector("#top-connection-text");
+
+  const viewTitle = document.querySelector("#view-title");
+  const desktopNavItems = [...document.querySelectorAll("[data-view]")];
+  const mobileNavItems = [...document.querySelectorAll("[data-mobile-view]")];
+  const viewPanels = [...document.querySelectorAll("[data-view-panel]")];
+  const viewLinks = [...document.querySelectorAll("[data-go-view]")];
+
+  const themeButtons = [...document.querySelectorAll("[data-theme-option]")];
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+  const THEME_KEY = "omnicio_theme_v2";
+
+  const installButton = document.querySelector("#install-app");
+  const installStatus = document.querySelector("#install-status");
 
   const VIEW_TITLES = {
-    overview: "Обзор",
+    home: "Главная",
     portfolio: "Портфель",
-    intelligence: "Система",
-    activity: "События",
+    connections: "Подключения",
     settings: "Настройки",
   };
 
-  const THEME_KEY = "omnicio_theme";
-  const MOTION_KEY = "omnicio_motion";
-  const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
-  const systemReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-
+  let currentView = "home";
   let pendingTbankCredential = null;
   let pendingTbankEnvironment = null;
-  let currentView = "overview";
-
-  const showMessage = (text, isError = false) => {
-    message.textContent = text;
-    message.classList.toggle("error", isError);
-  };
-
-  const showTbankMessage = (text, isError = false) => {
-    tbankMessage.textContent = text;
-    tbankMessage.classList.toggle("error", isError);
-  };
+  let deferredInstallPrompt = null;
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -78,19 +73,46 @@
     return body;
   };
 
-  const storedValue = (key, fallback) => {
-    try {
-      return window.localStorage.getItem(key) || fallback;
-    } catch {
-      return fallback;
+  const showMessage = (element, text, isError = false) => {
+    element.textContent = text;
+    element.classList.toggle("error", isError);
+  };
+
+  const setStateBadge = (element, text, state) => {
+    element.textContent = text;
+    element.classList.remove("state-ok", "state-next", "state-error");
+    if (state) {
+      element.classList.add(state);
     }
   };
 
-  const storeValue = (key, value) => {
+  const renderReleaseInfo = () => {
+    const release = window.OMNICIO_RELEASE || {};
+    const version = typeof release.version === "string" && release.version ? release.version : "—";
+    const build = typeof release.build === "string" && release.build ? release.build : "—";
+
+    document.querySelectorAll("[data-app-version]").forEach((element) => {
+      element.textContent = version;
+    });
+    document.querySelectorAll("[data-app-build]").forEach((element) => {
+      element.textContent = build;
+    });
+  };
+
+  const storedTheme = () => {
     try {
-      window.localStorage.setItem(key, value);
+      const value = window.localStorage.getItem(THEME_KEY);
+      return ["light", "dark", "auto"].includes(value) ? value : "light";
     } catch {
-      // Appearance preferences are non-critical and may be blocked by the browser.
+      return "light";
+    }
+  };
+
+  const saveTheme = (theme) => {
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Theme persistence is optional when storage is unavailable.
     }
   };
 
@@ -98,52 +120,54 @@
     if (preference === "auto") {
       return systemDark.matches ? "dark" : "light";
     }
-    return preference === "light" ? "light" : "dark";
+    return preference === "dark" ? "dark" : "light";
   };
 
   const applyTheme = (preference) => {
     const resolved = resolveTheme(preference);
     document.body.dataset.theme = resolved;
+    if (themeMeta) {
+      themeMeta.content = resolved === "dark" ? "#10151d" : "#f6f8fb";
+    }
     themeButtons.forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.themeOption === preference));
     });
   };
 
-  const motionPreference = () => storedValue(MOTION_KEY, "full");
-
-  const applyMotion = () => {
-    const requested = motionPreference();
-    const reduced = systemReducedMotion.matches || requested === "reduced";
-    document.body.dataset.motion = reduced ? "reduced" : "full";
-    if (motionToggle) {
-      motionToggle.checked = requested !== "reduced";
-      const label = motionToggle.closest(".switch-control")?.querySelector("em");
-      if (label) {
-        label.textContent = reduced ? "Отключены" : "Включены";
-      }
-    }
-  };
-
-  const setView = (view, {focus = false} = {}) => {
+  const setView = (view, {scroll = true} = {}) => {
     if (!VIEW_TITLES[view]) {
       return;
     }
+
     currentView = view;
-    navItems.forEach((item) => {
+    viewTitle.textContent = VIEW_TITLES[view];
+
+    desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
       item.classList.toggle("is-active", active);
-      item.setAttribute("aria-selected", String(active));
+      if (active) {
+        item.setAttribute("aria-current", "page");
+      } else {
+        item.removeAttribute("aria-current");
+      }
     });
+
+    mobileNavItems.forEach((item) => {
+      const active = item.dataset.mobileView === view;
+      item.classList.toggle("is-active", active);
+      if (active) {
+        item.setAttribute("aria-current", "page");
+      } else {
+        item.removeAttribute("aria-current");
+      }
+    });
+
     viewPanels.forEach((panel) => {
       panel.classList.toggle("hidden", panel.dataset.viewPanel !== view);
     });
-    viewTitle.textContent = VIEW_TITLES[view];
 
-    if (focus) {
-      document.querySelector(`[data-view-panel="${view}"]`)?.scrollIntoView({
-        block: "start",
-        behavior: document.body.dataset.motion === "reduced" ? "auto" : "smooth",
-      });
+    if (scroll) {
+      window.scrollTo({top: 0, behavior: "auto"});
     }
   };
 
@@ -154,36 +178,37 @@
     tbankAccountForm.classList.add("hidden");
   };
 
-  const renderOverviewTbank = (status) => {
-    if (!overviewAccount || !overviewConnectionText || !overviewConnectionPill) {
-      return;
-    }
+  const renderTbankSummary = (status) => {
+    homeConnectionCard.classList.remove("is-offline", "is-error");
+    topConnectionIndicator.classList.remove("is-offline", "is-error");
 
     if (!status.connected) {
-      overviewAccount.textContent = "Не подключён";
-      overviewConnectionText.textContent = "T-Invest не подключён";
-      overviewConnectionPill.classList.add("is-offline");
+      overviewAccount.textContent = "T-Invest не подключён";
+      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
+      homeConnectionCard.classList.add("is-offline");
+      topConnectionIndicator.classList.add("is-offline");
+      topConnectionText.textContent = "T-Invest не подключён";
+      setStateBadge(homeTbankState, "Не подключено", "state-next");
       return;
     }
 
     const environment = status.environment === "sandbox" ? "Песочница" : "Биржа";
     const accountName = status.account_name || "Брокерский счёт";
     overviewAccount.textContent = accountName;
-    overviewConnectionText.textContent = `${environment} · подключено`;
-    overviewConnectionPill.classList.remove("is-offline");
+    overviewConnectionText.textContent = `${environment} · соединение подтверждено`;
+    topConnectionText.textContent = "T-Invest подключён";
+    setStateBadge(homeTbankState, "Работает", "state-ok");
   };
 
   const renderTbankStatus = (status) => {
     resetTbankPreview();
     tbankToken.value = "";
-    renderOverviewTbank(status);
+    renderTbankSummary(status);
 
     if (!status.connected) {
       tbankConnected.classList.add("hidden");
       tbankForm.classList.remove("hidden");
-      if (tbankStatusBadge) {
-        tbankStatusBadge.textContent = "Не подключён";
-      }
+      setStateBadge(tbankStatusBadge, "Не подключён", "state-next");
       return;
     }
 
@@ -196,13 +221,21 @@
     tbankAccountLabel.textContent = `${environment} · ${accountName}${accountSuffix}`;
     tbankForm.classList.add("hidden");
     tbankConnected.classList.remove("hidden");
-    if (tbankStatusBadge) {
-      tbankStatusBadge.textContent = "Подключено";
-    }
+    setStateBadge(tbankStatusBadge, "Подключено", "state-ok");
+  };
+
+  const renderTbankFailure = () => {
+    overviewAccount.textContent = "Не удалось проверить подключение";
+    overviewConnectionText.textContent = "Обновите страницу или попробуйте позже.";
+    homeConnectionCard.classList.add("is-error");
+    topConnectionIndicator.classList.add("is-error");
+    topConnectionText.textContent = "Ошибка T-Invest";
+    setStateBadge(homeTbankState, "Ошибка", "state-error");
+    setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
   };
 
   const loadTbankStatus = async () => {
-    showTbankMessage("");
+    showMessage(tbankMessage, "");
     try {
       const status = await api("/api/broker/tbank", {method: "GET"});
       renderTbankStatus(status);
@@ -211,16 +244,8 @@
         location.reload();
         return;
       }
-      if (overviewAccount) {
-        overviewAccount.textContent = "Недоступно";
-      }
-      if (overviewConnectionText) {
-        overviewConnectionText.textContent = "Не удалось проверить T-Invest";
-      }
-      if (tbankStatusBadge) {
-        tbankStatusBadge.textContent = "Ошибка";
-      }
-      showTbankMessage("Не удалось проверить подключение T-Invest.", true);
+      renderTbankFailure();
+      showMessage(tbankMessage, "Не удалось проверить подключение T-Invest.", true);
     }
   };
 
@@ -229,7 +254,7 @@
     settingsProfileId.textContent = id;
     authCard.classList.add("hidden");
     profilePanel.classList.remove("hidden");
-    setView(currentView);
+    setView(currentView, {scroll: false});
     void loadTbankStatus();
   };
 
@@ -241,15 +266,17 @@
   const showCallbackResult = () => {
     const params = new URLSearchParams(location.search);
     const authError = params.get("auth_error");
+
     if (authError === "owner") {
-      showMessage("Этот VK ID не имеет доступа к личному аккаунту OmniCIO.", true);
+      showMessage(authMessage, "Этот VK ID не имеет доступа к личному аккаунту OmniCIO.", true);
     } else if (authError === "provider") {
-      showMessage("VK ID временно недоступен. Попробуйте позже.", true);
+      showMessage(authMessage, "VK ID временно недоступен. Попробуйте позже.", true);
     } else if (authError === "account") {
-      showMessage("Личный аккаунт OmniCIO заблокирован.", true);
+      showMessage(authMessage, "Личный аккаунт OmniCIO заблокирован.", true);
     } else if (authError) {
-      showMessage("Авторизация VK ID не завершена. Попробуйте ещё раз.", true);
+      showMessage(authMessage, "Авторизация VK ID не завершена. Попробуйте ещё раз.", true);
     }
+
     if (params.has("auth") || params.has("auth_error")) {
       history.replaceState(null, "", location.pathname);
     }
@@ -262,86 +289,108 @@
       return;
     } catch (error) {
       if (error.status !== 401) {
-        showMessage("Не удалось проверить сессию. Попробуйте обновить страницу.", true);
+        showMessage(authMessage, "Не удалось проверить сессию. Обновите страницу.", true);
       }
     }
 
     showAuth();
     showCallbackResult();
+
     try {
       const config = await api("/api/auth/config", {method: "GET"});
       if (config.auth_provider !== "vkid" || !config.owner_login_enabled) {
         vkidLogin.disabled = true;
         showMessage(
+          authMessage,
           "VK ID ещё не настроен для этого личного аккаунта.",
           true,
         );
       }
     } catch {
       vkidLogin.disabled = true;
-      showMessage("Сервис авторизации временно недоступен.", true);
+      showMessage(authMessage, "Сервис авторизации временно недоступен.", true);
     }
   };
 
-  const enableDepthEffects = () => {
-    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+  const standaloneMode = () => (
+    window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true
+  );
+
+  const refreshInstallState = () => {
+    if (standaloneMode()) {
+      installStatus.textContent = "Установлено и открыто как приложение";
+      installButton.classList.add("hidden");
       return;
     }
 
-    document.querySelectorAll(".interactive-depth").forEach((element) => {
-      element.addEventListener("pointermove", (event) => {
-        if (document.body.dataset.motion === "reduced") {
-          return;
-        }
-        const rect = element.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width - 0.5;
-        const y = (event.clientY - rect.top) / rect.height - 0.5;
-        element.style.transform =
-          `perspective(1100px) rotateX(${(-y * 3).toFixed(2)}deg) ` +
-          `rotateY(${(x * 4).toFixed(2)}deg) translateY(-2px)`;
-      });
+    if (deferredInstallPrompt) {
+      installStatus.textContent = "Можно установить без адресной строки браузера";
+      installButton.classList.remove("hidden");
+      return;
+    }
 
-      element.addEventListener("pointerleave", () => {
-        element.style.transform = "";
-      });
-    });
+    installStatus.textContent = "Открыто в браузере";
+    installButton.classList.add("hidden");
   };
 
-  navItems.forEach((item) => {
+  desktopNavItems.forEach((item) => {
     item.addEventListener("click", () => setView(item.dataset.view));
   });
 
-  viewLinks.forEach((item) => {
-    item.addEventListener("click", () => setView(item.dataset.goView, {focus: true}));
+  mobileNavItems.forEach((item) => {
+    item.addEventListener("click", () => setView(item.dataset.mobileView));
   });
 
-  appearanceQuick?.addEventListener("click", () => {
-    setView("settings", {focus: true});
+  viewLinks.forEach((item) => {
+    item.addEventListener("click", () => setView(item.dataset.goView));
   });
 
   themeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const preference = button.dataset.themeOption;
-      storeValue(THEME_KEY, preference);
+      saveTheme(preference);
       applyTheme(preference);
     });
   });
 
-  motionToggle?.addEventListener("change", () => {
-    storeValue(MOTION_KEY, motionToggle.checked ? "full" : "reduced");
-    applyMotion();
-  });
-
   systemDark.addEventListener("change", () => {
-    if (storedValue(THEME_KEY, "dark") === "auto") {
+    if (storedTheme() === "auto") {
       applyTheme("auto");
     }
   });
-  systemReducedMotion.addEventListener("change", applyMotion);
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    refreshInstallState();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    refreshInstallState();
+  });
+
+  installButton.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) {
+      return;
+    }
+
+    const promptEvent = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    installButton.disabled = true;
+    try {
+      await promptEvent.prompt();
+      await promptEvent.userChoice;
+    } finally {
+      installButton.disabled = false;
+      refreshInstallState();
+    }
+  });
 
   vkidForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    showMessage("");
+    showMessage(authMessage, "");
 
     const payload = {
       accept_privacy: document.querySelector("#accept-privacy").checked,
@@ -349,8 +398,9 @@
       accept_terms: document.querySelector("#accept-terms").checked,
       confirm_age_18: document.querySelector("#confirm-age-18").checked,
     };
+
     if (!Object.values(payload).every(Boolean)) {
-      showMessage("Подтвердите все пункты перед входом через VK ID.", true);
+      showMessage(authMessage, "Подтвердите все четыре пункта перед входом.", true);
       return;
     }
 
@@ -367,26 +417,27 @@
     } catch (error) {
       vkidLogin.disabled = false;
       if (error.status === 503) {
-        showMessage("VK ID ещё не настроен или временно недоступен.", true);
+        showMessage(authMessage, "VK ID ещё не настроен или временно недоступен.", true);
       } else {
-        showMessage("Не удалось начать авторизацию через VK ID.", true);
+        showMessage(authMessage, "Не удалось начать авторизацию через VK ID.", true);
       }
     }
   });
 
   tbankForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    showTbankMessage("");
+    showMessage(tbankMessage, "");
     resetTbankPreview();
 
     const credential = tbankToken.value.trim();
     const environment = tbankEnvironment.value;
+
     if (credential.length < 20) {
-      showTbankMessage("Вставьте полный API-токен T-Invest.", true);
+      showMessage(tbankMessage, "Вставьте полный API-токен T-Invest.", true);
       return;
     }
     if (!tbankTermsAck.checked) {
-      showTbankMessage("Подтвердите правила и риски подключения T-Invest.", true);
+      showMessage(tbankMessage, "Подтвердите правила и риски подключения T-Invest.", true);
       return;
     }
 
@@ -400,8 +451,9 @@
           accept_personal_terms: tbankTermsAck.checked,
         }),
       });
+
       if (!result.accounts || result.accounts.length === 0) {
-        showTbankMessage("У токена нет доступных открытых счетов.", true);
+        showMessage(tbankMessage, "У токена нет доступных открытых счетов.", true);
         return;
       }
 
@@ -416,16 +468,17 @@
         option.textContent = `${name} · ••••${String(account.id).slice(-6)}`;
         tbankAccount.append(option);
       });
+
       tbankAccountForm.classList.remove("hidden");
-      showTbankMessage("Токен проверен. Выберите счёт для подключения.");
+      showMessage(tbankMessage, "Токен проверен. Выберите счёт для подключения.");
     } catch (error) {
       resetTbankPreview();
       if (error.status === 400) {
-        showTbankMessage("T-Invest отклонил токен. Проверьте его и попробуйте снова.", true);
+        showMessage(tbankMessage, "T-Invest отклонил токен. Проверьте его и попробуйте снова.", true);
       } else if (error.status === 503) {
-        showTbankMessage("T-Invest API временно недоступен.", true);
+        showMessage(tbankMessage, "T-Invest API временно недоступен.", true);
       } else {
-        showTbankMessage("Не удалось проверить токен.", true);
+        showMessage(tbankMessage, "Не удалось проверить токен.", true);
       }
     } finally {
       tbankCheck.disabled = false;
@@ -434,10 +487,10 @@
 
   tbankAccountForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    showTbankMessage("");
+    showMessage(tbankMessage, "");
 
     if (!pendingTbankCredential || !pendingTbankEnvironment || !tbankAccount.value) {
-      showTbankMessage("Сначала заново проверьте API-токен.", true);
+      showMessage(tbankMessage, "Сначала заново проверьте API-токен.", true);
       resetTbankPreview();
       return;
     }
@@ -454,16 +507,16 @@
         }),
       });
       renderTbankStatus(status);
-      showTbankMessage("T-Invest подключён. Токен сохранён в зашифрованном виде.");
+      showMessage(tbankMessage, "T-Invest подключён. Токен сохранён в зашифрованном виде.");
     } catch (error) {
       resetTbankPreview();
       tbankForm.classList.remove("hidden");
       if (error.status === 400) {
-        showTbankMessage("Не удалось подключить выбранный счёт. Проверьте токен.", true);
+        showMessage(tbankMessage, "Не удалось подключить выбранный счёт. Проверьте токен.", true);
       } else if (error.status === 503) {
-        showTbankMessage("T-Invest API временно недоступен.", true);
+        showMessage(tbankMessage, "T-Invest API временно недоступен.", true);
       } else {
-        showTbankMessage("Подключение не сохранено.", true);
+        showMessage(tbankMessage, "Подключение не сохранено.", true);
       }
     } finally {
       tbankConnect.disabled = false;
@@ -472,7 +525,7 @@
 
   tbankDisconnect.addEventListener("click", async () => {
     const confirmed = window.confirm(
-      "Удалить сохранённый T-Invest токен из OmniCIO?"
+      "Отключить T-Invest и удалить сохранённый токен из OmniCIO?"
     );
     if (!confirmed) {
       return;
@@ -483,9 +536,9 @@
       await api("/api/broker/tbank", {method: "DELETE"});
       renderTbankStatus({connected: false});
       tbankTermsAck.checked = false;
-      showTbankMessage("Подключение удалено.");
+      showMessage(tbankMessage, "T-Invest отключён.");
     } catch {
-      showTbankMessage("Не удалось удалить подключение.", true);
+      showMessage(tbankMessage, "Не удалось удалить подключение.", true);
     } finally {
       tbankDisconnect.disabled = false;
     }
@@ -500,9 +553,8 @@
     }
   });
 
-  const savedTheme = storedValue(THEME_KEY, "dark");
-  applyTheme(["dark", "light", "auto"].includes(savedTheme) ? savedTheme : "dark");
-  applyMotion();
-  enableDepthEffects();
+  renderReleaseInfo();
+  applyTheme(storedTheme());
+  refreshInstallState();
   void loadState();
 })();
