@@ -46,7 +46,7 @@ def test_authorization_url_uses_oauth21_pkce_parameters() -> None:
     assert params["response_type"] == ["code"]
     assert params["state"] == ["state-123"]
     assert params["code_challenge"] == ["challenge-123"]
-    assert params["code_challenge_method"] == ["S256"]
+    assert params["code_challenge_method"] == ["s256"]
     assert params["redirect_uri"] == [
         "https://omnicio.ru/api/auth/vkid/callback"
     ]
