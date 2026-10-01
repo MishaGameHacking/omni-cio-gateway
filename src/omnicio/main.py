@@ -338,6 +338,108 @@ def me(
     }
 
 
+def usd_rub_snapshot(
+    broker: BrokerService,
+    bank_of_russia: CBRClient,
+    user: UserRecord,
+) -> dict[str, object]:
+    market_state = "live"
+    market: dict[str, object] | None = None
+    try:
+        quote = broker.usd_rub_quote(user.id)
+        market = asdict(quote)
+    except BrokerNotConnected:
+        market_state = "not_connected"
+    except TBankTokenRejected:
+        market_state = "reconnect_required"
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError):
+        market_state = "unavailable"
+
+    official_state = "available"
+    official: dict[str, object] | None = None
+    try:
+        rate = bank_of_russia.usd_rub_rate()
+        official = {
+            "currency": rate.currency,
+            "value": rate.value,
+            "nominal": rate.nominal,
+            "effective_date": rate.effective_date.isoformat(),
+            "fetched_at": rate.fetched_at.isoformat(),
+        }
+    except CBRUnavailable:
+        official_state = "unavailable"
+
+    return {
+        "pair": "USD/RUB",
+        "market_state": market_state,
+        "market": market,
+        "official_state": official_state,
+        "official": official,
+        "poll_interval_seconds": 5,
+    }
+
+
+@app.get("/api/market/usd-rub")
+def usd_rub_market_snapshot(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    return usd_rub_snapshot(
+        broker_service(request),
+        cbr_client(request),
+        user,
+    )
+
+
+@app.get("/api/market/usd-rub/stream")
+async def usd_rub_market_stream(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> StreamingResponse:
+    user = authenticated_user(request, session_token)
+    broker = broker_service(request)
+    bank_of_russia = cbr_client(request)
+
+    async def events() -> AsyncIterator[str]:
+        retry_delay = 1
+        while True:
+            if await request.is_disconnected():
+                break
+
+            payload = await asyncio.to_thread(
+                usd_rub_snapshot,
+                broker,
+                bank_of_russia,
+                user,
+            )
+            yield (
+                "event: quote\n"
+                f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+            )
+
+            market_state = str(payload["market_state"])
+            if market_state == "unavailable":
+                delay = retry_delay
+                retry_delay = min(retry_delay * 2, 30)
+            elif market_state == "not_connected":
+                delay = 15
+                retry_delay = 1
+            else:
+                delay = 5
+                retry_delay = 1
+            await asyncio.sleep(delay)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/api/broker/tbank")
 def tbank_connection_status(
     request: Request,
