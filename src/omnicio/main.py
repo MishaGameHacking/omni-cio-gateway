@@ -416,6 +416,37 @@ def tbank_operations(
     }
 
 
+@app.get("/api/broker/tbank/instruments/search")
+def tbank_instrument_search(
+    request: Request,
+    q: str = Query(min_length=1, max_length=64),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        instruments = broker_service(request).search_instruments(
+            user.id,
+            query=q,
+            limit=20,
+        )
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="T-Invest instrument search unavailable",
+        ) from exc
+
+    return {
+        "items": [asdict(item) for item in instruments],
+    }
+
+
 @app.post("/api/broker/tbank/accounts")
 def tbank_accounts(
     body: TBankCredentialBody,
