@@ -138,6 +138,7 @@ class BrokerService:
         user_id: UUID,
         *,
         limit: int = 30,
+        cursor: str | None = None,
     ) -> BrokerOperationsSnapshot:
         record, credential, environment = self._connected_credential(user_id)
         operations = self.tbank.get_operations(
@@ -145,6 +146,7 @@ class BrokerService:
             environment,
             record.account_id,
             limit=limit,
+            cursor=cursor,
         )
         return BrokerOperationsSnapshot(
             account_name=record.account_name,
