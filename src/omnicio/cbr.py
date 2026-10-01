@@ -36,34 +36,45 @@ class CBRClient:
         *,
         timeout_seconds: int = 6,
         cache_seconds: int = 3600,
+        failure_retry_seconds: int = 300,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.cache_seconds = cache_seconds
+        self.failure_retry_seconds = failure_retry_seconds
         self._lock = threading.Lock()
         self._cached_usd: CBRRate | None = None
         self._expires_at = 0.0
+        self._retry_after = 0.0
 
     def usd_rub_rate(self) -> CBRRate:
+        now = time.monotonic()
         cached = self._cached_usd
-        if cached is not None and time.monotonic() < self._expires_at:
+        if cached is not None and now < self._expires_at:
             return cached
+        if cached is None and now < self._retry_after:
+            raise CBRUnavailable("Bank of Russia daily rate retry is pending")
 
         with self._lock:
+            now = time.monotonic()
             cached = self._cached_usd
-            if cached is not None and time.monotonic() < self._expires_at:
+            if cached is not None and now < self._expires_at:
                 return cached
+            if cached is None and now < self._retry_after:
+                raise CBRUnavailable("Bank of Russia daily rate retry is pending")
 
             try:
                 rate = self._fetch_usd_rub()
             except CBRUnavailable:
+                self._retry_after = now + self.failure_retry_seconds
                 if cached is not None:
                     logger.warning("Bank of Russia rate refresh failed; using cached value")
-                    self._expires_at = time.monotonic() + min(self.cache_seconds, 300)
+                    self._expires_at = now + min(self.cache_seconds, self.failure_retry_seconds)
                     return cached
                 raise
 
             self._cached_usd = rate
-            self._expires_at = time.monotonic() + self.cache_seconds
+            self._expires_at = now + self.cache_seconds
+            self._retry_after = 0.0
             return rate
 
     def _fetch_usd_rub(self) -> CBRRate:
