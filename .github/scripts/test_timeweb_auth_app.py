@@ -77,9 +77,9 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
             os.environ.pop("VKID_APP_ID", None)
             os.environ.pop("OWNER_VK_ID", None)
             MODULE.validate_product_environment()
@@ -94,9 +94,9 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_product_environment_fails_on_partial_vkid_config(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
             os.environ["VKID_APP_ID"] = "123456"
             os.environ.pop("OWNER_VK_ID", None)
             with self.assertRaises(MODULE.InfraError):
@@ -110,9 +110,9 @@ class AuthAppDeployTests(unittest.TestCase):
         try:
             os.environ.pop("VKID_APP_ID", None)
             os.environ.pop("OWNER_VK_ID", None)
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
 
             product_env = MODULE.build_product_environment()
         finally:
@@ -154,7 +154,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-01", document)
+            self.assertIn("2026-10-01-v2", document)
 
         self.assertIn("OmniCIO Personal", privacy)
         self.assertIn("T-Invest API", privacy)
