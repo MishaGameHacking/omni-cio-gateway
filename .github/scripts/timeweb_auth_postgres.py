@@ -755,6 +755,7 @@ def parse_secret_bundle(raw: str) -> dict[str, str]:
         "PHONE_LOOKUP_KEY",
         "OTP_SIGNING_KEY",
         "CLIENT_IP_KEY",
+        "BROKER_TOKEN_CRYPTO_KEY",
     }
     if required - values.keys():
         raise InfraError("Server-side auth secret file is incomplete")
@@ -870,6 +871,7 @@ def write_runtime_env(
             f"PHONE_LOOKUP_KEY={secrets['PHONE_LOOKUP_KEY']}",
             f"OTP_SIGNING_KEY={secrets['OTP_SIGNING_KEY']}",
             f"CLIENT_IP_KEY={secrets['CLIENT_IP_KEY']}",
+            f"BROKER_TOKEN_CRYPTO_KEY={secrets['BROKER_TOKEN_CRYPTO_KEY']}",
             "SMS_PROVIDER=disabled",
             "REGISTRATION_ENABLED=false",
             "",
