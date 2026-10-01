@@ -423,10 +423,16 @@ def tbank_instrument_search(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
+    query = q.strip()
+    if not query:
+        raise HTTPException(
+            status_code=400,
+            detail="instrument search query is required",
+        )
     try:
         instruments = broker_service(request).search_instruments(
             user.id,
-            query=q,
+            query=query,
             limit=20,
         )
     except BrokerNotConnected as exc:
