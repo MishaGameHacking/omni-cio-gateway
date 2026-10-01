@@ -12,6 +12,7 @@ from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     TBankAccount,
     TBankEnvironment,
+    TBankFxQuote,
     TBankInstrument,
     TBankInvestClient,
     TBankOperationsPage,
@@ -155,6 +156,10 @@ class BrokerService:
             operations=operations,
             refreshed_at=datetime.now(UTC),
         )
+
+    def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_usd_rub_quote(credential, environment)
 
     def search_instruments(
         self,
