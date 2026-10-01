@@ -1038,6 +1038,8 @@
       setStateBadge(homeTbankState, "Не подключено", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+      stopUsdRubStream();
+      renderUsdRubStreamStatus("disconnected");
       updateOwlState(null);
       updateGuard(null);
       hunterResults.replaceChildren();
@@ -1053,6 +1055,7 @@
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
     showMessage(hunterMessage, "");
+    startUsdRubStream();
     if (!portfolioLoaded) {
       setStateBadge(homePortfolioState, "Загружаем", "");
       setStateBadge(portfolioStateBadge, "Загружаем", "");
@@ -1095,6 +1098,8 @@
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
     lastPortfolioRefreshAt = 0;
+    stopUsdRubStream();
+    renderUsdRubStreamStatus("unavailable");
     setStateBadge(homeTbankState, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
@@ -1453,6 +1458,7 @@
   });
 
   logoutButton.addEventListener("click", async () => {
+    stopUsdRubStream();
     try {
       await api("/api/auth/logout", {method: "POST"});
     } finally {
