@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from contextlib import closing
@@ -90,7 +91,7 @@ def sonar_scope(check: dict[str, Any]) -> str:
         return "main"
     if set(query) == {"id", "pullRequest"}:
         numbers = query["pullRequest"]
-        if len(numbers) == 1 and re.fullmatch(r"[1-9][0-9]*", numbers[0]):
+        if len(numbers) == 1 and re.fullmatch(r"[1-9]\d*", numbers[0], flags=re.ASCII):
             return "pr"
     return "unknown"
 
@@ -186,9 +187,23 @@ def release_context() -> tuple[str, str]:
     return sha, token
 
 
+def require_checkout(sha: str) -> None:
+    """The trusted main checkout must contain exactly the requested release."""
+    try:
+        result = subprocess.run(
+            ["/usr/bin/git", "rev-parse", "--verify", "HEAD"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise ReleaseBlocked("Unable to verify the production checkout") from None
+    if result.stdout.strip() != sha:
+        raise ReleaseBlocked("Production checkout differs from the release SHA")
+
+
 def main() -> int:
     try:
         sha, token = release_context()
+        require_checkout(sha)
         client = GitHubClient(token, deadline=time.monotonic() + 600)
         wait_for_release(client, sha)
     except ReleaseBlocked as exc:

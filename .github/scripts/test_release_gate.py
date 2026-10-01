@@ -52,21 +52,24 @@ class ReleaseEvidenceTests(unittest.TestCase):
         pull_request = sonar(12, details_url=(
             f"https://sonarcloud.io/dashboard?id={gate.SONAR_PROJECT}&pullRequest=660"
         ))
+        checks = [sonar(conclusion="failure"), pull_request]
         with self.assertRaises(gate.ReleaseBlocked):
-            gate.require_sonar([sonar(conclusion="failure"), pull_request], SHA)
+            gate.require_sonar(checks, SHA)
         with self.assertRaises(gate.PendingChecks):
             gate.require_sonar([pull_request], SHA)
 
     def test_latest_main_attempt_controls_acceptance(self) -> None:
         for conclusion in ("failure", "cancelled", "timed_out", "neutral", "skipped", None):
+            checks = [sonar(), sonar(11, conclusion=conclusion)]
             with self.subTest(conclusion=conclusion), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar([sonar(), sonar(11, conclusion=conclusion)], SHA)
+                gate.require_sonar(checks, SHA)
         gate.require_sonar([sonar(conclusion="failure"), sonar(11)], SHA)
 
     def test_pending_or_unclassified_new_analysis_cannot_reuse_old_success(self) -> None:
         for change in ({"status": "in_progress"}, {"details_url": None}):
+            checks = [sonar(), sonar(11, **change)]
             with self.subTest(change=change), self.assertRaises(gate.PendingChecks):
-                gate.require_sonar([sonar(), sonar(11, **change)], SHA)
+                gate.require_sonar(checks, SHA)
 
     def test_untrusted_sonar_identity_cannot_pass(self) -> None:
         for change in (
@@ -74,8 +77,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
             {"app": {"id": 1, "slug": "sonarqubecloud"}},
             {"app": {"id": 12526, "slug": "another-app"}}, {"app": None},
         ):
+            checks = [sonar(**change)]
             with self.subTest(change=change), self.assertRaises(gate.PendingChecks):
-                gate.require_sonar([sonar(**change)], SHA)
+                gate.require_sonar(checks, SHA)
 
     def test_ambiguous_project_or_branch_url_cannot_pass(self) -> None:
         valid = sonar()["details_url"]
@@ -85,8 +89,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
             valid.replace("branch=main", "branch=feature"), valid + "&branch=main",
             valid + "&pullRequest=661", valid + "#fragment", "https://[invalid", 123,
         ):
+            checks = [sonar(details_url=url)]
             with self.subTest(url=url), self.assertRaises(gate.PendingChecks):
-                gate.require_sonar([sonar(details_url=url)], SHA)
+                gate.require_sonar(checks, SHA)
 
     def test_only_exact_push_foundation_workflow_can_certify_release(self) -> None:
         for change in (
@@ -95,26 +100,30 @@ class ReleaseEvidenceTests(unittest.TestCase):
             {"path": ".github/workflows/other.yml"},
             {"repository": {"full_name": "someone/else"}},
         ):
+            runs = [foundation(**change)]
             with self.subTest(change=change), self.assertRaises(gate.PendingChecks):
-                gate.require_foundation([foundation(**change)], SHA)
+                gate.require_foundation(runs, SHA)
 
     def test_foundation_failure_and_pending_rerun_block_old_success(self) -> None:
+        failed = [foundation(), foundation(id=21, conclusion="failure")]
+        pending = [foundation(status="queued", conclusion=None)]
         with self.assertRaises(gate.ReleaseBlocked):
-            gate.require_foundation([foundation(), foundation(id=21, conclusion="failure")], SHA)
+            gate.require_foundation(failed, SHA)
         with self.assertRaises(gate.PendingChecks):
-            gate.require_foundation([foundation(status="queued", conclusion=None)], SHA)
+            gate.require_foundation(pending, SHA)
 
     def test_main_moving_before_or_during_verification_blocks_release(self) -> None:
         for responses in ([{"commit": {"sha": "b" * 40}}], [BRANCH, {"commit": {}}]):
+            client = client_with_evidence()
+            client.get.side_effect = responses
             with self.subTest(responses=responses), self.assertRaises(gate.ReleaseBlocked):
-                client = client_with_evidence()
-                client.get.side_effect = responses
                 gate.verify(client, SHA)
 
     def test_malformed_check_identity_blocks_instead_of_selecting_a_result(self) -> None:
         for identifier in (None, "99", True, -1):
+            checks = [sonar(id=identifier)]
             with self.subTest(identifier=identifier), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar([sonar(id=identifier)], SHA)
+                gate.require_sonar(checks, SHA)
 
     def test_missing_checks_wait_then_success_returns(self) -> None:
         client = client_with_evidence()
@@ -161,15 +170,16 @@ class GitHubTransportTests(unittest.TestCase):
             (429, b"limit"), (500, b"unavailable"), (200, b"invalid json"),
             (200, b"[]"), (200, b"x" * (gate.MAX_RESPONSE_BYTES + 1)),
         ):
+            response = Mock(status=status)
+            response.read.return_value = body
+            connection = Mock()
+            connection.getresponse.return_value = response
+            client = gate.GitHubClient("synthetic-test-token", deadline=100)
             with self.subTest(status=status, size=len(body)), \
+                    patch.object(gate.http.client, "HTTPSConnection", return_value=connection), \
+                    patch.object(gate.time, "monotonic", return_value=0), \
                     self.assertRaises(gate.ReleaseBlocked):
-                response = Mock(status=status)
-                response.read.return_value = body
-                connection = Mock()
-                connection.getresponse.return_value = response
-                with patch.object(gate.http.client, "HTTPSConnection", return_value=connection), \
-                        patch.object(gate.time, "monotonic", return_value=0):
-                    gate.GitHubClient("synthetic-test-token", deadline=100).get("/branches/main")
+                client.get("/branches/main")
 
     def test_pagination_reaches_main_failure_after_a_full_first_page(self) -> None:
         client = gate.GitHubClient("synthetic-test-token", deadline=100)
@@ -194,14 +204,31 @@ class GitHubTransportTests(unittest.TestCase):
         self.assertEqual(get.call_count, 10)
 
     def test_expired_deadline_never_opens_a_connection(self) -> None:
+        client = gate.GitHubClient("synthetic-test-token", deadline=1)
         with patch.object(gate.time, "monotonic", return_value=2), \
                 patch.object(gate.http.client, "HTTPSConnection") as https, \
                 self.assertRaises(gate.ReleaseBlocked):
-            gate.GitHubClient("synthetic-test-token", deadline=1).get("/branches/main")
+            client.get("/branches/main")
         https.assert_not_called()
 
 
 class ReleaseContextTests(unittest.TestCase):
+    def test_checkout_must_match_release_identity(self) -> None:
+        for actual in (SHA, "b" * 40):
+            result = Mock(stdout=actual + "\n")
+            with patch.object(gate.subprocess, "run", return_value=result), \
+                    self.subTest(sha=actual):
+                if actual == SHA:
+                    gate.require_checkout(SHA)
+                else:
+                    with self.assertRaises(gate.ReleaseBlocked):
+                        gate.require_checkout(SHA)
+
+    def test_checkout_verification_error_fails_closed(self) -> None:
+        with patch.object(gate.subprocess, "run", side_effect=OSError), \
+                self.assertRaises(gate.ReleaseBlocked):
+            gate.require_checkout(SHA)
+
     def test_wrong_context_stops_before_any_api_call(self) -> None:
         valid = {
             "GITHUB_REPOSITORY": gate.REPOSITORY, "GITHUB_REF": "refs/heads/main",
