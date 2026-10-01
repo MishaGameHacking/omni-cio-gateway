@@ -71,4 +71,3 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/timeweb_domain_tls.py
-

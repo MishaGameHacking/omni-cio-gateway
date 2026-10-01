@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import binascii
 import ipaddress
 import pathlib
 
@@ -23,7 +22,7 @@ def trusted_host_entry(value: str, server_ip: str) -> str:
         raise ValueError("SSH trust must pin the exact server IPv4 and Ed25519 key")
     try:
         key = base64.b64decode(fields[2], validate=True)
-    except (binascii.Error, ValueError) as exc:
+    except ValueError as exc:
         raise ValueError("SSH host key has invalid encoding") from exc
     prefix = b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20"
     if len(key) != len(prefix) + 32 or not key.startswith(prefix):

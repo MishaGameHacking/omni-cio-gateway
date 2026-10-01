@@ -123,4 +123,3 @@ jobs:
         if: steps.postgres.outputs.status == 'database_ready'
         run: |
           echo "Private PostgreSQL cluster ${{ steps.postgres.outputs.cluster_id }} is ready and schema migration completed."
-

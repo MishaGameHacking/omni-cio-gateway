@@ -143,4 +143,3 @@ jobs:
         if: steps.app.outputs.status == 'app_ready'
         run: |
           echo "OmniCIO is healthy over HTTPS. VK ID auth is deployed; public registration remains disabled."
-
