@@ -4,7 +4,9 @@ from datetime import UTC, date, datetime
 from unittest.mock import patch
 from uuid import UUID
 
-from omnicio.cbr import CBRClient, CBRRate
+import pytest
+
+from omnicio.cbr import CBRClient, CBRRate, CBRUnavailable
 from omnicio.market import MarketService
 from omnicio.tbank import TBankFxQuote
 
@@ -59,11 +61,10 @@ def test_cbr_client_backs_off_after_initial_provider_failure() -> None:
         "urllib.request.urlopen",
         side_effect=TimeoutError("timeout"),
     ) as urlopen:
-        for _ in range(2):
-            try:
-                client.usd_rub_rate()
-            except Exception as exc:
-                assert exc.__class__.__name__ == "CBRUnavailable"
+        with pytest.raises(CBRUnavailable):
+            client.usd_rub_rate()
+        with pytest.raises(CBRUnavailable):
+            client.usd_rub_rate()
 
     urlopen.assert_called_once()
 
