@@ -196,7 +196,7 @@ def verify_code(
             code=body.code,
             client_ip=client_ip(request),
         )
-    except InvalidChallenge as exc:
+    except (InvalidChallenge, OwnerAccessDenied) as exc:
         raise HTTPException(status_code=400, detail="invalid or expired code") from exc
     except RegistrationClosed as exc:
         raise HTTPException(status_code=503, detail="registration unavailable") from exc
