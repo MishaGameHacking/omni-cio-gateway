@@ -1221,13 +1221,18 @@
   });
 
   document.addEventListener("visibilitychange", () => {
+    const visible = document.visibilityState === "visible";
     const stale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
-    if (
-      document.visibilityState === "visible"
-      && tbankIsConnected
-      && stale
-      && !portfolioRequestInFlight
-    ) {
+
+    if (!visible) {
+      stopUsdRubStream();
+      return;
+    }
+
+    if (tbankIsConnected) {
+      startUsdRubStream();
+    }
+    if (tbankIsConnected && stale && !portfolioRequestInFlight) {
       void loadPortfolioData({force: true, refreshOperations: false});
     }
   });
