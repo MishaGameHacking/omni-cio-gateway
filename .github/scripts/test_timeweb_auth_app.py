@@ -237,6 +237,8 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank/portfolio",
             "/api/broker/tbank/operations",
             "/api/broker/tbank/instruments/search",
+            "/api/market/usd-rub",
+            "/api/market/usd-rub/stream",
         ):
             self.assertIn(endpoint, script)
 
@@ -280,6 +282,34 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/api/broker/tbank/instruments/search", script)
         self.assertIn("5 * 60 * 1000", script)
         self.assertIn('document.visibilityState === "visible"', script)
+        self.assertNotIn("innerHTML", script)
+
+    def test_personal_dashboard_shows_live_usd_rub_without_fake_rate(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+
+        for element_id in (
+            "usd-rub-card",
+            "usd-rub-state",
+            "usd-rub-price",
+            "usd-rub-change",
+            "usd-rub-source",
+            "usd-rub-time",
+            "usd-rub-cbr",
+            "usd-rub-cbr-date",
+            "home-fx-state",
+            "owl-fx-status",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn("Оперативная котировка T-Invest", page)
+        self.assertIn("Официальный курс ЦБ РФ", page)
+        self.assertIn('new EventSource("/api/market/usd-rub/stream")', script)
+        self.assertIn('/api/market/usd-rub"', script)
+        self.assertIn("5 * 1000", script)
+        self.assertNotIn("92,47", page)
+        self.assertNotIn("91,86", page)
         self.assertNotIn("innerHTML", script)
 
     def test_personal_dashboard_uses_approved_brand_assets(self) -> None:
@@ -337,7 +367,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.4.0"', project)
+        self.assertIn('version = "0.5.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
