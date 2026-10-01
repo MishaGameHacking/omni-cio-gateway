@@ -8,10 +8,12 @@ import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal, cast
 
 TBankEnvironment = Literal["prod", "sandbox"]
+TBankQuoteSource = Literal["exchange", "dealer"]
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,19 @@ class TBankInstrument:
     for_qual_investor: bool
     for_iis: bool
     weekend_trading: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TBankFxQuote:
+    instrument_uid: str
+    ticker: str
+    name: str
+    class_code: str
+    price: str
+    currency: str
+    quote_time: str
+    source: TBankQuoteSource
+    previous_close: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +177,7 @@ class TBankInvestClient:
         query: str,
         *,
         limit: int = 20,
+        instrument_kind: str = "INSTRUMENT_TYPE_UNSPECIFIED",
     ) -> tuple[TBankInstrument, ...]:
         clean_query = query.strip()
         if not 1 <= len(clean_query) <= 64 or "\n" in clean_query or "\r" in clean_query:
@@ -176,7 +192,7 @@ class TBankInvestClient:
             method="FindInstrument",
             body={
                 "query": clean_query,
-                "instrumentKind": "INSTRUMENT_TYPE_UNSPECIFIED",
+                "instrumentKind": instrument_kind,
                 "apiTradeAvailableFlag": True,
             },
         )
@@ -232,6 +248,113 @@ class TBankInvestClient:
                 break
 
         return tuple(instruments)
+
+    def get_usd_rub_quote(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+    ) -> TBankFxQuote:
+        candidates = tuple(
+            instrument
+            for instrument in self.find_instruments(
+                token,
+                environment,
+                "USD",
+                limit=50,
+                instrument_kind="INSTRUMENT_TYPE_CURRENCY",
+            )
+            if (
+                instrument.ticker.upper().startswith("USD")
+                or "доллар" in instrument.name.lower()
+                or "dollar" in instrument.name.lower()
+            )
+        )
+        if not candidates:
+            raise TBankUnavailable("T-Invest has no USD currency instruments")
+
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetMarketValues",
+            body={
+                "instrumentId": [instrument.uid for instrument in candidates],
+                "values": [
+                    "INSTRUMENT_VALUE_LAST_PRICE",
+                    "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
+                    "INSTRUMENT_VALUE_CLOSE_PRICE",
+                ],
+            },
+        )
+        candidate_by_uid = {instrument.uid: instrument for instrument in candidates}
+
+        best: tuple[datetime, int, TBankFxQuote] | None = None
+        for raw in _optional_list(payload, "instruments"):
+            item = _required_object(raw, "market value instrument")
+            uid = _text(item.get("instrumentUid")).strip()
+            instrument = candidate_by_uid.get(uid)
+            if instrument is None:
+                continue
+
+            currency = _text(item.get("priceCurrency")).strip().upper()
+            if currency != "RUB":
+                continue
+
+            previous_close: str | None = None
+            quotes: list[tuple[datetime, int, str, str, TBankQuoteSource]] = []
+            for value_raw in _optional_list(item, "values"):
+                value = _required_object(value_raw, "market value")
+                value_type = _text(value.get("type")).strip()
+                numeric = _quotation(value.get("value"))
+                if numeric is None:
+                    continue
+
+                if value_type == "INSTRUMENT_VALUE_CLOSE_PRICE":
+                    previous_close = numeric
+                    continue
+                if value_type not in {
+                    "INSTRUMENT_VALUE_LAST_PRICE",
+                    "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
+                }:
+                    continue
+
+                quote_time = _text(value.get("time")).strip()
+                parsed_time = _provider_timestamp(quote_time)
+                if value_type == "INSTRUMENT_VALUE_LAST_PRICE_DEALER":
+                    source: TBankQuoteSource = "dealer"
+                    source_priority = 0
+                else:
+                    source = "exchange"
+                    source_priority = 1
+                quotes.append(
+                    (parsed_time, source_priority, numeric, quote_time, source)
+                )
+
+            if not quotes:
+                continue
+
+            parsed_time, source_priority, price, quote_time, source = max(
+                quotes,
+                key=lambda quote: (quote[0], quote[1]),
+            )
+            quote = TBankFxQuote(
+                instrument_uid=instrument.uid,
+                ticker=instrument.ticker,
+                name=instrument.name,
+                class_code=instrument.class_code,
+                price=price,
+                currency=currency,
+                quote_time=quote_time,
+                source=source,
+                previous_close=previous_close,
+            )
+            ranked = (parsed_time, source_priority, quote)
+            if best is None or ranked[:2] > best[:2]:
+                best = ranked
+
+        if best is None:
+            raise TBankUnavailable("T-Invest has no current USD/RUB quote")
+        return best[2]
 
     def get_portfolio(
         self,
@@ -483,6 +606,15 @@ def _validate_cursor(cursor: str) -> str:
     if not clean or len(clean) > 4096 or "\n" in clean or "\r" in clean:
         raise TBankUnavailable("invalid T-Invest operation cursor")
     return clean
+
+
+def _provider_timestamp(value: str) -> datetime:
+    if not value:
+        raise TBankUnavailable("T-Invest market value has no timestamp")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise TBankUnavailable("T-Invest market value has invalid timestamp") from exc
 
 
 def _required_object(value: object, name: str) -> dict[str, object]:
