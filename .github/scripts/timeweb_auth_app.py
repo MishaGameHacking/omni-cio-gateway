@@ -94,7 +94,19 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
         f"grep -q '^VKID_FLOW_CRYPTO_KEY=' {RUNTIME_ENV} && "
         f"grep -q '^BROKER_TOKEN_CRYPTO_KEY=' {RUNTIME_ENV} && "
-        f"grep -q '^REGISTRATION_ENABLED=false
+        f"grep -q '^REGISTRATION_ENABLED=false$' {RUNTIME_ENV} && "
+        "command -v psql >/dev/null 2>&1 && "
+        "set -a && "
+        f". {RUNTIME_ENV} && "
+        "set +a && "
+        f'test "$(psql "$DATABASE_URL" -Atqc "{schema_query}" 2>/dev/null)" = "ready"'
+    )
+    try:
+        ssh.run(command)
+        return True
+    except InfraError:
+        return False
+
 
 def _environment_value(value: str) -> str:
     if "\n" in value or "\r" in value:
