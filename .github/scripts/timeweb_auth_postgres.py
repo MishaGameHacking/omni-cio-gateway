@@ -773,7 +773,16 @@ import secrets
 path = pathlib.Path("/etc/omnicio/auth-secrets.env")
 path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-if not path.exists():
+values = {}
+if path.exists():
+    for line in path.read_text().splitlines():
+        if not line:
+            continue
+        if "=" not in line:
+            raise SystemExit("malformed auth secret file")
+        key, value = line.split("=", 1)
+        values[key] = value
+else:
     values = {
         "OMNICIO_DB_ADMIN_PASSWORD": secrets.token_urlsafe(18),
         "PHONE_CRYPTO_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),
@@ -781,6 +790,15 @@ if not path.exists():
         "OTP_SIGNING_KEY": secrets.token_urlsafe(48),
         "CLIENT_IP_KEY": secrets.token_urlsafe(48),
     }
+
+changed = not path.exists()
+if "BROKER_TOKEN_CRYPTO_KEY" not in values:
+    values["BROKER_TOKEN_CRYPTO_KEY"] = (
+        base64.urlsafe_b64encode(os.urandom(32)).decode()
+    )
+    changed = True
+
+if changed:
     content = "".join(f"{key}={value}\n" for key, value in values.items())
     temp = path.with_suffix(".tmp")
     temp.write_text(content)
