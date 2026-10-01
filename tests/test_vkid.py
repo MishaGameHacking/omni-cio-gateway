@@ -52,7 +52,7 @@ def test_authorization_url_uses_oauth21_pkce_parameters() -> None:
     ]
 
 
-def test_exchange_code_requires_matching_returned_state() -> None:
+def test_exchange_code_returns_provider_verified_user_id() -> None:
     client = VKIDClient(
         app_id="123456",
         redirect_uri="https://omnicio.ru/api/auth/vkid/callback",
@@ -62,18 +62,19 @@ def test_exchange_code_requires_matching_returned_state() -> None:
             "state": "state-123",
             "access_token": "access-token",
             "refresh_token": "refresh-token",
+            "user_id": 987654321,
         }
     )
 
     with patch("urllib.request.urlopen", return_value=response) as urlopen:
-        token = client.exchange_code(
+        identity = client.exchange_code(
             code="authorization-code",
             device_id="device-1",
             code_verifier="v" * 64,
             expected_state="state-123",
         )
 
-    assert token == "access-token"
+    assert identity.user_id == "987654321"
     request = urlopen.call_args.args[0]
     params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
     body = urllib.parse.parse_qs(request.data.decode())
@@ -85,27 +86,55 @@ def test_exchange_code_requires_matching_returned_state() -> None:
     assert body == {"code": ["authorization-code"]}
 
 
-def test_user_info_extracts_nested_owner_id_without_exposing_tokens() -> None:
+def test_exchange_code_rejects_state_mismatch() -> None:
     client = VKIDClient(
         app_id="123456",
         redirect_uri="https://omnicio.ru/api/auth/vkid/callback",
     )
     response = FakeResponse(
         {
-            "user": {
-                "user_id": "987654321",
-                "first_name": "Owner",
-            }
+            "state": "other-state",
+            "access_token": "access-token",
+            "user_id": 987654321,
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
-        user = client.user_info("access-token")
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(VKIDRejected, match="state mismatch"),
+    ):
+        client.exchange_code(
+            code="authorization-code",
+            device_id="device-1",
+            code_verifier="v" * 64,
+            expected_state="state-123",
+        )
 
-    assert user.user_id == "987654321"
-    request = urlopen.call_args.args[0]
-    body = urllib.parse.parse_qs(request.data.decode())
-    assert body == {"access_token": ["access-token"]}
+
+@pytest.mark.parametrize("user_id", ["", "0", "-1", "not-a-number"])
+def test_exchange_code_rejects_invalid_user_id(user_id: str) -> None:
+    client = VKIDClient(
+        app_id="123456",
+        redirect_uri="https://omnicio.ru/api/auth/vkid/callback",
+    )
+    response = FakeResponse(
+        {
+            "state": "state-123",
+            "access_token": "access-token",
+            "user_id": user_id,
+        }
+    )
+
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(VKIDRejected, match="valid user id"),
+    ):
+        client.exchange_code(
+            code="authorization-code",
+            device_id="device-1",
+            code_verifier="v" * 64,
+            expected_state="state-123",
+        )
 
 
 def test_provider_401_is_rejected_without_response_body_leakage() -> None:
@@ -131,3 +160,21 @@ def test_provider_401_is_rejected_without_response_body_leakage() -> None:
             code_verifier="v" * 64,
             expected_state="state-123",
         )
+
+
+def test_invalid_app_id_fails_before_network_call() -> None:
+    client = VKIDClient(
+        app_id="not-numeric",
+        redirect_uri="https://omnicio.ru/api/auth/vkid/callback",
+    )
+
+    with (
+        patch("urllib.request.urlopen") as urlopen,
+        pytest.raises(VKIDRejected, match="app id"),
+    ):
+        client.authorization_url(
+            state="state-123",
+            code_challenge="challenge-123",
+        )
+
+    urlopen.assert_not_called()
