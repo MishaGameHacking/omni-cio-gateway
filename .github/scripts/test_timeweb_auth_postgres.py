@@ -153,11 +153,9 @@ class PostgresTests(unittest.TestCase):
     def test_secret_bundle_requires_all_runtime_keys(self) -> None:
         raw = (
             "OMNICIO_DB_ADMIN_PASSWORD=pw\n"
-            "PHONE_CRYPTO_KEY=crypto\n"
-            "PHONE_LOOKUP_KEY=lookup\n"
-            "OTP_SIGNING_KEY=otp\n"
             "CLIENT_IP_KEY=ip\n"
             "BROKER_TOKEN_CRYPTO_KEY=broker\n"
+            "VKID_FLOW_CRYPTO_KEY=vkid\n"
         )
         parsed = MODULE.parse_secret_bundle(raw)
         self.assertEqual(parsed["OMNICIO_DB_ADMIN_PASSWORD"], "pw")
@@ -165,8 +163,9 @@ class PostgresTests(unittest.TestCase):
         with self.assertRaises(MODULE.InfraError):
             MODULE.parse_secret_bundle("OMNICIO_DB_ADMIN_PASSWORD=pw\n")
 
-    def test_secret_bootstrap_adds_broker_encryption_key(self) -> None:
+    def test_secret_bootstrap_adds_required_encryption_keys(self) -> None:
         self.assertIn("BROKER_TOKEN_CRYPTO_KEY", MODULE.REMOTE_SECRET_BOOTSTRAP)
+        self.assertIn("VKID_FLOW_CRYPTO_KEY", MODULE.REMOTE_SECRET_BOOTSTRAP)
         self.assertIn(
             "base64.urlsafe_b64encode(os.urandom(32)).decode()",
             MODULE.REMOTE_SECRET_BOOTSTRAP,

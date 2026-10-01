@@ -751,11 +751,9 @@ def parse_secret_bundle(raw: str) -> dict[str, str]:
 
     required = {
         "OMNICIO_DB_ADMIN_PASSWORD",
-        "PHONE_CRYPTO_KEY",
-        "PHONE_LOOKUP_KEY",
-        "OTP_SIGNING_KEY",
         "CLIENT_IP_KEY",
         "BROKER_TOKEN_CRYPTO_KEY",
+        "VKID_FLOW_CRYPTO_KEY",
     }
     if required - values.keys():
         raise InfraError("Server-side auth secret file is incomplete")
@@ -785,18 +783,18 @@ if path.exists():
 else:
     values = {
         "OMNICIO_DB_ADMIN_PASSWORD": secrets.token_urlsafe(18),
-        "PHONE_CRYPTO_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),
-        "PHONE_LOOKUP_KEY": secrets.token_urlsafe(48),
-        "OTP_SIGNING_KEY": secrets.token_urlsafe(48),
-        "CLIENT_IP_KEY": secrets.token_urlsafe(48),
     }
 
 changed = not path.exists()
-if "BROKER_TOKEN_CRYPTO_KEY" not in values:
-    values["BROKER_TOKEN_CRYPTO_KEY"] = (
-        base64.urlsafe_b64encode(os.urandom(32)).decode()
-    )
-    changed = True
+generated_keys = (
+    "CLIENT_IP_KEY",
+    "BROKER_TOKEN_CRYPTO_KEY",
+    "VKID_FLOW_CRYPTO_KEY",
+)
+for key in generated_keys:
+    if key not in values:
+        values[key] = base64.urlsafe_b64encode(os.urandom(32)).decode()
+        changed = True
 
 if changed:
     content = "".join(f"{key}={value}\n" for key, value in values.items())
@@ -885,12 +883,9 @@ def write_runtime_env(
     content = "\n".join(
         [
             f"DATABASE_URL={database_url}",
-            f"PHONE_CRYPTO_KEY={secrets['PHONE_CRYPTO_KEY']}",
-            f"PHONE_LOOKUP_KEY={secrets['PHONE_LOOKUP_KEY']}",
-            f"OTP_SIGNING_KEY={secrets['OTP_SIGNING_KEY']}",
             f"CLIENT_IP_KEY={secrets['CLIENT_IP_KEY']}",
             f"BROKER_TOKEN_CRYPTO_KEY={secrets['BROKER_TOKEN_CRYPTO_KEY']}",
-            "SMS_PROVIDER=disabled",
+            f"VKID_FLOW_CRYPTO_KEY={secrets['VKID_FLOW_CRYPTO_KEY']}",
             "REGISTRATION_ENABLED=false",
             "",
         ]

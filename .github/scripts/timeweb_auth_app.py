@@ -80,12 +80,26 @@ def build_release_archive(root: pathlib.Path) -> str:
 
 
 def runtime_is_ready(ssh: EphemeralSsh) -> bool:
+    schema_query = (
+        "SELECT CASE WHEN "
+        "to_regclass('public.users') IS NOT NULL "
+        "AND to_regclass('public.sessions') IS NOT NULL "
+        "AND to_regclass('public.legal_acceptances') IS NOT NULL "
+        "AND to_regclass('public.vkid_identities') IS NOT NULL "
+        "AND to_regclass('public.tbank_connection') IS NOT NULL "
+        "THEN 'ready' ELSE 'missing' END"
+    )
     command = (
         f"test -s {RUNTIME_ENV} && "
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
-        f"grep -q '^PHONE_CRYPTO_KEY=' {RUNTIME_ENV} && "
+        f"grep -q '^VKID_FLOW_CRYPTO_KEY=' {RUNTIME_ENV} && "
         f"grep -q '^BROKER_TOKEN_CRYPTO_KEY=' {RUNTIME_ENV} && "
-        f"grep -q '^REGISTRATION_ENABLED=false$' {RUNTIME_ENV}"
+        f"grep -q '^REGISTRATION_ENABLED=false$' {RUNTIME_ENV} && "
+        "command -v psql >/dev/null 2>&1 && "
+        "set -a && "
+        f". {RUNTIME_ENV} && "
+        "set +a && "
+        f'test "$(psql "$DATABASE_URL" -Atqc "{schema_query}" 2>/dev/null)" = "ready"'
     )
     try:
         ssh.run(command)
@@ -101,13 +115,21 @@ def _environment_value(value: str) -> str:
     return f'"{escaped}"'
 
 
+def _positive_numeric_id(value: str) -> bool:
+    return value.isdigit() and int(value) > 0
+
+
+def vkid_configuration_ready() -> bool:
+    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
+    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
+    return (
+        _positive_numeric_id(vkid_app_id)
+        and _positive_numeric_id(owner_vk_id)
+    )
+
+
 def validate_product_environment() -> None:
     required_names = (
-        "SMS_PROVIDER_LOGIN",
-        "SMS_PROVIDER_TOKEN",
-        "SMS_SENDER",
-        "SMS_TEST_NUMBER",
-        "OWNER_PHONE",
         "LEGAL_PRIVACY_VERSION",
         "LEGAL_CONSENT_VERSION",
         "LEGAL_TERMS_VERSION",
@@ -123,28 +145,34 @@ def validate_product_environment() -> None:
             + ", ".join(missing)
         )
 
+    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
+    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
+    if bool(vkid_app_id) != bool(owner_vk_id):
+        raise InfraError(
+            "VK ID configuration is incomplete: VKID_APP_ID and OWNER_VK_ID "
+            "must be configured together"
+        )
+    if vkid_app_id and not vkid_configuration_ready():
+        raise InfraError(
+            "VK ID configuration must use positive numeric VKID_APP_ID "
+            "and OWNER_VK_ID values"
+        )
+
 
 def build_product_environment() -> str:
-    sms_login = os.environ.get("SMS_PROVIDER_LOGIN", "").strip()
-    sms_token = os.environ.get("SMS_PROVIDER_TOKEN", "").strip()
-    sms_sender = os.environ.get("SMS_SENDER", "").strip()
-    owner_phone = os.environ.get("OWNER_PHONE", "").strip()
-    sms_provider = "smsaero" if sms_login and sms_token and sms_sender else "disabled"
-    owner_login_enabled = (
-        "true" if sms_provider == "smsaero" and owner_phone else "false"
-    )
+    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
+    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
+    vkid_enabled = "true" if vkid_configuration_ready() else "false"
 
     values = {
-        "SMS_PROVIDER": sms_provider,
-        "SMS_PROVIDER_LOGIN": sms_login,
-        "SMS_PROVIDER_TOKEN": sms_token,
-        "SMS_SENDER": sms_sender,
-        "OWNER_PHONE": owner_phone,
-        "OWNER_LOGIN_ENABLED": owner_login_enabled,
+        "VKID_APP_ID": vkid_app_id,
+        "OWNER_VK_ID": owner_vk_id,
+        "VKID_LOGIN_ENABLED": vkid_enabled,
         "REGISTRATION_ENABLED": "false",
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
+        "VKID_FLOW_TTL_SECONDS": os.environ.get("VKID_FLOW_TTL_SECONDS", "600").strip(),
         "SESSION_TTL_SECONDS": os.environ.get("SESSION_TTL_SECONDS", "34560000").strip(),
     }
     return "".join(
@@ -158,32 +186,6 @@ def write_product_environment(ssh: EphemeralSsh) -> None:
         f"umask 077; cat > {PRODUCT_ENV}; chmod 600 {PRODUCT_ENV}",
         input_text=build_product_environment(),
     )
-
-
-def verify_smsaero_test_api(repository_root: pathlib.Path) -> bool:
-    login = os.environ.get("SMS_PROVIDER_LOGIN", "").strip()
-    token = os.environ.get("SMS_PROVIDER_TOKEN", "").strip()
-    sender = os.environ.get("SMS_SENDER", "").strip()
-    phone = os.environ.get("SMS_TEST_NUMBER", "").strip()
-    values = (login, token, sender, phone)
-    if not any(values):
-        return False
-    if not all(values):
-        raise InfraError("SMS Aero test configuration is incomplete")
-
-    source_root = str(repository_root / "src")
-    sys.path.insert(0, source_root)
-    try:
-        from omnicio.sms import SmsAeroSmsProvider, SmsDeliveryError
-
-        provider = SmsAeroSmsProvider(login=login, api_key=token, sender=sender)
-        try:
-            provider.test_send(phone)
-        except SmsDeliveryError as exc:
-            raise InfraError("SMS Aero test API rejected the configuration") from exc
-    finally:
-        sys.path.remove(source_root)
-    return True
 
 
 REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
@@ -468,9 +470,12 @@ def verify_public() -> None:
                 raise InfraError(
                     "Public registration unexpectedly became enabled"
                 )
-            if payload.get("owner_login_enabled") is not True:
+            if payload.get("auth_provider") != "vkid":
+                raise InfraError("Public auth provider is not VK ID")
+            expected_ready = vkid_configuration_ready()
+            if payload.get("owner_login_enabled") is not expected_ready:
                 raise InfraError(
-                    "Private owner login did not become enabled"
+                    "Public VK ID readiness does not match deployment config"
                 )
 
         for path, marker in LEGAL_PAGES.items():
@@ -517,8 +522,6 @@ def reconcile(
 
     add_summary("## OmniCIO auth application deploy")
     validate_product_environment()
-    if verify_smsaero_test_api(repository_root):
-        add_summary("- SMS Aero test API accepted the request; no SMS was sent.")
     server_summary = find_managed_server(
         client.get_servers(),
         name=server_name,
@@ -582,9 +585,11 @@ def reconcile(
             rollback_remote(ssh, release_sha=release_sha)
             raise
 
+    vkid_ready = vkid_configuration_ready()
+    login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
-        "owner login is enabled and public registration remains disabled."
+        f"VK ID owner login is {login_state}; public registration remains disabled."
     )
     set_output("status", "app_ready")
     return 0

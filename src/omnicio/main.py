@@ -2,43 +2,42 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal, cast
-from uuid import UUID
 
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from .broker import BrokerAccountNotAccessible, BrokerService
 from .config import Settings, load_settings
 from .db import Database, UserRecord
-from .security import SecurityValueError, format_public_id
-from .service import (
-    AuthService,
-    InvalidChallenge,
-    OwnerAccessDenied,
-    RateLimited,
-    RegistrationClosed,
+from .security import (
+    SecurityValueError,
+    format_public_id,
+    generate_oauth_state,
+    generate_pkce_verifier,
+    open_vkid_flow,
+    pkce_challenge,
+    seal_vkid_flow,
 )
-from .sms import SmsDeliveryError, build_sms_provider
+from .service import AuthService, LoginUnavailable, OwnerAccessDenied
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
+from .vkid import VKIDClient, VKIDRejected, VKIDUnavailable
 
 SESSION_COOKIE = "omnicio_session"
+VKID_FLOW_COOKIE = "omnicio_vkid_flow"
 CANONICAL_ORIGIN = "https://omnicio.ru"
+VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
 
 
-class RequestCodeBody(BaseModel):
-    phone: str = Field(min_length=11, max_length=12)
+class StartVKIDBody(BaseModel):
     accept_privacy: bool
     accept_personal_data: bool
     accept_terms: bool
     confirm_age_18: bool
-
-
-class VerifyCodeBody(BaseModel):
-    challenge_id: UUID
-    code: str = Field(min_length=6, max_length=6)
 
 
 class TBankCredentialBody(BaseModel):
@@ -79,6 +78,10 @@ def broker_service(request: Request) -> BrokerService:
     return cast(BrokerService, request.app.state.broker_service)
 
 
+def vkid_client(request: Request) -> VKIDClient:
+    return cast(VKIDClient, request.app.state.vkid_client)
+
+
 def authenticated_user(
     request: Request,
     session_token: str | None,
@@ -92,20 +95,72 @@ def authenticated_user(
     return user
 
 
+def callback_values(request: Request) -> dict[str, str]:
+    payload_raw = request.query_params.get("payload")
+    if payload_raw:
+        try:
+            payload = json.loads(payload_raw)
+        except json.JSONDecodeError as exc:
+            raise VKIDRejected("VK ID callback payload is invalid") from exc
+        if not isinstance(payload, dict):
+            raise VKIDRejected("VK ID callback payload is invalid")
+        values: dict[str, str] = {}
+        for key in ("code", "state", "device_id", "error"):
+            value = payload.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise VKIDRejected("VK ID callback payload is invalid")
+            values[key] = value
+        return values
+
+    return {
+        key: value
+        for key in ("code", "state", "device_id", "error")
+        if (value := request.query_params.get(key)) is not None
+    }
+
+
+def validate_vkid_callback_values(values: dict[str, str], expected_state: str) -> tuple[str, str]:
+    if values.get("error"):
+        raise VKIDRejected("VK ID returned an authorization error")
+
+    code = values.get("code", "")
+    state_value = values.get("state", "")
+    device_id = values.get("device_id", "")
+    if not code or not state_value or not device_id:
+        raise VKIDRejected("VK ID callback is incomplete")
+    if state_value != expected_state:
+        raise VKIDRejected("VK ID state mismatch")
+    if len(code) > 4096 or len(device_id) > 512 or len(state_value) > 512:
+        raise VKIDRejected("VK ID callback value is too long")
+    return code, device_id
+
+
+def auth_redirect(path: str) -> RedirectResponse:
+    response = RedirectResponse(path, status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie(
+        VKID_FLOW_COOKIE,
+        path="/api/auth/vkid",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cfg = load_settings()
     database = Database(cfg.database_url)
     database.open()
-    sms = build_sms_provider(
-        cfg.sms_provider,
-        login=cfg.sms_login,
-        token=cfg.sms_token,
-        sender=cfg.sms_sender,
-    )
     app.state.settings = cfg
     app.state.database = database
-    app.state.auth_service = AuthService(cfg, database, sms)
+    app.state.auth_service = AuthService(cfg, database)
+    app.state.vkid_client = VKIDClient(
+        app_id=cfg.vkid_app_id,
+        redirect_uri=VKID_CALLBACK,
+    )
     app.state.broker_service = BrokerService(
         database,
         credential_key=cfg.broker_token_crypto_key,
@@ -144,9 +199,9 @@ def auth_config(request: Request) -> dict[str, object]:
     cfg = settings(request)
     return {
         "mode": "owner_only",
+        "auth_provider": "vkid",
         "registration_enabled": False,
-        "owner_login_enabled": cfg.owner_login_ready,
-        "phone_format": "+79XXXXXXXXX",
+        "owner_login_enabled": cfg.vkid_ready,
         "legal_versions": {
             "privacy_policy": cfg.privacy_version,
             "personal_data_consent": cfg.consent_version,
@@ -155,55 +210,85 @@ def auth_config(request: Request) -> dict[str, object]:
     }
 
 
-@app.post("/api/auth/request-code")
-def request_code(body: RequestCodeBody, request: Request) -> dict[str, object]:
+@app.post("/api/auth/vkid/start")
+def start_vkid(
+    body: StartVKIDBody,
+    request: Request,
+    response: Response,
+) -> dict[str, str]:
     require_same_origin(request)
-    try:
-        issued = service(request).issue_challenge(
-            phone_raw=body.phone,
-            client_ip=client_ip(request),
-            accepted_privacy=body.accept_privacy,
-            accepted_personal_data=body.accept_personal_data,
-            accepted_terms=body.accept_terms,
-            confirmed_age_18=body.confirm_age_18,
-        )
-    except SecurityValueError as exc:
-        raise HTTPException(status_code=400, detail="invalid phone format") from exc
-    except OwnerAccessDenied as exc:
-        raise HTTPException(status_code=403, detail="owner access required") from exc
-    except RateLimited as exc:
-        raise HTTPException(status_code=429, detail="try again later") from exc
-    except RegistrationClosed as exc:
-        raise HTTPException(status_code=503, detail="registration unavailable") from exc
-    except SmsDeliveryError as exc:
-        raise HTTPException(status_code=503, detail="SMS delivery unavailable") from exc
+    cfg = settings(request)
+    if not cfg.vkid_ready:
+        raise HTTPException(status_code=503, detail="VK ID owner login is not configured")
+    if not (body.accept_privacy and body.accept_personal_data and body.accept_terms):
+        raise HTTPException(status_code=400, detail="legal acknowledgments are required")
+    if not body.confirm_age_18:
+        raise HTTPException(status_code=400, detail="owner must confirm age 18+")
 
+    state_value = generate_oauth_state()
+    verifier = generate_pkce_verifier()
+    flow = seal_vkid_flow(
+        state=state_value,
+        code_verifier=verifier,
+        legal_versions=service(request).legal_versions(),
+        crypto_key=cfg.vkid_flow_crypto_key,
+    )
+    response.set_cookie(
+        VKID_FLOW_COOKIE,
+        flow,
+        max_age=cfg.vkid_flow_ttl_seconds,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/api/auth/vkid",
+    )
     return {
-        "challenge_id": str(issued.challenge_id),
-        "expires_in": issued.expires_in_seconds,
+        "authorize_url": vkid_client(request).authorization_url(
+            state=state_value,
+            code_challenge=pkce_challenge(verifier),
+        )
     }
 
 
-@app.post("/api/auth/verify")
-def verify_code(
-    body: VerifyCodeBody,
+@app.get("/api/auth/vkid/callback")
+def vkid_callback(
     request: Request,
-    response: Response,
-) -> dict[str, object]:
-    require_same_origin(request)
-    try:
-        result = service(request).verify_challenge(
-            challenge_id=body.challenge_id,
-            code=body.code,
-            client_ip=client_ip(request),
-        )
-    except (InvalidChallenge, OwnerAccessDenied) as exc:
-        raise HTTPException(status_code=400, detail="invalid or expired code") from exc
-    except RegistrationClosed as exc:
-        raise HTTPException(status_code=503, detail="registration unavailable") from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail="account unavailable") from exc
+    flow_cookie: str | None = Cookie(default=None, alias=VKID_FLOW_COOKIE),
+) -> RedirectResponse:
+    cfg = settings(request)
+    if not cfg.vkid_ready or not flow_cookie:
+        return auth_redirect("/?auth_error=flow")
 
+    try:
+        expected_state, verifier, legal_versions = open_vkid_flow(
+            flow_cookie,
+            crypto_key=cfg.vkid_flow_crypto_key,
+            ttl_seconds=cfg.vkid_flow_ttl_seconds,
+        )
+        values = callback_values(request)
+        code, device_id = validate_vkid_callback_values(values, expected_state)
+
+        owner = vkid_client(request).exchange_code(
+            code=code,
+            device_id=device_id,
+            code_verifier=verifier,
+            expected_state=expected_state,
+        )
+        result = service(request).complete_vkid_login(
+            vk_user_id=owner.user_id,
+            client_ip=client_ip(request),
+            accepted_legal_versions=legal_versions,
+        )
+    except OwnerAccessDenied:
+        return auth_redirect("/?auth_error=owner")
+    except (SecurityValueError, VKIDRejected):
+        return auth_redirect("/?auth_error=flow")
+    except (VKIDUnavailable, LoginUnavailable):
+        return auth_redirect("/?auth_error=provider")
+    except PermissionError:
+        return auth_redirect("/?auth_error=account")
+
+    response = auth_redirect("/?auth=success")
     response.set_cookie(
         SESSION_COOKIE,
         result.session_token,
@@ -213,11 +298,7 @@ def verify_code(
         samesite="strict",
         path="/",
     )
-    return {
-        "authenticated": True,
-        "created": result.created,
-        "public_id": result.public_id,
-    }
+    return response
 
 
 @app.get("/api/me")
@@ -279,15 +360,9 @@ def tbank_accounts(
             environment=body.environment,
         )
     except TBankTokenRejected as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="T-Invest token rejected",
-        ) from exc
+        raise HTTPException(status_code=400, detail="T-Invest token rejected") from exc
     except TBankUnavailable as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="T-Invest API unavailable",
-        ) from exc
+        raise HTTPException(status_code=503, detail="T-Invest API unavailable") from exc
 
     return {
         "accounts": [
@@ -324,20 +399,14 @@ def connect_tbank(
             terms_version=settings(request).terms_version,
         )
     except TBankTokenRejected as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="T-Invest token rejected",
-        ) from exc
+        raise HTTPException(status_code=400, detail="T-Invest token rejected") from exc
     except BrokerAccountNotAccessible as exc:
         raise HTTPException(
             status_code=400,
             detail="T-Invest account is not accessible",
         ) from exc
     except TBankUnavailable as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="T-Invest API unavailable",
-        ) from exc
+        raise HTTPException(status_code=503, detail="T-Invest API unavailable") from exc
     except SecurityValueError as exc:
         raise HTTPException(
             status_code=503,

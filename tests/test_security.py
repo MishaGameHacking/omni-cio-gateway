@@ -8,31 +8,16 @@ from cryptography.fernet import Fernet
 
 from omnicio.security import (
     SecurityValueError,
-    decrypt_phone,
-    encrypt_phone,
+    client_ip_digest,
     encrypt_secret,
     format_public_id,
-    normalize_russian_mobile,
-    otp_digest,
+    generate_oauth_state,
+    generate_pkce_verifier,
+    open_vkid_flow,
     parse_public_id,
-    verify_otp_digest,
+    pkce_challenge,
+    seal_vkid_flow,
 )
-
-
-def test_phone_accepts_only_requested_russian_mobile_shape() -> None:
-    assert normalize_russian_mobile("+79161234567") == "+79161234567"
-    assert normalize_russian_mobile("79161234567") == "+79161234567"
-    assert normalize_russian_mobile("89161234567") == "+79161234567"
-
-    for value in (
-        "+78161234567",
-        "+7916123456",
-        "+791612345678",
-        "+7 916 123-45-67",
-        "+7999abc4567",
-    ):
-        with pytest.raises(SecurityValueError):
-            normalize_russian_mobile(value)
 
 
 def test_public_id_is_exactly_nine_digits() -> None:
@@ -54,23 +39,6 @@ def test_public_id_parser_rejects_malformed_or_zero_values() -> None:
             parse_public_id(value)
 
 
-def test_phone_encryption_round_trip() -> None:
-    key = Fernet.generate_key().decode("ascii")
-    encrypted = encrypt_phone("+79161234567", key)
-
-    assert encrypted != b"+79161234567"
-    assert decrypt_phone(encrypted, key) == "+79161234567"
-
-
-def test_otp_digest_is_challenge_bound() -> None:
-    key = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
-    digest = otp_digest("challenge-a", "123456", key)
-
-    assert verify_otp_digest("challenge-a", "123456", digest, key)
-    assert not verify_otp_digest("challenge-a", "654321", digest, key)
-    assert not verify_otp_digest("challenge-b", "123456", digest, key)
-
-
 def test_secret_encryption_does_not_store_plaintext() -> None:
     key = Fernet.generate_key().decode("ascii")
     plaintext = "t.example-owner-credential"
@@ -78,3 +46,52 @@ def test_secret_encryption_does_not_store_plaintext() -> None:
 
     assert encrypted != plaintext.encode()
     assert plaintext.encode() not in encrypted
+
+
+def test_pkce_challenge_is_stable_and_urlsafe() -> None:
+    verifier = generate_pkce_verifier()
+    challenge = pkce_challenge(verifier)
+
+    assert 43 <= len(verifier) <= 128
+    assert "=" not in challenge
+    assert challenge == pkce_challenge(verifier)
+
+
+def test_vkid_flow_round_trip_and_tamper_rejection() -> None:
+    key = Fernet.generate_key().decode("ascii")
+    state = generate_oauth_state()
+    verifier = generate_pkce_verifier()
+    versions = {
+        "privacy_policy": "2026-10-01-v2",
+        "personal_data_consent": "2026-10-01-v2",
+        "terms": "2026-10-01-v2",
+    }
+    token = seal_vkid_flow(
+        state=state,
+        code_verifier=verifier,
+        legal_versions=versions,
+        crypto_key=key,
+    )
+
+    assert open_vkid_flow(
+        token,
+        crypto_key=key,
+        ttl_seconds=600,
+    ) == (state, verifier, versions)
+
+    with pytest.raises(SecurityValueError):
+        open_vkid_flow(
+            token[:-1] + ("A" if token[-1] != "A" else "B"),
+            crypto_key=key,
+            ttl_seconds=600,
+        )
+
+
+def test_client_ip_digest_is_keyed() -> None:
+    first = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
+    second = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
+
+    assert client_ip_digest("203.0.113.10", first) != client_ip_digest(
+        "203.0.113.10",
+        second,
+    )

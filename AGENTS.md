@@ -31,14 +31,14 @@ Green CI необходим, но сам по себе не означает, ч
 - GitHub — код, ветки, pull request, CI, review и release provenance;
 - Timeweb Cloud — production runtime, App Platform, сеть, секреты и PostgreSQL;
 - OmniCIO Personal — закрытая single-owner система; публичная регистрация и второй пользователь не поддерживаются без нового явного решения OWNER;
-- human login владельца — только настроенный на сервере российский мобильный номер `+79XXXXXXXXX` через одноразовый SMS-код; браузер не определяет owner authority;
+- human login владельца — только через VK ID OAuth 2.1 + PKCE; сервер разрешает сессию только если подтверждённый `vk_user_id` совпадает с `OWNER_VK_ID`; браузер не определяет owner authority;
 - T-Invest подключается только к собственному брокерскому счёту OWNER; credential вводится только в аутентифицированной owner-сессии, проверяется сервером и хранится только в зашифрованном виде;
 - публичные legal pages описывают только фактическую single-owner модель, не являются публичной офертой и не публикуют домашний адрес, ИНН, паспортные или иные избыточные персональные реквизиты OWNER;
 - любое превращение OmniCIO Personal в многопользовательский, платный или публичный инвестиционный сервис требует нового юридического и архитектурного review до включения доступа;
 - Python — основной backend/runtime язык, если задача не требует другого языка;
 - браузерный frontend — только тот код, который реально нужен сайту.
 
-Не добавлять Cloudflare, Neon, Render, VK ID, Cloud.ru и другие старые provider-зависимости без нового явного решения OWNER.
+Не добавлять Cloudflare, Neon, Render, Cloud.ru и другие provider-зависимости без нового явного решения OWNER. VK ID является текущим явно одобренным human-login provider.
 
 Нельзя оставлять в рабочем дереве старый исполняемый код "на всякий случай". Git history является архивом.
 
@@ -176,7 +176,7 @@ Python-код должен следовать принципам PEP 8 и PEP 20
 
 Browser input никогда не является источником tenant authority.
 
-SMS OTP подтверждает владение только заранее настроенным server-side номером OWNER в формате `+79XXXXXXXXX`. Пользовательский ввод телефона никогда не выбирает OWNER. После успешной проверки сервер сам разрешает owner user/session. Публичный 9-значный profile ID является только идентификатором для UI/поддержки и никогда не предоставляет authority.
+VK ID подтверждает внешнюю идентичность через Authorization Code flow с PKCE. Только server-side `OWNER_VK_ID` определяет OWNER; callback/query/browser input не может назначить владельца. OAuth `state` обязателен, flow имеет короткий TTL, access/refresh tokens VK ID не являются сессией OmniCIO и не сохраняются после получения подтверждённого `vk_user_id`. Публичный 9-значный profile ID является только идентификатором для UI/поддержки и никогда не предоставляет authority.
 
 Сохранённый T-Invest credential запрещено возвращать в browser/API response, логировать или хранить в открытом виде. Browser может передать новый credential только для проверки/замены в уже аутентифицированной owner-сессии. Выбранный broker account обязан повторно подтверждаться через provider перед сохранением.
 
@@ -209,10 +209,10 @@ PostgreSQL является relational authority после принятого p
 - destructive migration требует отдельного recovery plan;
 - перед production schema mutation иметь проверяемую recovery точку;
 - публичный profile ID генерировать сервером/БД из монотонной sequence, не принимать его от browser;
-- телефон хранить encrypted-at-rest, а поиск/unique constraint выполнять по keyed blind index; полный телефон и OTP запрещены в логах;
-- OTP хранить только как keyed digest, ограничивать TTL, число попыток, resend и hourly rate;
+- VK ID owner identity хранить как проверенный provider subject, полученный только после успешного code exchange и user-info запроса;
+- PKCE verifier/state хранить только в краткоживущем зашифрованном Secure + HttpOnly + SameSite=Lax flow cookie и удалять после callback;
 - session token хранить у клиента только в Secure + HttpOnly + SameSite cookie, а в БД хранить только digest;
-- публичная регистрация в OmniCIO Personal всегда выключена; owner login fail-closed при отсутствии настроенного owner phone или рабочего SMS provider;
+- публичная регистрация в OmniCIO Personal всегда выключена; owner login fail-closed при отсутствии полного `VKID_APP_ID` + `OWNER_VK_ID` или при provider failure;
 - broker credential хранить только encrypted-at-rest отдельным server-side ключом, не возвращать через API и не включать в audit/log metadata;
 - login/session не дают broker write authority; любые будущие реальные торговые действия требуют отдельного execution/risk boundary и явной authorization модели.
 

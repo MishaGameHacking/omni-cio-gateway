@@ -2,88 +2,32 @@ from __future__ import annotations
 
 import base64
 import os
-from datetime import timedelta
 from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
 
 from omnicio.config import Settings
-from omnicio.db import ChallengeRecord, UserRecord, utcnow
-from omnicio.service import AuthService, OwnerAccessDenied
-
-
-class FakeSms:
-    def __init__(self) -> None:
-        self.phone = ""
-        self.code = ""
-
-    def send_otp(self, phone: str, code: str) -> str:
-        self.phone = phone
-        self.code = code
-        return "provider-message-1"
+from omnicio.db import UserRecord
+from omnicio.service import AuthService, LoginUnavailable, OwnerAccessDenied
 
 
 class FakeDatabase:
     def __init__(self) -> None:
-        self.challenge: ChallengeRecord | None = None
-        self.sent = False
         self.session_digest: bytes | None = None
+        self.refreshed_owner_vk_id: str | None = None
         self.refreshed_ttl: int | None = None
-        self.refreshed_owner_lookup: bytes | None = None
+        self.completed_vk_user_id: str | None = None
+        self.accepted_versions: dict[str, str] | None = None
         self.user = UserRecord(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
             status="active",
         )
 
-    def latest_challenge_created_at(self, phone_lookup: bytes):
-        return None
-
-    def recent_challenge_counts(self, **kwargs):
-        return (0, 0)
-
-    def create_challenge(self, **kwargs):
-        challenge_id = kwargs["challenge_id"]
-        self.challenge = ChallengeRecord(
-            id=challenge_id,
-            phone_lookup=kwargs["phone_lookup"],
-            phone_ciphertext=kwargs["phone_ciphertext"],
-            code_digest=kwargs["code_digest"],
-            attempts_remaining=kwargs["attempts_remaining"],
-            expires_at=utcnow() + timedelta(seconds=kwargs["ttl_seconds"]),
-            consumed_at=None,
-            legal_versions=kwargs["legal_versions"],
-        )
-        return challenge_id
-
-    def mark_challenge_sent(self, challenge_id, provider_message_id):
-        self.sent = True
-
-    def load_challenge(self, challenge_id):
-        if self.challenge and self.challenge.id == challenge_id:
-            return self.challenge
-        return None
-
-    def record_failed_challenge_attempt(self, challenge_id):
-        return self.challenge is not None and self.challenge.id == challenge_id
-
-    def complete_verified_challenge(self, **kwargs):
-        challenge_id = kwargs["challenge_id"]
-        if not self.challenge or self.challenge.id != challenge_id:
-            return None
-        if self.challenge.consumed_at is not None:
-            return None
-        self.challenge = ChallengeRecord(
-            id=self.challenge.id,
-            phone_lookup=self.challenge.phone_lookup,
-            phone_ciphertext=self.challenge.phone_ciphertext,
-            code_digest=self.challenge.code_digest,
-            attempts_remaining=self.challenge.attempts_remaining,
-            expires_at=self.challenge.expires_at,
-            consumed_at=utcnow(),
-            legal_versions=self.challenge.legal_versions,
-        )
+    def complete_vkid_login(self, **kwargs):
+        self.completed_vk_user_id = kwargs["vk_user_id"]
+        self.accepted_versions = kwargs["legal_versions"]
         self.session_digest = kwargs["session_token_digest"]
         return self.user, True
 
@@ -91,10 +35,10 @@ class FakeDatabase:
         self,
         token_digest,
         *,
-        owner_phone_lookup,
+        owner_vk_id,
         session_ttl_seconds,
     ):
-        self.refreshed_owner_lookup = owner_phone_lookup
+        self.refreshed_owner_vk_id = owner_vk_id
         self.refreshed_ttl = session_ttl_seconds
         if token_digest == self.session_digest:
             return self.user
@@ -105,111 +49,104 @@ class FakeDatabase:
             self.session_digest = None
 
 
-def settings() -> Settings:
-    return Settings(
-        database_url="postgresql://example.invalid/db",
-        crypto_key=Fernet.generate_key().decode("ascii"),
-        lookup_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
-        otp_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
-        ip_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
-        broker_token_crypto_key=Fernet.generate_key().decode("ascii"),
-        sms_provider="smsaero",
-        sms_login="user@example.test",
-        sms_token="test-token",
-        sms_sender="SMS Aero",
-        owner_phone="+79161234567",
-        owner_login_enabled=True,
-        registration_enabled=False,
-        privacy_version="2026-10-01",
-        consent_version="2026-10-01",
-        terms_version="2026-10-01",
-        otp_ttl_seconds=300,
-        otp_max_attempts=5,
-        otp_resend_cooldown_seconds=60,
-        otp_phone_hourly_limit=5,
-        otp_ip_hourly_limit=20,
-        session_ttl_seconds=34_560_000,
-    )
+def settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "database_url": "postgresql://example.invalid/db",
+        "ip_key": base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
+        "broker_token_crypto_key": Fernet.generate_key().decode("ascii"),
+        "vkid_flow_crypto_key": Fernet.generate_key().decode("ascii"),
+        "vkid_app_id": "123456",
+        "owner_vk_id": "987654321",
+        "vkid_login_enabled": True,
+        "privacy_version": "2026-10-01-v2",
+        "consent_version": "2026-10-01-v2",
+        "terms_version": "2026-10-01-v2",
+        "vkid_flow_ttl_seconds": 600,
+        "session_ttl_seconds": 34_560_000,
+    }
+    values.update(overrides)
+    return Settings(**values)
 
 
-def test_issue_and_verify_creates_public_id_and_session() -> None:
+def test_vkid_owner_login_creates_session() -> None:
     db = FakeDatabase()
-    sms = FakeSms()
-    service = AuthService(settings(), db, sms)
+    auth = AuthService(settings(), db)
 
-    issued = service.issue_challenge(
-        phone_raw="+79161234567",
+    result = auth.complete_vkid_login(
+        vk_user_id="987654321",
         client_ip="203.0.113.10",
-        accepted_privacy=True,
-        accepted_personal_data=True,
-        accepted_terms=True,
-        confirmed_age_18=True,
-    )
-
-    assert db.sent
-    assert sms.phone == "+79161234567"
-    assert len(sms.code) == 6
-
-    result = service.verify_challenge(
-        challenge_id=issued.challenge_id,
-        code=sms.code,
-        client_ip="203.0.113.10",
+        accepted_legal_versions=auth.legal_versions(),
     )
 
     assert result.public_id == "000000001"
     assert result.created is True
-    assert service.refresh_session(result.session_token) == db.user
+    assert db.completed_vk_user_id == "987654321"
+    assert db.accepted_versions == auth.legal_versions()
+    assert auth.refresh_session(result.session_token) == db.user
+    assert db.refreshed_owner_vk_id == "987654321"
     assert db.refreshed_ttl == 34_560_000
-    assert db.refreshed_owner_lookup is not None
 
 
-def test_issue_challenge_rejects_non_owner_before_sms_send() -> None:
+def test_vkid_login_rejects_non_owner_before_session_creation() -> None:
     db = FakeDatabase()
-    sms = FakeSms()
-    auth = AuthService(settings(), db, sms)
+    auth = AuthService(settings(), db)
 
     with pytest.raises(OwnerAccessDenied):
-        auth.issue_challenge(
-            phone_raw="+79991234567",
+        auth.complete_vkid_login(
+            vk_user_id="111111111",
             client_ip="203.0.113.10",
-            accepted_privacy=True,
-            accepted_personal_data=True,
-            accepted_terms=True,
-            confirmed_age_18=True,
+            accepted_legal_versions=auth.legal_versions(),
         )
 
-    assert sms.phone == ""
-    assert db.challenge is None
+    assert db.session_digest is None
+    assert db.completed_vk_user_id is None
 
 
-def test_verify_rejects_stale_non_owner_challenge() -> None:
+def test_vkid_login_rejects_stale_legal_versions() -> None:
     db = FakeDatabase()
-    sms = FakeSms()
-    auth = AuthService(settings(), db, sms)
+    auth = AuthService(settings(), db)
 
-    issued = auth.issue_challenge(
-        phone_raw="+79161234567",
-        client_ip="203.0.113.10",
-        accepted_privacy=True,
-        accepted_personal_data=True,
-        accepted_terms=True,
-        confirmed_age_18=True,
-    )
-    assert db.challenge is not None
-    db.challenge = ChallengeRecord(
-        id=db.challenge.id,
-        phone_lookup=b"x" * 32,
-        phone_ciphertext=db.challenge.phone_ciphertext,
-        code_digest=db.challenge.code_digest,
-        attempts_remaining=db.challenge.attempts_remaining,
-        expires_at=db.challenge.expires_at,
-        consumed_at=None,
-        legal_versions=db.challenge.legal_versions,
-    )
-
-    with pytest.raises(OwnerAccessDenied):
-        auth.verify_challenge(
-            challenge_id=issued.challenge_id,
-            code=sms.code,
+    with pytest.raises(LoginUnavailable):
+        auth.complete_vkid_login(
+            vk_user_id="987654321",
             client_ip="203.0.113.10",
+            accepted_legal_versions={
+                "privacy_policy": "old",
+                "personal_data_consent": "old",
+                "terms": "old",
+            },
         )
+
+    assert db.session_digest is None
+
+
+def test_session_fails_closed_when_vkid_is_not_configured() -> None:
+    db = FakeDatabase()
+    auth = AuthService(
+        settings(vkid_login_enabled=False, owner_vk_id=""),
+        db,
+    )
+
+    assert auth.refresh_session("anything") is None
+
+
+@pytest.mark.parametrize(
+    ("app_id", "owner_vk_id"),
+    [
+        ("app", "987654321"),
+        ("123456", "owner"),
+        ("0", "987654321"),
+        ("123456", "0"),
+    ],
+)
+def test_session_fails_closed_for_invalid_vkid_ids(
+    app_id: str,
+    owner_vk_id: str,
+) -> None:
+    db = FakeDatabase()
+    auth = AuthService(
+        settings(vkid_app_id=app_id, owner_vk_id=owner_vk_id),
+        db,
+    )
+
+    assert auth.refresh_session("anything") is None
