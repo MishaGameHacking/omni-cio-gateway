@@ -55,6 +55,18 @@
   const operationsLoadMore = document.querySelector("#operations-load-more");
   const portfolioRetry = document.querySelector("[data-portfolio-retry]");
 
+  const owlState = document.querySelector("#owl-state");
+  const owlLastRefresh = document.querySelector("#owl-last-refresh");
+  const hunterForm = document.querySelector("#hunter-form");
+  const hunterQuery = document.querySelector("#hunter-query");
+  const hunterSearch = document.querySelector("#hunter-search");
+  const hunterMessage = document.querySelector("#hunter-message");
+  const hunterResults = document.querySelector("#hunter-results");
+  const guardState = document.querySelector("#guard-state");
+  const guardBlockedPositions = document.querySelector("#guard-blocked-positions");
+  const guardBlockedCash = document.querySelector("#guard-blocked-cash");
+  const guardLargestClass = document.querySelector("#guard-largest-class");
+
   const viewTitle = document.querySelector("#view-title");
   const desktopNavItems = [...document.querySelectorAll("[data-view]")];
   const mobileNavItems = [...document.querySelectorAll("[data-mobile-view]")];
@@ -84,6 +96,9 @@
   let portfolioLoaded = false;
   let portfolioRequestInFlight = false;
   let nextOperationsCursor = "";
+  let lastPortfolioSnapshot = null;
+  let lastPortfolioRefreshAt = 0;
+  let owlTimer = null;
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -169,19 +184,7 @@
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
 
-    operationsLoadMore.addEventListener("click", () => {
-    void loadMoreOperations();
-  });
-
-  portfolioRefresh.addEventListener("click", () => {
-    void loadPortfolioData({force: true});
-  });
-
-  portfolioRetry.addEventListener("click", () => {
-    void loadPortfolioData({force: true});
-  });
-
-  desktopNavItems.forEach((item) => {
+    desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
       item.classList.toggle("is-active", active);
       if (active) {
@@ -315,6 +318,183 @@
     empty.className = "portfolio-empty-inline";
     empty.textContent = text;
     container.append(empty);
+  };
+
+  const updateOwlState = (timestamp) => {
+    if (!tbankIsConnected) {
+      setStateBadge(owlState, "Нет подключения", "state-next");
+      owlLastRefresh.textContent = "—";
+      return;
+    }
+
+    if (!timestamp) {
+      setStateBadge(owlState, "Ожидает данных", "");
+      owlLastRefresh.textContent = "—";
+      return;
+    }
+
+    setStateBadge(owlState, "Наблюдает", "state-ok");
+    owlLastRefresh.textContent = formatDateTime(timestamp);
+  };
+
+  const updateGuard = (snapshot) => {
+    if (!snapshot?.portfolio) {
+      setStateBadge(guardState, "Ожидает данных", "");
+      guardBlockedPositions.textContent = "—";
+      guardBlockedCash.textContent = "—";
+      guardLargestClass.textContent = "—";
+      return;
+    }
+
+    const positions = snapshot.portfolio.positions || [];
+    const blockedPositions = positions.filter((position) => position.blocked).length;
+    const blockedCash = (snapshot.blocked_cash || []).filter(
+      (money) => numericValue(money.value) !== 0
+    );
+
+    const totals = (snapshot.portfolio.asset_totals || []).filter(
+      (item) => numericValue(item.money?.value) > 0
+    );
+    const total = totals.reduce((sum, item) => sum + numericValue(item.money.value), 0);
+    const largest = totals.reduce((current, item) => {
+      if (!current || numericValue(item.money.value) > numericValue(current.money.value)) {
+        return item;
+      }
+      return current;
+    }, null);
+
+    guardBlockedPositions.textContent = String(blockedPositions);
+    guardBlockedCash.textContent = String(blockedCash.length);
+    if (largest && total > 0) {
+      const share = (numericValue(largest.money.value) / total) * 100;
+      guardLargestClass.textContent = `${ASSET_LABELS[largest.kind] || largest.kind} · ${share.toFixed(1)}%`;
+    } else {
+      guardLargestClass.textContent = "Нет данных";
+    }
+    setStateBadge(guardState, "Контролирует", "state-ok");
+  };
+
+  const renderHunterResults = (items) => {
+    hunterResults.replaceChildren();
+    if (!items?.length) {
+      appendEmptyState(hunterResults, "T-Invest не нашёл доступных инструментов по этому запросу.");
+      return;
+    }
+
+    items.forEach((instrument) => {
+      const card = document.createElement("article");
+      card.className = "hunter-result";
+
+      const main = document.createElement("div");
+      main.className = "hunter-result-main";
+
+      const identity = document.createElement("div");
+      identity.className = "hunter-result-identity";
+      const ticker = document.createElement("strong");
+      ticker.textContent = instrument.ticker || "—";
+      const name = document.createElement("span");
+      name.textContent = instrument.name || "Без названия";
+      identity.append(ticker, name);
+
+      const meta = document.createElement("div");
+      meta.className = "hunter-result-meta";
+      const type = document.createElement("span");
+      type.textContent = INSTRUMENT_LABELS[instrument.instrument_type]
+        || instrument.instrument_type
+        || "Инструмент";
+      const lot = document.createElement("span");
+      lot.textContent = `Лот: ${Number.isFinite(Number(instrument.lot)) ? instrument.lot : "—"}`;
+      meta.append(type, lot);
+
+      main.append(identity, meta);
+
+      const flags = document.createElement("div");
+      flags.className = "hunter-result-flags";
+      if (instrument.for_qual_investor) {
+        const flag = document.createElement("span");
+        flag.textContent = "Для квалифицированных инвесторов";
+        flags.append(flag);
+      }
+      if (instrument.for_iis) {
+        const flag = document.createElement("span");
+        flag.textContent = "Доступно для ИИС";
+        flags.append(flag);
+      }
+      if (instrument.weekend_trading) {
+        const flag = document.createElement("span");
+        flag.textContent = "Торги в выходные";
+        flags.append(flag);
+      }
+      if (!flags.childElementCount) {
+        const flag = document.createElement("span");
+        flag.textContent = "Доступен через T-Invest API";
+        flags.append(flag);
+      }
+
+      card.append(main, flags);
+      hunterResults.append(card);
+    });
+  };
+
+  const searchHunter = async () => {
+    const query = hunterQuery.value.trim();
+    showMessage(hunterMessage, "");
+    hunterResults.replaceChildren();
+
+    if (!tbankIsConnected) {
+      showMessage(hunterMessage, "Сначала подключите T-Invest.", true);
+      return;
+    }
+    if (!query || query.length > 64) {
+      showMessage(hunterMessage, "Введите тикер или название инструмента.", true);
+      return;
+    }
+
+    hunterSearch.disabled = true;
+    const originalText = hunterSearch.textContent;
+    hunterSearch.textContent = "Ищем…";
+    try {
+      const payload = await api(
+        `/api/broker/tbank/instruments/search?q=${encodeURIComponent(query)}`,
+        {method: "GET"},
+      );
+      renderHunterResults(payload.items || []);
+      showMessage(
+        hunterMessage,
+        payload.items?.length
+          ? `Найдено: ${payload.items.length}. Это поиск, а не инвестиционная рекомендация.`
+          : "Совпадений не найдено.",
+      );
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (error.status === 409) {
+        showMessage(hunterMessage, "Подключение T-Invest нужно обновить.", true);
+      } else {
+        showMessage(hunterMessage, "Поиск T-Invest временно недоступен.", true);
+      }
+    } finally {
+      hunterSearch.disabled = false;
+      hunterSearch.textContent = originalText;
+    }
+  };
+
+  const startOwl = () => {
+    if (owlTimer !== null) {
+      window.clearInterval(owlTimer);
+    }
+
+    owlTimer = window.setInterval(() => {
+      if (
+        document.visibilityState === "visible"
+        && tbankIsConnected
+        && !portfolioRequestInFlight
+      ) {
+        void loadPortfolioData({force: true, refreshOperations: false});
+      }
+    }, 5 * 60 * 1000);
   };
 
   const renderAllocation = (totals) => {
@@ -535,7 +715,11 @@
     portfolioContent.classList.toggle("hidden", mode !== "content");
   };
 
-  const renderPortfolio = (snapshot, operationsPayload) => {
+  const renderPortfolio = (
+    snapshot,
+    operationsPayload,
+    {updateOperations = true} = {},
+  ) => {
     const portfolio = snapshot.portfolio;
     portfolioTotal.textContent = formatMoney(portfolio.total);
     portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
@@ -549,17 +733,29 @@
     renderAllocation(portfolio.asset_totals);
     renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
     renderPositions(portfolio.positions);
-    renderOperations(operationsPayload);
+    if (updateOperations) {
+      renderOperations(operationsPayload);
+    }
 
+    lastPortfolioSnapshot = snapshot;
+    lastPortfolioRefreshAt = Date.now();
     portfolioLoaded = true;
+    updateOwlState(snapshot.refreshed_at);
+    updateGuard(snapshot);
     showPortfolioMode("content");
     setStateBadge(portfolioStateBadge, "Данные получены", "state-ok");
     setStateBadge(homePortfolioState, "Работает", "state-ok");
   };
 
-  const loadPortfolioData = async ({force = false} = {}) => {
+  const loadPortfolioData = async (
+    {force = false, refreshOperations = true} = {},
+  ) => {
     if (!tbankIsConnected) {
       portfolioLoaded = false;
+      lastPortfolioSnapshot = null;
+      lastPortfolioRefreshAt = 0;
+      updateOwlState(null);
+      updateGuard(null);
       showPortfolioMode("disconnected");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
@@ -569,31 +765,52 @@
       return;
     }
 
+    const hadPortfolio = portfolioLoaded;
     portfolioRequestInFlight = true;
     portfolioRefresh.disabled = true;
-    showPortfolioMode("loading");
+    if (!hadPortfolio) {
+      showPortfolioMode("loading");
+    }
     setStateBadge(portfolioStateBadge, "Обновляем", "");
-    setStateBadge(homePortfolioState, "Загружаем", "");
+    setStateBadge(homePortfolioState, hadPortfolio ? "Обновляем" : "Загружаем", "");
 
     try {
+      const operationsRequest = refreshOperations
+        ? api("/api/broker/tbank/operations?limit=30", {method: "GET"}).catch(() => null)
+        : Promise.resolve(null);
       const [snapshot, operationsPayload] = await Promise.all([
         api("/api/broker/tbank/portfolio", {method: "GET"}),
-        api("/api/broker/tbank/operations?limit=30", {method: "GET"}).catch(() => null),
+        operationsRequest,
       ]);
-      renderPortfolio(snapshot, operationsPayload);
+      renderPortfolio(
+        snapshot,
+        operationsPayload,
+        {updateOperations: refreshOperations},
+      );
     } catch (error) {
-      portfolioLoaded = false;
       if (error.status === 401) {
         location.reload();
         return;
       }
-      showPortfolioMode("error");
+
       const needsReconnect = error.status === 409;
-      portfolioErrorText.textContent = needsReconnect
-        ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
-        : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
-      setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
-      setStateBadge(homePortfolioState, "Ошибка", "state-error");
+      if (hadPortfolio && lastPortfolioSnapshot) {
+        portfolioLoaded = true;
+        showPortfolioMode("content");
+        setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
+        setStateBadge(homePortfolioState, "Данные устарели", "state-next");
+        setStateBadge(owlState, "Ошибка обновления", "state-next");
+      } else {
+        portfolioLoaded = false;
+        showPortfolioMode("error");
+        portfolioErrorText.textContent = needsReconnect
+          ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
+          : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
+        setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
+        setStateBadge(homePortfolioState, "Ошибка", "state-error");
+        setStateBadge(owlState, "Ошибка", "state-error");
+        updateGuard(null);
+      }
     } finally {
       portfolioRequestInFlight = false;
       portfolioRefresh.disabled = false;
@@ -607,6 +824,8 @@
 
     if (!status.connected) {
       portfolioLoaded = false;
+      lastPortfolioSnapshot = null;
+      lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
       overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
       homeConnectionCard.classList.add("is-offline");
@@ -615,6 +834,10 @@
       setStateBadge(homeTbankState, "Не подключено", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+      updateOwlState(null);
+      updateGuard(null);
+      hunterResults.replaceChildren();
+      showMessage(hunterMessage, "Подключите T-Invest, чтобы искать инструменты.");
       showPortfolioMode("disconnected");
       return;
     }
@@ -625,9 +848,12 @@
     overviewConnectionText.textContent = `${environment} · соединение подтверждено`;
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
+    showMessage(hunterMessage, "");
     if (!portfolioLoaded) {
       setStateBadge(homePortfolioState, "Загружаем", "");
       setStateBadge(portfolioStateBadge, "Загружаем", "");
+      updateOwlState(null);
+      updateGuard(null);
     }
   };
 
@@ -663,10 +889,18 @@
     topConnectionText.textContent = "Ошибка T-Invest";
     tbankIsConnected = false;
     portfolioLoaded = false;
+    lastPortfolioSnapshot = null;
+    lastPortfolioRefreshAt = 0;
     setStateBadge(homeTbankState, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
     setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
+    setStateBadge(owlState, "Ошибка", "state-error");
+    setStateBadge(guardState, "Ошибка", "state-error");
+    owlLastRefresh.textContent = "—";
+    guardBlockedPositions.textContent = "—";
+    guardBlockedCash.textContent = "—";
+    guardLargestClass.textContent = "—";
   };
 
   const loadTbankStatus = async () => {
@@ -771,6 +1005,35 @@
     installStatus.textContent = "Открыто в браузере";
     installButton.classList.add("hidden");
   };
+
+  hunterForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void searchHunter();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    const stale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
+    if (
+      document.visibilityState === "visible"
+      && tbankIsConnected
+      && stale
+      && !portfolioRequestInFlight
+    ) {
+      void loadPortfolioData({force: true, refreshOperations: false});
+    }
+  });
+
+  operationsLoadMore.addEventListener("click", () => {
+    void loadMoreOperations();
+  });
+
+  portfolioRefresh.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
+
+  portfolioRetry.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
 
   desktopNavItems.forEach((item) => {
     item.addEventListener("click", () => setView(item.dataset.view));
@@ -997,5 +1260,6 @@
   renderReleaseInfo();
   applyTheme(storedTheme());
   refreshInstallState();
+  startOwl();
   void loadState();
 })();

@@ -43,6 +43,20 @@ class TBankAccount:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankInstrument:
+    uid: str
+    figi: str
+    ticker: str
+    name: str
+    instrument_type: str
+    class_code: str
+    lot: int
+    for_qual_investor: bool
+    for_iis: bool
+    weekend_trading: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TBankMoney:
     currency: str
     value: str
@@ -140,6 +154,84 @@ class TBankInvestClient:
                 )
             )
         return accounts
+
+    def find_instruments(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> tuple[TBankInstrument, ...]:
+        clean_query = query.strip()
+        if not 1 <= len(clean_query) <= 64 or "\n" in clean_query or "\r" in clean_query:
+            raise ValueError("instrument search query must contain 1 to 64 characters")
+        if not 1 <= limit <= 50:
+            raise ValueError("instrument search limit must be between 1 and 50")
+
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="FindInstrument",
+            body={
+                "query": clean_query,
+                "instrumentKind": "INSTRUMENT_TYPE_UNSPECIFIED",
+                "apiTradeAvailableFlag": True,
+            },
+        )
+
+        instruments: list[TBankInstrument] = []
+        for raw in _optional_list(payload, "instruments"):
+            item = _required_object(raw, "instrument")
+            api_available = item.get("apiTradeAvailableFlag", False)
+            if not isinstance(api_available, bool):
+                raise TBankUnavailable("T-Invest instrument has invalid API availability flag")
+            if not api_available:
+                continue
+
+            lot_raw = item.get("lot", 0)
+            if isinstance(lot_raw, bool):
+                raise TBankUnavailable("T-Invest instrument has invalid lot size")
+            try:
+                lot = int(str(lot_raw))
+            except ValueError as exc:
+                raise TBankUnavailable("T-Invest instrument has invalid lot size") from exc
+
+            for_qual = item.get("forQualInvestorFlag", False)
+            for_iis = item.get("forIisFlag", False)
+            weekend = item.get("weekendFlag", False)
+            if (
+                not isinstance(for_qual, bool)
+                or not isinstance(for_iis, bool)
+                or not isinstance(weekend, bool)
+            ):
+                raise TBankUnavailable("T-Invest instrument has invalid access flags")
+
+            uid = _text(item.get("uid")).strip()
+            ticker = _text(item.get("ticker")).strip()
+            name = _text(item.get("name")).strip()
+            if not uid or not ticker or not name:
+                continue
+
+            instruments.append(
+                TBankInstrument(
+                    uid=uid,
+                    figi=_text(item.get("figi")).strip(),
+                    ticker=ticker,
+                    name=name,
+                    instrument_type=_text(item.get("instrumentType")).strip(),
+                    class_code=_text(item.get("classCode")).strip(),
+                    lot=lot,
+                    for_qual_investor=for_qual,
+                    for_iis=for_iis,
+                    weekend_trading=weekend,
+                )
+            )
+            if len(instruments) >= limit:
+                break
+
+        return tuple(instruments)
 
     def get_portfolio(
         self,

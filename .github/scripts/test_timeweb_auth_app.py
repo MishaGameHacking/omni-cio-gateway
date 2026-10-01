@@ -222,6 +222,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank/accounts",
             "/api/broker/tbank/portfolio",
             "/api/broker/tbank/operations",
+            "/api/broker/tbank/instruments/search",
         ):
             self.assertIn(endpoint, script)
 
@@ -240,6 +241,32 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("innerHTML", script)
         self.assertNotIn("₽ 1 000 000", page)
         self.assertNotIn("+12.4%", page)
+
+    def test_personal_dashboard_system_modules_are_real_and_read_only(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+
+        for element_id in (
+            "owl-state",
+            "owl-last-refresh",
+            "hunter-form",
+            "hunter-query",
+            "hunter-results",
+            "guard-state",
+            "guard-blocked-positions",
+            "guard-blocked-cash",
+            "guard-largest-class",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn("Автоматически обновляет портфель раз в 5 минут", page)
+        self.assertIn("не является рекомендацией", page)
+        self.assertIn("без автоматических решений", page)
+        self.assertIn("/api/broker/tbank/instruments/search", script)
+        self.assertIn("5 * 60 * 1000", script)
+        self.assertIn('document.visibilityState === "visible"', script)
+        self.assertNotIn("innerHTML", script)
 
     def test_personal_dashboard_uses_approved_brand_assets(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -296,7 +323,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.3.0"', project)
+        self.assertIn('version = "0.4.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

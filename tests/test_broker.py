@@ -16,6 +16,7 @@ from omnicio.db import TBankConnectionRecord
 from omnicio.tbank import (
     TBankAccount,
     TBankAssetTotal,
+    TBankInstrument,
     TBankInvestClient,
     TBankMoney,
     TBankOperation,
@@ -72,6 +73,85 @@ def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
     assert request.full_url.endswith("UsersService/GetAccounts")
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {"status": "ACCOUNT_STATUS_OPEN"}
+
+
+def test_tbank_find_instruments_filters_to_api_trade_available_results() -> None:
+    credential = "t.fake-owner-credential-1234567890"
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instruments": [
+                {
+                    "uid": "uid-sber",
+                    "figi": "BBG004730N88",
+                    "ticker": "SBER",
+                    "name": "Сбер Банк",
+                    "instrumentType": "share",
+                    "classCode": "TQBR",
+                    "lot": 10,
+                    "forQualInvestorFlag": False,
+                    "forIisFlag": True,
+                    "weekendFlag": False,
+                    "apiTradeAvailableFlag": True,
+                },
+                {
+                    "uid": "uid-hidden",
+                    "figi": "BBG000000000",
+                    "ticker": "HIDE",
+                    "name": "Недоступный инструмент",
+                    "instrumentType": "share",
+                    "classCode": "TQBR",
+                    "lot": 1,
+                    "forQualInvestorFlag": False,
+                    "forIisFlag": True,
+                    "weekendFlag": False,
+                    "apiTradeAvailableFlag": False,
+                },
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        instruments = client.find_instruments(credential, "prod", "SBER", limit=20)
+
+    assert instruments == (
+        TBankInstrument(
+            uid="uid-sber",
+            figi="BBG004730N88",
+            ticker="SBER",
+            name="Сбер Банк",
+            instrument_type="share",
+            class_code="TQBR",
+            lot=10,
+            for_qual_investor=False,
+            for_iis=True,
+            weekend_trading=False,
+        ),
+    )
+
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/FindInstrument")
+    assert json.loads(request.data.decode()) == {
+        "query": "SBER",
+        "instrumentKind": "INSTRUMENT_TYPE_UNSPECIFIED",
+        "apiTradeAvailableFlag": True,
+    }
+
+
+def test_tbank_find_instruments_rejects_blank_query_before_network_call() -> None:
+    client = TBankInvestClient()
+
+    with (
+        patch("urllib.request.urlopen") as urlopen,
+        pytest.raises(ValueError, match="1 to 64"),
+    ):
+        client.find_instruments(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "   ",
+        )
+
+    urlopen.assert_not_called()
 
 
 def test_tbank_reads_portfolio_positions_and_operations() -> None:
@@ -218,6 +298,33 @@ class FakeTBank:
         return self.accounts
 
 
+    def find_instruments(
+        self,
+        credential: str,
+        environment: str,
+        query: str,
+        *,
+        limit: int = 20,
+    ):
+        assert credential == "t.fake-owner-credential-1234567890"
+        assert environment == "prod"
+        assert query == "SBER"
+        assert limit == 20
+        return (
+            TBankInstrument(
+                uid="uid-sber",
+                figi="BBG004730N88",
+                ticker="SBER",
+                name="Сбер Банк",
+                instrument_type="share",
+                class_code="TQBR",
+                lot=10,
+                for_qual_investor=False,
+                for_iis=True,
+                weekend_trading=False,
+            ),
+        )
+
     def get_portfolio(self, credential: str, environment: str, account_id: str):
         assert credential == "t.fake-owner-credential-1234567890"
         assert environment == "prod"
@@ -350,10 +457,12 @@ def test_broker_service_decrypts_saved_credential_only_for_read_calls() -> None:
 
     portfolio = service.portfolio(owner_id)
     operations = service.operations(owner_id)
+    instruments = service.search_instruments(owner_id, query="SBER")
 
     assert portfolio.portfolio.total.value == "1000"
     assert portfolio.positions.money[0].value == "100"
     assert operations.operations.items[0].id == "op-1"
+    assert instruments[0].ticker == "SBER"
     assert not hasattr(portfolio, "credential")
     assert credential.encode() not in database.saved_ciphertext
 
