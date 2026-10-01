@@ -50,6 +50,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertTrue(MODULE.runtime_is_ready(ready))
         self.assertFalse(MODULE.runtime_is_ready(missing))
         self.assertIn("REGISTRATION_ENABLED=false", ready.commands[0])
+        self.assertIn("BROKER_TOKEN_CRYPTO_KEY", ready.commands[0])
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -80,6 +81,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 "SMS_PROVIDER_TOKEN": "secret-token",
                 "SMS_SENDER": "SMS Aero",
                 "SMS_TEST_NUMBER": "+79161234567",
+                "OWNER_PHONE": "+79161234567",
                 "LEGAL_OPERATOR_NAME": "Test Operator",
                 "LEGAL_OPERATOR_ADDRESS": "Test Address",
                 "LEGAL_PRIVACY_CONTACT": "privacy@example.test",
@@ -122,6 +124,7 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ["SMS_PROVIDER_LOGIN"] = "user@example.test"
             os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
             os.environ["SMS_SENDER"] = "SMS Aero"
+            os.environ["OWNER_PHONE"] = "+79161234567"
             product_env = MODULE.build_product_environment()
         finally:
             os.environ.clear()
@@ -130,6 +133,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('SMS_PROVIDER="smsaero"', product_env)
         self.assertIn('SMS_PROVIDER_LOGIN="user@example.test"', product_env)
         self.assertIn('SMS_SENDER="SMS Aero"', product_env)
+        self.assertIn('OWNER_PHONE="+79161234567"', product_env)
+        self.assertIn('OWNER_LOGIN_ENABLED="true"', product_env)
+        self.assertIn('REGISTRATION_ENABLED="false"', product_env)
 
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
