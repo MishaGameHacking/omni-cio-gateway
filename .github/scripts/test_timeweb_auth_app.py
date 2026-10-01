@@ -72,6 +72,27 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("web/index.html", names)
         self.assertNotIn("tests/secret-test.txt", names)
 
+    def test_product_environment_validation_requires_all_runtime_secrets(self) -> None:
+        old = dict(os.environ)
+        try:
+            values = {
+                "SMS_PROVIDER_LOGIN": "user@example.test",
+                "SMS_PROVIDER_TOKEN": "secret-token",
+                "SMS_SENDER": "SMS Aero",
+                "SMS_TEST_NUMBER": "+79161234567",
+                "LEGAL_OPERATOR_NAME": "Test Operator",
+                "LEGAL_OPERATOR_ADDRESS": "Test Address",
+                "LEGAL_PRIVACY_CONTACT": "privacy@example.test",
+            }
+            os.environ.update(values)
+            MODULE.validate_product_environment()
+            os.environ.pop("LEGAL_OPERATOR_ADDRESS")
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
     def test_product_environment_keeps_registration_closed_without_sender(self) -> None:
         old = dict(os.environ)
         try:
