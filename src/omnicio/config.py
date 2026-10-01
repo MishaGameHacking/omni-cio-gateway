@@ -45,68 +45,41 @@ def boolean(name: str, default: bool = False) -> bool:
 @dataclass(frozen=True, slots=True)
 class Settings:
     database_url: str
-    crypto_key: str
-    lookup_key: str
-    otp_key: str
     ip_key: str
     broker_token_crypto_key: str
-    sms_provider: str
-    sms_login: str
-    sms_token: str
-    sms_sender: str
-    owner_phone: str
-    owner_login_enabled: bool
+    vkid_flow_crypto_key: str
+    vkid_app_id: str
+    owner_vk_id: str
+    vkid_login_enabled: bool
     registration_enabled: bool
     privacy_version: str
     consent_version: str
     terms_version: str
-    otp_ttl_seconds: int
-    otp_max_attempts: int
-    otp_resend_cooldown_seconds: int
-    otp_phone_hourly_limit: int
-    otp_ip_hourly_limit: int
+    vkid_flow_ttl_seconds: int
     session_ttl_seconds: int
 
     @property
-    def sms_ready(self) -> bool:
+    def vkid_ready(self) -> bool:
         return (
-            self.sms_provider == "smsaero"
-            and bool(self.sms_login)
-            and bool(self.sms_token)
-            and bool(self.sms_sender)
-        )
-
-    @property
-    def owner_login_ready(self) -> bool:
-        return (
-            self.owner_login_enabled
-            and self.sms_ready
-            and bool(self.owner_phone)
+            self.vkid_login_enabled
+            and bool(self.vkid_app_id)
+            and bool(self.owner_vk_id)
         )
 
 
 def load_settings() -> Settings:
     return Settings(
         database_url=required("DATABASE_URL"),
-        crypto_key=required("PHONE_CRYPTO_KEY"),
-        lookup_key=required("PHONE_LOOKUP_KEY"),
-        otp_key=required("OTP_SIGNING_KEY"),
         ip_key=required("CLIENT_IP_KEY"),
         broker_token_crypto_key=required("BROKER_TOKEN_CRYPTO_KEY"),
-        sms_provider=os.environ.get("SMS_PROVIDER", "disabled").strip().lower(),
-        sms_login=os.environ.get("SMS_PROVIDER_LOGIN", "").strip(),
-        sms_token=os.environ.get("SMS_PROVIDER_TOKEN", "").strip(),
-        sms_sender=os.environ.get("SMS_SENDER", "").strip(),
-        owner_phone=os.environ.get("OWNER_PHONE", "").strip(),
-        owner_login_enabled=boolean("OWNER_LOGIN_ENABLED", False),
+        vkid_flow_crypto_key=required("VKID_FLOW_CRYPTO_KEY"),
+        vkid_app_id=os.environ.get("VKID_APP_ID", "").strip(),
+        owner_vk_id=os.environ.get("OWNER_VK_ID", "").strip(),
+        vkid_login_enabled=boolean("VKID_LOGIN_ENABLED", False),
         registration_enabled=boolean("REGISTRATION_ENABLED", False),
         privacy_version=os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         consent_version=os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
-        otp_ttl_seconds=positive_int("OTP_TTL_SECONDS", 300),
-        otp_max_attempts=positive_int("OTP_MAX_ATTEMPTS", 5),
-        otp_resend_cooldown_seconds=positive_int("OTP_RESEND_COOLDOWN_SECONDS", 60),
-        otp_phone_hourly_limit=positive_int("OTP_PHONE_HOURLY_LIMIT", 5),
-        otp_ip_hourly_limit=positive_int("OTP_IP_HOURLY_LIMIT", 20),
+        vkid_flow_ttl_seconds=positive_int("VKID_FLOW_TTL_SECONDS", 600),
         session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", 34_560_000),
     )
