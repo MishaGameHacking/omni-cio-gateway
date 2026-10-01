@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "omnicio-gateway"
 version = "0.1.0"
-description = "OmniCIO web gateway and phone authentication service"
+description = "OmniCIO Personal owner gateway and broker connectivity service"
 requires-python = ">=3.12,<3.14"
 dependencies = [
   "cryptography>=43,<50",
