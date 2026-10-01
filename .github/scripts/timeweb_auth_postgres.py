@@ -980,7 +980,7 @@ def reconcile(
     server_name: str,
     server_comment: str,
     vpc_name: str,
-    migration_sql: str,
+    migration_sqls: list[str],
 ) -> int:
     add_summary("## OmniCIO auth PostgreSQL")
     add_summary(
@@ -1130,12 +1130,13 @@ def reconcile(
             desired=desired,
             secrets=secret_bundle,
         )
-        run_schema_migration(
-            ssh,
-            migration_sql=migration_sql,
-            endpoint=endpoint,
-            desired=desired,
-        )
+        for migration_sql in migration_sqls:
+            run_schema_migration(
+                ssh,
+                migration_sql=migration_sql,
+                endpoint=endpoint,
+                desired=desired,
+            )
 
     add_summary(
         "- Result: database_ready. PostgreSQL is private-only, runtime "
@@ -1162,14 +1163,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-cpu", type=int, required=True)
     parser.add_argument("--min-ram-mb", type=int, required=True)
     parser.add_argument("--min-disk-mb", type=int, required=True)
-    parser.add_argument("--migration", required=True)
+    parser.add_argument("--migration", action="append", required=True)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        migration_sql = pathlib.Path(args.migration).read_text(encoding="utf-8")
+        migration_sqls = [
+            pathlib.Path(path).read_text(encoding="utf-8")
+            for path in args.migration
+        ]
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,
@@ -1188,7 +1192,7 @@ def main() -> int:
             server_name=args.server_name,
             server_comment=args.server_comment,
             vpc_name=args.vpc_name,
-            migration_sql=migration_sql,
+            migration_sqls=migration_sqls,
         )
     except (InfraError, TimewebApiError, AmbiguousProviderError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
