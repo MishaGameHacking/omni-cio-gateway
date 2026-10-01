@@ -53,8 +53,13 @@ jobs:
       - name: Run deployer tests
         run: python3 .github/scripts/test_timeweb_auth_app.py
 
-      - name: Verify HTTPS marker remains in auth page
-        run: grep -F 'name="omni-cio-white-site"' web/index.html
+      - name: Verify auth page markers
+        run: |
+          grep -F 'name="omni-cio-white-site"' web/index.html
+          if grep -F '\n' web/index.html; then
+            echo "::error::Auth page contains a literal escaped newline"
+            exit 1
+          fi
 
   deploy:
     name: Deploy auth application
@@ -74,9 +79,9 @@ jobs:
       SMS_PROVIDER_TOKEN: ${{ secrets.SMS_PROVIDER_TOKEN }}
       SMS_SENDER: ${{ vars.SMS_SENDER }}
       SMS_TEST_NUMBER: ${{ secrets.SMS_TEST_NUMBER }}
-      LEGAL_OPERATOR_NAME: "Климачев Михаил Константинович"
-      LEGAL_OPERATOR_ADDRESS: "Российская Федерация, Тюменская область, г. Тюмень, ул. Верхнетарманская, д. 5, кв. 97"
-      LEGAL_PRIVACY_CONTACT: "omnicioinfo@gmail.com"
+      LEGAL_OPERATOR_NAME: ${{ secrets.LEGAL_OPERATOR_NAME }}
+      LEGAL_OPERATOR_ADDRESS: ${{ secrets.LEGAL_OPERATOR_ADDRESS }}
+      LEGAL_PRIVACY_CONTACT: ${{ secrets.LEGAL_PRIVACY_CONTACT }}
       LEGAL_PRIVACY_VERSION: "2026-09-30"
       LEGAL_CONSENT_VERSION: "2026-09-30"
       LEGAL_TERMS_VERSION: "2026-09-30"

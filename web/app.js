@@ -59,7 +59,7 @@
         phoneForm.querySelectorAll("input, button").forEach((element) => {
           element.disabled = true;
         });
-        showMessage("Регистрация пока закрыта. Мы завершаем юридическую и SMS-настройку.");
+        showMessage("Авторизация временно закрыта до завершения проверки SMS-провайдера.");
       }
     } catch {
       showMessage("Сервис авторизации временно недоступен.", true);
