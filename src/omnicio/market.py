@@ -37,6 +37,7 @@ class UsdRubSnapshot:
     change: str | None
     change_percent: str | None
     cbr_reference: MarketReferenceRate | None
+    cbr_next_reference: MarketReferenceRate | None
 
 
 class MarketService:
@@ -59,18 +60,21 @@ class MarketService:
         change, change_percent = _change(quote.price, quote.previous_close)
 
         reference: MarketReferenceRate | None = None
+        next_reference: MarketReferenceRate | None = None
         try:
             rate = self.cbr.usd_rub_rate()
         except CBRUnavailable:
             pass
         else:
-            reference = MarketReferenceRate(
-                source="Bank of Russia",
-                value=rate.value,
-                currency=rate.currency,
-                effective_date=rate.effective_date.isoformat(),
-                fetched_at=rate.fetched_at.isoformat(),
-            )
+            reference = _reference_rate(rate)
+
+        try:
+            latest_rate = self.cbr.latest_usd_rub_rate()
+        except CBRUnavailable:
+            pass
+        else:
+            if reference is None or latest_rate.effective_date > rate.effective_date:
+                next_reference = _reference_rate(latest_rate)
 
         return UsdRubSnapshot(
             pair="USD/RUB",
@@ -88,7 +92,22 @@ class MarketService:
             change=change,
             change_percent=change_percent,
             cbr_reference=reference,
+            cbr_next_reference=next_reference,
         )
+
+
+def _reference_rate(rate: object) -> MarketReferenceRate:
+    from .cbr import CBRRate
+
+    if not isinstance(rate, CBRRate):
+        raise TypeError("invalid Bank of Russia rate")
+    return MarketReferenceRate(
+        source="Bank of Russia",
+        value=rate.value,
+        currency=rate.currency,
+        effective_date=rate.effective_date.isoformat(),
+        fetched_at=rate.fetched_at.isoformat(),
+    )
 
 
 def _parse_provider_time(value: str) -> datetime:
