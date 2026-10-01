@@ -405,6 +405,63 @@ class Database:
                 return None
             return _tbank_connection(cast(dict[str, Any], fetched))
 
+    def upsert_tbank_connection(
+        self,
+        *,
+        user_id: UUID,
+        environment: str,
+        account_id: str,
+        account_name: str,
+        encrypted_credential: bytes,
+    ) -> TBankConnectionRecord:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO tbank_connection (
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    token_ciphertext
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    environment = EXCLUDED.environment,
+                    account_id = EXCLUDED.account_id,
+                    account_name = EXCLUDED.account_name,
+                    token_ciphertext = EXCLUDED.token_ciphertext,
+                    verified_at = now(),
+                    updated_at = now()
+                RETURNING
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    token_ciphertext,
+                    verified_at,
+                    updated_at
+                """,
+                (
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    encrypted_credential,
+                ),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                raise RuntimeError("T-Bank connection upsert returned no row")
+            record = _tbank_connection(cast(dict[str, Any], fetched))
+            cur.execute(
+                """
+                INSERT INTO audit_events (user_id, event_type, metadata)
+                VALUES (%s, 'tbank_connected', %s::jsonb)
+                """,
+                (user_id, json.dumps({"environment": environment})),
+            )
+            return record
+
     def support_user_by_public_id(self, public_id: int) -> UserRecord | None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
