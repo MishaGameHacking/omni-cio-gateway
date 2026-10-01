@@ -201,7 +201,11 @@ class TBankInvestClient:
             for_qual = item.get("forQualInvestorFlag", False)
             for_iis = item.get("forIisFlag", False)
             weekend = item.get("weekendFlag", False)
-            if not all(isinstance(value, bool) for value in (for_qual, for_iis, weekend)):
+            if (
+                not isinstance(for_qual, bool)
+                or not isinstance(for_iis, bool)
+                or not isinstance(weekend, bool)
+            ):
                 raise TBankUnavailable("T-Invest instrument has invalid access flags")
 
             uid = _text(item.get("uid")).strip()
