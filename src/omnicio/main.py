@@ -142,7 +142,9 @@ def ready(request: Request) -> dict[str, str]:
 def auth_config(request: Request) -> dict[str, object]:
     cfg = settings(request)
     return {
-        "registration_enabled": cfg.registration_ready,
+        "mode": "owner_only",
+        "registration_enabled": False,
+        "owner_login_enabled": cfg.owner_login_ready,
         "phone_format": "+79XXXXXXXXX",
         "legal_versions": {
             "privacy_policy": cfg.privacy_version,
@@ -166,6 +168,8 @@ def request_code(body: RequestCodeBody, request: Request) -> dict[str, object]:
         )
     except SecurityValueError as exc:
         raise HTTPException(status_code=400, detail="invalid phone format") from exc
+    except OwnerAccessDenied as exc:
+        raise HTTPException(status_code=403, detail="owner access required") from exc
     except RateLimited as exc:
         raise HTTPException(status_code=429, detail="try again later") from exc
     except RegistrationClosed as exc:
@@ -222,9 +226,7 @@ def me(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     token = session_token or ""
-    user = service(request).refresh_session(token)
-    if user is None:
-        raise HTTPException(status_code=401, detail="authentication required")
+    user = authenticated_user(request, token)
 
     response.set_cookie(
         SESSION_COOKIE,
