@@ -383,6 +383,28 @@ class Database:
                 (token_digest,),
             )
 
+    def tbank_connection(self, user_id: UUID) -> TBankConnectionRecord | None:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    token_ciphertext,
+                    verified_at,
+                    updated_at
+                FROM tbank_connection
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            return _tbank_connection(cast(dict[str, Any], fetched))
+
     def support_user_by_public_id(self, public_id: int) -> UserRecord | None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
