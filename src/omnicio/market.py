@@ -73,7 +73,7 @@ class MarketService:
         except CBRUnavailable:
             pass
         else:
-            if reference is None or latest_rate.effective_date > rate.effective_date:
+            if reference is not None and latest_rate.effective_date > rate.effective_date:
                 next_reference = _reference_rate(latest_rate)
 
         return UsdRubSnapshot(
