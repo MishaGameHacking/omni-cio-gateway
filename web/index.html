@@ -12,21 +12,12 @@
   <main class="shell">
     <section class="card" id="auth-card" aria-labelledby="auth-title">
       <h1 id="auth-title">Личный вход OmniCIO</h1>
-      <p class="muted">Закрытый аккаунт владельца. Доступ разрешён только для настроенного номера.</p>
+      <p class="muted">
+        Закрытый аккаунт владельца. Вход выполняется через единственный
+        разрешённый VK ID.
+      </p>
 
-      <form id="phone-form" novalidate>
-        <label for="phone">Номер телефона</label>
-        <input
-          id="phone"
-          name="phone"
-          type="tel"
-          inputmode="tel"
-          autocomplete="tel"
-          placeholder="+79161234567"
-          maxlength="12"
-          required
-        >
-
+      <form id="vkid-form" novalidate>
         <label class="check">
           <input id="accept-privacy" type="checkbox">
           <span>Я ознакомился с <a href="/legal/privacy.html" target="_blank" rel="noopener">Уведомлением о конфиденциальности и обработке данных</a></span>
@@ -44,25 +35,13 @@
           <span>Подтверждаю, что мне исполнилось 18 лет</span>
         </label>
 
-        <button type="submit" id="send-code">Получить код</button>
+        <button type="submit" id="vkid-login">Войти через VK ID</button>
       </form>
 
-      <form id="code-form" class="hidden" novalidate>
-        <label for="code">Код из SMS</label>
-        <input
-          id="code"
-          name="code"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxlength="6"
-          placeholder="000000"
-          required
-        >
-        <button type="submit">Войти</button>
-      </form>
-
+      <p class="field-hint">
+        OmniCIO не получает ваш пароль VK. Авторизация проходит на стороне VK ID,
+        после чего OmniCIO разрешает вход только заранее настроенному владельцу.
+      </p>
       <p id="auth-message" role="status" aria-live="polite"></p>
     </section>
 
