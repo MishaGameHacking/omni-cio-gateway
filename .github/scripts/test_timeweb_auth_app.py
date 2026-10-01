@@ -105,6 +105,20 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
+    def test_product_environment_rejects_non_numeric_vkid_config(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
+            os.environ["VKID_APP_ID"] = "app"
+            os.environ["OWNER_VK_ID"] = "987654321"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
     def test_product_environment_keeps_vkid_fail_closed_without_owner_config(self) -> None:
         old = dict(os.environ)
         try:
