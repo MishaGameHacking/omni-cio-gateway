@@ -29,7 +29,7 @@ CANONICAL_ORIGIN = "https://omnicio.ru"
 
 
 class RequestCodeBody(BaseModel):
-    phone: str = Field(min_length=12, max_length=12)
+    phone: str = Field(min_length=11, max_length=12)
     accept_privacy: bool
     accept_personal_data: bool
     accept_terms: bool

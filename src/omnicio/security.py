@@ -21,11 +21,16 @@ class SecurityValueError(ValueError):
 def normalize_russian_mobile(raw: str) -> str:
     """Return the canonical +79XXXXXXXXX form or reject the input.
 
-    Only Russian mobile-number syntax requested by the product owner is accepted:
-    +7 followed by 9 and nine more digits.
+    Accept the canonical form plus the two common 11-digit forms that users
+    enter on Russian phone keyboards: 79XXXXXXXXX and 89XXXXXXXXX.
     """
 
     candidate = raw.strip()
+    if candidate.startswith("79") and len(candidate) == 11 and candidate.isdigit():
+        candidate = f"+{candidate}"
+    elif candidate.startswith("89") and len(candidate) == 11 and candidate.isdigit():
+        candidate = f"+7{candidate[1:]}"
+
     if not PHONE_RE.fullmatch(candidate):
         raise SecurityValueError("phone must match +79XXXXXXXXX")
     return candidate

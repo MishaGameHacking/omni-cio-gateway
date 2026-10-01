@@ -30,6 +30,17 @@
     message.classList.toggle("error", isError);
   };
 
+  const normalizePhoneForRequest = (raw) => {
+    const value = raw.trim();
+    if (/^79\d{9}$/.test(value)) {
+      return `+${value}`;
+    }
+    if (/^89\d{9}$/.test(value)) {
+      return `+7${value.slice(1)}`;
+    }
+    return value;
+  };
+
   const showTbankMessage = (text, isError = false) => {
     tbankMessage.textContent = text;
     tbankMessage.classList.toggle("error", isError);
@@ -133,7 +144,9 @@
     event.preventDefault();
     showMessage("");
 
-    const phone = document.querySelector("#phone").value.trim();
+    const phoneInput = document.querySelector("#phone");
+    const phone = normalizePhoneForRequest(phoneInput.value);
+    phoneInput.value = phone;
     const payload = {
       phone,
       accept_privacy: document.querySelector("#accept-privacy").checked,
@@ -157,8 +170,8 @@
         showMessage("Этот номер не имеет доступа к личному аккаунту.", true);
       } else if (error.status === 429) {
         showMessage("Слишком много попыток. Попробуйте позже.", true);
-      } else if (error.status === 400) {
-        showMessage("Введите номер строго в формате +79XXXXXXXXX.", true);
+      } else if (error.status === 400 || error.status === 422) {
+        showMessage("Введите российский мобильный номер: +79XXXXXXXXX или 79XXXXXXXXX.", true);
       } else {
         showMessage("Сейчас отправить код нельзя. Попробуйте позже.", true);
       }
