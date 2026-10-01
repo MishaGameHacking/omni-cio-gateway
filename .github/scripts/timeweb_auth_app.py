@@ -216,7 +216,53 @@ chmod 600 "$STATE"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3-venv ca-certificates nginx curl
+apt-get install -y -qq python3-venv ca-certificates nginx curl openssl
+
+install_tbank_trusted_ca() {
+    CERT_TMP="$(mktemp -d)"
+    ROOT_CER="$CERT_TMP/russian_trusted_root_ca.cer"
+    SUB_CER="$CERT_TMP/russian_trusted_sub_ca.cer"
+    ROOT_PEM="$CERT_TMP/russian_trusted_root_ca.pem"
+    SUB_PEM="$CERT_TMP/russian_trusted_sub_ca.pem"
+
+    curl --fail --location --silent --show-error --retry 3 \
+        --connect-timeout 10 --max-time 30 \
+        -o "$ROOT_CER" \
+        "https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer"
+    curl --fail --location --silent --show-error --retry 3 \
+        --connect-timeout 10 --max-time 30 \
+        -o "$SUB_CER" \
+        "https://gu-st.ru/content/Other/doc/russian_trusted_sub_ca.cer"
+
+    if openssl x509 -in "$ROOT_CER" -noout >/dev/null 2>&1; then
+        cp "$ROOT_CER" "$ROOT_PEM"
+    else
+        openssl x509 -inform DER -in "$ROOT_CER" -out "$ROOT_PEM"
+    fi
+    if openssl x509 -in "$SUB_CER" -noout >/dev/null 2>&1; then
+        cp "$SUB_CER" "$SUB_PEM"
+    else
+        openssl x509 -inform DER -in "$SUB_CER" -out "$SUB_PEM"
+    fi
+
+    openssl x509 -in "$ROOT_PEM" -noout -subject | grep -F "Russian Trusted Root CA" >/dev/null
+    openssl x509 -in "$SUB_PEM" -noout -subject | grep -F "Russian Trusted Sub CA" >/dev/null
+    openssl verify -CAfile "$ROOT_PEM" "$SUB_PEM" >/dev/null
+
+    install -m 0644 "$ROOT_PEM" /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
+    install -m 0644 "$SUB_PEM" /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
+    update-ca-certificates >/dev/null
+    rm -rf "$CERT_TMP"
+}
+
+install_tbank_trusted_ca
+
+if curl --silent --show-error --connect-timeout 5 --max-time 10 \
+    -o /dev/null "https://invest-public-api.tbank.ru/"; then
+    echo "T-Invest TLS probe: ok"
+else
+    echo "T-Invest TLS probe: failed" >&2
+fi
 
 if ! id omnicio >/dev/null 2>&1; then
     useradd --system --home /nonexistent --shell /usr/sbin/nologin omnicio
@@ -248,6 +294,7 @@ WorkingDirectory=/opt/omnicio/current
 EnvironmentFile=/etc/omnicio/runtime.env
 EnvironmentFile=/etc/omnicio/product.env
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app --host 127.0.0.1 --port 8001 --workers 2 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
