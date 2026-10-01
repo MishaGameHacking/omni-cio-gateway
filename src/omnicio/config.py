@@ -50,6 +50,7 @@ class Settings:
     otp_key: str
     ip_key: str
     sms_provider: str
+    sms_login: str
     sms_token: str
     sms_sender: str
     registration_enabled: bool
@@ -82,7 +83,8 @@ class Settings:
     @property
     def sms_ready(self) -> bool:
         return (
-            self.sms_provider == "mts_exolve"
+            self.sms_provider == "smsaero"
+            and bool(self.sms_login)
             and bool(self.sms_token)
             and bool(self.sms_sender)
         )
@@ -100,6 +102,7 @@ def load_settings() -> Settings:
         otp_key=required("OTP_SIGNING_KEY"),
         ip_key=required("CLIENT_IP_KEY"),
         sms_provider=os.environ.get("SMS_PROVIDER", "disabled").strip().lower(),
+        sms_login=os.environ.get("SMS_PROVIDER_LOGIN", "").strip(),
         sms_token=os.environ.get("SMS_PROVIDER_TOKEN", "").strip(),
         sms_sender=os.environ.get("SMS_SENDER", "").strip(),
         registration_enabled=boolean("REGISTRATION_ENABLED", False),

@@ -75,6 +75,7 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_product_environment_keeps_registration_closed_without_sender(self) -> None:
         old = dict(os.environ)
         try:
+            os.environ["SMS_PROVIDER_LOGIN"] = "user@example.test"
             os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
             os.environ.pop("SMS_SENDER", None)
             os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
@@ -90,21 +91,24 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.update(old)
 
         self.assertIn('SMS_PROVIDER="disabled"', product_env)
+        self.assertIn('SMS_PROVIDER_LOGIN="user@example.test"', product_env)
         self.assertIn('SMS_PROVIDER_TOKEN="secret-token"', product_env)
         self.assertIn('REGISTRATION_ENABLED="false"', product_env)
 
     def test_product_environment_enables_provider_only_with_sender(self) -> None:
         old = dict(os.environ)
         try:
+            os.environ["SMS_PROVIDER_LOGIN"] = "user@example.test"
             os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
-            os.environ["SMS_SENDER"] = "79990000000"
+            os.environ["SMS_SENDER"] = "SMS Aero"
             product_env = MODULE.build_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('SMS_PROVIDER="mts_exolve"', product_env)
-        self.assertIn('SMS_SENDER="79990000000"', product_env)
+        self.assertIn('SMS_PROVIDER="smsaero"', product_env)
+        self.assertIn('SMS_PROVIDER_LOGIN="user@example.test"', product_env)
+        self.assertIn('SMS_SENDER="SMS Aero"', product_env)
 
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT

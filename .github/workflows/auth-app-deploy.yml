@@ -70,8 +70,10 @@ jobs:
       VPC_NAME: omni-cio-private
       TARGET_LOCATION: ru-3
       TARGET_ZONE: msk-1
+      SMS_PROVIDER_LOGIN: ${{ secrets.SMS_PROVIDER_LOGIN }}
       SMS_PROVIDER_TOKEN: ${{ secrets.SMS_PROVIDER_TOKEN }}
       SMS_SENDER: ${{ vars.SMS_SENDER }}
+      SMS_TEST_NUMBER: ${{ secrets.SMS_TEST_NUMBER }}
       LEGAL_OPERATOR_NAME: "Климачев Михаил Константинович"
       LEGAL_OPERATOR_ADDRESS: "Российская Федерация, Тюменская область, г. Тюмень, ул. Верхнетарманская, д. 5, кв. 97"
       LEGAL_PRIVACY_CONTACT: "omnicioinfo@gmail.com"
