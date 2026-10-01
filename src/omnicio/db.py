@@ -50,8 +50,22 @@ class Database:
 
     def healthcheck(self) -> bool:
         with self.pool.connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT 1")
-            return cur.fetchone() is not None
+            cur.execute(
+                """
+                SELECT
+                    to_regclass('public.users') IS NOT NULL
+                    AND to_regclass('public.sessions') IS NOT NULL
+                    AND to_regclass('public.legal_acceptances') IS NOT NULL
+                    AND to_regclass('public.vkid_identities') IS NOT NULL
+                    AND to_regclass('public.tbank_connection') IS NOT NULL
+                    AS ready
+                """
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return False
+            row = cast(dict[str, Any], fetched)
+            return bool(row["ready"])
 
     def complete_vkid_login(
         self,
