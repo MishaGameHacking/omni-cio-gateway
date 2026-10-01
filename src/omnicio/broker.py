@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
@@ -130,7 +130,7 @@ class BrokerService:
             environment=environment,
             portfolio=portfolio,
             positions=positions,
-            refreshed_at=datetime.now().astimezone(),
+            refreshed_at=datetime.now(UTC),
         )
 
     def operations(
@@ -150,7 +150,7 @@ class BrokerService:
             account_name=record.account_name,
             environment=environment,
             operations=operations,
-            refreshed_at=datetime.now().astimezone(),
+            refreshed_at=datetime.now(UTC),
         )
 
     def disconnect(self, user_id: UUID) -> bool:
