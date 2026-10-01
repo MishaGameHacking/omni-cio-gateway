@@ -188,50 +188,12 @@ body[data-theme="light"] .auth-brand {
   text-transform: uppercase;
 }
 
-.brand-mark {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 13px;
-  background:
-    radial-gradient(circle at 35% 30%, rgb(255 255 255 / 28%), transparent 35%),
-    linear-gradient(145deg, rgb(141 247 192 / 22%), rgb(79 103 255 / 18%));
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 3%),
-    0 12px 28px rgb(0 0 0 / 18%);
-}
-
-.brand-mark::before,
-.brand-mark::after,
-.brand-mark-core {
-  content: "";
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  color: var(--accent);
-}
-
-.brand-mark::before {
-  width: 22px;
-  height: 22px;
-  opacity: .65;
-}
-
-.brand-mark::after {
-  width: 12px;
-  height: 12px;
-  opacity: .92;
-}
-
-.brand-mark-core {
-  width: 4px;
-  height: 4px;
-  border: 0;
-  background: var(--accent);
-  box-shadow: 0 0 14px var(--accent);
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 22px rgb(37 131 255 / 22%));
 }
 
 .auth-copy {
@@ -313,29 +275,16 @@ body[data-theme="light"] .scene-ring {
   transform: translate(-50%, -50%) rotateY(66deg);
 }
 
-.orbit-core {
+.orbit-brand-image {
   position: absolute;
   inset: 50%;
-  width: 92px;
-  height: 92px;
-  display: grid;
-  place-items: center;
-  transform: translate(-50%, -50%);
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  background: rgb(10 15 24 / 72%);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: .16em;
-  box-shadow:
-    0 0 0 18px rgb(141 247 192 / 3%),
-    0 0 64px var(--accent-glow);
-  backdrop-filter: blur(16px);
-}
-
-body[data-theme="light"] .orbit-core {
-  background: rgb(255 255 255 / 78%);
+  width: 62%;
+  height: 62%;
+  object-fit: contain;
+  transform: translate(-50%, -50%) translateZ(34px);
+  filter:
+    drop-shadow(0 0 24px rgb(41 193 255 / 28%))
+    drop-shadow(0 0 48px rgb(92 72 255 / 18%));
 }
 
 .orbit-node {
@@ -817,39 +766,35 @@ body[data-theme="light"] .topbar {
 .scene-core {
   position: absolute;
   inset: 50%;
-  width: 128px;
-  height: 128px;
+  width: 164px;
+  height: 164px;
   display: grid;
   place-items: center;
-  align-content: center;
-  gap: 2px;
   transform: translate(-50%, -50%) translateZ(42px);
   border: 1px solid var(--border-strong);
   border-radius: 50%;
   background:
-    radial-gradient(circle at 35% 30%, rgb(255 255 255 / 13%), transparent 38%),
-    rgb(10 15 24 / 72%);
+    radial-gradient(circle at 50% 50%, rgb(31 156 255 / 12%), transparent 66%),
+    rgb(10 15 24 / 38%);
   box-shadow:
-    inset 0 0 44px rgb(141 247 192 / 7%),
-    0 0 74px var(--accent-glow);
-  backdrop-filter: blur(18px);
+    inset 0 0 44px rgb(56 183 255 / 7%),
+    0 0 74px rgb(55 131 255 / 16%);
+  backdrop-filter: blur(14px);
 }
 
 body[data-theme="light"] .scene-core {
-  background: rgb(255 255 255 / 80%);
+  background:
+    radial-gradient(circle at 50% 50%, rgb(31 156 255 / 10%), transparent 66%),
+    rgb(255 255 255 / 58%);
 }
 
-.scene-core span {
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: .16em;
-}
-
-.scene-core small {
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .2em;
+.scene-brand-image {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+  filter:
+    drop-shadow(0 0 20px rgb(38 190 255 / 26%))
+    drop-shadow(0 0 34px rgb(92 72 255 / 14%));
 }
 
 .scene-label {

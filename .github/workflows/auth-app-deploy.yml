@@ -11,6 +11,7 @@ on:
       - ".github/scripts/timeweb_auth_postgres.py"
       - "src/omnicio/**"
       - "web/**"
+      - "assets/brand/**"
       - "pyproject.toml"
   push:
     branches:
@@ -22,6 +23,7 @@ on:
       - ".github/scripts/timeweb_auth_postgres.py"
       - "src/omnicio/**"
       - "web/**"
+      - "assets/brand/**"
       - "pyproject.toml"
   workflow_run:
     workflows:

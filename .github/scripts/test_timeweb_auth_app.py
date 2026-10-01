@@ -65,6 +65,10 @@ class AuthAppDeployTests(unittest.TestCase):
             (root / "src" / "omnicio" / "__init__.py").write_text("")
             (root / "web" / "index.html").write_text("<html></html>")
             (root / "tests" / "secret-test.txt").write_text("not shipped")
+            for relative in MODULE.BRAND_RUNTIME_FILES:
+                brand_file = root / relative
+                brand_file.parent.mkdir(parents=True, exist_ok=True)
+                brand_file.write_bytes(b"brand")
 
             encoded = MODULE.build_release_archive(root)
             raw = base64.b64decode(encoded)
@@ -74,6 +78,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("pyproject.toml", names)
         self.assertIn("src/omnicio/__init__.py", names)
         self.assertIn("web/index.html", names)
+        for relative in MODULE.BRAND_RUNTIME_FILES:
+            self.assertIn(relative, names)
         self.assertNotIn("tests/secret-test.txt", names)
 
     def test_product_environment_requires_legal_versions(self) -> None:
@@ -226,6 +232,34 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Торговые действия выключены", page)
         self.assertNotIn("₽ 1 000 000", page)
         self.assertNotIn("+12.4%", page)
+
+    def test_personal_dashboard_uses_approved_brand_assets(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        stylesheet = (root / "web" / "app.css").read_text()
+        manifest = (root / "web" / "manifest.webmanifest").read_text()
+        deploy_script = MODULE.REMOTE_DEPLOY_SCRIPT
+
+        self.assertIn(
+            "/assets/brand/omni-sentinel-core-color-1024.png",
+            page,
+        )
+        self.assertIn("/assets/brand/favicon.ico", page)
+        self.assertIn("/manifest.webmanifest", page)
+        self.assertNotIn('class="brand-mark"', page)
+        self.assertNotIn(".brand-mark {", stylesheet)
+
+        for filename in (
+            "omni-sentinel-core-color-1024.png",
+            "apple-touch-icon-180.png",
+            "favicon.ico",
+            "pwa-icon-192.png",
+            "pwa-icon-512.png",
+            "pwa-maskable-512.png",
+        ):
+            self.assertIn(filename, deploy_script)
+
+        self.assertIn('"purpose": "maskable"', manifest)
 
     def test_personal_dashboard_motion_can_be_disabled(self) -> None:
         root = SCRIPT_DIR.parent.parent
