@@ -52,6 +52,22 @@ def test_cbr_client_reads_daily_usd_rate_and_caches_it() -> None:
     urlopen.assert_called_once()
 
 
+def test_cbr_client_backs_off_after_initial_provider_failure() -> None:
+    client = CBRClient(failure_retry_seconds=300)
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=TimeoutError("timeout"),
+    ) as urlopen:
+        for _ in range(2):
+            try:
+                client.usd_rub_rate()
+            except Exception as exc:
+                assert exc.__class__.__name__ == "CBRUnavailable"
+
+    urlopen.assert_called_once()
+
+
 class FakeBroker:
     def __init__(self, quote_time: str) -> None:
         self.quote_time = quote_time
