@@ -13,7 +13,7 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, st
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .cbr import CBRClient, CBRUnavailable
+from .cbr import CBRClient
 from .broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
@@ -22,6 +22,7 @@ from .broker import (
 )
 from .config import Settings, load_settings
 from .db import Database, UserRecord
+from .market import MarketService
 from .security import (
     SecurityValueError,
     format_public_id,
@@ -86,8 +87,8 @@ def broker_service(request: Request) -> BrokerService:
     return cast(BrokerService, request.app.state.broker_service)
 
 
-def cbr_client(request: Request) -> CBRClient:
-    return cast(CBRClient, request.app.state.cbr_client)
+def market_service(request: Request) -> MarketService:
+    return cast(MarketService, request.app.state.market_service)
 
 
 def vkid_client(request: Request) -> VKIDClient:
@@ -173,12 +174,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app_id=cfg.vkid_app_id,
         redirect_uri=VKID_CALLBACK,
     )
-    app.state.broker_service = BrokerService(
+    broker = BrokerService(
         database,
         credential_key=cfg.broker_token_crypto_key,
         tbank=TBankInvestClient(),
     )
-    app.state.cbr_client = CBRClient()
+    app.state.broker_service = broker
+    app.state.market_service = MarketService(
+        broker=broker,
+        cbr=CBRClient(),
+    )
     try:
         yield
     finally:
@@ -338,58 +343,27 @@ def me(
     }
 
 
-def usd_rub_snapshot(
-    broker: BrokerService,
-    bank_of_russia: CBRClient,
-    user: UserRecord,
-) -> dict[str, object]:
-    market_state = "live"
-    market: dict[str, object] | None = None
-    try:
-        quote = broker.usd_rub_quote(user.id)
-        market = asdict(quote)
-    except BrokerNotConnected:
-        market_state = "not_connected"
-    except TBankTokenRejected:
-        market_state = "reconnect_required"
-    except (TBankUnavailable, BrokerConnectionError, SecurityValueError):
-        market_state = "unavailable"
-
-    official_state = "available"
-    official: dict[str, object] | None = None
-    try:
-        rate = bank_of_russia.usd_rub_rate()
-        official = {
-            "currency": rate.currency,
-            "value": rate.value,
-            "nominal": rate.nominal,
-            "effective_date": rate.effective_date.isoformat(),
-            "fetched_at": rate.fetched_at.isoformat(),
-        }
-    except CBRUnavailable:
-        official_state = "unavailable"
-
-    return {
-        "pair": "USD/RUB",
-        "market_state": market_state,
-        "market": market,
-        "official_state": official_state,
-        "official": official,
-        "poll_interval_seconds": 5,
-    }
-
-
 @app.get("/api/market/usd-rub")
 def usd_rub_market_snapshot(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
-    return usd_rub_snapshot(
-        broker_service(request),
-        cbr_client(request),
-        user,
-    )
+    try:
+        snapshot = market_service(request).usd_rub(user.id)
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="USD/RUB market quote unavailable",
+        ) from exc
+    return asdict(snapshot)
 
 
 @app.get("/api/market/usd-rub/stream")
@@ -398,36 +372,40 @@ async def usd_rub_market_stream(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
     user = authenticated_user(request, session_token)
-    broker = broker_service(request)
-    bank_of_russia = cbr_client(request)
+    market = market_service(request)
 
     async def events() -> AsyncIterator[str]:
-        retry_delay = 1
+        retry_delay = 5
+        yield "retry: 5000\n\n"
         while True:
             if await request.is_disconnected():
                 break
 
-            payload = await asyncio.to_thread(
-                usd_rub_snapshot,
-                broker,
-                bank_of_russia,
-                user,
-            )
-            yield (
-                "event: quote\n"
-                f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
-            )
-
-            market_state = str(payload["market_state"])
-            if market_state == "unavailable":
+            try:
+                snapshot = await asyncio.to_thread(market.usd_rub, user.id)
+            except BrokerNotConnected:
+                payload = {"state": "disconnected"}
+                event = "status"
+                delay = 15
+                retry_delay = 5
+            except TBankTokenRejected:
+                payload = {"state": "reconnect"}
+                event = "status"
+                delay = 30
+                retry_delay = 5
+            except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError):
+                payload = {"state": "unavailable"}
+                event = "status"
                 delay = retry_delay
                 retry_delay = min(retry_delay * 2, 30)
-            elif market_state == "not_connected":
-                delay = 15
-                retry_delay = 1
             else:
+                payload = asdict(snapshot)
+                event = "quote"
                 delay = 5
-                retry_delay = 1
+                retry_delay = 5
+
+            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            yield f"event: {event}\ndata: {data}\n\n"
             await asyncio.sleep(delay)
 
     return StreamingResponse(
