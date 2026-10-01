@@ -6,22 +6,20 @@ on:
       - main
     paths:
       - ".github/workflows/sonar-diagnostics.yml"
-      - ".github/scripts/timeweb_domain_tls.py"
 
 permissions:
-  contents: read
-  security-events: read
+  checks: read
 
 jobs:
   inspect:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - name: Query GitHub code-scanning alerts
+      - name: Read existing Sonar check annotations
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -29,39 +27,44 @@ jobs:
           import os
           import urllib.request
 
-          repo = os.environ["GH_REPO"]
-          token = os.environ["GH_TOKEN"]
-          request = urllib.request.Request(
-              f"https://api.github.com/repos/{repo}/code-scanning/alerts?state=open&per_page=100",
-              headers={
-                  "Accept": "application/vnd.github+json",
-                  "Authorization": f"Bearer {token}",
-                  "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "omni-cio-security-diagnostics/1.0",
-              },
-          )
-          with urllib.request.urlopen(request, timeout=20) as response:
-              alerts = json.loads(response.read().decode("utf-8"))
+          root = "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "omnicio-check-annotations/1.0",
+          }
 
-          safe = []
-          for alert in alerts:
-              instance = alert.get("most_recent_instance") or {}
-              tool = alert.get("tool") or {}
-              rule = alert.get("rule") or {}
-              safe.append({
-                  "number": alert.get("number"),
-                  "state": alert.get("state"),
-                  "dismissed_reason": alert.get("dismissed_reason"),
-                  "rule_id": rule.get("id"),
-                  "rule_severity": rule.get("severity"),
-                  "rule_security_severity_level": rule.get("security_severity_level"),
-                  "rule_description": rule.get("description"),
-                  "tool": tool.get("name"),
-                  "ref": instance.get("ref"),
-                  "analysis_key": instance.get("analysis_key"),
-                  "category": instance.get("category"),
-                  "location": instance.get("location"),
-                  "classifications": instance.get("classifications"),
-              })
-          print(json.dumps(safe, indent=2, sort_keys=True))
+          def read(path):
+              request = urllib.request.Request(root + path, headers=headers)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.load(response)
+
+          targets = (
+              ("portfolio-pr-658", 110522172817, "5cc166c8d74755957f9e1e1b4e4a14d91e950001"),
+              ("main", 110471295666, "eac2ebfcf64fa494b59b772fda9490b2c4e1823e"),
+          )
+          for label, check_id, expected_sha in targets:
+              check = read(f"/check-runs/{check_id}")
+              if check["head_sha"] != expected_sha or check["name"] != "SonarCloud Code Analysis":
+                  raise RuntimeError("Unexpected check identity")
+              expected = check["output"]["annotations_count"]
+              if not 0 <= expected <= 1000:
+                  raise RuntimeError("Annotation count exceeds diagnostic bound")
+              annotations = []
+              for page in range(1, 11):
+                  batch = read(f"/check-runs/{check_id}/annotations?per_page=100&page={page}")
+                  annotations.extend({
+                      key: item.get(key)
+                      for key in ("path", "start_line", "end_line", "annotation_level", "title", "message")
+                  } for item in batch)
+                  if len(batch) < 100:
+                      break
+              if len(annotations) != expected:
+                  raise RuntimeError("Incomplete annotation response")
+              print(json.dumps({
+                  "target": label, "head_sha": expected_sha,
+                  "check_id": check_id, "count": len(annotations),
+                  "annotations": annotations,
+              }, ensure_ascii=True, sort_keys=True))
           PY
