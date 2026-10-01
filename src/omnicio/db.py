@@ -31,6 +31,17 @@ class UserRecord:
     status: str
 
 
+@dataclass(frozen=True, slots=True)
+class TBankConnectionRecord:
+    user_id: UUID
+    environment: str
+    account_id: str
+    account_name: str
+    encrypted_credential: bytes
+    verified_at: datetime
+    updated_at: datetime
+
+
 class Database:
     """Thin persistence adapter for authentication state."""
 
