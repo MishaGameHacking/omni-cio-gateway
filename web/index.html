@@ -29,15 +29,15 @@
 
         <label class="check">
           <input id="accept-privacy" type="checkbox">
-          <span>Я ознакомился с <a href="/legal/privacy.html" target="_blank" rel="noopener">Политикой обработки персональных данных</a></span>
+          <span>Я ознакомился с <a href="/legal/privacy.html" target="_blank" rel="noopener">Уведомлением о конфиденциальности и обработке данных</a></span>
         </label>
         <label class="check">
           <input id="accept-pd" type="checkbox">
-          <span>Я отдельно даю <a href="/legal/consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных</a></span>
+          <span>Я отдельно подтверждаю <a href="/legal/consent.html" target="_blank" rel="noopener">согласие на обработку данных для входа</a></span>
         </label>
         <label class="check">
           <input id="accept-terms" type="checkbox">
-          <span>Я принимаю <a href="/legal/terms.html" target="_blank" rel="noopener">Пользовательское соглашение</a></span>
+          <span>Я принимаю <a href="/legal/terms.html" target="_blank" rel="noopener">Правила личного использования OmniCIO Personal</a></span>
         </label>
         <label class="check">
           <input id="confirm-age-18" type="checkbox">
@@ -125,6 +125,14 @@
             его можно заменить на full-access токен, ограниченный конкретным счётом.
             Transfer-access для OmniCIO не требуется.
           </p>
+          <label class="check broker-ack">
+            <input id="tbank-terms-ack" type="checkbox" required>
+            <span>
+              Я понимаю, что токен будет передан T-Invest API для проверки прав,
+              а после подключения сохранён на сервере в зашифрованном виде.
+              Я ознакомился с <a href="/legal/terms.html" target="_blank" rel="noopener">правилами и рисками</a>.
+            </span>
+          </label>
           <button type="submit" id="tbank-check">Проверить токен</button>
         </form>
 
