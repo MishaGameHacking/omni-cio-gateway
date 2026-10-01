@@ -95,6 +95,28 @@ def _environment_value(value: str) -> str:
     return f'"{escaped}"'
 
 
+def validate_product_environment() -> None:
+    required_names = (
+        "SMS_PROVIDER_LOGIN",
+        "SMS_PROVIDER_TOKEN",
+        "SMS_SENDER",
+        "SMS_TEST_NUMBER",
+        "LEGAL_OPERATOR_NAME",
+        "LEGAL_OPERATOR_ADDRESS",
+        "LEGAL_PRIVACY_CONTACT",
+    )
+    missing = [
+        name
+        for name in required_names
+        if not os.environ.get(name, "").strip()
+    ]
+    if missing:
+        raise InfraError(
+            "Required auth product configuration is missing: "
+            + ", ".join(missing)
+        )
+
+
 def build_product_environment() -> str:
     sms_login = os.environ.get("SMS_PROVIDER_LOGIN", "").strip()
     sms_token = os.environ.get("SMS_PROVIDER_TOKEN", "").strip()
@@ -461,6 +483,7 @@ def reconcile(
         raise InfraError("Release SHA must be a full lowercase 40-character SHA")
 
     add_summary("## OmniCIO auth application deploy")
+    validate_product_environment()
     if verify_smsaero_test_api(repository_root):
         add_summary("- SMS Aero test API accepted the request; no SMS was sent.")
     server_summary = find_managed_server(
