@@ -11,8 +11,8 @@
 <body>
   <main class="shell">
     <section class="card" id="auth-card" aria-labelledby="auth-title">
-      <h1 id="auth-title">Вход в OmniCIO</h1>
-      <p class="muted">Используйте российский мобильный номер в формате +79XXXXXXXXX.</p>
+      <h1 id="auth-title">Личный вход OmniCIO</h1>
+      <p class="muted">Закрытый аккаунт владельца. Доступ разрешён только для настроенного номера.</p>
 
       <form id="phone-form" novalidate>
         <label for="phone">Номер телефона</label>
@@ -66,14 +66,76 @@
       <p id="auth-message" role="status" aria-live="polite"></p>
     </section>
 
-    <aside class="profile hidden" id="profile-panel" aria-label="Профиль">
-      <div class="profile-title">Профиль</div>
+    <section class="profile hidden" id="profile-panel" aria-label="Личный аккаунт">
+      <header class="profile-header">
+        <div>
+          <div class="profile-title">OmniCIO Personal</div>
+          <div class="muted">Личный аккаунт владельца</div>
+        </div>
+        <button id="logout" class="secondary compact" type="button">Выйти</button>
+      </header>
+
       <div class="profile-id">
         <span class="muted">ID профиля</span>
         <strong id="profile-id">000000000</strong>
       </div>
-      <button id="logout" class="secondary" type="button">Выйти</button>
-    </aside>
+
+      <section class="broker-card" aria-labelledby="tbank-title">
+        <h2 id="tbank-title">Т-Банк Инвестиции</h2>
+        <p class="muted">
+          API-токен проверяется через T-Invest API и сохраняется на сервере только
+          в зашифрованном виде. После сохранения токен больше не отображается.
+        </p>
+
+        <div id="tbank-connected" class="hidden">
+          <div class="connection-row">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div>
+              <strong>Подключено</strong>
+              <div id="tbank-account-label" class="muted"></div>
+            </div>
+          </div>
+          <button id="tbank-disconnect" class="secondary" type="button">
+            Отключить T-Invest
+          </button>
+        </div>
+
+        <form id="tbank-form" novalidate>
+          <label for="tbank-environment">Контур</label>
+          <select id="tbank-environment" name="environment">
+            <option value="prod" selected>Биржа — реальный счёт</option>
+            <option value="sandbox">Песочница — тестовый контур</option>
+          </select>
+
+          <label for="tbank-token">API-токен T-Invest</label>
+          <input
+            id="tbank-token"
+            name="token"
+            type="password"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="Вставьте токен"
+            minlength="20"
+            maxlength="4096"
+            required
+          >
+          <p class="field-hint">
+            Для реальной торговли используйте full-access токен, ограниченный
+            конкретным брокерским счётом. Transfer-access здесь не требуется.
+          </p>
+          <button type="submit" id="tbank-check">Проверить токен</button>
+        </form>
+
+        <form id="tbank-account-form" class="hidden" novalidate>
+          <label for="tbank-account">Доступный брокерский счёт</label>
+          <select id="tbank-account" name="account" required></select>
+          <button type="submit" id="tbank-connect">Подключить выбранный счёт</button>
+        </form>
+
+        <p id="tbank-message" role="status" aria-live="polite"></p>
+      </section>
+    </section>
   </main>
 
   <script src="/assets/app.js" defer></script>
