@@ -169,18 +169,6 @@
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
 
-    operationsLoadMore.addEventListener("click", () => {
-    void loadMoreOperations();
-  });
-
-  portfolioRefresh.addEventListener("click", () => {
-    void loadPortfolioData({force: true});
-  });
-
-  portfolioRetry.addEventListener("click", () => {
-    void loadPortfolioData({force: true});
-  });
-
   desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
       item.classList.toggle("is-active", active);
@@ -771,6 +759,18 @@
     installStatus.textContent = "Открыто в браузере";
     installButton.classList.add("hidden");
   };
+
+  operationsLoadMore.addEventListener("click", () => {
+    void loadMoreOperations();
+  });
+
+  portfolioRefresh.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
+
+  portfolioRetry.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
 
   desktopNavItems.forEach((item) => {
     item.addEventListener("click", () => setView(item.dataset.view));
