@@ -52,6 +52,7 @@ BRAND_RUNTIME_FILES = (
 )
 BRAND_PUBLIC_MARK = "/assets/brand/omni-sentinel-core-color-1024.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
+VERSION_PUBLIC_PATH = "/version.js"
 
 
 def add_summary(line: str) -> None:
@@ -299,6 +300,27 @@ install -m 0644 "$RELEASE/web/legal/privacy.html" "$WEB_RELEASE/legal/privacy.ht
 install -m 0644 "$RELEASE/web/legal/consent.html" "$WEB_RELEASE/legal/consent.html"
 install -m 0644 "$RELEASE/web/legal/terms.html" "$WEB_RELEASE/legal/terms.html"
 
+python3 - "$RELEASE/pyproject.toml" "$SHA" "$WEB_RELEASE/version.js" <<'PY'
+import json
+import pathlib
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    version = str(tomllib.load(handle)["project"]["version"])
+payload = {
+    "version": version,
+    "build": sys.argv[2][:12],
+}
+pathlib.Path(sys.argv[3]).write_text(
+    "window.OMNICIO_RELEASE = "
+    + json.dumps(payload, separators=(",", ":"))
+    + ";\n",
+    encoding="utf-8",
+)
+PY
+chmod 0644 "$WEB_RELEASE/version.js"
+
 cat > "$SERVICE.new" <<'EOF'
 [Unit]
 Description=OmniCIO authentication API
@@ -503,7 +525,7 @@ def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
         pass
 
 
-def verify_public() -> None:
+def verify_public(release_sha: str) -> None:
     context = ssl.create_default_context()
     root_request = urllib.request.Request(
         f"https://{DOMAIN}/",
@@ -554,6 +576,23 @@ def verify_public() -> None:
             manifest = json.loads(response.read().decode())
             if response.status != 200 or not isinstance(manifest.get("icons"), list):
                 raise InfraError("Public web manifest verification failed")
+
+        version_request = urllib.request.Request(
+            f"https://{DOMAIN}{VERSION_PUBLIC_PATH}",
+            headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+        )
+        with urllib.request.urlopen(
+            version_request,
+            timeout=15,
+            context=context,
+        ) as response:
+            version_body = response.read().decode()
+            if response.status != 200:
+                raise InfraError("Public application version verification failed")
+            if "window.OMNICIO_RELEASE" not in version_body:
+                raise InfraError("Public application version marker is missing")
+            if release_sha[:12] not in version_body:
+                raise InfraError("Public application build does not match release")
 
         with urllib.request.urlopen(
             config_request,
@@ -672,7 +711,7 @@ def reconcile(
         try:
             for _ in range(6):
                 try:
-                    verify_public()
+                    verify_public(release_sha)
                     break
                 except InfraError:
                     time.sleep(5)
