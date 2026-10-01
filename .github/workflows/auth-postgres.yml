@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - ".github/workflows/auth-postgres.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
@@ -14,6 +16,8 @@ on:
       - main
     paths:
       - ".github/workflows/auth-postgres.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
@@ -45,11 +49,15 @@ jobs:
         run: python3 .github/scripts/test_timeweb_auth_postgres.py
 
   reconcile:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
     name: Reconcile private PostgreSQL
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       SERVER_NAME: omni-cio-white-site
@@ -70,7 +78,13 @@ jobs:
       - name: Checkout accepted main state
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           persist-credentials: false
+
+      - name: Verify current main release checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/verify_main_release.py
 
       - name: Validate Timeweb secret
         run: |
