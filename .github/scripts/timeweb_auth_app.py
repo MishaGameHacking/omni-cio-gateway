@@ -42,6 +42,14 @@ LEGAL_PAGES = {
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
+BRAND_RUNTIME_FILES = (
+    "assets/brand/transparent/omni-sentinel-core-color-1024.png",
+    "assets/brand/web/apple-touch-icon-180.png",
+    "assets/brand/web/favicon.ico",
+    "assets/brand/web/pwa-icon-192.png",
+    "assets/brand/web/pwa-icon-512.png",
+    "assets/brand/web/pwa-maskable-512.png",
+)
 
 
 def add_summary(line: str) -> None:
@@ -56,10 +64,12 @@ def set_output(name: str, value: str) -> None:
 
 
 def iter_release_files(root: pathlib.Path) -> Iterable[pathlib.Path]:
-    for relative in ("pyproject.toml", "src", "web"):
+    for relative in ("pyproject.toml", "src", "web", *BRAND_RUNTIME_FILES):
         path = root / relative
         if path.is_file():
             yield path
+            continue
+        if not path.is_dir():
             continue
         for item in sorted(path.rglob("*")):
             if item.is_file() and "__pycache__" not in item.parts:
@@ -272,10 +282,17 @@ python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q --upgrade pip
 "$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q "$RELEASE"
 
-install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/legal"
+install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/index.html" "$WEB_RELEASE/index.html"
+install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
+install -m 0644 "$RELEASE/assets/brand/transparent/omni-sentinel-core-color-1024.png" "$WEB_RELEASE/assets/brand/omni-sentinel-core-color-1024.png"
+install -m 0644 "$RELEASE/assets/brand/web/apple-touch-icon-180.png" "$WEB_RELEASE/assets/brand/apple-touch-icon-180.png"
+install -m 0644 "$RELEASE/assets/brand/web/favicon.ico" "$WEB_RELEASE/assets/brand/favicon.ico"
+install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-192.png" "$WEB_RELEASE/assets/brand/pwa-icon-192.png"
+install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-512.png" "$WEB_RELEASE/assets/brand/pwa-icon-512.png"
+install -m 0644 "$RELEASE/assets/brand/web/pwa-maskable-512.png" "$WEB_RELEASE/assets/brand/pwa-maskable-512.png"
 install -m 0644 "$RELEASE/web/legal/privacy.html" "$WEB_RELEASE/legal/privacy.html"
 install -m 0644 "$RELEASE/web/legal/consent.html" "$WEB_RELEASE/legal/consent.html"
 install -m 0644 "$RELEASE/web/legal/terms.html" "$WEB_RELEASE/legal/terms.html"
