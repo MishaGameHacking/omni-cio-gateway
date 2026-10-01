@@ -416,6 +416,7 @@ class Database:
         account_id: str,
         account_name: str,
         encrypted_credential: bytes,
+        terms_version: str,
     ) -> TBankConnectionRecord:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(
@@ -461,7 +462,15 @@ class Database:
                 INSERT INTO audit_events (user_id, event_type, metadata)
                 VALUES (%s, 'tbank_connected', %s::jsonb)
                 """,
-                (user_id, json.dumps({"environment": environment})),
+                (
+                    user_id,
+                    json.dumps(
+                        {
+                            "environment": environment,
+                            "terms_version": terms_version,
+                        }
+                    ),
+                ),
             )
             return record
 
