@@ -12,6 +12,7 @@ from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     TBankAccount,
     TBankEnvironment,
+    TBankInstrument,
     TBankInvestClient,
     TBankOperationsPage,
     TBankPortfolio,
@@ -154,6 +155,22 @@ class BrokerService:
             operations=operations,
             refreshed_at=datetime.now(UTC),
         )
+
+    def search_instruments(
+        self,
+        user_id: UUID,
+        *,
+        query: str,
+        limit: int = 20,
+    ) -> tuple[TBankInstrument, ...]:
+        record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.find_instruments(
+            credential,
+            environment,
+            query,
+            limit=limit,
+        )
+
 
     def disconnect(self, user_id: UUID) -> bool:
         return self.database.delete_tbank_connection(user_id)
