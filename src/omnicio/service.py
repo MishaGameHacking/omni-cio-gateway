@@ -33,7 +33,7 @@ class RegistrationClosed(AuthError):
 
 class OwnerAccessDenied(AuthError):
     """The submitted phone is not the configured private owner."""
-    
+
 
 class RateLimited(AuthError):
     """OTP send rate limit was exceeded."""
