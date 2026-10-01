@@ -1479,3 +1479,382 @@ select:hover {
 .legal-page ul {
   padding-left: 22px;
 }
+
+
+/* Read-only T-Invest portfolio */
+
+.portfolio-heading .button {
+  margin-top: 18px;
+}
+
+.portfolio-content {
+  display: grid;
+  gap: 16px;
+}
+
+.portfolio-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.portfolio-metric,
+.portfolio-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(22 35 58 / 4%);
+}
+
+.portfolio-metric {
+  min-height: 132px;
+  padding: 18px;
+  display: grid;
+  align-content: space-between;
+  border-radius: var(--radius-md);
+}
+
+.portfolio-metric > span,
+.portfolio-metric > small {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.portfolio-metric > strong {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(20px, 2.3vw, 28px);
+  line-height: 1.1;
+  letter-spacing: -.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+.value-positive {
+  color: var(--success) !important;
+}
+
+.value-negative {
+  color: var(--danger) !important;
+}
+
+.portfolio-two-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);
+  gap: 16px;
+}
+
+.portfolio-card {
+  padding: 22px;
+  border-radius: var(--radius-lg);
+}
+
+.portfolio-card-header {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.portfolio-card-header h3 {
+  margin: 3px 0 0;
+  font-size: 20px;
+  letter-spacing: -.02em;
+}
+
+.allocation-list,
+.cash-list,
+.positions-list,
+.operations-list {
+  display: grid;
+  gap: 10px;
+}
+
+.allocation-row {
+  display: grid;
+  grid-template-columns: minmax(110px, .9fr) minmax(140px, 2fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.allocation-label {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.allocation-label strong,
+.cash-row strong {
+  font-size: 14px;
+}
+
+.allocation-label span,
+.cash-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.allocation-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.allocation-fill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.allocation-value {
+  min-width: 84px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-row {
+  min-height: 54px;
+  padding: 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.cash-row:first-child {
+  border-top: 0;
+}
+
+.cash-row > div {
+  display: grid;
+  gap: 2px;
+}
+
+.cash-value {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.position-row {
+  min-height: 76px;
+  padding: 14px 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 1.1fr) minmax(90px, .8fr) minmax(120px, 1fr) minmax(110px, .9fr);
+  align-items: center;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.position-row:first-child {
+  border-top: 0;
+}
+
+.position-name {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.position-name strong {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position-name span,
+.position-cell span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.position-cell {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.position-cell strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.position-blocked {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.operation-row {
+  min-height: 68px;
+  padding: 12px 0;
+  display: grid;
+  grid-template-columns: minmax(160px, 1.35fr) minmax(100px, .75fr) minmax(100px, .75fr);
+  align-items: center;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.operation-row:first-child {
+  border-top: 0;
+}
+
+.operation-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.operation-main strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-main span,
+.operation-meta span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.operation-meta {
+  display: grid;
+  gap: 3px;
+}
+
+.operation-meta strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.portfolio-empty-inline {
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: portfolio-spin 900ms linear infinite;
+}
+
+@keyframes portfolio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 980px) {
+  .portfolio-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio-two-column {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .portfolio-heading .button {
+    width: 100%;
+  }
+
+  .portfolio-metrics {
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+  }
+
+  .portfolio-metric {
+    min-height: 118px;
+    padding: 14px;
+  }
+
+  .portfolio-metric > strong {
+    font-size: 19px;
+  }
+
+  .portfolio-card {
+    padding: 18px;
+  }
+
+  .allocation-row {
+    grid-template-columns: minmax(90px, 1fr) minmax(90px, 1.2fr);
+    gap: 8px 10px;
+  }
+
+  .allocation-value {
+    grid-column: 1 / -1;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .position-row,
+  .operation-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 11px;
+  }
+
+  .position-name,
+  .operation-main {
+    grid-column: 1 / -1;
+  }
+
+  .operation-main strong {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
+    border-top-color: var(--border);
+  }
+}
+
+
+.operations-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.operations-footer span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 620px) {
+  .operations-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .operations-footer .button {
+    width: 100%;
+  }
+}

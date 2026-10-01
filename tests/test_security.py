@@ -9,6 +9,7 @@ from cryptography.fernet import Fernet
 from omnicio.security import (
     SecurityValueError,
     client_ip_digest,
+    decrypt_secret,
     encrypt_secret,
     format_public_id,
     generate_oauth_state,
@@ -46,6 +47,17 @@ def test_secret_encryption_does_not_store_plaintext() -> None:
 
     assert encrypted != plaintext.encode()
     assert plaintext.encode() not in encrypted
+
+
+def test_secret_encryption_round_trip() -> None:
+    key = Fernet.generate_key().decode("ascii")
+    plaintext = "t.example-owner-credential"
+    encrypted = encrypt_secret(plaintext, key)
+
+    assert decrypt_secret(encrypted, key) == plaintext
+
+    with pytest.raises(SecurityValueError):
+        decrypt_secret(encrypted, Fernet.generate_key().decode("ascii"))
 
 
 def test_pkce_challenge_is_stable_and_urlsafe() -> None:

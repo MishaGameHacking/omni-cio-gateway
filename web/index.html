@@ -244,46 +244,50 @@
                     <strong>Данные портфеля</strong>
                     <span>Стоимость, позиции, доходность и история</span>
                   </div>
-                  <span class="state-badge state-next">Следующий этап</span>
+                  <span class="state-badge" id="home-portfolio-state">Загружаем</span>
                 </div>
               </div>
             </section>
 
             <details class="roadmap">
-              <summary>Что появится дальше</summary>
+              <summary>Следующий отдельный этап</summary>
               <div class="roadmap-content">
                 <div>
-                  <strong>Портфель</strong>
-                  <span>Реальные позиции и деньги из read-only T-Invest API.</span>
-                </div>
-                <div>
-                  <strong>Аналитика</strong>
-                  <span>Графики, структура активов и понятные объяснения изменений.</span>
-                </div>
-                <div>
                   <strong>Системные модули</strong>
-                  <span>Сова, Охотник и Страж будут подключаться только после отдельных проверок.</span>
+                  <span>
+                    Сова, Охотник и Страж получат отдельные правила данных, риска и тесты.
+                    Они не будут имитировать работу до появления проверенной логики.
+                  </span>
                 </div>
               </div>
             </details>
           </section>
 
           <section class="view-panel hidden" data-view-panel="portfolio">
-            <div class="page-heading">
+            <div class="page-heading portfolio-heading">
               <div class="heading-with-state">
                 <div>
                   <p class="section-label">Портфель</p>
-                  <h2>Реальные данные счёта</h2>
+                  <h2>Состояние брокерского счёта</h2>
                 </div>
-                <span class="state-badge state-next">В разработке</span>
+                <span class="state-badge" id="portfolio-state-badge">Загружаем</span>
               </div>
               <p>
-                Этот раздел уже подготовлен как отдельное место для портфеля,
-                но OmniCIO пока не запрашивает позиции и стоимость счёта.
+                Данные читаются напрямую из T-Invest через сохранённый read-only токен.
+                OmniCIO не выставляет заявки и не совершает сделки.
               </p>
+              <button id="portfolio-refresh" class="button button-secondary" type="button">
+                Обновить данные
+              </button>
             </div>
 
-            <article class="empty-card">
+            <article class="empty-card" id="portfolio-loading">
+              <div class="loading-spinner" aria-hidden="true"></div>
+              <h3>Получаем данные T-Invest</h3>
+              <p>Загружаем стоимость портфеля, позиции, деньги и последние операции.</p>
+            </article>
+
+            <article class="empty-card hidden" id="portfolio-disconnected">
               <img
                 class="empty-logo"
                 src="/assets/brand/omni-sentinel-core-color-1024.png"
@@ -293,33 +297,97 @@
                 aria-hidden="true"
                 decoding="async"
               >
-              <h3>Здесь не будет вымышленных цифр.</h3>
-              <p>
-                Как только подключим методы чтения T-Invest, здесь появятся
-                стоимость портфеля, деньги, позиции, P&amp;L и история операций.
-              </p>
+              <h3>T-Invest не подключён</h3>
+              <p>Сначала подключите брокерский счёт, затем здесь появятся реальные данные.</p>
               <button class="button button-secondary" type="button" data-go-view="connections">
-                Проверить подключение T-Invest
+                Открыть подключения
               </button>
             </article>
 
-            <section class="future-grid" aria-label="План раздела портфеля">
-              <article>
-                <span>01</span>
-                <strong>Стоимость</strong>
-                <p>Общая оценка портфеля и свободные деньги.</p>
+            <article class="empty-card hidden" id="portfolio-error">
+              <h3>Не удалось получить портфель</h3>
+              <p id="portfolio-error-text">Попробуйте обновить данные позже.</p>
+              <button class="button button-secondary" type="button" data-portfolio-retry>
+                Повторить
+              </button>
+            </article>
+
+            <div class="portfolio-content hidden" id="portfolio-content">
+              <section class="portfolio-metrics" aria-label="Основные показатели портфеля">
+                <article class="portfolio-metric">
+                  <span>Стоимость портфеля</span>
+                  <strong id="portfolio-total">—</strong>
+                  <small id="portfolio-refreshed">—</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Общая доходность</span>
+                  <strong id="portfolio-yield">—</strong>
+                  <small>По данным T-Invest</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Сегодня</span>
+                  <strong id="portfolio-daily">—</strong>
+                  <small id="portfolio-daily-relative">—</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Позиций</span>
+                  <strong id="portfolio-position-count">—</strong>
+                  <small>В текущем портфеле</small>
+                </article>
+              </section>
+
+              <section class="portfolio-two-column">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Аналитика</p>
+                      <h3>Структура активов</h3>
+                    </div>
+                  </header>
+                  <div class="allocation-list" id="asset-allocation"></div>
+                </article>
+
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Деньги</p>
+                      <h3>Денежные остатки</h3>
+                    </div>
+                  </header>
+                  <div class="cash-list" id="cash-list"></div>
+                  <p class="field-hint hidden" id="cash-loading-note">
+                    T-Invest ещё обновляет лимиты по счёту.
+                  </p>
+                </article>
+              </section>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Позиции</p>
+                    <h3>Активы в портфеле</h3>
+                  </div>
+                </header>
+                <div class="positions-list" id="positions-list"></div>
               </article>
-              <article>
-                <span>02</span>
-                <strong>Позиции</strong>
-                <p>Активы, количество, цена и результат по позиции.</p>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">История</p>
+                    <h3>Последние исполненные операции</h3>
+                  </div>
+                  <span class="section-note">до 30</span>
+                </header>
+                <div class="operations-list" id="operations-list"></div>
+                <div class="operations-footer hidden" id="operations-more-note">
+                  <button id="operations-load-more" class="button button-secondary" type="button">
+                    Показать ещё
+                  </button>
+                  <span>Загрузим следующую страницу истории из T-Invest.</span>
+                </div>
               </article>
-              <article>
-                <span>03</span>
-                <strong>История</strong>
-                <p>Операции и изменение стоимости по выбранному периоду.</p>
-              </article>
-            </section>
+            </div>
           </section>
 
           <section class="view-panel hidden" data-view-panel="connections">

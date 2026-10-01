@@ -31,6 +31,29 @@
   const homeTbankState = document.querySelector("#home-tbank-state");
   const topConnectionIndicator = document.querySelector("#top-connection-indicator");
   const topConnectionText = document.querySelector("#top-connection-text");
+  const homePortfolioState = document.querySelector("#home-portfolio-state");
+
+  const portfolioStateBadge = document.querySelector("#portfolio-state-badge");
+  const portfolioRefresh = document.querySelector("#portfolio-refresh");
+  const portfolioLoading = document.querySelector("#portfolio-loading");
+  const portfolioDisconnected = document.querySelector("#portfolio-disconnected");
+  const portfolioError = document.querySelector("#portfolio-error");
+  const portfolioErrorText = document.querySelector("#portfolio-error-text");
+  const portfolioContent = document.querySelector("#portfolio-content");
+  const portfolioTotal = document.querySelector("#portfolio-total");
+  const portfolioYield = document.querySelector("#portfolio-yield");
+  const portfolioDaily = document.querySelector("#portfolio-daily");
+  const portfolioDailyRelative = document.querySelector("#portfolio-daily-relative");
+  const portfolioPositionCount = document.querySelector("#portfolio-position-count");
+  const portfolioRefreshed = document.querySelector("#portfolio-refreshed");
+  const assetAllocation = document.querySelector("#asset-allocation");
+  const cashList = document.querySelector("#cash-list");
+  const cashLoadingNote = document.querySelector("#cash-loading-note");
+  const positionsList = document.querySelector("#positions-list");
+  const operationsList = document.querySelector("#operations-list");
+  const operationsMoreNote = document.querySelector("#operations-more-note");
+  const operationsLoadMore = document.querySelector("#operations-load-more");
+  const portfolioRetry = document.querySelector("[data-portfolio-retry]");
 
   const viewTitle = document.querySelector("#view-title");
   const desktopNavItems = [...document.querySelectorAll("[data-view]")];
@@ -57,6 +80,10 @@
   let pendingTbankCredential = null;
   let pendingTbankEnvironment = null;
   let deferredInstallPrompt = null;
+  let tbankIsConnected = false;
+  let portfolioLoaded = false;
+  let portfolioRequestInFlight = false;
+  let nextOperationsCursor = "";
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -142,7 +169,19 @@
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
 
-    desktopNavItems.forEach((item) => {
+    operationsLoadMore.addEventListener("click", () => {
+    void loadMoreOperations();
+  });
+
+  portfolioRefresh.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
+
+  portfolioRetry.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
+
+  desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
       item.classList.toggle("is-active", active);
       if (active) {
@@ -169,6 +208,10 @@
     if (scroll) {
       window.scrollTo({top: 0, behavior: "auto"});
     }
+
+    if (view === "portfolio" && tbankIsConnected && !portfolioLoaded) {
+      void loadPortfolioData();
+    }
   };
 
   const resetTbankPreview = () => {
@@ -178,17 +221,401 @@
     tbankAccountForm.classList.add("hidden");
   };
 
+  const ASSET_LABELS = {
+    shares: "Акции",
+    bonds: "Облигации",
+    funds: "Фонды",
+    currencies: "Валюта и деньги",
+    futures: "Фьючерсы",
+    options: "Опционы",
+    structured_products: "Структурные продукты",
+    dfa: "ЦФА",
+  };
+
+  const INSTRUMENT_LABELS = {
+    share: "Акция",
+    bond: "Облигация",
+    etf: "Фонд",
+    currency: "Валюта",
+    futures: "Фьючерс",
+    option: "Опцион",
+    sp: "Структурный продукт",
+  };
+
+  const numericValue = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  };
+
+  const formatMoney = (money, {sign = false} = {}) => {
+    if (!money || typeof money.value !== "string" || !money.currency) {
+      return "—";
+    }
+    const value = numericValue(money.value);
+    try {
+      const formatted = new Intl.NumberFormat("ru-RU", {
+        style: "currency",
+        currency: String(money.currency).toUpperCase(),
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+      }).format(value);
+      return sign && value > 0 ? `+${formatted}` : formatted;
+    } catch {
+      const formatted = new Intl.NumberFormat("ru-RU", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+      }).format(value);
+      return `${sign && value > 0 ? "+" : ""}${formatted} ${money.currency}`;
+    }
+  };
+
+  const formatPercent = (value, {sign = false} = {}) => {
+    const number = numericValue(value);
+    const formatted = new Intl.NumberFormat("ru-RU", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(number);
+    return `${sign && number > 0 ? "+" : ""}${formatted}%`;
+  };
+
+  const formatQuantity = (value) => new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: 8,
+  }).format(numericValue(value));
+
+  const formatDateTime = (value) => {
+    if (!value) {
+      return "—";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  };
+
+  const applySignedClass = (element, value) => {
+    const number = numericValue(value);
+    element.classList.remove("value-positive", "value-negative");
+    if (number > 0) {
+      element.classList.add("value-positive");
+    } else if (number < 0) {
+      element.classList.add("value-negative");
+    }
+  };
+
+  const appendEmptyState = (container, text) => {
+    container.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "portfolio-empty-inline";
+    empty.textContent = text;
+    container.append(empty);
+  };
+
+  const renderAllocation = (totals) => {
+    assetAllocation.replaceChildren();
+    const positive = (totals || []).filter((item) => numericValue(item.money?.value) > 0);
+    const sum = positive.reduce((total, item) => total + numericValue(item.money.value), 0);
+    if (!positive.length || sum <= 0) {
+      appendEmptyState(assetAllocation, "T-Invest не вернул распределение по классам активов.");
+      return;
+    }
+
+    positive
+      .sort((left, right) => numericValue(right.money.value) - numericValue(left.money.value))
+      .forEach((item) => {
+        const value = numericValue(item.money.value);
+        const share = Math.max(0, Math.min(100, (value / sum) * 100));
+
+        const row = document.createElement("div");
+        row.className = "allocation-row";
+
+        const label = document.createElement("div");
+        label.className = "allocation-label";
+        const name = document.createElement("strong");
+        name.textContent = ASSET_LABELS[item.kind] || item.kind;
+        const percent = document.createElement("span");
+        percent.textContent = `${share.toFixed(1)}%`;
+        label.append(name, percent);
+
+        const track = document.createElement("div");
+        track.className = "allocation-track";
+        const fill = document.createElement("div");
+        fill.className = "allocation-fill";
+        fill.style.width = `${share}%`;
+        track.append(fill);
+
+        const amount = document.createElement("div");
+        amount.className = "allocation-value";
+        amount.textContent = formatMoney(item.money);
+
+        row.append(label, track, amount);
+        assetAllocation.append(row);
+      });
+  };
+
+  const renderCash = (cash, blockedCash, loadingLimits) => {
+    cashList.replaceChildren();
+    const blockedByCurrency = new Map(
+      (blockedCash || []).map((item) => [String(item.currency).toUpperCase(), item])
+    );
+    if (!cash?.length) {
+      appendEmptyState(cashList, "Денежные остатки отсутствуют или ещё не загружены.");
+    } else {
+      cash.forEach((item) => {
+        const currency = String(item.currency).toUpperCase();
+        const blocked = blockedByCurrency.get(currency);
+        const row = document.createElement("div");
+        row.className = "cash-row";
+
+        const label = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = currency;
+        const note = document.createElement("span");
+        note.textContent = blocked && numericValue(blocked.value) !== 0
+          ? `Заблокировано: ${formatMoney(blocked)}`
+          : "Доступно на счёте";
+        label.append(title, note);
+
+        const amount = document.createElement("div");
+        amount.className = "cash-value";
+        amount.textContent = formatMoney(item);
+
+        row.append(label, amount);
+        cashList.append(row);
+      });
+    }
+    cashLoadingNote.classList.toggle("hidden", !loadingLimits);
+  };
+
+  const renderPositions = (positions) => {
+    positionsList.replaceChildren();
+    if (!positions?.length) {
+      appendEmptyState(positionsList, "В портфеле нет инструментов.");
+      return;
+    }
+
+    positions.forEach((position) => {
+      const row = document.createElement("div");
+      row.className = "position-row";
+
+      const name = document.createElement("div");
+      name.className = "position-name";
+      const ticker = document.createElement("strong");
+      ticker.textContent = position.ticker || position.figi || "Инструмент";
+      const type = document.createElement("span");
+      type.textContent = INSTRUMENT_LABELS[position.instrument_type] || position.instrument_type || "Инструмент";
+      name.append(ticker, type);
+      if (position.blocked) {
+        const blocked = document.createElement("em");
+        blocked.className = "position-blocked";
+        blocked.textContent = "Заблокировано биржей";
+        name.append(blocked);
+      }
+
+      const quantity = document.createElement("div");
+      quantity.className = "position-cell";
+      const quantityLabel = document.createElement("span");
+      quantityLabel.textContent = "Количество";
+      const quantityValue = document.createElement("strong");
+      quantityValue.textContent = formatQuantity(position.quantity);
+      quantity.append(quantityLabel, quantityValue);
+
+      const price = document.createElement("div");
+      price.className = "position-cell";
+      const priceLabel = document.createElement("span");
+      priceLabel.textContent = "Текущая цена";
+      const priceValue = document.createElement("strong");
+      priceValue.textContent = formatMoney(position.current_price);
+      price.append(priceLabel, priceValue);
+
+      const yieldCell = document.createElement("div");
+      yieldCell.className = "position-cell";
+      const yieldLabel = document.createElement("span");
+      yieldLabel.textContent = "Доходность";
+      const yieldValue = document.createElement("strong");
+      yieldValue.textContent = formatPercent(position.expected_yield_percent, {sign: true});
+      applySignedClass(yieldValue, position.expected_yield_percent);
+      yieldCell.append(yieldLabel, yieldValue);
+
+      row.append(name, quantity, price, yieldCell);
+      positionsList.append(row);
+    });
+  };
+
+  const renderOperations = (payload, {append = false} = {}) => {
+    if (!append) {
+      operationsList.replaceChildren();
+    }
+    if (!payload || !payload.items?.length) {
+      if (!append) {
+        appendEmptyState(operationsList, "Исполненных операций пока нет.");
+      }
+      nextOperationsCursor = "";
+      operationsMoreNote.classList.add("hidden");
+      return;
+    }
+
+    payload.items.forEach((operation) => {
+      const row = document.createElement("div");
+      row.className = "operation-row";
+
+      const main = document.createElement("div");
+      main.className = "operation-main";
+      const name = document.createElement("strong");
+      name.textContent = operation.name || operation.description || operation.type || "Операция";
+      const detail = document.createElement("span");
+      detail.textContent = [operation.ticker, formatDateTime(operation.date)].filter(Boolean).join(" · ");
+      main.append(name, detail);
+
+      const amount = document.createElement("div");
+      amount.className = "operation-meta";
+      const amountLabel = document.createElement("span");
+      amountLabel.textContent = "Сумма";
+      const amountValue = document.createElement("strong");
+      amountValue.textContent = formatMoney(operation.payment, {sign: true});
+      applySignedClass(amountValue, operation.payment?.value);
+      amount.append(amountLabel, amountValue);
+
+      const commission = document.createElement("div");
+      commission.className = "operation-meta";
+      const commissionLabel = document.createElement("span");
+      commissionLabel.textContent = "Комиссия";
+      const commissionValue = document.createElement("strong");
+      commissionValue.textContent = operation.commission
+        ? formatMoney(operation.commission)
+        : "—";
+      commission.append(commissionLabel, commissionValue);
+
+      row.append(main, amount, commission);
+      operationsList.append(row);
+    });
+
+    nextOperationsCursor = payload.has_next ? String(payload.next_cursor || "") : "";
+    operationsMoreNote.classList.toggle("hidden", !nextOperationsCursor);
+  };
+
+  const loadMoreOperations = async () => {
+    if (!tbankIsConnected || !nextOperationsCursor || operationsLoadMore.disabled) {
+      return;
+    }
+    operationsLoadMore.disabled = true;
+    const originalText = operationsLoadMore.textContent;
+    operationsLoadMore.textContent = "Загружаем…";
+    try {
+      const payload = await api(
+        `/api/broker/tbank/operations?limit=30&cursor=${encodeURIComponent(nextOperationsCursor)}`,
+        {method: "GET"},
+      );
+      renderOperations(payload, {append: true});
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      operationsLoadMore.textContent = "Не удалось. Повторить";
+      return;
+    } finally {
+      operationsLoadMore.disabled = false;
+      if (operationsLoadMore.textContent === "Загружаем…") {
+        operationsLoadMore.textContent = originalText;
+      }
+    }
+  };
+
+  const showPortfolioMode = (mode) => {
+    portfolioLoading.classList.toggle("hidden", mode !== "loading");
+    portfolioDisconnected.classList.toggle("hidden", mode !== "disconnected");
+    portfolioError.classList.toggle("hidden", mode !== "error");
+    portfolioContent.classList.toggle("hidden", mode !== "content");
+  };
+
+  const renderPortfolio = (snapshot, operationsPayload) => {
+    const portfolio = snapshot.portfolio;
+    portfolioTotal.textContent = formatMoney(portfolio.total);
+    portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
+    applySignedClass(portfolioYield, portfolio.expected_yield_percent);
+    portfolioDaily.textContent = formatMoney(portfolio.daily_yield, {sign: true});
+    applySignedClass(portfolioDaily, portfolio.daily_yield?.value);
+    portfolioDailyRelative.textContent = formatPercent(portfolio.daily_yield_percent, {sign: true});
+    portfolioPositionCount.textContent = String(portfolio.positions?.length || 0);
+    portfolioRefreshed.textContent = `Обновлено ${formatDateTime(snapshot.refreshed_at)}`;
+
+    renderAllocation(portfolio.asset_totals);
+    renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
+    renderPositions(portfolio.positions);
+    renderOperations(operationsPayload);
+
+    portfolioLoaded = true;
+    showPortfolioMode("content");
+    setStateBadge(portfolioStateBadge, "Данные получены", "state-ok");
+    setStateBadge(homePortfolioState, "Работает", "state-ok");
+  };
+
+  const loadPortfolioData = async ({force = false} = {}) => {
+    if (!tbankIsConnected) {
+      portfolioLoaded = false;
+      showPortfolioMode("disconnected");
+      setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+      setStateBadge(homePortfolioState, "Нет подключения", "state-next");
+      return;
+    }
+    if (portfolioRequestInFlight || (portfolioLoaded && !force)) {
+      return;
+    }
+
+    portfolioRequestInFlight = true;
+    portfolioRefresh.disabled = true;
+    showPortfolioMode("loading");
+    setStateBadge(portfolioStateBadge, "Обновляем", "");
+    setStateBadge(homePortfolioState, "Загружаем", "");
+
+    try {
+      const [snapshot, operationsPayload] = await Promise.all([
+        api("/api/broker/tbank/portfolio", {method: "GET"}),
+        api("/api/broker/tbank/operations?limit=30", {method: "GET"}).catch(() => null),
+      ]);
+      renderPortfolio(snapshot, operationsPayload);
+    } catch (error) {
+      portfolioLoaded = false;
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showPortfolioMode("error");
+      const needsReconnect = error.status === 409;
+      portfolioErrorText.textContent = needsReconnect
+        ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
+        : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
+      setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
+      setStateBadge(homePortfolioState, "Ошибка", "state-error");
+    } finally {
+      portfolioRequestInFlight = false;
+      portfolioRefresh.disabled = false;
+    }
+  };
+
   const renderTbankSummary = (status) => {
     homeConnectionCard.classList.remove("is-offline", "is-error");
     topConnectionIndicator.classList.remove("is-offline", "is-error");
+    tbankIsConnected = Boolean(status.connected);
 
     if (!status.connected) {
+      portfolioLoaded = false;
       overviewAccount.textContent = "T-Invest не подключён";
       overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
       homeConnectionCard.classList.add("is-offline");
       topConnectionIndicator.classList.add("is-offline");
       topConnectionText.textContent = "T-Invest не подключён";
       setStateBadge(homeTbankState, "Не подключено", "state-next");
+      setStateBadge(homePortfolioState, "Нет подключения", "state-next");
+      setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+      showPortfolioMode("disconnected");
       return;
     }
 
@@ -198,6 +625,10 @@
     overviewConnectionText.textContent = `${environment} · соединение подтверждено`;
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
+    if (!portfolioLoaded) {
+      setStateBadge(homePortfolioState, "Загружаем", "");
+      setStateBadge(portfolioStateBadge, "Загружаем", "");
+    }
   };
 
   const renderTbankStatus = (status) => {
@@ -230,8 +661,12 @@
     homeConnectionCard.classList.add("is-error");
     topConnectionIndicator.classList.add("is-error");
     topConnectionText.textContent = "Ошибка T-Invest";
+    tbankIsConnected = false;
+    portfolioLoaded = false;
     setStateBadge(homeTbankState, "Ошибка", "state-error");
+    setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
+    setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
   };
 
   const loadTbankStatus = async () => {
@@ -239,6 +674,9 @@
     try {
       const status = await api("/api/broker/tbank", {method: "GET"});
       renderTbankStatus(status);
+      if (status.connected) {
+        void loadPortfolioData();
+      }
     } catch (error) {
       if (error.status === 401) {
         location.reload();
@@ -507,6 +945,8 @@
         }),
       });
       renderTbankStatus(status);
+      portfolioLoaded = false;
+      void loadPortfolioData({force: true});
       showMessage(tbankMessage, "T-Invest подключён. Токен сохранён в зашифрованном виде.");
     } catch (error) {
       resetTbankPreview();
@@ -535,6 +975,7 @@
     try {
       await api("/api/broker/tbank", {method: "DELETE"});
       renderTbankStatus({connected: false});
+      portfolioLoaded = false;
       tbankTermsAck.checked = false;
       showMessage(tbankMessage, "T-Invest отключён.");
     } catch {

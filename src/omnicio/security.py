@@ -47,6 +47,13 @@ def encrypt_secret(value: str, crypto_key: str) -> bytes:
         raise SecurityValueError("invalid secret encryption key") from exc
 
 
+def decrypt_secret(value: bytes, crypto_key: str) -> str:
+    try:
+        return Fernet(crypto_key.encode("ascii")).decrypt(value).decode()
+    except (InvalidToken, ValueError, UnicodeError) as exc:
+        raise SecurityValueError("invalid encrypted secret or encryption key") from exc
+
+
 def generate_session_token() -> str:
     return secrets.token_urlsafe(48)
 
