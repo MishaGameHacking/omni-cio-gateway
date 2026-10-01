@@ -95,7 +95,7 @@ const server = http.createServer((request, response) => {
       const nav = label === "mobile" ? '[data-mobile-view="decisions"]' : '[data-view="decisions"]';
       await page.locator(nav).click();
       await page.locator("#analysis-content").waitFor({state:"visible"});
-      assert.equal(await page.locator("#analysis-cash").innerText(), "80 ₽");
+      assert.equal(await page.locator("#analysis-cash").innerText(), "80\u00a0₽");
       assert.equal(await page.locator("#analysis-securities tr").count(), 2);
       assert.equal(await page.locator("#analysis-securities img").count(), 0);
       assert.equal(await page.locator("#analysis-observations img").count(), 0);
