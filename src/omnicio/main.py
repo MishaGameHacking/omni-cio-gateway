@@ -41,6 +41,15 @@ class VerifyCodeBody(BaseModel):
     code: str = Field(min_length=6, max_length=6)
 
 
+class TBankCredentialBody(BaseModel):
+    credential: str = Field(min_length=20, max_length=4096)
+    environment: Literal["prod", "sandbox"] = "prod"
+
+
+class TBankConnectBody(TBankCredentialBody):
+    account_id: str = Field(min_length=1, max_length=128)
+
+
 def client_ip(request: Request) -> str:
     direct = request.client.host if request.client else ""
     if direct in {"127.0.0.1", "::1"}:
@@ -65,6 +74,23 @@ def settings(request: Request) -> Settings:
     return cast(Settings, request.app.state.settings)
 
 
+def broker_service(request: Request) -> BrokerService:
+    return cast(BrokerService, request.app.state.broker_service)
+
+
+def authenticated_user(
+    request: Request,
+    session_token: str | None,
+) -> UserRecord:
+    user = service(request).refresh_session(session_token or "")
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="authentication required",
+        )
+    return user
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cfg = load_settings()
@@ -79,6 +105,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = cfg
     app.state.database = database
     app.state.auth_service = AuthService(cfg, database, sms)
+    app.state.broker_service = BrokerService(
+        database,
+        credential_key=cfg.broker_token_crypto_key,
+        tbank=TBankInvestClient(),
+    )
     try:
         yield
     finally:
