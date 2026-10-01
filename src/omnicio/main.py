@@ -44,6 +44,7 @@ class VerifyCodeBody(BaseModel):
 class TBankCredentialBody(BaseModel):
     credential: str = Field(min_length=20, max_length=4096)
     environment: Literal["prod", "sandbox"] = "prod"
+    accept_personal_terms: bool
 
 
 class TBankConnectBody(TBankCredentialBody):
@@ -267,6 +268,11 @@ def tbank_accounts(
 ) -> dict[str, object]:
     require_same_origin(request)
     authenticated_user(request, session_token)
+    if not body.accept_personal_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="broker terms acknowledgment required",
+        )
     try:
         accounts = broker_service(request).preview_accounts(
             credential=body.credential,
@@ -304,12 +310,18 @@ def connect_tbank(
 ) -> dict[str, object]:
     require_same_origin(request)
     user = authenticated_user(request, session_token)
+    if not body.accept_personal_terms:
+        raise HTTPException(
+            status_code=400,
+            detail="broker terms acknowledgment required",
+        )
     try:
         connection = broker_service(request).connect(
             user_id=user.id,
             credential=body.credential,
             environment=body.environment,
             account_id=body.account_id,
+            terms_version=settings(request).terms_version,
         )
     except TBankTokenRejected as exc:
         raise HTTPException(
