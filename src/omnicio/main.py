@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal, cast
 
-from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
+from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from .broker import BrokerAccountNotAccessible, BrokerService
+from .broker import (
+    BrokerAccountNotAccessible,
+    BrokerConnectionError,
+    BrokerNotConnected,
+    BrokerService,
+)
 from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .security import (
@@ -338,6 +344,70 @@ def tbank_connection_status(
         "account_id": connection.account_id,
         "account_name": connection.account_name,
         "verified_at": connection.verified_at,
+    }
+
+
+@app.get("/api/broker/tbank/portfolio")
+def tbank_portfolio(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        snapshot = broker_service(request).portfolio(user.id)
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="T-Invest portfolio unavailable",
+        ) from exc
+
+    return {
+        "account_name": snapshot.account_name,
+        "environment": snapshot.environment,
+        "refreshed_at": snapshot.refreshed_at,
+        "portfolio": asdict(snapshot.portfolio),
+        "cash": [asdict(item) for item in snapshot.positions.money],
+        "blocked_cash": [asdict(item) for item in snapshot.positions.blocked_money],
+        "limits_loading_in_progress": snapshot.positions.limits_loading_in_progress,
+    }
+
+
+@app.get("/api/broker/tbank/operations")
+def tbank_operations(
+    request: Request,
+    limit: int = Query(default=30, ge=1, le=100),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        snapshot = broker_service(request).operations(user.id, limit=limit)
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="T-Invest operations unavailable",
+        ) from exc
+
+    return {
+        "account_name": snapshot.account_name,
+        "environment": snapshot.environment,
+        "refreshed_at": snapshot.refreshed_at,
+        "items": [asdict(item) for item in snapshot.operations.items],
+        "has_next": snapshot.operations.has_next,
+        "next_cursor": snapshot.operations.next_cursor,
     }
 
 
