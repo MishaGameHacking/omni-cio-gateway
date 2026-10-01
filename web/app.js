@@ -715,7 +715,11 @@
     portfolioContent.classList.toggle("hidden", mode !== "content");
   };
 
-  const renderPortfolio = (snapshot, operationsPayload) => {
+  const renderPortfolio = (
+    snapshot,
+    operationsPayload,
+    {updateOperations = true} = {},
+  ) => {
     const portfolio = snapshot.portfolio;
     portfolioTotal.textContent = formatMoney(portfolio.total);
     portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
@@ -729,17 +733,29 @@
     renderAllocation(portfolio.asset_totals);
     renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
     renderPositions(portfolio.positions);
-    renderOperations(operationsPayload);
+    if (updateOperations) {
+      renderOperations(operationsPayload);
+    }
 
+    lastPortfolioSnapshot = snapshot;
+    lastPortfolioRefreshAt = Date.now();
     portfolioLoaded = true;
+    updateOwlState(snapshot.refreshed_at);
+    updateGuard(snapshot);
     showPortfolioMode("content");
     setStateBadge(portfolioStateBadge, "Данные получены", "state-ok");
     setStateBadge(homePortfolioState, "Работает", "state-ok");
   };
 
-  const loadPortfolioData = async ({force = false} = {}) => {
+  const loadPortfolioData = async (
+    {force = false, refreshOperations = true} = {},
+  ) => {
     if (!tbankIsConnected) {
       portfolioLoaded = false;
+      lastPortfolioSnapshot = null;
+      lastPortfolioRefreshAt = 0;
+      updateOwlState(null);
+      updateGuard(null);
       showPortfolioMode("disconnected");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
@@ -749,31 +765,52 @@
       return;
     }
 
+    const hadPortfolio = portfolioLoaded;
     portfolioRequestInFlight = true;
     portfolioRefresh.disabled = true;
-    showPortfolioMode("loading");
+    if (!hadPortfolio) {
+      showPortfolioMode("loading");
+    }
     setStateBadge(portfolioStateBadge, "Обновляем", "");
-    setStateBadge(homePortfolioState, "Загружаем", "");
+    setStateBadge(homePortfolioState, hadPortfolio ? "Обновляем" : "Загружаем", "");
 
     try {
+      const operationsRequest = refreshOperations
+        ? api("/api/broker/tbank/operations?limit=30", {method: "GET"}).catch(() => null)
+        : Promise.resolve(null);
       const [snapshot, operationsPayload] = await Promise.all([
         api("/api/broker/tbank/portfolio", {method: "GET"}),
-        api("/api/broker/tbank/operations?limit=30", {method: "GET"}).catch(() => null),
+        operationsRequest,
       ]);
-      renderPortfolio(snapshot, operationsPayload);
+      renderPortfolio(
+        snapshot,
+        operationsPayload,
+        {updateOperations: refreshOperations},
+      );
     } catch (error) {
-      portfolioLoaded = false;
       if (error.status === 401) {
         location.reload();
         return;
       }
-      showPortfolioMode("error");
+
       const needsReconnect = error.status === 409;
-      portfolioErrorText.textContent = needsReconnect
-        ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
-        : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
-      setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
-      setStateBadge(homePortfolioState, "Ошибка", "state-error");
+      if (hadPortfolio && lastPortfolioSnapshot) {
+        portfolioLoaded = true;
+        showPortfolioMode("content");
+        setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
+        setStateBadge(homePortfolioState, "Данные устарели", "state-next");
+        setStateBadge(owlState, "Ошибка обновления", "state-next");
+      } else {
+        portfolioLoaded = false;
+        showPortfolioMode("error");
+        portfolioErrorText.textContent = needsReconnect
+          ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
+          : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
+        setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
+        setStateBadge(homePortfolioState, "Ошибка", "state-error");
+        setStateBadge(owlState, "Ошибка", "state-error");
+        updateGuard(null);
+      }
     } finally {
       portfolioRequestInFlight = false;
       portfolioRefresh.disabled = false;
