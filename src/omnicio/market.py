@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -10,8 +9,6 @@ from uuid import UUID
 
 from .broker import BrokerService
 from .cbr import CBRClient, CBRUnavailable
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +62,7 @@ class MarketService:
         try:
             rate = self.cbr.usd_rub_rate()
         except CBRUnavailable:
-            logger.warning("Bank of Russia reference rate unavailable")
+            pass
         else:
             reference = MarketReferenceRate(
                 source="Bank of Russia",
