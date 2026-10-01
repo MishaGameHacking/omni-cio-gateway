@@ -31,6 +31,28 @@
   const homeTbankState = document.querySelector("#home-tbank-state");
   const topConnectionIndicator = document.querySelector("#top-connection-indicator");
   const topConnectionText = document.querySelector("#top-connection-text");
+  const homePortfolioState = document.querySelector("#home-portfolio-state");
+
+  const portfolioStateBadge = document.querySelector("#portfolio-state-badge");
+  const portfolioRefresh = document.querySelector("#portfolio-refresh");
+  const portfolioLoading = document.querySelector("#portfolio-loading");
+  const portfolioDisconnected = document.querySelector("#portfolio-disconnected");
+  const portfolioError = document.querySelector("#portfolio-error");
+  const portfolioErrorText = document.querySelector("#portfolio-error-text");
+  const portfolioContent = document.querySelector("#portfolio-content");
+  const portfolioTotal = document.querySelector("#portfolio-total");
+  const portfolioYield = document.querySelector("#portfolio-yield");
+  const portfolioDaily = document.querySelector("#portfolio-daily");
+  const portfolioDailyRelative = document.querySelector("#portfolio-daily-relative");
+  const portfolioPositionCount = document.querySelector("#portfolio-position-count");
+  const portfolioRefreshed = document.querySelector("#portfolio-refreshed");
+  const assetAllocation = document.querySelector("#asset-allocation");
+  const cashList = document.querySelector("#cash-list");
+  const cashLoadingNote = document.querySelector("#cash-loading-note");
+  const positionsList = document.querySelector("#positions-list");
+  const operationsList = document.querySelector("#operations-list");
+  const operationsMoreNote = document.querySelector("#operations-more-note");
+  const portfolioRetry = document.querySelector("[data-portfolio-retry]");
 
   const viewTitle = document.querySelector("#view-title");
   const desktopNavItems = [...document.querySelectorAll("[data-view]")];
@@ -57,6 +79,9 @@
   let pendingTbankCredential = null;
   let pendingTbankEnvironment = null;
   let deferredInstallPrompt = null;
+  let tbankIsConnected = false;
+  let portfolioLoaded = false;
+  let portfolioRequestInFlight = false;
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -168,6 +193,10 @@
 
     if (scroll) {
       window.scrollTo({top: 0, behavior: "auto"});
+    }
+
+    if (view === "portfolio" && tbankIsConnected && !portfolioLoaded) {
+      void loadPortfolioData();
     }
   };
 
