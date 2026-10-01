@@ -62,9 +62,9 @@ def test_vkid_flow_round_trip_and_tamper_rejection() -> None:
     state = generate_oauth_state()
     verifier = generate_pkce_verifier()
     versions = {
-        "privacy_policy": "2026-10-01",
-        "personal_data_consent": "2026-10-01",
-        "terms": "2026-10-01",
+        "privacy_policy": "2026-10-01-v2",
+        "personal_data_consent": "2026-10-01-v2",
+        "terms": "2026-10-01-v2",
     }
     token = seal_vkid_flow(
         state=state,
