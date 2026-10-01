@@ -34,6 +34,11 @@ from timeweb_auth_postgres import (
 
 DOMAIN = "omnicio.ru"
 SITE_MARKER = 'name="omni-cio-white-site"'
+LEGAL_PAGES = {
+    "/legal/privacy.html": "Политика обработки персональных данных",
+    "/legal/consent.html": "Согласие на обработку персональных данных",
+    "/legal/terms.html": "Пользовательское соглашение",
+}
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -214,10 +219,13 @@ python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q --upgrade pip
 "$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q "$RELEASE"
 
-install -d -m 0755 "$WEB_RELEASE/assets"
+install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/index.html" "$WEB_RELEASE/index.html"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
+install -m 0644 "$RELEASE/web/legal/privacy.html" "$WEB_RELEASE/legal/privacy.html"
+install -m 0644 "$RELEASE/web/legal/consent.html" "$WEB_RELEASE/legal/consent.html"
+install -m 0644 "$RELEASE/web/legal/terms.html" "$WEB_RELEASE/legal/terms.html"
 
 cat > "$SERVICE.new" <<'EOF'
 [Unit]
@@ -455,6 +463,22 @@ def verify_public() -> None:
                 raise InfraError(
                     "Registration unexpectedly became enabled during app deploy"
                 )
+
+        for path, marker in LEGAL_PAGES.items():
+            legal_request = urllib.request.Request(
+                f"https://{DOMAIN}{path}",
+                headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+            )
+            with urllib.request.urlopen(
+                legal_request,
+                timeout=15,
+                context=context,
+            ) as response:
+                body = response.read().decode(errors="replace")
+                if response.status != 200 or marker not in body:
+                    raise InfraError(
+                        f"Public legal page verification failed: {path}"
+                    )
     except (
         urllib.error.URLError,
         TimeoutError,

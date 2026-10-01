@@ -138,6 +138,21 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
+    def test_remote_release_publishes_all_legal_pages(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        for filename in ("privacy.html", "consent.html", "terms.html"):
+            self.assertIn(f'web/legal/{filename}', script)
+            self.assertIn(f'legal/{filename}', script)
+
+        self.assertEqual(
+            set(MODULE.LEGAL_PAGES),
+            {
+                "/legal/privacy.html",
+                "/legal/consent.html",
+                "/legal/terms.html",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
