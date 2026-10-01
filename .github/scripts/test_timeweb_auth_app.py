@@ -161,6 +161,20 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
         self.assertIn('REGISTRATION_ENABLED="false"', product_env)
 
+    def test_auth_deploy_workflow_separates_pr_and_production_concurrency(self) -> None:
+        workflow = (
+            SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml"
+        ).read_text()
+
+        self.assertIn(
+            "github.event.pull_request.number || 'production'",
+            workflow,
+        )
+        self.assertIn(
+            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+            workflow,
+        )
+
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
