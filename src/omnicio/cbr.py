@@ -11,10 +11,12 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 _CBR_DAILY_URL = "https://www.cbr.ru/scripts/XML_daily.asp"
+_MOSCOW = ZoneInfo("Europe/Moscow")
 
 
 class CBRUnavailable(RuntimeError):
@@ -42,44 +44,68 @@ class CBRClient:
         self.cache_seconds = cache_seconds
         self.failure_retry_seconds = failure_retry_seconds
         self._lock = threading.Lock()
-        self._cached_usd: CBRRate | None = None
-        self._expires_at = 0.0
-        self._retry_after = 0.0
+        self._cached: dict[str, CBRRate] = {}
+        self._expires_at: dict[str, float] = {}
+        self._retry_after: dict[str, float] = {}
 
-    def usd_rub_rate(self) -> CBRRate:
+    def usd_rub_rate(self, effective_on: date | None = None) -> CBRRate:
+        target = effective_on or datetime.now(_MOSCOW).date()
+        return self._cached_rate(
+            key=f"date:{target.isoformat()}",
+            effective_on=target,
+        )
+
+    def latest_usd_rub_rate(self) -> CBRRate:
+        return self._cached_rate(key="latest", effective_on=None)
+
+    def _cached_rate(
+        self,
+        *,
+        key: str,
+        effective_on: date | None,
+    ) -> CBRRate:
         now = time.monotonic()
-        cached = self._cached_usd
-        if cached is not None and now < self._expires_at:
+        cached = self._cached.get(key)
+        if cached is not None and now < self._expires_at.get(key, 0.0):
             return cached
-        if cached is None and now < self._retry_after:
+        if cached is None and now < self._retry_after.get(key, 0.0):
             raise CBRUnavailable("Bank of Russia daily rate retry is pending")
 
         with self._lock:
             now = time.monotonic()
-            cached = self._cached_usd
-            if cached is not None and now < self._expires_at:
+            cached = self._cached.get(key)
+            if cached is not None and now < self._expires_at.get(key, 0.0):
                 return cached
-            if cached is None and now < self._retry_after:
+            if cached is None and now < self._retry_after.get(key, 0.0):
                 raise CBRUnavailable("Bank of Russia daily rate retry is pending")
 
             try:
-                rate = self._fetch_usd_rub()
+                rate = self._fetch_usd_rub(effective_on)
             except CBRUnavailable:
-                self._retry_after = now + self.failure_retry_seconds
+                self._retry_after[key] = now + self.failure_retry_seconds
                 if cached is not None:
-                    logger.warning("Bank of Russia rate refresh failed; using cached value")
-                    self._expires_at = now + min(self.cache_seconds, self.failure_retry_seconds)
+                    logger.warning(
+                        "Bank of Russia rate refresh failed key=%s; using cached value",
+                        key,
+                    )
+                    self._expires_at[key] = (
+                        now + min(self.cache_seconds, self.failure_retry_seconds)
+                    )
                     return cached
                 raise
 
-            self._cached_usd = rate
-            self._expires_at = now + self.cache_seconds
-            self._retry_after = 0.0
+            self._cached[key] = rate
+            self._expires_at[key] = now + self.cache_seconds
+            self._retry_after[key] = 0.0
             return rate
 
-    def _fetch_usd_rub(self) -> CBRRate:
+    def _fetch_usd_rub(self, effective_on: date | None) -> CBRRate:
+        url = _CBR_DAILY_URL
+        if effective_on is not None:
+            url = f"{url}?date_req={effective_on.strftime('%d/%m/%Y')}"
+
         request = urllib.request.Request(
-            _CBR_DAILY_URL,
+            url,
             headers={
                 "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.1",
                 "User-Agent": "OmniCIO-Personal/1.0",
