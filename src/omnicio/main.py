@@ -243,6 +243,117 @@ def me(
     }
 
 
+@app.get("/api/broker/tbank")
+def tbank_connection_status(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    connection = broker_service(request).status(user.id)
+    return {
+        "connected": connection.connected,
+        "environment": connection.environment,
+        "account_id": connection.account_id,
+        "account_name": connection.account_name,
+        "verified_at": connection.verified_at,
+    }
+
+
+@app.post("/api/broker/tbank/accounts")
+def tbank_accounts(
+    body: TBankCredentialBody,
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    authenticated_user(request, session_token)
+    try:
+        accounts = broker_service(request).preview_accounts(
+            credential=body.credential,
+            environment=body.environment,
+        )
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="T-Invest token rejected",
+        ) from exc
+    except TBankUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="T-Invest API unavailable",
+        ) from exc
+
+    return {
+        "accounts": [
+            {
+                "id": account.id,
+                "name": account.name,
+                "type": account.type,
+                "status": account.status,
+            }
+            for account in accounts
+        ]
+    }
+
+
+@app.put("/api/broker/tbank")
+def connect_tbank(
+    body: TBankConnectBody,
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    try:
+        connection = broker_service(request).connect(
+            user_id=user.id,
+            credential=body.credential,
+            environment=body.environment,
+            account_id=body.account_id,
+        )
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="T-Invest token rejected",
+        ) from exc
+    except BrokerAccountNotAccessible as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="T-Invest account is not accessible",
+        ) from exc
+    except TBankUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="T-Invest API unavailable",
+        ) from exc
+    except SecurityValueError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="broker credential storage unavailable",
+        ) from exc
+
+    return {
+        "connected": connection.connected,
+        "environment": connection.environment,
+        "account_id": connection.account_id,
+        "account_name": connection.account_name,
+        "verified_at": connection.verified_at,
+    }
+
+
+@app.delete("/api/broker/tbank", status_code=204)
+def disconnect_tbank(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> Response:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    broker_service(request).disconnect(user.id)
+    response.status_code = 204
+    return response
+
+
 @app.post("/api/auth/logout", status_code=204)
 def logout(
     request: Request,
