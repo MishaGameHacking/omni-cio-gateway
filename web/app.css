@@ -1719,6 +1719,10 @@ select:hover {
   gap: 20px;
 }
 
+#analysis-status {
+  display: block;
+}
+
 #analysis-content .portfolio-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

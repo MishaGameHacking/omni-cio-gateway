@@ -5,34 +5,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
-const {execFileSync} = require("node:child_process");
 const {chromium} = require("playwright");
 
 const root = path.resolve(__dirname, "../..");
-const analysis = JSON.parse(execFileSync("python", ["-c", `
-import json
-from dataclasses import asdict
-from omnicio.portfolio import analyze_portfolio
-from omnicio.tbank import (
-    TBankInstrumentMetadata, TBankMoney, TBankPortfolio,
-    TBankPortfolioPosition, TBankPositions,
-)
-names = ("Issuer <img src=x onerror=alert(1)>", "Second issuer")
-holdings = tuple(TBankPortfolioPosition(
-    ticker=name, figi=name, instrument_uid=name, instrument_type="share",
-    quantity="1", current_price=TBankMoney("RUB", price), average_price=None,
-    expected_yield_percent="0", daily_yield=None, blocked=False,
-) for name, price in zip(names, ("750", "150"), strict=True))
-metadata = tuple(TBankInstrumentMetadata(
-    name, name, name, "", "share", sector, "RU", False,
-) for name, sector in zip(names, ("financial", "energy"), strict=True))
-report = analyze_portfolio(
-    TBankPortfolio(TBankMoney("RUB", "1000"), "0", None, "0", (), holdings),
-    TBankPositions((TBankMoney("RUB", "100"),), (TBankMoney("RUB", "20"),), False),
-    metadata,
-)
-print(json.dumps(asdict(report)))
-`], {cwd: root, encoding: "utf8"}));
+const analysis = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 
 const timestamp = new Date().toISOString();
 const fixture = {
@@ -74,45 +50,46 @@ const server = http.createServer((request, response) => {
   return send({detail:"synthetic unavailable"}, 503);
 });
 
+async function checkViewport(browser, origin, label, viewport) {
+  connected = true;
+  mode = "success";
+  const page = await browser.newPage({viewport});
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(origin);
+  await page.locator("#profile-panel").waitFor({state:"visible"});
+  await page.waitForFunction(() =>
+    document.querySelector("#top-connection-text").textContent === "T-Invest подключён");
+  const nav = label === "mobile" ? '[data-mobile-view="decisions"]' : '[data-view="decisions"]';
+  await page.locator(nav).click();
+  await page.locator("#analysis-content").waitFor({state:"visible"});
+  assert.equal(await page.locator("#analysis-cash").innerText(), "80\u00a0₽");
+  assert.equal(await page.locator("#analysis-securities tr").count(), 2);
+  assert.equal(await page.locator("#analysis-securities img").count(), 0);
+  assert.equal(await page.locator("#analysis-observations img").count(), 0);
+  assert.match(await page.locator("#analysis-status").innerText(), /Песочница/);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  mode = "empty";
+  await page.locator("#analysis-refresh").click();
+  await page.waitForFunction(() => document.querySelector("#analysis-count").textContent === "0");
+  assert.equal(await page.locator("#analysis-cash").innerText(), "Не подтверждены");
+  mode = "error";
+  await page.locator("#analysis-refresh").click();
+  await page.waitForFunction(() => document.querySelector("#analysis-content").classList.contains("hidden"));
+  assert.match(await page.locator("#analysis-status").innerText(), /не получен/);
+  assert.deepEqual(errors, []);
+  console.log(JSON.stringify({label, success:true, bodyOverflow:false}));
+  await page.close();
+}
+
 (async () => {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   const origin = "http://127.0.0.1:" + address.port;
   const browser = await chromium.launch({headless:true});
   try {
-    for (const [label, viewport] of [
-      ["desktop", {width:1440,height:1000}], ["mobile", {width:390,height:844}],
-    ]) {
-      connected = true;
-      mode = "success";
-      const page = await browser.newPage({viewport});
-      const errors = [];
-      page.on("pageerror", error => errors.push(error.message));
-      await page.goto(origin);
-      await page.locator("#profile-panel").waitFor({state:"visible"});
-      await page.waitForFunction(() =>
-        document.querySelector("#top-connection-text").textContent === "T-Invest подключён");
-      const nav = label === "mobile" ? '[data-mobile-view="decisions"]' : '[data-view="decisions"]';
-      await page.locator(nav).click();
-      await page.locator("#analysis-content").waitFor({state:"visible"});
-      assert.equal(await page.locator("#analysis-cash").innerText(), "80\u00a0₽");
-      assert.equal(await page.locator("#analysis-securities tr").count(), 2);
-      assert.equal(await page.locator("#analysis-securities img").count(), 0);
-      assert.equal(await page.locator("#analysis-observations img").count(), 0);
-      assert.match(await page.locator("#analysis-status").innerText(), /Песочница/);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-      mode = "empty";
-      await page.locator("#analysis-refresh").click();
-      await page.waitForFunction(() => document.querySelector("#analysis-count").textContent === "0");
-      assert.equal(await page.locator("#analysis-cash").innerText(), "Не подтверждены");
-      mode = "error";
-      await page.locator("#analysis-refresh").click();
-      await page.waitForFunction(() => document.querySelector("#analysis-content").classList.contains("hidden"));
-      assert.match(await page.locator("#analysis-status").innerText(), /не получен/);
-      assert.deepEqual(errors, []);
-      console.log(JSON.stringify({label, success:true, bodyOverflow:false}));
-      await page.close();
-    }
+    await checkViewport(browser, origin, "desktop", {width:1440,height:1000});
+    await checkViewport(browser, origin, "mobile", {width:390,height:844});
     assert.equal(calls, 6);
   } finally {
     await browser.close();

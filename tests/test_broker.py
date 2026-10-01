@@ -632,11 +632,13 @@ def test_metadata_adapter_preserves_unknown_qualification_and_delisted_records()
     {"instruments": [{"uid": "one", "forQualInvestorFlag": "false"}]},
 ])
 def test_malformed_metadata_cannot_look_like_a_valid_catalog(payload: dict[str, object]) -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(payload)
     with (
-        patch("urllib.request.urlopen", return_value=FakeResponse(payload)),
+        patch("urllib.request.urlopen", return_value=response),
         pytest.raises(TBankUnavailable),
     ):
-        TBankInvestClient().get_instrument_metadata(
+        client.get_instrument_metadata(
             "t.fake-owner-credential-1234567890", "prod", "bond",
         )
 
@@ -644,11 +646,13 @@ def test_malformed_metadata_cannot_look_like_a_valid_catalog(payload: dict[str, 
 @pytest.mark.parametrize("units", ["NaN", "Infinity"])
 def test_non_finite_broker_money_fails_at_provider_boundary(units: str) -> None:
     payload = {"totalAmountPortfolio": {"currency": "rub", "units": units}}
+    client = TBankInvestClient()
+    response = FakeResponse(payload)
     with (
-        patch("urllib.request.urlopen", return_value=FakeResponse(payload)),
+        patch("urllib.request.urlopen", return_value=response),
         pytest.raises(TBankUnavailable),
     ):
-        TBankInvestClient().get_portfolio(
+        client.get_portfolio(
             "t.fake-owner-credential-1234567890", "prod", "account-1",
         )
 

@@ -202,6 +202,11 @@ class BrokerService:
                     metadata.extend(result.result())
                 except TBankUnavailable:
                     failed.append(methods[kind])
+        catalog_status = "not_requested"
+        if requested:
+            catalog_status = "received"
+        if failed:
+            catalog_status = "partial"
         sources.append(
             AnalysisSource(
                 "catalog",
@@ -209,7 +214,7 @@ class BrokerService:
                 source_root + "instruments-service",
                 tuple(requested),
                 datetime.now(UTC),
-                "partial" if failed else "received" if requested else "not_requested",
+                catalog_status,
             )
         )
         return BrokerAnalysisSnapshot(

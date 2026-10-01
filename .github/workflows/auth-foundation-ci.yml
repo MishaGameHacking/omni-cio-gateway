@@ -75,7 +75,31 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/omnicio-ui" --no-save --ignore-scripts playwright@1.62.1
           export NODE_PATH="$RUNNER_TEMP/omnicio-ui/node_modules"
           node "$NODE_PATH/playwright/cli.js" install --with-deps chromium
-          node .github/scripts/test_portfolio_ui.cjs
+          python - <<'PY' > "$RUNNER_TEMP/portfolio-analysis.json"
+          import json
+          from dataclasses import asdict
+          from omnicio.portfolio import analyze_portfolio
+          from omnicio.tbank import (
+              TBankInstrumentMetadata, TBankMoney, TBankPortfolio,
+              TBankPortfolioPosition, TBankPositions,
+          )
+          names = ("Issuer <img src=x onerror=alert(1)>", "Second issuer")
+          holdings = tuple(TBankPortfolioPosition(
+              ticker=name, figi=name, instrument_uid=name, instrument_type="share",
+              quantity="1", current_price=TBankMoney("RUB", price), average_price=None,
+              expected_yield_percent="0", daily_yield=None, blocked=False,
+          ) for name, price in zip(names, ("750", "150"), strict=True))
+          metadata = tuple(TBankInstrumentMetadata(
+              name, name, name, "", "share", sector, "RU", False,
+          ) for name, sector in zip(names, ("financial", "energy"), strict=True))
+          report = analyze_portfolio(
+              TBankPortfolio(TBankMoney("RUB", "1000"), "0", None, "0", (), holdings),
+              TBankPositions((TBankMoney("RUB", "100"),), (TBankMoney("RUB", "20"),), False),
+              metadata,
+          )
+          print(json.dumps(asdict(report)))
+          PY
+          node .github/scripts/test_portfolio_ui.cjs "$RUNNER_TEMP/portfolio-analysis.json"
 
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}

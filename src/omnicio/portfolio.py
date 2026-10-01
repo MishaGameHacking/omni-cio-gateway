@@ -122,15 +122,9 @@ def _value(position: TBankPortfolioPosition) -> Decimal | None:
     return amount * quantity
 
 
-def analyze_portfolio(
-    portfolio: TBankPortfolio,
-    positions: TBankPositions,
-    metadata: tuple[TBankInstrumentMetadata, ...],
-) -> PortfolioAnalysis:
-    """Describe verified holdings, and expose every gap instead of guessing."""
-    if portfolio.total.currency.upper() != "RUB":
-        raise ValueError("RUB portfolio valuation required")
-    nav = _number(portfolio.total.value)
+def _cash_state(
+    portfolio: TBankPortfolio, positions: TBankPositions, nav: Decimal,
+) -> tuple[Decimal, Decimal, bool]:
     cash, cash_valid = _rub_money(positions.money)
     blocked, blocked_valid = _rub_money(positions.blocked_money)
     compatible = nav >= 0 and cash_valid and blocked_valid and blocked <= cash
@@ -143,17 +137,42 @@ def analyze_portfolio(
         for p in portfolio.positions
         if _number(p.quantity) != 0
     )
-    unblocked = cash - blocked if compatible and not positions.limits_loading_in_progress else None
+    return cash, blocked, compatible
+
+
+def _exposure(
+    position: TBankPortfolioPosition, info: TBankInstrumentMetadata | None, nav: Decimal,
+) -> SecurityExposure:
+    if info is not None and info.instrument_type != position.instrument_type:
+        raise ValueError("portfolio metadata instrument type mismatch")
+    uid = position.instrument_uid or position.figi
+    value = _value(position)
+    sector = info.sector if info is not None else ""
+    # A fund sector is not the sector exposure of its underlying holdings.
+    if position.instrument_type == "etf":
+        sector = ""
+    return SecurityExposure(
+        uid=uid,
+        ticker=(info.ticker if info else "") or position.ticker,
+        name=(info.name if info else "") or position.ticker or uid,
+        instrument_type=position.instrument_type,
+        sector=sector,
+        country_of_risk=info.country_of_risk if info else "",
+        for_qual_investor=info.for_qual_investor if info else None,
+        blocked=position.blocked or position.exchange_blocked,
+        value_rub=_text(value) if value is not None else None,
+        nav_percent=_percent(value, nav) if value is not None else None,
+    )
+
+
+def _securities(
+    portfolio: TBankPortfolio, metadata: tuple[TBankInstrumentMetadata, ...], nav: Decimal,
+) -> tuple[SecurityExposure, ...]:
     by_uid = {item.uid: item for item in metadata}
     if len(by_uid) != len(metadata):
         raise ValueError("duplicate metadata uid")
-
     securities: list[SecurityExposure] = []
-    sector_values: dict[str, Decimal] = {}
-    valued = Decimal(0)
-    classified = Decimal(0)
     seen: set[str] = set()
-    incomplete = False
     for position in portfolio.positions:
         if position.instrument_type == "currency" or _number(position.quantity) == 0:
             continue
@@ -161,47 +180,25 @@ def analyze_portfolio(
         if not uid or uid in seen:
             raise ValueError("missing or duplicate portfolio instrument identity")
         seen.add(uid)
-        info = by_uid.get(position.instrument_uid)
-        if info is not None and info.instrument_type != position.instrument_type:
-            raise ValueError("portfolio metadata instrument type mismatch")
-        value = _value(position)
-        sector = info.sector if info is not None else ""
-        # A fund sector is not the sector exposure of its underlying holdings.
-        if position.instrument_type == "etf":
-            sector = ""
-        if value is not None:
-            valued += value
-            sector_values[sector] = sector_values.get(sector, Decimal(0)) + value
-            if sector:
-                classified += value
-        if value is None or info is None or not sector:
-            incomplete = True
-        securities.append(
-            SecurityExposure(
-                uid=uid,
-                ticker=(info.ticker if info else "") or position.ticker,
-                name=(info.name if info else "") or position.ticker or uid,
-                instrument_type=position.instrument_type,
-                sector=sector,
-                country_of_risk=info.country_of_risk if info else "",
-                for_qual_investor=info.for_qual_investor if info else None,
-                blocked=position.blocked or position.exchange_blocked,
-                value_rub=_text(value) if value is not None else None,
-                nav_percent=_percent(value, nav) if value is not None else None,
-            )
+        securities.append(_exposure(position, by_uid.get(position.instrument_uid), nav))
+    return tuple(sorted(securities, key=lambda item: (
+        item.value_rub is None, -_number(item.value_rub or "0"), item.uid,
+    )))
+
+
+def _sector_values(securities: tuple[SecurityExposure, ...]) -> dict[str, Decimal]:
+    values: dict[str, Decimal] = {}
+    for security in securities:
+        if security.value_rub is None:
+            continue
+        values[security.sector] = (
+            values.get(security.sector, Decimal(0)) + _number(security.value_rub)
         )
-    # Sequential broker reads are not an atomic valuation. Never normalize away a mismatch.
-    if nav < valued + cash - Decimal("0.01"):
-        compatible = False
-        unblocked = None
-    securities.sort(
-        key=lambda item: (
-            item.value_rub is None,
-            -_number(item.value_rub or "0"),
-            item.uid,
-        )
-    )
-    classes = tuple(
+    return values
+
+
+def _class_allocations(portfolio: TBankPortfolio, nav: Decimal) -> tuple[Allocation, ...]:
+    return tuple(
         sorted(
             (
                 Allocation(
@@ -216,7 +213,12 @@ def analyze_portfolio(
             key=lambda item: (-_number(item.value_rub), item.key),
         )
     )
-    sectors = tuple(
+
+
+def _sector_allocations(
+    sector_values: dict[str, Decimal], nav: Decimal,
+) -> tuple[Allocation, ...]:
+    return tuple(
         sorted(
             (
                 Allocation(
@@ -230,6 +232,12 @@ def analyze_portfolio(
             key=lambda item: (-_number(item.value_rub), item.key),
         )
     )
+
+
+def _observations(
+    securities: tuple[SecurityExposure, ...], positions: TBankPositions,
+    *, incomplete: bool, compatible: bool, unblocked: Decimal | None,
+) -> tuple[Observation, ...]:
     observations: list[Observation] = []
     source_ids = ("portfolio", "positions")
     if not compatible:
@@ -329,12 +337,35 @@ def analyze_portfolio(
         )
     )
     observations.sort(key=lambda item: (item.priority, item.code))
+    return tuple(observations)
+
+
+def analyze_portfolio(
+    portfolio: TBankPortfolio,
+    positions: TBankPositions,
+    metadata: tuple[TBankInstrumentMetadata, ...],
+) -> PortfolioAnalysis:
+    """Describe verified holdings, and expose every gap instead of guessing."""
+    if portfolio.total.currency.upper() != "RUB":
+        raise ValueError("RUB portfolio valuation required")
+    nav = _number(portfolio.total.value)
+    cash, blocked, compatible = _cash_state(portfolio, positions, nav)
+    securities = _securities(portfolio, metadata, nav)
+    sector_values = _sector_values(securities)
+    valued = sum(sector_values.values(), Decimal(0))
+    classified = sum((value for sector, value in sector_values.items() if sector), Decimal(0))
+    incomplete = any(item.value_rub is None or not item.sector for item in securities)
+    # Broker reads are not an atomic valuation. Never normalize away a mismatch.
+    if nav < valued + cash - Decimal("0.01"):
+        compatible = False
+    unblocked = cash - blocked if compatible and not positions.limits_loading_in_progress else None
+    status = "observed"
+    if not compatible:
+        status = "needs_reconciliation"
+    elif incomplete or positions.limits_loading_in_progress:
+        status = "partial"
     return PortfolioAnalysis(
-        status="needs_reconciliation"
-        if not compatible
-        else "partial"
-        if incomplete or positions.limits_loading_in_progress
-        else "observed",
+        status=status,
         nav_rub=_text(nav),
         rub_cash_total=_text(cash),
         rub_cash_blocked=_text(blocked),
@@ -342,8 +373,11 @@ def analyze_portfolio(
         security_count=len(securities),
         valued_security_count=sum(item.value_rub is not None for item in securities),
         sector_coverage_percent=_percent(classified, valued),
-        classes=classes,
-        sectors=sectors,
-        securities=tuple(securities),
-        observations=tuple(observations),
+        classes=_class_allocations(portfolio, nav),
+        sectors=_sector_allocations(sector_values, nav),
+        securities=securities,
+        observations=_observations(
+            securities, positions,
+            incomplete=incomplete, compatible=compatible, unblocked=unblocked,
+        ),
     )

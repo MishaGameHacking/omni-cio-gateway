@@ -467,7 +467,14 @@ def tbank_portfolio(
     }
 
 
-@app.get("/api/broker/tbank/analysis")
+@app.get(
+    "/api/broker/tbank/analysis",
+    responses={
+        401: {"description": "Owner session required"},
+        409: {"description": "Broker connection or credential must be checked"},
+        503: {"description": "Broker analysis is temporarily unavailable"},
+    },
+)
 def tbank_analysis(
     request: Request,
     response: Response,
@@ -482,7 +489,7 @@ def tbank_analysis(
         raise HTTPException(
             status_code=409, detail="stored T-Invest credential was rejected",
         ) from exc
-    except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError) as exc:
+    except (TBankUnavailable, BrokerConnectionError, ValueError) as exc:
         raise HTTPException(status_code=503, detail="T-Invest analysis unavailable") from exc
     response.headers["Cache-Control"] = "private, no-store"
     return asdict(snapshot)
