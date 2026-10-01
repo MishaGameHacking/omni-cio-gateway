@@ -4,17 +4,25 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID
 
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
+from .broker import BrokerAccountNotAccessible, BrokerService
 from .config import Settings, load_settings
-from .db import Database
+from .db import Database, UserRecord
 from .security import SecurityValueError, format_public_id
-from .service import AuthService, InvalidChallenge, RateLimited, RegistrationClosed
+from .service import (
+    AuthService,
+    InvalidChallenge,
+    OwnerAccessDenied,
+    RateLimited,
+    RegistrationClosed,
+)
 from .sms import SmsDeliveryError, build_sms_provider
+from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 
 SESSION_COOKIE = "omnicio_session"
 CANONICAL_ORIGIN = "https://omnicio.ru"
