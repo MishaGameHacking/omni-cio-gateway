@@ -35,9 +35,9 @@ from timeweb_auth_postgres import (
 DOMAIN = "omnicio.ru"
 SITE_MARKER = 'name="omni-cio-white-site"'
 LEGAL_PAGES = {
-    "/legal/privacy.html": "Политика обработки персональных данных",
-    "/legal/consent.html": "Согласие на обработку персональных данных",
-    "/legal/terms.html": "Пользовательское соглашение",
+    "/legal/privacy.html": "Уведомление о конфиденциальности и обработке данных",
+    "/legal/consent.html": "Отдельное согласие на обработку данных для входа",
+    "/legal/terms.html": "Правила личного использования OmniCIO Personal",
 }
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
