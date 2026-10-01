@@ -117,6 +117,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('SMS_PROVIDER_LOGIN="user@example.test"', product_env)
         self.assertIn('SMS_PROVIDER_TOKEN="secret-token"', product_env)
         self.assertIn('REGISTRATION_ENABLED="false"', product_env)
+        self.assertIn('OWNER_LOGIN_ENABLED="false"', product_env)
 
     def test_product_environment_enables_provider_only_with_sender(self) -> None:
         old = dict(os.environ)
