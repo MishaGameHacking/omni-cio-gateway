@@ -108,9 +108,9 @@ def validate_product_environment() -> None:
         "SMS_SENDER",
         "SMS_TEST_NUMBER",
         "OWNER_PHONE",
-        "LEGAL_OPERATOR_NAME",
-        "LEGAL_OPERATOR_ADDRESS",
-        "LEGAL_PRIVACY_CONTACT",
+        "LEGAL_PRIVACY_VERSION",
+        "LEGAL_CONSENT_VERSION",
+        "LEGAL_TERMS_VERSION",
     )
     missing = [
         name
@@ -142,9 +142,6 @@ def build_product_environment() -> str:
         "OWNER_PHONE": owner_phone,
         "OWNER_LOGIN_ENABLED": owner_login_enabled,
         "REGISTRATION_ENABLED": "false",
-        "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
-        "LEGAL_OPERATOR_ADDRESS": os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),
-        "LEGAL_PRIVACY_CONTACT": os.environ.get("LEGAL_PRIVACY_CONTACT", "").strip(),
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
