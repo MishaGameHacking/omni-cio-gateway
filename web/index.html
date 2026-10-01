@@ -249,18 +249,109 @@
               </div>
             </section>
 
-            <details class="roadmap">
-              <summary>Следующий отдельный этап</summary>
-              <div class="roadmap-content">
+            <section class="system-section" aria-labelledby="system-modules-title">
+              <div class="section-heading">
                 <div>
-                  <strong>Системные модули</strong>
-                  <span>
-                    Сова, Охотник и Страж получат отдельные правила данных, риска и тесты.
-                    Они не будут имитировать работу до появления проверенной логики.
-                  </span>
+                  <p class="section-label">Система</p>
+                  <h3 id="system-modules-title">Системные модули</h3>
                 </div>
+                <span class="section-note">Только чтение</span>
               </div>
-            </details>
+
+              <div class="system-grid">
+                <article class="system-card">
+                  <header class="system-card-header">
+                    <div>
+                      <span class="system-symbol" aria-hidden="true">С</span>
+                      <div>
+                        <strong>Сова</strong>
+                        <span>Наблюдение за свежестью данных</span>
+                      </div>
+                    </div>
+                    <span class="state-badge" id="owl-state">Ожидает</span>
+                  </header>
+                  <p>
+                    Автоматически обновляет портфель раз в 5 минут, пока приложение
+                    открыто на экране. Никаких торговых действий не выполняет.
+                  </p>
+                  <dl class="system-facts">
+                    <div>
+                      <dt>Последние данные</dt>
+                      <dd id="owl-last-refresh">—</dd>
+                    </div>
+                    <div>
+                      <dt>Интервал</dt>
+                      <dd>5 минут</dd>
+                    </div>
+                  </dl>
+                </article>
+
+                <article class="system-card system-card-hunter">
+                  <header class="system-card-header">
+                    <div>
+                      <span class="system-symbol" aria-hidden="true">О</span>
+                      <div>
+                        <strong>Охотник</strong>
+                        <span>Поиск доступных инструментов</span>
+                      </div>
+                    </div>
+                    <span class="state-badge state-ok">Работает</span>
+                  </header>
+                  <p>
+                    Ищет инструменты в T-Invest по тикеру или названию. Результат поиска
+                    не является рекомендацией купить или продать актив.
+                  </p>
+                  <form id="hunter-form" class="hunter-form" novalidate>
+                    <label class="visually-hidden" for="hunter-query">Тикер или название</label>
+                    <input
+                      id="hunter-query"
+                      type="search"
+                      minlength="1"
+                      maxlength="64"
+                      autocomplete="off"
+                      placeholder="Например: SBER или Газпром"
+                      required
+                    >
+                    <button id="hunter-search" class="button button-primary" type="submit">
+                      Найти
+                    </button>
+                  </form>
+                  <p id="hunter-message" class="message" role="status" aria-live="polite"></p>
+                  <div class="hunter-results" id="hunter-results"></div>
+                </article>
+
+                <article class="system-card">
+                  <header class="system-card-header">
+                    <div>
+                      <span class="system-symbol" aria-hidden="true">С</span>
+                      <div>
+                        <strong>Страж</strong>
+                        <span>Объективный контроль состояния</span>
+                      </div>
+                    </div>
+                    <span class="state-badge" id="guard-state">Ожидает</span>
+                  </header>
+                  <p>
+                    Показывает фактические блокировки и концентрацию портфеля без
+                    оценки «хорошо/плохо» и без автоматических решений.
+                  </p>
+                  <dl class="system-facts">
+                    <div>
+                      <dt>Заблокированных позиций</dt>
+                      <dd id="guard-blocked-positions">—</dd>
+                    </div>
+                    <div>
+                      <dt>Заблокированных валют</dt>
+                      <dd id="guard-blocked-cash">—</dd>
+                    </div>
+                    <div>
+                      <dt>Крупнейший класс активов</dt>
+                      <dd id="guard-largest-class">—</dd>
+                    </div>
+                  </dl>
+                </article>
+              </div>
+            </section>
           </section>
 
           <section class="view-panel hidden" data-view-panel="portfolio">
