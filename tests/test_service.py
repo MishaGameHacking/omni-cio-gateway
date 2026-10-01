@@ -174,3 +174,36 @@ def test_issue_challenge_rejects_non_owner_before_sms_send() -> None:
 
     assert sms.phone == ""
     assert db.challenge is None
+
+
+def test_verify_rejects_stale_non_owner_challenge() -> None:
+    db = FakeDatabase()
+    sms = FakeSms()
+    auth = AuthService(settings(), db, sms)
+
+    issued = auth.issue_challenge(
+        phone_raw="+79161234567",
+        client_ip="203.0.113.10",
+        accepted_privacy=True,
+        accepted_personal_data=True,
+        accepted_terms=True,
+        confirmed_age_18=True,
+    )
+    assert db.challenge is not None
+    db.challenge = ChallengeRecord(
+        id=db.challenge.id,
+        phone_lookup=b"x" * 32,
+        phone_ciphertext=db.challenge.phone_ciphertext,
+        code_digest=db.challenge.code_digest,
+        attempts_remaining=db.challenge.attempts_remaining,
+        expires_at=db.challenge.expires_at,
+        consumed_at=None,
+        legal_versions=db.challenge.legal_versions,
+    )
+
+    with pytest.raises(OwnerAccessDenied):
+        auth.verify_challenge(
+            challenge_id=issued.challenge_id,
+            code=sms.code,
+            client_ip="203.0.113.10",
+        )
