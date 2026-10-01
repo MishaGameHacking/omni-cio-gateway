@@ -43,6 +43,9 @@
   const usdRubTime = document.querySelector("#usd-rub-time");
   const usdRubCbr = document.querySelector("#usd-rub-cbr");
   const usdRubCbrDate = document.querySelector("#usd-rub-cbr-date");
+  const usdRubCbrNextRow = document.querySelector("#usd-rub-cbr-next-row");
+  const usdRubCbrNext = document.querySelector("#usd-rub-cbr-next");
+  const usdRubCbrNextDate = document.querySelector("#usd-rub-cbr-next-date");
 
   const portfolioStateBadge = document.querySelector("#portfolio-state-badge");
   const portfolioRefresh = document.querySelector("#portfolio-refresh");
@@ -415,8 +418,8 @@
       : "T-Invest · биржа";
     usdRubTime.textContent = formatClock(snapshot.quote_time);
     usdRubNote.textContent = live
-      ? "Котировка обновляется через защищённый поток OmniCIO примерно каждые 5 секунд."
-      : "Источник давно не обновлял цену — показываем последнюю доступную котировку.";
+      ? "Рыночная котировка T-Invest. Она может отличаться от Google/Morningstar и курса ЦБ РФ."
+      : "Последняя доступная котировка T-Invest. Она может отличаться от Google/Morningstar и курса ЦБ РФ.";
     owlFxStatus.textContent = live
       ? `оперативно · ${formatClock(snapshot.quote_time)}`
       : `последняя · ${formatClock(snapshot.quote_time)}`;
@@ -426,12 +429,27 @@
         currency: snapshot.cbr_reference.currency,
         value: String(snapshot.cbr_reference.value),
       });
-      usdRubCbrDate.textContent = `действует на ${formatCalendarDate(
+      usdRubCbrDate.textContent = `официальный курс на ${formatCalendarDate(
         snapshot.cbr_reference.effective_date,
       )}`;
     } else {
       usdRubCbr.textContent = "Недоступен";
       usdRubCbrDate.textContent = "Справочный источник временно не отвечает";
+    }
+
+    if (snapshot.cbr_next_reference) {
+      usdRubCbrNext.textContent = formatMoney({
+        currency: snapshot.cbr_next_reference.currency,
+        value: String(snapshot.cbr_next_reference.value),
+      });
+      usdRubCbrNextDate.textContent = `вступает в силу ${formatCalendarDate(
+        snapshot.cbr_next_reference.effective_date,
+      )}`;
+      usdRubCbrNextRow.classList.remove("hidden");
+    } else {
+      usdRubCbrNextRow.classList.add("hidden");
+      usdRubCbrNext.textContent = "—";
+      usdRubCbrNextDate.textContent = "—";
     }
   };
 

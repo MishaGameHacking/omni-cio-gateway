@@ -298,13 +298,17 @@ class AuthAppDeployTests(unittest.TestCase):
             "usd-rub-time",
             "usd-rub-cbr",
             "usd-rub-cbr-date",
+            "usd-rub-cbr-next-row",
+            "usd-rub-cbr-next",
+            "usd-rub-cbr-next-date",
             "home-fx-state",
             "owl-fx-status",
         ):
             self.assertIn(f'id="{element_id}"', page)
 
         self.assertIn("Оперативная котировка T-Invest", page)
-        self.assertIn("Официальный курс ЦБ РФ", page)
+        self.assertIn("ЦБ РФ — действует сегодня", page)
+        self.assertIn("Следующий курс ЦБ РФ", page)
         self.assertIn('new EventSource("/api/market/usd-rub/stream")', script)
         self.assertIn('/api/market/usd-rub"', script)
         self.assertIn("5 * 1000", script)
@@ -367,7 +371,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.5.0"', project)
+        self.assertIn('version = "0.5.1"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
