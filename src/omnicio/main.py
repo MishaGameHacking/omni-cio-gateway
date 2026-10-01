@@ -381,6 +381,7 @@ async def usd_rub_market_stream(
             if await request.is_disconnected():
                 break
 
+            payload: dict[str, object]
             try:
                 snapshot = await asyncio.to_thread(market.usd_rub, user.id)
             except BrokerNotConnected:
