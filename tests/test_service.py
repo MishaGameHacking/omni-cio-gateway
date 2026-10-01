@@ -5,11 +5,12 @@ import os
 from datetime import timedelta
 from uuid import UUID
 
+import pytest
 from cryptography.fernet import Fernet
 
 from omnicio.config import Settings
 from omnicio.db import ChallengeRecord, UserRecord, utcnow
-from omnicio.service import AuthService
+from omnicio.service import AuthService, OwnerAccessDenied
 
 
 class FakeSms:
@@ -29,6 +30,7 @@ class FakeDatabase:
         self.sent = False
         self.session_digest: bytes | None = None
         self.refreshed_ttl: int | None = None
+        self.refreshed_owner_lookup: bytes | None = None
         self.user = UserRecord(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
@@ -85,7 +87,14 @@ class FakeDatabase:
         self.session_digest = kwargs["session_token_digest"]
         return self.user, True
 
-    def refresh_session_digest(self, token_digest, *, session_ttl_seconds):
+    def refresh_session_digest(
+        self,
+        token_digest,
+        *,
+        owner_phone_lookup,
+        session_ttl_seconds,
+    ):
+        self.refreshed_owner_lookup = owner_phone_lookup
         self.refreshed_ttl = session_ttl_seconds
         if token_digest == self.session_digest:
             return self.user
@@ -103,11 +112,14 @@ def settings() -> Settings:
         lookup_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
         otp_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
         ip_key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
+        broker_token_crypto_key=Fernet.generate_key().decode("ascii"),
         sms_provider="smsaero",
         sms_login="user@example.test",
         sms_token="test-token",
         sms_sender="SMS Aero",
-        registration_enabled=True,
+        owner_phone="+79161234567",
+        owner_login_enabled=True,
+        registration_enabled=False,
         operator_name="Test Operator",
         operator_address="Moscow",
         privacy_contact="privacy@example.test",
@@ -151,3 +163,56 @@ def test_issue_and_verify_creates_public_id_and_session() -> None:
     assert result.created is True
     assert service.refresh_session(result.session_token) == db.user
     assert db.refreshed_ttl == 34_560_000
+    assert db.refreshed_owner_lookup is not None
+
+
+def test_issue_challenge_rejects_non_owner_before_sms_send() -> None:
+    db = FakeDatabase()
+    sms = FakeSms()
+    auth = AuthService(settings(), db, sms)
+
+    with pytest.raises(OwnerAccessDenied):
+        auth.issue_challenge(
+            phone_raw="+79991234567",
+            client_ip="203.0.113.10",
+            accepted_privacy=True,
+            accepted_personal_data=True,
+            accepted_terms=True,
+            confirmed_age_18=True,
+        )
+
+    assert sms.phone == ""
+    assert db.challenge is None
+
+
+def test_verify_rejects_stale_non_owner_challenge() -> None:
+    db = FakeDatabase()
+    sms = FakeSms()
+    auth = AuthService(settings(), db, sms)
+
+    issued = auth.issue_challenge(
+        phone_raw="+79161234567",
+        client_ip="203.0.113.10",
+        accepted_privacy=True,
+        accepted_personal_data=True,
+        accepted_terms=True,
+        confirmed_age_18=True,
+    )
+    assert db.challenge is not None
+    db.challenge = ChallengeRecord(
+        id=db.challenge.id,
+        phone_lookup=b"x" * 32,
+        phone_ciphertext=db.challenge.phone_ciphertext,
+        code_digest=db.challenge.code_digest,
+        attempts_remaining=db.challenge.attempts_remaining,
+        expires_at=db.challenge.expires_at,
+        consumed_at=None,
+        legal_versions=db.challenge.legal_versions,
+    )
+
+    with pytest.raises(OwnerAccessDenied):
+        auth.verify_challenge(
+            challenge_id=issued.challenge_id,
+            code=sms.code,
+            client_ip="203.0.113.10",
+        )

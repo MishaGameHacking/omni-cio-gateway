@@ -84,6 +84,7 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         f"test -s {RUNTIME_ENV} && "
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
         f"grep -q '^PHONE_CRYPTO_KEY=' {RUNTIME_ENV} && "
+        f"grep -q '^BROKER_TOKEN_CRYPTO_KEY=' {RUNTIME_ENV} && "
         f"grep -q '^REGISTRATION_ENABLED=false$' {RUNTIME_ENV}"
     )
     try:
@@ -106,6 +107,7 @@ def validate_product_environment() -> None:
         "SMS_PROVIDER_TOKEN",
         "SMS_SENDER",
         "SMS_TEST_NUMBER",
+        "OWNER_PHONE",
         "LEGAL_OPERATOR_NAME",
         "LEGAL_OPERATOR_ADDRESS",
         "LEGAL_PRIVACY_CONTACT",
@@ -126,13 +128,19 @@ def build_product_environment() -> str:
     sms_login = os.environ.get("SMS_PROVIDER_LOGIN", "").strip()
     sms_token = os.environ.get("SMS_PROVIDER_TOKEN", "").strip()
     sms_sender = os.environ.get("SMS_SENDER", "").strip()
+    owner_phone = os.environ.get("OWNER_PHONE", "").strip()
     sms_provider = "smsaero" if sms_login and sms_token and sms_sender else "disabled"
+    owner_login_enabled = (
+        "true" if sms_provider == "smsaero" and owner_phone else "false"
+    )
 
     values = {
         "SMS_PROVIDER": sms_provider,
         "SMS_PROVIDER_LOGIN": sms_login,
         "SMS_PROVIDER_TOKEN": sms_token,
         "SMS_SENDER": sms_sender,
+        "OWNER_PHONE": owner_phone,
+        "OWNER_LOGIN_ENABLED": owner_login_enabled,
         "REGISTRATION_ENABLED": "false",
         "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
         "LEGAL_OPERATOR_ADDRESS": os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),
@@ -461,7 +469,11 @@ def verify_public() -> None:
                 raise InfraError("Public auth config returned non-200")
             if payload.get("registration_enabled") is not False:
                 raise InfraError(
-                    "Registration unexpectedly became enabled during app deploy"
+                    "Public registration unexpectedly became enabled"
+                )
+            if payload.get("owner_login_enabled") is not True:
+                raise InfraError(
+                    "Private owner login did not become enabled"
                 )
 
         for path, marker in LEGAL_PAGES.items():
@@ -575,7 +587,7 @@ def reconcile(
 
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
-        "registration remains disabled."
+        "owner login is enabled and public registration remains disabled."
     )
     set_output("status", "app_ready")
     return 0

@@ -31,6 +31,10 @@ class RegistrationClosed(AuthError):
     """Registration is not legally or operationally ready."""
 
 
+class OwnerAccessDenied(AuthError):
+    """The submitted phone is not the configured private owner."""
+
+
 class RateLimited(AuthError):
     """OTP send rate limit was exceeded."""
 
@@ -76,14 +80,19 @@ class AuthService:
         accepted_terms: bool,
         confirmed_age_18: bool,
     ) -> ChallengeIssued:
-        if not self.settings.registration_ready:
-            raise RegistrationClosed("registration is not enabled")
+        if not self.settings.owner_login_ready:
+            raise RegistrationClosed("owner login is not enabled")
+
+        phone = normalize_russian_mobile(phone_raw)
+        owner_phone = normalize_russian_mobile(self.settings.owner_phone)
+        if phone != owner_phone:
+            raise OwnerAccessDenied("phone is not allowed for this private account")
+
         if not (accepted_privacy and accepted_personal_data and accepted_terms):
             raise RegistrationClosed("required legal documents are not accepted")
         if not confirmed_age_18:
             raise RegistrationClosed("service is available only to users aged 18+")
 
-        phone = normalize_russian_mobile(phone_raw)
         lookup = phone_lookup(phone, self.settings.lookup_key)
         ip_hash = client_ip_digest(client_ip, self.settings.ip_key)
 
@@ -132,14 +141,20 @@ class AuthService:
         code: str,
         client_ip: str,
     ) -> LoginSucceeded:
-        if not self.settings.registration_ready:
-            raise RegistrationClosed("registration is not enabled")
+        if not self.settings.owner_login_ready:
+            raise RegistrationClosed("owner login is not enabled")
         if len(code) != 6 or not code.isdigit():
             raise InvalidChallenge("invalid verification code")
 
         challenge = self.database.load_challenge(challenge_id)
         if challenge is None:
             raise InvalidChallenge("challenge not found")
+
+        owner_phone = normalize_russian_mobile(self.settings.owner_phone)
+        owner_lookup = phone_lookup(owner_phone, self.settings.lookup_key)
+        if challenge.phone_lookup != owner_lookup:
+            raise OwnerAccessDenied("challenge does not belong to the private owner")
+
         if challenge.consumed_at is not None or challenge.expires_at <= utcnow():
             raise InvalidChallenge("challenge expired or consumed")
         if challenge.attempts_remaining <= 0:
@@ -182,8 +197,11 @@ class AuthService:
     def refresh_session(self, token: str) -> UserRecord | None:
         if not token:
             return None
+        owner_phone = normalize_russian_mobile(self.settings.owner_phone)
+        owner_lookup = phone_lookup(owner_phone, self.settings.lookup_key)
         return self.database.refresh_session_digest(
             session_digest(token),
+            owner_phone_lookup=owner_lookup,
             session_ttl_seconds=self.settings.session_ttl_seconds,
         )
 

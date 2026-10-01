@@ -30,7 +30,9 @@ Green CI необходим, но сам по себе не означает, ч
 
 - GitHub — код, ветки, pull request, CI, review и release provenance;
 - Timeweb Cloud — production runtime, App Platform, сеть, секреты и PostgreSQL;
-- авторизация по российскому мобильному номеру `+79XXXXXXXXX` через одноразовый SMS-код — выбранный human login;
+- OmniCIO Personal — закрытая single-owner система; публичная регистрация и второй пользователь не поддерживаются без нового явного решения OWNER;
+- human login владельца — только настроенный на сервере российский мобильный номер `+79XXXXXXXXX` через одноразовый SMS-код; браузер не определяет owner authority;
+- T-Invest подключается только к собственному брокерскому счёту OWNER; credential вводится только в аутентифицированной owner-сессии, проверяется сервером и хранится только в зашифрованном виде;
 - Python — основной backend/runtime язык, если задача не требует другого языка;
 - браузерный frontend — только тот код, который реально нужен сайту.
 
@@ -172,7 +174,9 @@ Python-код должен следовать принципам PEP 8 и PEP 20
 
 Browser input никогда не является источником tenant authority.
 
-SMS OTP подтверждает владение конкретным российским мобильным номером в формате `+79XXXXXXXXX`. После успешной проверки сервер сам разрешает internal user/session. Публичный 9-значный profile ID является только идентификатором для UI/поддержки и никогда не предоставляет authority.
+SMS OTP подтверждает владение только заранее настроенным server-side номером OWNER в формате `+79XXXXXXXXX`. Пользовательский ввод телефона никогда не выбирает OWNER. После успешной проверки сервер сам разрешает owner user/session. Публичный 9-значный profile ID является только идентификатором для UI/поддержки и никогда не предоставляет authority.
+
+Сохранённый T-Invest credential запрещено возвращать в browser/API response, логировать или хранить в открытом виде. Browser может передать новый credential только для проверки/замены в уже аутентифицированной owner-сессии. Выбранный broker account обязан повторно подтверждаться через provider перед сохранением.
 
 Login не предоставляет broker write authority.
 
@@ -206,7 +210,9 @@ PostgreSQL является relational authority после принятого p
 - телефон хранить encrypted-at-rest, а поиск/unique constraint выполнять по keyed blind index; полный телефон и OTP запрещены в логах;
 - OTP хранить только как keyed digest, ограничивать TTL, число попыток, resend и hourly rate;
 - session token хранить у клиента только в Secure + HttpOnly + SameSite cookie, а в БД хранить только digest;
-- production registration fail-closed: до готовых legal documents, реквизитов оператора ПД и SMS provider registration должна оставаться выключенной.
+- публичная регистрация в OmniCIO Personal всегда выключена; owner login fail-closed при отсутствии настроенного owner phone или рабочего SMS provider;
+- broker credential хранить только encrypted-at-rest отдельным server-side ключом, не возвращать через API и не включать в audit/log metadata;
+- login/session не дают broker write authority; любые будущие реальные торговые действия требуют отдельного execution/risk boundary и явной authorization модели.
 
 ## 10. Timeweb
 

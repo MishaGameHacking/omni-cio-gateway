@@ -49,10 +49,13 @@ class Settings:
     lookup_key: str
     otp_key: str
     ip_key: str
+    broker_token_crypto_key: str
     sms_provider: str
     sms_login: str
     sms_token: str
     sms_sender: str
+    owner_phone: str
+    owner_login_enabled: bool
     registration_enabled: bool
     operator_name: str
     operator_address: str
@@ -90,6 +93,14 @@ class Settings:
         )
 
     @property
+    def owner_login_ready(self) -> bool:
+        return (
+            self.owner_login_enabled
+            and self.sms_ready
+            and bool(self.owner_phone)
+        )
+
+    @property
     def registration_ready(self) -> bool:
         return self.registration_enabled and self.legal_ready and self.sms_ready
 
@@ -101,10 +112,13 @@ def load_settings() -> Settings:
         lookup_key=required("PHONE_LOOKUP_KEY"),
         otp_key=required("OTP_SIGNING_KEY"),
         ip_key=required("CLIENT_IP_KEY"),
+        broker_token_crypto_key=required("BROKER_TOKEN_CRYPTO_KEY"),
         sms_provider=os.environ.get("SMS_PROVIDER", "disabled").strip().lower(),
         sms_login=os.environ.get("SMS_PROVIDER_LOGIN", "").strip(),
         sms_token=os.environ.get("SMS_PROVIDER_TOKEN", "").strip(),
         sms_sender=os.environ.get("SMS_SENDER", "").strip(),
+        owner_phone=os.environ.get("OWNER_PHONE", "").strip(),
+        owner_login_enabled=boolean("OWNER_LOGIN_ENABLED", False),
         registration_enabled=boolean("REGISTRATION_ENABLED", False),
         operator_name=os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
         operator_address=os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),

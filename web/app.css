@@ -45,7 +45,9 @@ label {
 }
 
 input[type="tel"],
-input[type="text"] {
+input[type="text"],
+input[type="password"],
+select {
   width: 100%;
   height: 48px;
   border: 1px solid #d1d5db;
@@ -87,6 +89,77 @@ button:disabled {
 button.secondary {
   background: #f3f4f6;
   color: #111827;
+}
+
+button.compact {
+  width: auto;
+  min-height: 40px;
+  margin-top: 0;
+  padding: 0 16px;
+}
+
+.profile {
+  width: min(100%, 620px);
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.broker-card {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.broker-card h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.field-hint {
+  margin: 8px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.connection-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #d1fae5;
+  border-radius: 12px;
+  background: #f0fdf4;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #16a34a;
+}
+
+#tbank-message,
+#auth-message {
+  min-height: 24px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 520px) {
+  .profile-header {
+    align-items: flex-start;
+  }
+
+  button.compact {
+    padding: 0 12px;
+  }
 }
 
 .hidden {

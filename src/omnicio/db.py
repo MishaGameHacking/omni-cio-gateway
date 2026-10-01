@@ -31,6 +31,17 @@ class UserRecord:
     status: str
 
 
+@dataclass(frozen=True, slots=True)
+class TBankConnectionRecord:
+    user_id: UUID
+    environment: str
+    account_id: str
+    account_name: str
+    encrypted_credential: bytes
+    verified_at: datetime
+    updated_at: datetime
+
+
 class Database:
     """Thin persistence adapter for authentication state."""
 
@@ -335,6 +346,7 @@ class Database:
         self,
         token_digest: bytes,
         *,
+        owner_phone_lookup: bytes,
         session_ttl_seconds: int,
     ) -> UserRecord | None:
         """Validate a session and extend its rolling expiry after real use."""
@@ -346,15 +358,17 @@ class Database:
                 SET
                     last_seen_at = now(),
                     expires_at = now() + make_interval(secs => %s)
-                FROM users AS u
+                FROM users AS u, phone_identities AS p
                 WHERE s.user_id = u.id
+                  AND p.user_id = u.id
+                  AND p.phone_lookup = %s
                   AND s.token_digest = %s
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
                   AND u.status = 'active'
                 RETURNING u.id, u.public_id, u.status
                 """,
-                (session_ttl_seconds, token_digest),
+                (session_ttl_seconds, owner_phone_lookup, token_digest),
             )
             fetched = cur.fetchone()
             if fetched is None:
@@ -371,6 +385,111 @@ class Database:
                 """,
                 (token_digest,),
             )
+
+    def tbank_connection(self, user_id: UUID) -> TBankConnectionRecord | None:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    token_ciphertext,
+                    verified_at,
+                    updated_at
+                FROM tbank_connection
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            return _tbank_connection(cast(dict[str, Any], fetched))
+
+    def upsert_tbank_connection(
+        self,
+        *,
+        user_id: UUID,
+        environment: str,
+        account_id: str,
+        account_name: str,
+        encrypted_credential: bytes,
+    ) -> TBankConnectionRecord:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO tbank_connection (
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    token_ciphertext
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    environment = EXCLUDED.environment,
+                    account_id = EXCLUDED.account_id,
+                    account_name = EXCLUDED.account_name,
+                    token_ciphertext = EXCLUDED.token_ciphertext,
+                    verified_at = now(),
+                    updated_at = now()
+                RETURNING
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    token_ciphertext,
+                    verified_at,
+                    updated_at
+                """,
+                (
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    encrypted_credential,
+                ),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                raise RuntimeError("T-Bank connection upsert returned no row")
+            record = _tbank_connection(cast(dict[str, Any], fetched))
+            cur.execute(
+                """
+                INSERT INTO audit_events (user_id, event_type, metadata)
+                VALUES (%s, 'tbank_connected', %s::jsonb)
+                """,
+                (user_id, json.dumps({"environment": environment})),
+            )
+            return record
+
+    def delete_tbank_connection(self, user_id: UUID) -> bool:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM tbank_connection
+                WHERE user_id = %s
+                RETURNING environment
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return False
+            row = cast(dict[str, Any], fetched)
+            cur.execute(
+                """
+                INSERT INTO audit_events (user_id, event_type, metadata)
+                VALUES (%s, 'tbank_disconnected', %s::jsonb)
+                """,
+                (
+                    user_id,
+                    json.dumps({"environment": str(row["environment"])}),
+                ),
+            )
+            return True
 
     def support_user_by_public_id(self, public_id: int) -> UserRecord | None:
         with self.pool.connection() as conn, conn.cursor() as cur:
@@ -512,4 +631,16 @@ def _user(row: dict[str, Any]) -> UserRecord:
         id=row["id"],
         public_id=int(row["public_id"]),
         status=str(row["status"]),
+    )
+
+
+def _tbank_connection(row: dict[str, Any]) -> TBankConnectionRecord:
+    return TBankConnectionRecord(
+        user_id=row["user_id"],
+        environment=str(row["environment"]),
+        account_id=str(row["account_id"]),
+        account_name=str(row["account_name"]),
+        encrypted_credential=bytes(row["token_ciphertext"]),
+        verified_at=row["verified_at"],
+        updated_at=row["updated_at"],
     )
