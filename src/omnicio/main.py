@@ -112,7 +112,7 @@ def callback_values(request: Request) -> dict[str, str]:
     return {key: value for key, value in request.query_params.items()}
 
 
-def auth_redirect(path: str, *, session_token: str | None = None) -> RedirectResponse:
+def auth_redirect(path: str) -> RedirectResponse:
     response = RedirectResponse(path, status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(
         VKID_FLOW_COOKIE,
@@ -121,16 +121,6 @@ def auth_redirect(path: str, *, session_token: str | None = None) -> RedirectRes
         httponly=True,
         samesite="lax",
     )
-    if session_token:
-        response.set_cookie(
-            SESSION_COOKIE,
-            session_token,
-            max_age=34_560_000,
-            httponly=True,
-            secure=True,
-            samesite="strict",
-            path="/",
-        )
     return response
 
 
@@ -283,7 +273,7 @@ def vkid_callback(
     except PermissionError:
         return auth_redirect("/?auth_error=account")
 
-    response = auth_redirect("/?auth=success", session_token=result.session_token)
+    response = auth_redirect("/?auth=success")
     response.set_cookie(
         SESSION_COOKIE,
         result.session_token,
