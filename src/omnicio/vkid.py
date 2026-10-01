@@ -45,7 +45,7 @@ class VKIDClient:
                 "response_type": "code",
                 "state": state,
                 "code_challenge": code_challenge,
-                "code_challenge_method": "S256",
+                "code_challenge_method": "s256",
             }
         )
         return f"{self.base_url}/authorize?{query}"
