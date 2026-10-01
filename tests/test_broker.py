@@ -107,7 +107,7 @@ class FakeDatabase:
 
     def upsert_tbank_connection(self, **kwargs):
         self.saved_ciphertext = kwargs["encrypted_credential"]
-        assert kwargs["terms_version"] == "2026-10-01"
+        assert kwargs["terms_version"] == "2026-10-01-v2"
         now = datetime.now(UTC)
         self.record = TBankConnectionRecord(
             user_id=kwargs["user_id"],
@@ -147,7 +147,7 @@ def test_broker_service_encrypts_credential_and_returns_safe_status() -> None:
         credential=credential,
         environment="prod",
         account_id="account-1",
-        terms_version="2026-10-01",
+        terms_version="2026-10-01-v2",
     )
 
     assert status.connected is True
@@ -171,7 +171,7 @@ def test_broker_service_refuses_account_outside_credential_scope() -> None:
             credential="t.fake-owner-credential-1234567890",
             environment="prod",
             account_id="account-other",
-            terms_version="2026-10-01",
+            terms_version="2026-10-01-v2",
         )
 
     assert database.record is None
