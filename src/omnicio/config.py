@@ -57,9 +57,6 @@ class Settings:
     owner_phone: str
     owner_login_enabled: bool
     registration_enabled: bool
-    operator_name: str
-    operator_address: str
-    privacy_contact: str
     privacy_version: str
     consent_version: str
     terms_version: str
@@ -69,19 +66,6 @@ class Settings:
     otp_phone_hourly_limit: int
     otp_ip_hourly_limit: int
     session_ttl_seconds: int
-
-    @property
-    def legal_ready(self) -> bool:
-        return all(
-            (
-                self.operator_name,
-                self.operator_address,
-                self.privacy_contact,
-                self.privacy_version,
-                self.consent_version,
-                self.terms_version,
-            )
-        )
 
     @property
     def sms_ready(self) -> bool:
@@ -100,10 +84,6 @@ class Settings:
             and bool(self.owner_phone)
         )
 
-    @property
-    def registration_ready(self) -> bool:
-        return self.registration_enabled and self.legal_ready and self.sms_ready
-
 
 def load_settings() -> Settings:
     return Settings(
@@ -120,9 +100,6 @@ def load_settings() -> Settings:
         owner_phone=os.environ.get("OWNER_PHONE", "").strip(),
         owner_login_enabled=boolean("OWNER_LOGIN_ENABLED", False),
         registration_enabled=boolean("REGISTRATION_ENABLED", False),
-        operator_name=os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
-        operator_address=os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),
-        privacy_contact=os.environ.get("LEGAL_PRIVACY_CONTACT", "").strip(),
         privacy_version=os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         consent_version=os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
