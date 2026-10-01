@@ -130,6 +130,9 @@ def build_product_environment() -> str:
     sms_sender = os.environ.get("SMS_SENDER", "").strip()
     owner_phone = os.environ.get("OWNER_PHONE", "").strip()
     sms_provider = "smsaero" if sms_login and sms_token and sms_sender else "disabled"
+    owner_login_enabled = (
+        "true" if sms_provider == "smsaero" and owner_phone else "false"
+    )
 
     values = {
         "SMS_PROVIDER": sms_provider,
@@ -137,7 +140,7 @@ def build_product_environment() -> str:
         "SMS_PROVIDER_TOKEN": sms_token,
         "SMS_SENDER": sms_sender,
         "OWNER_PHONE": owner_phone,
-        "OWNER_LOGIN_ENABLED": "true",
+        "OWNER_LOGIN_ENABLED": owner_login_enabled,
         "REGISTRATION_ENABLED": "false",
         "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
         "LEGAL_OPERATOR_ADDRESS": os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),
