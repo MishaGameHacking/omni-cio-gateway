@@ -51,6 +51,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertFalse(MODULE.runtime_is_ready(missing))
         self.assertIn("REGISTRATION_ENABLED=false", ready.commands[0])
         self.assertIn("BROKER_TOKEN_CRYPTO_KEY", ready.commands[0])
+        self.assertIn("VKID_FLOW_CRYPTO_KEY", ready.commands[0])
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -73,21 +74,16 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("web/index.html", names)
         self.assertNotIn("tests/secret-test.txt", names)
 
-    def test_product_environment_validation_requires_all_runtime_secrets(self) -> None:
+    def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
         try:
-            values = {
-                "SMS_PROVIDER_LOGIN": "user@example.test",
-                "SMS_PROVIDER_TOKEN": "secret-token",
-                "SMS_SENDER": "SMS Aero",
-                "SMS_TEST_NUMBER": "+79161234567",
-                "OWNER_PHONE": "+79161234567",
-                "LEGAL_PRIVACY_VERSION": "2026-10-01",
-                "LEGAL_CONSENT_VERSION": "2026-10-01",
-                "LEGAL_TERMS_VERSION": "2026-10-01",
-            }
-            os.environ.update(values)
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01"
+            os.environ.pop("VKID_APP_ID", None)
+            os.environ.pop("OWNER_VK_ID", None)
             MODULE.validate_product_environment()
+
             os.environ.pop("LEGAL_TERMS_VERSION")
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
@@ -95,12 +91,25 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_keeps_registration_closed_without_sender(self) -> None:
+    def test_product_environment_fails_on_partial_vkid_config(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["SMS_PROVIDER_LOGIN"] = "user@example.test"
-            os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
-            os.environ.pop("SMS_SENDER", None)
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01"
+            os.environ["VKID_APP_ID"] = "123456"
+            os.environ.pop("OWNER_VK_ID", None)
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_product_environment_keeps_vkid_fail_closed_without_owner_config(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ.pop("VKID_APP_ID", None)
+            os.environ.pop("OWNER_VK_ID", None)
             os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01"
             os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01"
             os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01"
@@ -110,29 +119,24 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('SMS_PROVIDER="disabled"', product_env)
-        self.assertIn('SMS_PROVIDER_LOGIN="user@example.test"', product_env)
-        self.assertIn('SMS_PROVIDER_TOKEN="secret-token"', product_env)
+        self.assertIn('VKID_APP_ID=""', product_env)
+        self.assertIn('OWNER_VK_ID=""', product_env)
+        self.assertIn('VKID_LOGIN_ENABLED="false"', product_env)
         self.assertIn('REGISTRATION_ENABLED="false"', product_env)
-        self.assertIn('OWNER_LOGIN_ENABLED="false"', product_env)
 
-    def test_product_environment_enables_provider_only_with_sender(self) -> None:
+    def test_product_environment_enables_vkid_only_with_owner_config(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["SMS_PROVIDER_LOGIN"] = "user@example.test"
-            os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
-            os.environ["SMS_SENDER"] = "SMS Aero"
-            os.environ["OWNER_PHONE"] = "+79161234567"
+            os.environ["VKID_APP_ID"] = "123456"
+            os.environ["OWNER_VK_ID"] = "987654321"
             product_env = MODULE.build_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('SMS_PROVIDER="smsaero"', product_env)
-        self.assertIn('SMS_PROVIDER_LOGIN="user@example.test"', product_env)
-        self.assertIn('SMS_SENDER="SMS Aero"', product_env)
-        self.assertIn('OWNER_PHONE="+79161234567"', product_env)
-        self.assertIn('OWNER_LOGIN_ENABLED="true"', product_env)
+        self.assertIn('VKID_APP_ID="123456"', product_env)
+        self.assertIn('OWNER_VK_ID="987654321"', product_env)
+        self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
         self.assertIn('REGISTRATION_ENABLED="false"', product_env)
 
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
