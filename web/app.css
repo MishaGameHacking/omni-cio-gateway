@@ -1832,3 +1832,29 @@ select:hover {
     border-top-color: var(--border);
   }
 }
+
+
+.operations-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.operations-footer span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 620px) {
+  .operations-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .operations-footer .button {
+    width: 100%;
+  }
+}
