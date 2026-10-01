@@ -383,11 +383,16 @@ def tbank_portfolio(
 def tbank_operations(
     request: Request,
     limit: int = Query(default=30, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=4096),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     try:
-        snapshot = broker_service(request).operations(user.id, limit=limit)
+        snapshot = broker_service(request).operations(
+            user.id,
+            limit=limit,
+            cursor=cursor,
+        )
     except BrokerNotConnected as exc:
         raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
     except TBankTokenRejected as exc:
