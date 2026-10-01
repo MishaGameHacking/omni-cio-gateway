@@ -9,6 +9,8 @@ on:
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - "src/omnicio/**"
       - "web/**"
       - "assets/brand/**"
@@ -21,6 +23,8 @@ on:
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - "src/omnicio/**"
       - "web/**"
       - "assets/brand/**"
@@ -62,7 +66,9 @@ jobs:
             .github/scripts/timeweb_auth_app.py
 
       - name: Run deployer tests
-        run: python3 .github/scripts/test_timeweb_auth_app.py
+        run: |
+          python3 .github/scripts/test_timeweb_ssh_trust.py
+          python3 .github/scripts/test_timeweb_auth_app.py
 
       - name: Verify auth page markers
         run: |
@@ -86,6 +92,7 @@ jobs:
     timeout-minutes: 20
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
       DB_CLUSTER_NAME: omnicio-auth-postgres
@@ -136,3 +143,4 @@ jobs:
         if: steps.app.outputs.status == 'app_ready'
         run: |
           echo "OmniCIO is healthy over HTTPS. VK ID auth is deployed; public registration remains disabled."
+

@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/auth-postgres.yml"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
   push:
@@ -15,6 +17,8 @@ on:
     paths:
       - ".github/workflows/auth-postgres.yml"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
   workflow_dispatch:
@@ -42,7 +46,9 @@ jobs:
         run: python3 -m py_compile .github/scripts/timeweb_auth_postgres.py
 
       - name: Run reconciler tests
-        run: python3 .github/scripts/test_timeweb_auth_postgres.py
+        run: |
+          python3 .github/scripts/test_timeweb_ssh_trust.py
+          python3 .github/scripts/test_timeweb_auth_postgres.py
 
   reconcile:
     name: Reconcile private PostgreSQL
@@ -52,6 +58,7 @@ jobs:
     timeout-minutes: 20
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
       VPC_NAME: omni-cio-private
@@ -116,3 +123,4 @@ jobs:
         if: steps.postgres.outputs.status == 'database_ready'
         run: |
           echo "Private PostgreSQL cluster ${{ steps.postgres.outputs.cluster_id }} is ready and schema migration completed."
+
