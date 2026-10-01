@@ -59,9 +59,9 @@ def settings(**overrides: object) -> Settings:
         "owner_vk_id": "987654321",
         "vkid_login_enabled": True,
         "registration_enabled": False,
-        "privacy_version": "2026-10-01",
-        "consent_version": "2026-10-01",
-        "terms_version": "2026-10-01",
+        "privacy_version": "2026-10-01-v2",
+        "consent_version": "2026-10-01-v2",
+        "terms_version": "2026-10-01-v2",
         "vkid_flow_ttl_seconds": 600,
         "session_ttl_seconds": 34_560_000,
     }
