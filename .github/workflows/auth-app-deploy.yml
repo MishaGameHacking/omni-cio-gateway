@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
@@ -18,6 +20,8 @@ on:
       - main
     paths:
       - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
@@ -73,6 +77,10 @@ jobs:
           fi
 
   deploy:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
     name: Deploy auth application
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -83,7 +91,7 @@ jobs:
        github.event.workflow_run.head_sha == github.sha)
     needs: tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       SERVER_NAME: omni-cio-white-site
@@ -103,7 +111,13 @@ jobs:
       - name: Checkout accepted main state
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Verify current main release checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/verify_main_release.py
 
       - name: Validate Timeweb secret
         run: |

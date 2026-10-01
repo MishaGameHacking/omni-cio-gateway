@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - ".github/workflows/auth-private-network.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_network.py"
       - ".github/scripts/test_timeweb_auth_network.py"
   push:
@@ -13,6 +15,8 @@ on:
       - main
     paths:
       - ".github/workflows/auth-private-network.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_network.py"
       - ".github/scripts/test_timeweb_auth_network.py"
   workflow_dispatch:
@@ -40,11 +44,15 @@ jobs:
         run: python3 .github/scripts/test_timeweb_auth_network.py
 
   reconcile:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
     name: Reconcile private network
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       SERVER_NAME: omni-cio-white-site
@@ -58,7 +66,13 @@ jobs:
       - name: Checkout accepted main state
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Verify current main release checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/verify_main_release.py
 
       - name: Validate Timeweb secret
         run: |
