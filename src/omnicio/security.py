@@ -72,6 +72,20 @@ def decrypt_phone(ciphertext: bytes, crypto_key: str) -> str:
         raise SecurityValueError("unable to decrypt phone") from exc
 
 
+def encrypt_secret(value: str, crypto_key: str) -> bytes:
+    try:
+        return Fernet(crypto_key.encode("ascii")).encrypt(value.encode())
+    except (ValueError, UnicodeError) as exc:
+        raise SecurityValueError("invalid secret encryption key") from exc
+
+
+def decrypt_secret(ciphertext: bytes, crypto_key: str) -> str:
+    try:
+        return Fernet(crypto_key.encode("ascii")).decrypt(ciphertext).decode("utf-8")
+    except (InvalidToken, ValueError, UnicodeError) as exc:
+        raise SecurityValueError("unable to decrypt secret") from exc
+
+
 def generate_otp() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
