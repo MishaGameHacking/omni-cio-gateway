@@ -21,9 +21,10 @@ from omnicio.security import (
 
 def test_phone_accepts_only_requested_russian_mobile_shape() -> None:
     assert normalize_russian_mobile("+79161234567") == "+79161234567"
+    assert normalize_russian_mobile("79161234567") == "+79161234567"
+    assert normalize_russian_mobile("89161234567") == "+79161234567"
 
     for value in (
-        "79161234567",
         "+78161234567",
         "+7916123456",
         "+791612345678",
