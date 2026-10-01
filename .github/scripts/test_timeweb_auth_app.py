@@ -162,6 +162,19 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
+    def test_remote_service_installs_tbank_russian_trusted_ca_safely(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        self.assertIn("russian_trusted_root_ca.cer", script)
+        self.assertIn("russian_trusted_sub_ca.cer", script)
+        self.assertIn("openssl verify -CAfile", script)
+        self.assertIn("update-ca-certificates", script)
+        self.assertIn(
+            "Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+            script,
+        )
+        self.assertNotIn("curl -k", script)
+        self.assertNotIn("--insecure", script)
+
     def test_legal_pages_are_private_owner_documents(self) -> None:
         root = SCRIPT_DIR.parent.parent
         privacy = (root / "web" / "legal" / "privacy.html").read_text()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import ssl
 import urllib.error
 from datetime import UTC, datetime
 from unittest.mock import patch
@@ -16,6 +17,7 @@ from omnicio.tbank import (
     TBankAccount,
     TBankInvestClient,
     TBankTokenRejected,
+    TBankUnavailable,
 )
 
 
@@ -64,6 +66,19 @@ def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
     assert request.full_url.endswith("UsersService/GetAccounts")
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {"status": "ACCOUNT_STATUS_OPEN"}
+
+
+def test_tbank_tls_verification_failure_is_reported_as_unavailable() -> None:
+    client = TBankInvestClient()
+    error = urllib.error.URLError(
+        ssl.SSLCertVerificationError(1, "certificate verify failed")
+    )
+
+    with (
+        patch("urllib.request.urlopen", side_effect=error),
+        pytest.raises(TBankUnavailable, match="TLS certificate verification failed"),
+    ):
+        client.get_accounts("t.fake-owner-credential-1234567890", "prod")
 
 
 def test_tbank_rejects_unauthorized_credential_without_response_body() -> None:
