@@ -1,12 +1,12 @@
 {
   "name": "OmniCIO Personal",
   "short_name": "OmniCIO",
-  "description": "Личный инвестиционный центр владельца OmniCIO.",
+  "description": "Личный инвестиционный кабинет владельца OmniCIO.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#080b12",
-  "theme_color": "#080b12",
+  "background_color": "#f6f8fb",
+  "theme_color": "#f6f8fb",
   "icons": [
     {
       "src": "/assets/brand/pwa-icon-192.png",
