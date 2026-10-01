@@ -167,7 +167,15 @@
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
 
-    desktopNavItems.forEach((item) => {
+    portfolioRefresh.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
+
+  portfolioRetry.addEventListener("click", () => {
+    void loadPortfolioData({force: true});
+  });
+
+  desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
       item.classList.toggle("is-active", active);
       if (active) {
@@ -555,14 +563,19 @@
   const renderTbankSummary = (status) => {
     homeConnectionCard.classList.remove("is-offline", "is-error");
     topConnectionIndicator.classList.remove("is-offline", "is-error");
+    tbankIsConnected = Boolean(status.connected);
 
     if (!status.connected) {
+      portfolioLoaded = false;
       overviewAccount.textContent = "T-Invest не подключён";
       overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
       homeConnectionCard.classList.add("is-offline");
       topConnectionIndicator.classList.add("is-offline");
       topConnectionText.textContent = "T-Invest не подключён";
       setStateBadge(homeTbankState, "Не подключено", "state-next");
+      setStateBadge(homePortfolioState, "Нет подключения", "state-next");
+      setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+      showPortfolioMode("disconnected");
       return;
     }
 
@@ -572,6 +585,10 @@
     overviewConnectionText.textContent = `${environment} · соединение подтверждено`;
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
+    if (!portfolioLoaded) {
+      setStateBadge(homePortfolioState, "Загружаем", "");
+      setStateBadge(portfolioStateBadge, "Загружаем", "");
+    }
   };
 
   const renderTbankStatus = (status) => {
@@ -604,8 +621,12 @@
     homeConnectionCard.classList.add("is-error");
     topConnectionIndicator.classList.add("is-error");
     topConnectionText.textContent = "Ошибка T-Invest";
+    tbankIsConnected = false;
+    portfolioLoaded = false;
     setStateBadge(homeTbankState, "Ошибка", "state-error");
+    setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
+    setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
   };
 
   const loadTbankStatus = async () => {
@@ -613,6 +634,9 @@
     try {
       const status = await api("/api/broker/tbank", {method: "GET"});
       renderTbankStatus(status);
+      if (status.connected) {
+        void loadPortfolioData();
+      }
     } catch (error) {
       if (error.status === 401) {
         location.reload();
@@ -881,6 +905,8 @@
         }),
       });
       renderTbankStatus(status);
+      portfolioLoaded = false;
+      void loadPortfolioData({force: true});
       showMessage(tbankMessage, "T-Invest подключён. Токен сохранён в зашифрованном виде.");
     } catch (error) {
       resetTbankPreview();
@@ -909,6 +935,7 @@
     try {
       await api("/api/broker/tbank", {method: "DELETE"});
       renderTbankStatus({connected: false});
+      portfolioLoaded = false;
       tbankTermsAck.checked = false;
       showMessage(tbankMessage, "T-Invest отключён.");
     } catch {
