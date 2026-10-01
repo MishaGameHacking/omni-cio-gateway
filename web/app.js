@@ -1,8 +1,8 @@
 (() => {
   "use strict";
 
-  const phoneForm = document.querySelector("#phone-form");
-  const codeForm = document.querySelector("#code-form");
+  const vkidForm = document.querySelector("#vkid-form");
+  const vkidLogin = document.querySelector("#vkid-login");
   const authCard = document.querySelector("#auth-card");
   const profilePanel = document.querySelector("#profile-panel");
   const message = document.querySelector("#auth-message");
@@ -22,24 +22,12 @@
   const tbankAccountLabel = document.querySelector("#tbank-account-label");
   const tbankMessage = document.querySelector("#tbank-message");
 
-  let challengeId = null;
   let pendingTbankCredential = null;
   let pendingTbankEnvironment = null;
 
   const showMessage = (text, isError = false) => {
     message.textContent = text;
     message.classList.toggle("error", isError);
-  };
-
-  const normalizePhoneForRequest = (raw) => {
-    const value = raw.trim();
-    if (/^79\d{9}$/.test(value)) {
-      return `+${value}`;
-    }
-    if (/^89\d{9}$/.test(value)) {
-      return `+7${value.slice(1)}`;
-    }
-    return value;
   };
 
   const showTbankMessage = (text, isError = false) => {
@@ -116,6 +104,23 @@
     authCard.classList.remove("hidden");
   };
 
+  const showCallbackResult = () => {
+    const params = new URLSearchParams(location.search);
+    const authError = params.get("auth_error");
+    if (authError === "owner") {
+      showMessage("Этот VK ID не имеет доступа к личному аккаунту OmniCIO.", true);
+    } else if (authError === "provider") {
+      showMessage("VK ID временно недоступен. Попробуйте позже.", true);
+    } else if (authError === "account") {
+      showMessage("Личный аккаунт OmniCIO заблокирован.", true);
+    } else if (authError) {
+      showMessage("Авторизация VK ID не завершена. Попробуйте ещё раз.", true);
+    }
+    if (params.has("auth") || params.has("auth_error")) {
+      history.replaceState(null, "", location.pathname);
+    }
+  };
+
   const loadState = async () => {
     try {
       const me = await api("/api/me", {method: "GET"});
@@ -128,74 +133,54 @@
     }
 
     showAuth();
+    showCallbackResult();
     try {
       const config = await api("/api/auth/config", {method: "GET"});
-      if (!config.owner_login_enabled) {
-        phoneForm.querySelectorAll("input, button").forEach((element) => {
-          element.disabled = true;
-        });
-        showMessage("Личный вход владельца временно недоступен.");
+      if (config.auth_provider !== "vkid" || !config.owner_login_enabled) {
+        vkidLogin.disabled = true;
+        showMessage(
+          "VK ID ещё не настроен для этого личного аккаунта.",
+          true,
+        );
       }
     } catch {
+      vkidLogin.disabled = true;
       showMessage("Сервис авторизации временно недоступен.", true);
     }
   };
 
-  phoneForm.addEventListener("submit", async (event) => {
+  vkidForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     showMessage("");
 
-    const phoneInput = document.querySelector("#phone");
-    const phone = normalizePhoneForRequest(phoneInput.value);
-    phoneInput.value = phone;
     const payload = {
-      phone,
       accept_privacy: document.querySelector("#accept-privacy").checked,
       accept_personal_data: document.querySelector("#accept-pd").checked,
       accept_terms: document.querySelector("#accept-terms").checked,
       confirm_age_18: document.querySelector("#confirm-age-18").checked,
     };
-
-    try {
-      const result = await api("/api/auth/request-code", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      challengeId = result.challenge_id;
-      phoneForm.classList.add("hidden");
-      codeForm.classList.remove("hidden");
-      document.querySelector("#code").focus();
-      showMessage("Код отправлен. Введите 6 цифр из SMS.");
-    } catch (error) {
-      if (error.status === 403) {
-        showMessage("Этот номер не имеет доступа к личному аккаунту.", true);
-      } else if (error.status === 429) {
-        showMessage("Слишком много попыток. Попробуйте позже.", true);
-      } else if (error.status === 400 || error.status === 422) {
-        showMessage("Введите российский мобильный номер: +79XXXXXXXXX или 79XXXXXXXXX.", true);
-      } else {
-        showMessage("Сейчас отправить код нельзя. Попробуйте позже.", true);
-      }
-    }
-  });
-
-  codeForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const code = document.querySelector("#code").value.trim();
-    if (!challengeId) {
-      showMessage("Запросите новый код.", true);
+    if (!Object.values(payload).every(Boolean)) {
+      showMessage("Подтвердите все пункты перед входом через VK ID.", true);
       return;
     }
 
+    vkidLogin.disabled = true;
     try {
-      const result = await api("/api/auth/verify", {
+      const result = await api("/api/auth/vkid/start", {
         method: "POST",
-        body: JSON.stringify({challenge_id: challengeId, code}),
+        body: JSON.stringify(payload),
       });
-      showProfile(result.public_id);
-      showMessage("");
-    } catch {
-      showMessage("Код неверный, просрочен или уже использован.", true);
+      if (!result.authorize_url) {
+        throw new Error("VK ID URL is missing");
+      }
+      location.assign(result.authorize_url);
+    } catch (error) {
+      vkidLogin.disabled = false;
+      if (error.status === 503) {
+        showMessage("VK ID ещё не настроен или временно недоступен.", true);
+      } else {
+        showMessage("Не удалось начать авторизацию через VK ID.", true);
+      }
     }
   });
 
