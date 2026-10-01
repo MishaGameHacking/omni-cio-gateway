@@ -142,6 +142,21 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
+    def test_legal_pages_are_private_owner_documents(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        privacy = (root / "web" / "legal" / "privacy.html").read_text()
+        consent = (root / "web" / "legal" / "consent.html").read_text()
+        terms = (root / "web" / "legal" / "terms.html").read_text()
+
+        for document in (privacy, consent, terms):
+            self.assertIn('content="noindex,nofollow"', document)
+            self.assertIn("2026-10-01", document)
+
+        self.assertIn("OmniCIO Personal", privacy)
+        self.assertIn("T-Invest API", privacy)
+        self.assertIn("статьи 437", terms)
+        self.assertNotIn("omnicioinfo@gmail.com", privacy)
+
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         for filename in ("privacy.html", "consent.html", "terms.html"):
