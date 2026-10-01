@@ -10,6 +10,7 @@ from omnicio.security import (
     SecurityValueError,
     decrypt_phone,
     encrypt_phone,
+    encrypt_secret,
     format_public_id,
     normalize_russian_mobile,
     otp_digest,
@@ -67,3 +68,12 @@ def test_otp_digest_is_challenge_bound() -> None:
     assert verify_otp_digest("challenge-a", "123456", digest, key)
     assert not verify_otp_digest("challenge-a", "654321", digest, key)
     assert not verify_otp_digest("challenge-b", "123456", digest, key)
+
+
+def test_secret_encryption_does_not_store_plaintext() -> None:
+    key = Fernet.generate_key().decode("ascii")
+    plaintext = "t.example-owner-credential"
+    encrypted = encrypt_secret(plaintext, key)
+
+    assert encrypted != plaintext.encode()
+    assert plaintext.encode() not in encrypted
