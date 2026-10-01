@@ -14,6 +14,7 @@
   const tbankEnvironment = document.querySelector("#tbank-environment");
   const tbankToken = document.querySelector("#tbank-token");
   const tbankAccount = document.querySelector("#tbank-account");
+  const tbankTermsAck = document.querySelector("#tbank-terms-ack");
   const tbankCheck = document.querySelector("#tbank-check");
   const tbankConnect = document.querySelector("#tbank-connect");
   const tbankConnected = document.querySelector("#tbank-connected");
@@ -209,12 +210,20 @@
       showTbankMessage("Вставьте полный API-токен T-Invest.", true);
       return;
     }
+    if (!tbankTermsAck.checked) {
+      showTbankMessage("Подтвердите правила и риски подключения T-Invest.", true);
+      return;
+    }
 
     tbankCheck.disabled = true;
     try {
       const result = await api("/api/broker/tbank/accounts", {
         method: "POST",
-        body: JSON.stringify({credential, environment}),
+        body: JSON.stringify({
+          credential,
+          environment,
+          accept_personal_terms: tbankTermsAck.checked,
+        }),
       });
       if (!result.accounts || result.accounts.length === 0) {
         showTbankMessage("У токена нет доступных открытых счетов.", true);
@@ -266,6 +275,7 @@
           credential: pendingTbankCredential,
           environment: pendingTbankEnvironment,
           account_id: tbankAccount.value,
+          accept_personal_terms: tbankTermsAck.checked,
         }),
       });
       renderTbankStatus(status);
@@ -297,6 +307,7 @@
     try {
       await api("/api/broker/tbank", {method: "DELETE"});
       renderTbankStatus({connected: false});
+      tbankTermsAck.checked = false;
       showTbankMessage("Подключение удалено.");
     } catch {
       showTbankMessage("Не удалось удалить подключение.", true);
