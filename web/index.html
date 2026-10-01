@@ -3,126 +3,554 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#080b12">
   <meta name="omni-cio-white-site" content="1">
-  <title>OmniCIO</title>
+  <title>OmniCIO Personal</title>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
-<body>
+<body data-theme="dark" data-motion="full">
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
   <main class="shell">
-    <section class="card" id="auth-card" aria-labelledby="auth-title">
-      <h1 id="auth-title">Личный вход OmniCIO</h1>
-      <p class="muted">
-        Закрытый аккаунт владельца. Вход выполняется через единственный
-        разрешённый VK ID.
-      </p>
-
-      <form id="vkid-form" novalidate>
-        <label class="check">
-          <input id="accept-privacy" type="checkbox">
-          <span>Я ознакомился с <a href="/legal/privacy.html" target="_blank" rel="noopener">Уведомлением о конфиденциальности и обработке данных</a></span>
-        </label>
-        <label class="check">
-          <input id="accept-pd" type="checkbox">
-          <span>Я отдельно подтверждаю <a href="/legal/consent.html" target="_blank" rel="noopener">согласие на обработку данных для входа</a></span>
-        </label>
-        <label class="check">
-          <input id="accept-terms" type="checkbox">
-          <span>Я принимаю <a href="/legal/terms.html" target="_blank" rel="noopener">Правила личного использования OmniCIO Personal</a></span>
-        </label>
-        <label class="check">
-          <input id="confirm-age-18" type="checkbox">
-          <span>Подтверждаю, что мне исполнилось 18 лет</span>
-        </label>
-
-        <button type="submit" id="vkid-login">Войти через VK ID</button>
-      </form>
-
-      <p class="field-hint">
-        OmniCIO не получает ваш пароль VK. Авторизация проходит на стороне VK ID,
-        после чего OmniCIO разрешает вход только заранее настроенному владельцу.
-      </p>
-      <p id="auth-message" role="status" aria-live="polite"></p>
-    </section>
-
-    <section class="profile hidden" id="profile-panel" aria-label="Личный аккаунт">
-      <header class="profile-header">
-        <div>
-          <div class="profile-title">OmniCIO Personal</div>
-          <div class="muted">Личный аккаунт владельца</div>
+    <section class="card auth-card" id="auth-card" aria-labelledby="auth-title">
+      <div class="auth-brand">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-mark-core"></span>
+          </span>
+          <span>
+            <strong>OmniCIO</strong>
+            <small>Personal intelligence console</small>
+          </span>
         </div>
-        <button id="logout" class="secondary compact" type="button">Выйти</button>
-      </header>
 
-      <div class="profile-id">
-        <span class="muted">ID профиля</span>
-        <strong id="profile-id">000000000</strong>
+        <div class="auth-copy">
+          <p class="eyebrow">OWNER ONLY · PRIVATE CONTOUR</p>
+          <h1 id="auth-title">Личный инвестиционный центр</h1>
+          <p class="lead">
+            Один закрытый контур для наблюдения за портфелем, аналитики,
+            будущих сигналов и контроля риска.
+          </p>
+        </div>
+
+        <div class="auth-orbit interactive-depth" aria-hidden="true">
+          <span class="orbit-ring orbit-ring-one"></span>
+          <span class="orbit-ring orbit-ring-two"></span>
+          <span class="orbit-node orbit-node-one"></span>
+          <span class="orbit-node orbit-node-two"></span>
+          <span class="orbit-node orbit-node-three"></span>
+          <span class="orbit-core">OMNI</span>
+        </div>
+
+        <div class="trust-row" aria-label="Свойства личного контура">
+          <span>VK ID</span>
+          <span>Owner-only</span>
+          <span>Encrypted</span>
+        </div>
       </div>
 
-      <section class="broker-card" aria-labelledby="tbank-title">
-        <h2 id="tbank-title">Т-Банк Инвестиции</h2>
+      <div class="auth-panel">
+        <div class="section-kicker">Защищённый вход</div>
+        <h2>Войти в OmniCIO Personal</h2>
         <p class="muted">
-          API-токен проверяется через T-Invest API и сохраняется на сервере только
-          в зашифрованном виде. После сохранения токен больше не отображается.
+          Вход выполняется только через единственный разрешённый VK ID владельца.
         </p>
 
-        <div id="tbank-connected" class="hidden">
-          <div class="connection-row">
-            <span class="status-dot" aria-hidden="true"></span>
-            <div>
-              <strong>Подключено</strong>
-              <div id="tbank-account-label" class="muted"></div>
-            </div>
-          </div>
-          <button id="tbank-disconnect" class="secondary" type="button">
-            Отключить T-Invest
+        <form id="vkid-form" novalidate>
+          <label class="check">
+            <input id="accept-privacy" type="checkbox">
+            <span>Я ознакомился с <a href="/legal/privacy.html" target="_blank" rel="noopener">Уведомлением о конфиденциальности и обработке данных</a></span>
+          </label>
+          <label class="check">
+            <input id="accept-pd" type="checkbox">
+            <span>Я отдельно подтверждаю <a href="/legal/consent.html" target="_blank" rel="noopener">согласие на обработку данных для входа</a></span>
+          </label>
+          <label class="check">
+            <input id="accept-terms" type="checkbox">
+            <span>Я принимаю <a href="/legal/terms.html" target="_blank" rel="noopener">Правила личного использования OmniCIO Personal</a></span>
+          </label>
+          <label class="check">
+            <input id="confirm-age-18" type="checkbox">
+            <span>Подтверждаю, что мне исполнилось 18 лет</span>
+          </label>
+
+          <button type="submit" id="vkid-login" class="primary-button">
+            <span>Войти через VK ID</span>
+            <span aria-hidden="true">→</span>
           </button>
+        </form>
+
+        <p class="field-hint">
+          OmniCIO не получает ваш пароль VK. Авторизация проходит на стороне VK ID,
+          после чего сервер разрешает вход только заранее настроенному владельцу.
+        </p>
+        <p id="auth-message" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="profile app-frame hidden" id="profile-panel" aria-label="Личный аккаунт OmniCIO">
+      <aside class="app-sidebar">
+        <div class="brand-lockup sidebar-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-mark-core"></span>
+          </span>
+          <span>
+            <strong>OmniCIO</strong>
+            <small>Personal</small>
+          </span>
         </div>
 
-        <form id="tbank-form" novalidate>
-          <label for="tbank-environment">Контур</label>
-          <select id="tbank-environment" name="environment">
-            <option value="prod" selected>Биржа — реальный счёт</option>
-            <option value="sandbox">Песочница — тестовый контур</option>
-          </select>
+        <nav class="app-nav" aria-label="Разделы приложения">
+          <button class="nav-item is-active" type="button" data-view="overview" aria-selected="true">
+            <span class="nav-glyph" aria-hidden="true">◌</span>
+            <span>Обзор</span>
+          </button>
+          <button class="nav-item" type="button" data-view="portfolio" aria-selected="false">
+            <span class="nav-glyph" aria-hidden="true">⌁</span>
+            <span>Портфель</span>
+          </button>
+          <button class="nav-item" type="button" data-view="intelligence" aria-selected="false">
+            <span class="nav-glyph" aria-hidden="true">✦</span>
+            <span>Система</span>
+          </button>
+          <button class="nav-item" type="button" data-view="activity" aria-selected="false">
+            <span class="nav-glyph" aria-hidden="true">↗</span>
+            <span>События</span>
+          </button>
+          <button class="nav-item" type="button" data-view="settings" aria-selected="false">
+            <span class="nav-glyph" aria-hidden="true">⊙</span>
+            <span>Настройки</span>
+          </button>
+        </nav>
 
-          <label for="tbank-token">API-токен T-Invest</label>
-          <input
-            id="tbank-token"
-            name="token"
-            type="password"
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-            placeholder="Вставьте токен"
-            minlength="20"
-            maxlength="4096"
-            required
-          >
-          <p class="field-hint">
-            Сейчас достаточно read-only токена. Перед включением реальных сделок
-            его можно заменить на full-access токен, ограниченный конкретным счётом.
-            Transfer-access для OmniCIO не требуется.
-          </p>
-          <label class="check broker-ack">
-            <input id="tbank-terms-ack" type="checkbox" required>
-            <span>
-              Я понимаю, что токен будет передан T-Invest API для проверки прав,
-              а после подключения сохранён на сервере в зашифрованном виде.
-              Я ознакомился с <a href="/legal/terms.html" target="_blank" rel="noopener">правилами и рисками</a>.
-            </span>
-          </label>
-          <button type="submit" id="tbank-check">Проверить токен</button>
-        </form>
+        <div class="sidebar-security">
+          <span class="security-pulse" aria-hidden="true"></span>
+          <div>
+            <strong>Личный контур</strong>
+            <span>Торговые действия выключены</span>
+          </div>
+        </div>
+      </aside>
 
-        <form id="tbank-account-form" class="hidden" novalidate>
-          <label for="tbank-account">Доступный брокерский счёт</label>
-          <select id="tbank-account" name="account" required></select>
-          <button type="submit" id="tbank-connect">Подключить выбранный счёт</button>
-        </form>
+      <div class="app-workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">OMNICALL · OWNER WORKSPACE</p>
+            <h1 id="view-title">Обзор</h1>
+          </div>
+          <div class="topbar-actions">
+            <div class="profile-badge" title="ID профиля">
+              <span class="profile-badge-dot" aria-hidden="true"></span>
+              <span id="profile-id">000000000</span>
+            </div>
+            <button id="appearance-quick" class="icon-button" type="button" aria-label="Открыть настройки внешнего вида" title="Внешний вид">
+              <span aria-hidden="true">◐</span>
+            </button>
+            <button id="logout" class="secondary compact" type="button">Выйти</button>
+          </div>
+        </header>
 
-        <p id="tbank-message" role="status" aria-live="polite"></p>
-      </section>
+        <div class="workspace-scroll">
+          <section class="view-panel" data-view-panel="overview">
+            <article class="hero-card interactive-depth">
+              <div class="hero-copy">
+                <div class="section-kicker">Личный инвестиционный центр</div>
+                <h2>Один экран для данных, сигналов и контроля риска.</h2>
+                <p>
+                  Сейчас безопасно подключён T-Invest. Следующий слой — реальный
+                  портфель, позиции и история операций без выдачи торговых полномочий.
+                </p>
+                <div class="hero-actions">
+                  <span class="connection-pill" id="overview-connection-pill">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span id="overview-connection-text">Проверяем T-Invest…</span>
+                  </span>
+                  <button class="text-button" type="button" data-go-view="settings">
+                    Управление подключением
+                  </button>
+                </div>
+              </div>
+
+              <div class="hero-scene" aria-hidden="true">
+                <div class="scene-glow"></div>
+                <div class="scene-ring scene-ring-a"></div>
+                <div class="scene-ring scene-ring-b"></div>
+                <div class="scene-ring scene-ring-c"></div>
+                <div class="scene-core">
+                  <span>OMNI</span>
+                  <small>CORE</small>
+                </div>
+                <div class="scene-label scene-label-data">DATA</div>
+                <div class="scene-label scene-label-risk">RISK</div>
+                <div class="scene-label scene-label-signal">SIGNAL</div>
+              </div>
+            </article>
+
+            <section class="metric-grid" aria-label="Состояние системы">
+              <article class="metric-card">
+                <span class="metric-label">Брокерский счёт</span>
+                <strong id="overview-account">Проверяем…</strong>
+                <span class="metric-foot">T-Invest API</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Исполнение сделок</span>
+                <strong>Выключено</strong>
+                <span class="metric-foot">Безопасный этап</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Доступ</span>
+                <strong>Owner-only</strong>
+                <span class="metric-foot">VK ID + защищённая сессия</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-label">Портфель</span>
+                <strong>Следующий этап</strong>
+                <span class="metric-foot">Без вымышленных данных</span>
+              </article>
+            </section>
+
+            <section class="overview-grid">
+              <article class="surface-card portfolio-preview">
+                <div class="card-heading">
+                  <div>
+                    <span class="section-kicker">Портфель</span>
+                    <h2>Данные счёта</h2>
+                  </div>
+                  <span class="soft-badge">API ready next</span>
+                </div>
+
+                <div class="chart-empty" aria-label="Данные портфеля пока не загружены">
+                  <div class="chart-grid" aria-hidden="true">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+                  <div class="chart-empty-copy">
+                    <span class="empty-icon" aria-hidden="true">⌁</span>
+                    <strong>График готов к реальным данным</strong>
+                    <p>
+                      Здесь появятся стоимость портфеля, динамика, позиции и распределение
+                      активов после подключения методов чтения T-Invest.
+                    </p>
+                    <button class="text-button" type="button" data-go-view="portfolio">
+                      Открыть план портфеля
+                    </button>
+                  </div>
+                </div>
+              </article>
+
+              <article class="surface-card system-card">
+                <div class="card-heading">
+                  <div>
+                    <span class="section-kicker">Система</span>
+                    <h2>Три слоя интеллекта</h2>
+                  </div>
+                  <span class="soft-badge">Концепт</span>
+                </div>
+
+                <div class="module-list">
+                  <div class="module-row">
+                    <span class="module-orb module-orb-watch" aria-hidden="true">С</span>
+                    <div>
+                      <strong>Сова</strong>
+                      <span>Наблюдение за рынком и аномалиями 24/7.</span>
+                    </div>
+                    <em>Готовим</em>
+                  </div>
+                  <div class="module-row">
+                    <span class="module-orb module-orb-hunt" aria-hidden="true">О</span>
+                    <div>
+                      <strong>Охотник</strong>
+                      <span>Поиск активов по заданным критериям.</span>
+                    </div>
+                    <em>Готовим</em>
+                  </div>
+                  <div class="module-row">
+                    <span class="module-orb module-orb-guard" aria-hidden="true">С</span>
+                    <div>
+                      <strong>Страж</strong>
+                      <span>Контроль риска до любых будущих действий.</span>
+                    </div>
+                    <em>Готовим</em>
+                  </div>
+                </div>
+              </article>
+            </section>
+
+            <article class="security-banner">
+              <div class="security-symbol" aria-hidden="true">✓</div>
+              <div>
+                <strong>Безопасная архитектура остаётся главным ограничителем.</strong>
+                <p>
+                  Подключение брокера не даёт OmniCIO права совершать сделки.
+                  Реальное исполнение будет отдельным, проверяемым контуром.
+                </p>
+              </div>
+            </article>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="portfolio">
+            <div class="page-heading">
+              <span class="section-kicker">Портфель</span>
+              <h2>Реальные данные без демонстрационных цифр</h2>
+              <p>
+                Интерфейс подготовлен, но мы не показываем вымышленные значения.
+                Следующий backend-этап подключит только методы чтения T-Invest.
+              </p>
+            </div>
+
+            <section class="portfolio-layout">
+              <article class="surface-card portfolio-stage">
+                <div class="stage-number">01</div>
+                <div>
+                  <strong>Стоимость и позиции</strong>
+                  <p>Общая оценка портфеля, активы, количество и доступные деньги.</p>
+                </div>
+                <span class="soft-badge">Следующий</span>
+              </article>
+              <article class="surface-card portfolio-stage">
+                <div class="stage-number">02</div>
+                <div>
+                  <strong>Динамика и распределение</strong>
+                  <p>График стоимости, структура активов и доходность по позициям.</p>
+                </div>
+                <span class="soft-badge">После данных</span>
+              </article>
+              <article class="surface-card portfolio-stage">
+                <div class="stage-number">03</div>
+                <div>
+                  <strong>История операций</strong>
+                  <p>Пополнения, сделки и комиссии с фильтрацией по периоду.</p>
+                </div>
+                <span class="soft-badge">После данных</span>
+              </article>
+            </section>
+
+            <article class="surface-card feature-canvas">
+              <div class="feature-orbit" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <div>
+                <span class="section-kicker">Визуализация</span>
+                <h2>Графики будут объяснять состояние портфеля, а не украшать его.</h2>
+                <p>
+                  Для каждой метрики предусмотрим понятный период, единицы измерения,
+                  подписи и доступное текстовое представление.
+                </p>
+              </div>
+            </article>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="intelligence">
+            <div class="page-heading">
+              <span class="section-kicker">Система</span>
+              <h2>Интеллектуальные модули OmniCIO</h2>
+              <p>
+                Сейчас это продуктовый слой интерфейса. Перед активацией каждый модуль
+                получит отдельные данные, правила, тесты и границы полномочий.
+              </p>
+            </div>
+
+            <section class="intelligence-grid">
+              <article class="intelligence-card interactive-depth">
+                <div class="intelligence-icon">С</div>
+                <span class="section-kicker">Наблюдение</span>
+                <h3>Сова</h3>
+                <p>Ночной и дневной мониторинг рыночных событий, отклонений и новых данных.</p>
+                <div class="capability-tags">
+                  <span>Мониторинг</span><span>События</span><span>Аномалии</span>
+                </div>
+              </article>
+              <article class="intelligence-card interactive-depth">
+                <div class="intelligence-icon">О</div>
+                <span class="section-kicker">Поиск</span>
+                <h3>Охотник</h3>
+                <p>Скрининг активов по прозрачным критериям без скрытых автоматических действий.</p>
+                <div class="capability-tags">
+                  <span>Скрининг</span><span>Фильтры</span><span>Сигналы</span>
+                </div>
+              </article>
+              <article class="intelligence-card interactive-depth">
+                <div class="intelligence-icon">С</div>
+                <span class="section-kicker">Риск</span>
+                <h3>Страж</h3>
+                <p>Проверка ограничений и риска до любого будущего исполнительного действия.</p>
+                <div class="capability-tags">
+                  <span>Лимиты</span><span>Риск</span><span>Контроль</span>
+                </div>
+              </article>
+            </section>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="activity">
+            <div class="page-heading">
+              <span class="section-kicker">События</span>
+              <h2>История действий и сигналов</h2>
+              <p>
+                Этот раздел станет единым журналом наблюдений системы, операций
+                и важных изменений. Пока данных для него нет.
+              </p>
+            </div>
+
+            <article class="surface-card empty-state-card">
+              <div class="empty-state-mark" aria-hidden="true">↗</div>
+              <h3>Журнал пока пуст</h3>
+              <p>
+                Мы добавим события только после появления реальных источников данных.
+                Никаких демонстрационных операций в личном аккаунте не показывается.
+              </p>
+            </article>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="settings">
+            <div class="page-heading">
+              <span class="section-kicker">Настройки</span>
+              <h2>Личный контур и внешний вид</h2>
+              <p>
+                Здесь находятся только реальные настройки текущего приложения:
+                интерфейс, сессия и подключение T-Invest.
+              </p>
+            </div>
+
+            <section class="settings-grid">
+              <article class="surface-card settings-card">
+                <div class="card-heading">
+                  <div>
+                    <span class="section-kicker">Интерфейс</span>
+                    <h2>Внешний вид</h2>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div>
+                    <strong>Тема</strong>
+                    <span>Выберите оформление личного кабинета.</span>
+                  </div>
+                  <div class="segmented-control" role="group" aria-label="Тема интерфейса">
+                    <button type="button" data-theme-option="dark" aria-pressed="true">Тёмная</button>
+                    <button type="button" data-theme-option="light" aria-pressed="false">Светлая</button>
+                    <button type="button" data-theme-option="auto" aria-pressed="false">Авто</button>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                  <div>
+                    <strong>Объёмные эффекты</strong>
+                    <span>Лёгкая глубина и реакция карточек на указатель.</span>
+                  </div>
+                  <label class="switch-control" for="motion-toggle">
+                    <input id="motion-toggle" type="checkbox" checked>
+                    <span aria-hidden="true"></span>
+                    <em>Включены</em>
+                  </label>
+                </div>
+
+                <p class="field-hint">
+                  Системная настройка «уменьшить движение» имеет приоритет и отключает
+                  необязательные анимации автоматически.
+                </p>
+              </article>
+
+              <article class="surface-card settings-card account-card">
+                <div class="card-heading">
+                  <div>
+                    <span class="section-kicker">Профиль</span>
+                    <h2>OmniCIO Personal</h2>
+                  </div>
+                  <span class="soft-badge">Owner-only</span>
+                </div>
+
+                <dl class="account-details">
+                  <div>
+                    <dt>ID профиля</dt>
+                    <dd id="settings-profile-id">000000000</dd>
+                  </div>
+                  <div>
+                    <dt>Вход</dt>
+                    <dd>VK ID</dd>
+                  </div>
+                  <div>
+                    <dt>Регистрация</dt>
+                    <dd>Выключена</dd>
+                  </div>
+                </dl>
+              </article>
+            </section>
+
+            <section class="broker-card surface-card" aria-labelledby="tbank-title">
+              <div class="card-heading">
+                <div>
+                  <span class="section-kicker">Интеграция</span>
+                  <h2 id="tbank-title">Т-Банк Инвестиции</h2>
+                </div>
+                <span class="soft-badge" id="tbank-status-badge">Проверяем</span>
+              </div>
+
+              <p class="muted broker-intro">
+                API-токен проверяется через T-Invest API и сохраняется на сервере
+                только в зашифрованном виде. После сохранения токен больше не отображается.
+              </p>
+
+              <div id="tbank-connected" class="hidden">
+                <div class="connection-row">
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <div>
+                    <strong>Подключено</strong>
+                    <div id="tbank-account-label" class="muted"></div>
+                  </div>
+                </div>
+                <button id="tbank-disconnect" class="secondary" type="button">
+                  Отключить T-Invest
+                </button>
+              </div>
+
+              <form id="tbank-form" novalidate>
+                <label for="tbank-environment">Контур</label>
+                <select id="tbank-environment" name="environment">
+                  <option value="prod" selected>Биржа — реальный счёт</option>
+                  <option value="sandbox">Песочница — тестовый контур</option>
+                </select>
+
+                <label for="tbank-token">API-токен T-Invest</label>
+                <input
+                  id="tbank-token"
+                  name="token"
+                  type="password"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  placeholder="Вставьте токен"
+                  minlength="20"
+                  maxlength="4096"
+                  required
+                >
+                <p class="field-hint">
+                  Сейчас достаточно read-only токена. Перед включением реальных сделок
+                  его можно заменить на full-access токен, ограниченный конкретным счётом.
+                  Transfer-access для OmniCIO не требуется.
+                </p>
+                <label class="check broker-ack">
+                  <input id="tbank-terms-ack" type="checkbox" required>
+                  <span>
+                    Я понимаю, что токен будет передан T-Invest API для проверки прав,
+                    а после подключения сохранён на сервере в зашифрованном виде.
+                    Я ознакомился с <a href="/legal/terms.html" target="_blank" rel="noopener">правилами и рисками</a>.
+                  </span>
+                </label>
+                <button type="submit" id="tbank-check">Проверить токен</button>
+              </form>
+
+              <form id="tbank-account-form" class="hidden" novalidate>
+                <label for="tbank-account">Доступный брокерский счёт</label>
+                <select id="tbank-account" name="account" required></select>
+                <button type="submit" id="tbank-connect">Подключить выбранный счёт</button>
+              </form>
+
+              <p id="tbank-message" role="status" aria-live="polite"></p>
+            </section>
+          </section>
+        </div>
+      </div>
     </section>
   </main>
 

@@ -190,6 +190,52 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("статьи 437", terms)
         self.assertNotIn("omnicioinfo@gmail.com", privacy)
 
+    def test_personal_dashboard_keeps_auth_and_broker_contracts(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+
+        for element_id in (
+            "auth-card",
+            "profile-panel",
+            "vkid-form",
+            "tbank-form",
+            "tbank-account-form",
+            "tbank-connected",
+            "profile-id",
+            "logout",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        for endpoint in (
+            "/api/me",
+            "/api/auth/config",
+            "/api/auth/vkid/start",
+            "/api/auth/logout",
+            "/api/broker/tbank",
+            "/api/broker/tbank/accounts",
+        ):
+            self.assertIn(endpoint, script)
+
+    def test_personal_dashboard_uses_real_data_placeholders_not_fake_portfolio_values(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+
+        self.assertIn("Без вымышленных данных", page)
+        self.assertIn("График готов к реальным данным", page)
+        self.assertIn("Торговые действия выключены", page)
+        self.assertNotIn("₽ 1 000 000", page)
+        self.assertNotIn("+12.4%", page)
+
+    def test_personal_dashboard_motion_can_be_disabled(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        stylesheet = (root / "web" / "app.css").read_text()
+        script = (root / "web" / "app.js").read_text()
+
+        self.assertIn("@media (prefers-reduced-motion: reduce)", stylesheet)
+        self.assertIn('matchMedia("(prefers-reduced-motion: reduce)")', script)
+        self.assertIn('dataset.motion = reduced ? "reduced" : "full"', script)
+
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         for filename in ("privacy.html", "consent.html", "terms.html"):
