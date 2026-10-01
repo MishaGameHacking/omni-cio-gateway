@@ -629,3 +629,15 @@ def _user(row: dict[str, Any]) -> UserRecord:
         public_id=int(row["public_id"]),
         status=str(row["status"]),
     )
+
+
+def _tbank_connection(row: dict[str, Any]) -> TBankConnectionRecord:
+    return TBankConnectionRecord(
+        user_id=row["user_id"],
+        environment=str(row["environment"]),
+        account_id=str(row["account_id"]),
+        account_name=str(row["account_name"]),
+        encrypted_credential=bytes(row["token_ciphertext"]),
+        verified_at=row["verified_at"],
+        updated_at=row["updated_at"],
+    )
