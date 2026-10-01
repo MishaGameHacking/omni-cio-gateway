@@ -12,10 +12,10 @@
   <title>OmniCIO Personal</title>
   <link rel="icon" href="/assets/brand/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon-180.png" sizes="180x180">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="manifest" href="/manifest.webmanifest?build=__OMNICIO_BUILD__">
+  <link rel="stylesheet" href="/assets/app.css?build=__OMNICIO_BUILD__">
 </head>
-<body data-theme="light">
+<body data-theme="light" data-build="__OMNICIO_BUILD__">
   <main class="shell">
     <section class="auth-card" id="auth-card" aria-labelledby="auth-title">
       <header class="auth-header">
@@ -35,7 +35,7 @@
           </span>
         </a>
         <span class="release-chip" aria-label="Версия приложения">
-          v<span data-app-version>—</span>
+          v<span data-app-version>__OMNICIO_VERSION__</span>
         </span>
       </header>
 
@@ -114,7 +114,7 @@
 
           <footer class="auth-meta">
             <span>OmniCIO Personal</span>
-            <span>v<span data-app-version>—</span> · сборка <span data-app-build>—</span></span>
+            <span>v<span data-app-version>__OMNICIO_VERSION__</span> · сборка <span data-app-build>__OMNICIO_BUILD__</span></span>
           </footer>
         </section>
       </div>
@@ -156,8 +156,8 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span class="sidebar-version">v<span data-app-version>—</span></span>
-          <span class="sidebar-build">build <span data-app-build>—</span></span>
+          <span class="sidebar-version">v<span data-app-version>__OMNICIO_VERSION__</span></span>
+          <span class="sidebar-build">build <span data-app-build>__OMNICIO_BUILD__</span></span>
         </div>
       </aside>
 
@@ -457,17 +457,17 @@
                     <p class="card-label">Приложение</p>
                     <h3>Версия OmniCIO</h3>
                   </div>
-                  <span class="release-chip">v<span data-app-version>—</span></span>
+                  <span class="release-chip">v<span data-app-version>__OMNICIO_VERSION__</span></span>
                 </header>
 
                 <dl class="info-list">
                   <div>
                     <dt>Версия</dt>
-                    <dd>v<span data-app-version>—</span></dd>
+                    <dd>v<span data-app-version>__OMNICIO_VERSION__</span></dd>
                   </div>
                   <div>
                     <dt>Сборка</dt>
-                    <dd><span data-app-build>—</span></dd>
+                    <dd><span data-app-build>__OMNICIO_BUILD__</span></dd>
                   </div>
                   <div>
                     <dt>Режим</dt>
@@ -536,7 +536,7 @@
     </section>
   </main>
 
-  <script src="/version.js" defer></script>
-  <script src="/assets/app.js" defer></script>
+  <script src="/version.js?build=__OMNICIO_BUILD__" defer></script>
+  <script src="/assets/app.js?build=__OMNICIO_BUILD__" defer></script>
 </body>
 </html>
