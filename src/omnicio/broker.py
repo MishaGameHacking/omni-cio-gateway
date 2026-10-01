@@ -55,6 +55,7 @@ class BrokerService:
         credential: str,
         environment: TBankEnvironment,
         account_id: str,
+        terms_version: str,
     ) -> BrokerConnectionStatus:
         accounts = self.tbank.get_accounts(credential, environment)
         selected = next(
@@ -73,6 +74,7 @@ class BrokerService:
             account_id=selected.id,
             account_name=selected.name,
             encrypted_credential=encrypted,
+            terms_version=terms_version,
         )
         return _status(record)
 
