@@ -462,6 +462,32 @@ class Database:
             )
             return record
 
+    def delete_tbank_connection(self, user_id: UUID) -> bool:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM tbank_connection
+                WHERE user_id = %s
+                RETURNING environment
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return False
+            row = cast(dict[str, Any], fetched)
+            cur.execute(
+                """
+                INSERT INTO audit_events (user_id, event_type, metadata)
+                VALUES (%s, 'tbank_disconnected', %s::jsonb)
+                """,
+                (
+                    user_id,
+                    json.dumps({"environment": str(row["environment"])}),
+                ),
+            )
+            return True
+
     def support_user_by_public_id(self, public_id: int) -> UserRecord | None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
