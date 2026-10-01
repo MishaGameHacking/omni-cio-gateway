@@ -138,6 +138,22 @@ def test_tbank_find_instruments_filters_to_api_trade_available_results() -> None
     }
 
 
+def test_tbank_find_instruments_rejects_blank_query_before_network_call() -> None:
+    client = TBankInvestClient()
+
+    with (
+        patch("urllib.request.urlopen") as urlopen,
+        pytest.raises(ValueError, match="1 to 64"),
+    ):
+        client.find_instruments(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "   ",
+        )
+
+    urlopen.assert_not_called()
+
+
 def test_tbank_reads_portfolio_positions_and_operations() -> None:
     credential = "t.fake-owner-credential-1234567890"
     client = TBankInvestClient()
