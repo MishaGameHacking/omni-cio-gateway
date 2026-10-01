@@ -82,13 +82,13 @@ class AuthAppDeployTests(unittest.TestCase):
                 "SMS_SENDER": "SMS Aero",
                 "SMS_TEST_NUMBER": "+79161234567",
                 "OWNER_PHONE": "+79161234567",
-                "LEGAL_OPERATOR_NAME": "Test Operator",
-                "LEGAL_OPERATOR_ADDRESS": "Test Address",
-                "LEGAL_PRIVACY_CONTACT": "privacy@example.test",
+                "LEGAL_PRIVACY_VERSION": "2026-10-01",
+                "LEGAL_CONSENT_VERSION": "2026-10-01",
+                "LEGAL_TERMS_VERSION": "2026-10-01",
             }
             os.environ.update(values)
             MODULE.validate_product_environment()
-            os.environ.pop("LEGAL_OPERATOR_ADDRESS")
+            os.environ.pop("LEGAL_TERMS_VERSION")
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
         finally:
@@ -101,12 +101,9 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ["SMS_PROVIDER_LOGIN"] = "user@example.test"
             os.environ["SMS_PROVIDER_TOKEN"] = "secret-token"
             os.environ.pop("SMS_SENDER", None)
-            os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
-            os.environ["LEGAL_OPERATOR_ADDRESS"] = "Test Address"
-            os.environ["LEGAL_PRIVACY_CONTACT"] = "privacy@example.test"
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-09-30"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-09-30"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-09-30"
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01"
 
             product_env = MODULE.build_product_environment()
         finally:
