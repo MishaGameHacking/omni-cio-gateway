@@ -101,6 +101,19 @@ def _environment_value(value: str) -> str:
     return f'"{escaped}"'
 
 
+def _positive_numeric_id(value: str) -> bool:
+    return value.isdigit() and int(value) > 0
+
+
+def vkid_configuration_ready() -> bool:
+    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
+    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
+    return (
+        _positive_numeric_id(vkid_app_id)
+        and _positive_numeric_id(owner_vk_id)
+    )
+
+
 def validate_product_environment() -> None:
     required_names = (
         "LEGAL_PRIVACY_VERSION",
@@ -125,12 +138,17 @@ def validate_product_environment() -> None:
             "VK ID configuration is incomplete: VKID_APP_ID and OWNER_VK_ID "
             "must be configured together"
         )
+    if vkid_app_id and not vkid_configuration_ready():
+        raise InfraError(
+            "VK ID configuration must use positive numeric VKID_APP_ID "
+            "and OWNER_VK_ID values"
+        )
 
 
 def build_product_environment() -> str:
     vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
     owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    vkid_enabled = "true" if vkid_app_id and owner_vk_id else "false"
+    vkid_enabled = "true" if vkid_configuration_ready() else "false"
 
     values = {
         "VKID_APP_ID": vkid_app_id,
@@ -440,10 +458,7 @@ def verify_public() -> None:
                 )
             if payload.get("auth_provider") != "vkid":
                 raise InfraError("Public auth provider is not VK ID")
-            expected_ready = bool(
-                os.environ.get("VKID_APP_ID", "").strip()
-                and os.environ.get("OWNER_VK_ID", "").strip()
-            )
+            expected_ready = vkid_configuration_ready()
             if payload.get("owner_login_enabled") is not expected_ready:
                 raise InfraError(
                     "Public VK ID readiness does not match deployment config"
@@ -556,10 +571,7 @@ def reconcile(
             rollback_remote(ssh, release_sha=release_sha)
             raise
 
-    vkid_ready = bool(
-        os.environ.get("VKID_APP_ID", "").strip()
-        and os.environ.get("OWNER_VK_ID", "").strip()
-    )
+    vkid_ready = vkid_configuration_ready()
     login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
