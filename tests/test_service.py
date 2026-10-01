@@ -30,6 +30,7 @@ class FakeDatabase:
         self.sent = False
         self.session_digest: bytes | None = None
         self.refreshed_ttl: int | None = None
+        self.refreshed_owner_lookup: bytes | None = None
         self.user = UserRecord(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
@@ -86,7 +87,14 @@ class FakeDatabase:
         self.session_digest = kwargs["session_token_digest"]
         return self.user, True
 
-    def refresh_session_digest(self, token_digest, *, session_ttl_seconds):
+    def refresh_session_digest(
+        self,
+        token_digest,
+        *,
+        owner_phone_lookup,
+        session_ttl_seconds,
+    ):
+        self.refreshed_owner_lookup = owner_phone_lookup
         self.refreshed_ttl = session_ttl_seconds
         if token_digest == self.session_digest:
             return self.user
@@ -155,6 +163,7 @@ def test_issue_and_verify_creates_public_id_and_session() -> None:
     assert result.created is True
     assert service.refresh_session(result.session_token) == db.user
     assert db.refreshed_ttl == 34_560_000
+    assert db.refreshed_owner_lookup is not None
 
 
 def test_issue_challenge_rejects_non_owner_before_sms_send() -> None:
