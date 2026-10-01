@@ -149,6 +149,12 @@ class AuthService:
         challenge = self.database.load_challenge(challenge_id)
         if challenge is None:
             raise InvalidChallenge("challenge not found")
+
+        owner_phone = normalize_russian_mobile(self.settings.owner_phone)
+        owner_lookup = phone_lookup(owner_phone, self.settings.lookup_key)
+        if challenge.phone_lookup != owner_lookup:
+            raise OwnerAccessDenied("challenge does not belong to the private owner")
+
         if challenge.consumed_at is not None or challenge.expires_at <= utcnow():
             raise InvalidChallenge("challenge expired or consumed")
         if challenge.attempts_remaining <= 0:
