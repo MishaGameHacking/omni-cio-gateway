@@ -50,6 +50,8 @@ BRAND_RUNTIME_FILES = (
     "assets/brand/web/pwa-icon-512.png",
     "assets/brand/web/pwa-maskable-512.png",
 )
+BRAND_PUBLIC_MARK = "/assets/brand/omni-sentinel-core-color-1024.png"
+WEB_MANIFEST_PATH = "/manifest.webmanifest"
 
 
 def add_summary(line: str) -> None:
@@ -521,6 +523,37 @@ def verify_public() -> None:
             root_body = response.read().decode(errors="replace")
             if response.status != 200 or SITE_MARKER not in root_body:
                 raise InfraError("Public auth page verification failed")
+            if BRAND_PUBLIC_MARK not in root_body:
+                raise InfraError("Public auth page does not use approved brand mark")
+            if WEB_MANIFEST_PATH not in root_body:
+                raise InfraError("Public auth page does not expose web manifest")
+
+        brand_request = urllib.request.Request(
+            f"https://{DOMAIN}{BRAND_PUBLIC_MARK}",
+            headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+        )
+        with urllib.request.urlopen(
+            brand_request,
+            timeout=15,
+            context=context,
+        ) as response:
+            if response.status != 200 or response.headers.get_content_type() != "image/png":
+                raise InfraError("Public approved brand mark verification failed")
+            if not response.read(1):
+                raise InfraError("Public approved brand mark is empty")
+
+        manifest_request = urllib.request.Request(
+            f"https://{DOMAIN}{WEB_MANIFEST_PATH}",
+            headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+        )
+        with urllib.request.urlopen(
+            manifest_request,
+            timeout=15,
+            context=context,
+        ) as response:
+            manifest = json.loads(response.read().decode())
+            if response.status != 200 or not isinstance(manifest.get("icons"), list):
+                raise InfraError("Public web manifest verification failed")
 
         with urllib.request.urlopen(
             config_request,
