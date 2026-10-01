@@ -79,6 +79,7 @@ jobs:
       SMS_PROVIDER_TOKEN: ${{ secrets.SMS_PROVIDER_TOKEN }}
       SMS_SENDER: ${{ vars.SMS_SENDER }}
       SMS_TEST_NUMBER: ${{ secrets.SMS_TEST_NUMBER }}
+      OWNER_PHONE: ${{ secrets.SMS_TEST_NUMBER }}
       LEGAL_OPERATOR_NAME: ${{ secrets.LEGAL_OPERATOR_NAME }}
       LEGAL_OPERATOR_ADDRESS: ${{ secrets.LEGAL_OPERATOR_ADDRESS }}
       LEGAL_PRIVACY_CONTACT: ${{ secrets.LEGAL_PRIVACY_CONTACT }}
@@ -123,4 +124,4 @@ jobs:
       - name: Confirm application readiness
         if: steps.app.outputs.status == 'app_ready'
         run: |
-          echo "OmniCIO auth application is healthy over HTTPS. Registration remains disabled."
+          echo "OmniCIO is healthy over HTTPS. Owner login is enabled; public registration remains disabled."
