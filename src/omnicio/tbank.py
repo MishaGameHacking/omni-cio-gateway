@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Literal
 
 TBankEnvironment = Literal["prod", "sandbox"]
+
+logger = logging.getLogger(__name__)
 
 _ENDPOINTS: dict[str, str] = {
     "prod": (
@@ -74,6 +78,12 @@ class TBankInvestClient:
             ) as response:
                 raw = response.read().decode()
         except urllib.error.HTTPError as exc:
+            tracking_id = exc.headers.get("x-tracking-id", "")
+            logger.warning(
+                "T-Invest request failed status=%s tracking_id=%s",
+                exc.code,
+                tracking_id or "-",
+            )
             if exc.code in {401, 403}:
                 raise TBankTokenRejected("T-Invest token was rejected") from exc
             if exc.code == 429 or exc.code >= 500:
@@ -83,10 +93,23 @@ class TBankInvestClient:
             raise TBankUnavailable(
                 f"T-Invest API rejected request: HTTP {exc.code}"
             ) from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except urllib.error.URLError as exc:
+            reason = exc.reason
+            reason_name = type(reason).__name__
+            logger.warning(
+                "T-Invest network failure reason=%s",
+                reason_name,
+            )
+            if isinstance(reason, ssl.SSLCertVerificationError):
+                raise TBankUnavailable(
+                    "T-Invest TLS certificate verification failed"
+                ) from exc
             raise TBankUnavailable(
-                f"T-Invest API unavailable: {type(exc).__name__}"
+                f"T-Invest API unavailable: {reason_name}"
             ) from exc
+        except TimeoutError as exc:
+            logger.warning("T-Invest request timed out")
+            raise TBankUnavailable("T-Invest API request timed out") from exc
 
         try:
             payload = json.loads(raw)
