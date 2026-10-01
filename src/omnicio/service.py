@@ -197,8 +197,11 @@ class AuthService:
     def refresh_session(self, token: str) -> UserRecord | None:
         if not token:
             return None
+        owner_phone = normalize_russian_mobile(self.settings.owner_phone)
+        owner_lookup = phone_lookup(owner_phone, self.settings.lookup_key)
         return self.database.refresh_session_digest(
             session_digest(token),
+            owner_phone_lookup=owner_lookup,
             session_ttl_seconds=self.settings.session_ttl_seconds,
         )
 
