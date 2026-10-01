@@ -824,6 +824,8 @@
 
     if (!status.connected) {
       portfolioLoaded = false;
+      lastPortfolioSnapshot = null;
+      lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
       overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
       homeConnectionCard.classList.add("is-offline");
@@ -832,6 +834,10 @@
       setStateBadge(homeTbankState, "Не подключено", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+      updateOwlState(null);
+      updateGuard(null);
+      hunterResults.replaceChildren();
+      showMessage(hunterMessage, "Подключите T-Invest, чтобы искать инструменты.");
       showPortfolioMode("disconnected");
       return;
     }
@@ -842,9 +848,12 @@
     overviewConnectionText.textContent = `${environment} · соединение подтверждено`;
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
+    showMessage(hunterMessage, "");
     if (!portfolioLoaded) {
       setStateBadge(homePortfolioState, "Загружаем", "");
       setStateBadge(portfolioStateBadge, "Загружаем", "");
+      updateOwlState(null);
+      updateGuard(null);
     }
   };
 
@@ -880,10 +889,18 @@
     topConnectionText.textContent = "Ошибка T-Invest";
     tbankIsConnected = false;
     portfolioLoaded = false;
+    lastPortfolioSnapshot = null;
+    lastPortfolioRefreshAt = 0;
     setStateBadge(homeTbankState, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
     setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
+    setStateBadge(owlState, "Ошибка", "state-error");
+    setStateBadge(guardState, "Ошибка", "state-error");
+    owlLastRefresh.textContent = "—";
+    guardBlockedPositions.textContent = "—";
+    guardBlockedCash.textContent = "—";
+    guardLargestClass.textContent = "—";
   };
 
   const loadTbankStatus = async () => {
@@ -988,6 +1005,23 @@
     installStatus.textContent = "Открыто в браузере";
     installButton.classList.add("hidden");
   };
+
+  hunterForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void searchHunter();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    const stale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
+    if (
+      document.visibilityState === "visible"
+      && tbankIsConnected
+      && stale
+      && !portfolioRequestInFlight
+    ) {
+      void loadPortfolioData({force: true, refreshOperations: false});
+    }
+  });
 
   operationsLoadMore.addEventListener("click", () => {
     void loadMoreOperations();
@@ -1226,5 +1260,6 @@
   renderReleaseInfo();
   applyTheme(storedTheme());
   refreshInstallState();
+  startOwl();
   void loadState();
 })();
