@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from .broker import BrokerService
-from .cbr import CBRClient, CBRUnavailable
+from .cbr import CBRClient, CBRRate, CBRUnavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,11 +96,7 @@ class MarketService:
         )
 
 
-def _reference_rate(rate: object) -> MarketReferenceRate:
-    from .cbr import CBRRate
-
-    if not isinstance(rate, CBRRate):
-        raise TypeError("invalid Bank of Russia rate")
+def _reference_rate(rate: CBRRate) -> MarketReferenceRate:
     return MarketReferenceRate(
         source="Bank of Russia",
         value=rate.value,
