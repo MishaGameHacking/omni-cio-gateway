@@ -2149,3 +2149,167 @@ select:hover {
     text-align: left;
   }
 }
+
+
+/* USD/RUB live market card */
+
+.market-card {
+  margin-bottom: 18px;
+  padding: 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
+  gap: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(22 35 58 / 4%);
+}
+
+.market-card.is-offline {
+  border-color: color-mix(in srgb, var(--warning) 24%, var(--border));
+}
+
+.market-card.is-error {
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--border));
+}
+
+.market-primary {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+}
+
+.market-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.market-heading h3 {
+  margin: 3px 0 0;
+  font-size: 22px;
+  letter-spacing: -.025em;
+}
+
+.market-price-row {
+  margin-top: 18px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.market-price-row > strong {
+  font-size: clamp(34px, 5vw, 52px);
+  line-height: 1;
+  letter-spacing: -.045em;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-price-row > span {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-primary > p {
+  margin: 12px 0 0;
+  max-width: 650px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.market-meta {
+  margin: 0;
+  padding: 0 0 0 22px;
+  display: grid;
+  align-content: center;
+  border-left: 1px solid var(--border);
+}
+
+.market-meta > div {
+  min-height: 54px;
+  padding: 10px 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 4px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.market-meta > div:first-child {
+  border-top: 0;
+}
+
+.market-meta dt {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.market-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-meta small {
+  grid-column: 1 / -1;
+  color: var(--text-soft);
+  font-size: 11px;
+  text-align: right;
+}
+
+@media (max-width: 820px) {
+  .market-card {
+    grid-template-columns: 1fr;
+  }
+
+  .market-meta {
+    padding: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .market-meta > div:first-child {
+    border-top: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .market-card {
+    padding: 18px;
+    gap: 18px;
+  }
+
+  .market-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .market-price-row {
+    margin-top: 14px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .market-price-row > strong {
+    font-size: 38px;
+  }
+
+  .market-meta > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .market-meta dd,
+  .market-meta small {
+    text-align: left;
+  }
+}
