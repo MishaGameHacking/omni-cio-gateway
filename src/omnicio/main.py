@@ -13,13 +13,13 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, st
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .cbr import CBRClient
 from .broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
     BrokerNotConnected,
     BrokerService,
 )
+from .cbr import CBRClient
 from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .market import MarketService
