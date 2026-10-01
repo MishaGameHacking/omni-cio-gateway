@@ -283,11 +283,27 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertGreaterEqual(page.count("data-app-version"), 3)
         self.assertIn("data-app-build", page)
-        self.assertIn("/version.js", page)
-        self.assertIn('version = "0.2.0"', project)
+        self.assertIn("__OMNICIO_VERSION__", page)
+        self.assertIn("__OMNICIO_BUILD__", page)
+        self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
+        self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
+        self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
+        self.assertIn('version = "0.2.1"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
+        self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
+        self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
         self.assertIn("tomllib", deploy_script)
         self.assertEqual(MODULE.VERSION_PUBLIC_PATH, "/version.js")
+
+    def test_runtime_assets_cannot_mix_across_frontend_releases(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+
+        self.assertIn("location = /assets/app.css", script)
+        self.assertIn("location = /assets/app.js", script)
+        self.assertIn("location = /version.js", script)
+        self.assertIn("location = /manifest.webmanifest", script)
+        self.assertGreaterEqual(script.count('add_header Cache-Control "no-cache";'), 5)
+        self.assertNotIn('add_header Cache-Control "public, max-age=300";', script)
 
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
