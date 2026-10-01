@@ -5,8 +5,8 @@ import os
 from datetime import timedelta
 from uuid import UUID
 
-from cryptography.fernet import Fernet
 import pytest
+from cryptography.fernet import Fernet
 
 from omnicio.config import Settings
 from omnicio.db import ChallengeRecord, UserRecord, utcnow
