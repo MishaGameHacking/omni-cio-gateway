@@ -104,12 +104,37 @@ def callback_values(request: Request) -> dict[str, str]:
             raise VKIDRejected("VK ID callback payload is invalid") from exc
         if not isinstance(payload, dict):
             raise VKIDRejected("VK ID callback payload is invalid")
-        return {
-            key: str(value)
-            for key, value in payload.items()
-            if value is not None
-        }
-    return {key: value for key, value in request.query_params.items()}
+        values: dict[str, str] = {}
+        for key in ("code", "state", "device_id", "error"):
+            value = payload.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise VKIDRejected("VK ID callback payload is invalid")
+            values[key] = value
+        return values
+
+    return {
+        key: value
+        for key in ("code", "state", "device_id", "error")
+        if (value := request.query_params.get(key)) is not None
+    }
+
+
+def validate_vkid_callback_values(values: dict[str, str], expected_state: str) -> tuple[str, str]:
+    if values.get("error"):
+        raise VKIDRejected("VK ID returned an authorization error")
+
+    code = values.get("code", "")
+    state_value = values.get("state", "")
+    device_id = values.get("device_id", "")
+    if not code or not state_value or not device_id:
+        raise VKIDRejected("VK ID callback is incomplete")
+    if state_value != expected_state:
+        raise VKIDRejected("VK ID state mismatch")
+    if len(code) > 4096 or len(device_id) > 512 or len(state_value) > 512:
+        raise VKIDRejected("VK ID callback value is too long")
+    return code, device_id
 
 
 def auth_redirect(path: str) -> RedirectResponse:
@@ -241,24 +266,14 @@ def vkid_callback(
             ttl_seconds=cfg.vkid_flow_ttl_seconds,
         )
         values = callback_values(request)
-        if values.get("error"):
-            raise VKIDRejected("VK ID returned an authorization error")
+        code, device_id = validate_vkid_callback_values(values, expected_state)
 
-        code = values.get("code", "")
-        state_value = values.get("state", "")
-        device_id = values.get("device_id", "")
-        if not code or not state_value or not device_id:
-            raise VKIDRejected("VK ID callback is incomplete")
-        if state_value != expected_state:
-            raise VKIDRejected("VK ID state mismatch")
-
-        access_token = vkid_client(request).exchange_code(
+        owner = vkid_client(request).exchange_code(
             code=code,
             device_id=device_id,
             code_verifier=verifier,
             expected_state=expected_state,
         )
-        owner = vkid_client(request).user_info(access_token)
         result = service(request).complete_vkid_login(
             vk_user_id=owner.user_id,
             client_ip=client_ip(request),
