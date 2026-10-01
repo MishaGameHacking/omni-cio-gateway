@@ -58,7 +58,6 @@ def settings(**overrides: object) -> Settings:
         "vkid_app_id": "123456",
         "owner_vk_id": "987654321",
         "vkid_login_enabled": True,
-        "registration_enabled": False,
         "privacy_version": "2026-10-01-v2",
         "consent_version": "2026-10-01-v2",
         "terms_version": "2026-10-01-v2",
@@ -125,6 +124,28 @@ def test_session_fails_closed_when_vkid_is_not_configured() -> None:
     db = FakeDatabase()
     auth = AuthService(
         settings(vkid_login_enabled=False, owner_vk_id=""),
+        db,
+    )
+
+    assert auth.refresh_session("anything") is None
+
+
+@pytest.mark.parametrize(
+    ("app_id", "owner_vk_id"),
+    [
+        ("app", "987654321"),
+        ("123456", "owner"),
+        ("0", "987654321"),
+        ("123456", "0"),
+    ],
+)
+def test_session_fails_closed_for_invalid_vkid_ids(
+    app_id: str,
+    owner_vk_id: str,
+) -> None:
+    db = FakeDatabase()
+    auth = AuthService(
+        settings(vkid_app_id=app_id, owner_vk_id=owner_vk_id),
         db,
     )
 
