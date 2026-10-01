@@ -25,6 +25,7 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import urllib.error
           import urllib.request
 
           root = "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway"
@@ -41,7 +42,9 @@ jobs:
                   return json.load(response)
 
           targets = (
-              ("portfolio-pr-658", 110522172817, "5cc166c8d74755957f9e1e1b4e4a14d91e950001"),
+              ("portfolio-pr-658", 110532674368, "f00b4f7d1d5f4b6bd8db601170d8eafc550dabff"),
+              ("historical-pr-620", 109972480542, "b7beb5243973016886d379bcb25a809a95862f29"),
+              ("historical-pr-642", 110289452922, "af999b1a1201ae2f26efb5b7cd13141950148477"),
               ("main", 110471295666, "eac2ebfcf64fa494b59b772fda9490b2c4e1823e"),
           )
           for label, check_id, expected_sha in targets:
@@ -67,4 +70,29 @@ jobs:
                   "check_id": check_id, "count": len(annotations),
                   "annotations": annotations,
               }, ensure_ascii=True, sort_keys=True))
+
+          public_paths = (
+              "/api/components/show?component=MishaGameHacking_omni-cio-gateway",
+              "/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&resolved=false&ps=100",
+          )
+          for path in public_paths:
+              request = urllib.request.Request(
+                  "https://sonarcloud.io" + path,
+                  headers={"Accept": "application/json", "User-Agent": "omnicio-public-sonar-diagnostics/1.0"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      data = json.load(response)
+                  component = data.get("component", {})
+                  print(json.dumps({
+                      "public_sonar_path": path, "status": 200,
+                      "component": {key: component.get(key) for key in ("key", "visibility", "qualifier")},
+                      "total": data.get("total"),
+                      "issues": [{
+                          key: item.get(key)
+                          for key in ("key", "rule", "severity", "type", "component", "line", "message", "status")
+                      } for item in data.get("issues", [])],
+                  }, sort_keys=True))
+              except urllib.error.HTTPError as error:
+                  print(json.dumps({"public_sonar_path": path, "status": error.code}))
           PY
