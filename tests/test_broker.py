@@ -249,11 +249,13 @@ class FakeTBank:
         account_id: str,
         *,
         limit: int = 30,
+        cursor: str | None = None,
     ):
         assert credential == "t.fake-owner-credential-1234567890"
         assert environment == "prod"
         assert account_id == "account-1"
         assert limit == 30
+        assert cursor is None
         return TBankOperationsPage(
             items=(
                 TBankOperation(
