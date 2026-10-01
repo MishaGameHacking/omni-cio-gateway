@@ -755,6 +755,7 @@ def parse_secret_bundle(raw: str) -> dict[str, str]:
         "PHONE_LOOKUP_KEY",
         "OTP_SIGNING_KEY",
         "CLIENT_IP_KEY",
+        "BROKER_TOKEN_CRYPTO_KEY",
     }
     if required - values.keys():
         raise InfraError("Server-side auth secret file is incomplete")
@@ -772,7 +773,16 @@ import secrets
 path = pathlib.Path("/etc/omnicio/auth-secrets.env")
 path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-if not path.exists():
+values = {}
+if path.exists():
+    for line in path.read_text().splitlines():
+        if not line:
+            continue
+        if "=" not in line:
+            raise SystemExit("malformed auth secret file")
+        key, value = line.split("=", 1)
+        values[key] = value
+else:
     values = {
         "OMNICIO_DB_ADMIN_PASSWORD": secrets.token_urlsafe(18),
         "PHONE_CRYPTO_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),
@@ -780,6 +790,15 @@ if not path.exists():
         "OTP_SIGNING_KEY": secrets.token_urlsafe(48),
         "CLIENT_IP_KEY": secrets.token_urlsafe(48),
     }
+
+changed = not path.exists()
+if "BROKER_TOKEN_CRYPTO_KEY" not in values:
+    values["BROKER_TOKEN_CRYPTO_KEY"] = (
+        base64.urlsafe_b64encode(os.urandom(32)).decode()
+    )
+    changed = True
+
+if changed:
     content = "".join(f"{key}={value}\n" for key, value in values.items())
     temp = path.with_suffix(".tmp")
     temp.write_text(content)
@@ -870,6 +889,7 @@ def write_runtime_env(
             f"PHONE_LOOKUP_KEY={secrets['PHONE_LOOKUP_KEY']}",
             f"OTP_SIGNING_KEY={secrets['OTP_SIGNING_KEY']}",
             f"CLIENT_IP_KEY={secrets['CLIENT_IP_KEY']}",
+            f"BROKER_TOKEN_CRYPTO_KEY={secrets['BROKER_TOKEN_CRYPTO_KEY']}",
             "SMS_PROVIDER=disabled",
             "REGISTRATION_ENABLED=false",
             "",
@@ -960,7 +980,7 @@ def reconcile(
     server_name: str,
     server_comment: str,
     vpc_name: str,
-    migration_sql: str,
+    migration_sqls: list[str],
 ) -> int:
     add_summary("## OmniCIO auth PostgreSQL")
     add_summary(
@@ -1110,12 +1130,13 @@ def reconcile(
             desired=desired,
             secrets=secret_bundle,
         )
-        run_schema_migration(
-            ssh,
-            migration_sql=migration_sql,
-            endpoint=endpoint,
-            desired=desired,
-        )
+        for migration_sql in migration_sqls:
+            run_schema_migration(
+                ssh,
+                migration_sql=migration_sql,
+                endpoint=endpoint,
+                desired=desired,
+            )
 
     add_summary(
         "- Result: database_ready. PostgreSQL is private-only, runtime "
@@ -1142,14 +1163,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-cpu", type=int, required=True)
     parser.add_argument("--min-ram-mb", type=int, required=True)
     parser.add_argument("--min-disk-mb", type=int, required=True)
-    parser.add_argument("--migration", required=True)
+    parser.add_argument("--migration", action="append", required=True)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        migration_sql = pathlib.Path(args.migration).read_text(encoding="utf-8")
+        migration_sqls = [
+            pathlib.Path(path).read_text(encoding="utf-8")
+            for path in args.migration
+        ]
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,
@@ -1168,7 +1192,7 @@ def main() -> int:
             server_name=args.server_name,
             server_comment=args.server_comment,
             vpc_name=args.vpc_name,
-            migration_sql=migration_sql,
+            migration_sqls=migration_sqls,
         )
     except (InfraError, TimewebApiError, AmbiguousProviderError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
