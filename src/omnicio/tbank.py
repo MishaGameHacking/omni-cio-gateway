@@ -243,20 +243,24 @@ class TBankInvestClient:
         account_id: str,
         *,
         limit: int = 30,
+        cursor: str | None = None,
     ) -> TBankOperationsPage:
         if not 1 <= limit <= 100:
             raise ValueError("operation limit must be between 1 and 100")
+        body: dict[str, object] = {
+            "accountId": _validate_account_id(account_id),
+            "limit": limit,
+            "state": "OPERATION_STATE_EXECUTED",
+            "withoutTrades": True,
+        }
+        if cursor:
+            body["cursor"] = _validate_cursor(cursor)
         payload = self._post(
             token=token,
             environment=environment,
             service="OperationsService",
             method="GetOperationsByCursor",
-            body={
-                "accountId": _validate_account_id(account_id),
-                "limit": limit,
-                "state": "OPERATION_STATE_EXECUTED",
-                "withoutTrades": True,
-            },
+            body=body,
         )
         has_next_raw = payload.get("hasNext", False)
         if not isinstance(has_next_raw, bool):
@@ -379,6 +383,13 @@ def _validate_account_id(account_id: str) -> str:
     clean = account_id.strip()
     if not clean or len(clean) > 128 or "\n" in clean or "\r" in clean:
         raise TBankUnavailable("invalid T-Invest account id")
+    return clean
+
+
+def _validate_cursor(cursor: str) -> str:
+    clean = cursor.strip()
+    if not clean or len(clean) > 4096 or "\n" in clean or "\r" in clean:
+        raise TBankUnavailable("invalid T-Invest operation cursor")
     return clean
 
 
