@@ -21,7 +21,6 @@ from omnicio.tbank import (
     TBankOperation,
     TBankOperationsPage,
     TBankPortfolio,
-    TBankPortfolioPosition,
     TBankPositions,
     TBankTokenRejected,
     TBankUnavailable,
