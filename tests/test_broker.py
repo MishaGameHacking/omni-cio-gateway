@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import urllib.error
-import urllib.parse
 from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import UUID
