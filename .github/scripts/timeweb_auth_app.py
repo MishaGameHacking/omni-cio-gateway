@@ -286,7 +286,6 @@ python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q "$RELEASE"
 
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
-install -m 0644 "$RELEASE/web/index.html" "$WEB_RELEASE/index.html"
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
@@ -300,7 +299,7 @@ install -m 0644 "$RELEASE/web/legal/privacy.html" "$WEB_RELEASE/legal/privacy.ht
 install -m 0644 "$RELEASE/web/legal/consent.html" "$WEB_RELEASE/legal/consent.html"
 install -m 0644 "$RELEASE/web/legal/terms.html" "$WEB_RELEASE/legal/terms.html"
 
-python3 - "$RELEASE/pyproject.toml" "$SHA" "$WEB_RELEASE/version.js" <<'PY'
+python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" <<'PY'
 import json
 import pathlib
 import sys
@@ -308,18 +307,26 @@ import tomllib
 
 with open(sys.argv[1], "rb") as handle:
     version = str(tomllib.load(handle)["project"]["version"])
-payload = {
-    "version": version,
-    "build": sys.argv[2][:12],
-}
-pathlib.Path(sys.argv[3]).write_text(
+build = sys.argv[2][:12]
+template = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
+for marker in ("__OMNICIO_VERSION__", "__OMNICIO_BUILD__"):
+    if marker not in template:
+        raise SystemExit(f"missing release marker: {marker}")
+rendered = (
+    template
+    .replace("__OMNICIO_VERSION__", version)
+    .replace("__OMNICIO_BUILD__", build)
+)
+pathlib.Path(sys.argv[4]).write_text(rendered, encoding="utf-8")
+payload = {"version": version, "build": build}
+pathlib.Path(sys.argv[5]).write_text(
     "window.OMNICIO_RELEASE = "
     + json.dumps(payload, separators=(",", ":"))
     + ";\n",
     encoding="utf-8",
 )
 PY
-chmod 0644 "$WEB_RELEASE/version.js"
+chmod 0644 "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js"
 
 cat > "$SERVICE.new" <<'EOF'
 [Unit]
@@ -443,14 +450,34 @@ server {
         proxy_read_timeout 10s;
     }
 
+    location = /assets/app.css {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /assets/app.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
     location /assets/ {
         try_files $uri =404;
-        add_header Cache-Control "public, max-age=300";
+        add_header Cache-Control "public, max-age=86400";
+    }
+
+    location = /manifest.webmanifest {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /version.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
     }
 
     location / {
         try_files $uri $uri/ /index.html;
-        add_header Cache-Control "no-store";
+        add_header Cache-Control "no-cache";
     }
 }
 EOF
@@ -549,6 +576,10 @@ def verify_public(release_sha: str) -> None:
                 raise InfraError("Public auth page does not use approved brand mark")
             if WEB_MANIFEST_PATH not in root_body:
                 raise InfraError("Public auth page does not expose web manifest")
+            if "__OMNICIO_VERSION__" in root_body or "__OMNICIO_BUILD__" in root_body:
+                raise InfraError("Public auth page contains unresolved release markers")
+            if release_sha[:12] not in root_body:
+                raise InfraError("Public auth page asset build does not match release")
 
         brand_request = urllib.request.Request(
             f"https://{DOMAIN}{BRAND_PUBLIC_MARK}",
