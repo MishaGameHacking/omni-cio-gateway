@@ -157,12 +157,50 @@ class PostgresTests(unittest.TestCase):
             "PHONE_LOOKUP_KEY=lookup\n"
             "OTP_SIGNING_KEY=otp\n"
             "CLIENT_IP_KEY=ip\n"
+            "BROKER_TOKEN_CRYPTO_KEY=broker\n"
         )
         parsed = MODULE.parse_secret_bundle(raw)
         self.assertEqual(parsed["OMNICIO_DB_ADMIN_PASSWORD"], "pw")
 
         with self.assertRaises(MODULE.InfraError):
             MODULE.parse_secret_bundle("OMNICIO_DB_ADMIN_PASSWORD=pw\n")
+
+    def test_secret_bootstrap_adds_broker_encryption_key(self) -> None:
+        self.assertIn("BROKER_TOKEN_CRYPTO_KEY", MODULE.REMOTE_SECRET_BOOTSTRAP)
+        self.assertIn(
+            "base64.urlsafe_b64encode(os.urandom(32)).decode()",
+            MODULE.REMOTE_SECRET_BOOTSTRAP,
+        )
+
+    def test_parser_accepts_multiple_migrations(self) -> None:
+        old = sys.argv
+        try:
+            sys.argv = [
+                "timeweb_auth_postgres.py",
+                "--server-name", "server",
+                "--server-comment", "comment",
+                "--vpc-name", "vpc",
+                "--cluster-name", "cluster",
+                "--instance-name", "db",
+                "--admin-login", "user",
+                "--postgres-version", "18",
+                "--location", "ru-3",
+                "--availability-zone", "msk-1",
+                "--max-price-rub", "1110",
+                "--min-cpu", "1",
+                "--min-ram-mb", "2048",
+                "--min-disk-mb", "20480",
+                "--migration", "migrations/0001.sql",
+                "--migration", "migrations/0002.sql",
+            ]
+            args = MODULE.parse_args()
+        finally:
+            sys.argv = old
+
+        self.assertEqual(
+            args.migration,
+            ["migrations/0001.sql", "migrations/0002.sql"],
+        )
 
     def test_existing_cluster_rejects_public_network(self) -> None:
         cluster = {
