@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,9 +10,10 @@ from dataclasses import asdict
 from typing import Literal, cast
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .cbr import CBRClient, CBRUnavailable
 from .broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
@@ -82,6 +84,10 @@ def settings(request: Request) -> Settings:
 
 def broker_service(request: Request) -> BrokerService:
     return cast(BrokerService, request.app.state.broker_service)
+
+
+def cbr_client(request: Request) -> CBRClient:
+    return cast(CBRClient, request.app.state.cbr_client)
 
 
 def vkid_client(request: Request) -> VKIDClient:
@@ -172,6 +178,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         credential_key=cfg.broker_token_crypto_key,
         tbank=TBankInvestClient(),
     )
+    app.state.cbr_client = CBRClient()
     try:
         yield
     finally:
