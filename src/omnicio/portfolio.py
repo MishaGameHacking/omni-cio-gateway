@@ -1,0 +1,349 @@
+"""Deterministic, read-only portfolio observations; never a trading authority."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+
+from .tbank import (
+    TBankInstrumentMetadata,
+    TBankMoney,
+    TBankPortfolio,
+    TBankPortfolioPosition,
+    TBankPositions,
+)
+
+_SUPPORTED = {"share", "bond", "etf"}
+_CLASS_LABELS = {
+    "shares": "Акции",
+    "bonds": "Облигации",
+    "funds": "Фонды",
+    "currencies": "Валюта и деньги",
+    "futures": "Фьючерсы",
+    "options": "Опционы",
+    "structured_products": "Структурные продукты",
+    "dfa": "ЦФА",
+}
+# An observation threshold, not an approved investment-policy allocation.
+_CONCENTRATION_NOTICE = Decimal("25")
+
+
+@dataclass(frozen=True, slots=True)
+class Allocation:
+    key: str
+    label: str
+    value_rub: str
+    nav_percent: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SecurityExposure:
+    uid: str
+    ticker: str
+    name: str
+    instrument_type: str
+    sector: str
+    country_of_risk: str
+    for_qual_investor: bool | None
+    blocked: bool
+    value_rub: str | None
+    nav_percent: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Observation:
+    code: str
+    priority: int
+    title: str
+    detail: str
+    source_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioAnalysis:
+    status: str
+    nav_rub: str
+    rub_cash_total: str
+    rub_cash_blocked: str
+    rub_cash_unblocked: str | None
+    security_count: int
+    valued_security_count: int
+    sector_coverage_percent: str | None
+    classes: tuple[Allocation, ...]
+    sectors: tuple[Allocation, ...]
+    securities: tuple[SecurityExposure, ...]
+    observations: tuple[Observation, ...]
+    execution_enabled: bool = False
+
+
+def _number(value: str) -> Decimal:
+    try:
+        number = Decimal(value)
+    except InvalidOperation as exc:
+        raise ValueError("invalid portfolio amount") from exc
+    if not number.is_finite():
+        raise ValueError("non-finite portfolio amount")
+    return number
+
+
+def _text(value: Decimal) -> str:
+    return format(value, "f")
+
+
+def _percent(value: Decimal, total: Decimal) -> str | None:
+    return _text(value / total * 100) if total > 0 else None
+
+
+def _rub_money(items: tuple[TBankMoney, ...]) -> tuple[Decimal, bool]:
+    rub_items = [item for item in items if item.currency.upper() == "RUB"]
+    values = [_number(item.value) for item in rub_items]
+    return sum(values, Decimal(0)), len(values) <= 1 and all(value >= 0 for value in values)
+
+
+def _value(position: TBankPortfolioPosition) -> Decimal | None:
+    # Futures/option premiums are not their economic exposure or portfolio NAV.
+    if position.instrument_type not in _SUPPORTED:
+        return None
+    quantity = _number(position.quantity)
+    price = position.current_price
+    if quantity < 0 or price is None or price.currency.upper() != "RUB":
+        return None
+    amount = _number(price.value)
+    if amount < 0:
+        return None
+    if position.instrument_type == "bond":
+        nkd = position.current_nkd
+        if nkd is None or nkd.currency.upper() != "RUB":
+            return None
+        accrued = _number(nkd.value)
+        if accrued < 0:
+            return None
+        amount += accrued
+    return amount * quantity
+
+
+def analyze_portfolio(
+    portfolio: TBankPortfolio,
+    positions: TBankPositions,
+    metadata: tuple[TBankInstrumentMetadata, ...],
+) -> PortfolioAnalysis:
+    """Describe verified holdings, and expose every gap instead of guessing."""
+    if portfolio.total.currency.upper() != "RUB":
+        raise ValueError("RUB portfolio valuation required")
+    nav = _number(portfolio.total.value)
+    cash, cash_valid = _rub_money(positions.money)
+    blocked, blocked_valid = _rub_money(positions.blocked_money)
+    compatible = nav >= 0 and cash_valid and blocked_valid and blocked <= cash
+    compatible = compatible and all(
+        _number(item.value) >= 0 for item in (*positions.money, *positions.blocked_money)
+    )
+    compatible = compatible and all(_number(p.quantity) >= 0 for p in portfolio.positions)
+    compatible = compatible and not any(
+        p.instrument_type in {"futures", "future", "option", "options"}
+        for p in portfolio.positions
+        if _number(p.quantity) != 0
+    )
+    unblocked = cash - blocked if compatible and not positions.limits_loading_in_progress else None
+    by_uid = {item.uid: item for item in metadata}
+    if len(by_uid) != len(metadata):
+        raise ValueError("duplicate metadata uid")
+
+    securities: list[SecurityExposure] = []
+    sector_values: dict[str, Decimal] = {}
+    valued = Decimal(0)
+    classified = Decimal(0)
+    seen: set[str] = set()
+    incomplete = False
+    for position in portfolio.positions:
+        if position.instrument_type == "currency" or _number(position.quantity) == 0:
+            continue
+        uid = position.instrument_uid or position.figi
+        if not uid or uid in seen:
+            raise ValueError("missing or duplicate portfolio instrument identity")
+        seen.add(uid)
+        info = by_uid.get(position.instrument_uid)
+        if info is not None and info.instrument_type != position.instrument_type:
+            raise ValueError("portfolio metadata instrument type mismatch")
+        value = _value(position)
+        sector = info.sector if info is not None else ""
+        # A fund sector is not the sector exposure of its underlying holdings.
+        if position.instrument_type == "etf":
+            sector = ""
+        if value is not None:
+            valued += value
+            sector_values[sector] = sector_values.get(sector, Decimal(0)) + value
+            if sector:
+                classified += value
+        if value is None or info is None or not sector:
+            incomplete = True
+        securities.append(
+            SecurityExposure(
+                uid=uid,
+                ticker=(info.ticker if info else "") or position.ticker,
+                name=(info.name if info else "") or position.ticker or uid,
+                instrument_type=position.instrument_type,
+                sector=sector,
+                country_of_risk=info.country_of_risk if info else "",
+                for_qual_investor=info.for_qual_investor if info else None,
+                blocked=position.blocked or position.exchange_blocked,
+                value_rub=_text(value) if value is not None else None,
+                nav_percent=_percent(value, nav) if value is not None else None,
+            )
+        )
+    # Sequential broker reads are not an atomic valuation. Never normalize away a mismatch.
+    if nav < valued + cash - Decimal("0.01"):
+        compatible = False
+        unblocked = None
+    securities.sort(
+        key=lambda item: (
+            item.value_rub is None,
+            -_number(item.value_rub or "0"),
+            item.uid,
+        )
+    )
+    classes = tuple(
+        sorted(
+            (
+                Allocation(
+                    item.kind,
+                    _CLASS_LABELS.get(item.kind, item.kind),
+                    item.money.value,
+                    _percent(_number(item.money.value), nav),
+                )
+                for item in portfolio.asset_totals
+                if item.money.currency.upper() == "RUB"
+            ),
+            key=lambda item: (-_number(item.value_rub), item.key),
+        )
+    )
+    sectors = tuple(
+        sorted(
+            (
+                Allocation(
+                    key or "unknown",
+                    key or "Не определён / состав фонда",
+                    _text(value),
+                    _percent(value, nav),
+                )
+                for key, value in sector_values.items()
+            ),
+            key=lambda item: (-_number(item.value_rub), item.key),
+        )
+    )
+    observations: list[Observation] = []
+    source_ids = ("portfolio", "positions")
+    if not compatible:
+        observations.append(
+            Observation(
+                "reconcile",
+                0,
+                "Нужна сверка счёта",
+                "Обнаружены отрицательные суммы, производные инструменты или несогласованные "
+                "оценки. Остаток для новых покупок не определён. Повторите сверку с брокером.",
+                source_ids,
+            )
+        )
+    if positions.limits_loading_in_progress:
+        observations.append(
+            Observation(
+                "limits_loading",
+                0,
+                "Брокер ещё рассчитывает лимиты",
+                "Свободные деньги не подтверждены. Дождитесь завершения расчёта лимитов.",
+                ("positions",),
+            )
+        )
+    blocked_count = sum(item.blocked for item in securities)
+    if blocked_count:
+        observations.append(
+            Observation(
+                "blocked",
+                1,
+                "Есть заблокированные позиции",
+                f"Позиций с блокировкой: {blocked_count}. Их нельзя считать свободными "
+                "для продажи. Блокировка сама по себе не доказывает дефолт компании.",
+                ("portfolio",),
+            )
+        )
+    concentrated = [
+        item
+        for item in securities
+        if item.nav_percent is not None and _number(item.nav_percent) > _CONCENTRATION_NOTICE
+    ]
+    if concentrated:
+        largest = concentrated[0]
+        observations.append(
+            Observation(
+                "concentration",
+                1,
+                "Проверьте концентрацию",
+                f"{largest.name}: {_number(largest.nav_percent or '0'):.1f}% стоимости портфеля. "
+                "Порог наблюдения — 25% в одном инструменте. Это повод проверить общий риск "
+                "эмитента, а не команда продавать; целевая доля ещё не установлена.",
+                ("portfolio",),
+            )
+        )
+    if incomplete:
+        observations.append(
+            Observation(
+                "coverage",
+                1,
+                "Часть структуры не определена",
+                "Для некоторых позиций нет рублёвой оценки с НКД или проверенного сектора. "
+                "Иностранные суммы не пересчитываются без курса; состав фондов не угадывается.",
+                ("portfolio", "catalog"),
+            )
+        )
+    observations.append(
+        Observation(
+            "evidence_required",
+            2,
+            "Проверка компаний ещё не завершена",
+            "Кредитные рейтинги, отчётность, юридические эмитенты и состав фондов пока "
+            "не подключены к этому анализу. Флаги квалификации инструмента не подтверждают "
+            "доступность покупки на вашем счёте. Уровень кредитного риска не рассчитан.",
+            ("catalog",),
+        )
+    )
+    if unblocked is not None and unblocked > 0:
+        observations.append(
+            Observation(
+                "cash",
+                2,
+                "Есть незаблокированные рубли",
+                f"{unblocked:,.2f} ₽ = денежный остаток минус блокировки. Это предварительный "
+                "остаток до резерва, налогов, комиссий и проверки заявок; он не является "
+                "разрешённым бюджетом покупки.",
+                ("positions",),
+            )
+        )
+    observations.append(
+        Observation(
+            "execution_disabled",
+            2,
+            "Пакет сделок пока не сформирован",
+            "Текущий этап — наблюдение. Подбор замен, подтверждение сделок, ежедневный "
+            "анализ отчётности и автоматическое реинвестирование ещё не включены. "
+            "Изменение цены само по себе не вызывает продажу.",
+            source_ids,
+        )
+    )
+    observations.sort(key=lambda item: (item.priority, item.code))
+    return PortfolioAnalysis(
+        status="needs_reconciliation"
+        if not compatible
+        else "partial"
+        if incomplete or positions.limits_loading_in_progress
+        else "observed",
+        nav_rub=_text(nav),
+        rub_cash_total=_text(cash),
+        rub_cash_blocked=_text(blocked),
+        rub_cash_unblocked=_text(unblocked) if unblocked is not None else None,
+        security_count=len(securities),
+        valued_security_count=sum(item.value_rub is not None for item in securities),
+        sector_coverage_percent=_percent(classified, valued),
+        classes=classes,
+        sectors=sectors,
+        securities=tuple(securities),
+        observations=tuple(observations),
+    )

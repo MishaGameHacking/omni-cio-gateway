@@ -467,6 +467,27 @@ def tbank_portfolio(
     }
 
 
+@app.get("/api/broker/tbank/analysis")
+def tbank_analysis(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        snapshot = broker_service(request).analysis(user.id)
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409, detail="stored T-Invest credential was rejected",
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="T-Invest analysis unavailable") from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return asdict(snapshot)
+
+
 @app.get("/api/broker/tbank/operations")
 def tbank_operations(
     request: Request,

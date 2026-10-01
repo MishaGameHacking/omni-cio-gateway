@@ -13,6 +13,7 @@ on:
       - "pyproject.toml"
       - "AGENTS.md"
       - ".github/workflows/auth-foundation-ci.yml"
+      - ".github/scripts/test_portfolio_ui.cjs"
   push:
     branches:
       - main
@@ -25,6 +26,7 @@ on:
       - "pyproject.toml"
       - "AGENTS.md"
       - ".github/workflows/auth-foundation-ci.yml"
+      - ".github/scripts/test_portfolio_ui.cjs"
 
 permissions:
   contents: read
@@ -66,6 +68,15 @@ jobs:
       - name: Tests
         run: pytest
 
+      - name: Portfolio UI desktop and mobile acceptance
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: |
+          npm install --prefix "$RUNNER_TEMP/omnicio-ui" --no-save --ignore-scripts playwright@1.62.1
+          export NODE_PATH="$RUNNER_TEMP/omnicio-ui/node_modules"
+          node "$NODE_PATH/playwright/cli.js" install --with-deps chromium
+          node .github/scripts/test_portfolio_ui.cjs
+
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -83,7 +94,7 @@ jobs:
           - name: Security tests
             command: '"%OMNICIO_PYTHON%" -m pytest tests/test_security.py'
           - name: Service and support tests
-            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_vkid.py tests/test_support.py tests/test_broker.py'
+            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_vkid.py tests/test_support.py tests/test_broker.py tests/test_portfolio.py tests/test_market.py'
 
     steps:
       - name: Checkout accepted main state

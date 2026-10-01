@@ -4,6 +4,7 @@ import io
 import json
 import ssl
 import urllib.error
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import UUID
@@ -23,6 +24,7 @@ from omnicio.tbank import (
     TBankOperation,
     TBankOperationsPage,
     TBankPortfolio,
+    TBankPortfolioPosition,
     TBankPositions,
     TBankTokenRejected,
     TBankUnavailable,
@@ -606,3 +608,79 @@ def test_broker_service_refuses_account_outside_credential_scope() -> None:
         )
 
     assert database.record is None
+
+
+def test_metadata_adapter_preserves_unknown_qualification_and_delisted_records() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse({"instruments": [{
+        "uid": "uid-1", "name": "Issuer", "ticker": "TEST", "sector": "energy",
+        "isin": "RU000TEST", "countryOfRisk": "ru", "apiTradeAvailableFlag": False,
+    }]})
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_instrument_metadata(
+            "t.fake-owner-credential-1234567890", "prod", "share",
+        )
+    assert result[0].country_of_risk == "RU"
+    assert result[0].for_qual_investor is None
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/Shares")
+    assert json.loads(request.data) == {"instrumentStatus": "INSTRUMENT_STATUS_ALL"}
+
+
+@pytest.mark.parametrize("payload", [
+    {}, {"instruments": [{"uid": "one"}, {"uid": "one"}]},
+    {"instruments": [{"uid": "one", "forQualInvestorFlag": "false"}]},
+])
+def test_malformed_metadata_cannot_look_like_a_valid_catalog(payload: dict[str, object]) -> None:
+    with (
+        patch("urllib.request.urlopen", return_value=FakeResponse(payload)),
+        pytest.raises(TBankUnavailable),
+    ):
+        TBankInvestClient().get_instrument_metadata(
+            "t.fake-owner-credential-1234567890", "prod", "bond",
+        )
+
+
+@pytest.mark.parametrize("units", ["NaN", "Infinity"])
+def test_non_finite_broker_money_fails_at_provider_boundary(units: str) -> None:
+    payload = {"totalAmountPortfolio": {"currency": "rub", "units": units}}
+    with (
+        patch("urllib.request.urlopen", return_value=FakeResponse(payload)),
+        pytest.raises(TBankUnavailable),
+    ):
+        TBankInvestClient().get_portfolio(
+            "t.fake-owner-credential-1234567890", "prod", "account-1",
+        )
+
+
+def test_analysis_metadata_outage_is_partial_and_calls_are_bounded_by_kind() -> None:
+    database = FakeDatabase()
+    owner_id = UUID("00000000-0000-0000-0000-000000000001")
+    fake = FakeTBank()
+    baseline = fake.get_portfolio(
+        "t.fake-owner-credential-1234567890", "prod", "account-1",
+    )
+    holdings = tuple(TBankPortfolioPosition(
+        ticker=str(index), figi=str(index), instrument_uid=str(index),
+        instrument_type="share", quantity="1", current_price=TBankMoney("RUB", "1"),
+        average_price=None, expected_yield_percent="0", daily_yield=None, blocked=False,
+    ) for index in range(200))
+    service = BrokerService(
+        database, credential_key=Fernet.generate_key().decode("ascii"), tbank=fake,
+    )
+    service.connect(
+        user_id=owner_id, credential="t.fake-owner-credential-1234567890",
+        environment="prod", account_id="account-1", terms_version="2026-10-01-v2",
+    )
+    with (
+        patch.object(fake, "get_portfolio", return_value=replace(baseline, positions=holdings)),
+        patch.object(fake, "get_instrument_metadata", create=True,
+                     side_effect=TBankUnavailable("unavailable")) as catalog,
+    ):
+        snapshot = service.analysis(owner_id)
+    assert catalog.call_count == 1
+    assert snapshot.analysis.security_count == 200
+    assert snapshot.analysis.status == "partial"
+    assert snapshot.sources[-1].status == "partial"
+    assert snapshot.analysis.rub_cash_unblocked == "100"
+    assert "t.fake" not in repr(snapshot)

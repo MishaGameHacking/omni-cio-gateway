@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
 from .db import Database, TBankConnectionRecord
+from .portfolio import PortfolioAnalysis, analyze_portfolio
 from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     TBankAccount,
     TBankEnvironment,
     TBankFxQuote,
     TBankInstrument,
+    TBankInstrumentMetadata,
     TBankInvestClient,
     TBankOperationsPage,
     TBankPortfolio,
     TBankPositions,
+    TBankUnavailable,
 )
 
 
@@ -59,6 +63,25 @@ class BrokerOperationsSnapshot:
     refreshed_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class AnalysisSource:
+    id: str
+    name: str
+    url: str
+    methods: tuple[str, ...]
+    retrieved_at: datetime
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class BrokerAnalysisSnapshot:
+    account_name: str
+    environment: TBankEnvironment
+    refreshed_at: datetime
+    analysis: PortfolioAnalysis
+    sources: tuple[AnalysisSource, ...]
+
+
 class BrokerService:
     def __init__(
         self,
@@ -94,9 +117,7 @@ class BrokerService:
             None,
         )
         if selected is None:
-            raise BrokerAccountNotAccessible(
-                "selected T-Invest account is not accessible"
-            )
+            raise BrokerAccountNotAccessible("selected T-Invest account is not accessible")
 
         encrypted = encrypt_secret(credential.strip(), self.credential_key)
         record = self.database.upsert_tbank_connection(
@@ -117,22 +138,86 @@ class BrokerService:
 
     def portfolio(self, user_id: UUID) -> BrokerPortfolioSnapshot:
         record, credential, environment = self._connected_credential(user_id)
-        portfolio = self.tbank.get_portfolio(
-            credential,
-            environment,
-            record.account_id,
-        )
-        positions = self.tbank.get_positions(
-            credential,
-            environment,
-            record.account_id,
-        )
+        return self._read_portfolio(record, credential, environment)
+
+    def _read_portfolio(
+        self,
+        record: TBankConnectionRecord,
+        credential: str,
+        environment: TBankEnvironment,
+    ) -> BrokerPortfolioSnapshot:
+        with ThreadPoolExecutor(max_workers=2) as reads:
+            portfolio_read = reads.submit(
+                self.tbank.get_portfolio, credential, environment, record.account_id,
+            )
+            positions_read = reads.submit(
+                self.tbank.get_positions, credential, environment, record.account_id,
+            )
+            portfolio = portfolio_read.result()
+            positions = positions_read.result()
         return BrokerPortfolioSnapshot(
             account_name=record.account_name,
             environment=environment,
             portfolio=portfolio,
             positions=positions,
             refreshed_at=datetime.now(UTC),
+        )
+
+    def analysis(self, user_id: UUID) -> BrokerAnalysisSnapshot:
+        record, credential, environment = self._connected_credential(user_id)
+        snapshot = self._read_portfolio(record, credential, environment)
+        source_root = "https://developer.tbank.ru/invest/api/"
+        sources = [
+            AnalysisSource(
+                "portfolio",
+                "T-Invest: портфель",
+                source_root + "operations-service-get-portfolio",
+                ("OperationsService/GetPortfolio",),
+                snapshot.refreshed_at,
+                "received",
+            ),
+            AnalysisSource(
+                "positions",
+                "T-Invest: деньги и блокировки",
+                source_root + "operations-service-get-positions",
+                ("OperationsService/GetPositions",),
+                snapshot.refreshed_at,
+                "received",
+            ),
+        ]
+        metadata: list[TBankInstrumentMetadata] = []
+        methods = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}
+        requested: list[str] = []
+        failed: list[str] = []
+        kinds = {item.instrument_type for item in snapshot.portfolio.positions}
+        with ThreadPoolExecutor(max_workers=3) as catalog_reads:
+            pending = {
+                kind: catalog_reads.submit(
+                    self.tbank.get_instrument_metadata, credential, environment, kind,
+                ) for kind in sorted(kinds & methods.keys())
+            }
+            for kind, result in pending.items():
+                requested.append("InstrumentsService/" + methods[kind])
+                try:
+                    metadata.extend(result.result())
+                except TBankUnavailable:
+                    failed.append(methods[kind])
+        sources.append(
+            AnalysisSource(
+                "catalog",
+                "T-Invest: справочники инструментов",
+                source_root + "instruments-service",
+                tuple(requested),
+                datetime.now(UTC),
+                "partial" if failed else "received" if requested else "not_requested",
+            )
+        )
+        return BrokerAnalysisSnapshot(
+            account_name=record.account_name,
+            environment=environment,
+            refreshed_at=snapshot.refreshed_at,
+            analysis=analyze_portfolio(snapshot.portfolio, snapshot.positions, tuple(metadata)),
+            sources=tuple(sources),
         )
 
     def operations(
@@ -175,7 +260,6 @@ class BrokerService:
             query,
             limit=limit,
         )
-
 
     def disconnect(self, user_id: UUID) -> bool:
         return self.database.delete_tbank_connection(user_id)

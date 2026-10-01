@@ -147,6 +147,9 @@
           <button class="nav-item" type="button" data-view="portfolio">
             Портфель
           </button>
+          <button class="nav-item" type="button" data-view="decisions">
+            Решения
+          </button>
           <button class="nav-item" type="button" data-view="connections">
             Подключения
           </button>
@@ -404,6 +407,84 @@
                 </article>
               </div>
             </section>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="decisions">
+            <div class="page-heading portfolio-heading">
+              <p class="section-label">Аналитика портфеля</p>
+              <h2>Наблюдения системы</h2>
+              <p>
+                Фактические доли и ограничения по данным брокера. Это первый этап анализа:
+                торговые предложения и исполнение сделок ещё не включены.
+              </p>
+              <button id="analysis-refresh" class="button button-secondary" type="button">
+                Обновить анализ
+              </button>
+              <p id="analysis-status" class="message" role="status" aria-live="polite">
+                Подключите счёт T-Invest для анализа.
+              </p>
+            </div>
+            <div id="analysis-content" class="hidden">
+              <section class="portfolio-metrics" aria-label="Показатели анализа">
+                <article class="portfolio-metric">
+                  <span>Незаблокированные рубли</span>
+                  <strong id="analysis-cash">—</strong>
+                  <small>До резерва, налогов и проверки заявок</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Инструментов без валюты</span>
+                  <strong id="analysis-count">—</strong>
+                  <small>Количество компаний ещё не определено</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Покрытие секторов</span>
+                  <strong id="analysis-coverage">—</strong>
+                  <small>В пределах оценённых рублёвых позиций</small>
+                </article>
+              </section>
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <h3>Что требует внимания</h3>
+                </header>
+                <div id="analysis-observations" class="analysis-observations"></div>
+              </article>
+              <section class="portfolio-two-column">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header"><h3>Типы активов</h3></header>
+                  <div id="analysis-classes" class="allocation-list"></div>
+                </article>
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header"><h3>Сектора</h3></header>
+                  <div id="analysis-sectors" class="allocation-list"></div>
+                  <p class="field-hint">
+                    Доли от полной стоимости портфеля. Неизвестные сектора и состав фондов
+                    показаны отдельно; иностранные суммы без курса не пересчитываются.
+                  </p>
+                </article>
+              </section>
+              <article class="portfolio-card">
+                <header class="portfolio-card-header"><h3>Доли отдельных инструментов</h3></header>
+                <div class="analysis-table-scroll">
+                  <table class="analysis-table">
+                    <thead><tr><th>Инструмент</th><th>Сектор</th><th>Оценка</th><th>Доля</th></tr></thead>
+                    <tbody id="analysis-securities"></tbody>
+                  </table>
+                </div>
+                <p class="field-hint">
+                  Облигации оцениваются с НКД. Кредитный рейтинг и доступность покупки для
+                  вашего счёта пока не проверены. Бумаги одного эмитента могут быть связаны.
+                </p>
+              </article>
+              <article class="portfolio-card">
+                <header class="portfolio-card-header"><h3>Источники и время проверки</h3></header>
+                <div id="analysis-sources" class="analysis-sources"></div>
+                <p class="field-hint">
+                  Время получения данных не является временем последней сделки или
+                  подтверждением свежести рыночной цены. Ежедневный серверный мониторинг
+                  отчётности будет подключён отдельным этапом.
+                </p>
+              </article>
+            </div>
           </section>
 
           <section class="view-panel hidden" data-view-panel="portfolio">
@@ -736,6 +817,9 @@
         </button>
         <button class="mobile-nav-item" type="button" data-mobile-view="portfolio">
           Портфель
+        </button>
+        <button class="mobile-nav-item" type="button" data-mobile-view="decisions">
+          Решения
         </button>
         <button class="mobile-nav-item" type="button" data-mobile-view="connections">
           Подключения
