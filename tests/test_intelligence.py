@@ -372,3 +372,137 @@ def test_stale_evidence_retrieval_is_fail_closed() -> None:
     assert "provider_evidence_stale" in assessments[0].reasons
     assert assessments[0].evidence["evidence_retrieval_max_age_hours"] == 36
     assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
+
+
+
+def test_corporate_fccr_below_one_is_explainable_elevated_watch() -> None:
+    now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now,
+        dividends=(),
+        coupons=(),
+        bond_events=(),
+        reports=(),
+        fundamentals=(
+            TBankAssetFundamental(
+                asset_uid="issuer-asset",
+                currency="RUB",
+                revenue_ttm="100",
+                ebitda_ttm="10",
+                net_income_ttm="2",
+                free_cash_flow_ttm="-3",
+                total_debt_mrq="40",
+                total_debt_to_equity_mrq="1.2",
+                total_debt_to_ebitda_mrq="4",
+                net_debt_to_ebitda="3.5",
+                current_ratio_mrq="0.8",
+                fixed_charge_coverage_ratio_fy="0.7",
+                net_interest_margin_mrq=None,
+                roe="0.04",
+                roa="0.02",
+                fiscal_period_start_date=datetime(2025, 1, 1, tzinfo=UTC),
+                fiscal_period_end_date=datetime(2025, 12, 31, tzinfo=UTC),
+            ),
+        ),
+        sources=_sources(now),
+    )
+
+    _, assessments = build_tbank_evidence(_bundle(), evidence, assessed_at=now)
+
+    risk = assessments[0]
+    assert risk.state == "elevated"
+    assert risk.rating_status == "data_missing"
+    assert risk.evidence["metric_profile"] == "corporate"
+    assert "fixed_charge_coverage_ratio_below_one" in risk.reasons
+    assert "credit_rating_feed_not_verified" in risk.reasons
+    signals = risk.evidence["metric_signals"]
+    assert any(
+        item["metric"] == "fixed_charge_coverage_ratio_fy"
+        and item["value"] == "0.7"
+        for item in signals
+    )
+
+
+def test_bank_like_metrics_do_not_apply_corporate_leverage_rules() -> None:
+    now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now,
+        dividends=(),
+        coupons=(),
+        bond_events=(),
+        reports=(),
+        fundamentals=(
+            TBankAssetFundamental(
+                asset_uid="issuer-asset",
+                currency="RUB",
+                revenue_ttm="100",
+                ebitda_ttm="-10",
+                net_income_ttm="-2",
+                free_cash_flow_ttm="-3",
+                total_debt_mrq="400",
+                total_debt_to_equity_mrq="8",
+                total_debt_to_ebitda_mrq="20",
+                net_debt_to_ebitda="15",
+                current_ratio_mrq="0.5",
+                fixed_charge_coverage_ratio_fy="0.2",
+                net_interest_margin_mrq="0.03",
+                roe="0.05",
+                roa="0.01",
+                fiscal_period_start_date=datetime(2025, 1, 1, tzinfo=UTC),
+                fiscal_period_end_date=datetime(2025, 12, 31, tzinfo=UTC),
+            ),
+        ),
+        sources=_sources(now),
+    )
+
+    _, assessments = build_tbank_evidence(_bundle(), evidence, assessed_at=now)
+
+    risk = assessments[0]
+    assert risk.state == "data_missing"
+    assert risk.evidence["metric_profile"] == "bank_like"
+    assert "fixed_charge_coverage_ratio_below_one" not in risk.reasons
+    assert "ebitda_negative" not in risk.reasons
+    assert "credit_rating_feed_not_verified" in risk.reasons
+
+
+def test_negative_bank_profitability_is_watch_not_default_prediction() -> None:
+    now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now,
+        dividends=(),
+        coupons=(),
+        bond_events=(),
+        reports=(),
+        fundamentals=(
+            TBankAssetFundamental(
+                asset_uid="issuer-asset",
+                currency="RUB",
+                revenue_ttm=None,
+                ebitda_ttm=None,
+                net_income_ttm="-5",
+                free_cash_flow_ttm=None,
+                total_debt_mrq=None,
+                total_debt_to_equity_mrq=None,
+                total_debt_to_ebitda_mrq=None,
+                net_debt_to_ebitda=None,
+                current_ratio_mrq=None,
+                fixed_charge_coverage_ratio_fy=None,
+                net_interest_margin_mrq="-0.01",
+                roe="-0.05",
+                roa="-0.01",
+                fiscal_period_start_date=datetime(2025, 1, 1, tzinfo=UTC),
+                fiscal_period_end_date=datetime(2025, 12, 31, tzinfo=UTC),
+            ),
+        ),
+        sources=_sources(now),
+    )
+
+    _, assessments = build_tbank_evidence(_bundle(), evidence, assessed_at=now)
+
+    risk = assessments[0]
+    assert risk.state == "watch"
+    assert risk.evidence["metric_profile"] == "bank_like"
+    assert "net_interest_margin_mrq_negative" in risk.reasons
+    assert "roe_negative" in risk.reasons
+    assert "roa_negative" in risk.reasons
+    assert risk.state != "confirmed_default"
