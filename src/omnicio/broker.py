@@ -191,13 +191,19 @@ class BrokerService:
             sources=bundle.sources,
         )
 
-    def observation_bundle(self, user_id: UUID) -> BrokerObservationBundle:
+    def observation_bundle(
+        self,
+        user_id: UUID,
+        *,
+        full_catalog: bool = False,
+    ) -> BrokerObservationBundle:
         record, credential, environment = self._connected_credential(user_id)
         snapshot = self._read_portfolio(record, credential, environment)
         metadata, catalog_methods, catalog_status = self._read_catalog(
             credential,
             environment,
             snapshot.portfolio,
+            full_catalog=full_catalog,
         )
         source_root = "https://developer.tbank.ru/invest/api/"
         sources = (
@@ -247,12 +253,18 @@ class BrokerService:
         credential: str,
         environment: TBankEnvironment,
         portfolio: TBankPortfolio,
+        *,
+        full_catalog: bool,
     ) -> tuple[tuple[TBankInstrumentMetadata, ...], tuple[str, ...], str]:
         metadata: list[TBankInstrumentMetadata] = []
         methods = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}
         requested: list[str] = []
         failed: list[str] = []
-        kinds = {item.instrument_type for item in portfolio.positions}
+        kinds = (
+            set(methods)
+            if full_catalog
+            else {item.instrument_type for item in portfolio.positions}
+        )
 
         with ThreadPoolExecutor(max_workers=3) as catalog_reads:
             pending = {
