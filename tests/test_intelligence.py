@@ -162,6 +162,14 @@ def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> Non
     documents, assessments = build_tbank_evidence(_bundle(), evidence, assessed_at=now)
 
     assert len(documents) == 1
+    facts = {fact.fact_key: fact for fact in documents[0].facts}
+    assert facts["revenue_ttm"].currency == "RUB"
+    assert facts["revenue_ttm"].unit is None
+    assert facts["total_debt_mrq"].currency == "RUB"
+    assert facts["total_debt_to_ebitda_mrq"].currency is None
+    assert facts["total_debt_to_ebitda_mrq"].unit == "ratio"
+    assert facts["roe"].currency is None
+    assert facts["roe"].unit == "ratio"
     assert assessments[0].state == "data_missing"
     assert assessments[0].rating_status == "data_missing"
     assert assessments[0].fundamental_status == "received"
