@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS operation_observations (
 CREATE INDEX IF NOT EXISTS operation_observations_user_date_idx
     ON operation_observations (user_id, operation_date DESC);
 
-CREATE INDEX IF NOT EXISTS operation_observations_semantic_idx
+CREATE UNIQUE INDEX IF NOT EXISTS operation_observations_semantic_unique_idx
     ON operation_observations (user_id, account_id, semantic_hash);
 
 CREATE TABLE IF NOT EXISTS broker_sync_state (
