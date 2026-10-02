@@ -37,7 +37,10 @@ Green CI необходим, но сам по себе не означает, ч
 - публичные legal pages обязаны описывать фактически включённый access mode и не публикуют домашний адрес, ИНН, паспортные или иные избыточные персональные реквизиты OWNER;
 - обычное production-включение `REGISTRATION_ENABLED=true` требует актуальных legal documents, явного versioned `MULTIUSER_LEGAL_APPROVED=true`, подтверждённого regulatory gate и опубликованных реквизитов оператора; отдельное явно одобренное OWNER исключение `CONTROLLED_LIVE_TEST_MODE=true` допускается только для временного live-test максимум с двумя пользовательскими аккаунтами (`REGISTRATION_MAX_USERS<=2`), без утверждения о наличии regulatory confirmation, с неизменным `RKN_NOTIFICATION_CONFIRMED=false`; при попытке увеличить лимит выше 2 без regulatory gate production deploy обязан fail closed;
 - Python — основной backend/runtime язык, если задача не требует другого языка;
-- браузерный frontend — только тот код, который реально нужен сайту.
+- браузерный frontend — только тот код, который реально нужен сайту;
+- основная навигация frontend использует один канонический набор разделов: постоянный sidebar на широком экране и тот же drawer на мобильном; дублирующая нижняя навигация не допускается, переходы внутри SPA обязаны поддерживать History API/back без потери tenant/session authority;
+- мобильный installed PWA предпочитает fullscreen display с standalone fallback и safe-area CSS; обычная browser tab не должна пытаться обходить browser/OS security для скрытия системных панелей, а Fullscreen API вызывается только из явного пользовательского действия;
+- история брокерских операций не является пользовательской функцией текущего продукта и не должна публиковаться через HTTP/UI без нового явного решения OWNER.
 
 Не добавлять Cloudflare, Neon, Render, Cloud.ru и другие provider-зависимости без нового явного решения OWNER. VK ID является текущим явно одобренным human-login provider.
 

@@ -15,7 +15,6 @@ from .tbank import (
     TBankFxQuote,
     TBankInstrument,
     TBankInvestClient,
-    TBankOperationsPage,
     TBankPortfolio,
     TBankPositions,
 )
@@ -48,14 +47,6 @@ class BrokerPortfolioSnapshot:
     environment: TBankEnvironment
     portfolio: TBankPortfolio
     positions: TBankPositions
-    refreshed_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class BrokerOperationsSnapshot:
-    account_name: str
-    environment: TBankEnvironment
-    operations: TBankOperationsPage
     refreshed_at: datetime
 
 
@@ -132,28 +123,6 @@ class BrokerService:
             environment=environment,
             portfolio=portfolio,
             positions=positions,
-            refreshed_at=datetime.now(UTC),
-        )
-
-    def operations(
-        self,
-        user_id: UUID,
-        *,
-        limit: int = 30,
-        cursor: str | None = None,
-    ) -> BrokerOperationsSnapshot:
-        record, credential, environment = self._connected_credential(user_id)
-        operations = self.tbank.get_operations(
-            credential,
-            environment,
-            record.account_id,
-            limit=limit,
-            cursor=cursor,
-        )
-        return BrokerOperationsSnapshot(
-            account_name=record.account_name,
-            environment=environment,
-            operations=operations,
             refreshed_at=datetime.now(UTC),
         )
 

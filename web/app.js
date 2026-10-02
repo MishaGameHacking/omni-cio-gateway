@@ -14,6 +14,9 @@
   const accountModeBadge = document.querySelector("#account-mode-badge");
 
   const profileId = document.querySelector("#profile-id");
+  const drawerProfileId = document.querySelector("#drawer-profile-id");
+  const profilePageId = document.querySelector("#profile-page-id");
+  const supportProfileId = document.querySelector("#support-profile-id");
   const settingsProfileId = document.querySelector("#settings-profile-id");
   const settingsProfileRole = document.querySelector("#settings-profile-role");
   const settingsRegistrationState = document.querySelector("#settings-registration-state");
@@ -26,6 +29,15 @@
   const deleteAccountCancel = document.querySelector("#delete-account-cancel");
   const deleteAccountSubmit = document.querySelector("#delete-account-submit");
   const deleteAccountMessage = document.querySelector("#delete-account-message");
+  const appBack = document.querySelector("#app-back");
+  const appMenuToggle = document.querySelector("#app-menu-toggle");
+  const appDrawer = document.querySelector("#app-drawer");
+  const drawerBackdrop = document.querySelector("#drawer-backdrop");
+  const drawerClose = document.querySelector("#drawer-close");
+  const fullscreenToggle = document.querySelector("#fullscreen-toggle");
+  const fullscreenStatus = document.querySelector("#fullscreen-status");
+  const copySupportDiagnostics = document.querySelector("#copy-support-diagnostics");
+  const supportCopyMessage = document.querySelector("#support-copy-message");
 
   const tbankForm = document.querySelector("#tbank-form");
   const tbankAccountForm = document.querySelector("#tbank-account-form");
@@ -80,9 +92,6 @@
   const cashList = document.querySelector("#cash-list");
   const cashLoadingNote = document.querySelector("#cash-loading-note");
   const positionsList = document.querySelector("#positions-list");
-  const operationsList = document.querySelector("#operations-list");
-  const operationsMoreNote = document.querySelector("#operations-more-note");
-  const operationsLoadMore = document.querySelector("#operations-load-more");
   const portfolioRetry = document.querySelector("[data-portfolio-retry]");
 
   const owlState = document.querySelector("#owl-state");
@@ -100,7 +109,6 @@
 
   const viewTitle = document.querySelector("#view-title");
   const desktopNavItems = [...document.querySelectorAll("[data-view]")];
-  const mobileNavItems = [...document.querySelectorAll("[data-mobile-view]")];
   const viewPanels = [...document.querySelectorAll("[data-view-panel]")];
   const viewLinks = [...document.querySelectorAll("[data-go-view]")];
 
@@ -115,8 +123,11 @@
   const VIEW_TITLES = {
     home: "Главная",
     portfolio: "Портфель",
-    connections: "Подключения",
+    system: "Система",
+    connections: "Интеграции",
+    profile: "Профиль",
     settings: "Настройки",
+    support: "Поддержка",
   };
 
   let currentView = "home";
@@ -127,12 +138,12 @@
   let tbankIsConnected = false;
   let portfolioLoaded = false;
   let portfolioRequestInFlight = false;
-  let nextOperationsCursor = "";
   let lastPortfolioSnapshot = null;
   let lastPortfolioRefreshAt = 0;
   let owlTimer = null;
   let usdRubEventSource = null;
   let usdRubFallbackTimer = null;
+  let navigationDepth = 0;
 
   const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -230,7 +241,29 @@
     });
   };
 
-  const setView = (view, {scroll = true} = {}) => {
+  const mobileDrawerMode = () => window.matchMedia("(max-width: 820px)").matches;
+
+  const closeDrawer = () => {
+    document.body.classList.remove("drawer-open");
+    appMenuToggle.setAttribute("aria-expanded", "false");
+    if (mobileDrawerMode()) {
+      appDrawer.setAttribute("aria-hidden", "true");
+    } else {
+      appDrawer.removeAttribute("aria-hidden");
+    }
+  };
+
+  const openDrawer = () => {
+    if (!mobileDrawerMode()) {
+      return;
+    }
+    drawerBackdrop.hidden = false;
+    document.body.classList.add("drawer-open");
+    appMenuToggle.setAttribute("aria-expanded", "true");
+    appDrawer.setAttribute("aria-hidden", "false");
+  };
+
+  const renderView = (view, {scroll = true} = {}) => {
     if (!VIEW_TITLES[view]) {
       return;
     }
@@ -248,19 +281,11 @@
       }
     });
 
-    mobileNavItems.forEach((item) => {
-      const active = item.dataset.mobileView === view;
-      item.classList.toggle("is-active", active);
-      if (active) {
-        item.setAttribute("aria-current", "page");
-      } else {
-        item.removeAttribute("aria-current");
-      }
-    });
-
     viewPanels.forEach((panel) => {
       panel.classList.toggle("hidden", panel.dataset.viewPanel !== view);
     });
+
+    appBack.classList.toggle("hidden", view === "home" && navigationDepth === 0);
 
     if (scroll) {
       window.scrollTo({top: 0, behavior: "auto"});
@@ -268,6 +293,79 @@
 
     if (view === "portfolio" && tbankIsConnected && !portfolioLoaded) {
       void loadPortfolioData();
+    }
+  };
+
+  const viewUrl = (view) => {
+    const url = new URL(location.href);
+    url.searchParams.delete("auth");
+    url.searchParams.delete("auth_error");
+    if (view === "home") {
+      url.searchParams.delete("view");
+    } else {
+      url.searchParams.set("view", view);
+    }
+    return `${url.pathname}${url.search}`;
+  };
+
+  const saveCurrentScrollState = () => {
+    if (!history.state?.omnicio) {
+      return;
+    }
+    history.replaceState(
+      {...history.state, scrollY: window.scrollY},
+      "",
+      location.href,
+    );
+  };
+
+  const navigateToView = (view, {replace = false} = {}) => {
+    if (!VIEW_TITLES[view]) {
+      return;
+    }
+    if (view === currentView && !replace) {
+      closeDrawer();
+      return;
+    }
+
+    saveCurrentScrollState();
+    const nextDepth = replace ? navigationDepth : navigationDepth + 1;
+    const state = {omnicio: true, view, depth: nextDepth, scrollY: 0};
+    if (replace) {
+      history.replaceState(state, "", viewUrl(view));
+    } else {
+      history.pushState(state, "", viewUrl(view));
+    }
+    navigationDepth = nextDepth;
+    renderView(view);
+    closeDrawer();
+  };
+
+  const initializeNavigation = () => {
+    const params = new URLSearchParams(location.search);
+    const requested = params.get("view");
+    const initialView = requested && VIEW_TITLES[requested] ? requested : "home";
+    const existingDepth = Number(history.state?.depth);
+    navigationDepth = history.state?.omnicio && Number.isFinite(existingDepth)
+      ? Math.max(0, existingDepth)
+      : 0;
+    history.replaceState(
+      {omnicio: true, view: initialView, depth: navigationDepth, scrollY: 0},
+      "",
+      viewUrl(initialView),
+    );
+    renderView(initialView, {scroll: false});
+    closeDrawer();
+  };
+
+  const goBack = () => {
+    closeDrawer();
+    if (navigationDepth > 0 && history.state?.omnicio) {
+      history.back();
+      return;
+    }
+    if (currentView !== "home") {
+      navigateToView("home", {replace: true});
     }
   };
 
@@ -751,7 +849,7 @@
         && tbankIsConnected
         && !portfolioRequestInFlight
       ) {
-        void loadPortfolioData({force: true, refreshOperations: false});
+        void loadPortfolioData({force: true});
       }
     }, 5 * 60 * 1000);
   };
@@ -887,86 +985,6 @@
     });
   };
 
-  const renderOperations = (payload, {append = false} = {}) => {
-    if (!append) {
-      operationsList.replaceChildren();
-    }
-    if (!payload || !payload.items?.length) {
-      if (!append) {
-        appendEmptyState(operationsList, "Исполненных операций пока нет.");
-      }
-      nextOperationsCursor = "";
-      operationsMoreNote.classList.add("hidden");
-      return;
-    }
-
-    payload.items.forEach((operation) => {
-      const row = document.createElement("div");
-      row.className = "operation-row";
-
-      const main = document.createElement("div");
-      main.className = "operation-main";
-      const name = document.createElement("strong");
-      name.textContent = operation.name || operation.description || operation.type || "Операция";
-      const detail = document.createElement("span");
-      detail.textContent = [operation.ticker, formatDateTime(operation.date)].filter(Boolean).join(" · ");
-      main.append(name, detail);
-
-      const amount = document.createElement("div");
-      amount.className = "operation-meta";
-      const amountLabel = document.createElement("span");
-      amountLabel.textContent = "Сумма";
-      const amountValue = document.createElement("strong");
-      amountValue.textContent = formatMoney(operation.payment, {sign: true});
-      applySignedClass(amountValue, operation.payment?.value);
-      amount.append(amountLabel, amountValue);
-
-      const commission = document.createElement("div");
-      commission.className = "operation-meta";
-      const commissionLabel = document.createElement("span");
-      commissionLabel.textContent = "Комиссия";
-      const commissionValue = document.createElement("strong");
-      commissionValue.textContent = operation.commission
-        ? formatMoney(operation.commission)
-        : "—";
-      commission.append(commissionLabel, commissionValue);
-
-      row.append(main, amount, commission);
-      operationsList.append(row);
-    });
-
-    nextOperationsCursor = payload.has_next ? String(payload.next_cursor || "") : "";
-    operationsMoreNote.classList.toggle("hidden", !nextOperationsCursor);
-  };
-
-  const loadMoreOperations = async () => {
-    if (!tbankIsConnected || !nextOperationsCursor || operationsLoadMore.disabled) {
-      return;
-    }
-    operationsLoadMore.disabled = true;
-    const originalText = operationsLoadMore.textContent;
-    operationsLoadMore.textContent = "Загружаем…";
-    try {
-      const payload = await api(
-        `/api/broker/tbank/operations?limit=30&cursor=${encodeURIComponent(nextOperationsCursor)}`,
-        {method: "GET"},
-      );
-      renderOperations(payload, {append: true});
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      operationsLoadMore.textContent = "Не удалось. Повторить";
-      return;
-    } finally {
-      operationsLoadMore.disabled = false;
-      if (operationsLoadMore.textContent === "Загружаем…") {
-        operationsLoadMore.textContent = originalText;
-      }
-    }
-  };
-
   const showPortfolioMode = (mode) => {
     portfolioLoading.classList.toggle("hidden", mode !== "loading");
     portfolioDisconnected.classList.toggle("hidden", mode !== "disconnected");
@@ -974,11 +992,7 @@
     portfolioContent.classList.toggle("hidden", mode !== "content");
   };
 
-  const renderPortfolio = (
-    snapshot,
-    operationsPayload,
-    {updateOperations = true} = {},
-  ) => {
+  const renderPortfolio = (snapshot) => {
     const portfolio = snapshot.portfolio;
     portfolioTotal.textContent = formatMoney(portfolio.total);
     portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
@@ -992,9 +1006,6 @@
     renderAllocation(portfolio.asset_totals);
     renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
     renderPositions(portfolio.positions);
-    if (updateOperations) {
-      renderOperations(operationsPayload);
-    }
 
     lastPortfolioSnapshot = snapshot;
     lastPortfolioRefreshAt = Date.now();
@@ -1006,9 +1017,7 @@
     setStateBadge(homePortfolioState, "Работает", "state-ok");
   };
 
-  const loadPortfolioData = async (
-    {force = false, refreshOperations = true} = {},
-  ) => {
+  const loadPortfolioData = async ({force = false} = {}) => {
     if (!tbankIsConnected) {
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
@@ -1034,18 +1043,8 @@
     setStateBadge(homePortfolioState, hadPortfolio ? "Обновляем" : "Загружаем", "");
 
     try {
-      const operationsRequest = refreshOperations
-        ? api("/api/broker/tbank/operations?limit=30", {method: "GET"}).catch(() => null)
-        : Promise.resolve(null);
-      const [snapshot, operationsPayload] = await Promise.all([
-        api("/api/broker/tbank/portfolio", {method: "GET"}),
-        operationsRequest,
-      ]);
-      renderPortfolio(
-        snapshot,
-        operationsPayload,
-        {updateOperations: refreshOperations},
-      );
+      const snapshot = await api("/api/broker/tbank/portfolio", {method: "GET"});
+      renderPortfolio(snapshot);
     } catch (error) {
       if (error.status === 401) {
         location.reload();
@@ -1086,7 +1085,7 @@
       lastPortfolioSnapshot = null;
       lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
-      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
+      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Интеграции».";
       homeConnectionCard.classList.add("is-offline");
       topConnectionIndicator.classList.add("is-offline");
       topConnectionText.textContent = "T-Invest не подключён";
@@ -1188,12 +1187,15 @@
   const showProfile = (profile) => {
     currentProfileId = profile.public_id;
     profileId.textContent = profile.public_id;
+    drawerProfileId.textContent = profile.public_id;
+    profilePageId.textContent = profile.public_id;
+    supportProfileId.textContent = profile.public_id;
     settingsProfileId.textContent = profile.public_id;
     deleteAccountProfileId.textContent = profile.public_id;
     settingsProfileRole.textContent = profile.role === "user" ? "Пользователь" : profile.role;
     authCard.classList.add("hidden");
     profilePanel.classList.remove("hidden");
-    setView(currentView, {scroll: false});
+    initializeNavigation();
     void loadTbankStatus();
   };
 
@@ -1261,26 +1263,62 @@
     }
   };
 
+  const fullscreenDisplayMode = () => (
+    window.matchMedia("(display-mode: fullscreen)").matches
+  );
+
   const standaloneMode = () => (
-    window.matchMedia("(display-mode: standalone)").matches
+    fullscreenDisplayMode()
+    || window.matchMedia("(display-mode: standalone)").matches
     || window.navigator.standalone === true
   );
 
+  const refreshScreenState = () => {
+    if (fullscreenDisplayMode()) {
+      fullscreenStatus.textContent = "Полноэкранный режим приложения";
+      fullscreenToggle.classList.add("hidden");
+      return;
+    }
+    if (document.fullscreenElement) {
+      fullscreenStatus.textContent = "Полноэкранный режим браузера";
+      fullscreenToggle.textContent = "Выйти из полного экрана";
+      fullscreenToggle.classList.remove("hidden");
+      return;
+    }
+    if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
+      fullscreenStatus.textContent = standaloneMode()
+        ? "Режим приложения · можно скрыть системные панели"
+        : "Браузер · полный экран включается по нажатию";
+      fullscreenToggle.textContent = "На весь экран";
+      fullscreenToggle.classList.remove("hidden");
+      return;
+    }
+    fullscreenStatus.textContent = standaloneMode()
+      ? "Режим приложения"
+      : "Полный экран недоступен в этом браузере";
+    fullscreenToggle.classList.add("hidden");
+  };
+
   const refreshInstallState = () => {
     if (standaloneMode()) {
-      installStatus.textContent = "Установлено и открыто как приложение";
+      installStatus.textContent = fullscreenDisplayMode()
+        ? "Установлено · полноэкранный режим"
+        : "Установлено и открыто как приложение";
       installButton.classList.add("hidden");
+      refreshScreenState();
       return;
     }
 
     if (deferredInstallPrompt) {
       installStatus.textContent = "Можно установить без адресной строки браузера";
       installButton.classList.remove("hidden");
+      refreshScreenState();
       return;
     }
 
     installStatus.textContent = "Открыто в браузере";
     installButton.classList.add("hidden");
+    refreshScreenState();
   };
 
   hunterForm.addEventListener("submit", (event) => {
@@ -1301,12 +1339,8 @@
       startUsdRubStream();
     }
     if (tbankIsConnected && stale && !portfolioRequestInFlight) {
-      void loadPortfolioData({force: true, refreshOperations: false});
+      void loadPortfolioData({force: true});
     }
-  });
-
-  operationsLoadMore.addEventListener("click", () => {
-    void loadMoreOperations();
   });
 
   portfolioRefresh.addEventListener("click", () => {
@@ -1318,15 +1352,49 @@
   });
 
   desktopNavItems.forEach((item) => {
-    item.addEventListener("click", () => setView(item.dataset.view));
-  });
-
-  mobileNavItems.forEach((item) => {
-    item.addEventListener("click", () => setView(item.dataset.mobileView));
+    item.addEventListener("click", () => navigateToView(item.dataset.view));
   });
 
   viewLinks.forEach((item) => {
-    item.addEventListener("click", () => setView(item.dataset.goView));
+    item.addEventListener("click", () => navigateToView(item.dataset.goView));
+  });
+
+  appMenuToggle.addEventListener("click", () => {
+    if (document.body.classList.contains("drawer-open")) {
+      closeDrawer();
+    } else {
+      openDrawer();
+    }
+  });
+
+  drawerClose.addEventListener("click", closeDrawer);
+  drawerBackdrop.addEventListener("click", closeDrawer);
+  appBack.addEventListener("click", goBack);
+
+  window.addEventListener("resize", () => {
+    if (!mobileDrawerMode()) {
+      closeDrawer();
+    }
+  });
+
+  window.addEventListener("popstate", (event) => {
+    const state = event.state;
+    if (!state?.omnicio || !VIEW_TITLES[state.view]) {
+      return;
+    }
+    navigationDepth = Math.max(0, Number(state.depth) || 0);
+    renderView(state.view, {scroll: false});
+    closeDrawer();
+    window.requestAnimationFrame(() => {
+      window.scrollTo({top: Math.max(0, Number(state.scrollY) || 0), behavior: "auto"});
+    });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("drawer-open")) {
+      closeDrawer();
+      appMenuToggle.focus();
+    }
   });
 
   themeButtons.forEach((button) => {
@@ -1352,6 +1420,44 @@
   window.addEventListener("appinstalled", () => {
     deferredInstallPrompt = null;
     refreshInstallState();
+  });
+
+  fullscreenToggle.addEventListener("click", async () => {
+    fullscreenToggle.disabled = true;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
+        try {
+          await document.documentElement.requestFullscreen({navigationUI: "hide"});
+        } catch {
+          await document.documentElement.requestFullscreen();
+        }
+      }
+    } catch {
+      fullscreenStatus.textContent = "Браузер не разрешил полноэкранный режим";
+    } finally {
+      fullscreenToggle.disabled = false;
+      refreshScreenState();
+    }
+  });
+
+  document.addEventListener("fullscreenchange", refreshScreenState);
+
+  copySupportDiagnostics.addEventListener("click", async () => {
+    const release = window.OMNICIO_RELEASE || {};
+    const diagnostic = [
+      `OmniCIO v${release.version || "—"}`,
+      `build ${release.build || "—"}`,
+      `profile ${currentProfileId || "—"}`,
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(diagnostic);
+      showMessage(supportCopyMessage, "Диагностика скопирована.");
+    } catch {
+      showMessage(supportCopyMessage, "Не удалось скопировать. Укажите ID профиля вручную.", true);
+    }
   });
 
   installButton.addEventListener("click", async () => {

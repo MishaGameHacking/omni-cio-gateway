@@ -432,6 +432,15 @@ class AuthAppDeployTests(unittest.TestCase):
             "tbank-account-form",
             "tbank-connected",
             "profile-id",
+            "app-menu-toggle",
+            "app-back",
+            "app-drawer",
+            "drawer-backdrop",
+            "drawer-profile-id",
+            "profile-page-id",
+            "support-profile-id",
+            "fullscreen-toggle",
+            "copy-support-diagnostics",
             "logout",
             "delete-account-start",
             "delete-account-form",
@@ -449,7 +458,6 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank",
             "/api/broker/tbank/accounts",
             "/api/broker/tbank/portfolio",
-            "/api/broker/tbank/operations",
             "/api/broker/tbank/instruments/search",
             "/api/market/usd-rub",
             "/api/market/usd-rub/stream",
@@ -464,13 +472,25 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Данные читаются напрямую из T-Invest", page)
         self.assertIn('id="portfolio-content"', page)
         self.assertIn('id="positions-list"', page)
-        self.assertIn('id="operations-list"', page)
+        self.assertNotIn('id="operations-list"', page)
+        self.assertNotIn("Последние исполненные операции", page)
+        self.assertIn('data-view-panel="system"', page)
         self.assertIn("Системные модули", page)
         self.assertIn("/api/broker/tbank/portfolio", script)
-        self.assertIn("/api/broker/tbank/operations?limit=30", script)
+        self.assertNotIn("/api/broker/tbank/operations", script)
         self.assertNotIn("innerHTML", script)
         self.assertNotIn("₽ 1 000 000", page)
         self.assertNotIn("+12.4%", page)
+
+    def test_user_transaction_history_is_not_exposed(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+        backend = (root / "src" / "omnicio" / "main.py").read_text()
+
+        self.assertNotIn("Последние исполненные операции", page)
+        self.assertNotIn("/api/broker/tbank/operations", script)
+        self.assertNotIn('@app.get("/api/broker/tbank/operations")', backend)
 
     def test_personal_dashboard_system_modules_are_real_and_read_only(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -530,6 +550,25 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("91,86", page)
         self.assertNotIn("innerHTML", script)
 
+    def test_personal_dashboard_uses_grouped_drawer_navigation(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+        stylesheet = (root / "web" / "app.css").read_text()
+
+        for view in ("home", "portfolio", "system", "connections", "profile", "settings", "support"):
+            self.assertIn(f'data-view="{view}"', page)
+            self.assertIn(f'data-view-panel="{view}"', page)
+
+        self.assertIn("Рабочее пространство", page)
+        self.assertIn("Профиль", page)
+        self.assertIn("Поддержка", page)
+        self.assertIn("T-Invest и API-токен", page)
+        self.assertIn("drawer-open", stylesheet)
+        self.assertIn("navigateToView", script)
+        self.assertIn("goBack", script)
+        self.assertNotIn("data-mobile-view", page)
+
     def test_personal_dashboard_uses_approved_brand_assets(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text()
@@ -570,8 +609,14 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("safe-area-inset-bottom", stylesheet)
         self.assertIn("@media (prefers-reduced-motion: reduce)", stylesheet)
         self.assertIn("beforeinstallprompt", script)
+        self.assertIn("requestFullscreen", script)
+        self.assertIn("history.pushState", script)
+        self.assertIn('window.addEventListener("popstate"', script)
+        self.assertIn('id="app-drawer"', page)
+        self.assertNotIn('class="mobile-nav"', page)
         manifest = (root / "web" / "manifest.webmanifest").read_text()
-        self.assertIn('"display": "standalone"', manifest)
+        self.assertIn('"display": "fullscreen"', manifest)
+        self.assertIn('"display_override": ["fullscreen", "standalone"]', manifest)
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -586,7 +631,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.6.4"', project)
+        self.assertIn('version = "0.7.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

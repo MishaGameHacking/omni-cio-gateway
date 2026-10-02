@@ -488,43 +488,6 @@ def tbank_portfolio(
     }
 
 
-@app.get("/api/broker/tbank/operations")
-def tbank_operations(
-    request: Request,
-    limit: int = Query(default=30, ge=1, le=100),
-    cursor: str | None = Query(default=None, max_length=4096),
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    user = authenticated_user(request, session_token)
-    try:
-        snapshot = broker_service(request).operations(
-            user.id,
-            limit=limit,
-            cursor=cursor,
-        )
-    except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
-    except TBankTokenRejected as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="stored T-Invest credential was rejected",
-        ) from exc
-    except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="T-Invest operations unavailable",
-        ) from exc
-
-    return {
-        "account_name": snapshot.account_name,
-        "environment": snapshot.environment,
-        "refreshed_at": snapshot.refreshed_at,
-        "items": [asdict(item) for item in snapshot.operations.items],
-        "has_next": snapshot.operations.has_next,
-        "next_cursor": snapshot.operations.next_cursor,
-    }
-
-
 @app.get("/api/broker/tbank/instruments/search")
 def tbank_instrument_search(
     request: Request,

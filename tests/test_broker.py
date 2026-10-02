@@ -20,8 +20,6 @@ from omnicio.tbank import (
     TBankInstrument,
     TBankInvestClient,
     TBankMoney,
-    TBankOperation,
-    TBankOperationsPage,
     TBankPortfolio,
     TBankPositions,
     TBankTokenRejected,
@@ -257,7 +255,7 @@ def test_tbank_reads_latest_usd_rub_quote_without_hardcoded_instrument_id() -> N
     }
 
 
-def test_tbank_reads_portfolio_positions_and_operations() -> None:
+def test_tbank_reads_portfolio_and_positions() -> None:
     credential = "t.fake-owner-credential-1234567890"
     client = TBankInvestClient()
 
@@ -292,35 +290,12 @@ def test_tbank_reads_portfolio_positions_and_operations() -> None:
             "limitsLoadingInProgress": False,
         }
     )
-    operations_response = FakeResponse(
-        {
-            "hasNext": True,
-            "nextCursor": "cursor-2",
-            "items": [
-                {
-                    "id": "op-1",
-                    "date": "2026-10-01T09:00:00Z",
-                    "name": "Покупка TEST",
-                    "description": "Покупка ценных бумаг",
-                    "type": "OPERATION_TYPE_BUY",
-                    "state": "OPERATION_STATE_EXECUTED",
-                    "ticker": "TEST",
-                    "payment": {"currency": "rub", "units": "-10000", "nano": 0},
-                    "price": {"currency": "rub", "units": "10000", "nano": 0},
-                    "commission": {"currency": "rub", "units": "-10", "nano": 0},
-                    "quantity": "1",
-                }
-            ],
-        }
-    )
-
     with patch(
         "urllib.request.urlopen",
-        side_effect=[portfolio_response, positions_response, operations_response],
+        side_effect=[portfolio_response, positions_response],
     ) as urlopen:
         portfolio = client.get_portfolio(credential, "prod", "account-1")
         positions = client.get_positions(credential, "prod", "account-1")
-        operations = client.get_operations(credential, "prod", "account-1", limit=30)
 
     assert portfolio.total == TBankMoney(currency="RUB", value="125000.5")
     assert portfolio.expected_yield_percent == "12.34"
@@ -332,26 +307,14 @@ def test_tbank_reads_portfolio_positions_and_operations() -> None:
     assert portfolio.positions[0].quantity == "10"
     assert positions.money == (TBankMoney(currency="RUB", value="25000.5"),)
     assert positions.blocked_money == (TBankMoney(currency="RUB", value="100"),)
-    assert operations.items[0].id == "op-1"
-    assert operations.items[0].payment == TBankMoney(currency="RUB", value="-10000")
-    assert operations.has_next is True
-
     portfolio_request = urlopen.call_args_list[0].args[0]
     positions_request = urlopen.call_args_list[1].args[0]
-    operations_request = urlopen.call_args_list[2].args[0]
     assert portfolio_request.full_url.endswith("OperationsService/GetPortfolio")
     assert json.loads(portfolio_request.data.decode()) == {
         "accountId": "account-1",
         "currency": "RUB",
     }
     assert positions_request.full_url.endswith("OperationsService/GetPositions")
-    assert operations_request.full_url.endswith("OperationsService/GetOperationsByCursor")
-    assert json.loads(operations_request.data.decode()) == {
-        "accountId": "account-1",
-        "limit": 30,
-        "state": "OPERATION_STATE_EXECUTED",
-        "withoutTrades": True,
-    }
 
 
 def test_tbank_tls_verification_failure_is_reported_as_unavailable() -> None:
@@ -466,39 +429,6 @@ class FakeTBank:
             limits_loading_in_progress=False,
         )
 
-    def get_operations(
-        self,
-        credential: str,
-        environment: str,
-        account_id: str,
-        *,
-        limit: int = 30,
-        cursor: str | None = None,
-    ):
-        assert credential == "t.fake-owner-credential-1234567890"
-        assert environment == "prod"
-        assert account_id == "account-1"
-        assert limit == 30
-        assert cursor is None
-        return TBankOperationsPage(
-            items=(
-                TBankOperation(
-                    id="op-1",
-                    date="2026-10-01T09:00:00Z",
-                    name="Пополнение",
-                    description="",
-                    type="OPERATION_TYPE_INPUT",
-                    state="OPERATION_STATE_EXECUTED",
-                    ticker="",
-                    payment=TBankMoney(currency="RUB", value="100"),
-                    price=None,
-                    commission=None,
-                    quantity="0",
-                ),
-            ),
-            has_next=False,
-            next_cursor="",
-        )
 
 
 class FakeDatabase:
@@ -574,13 +504,11 @@ def test_broker_service_decrypts_saved_credential_only_for_read_calls() -> None:
     )
 
     portfolio = service.portfolio(owner_id)
-    operations = service.operations(owner_id)
     instruments = service.search_instruments(owner_id, query="SBER")
     quote = service.usd_rub_quote(owner_id)
 
     assert portfolio.portfolio.total.value == "1000"
     assert portfolio.positions.money[0].value == "100"
-    assert operations.operations.items[0].id == "op-1"
     assert instruments[0].ticker == "SBER"
     assert quote.price == "92.25"
     assert quote.source == "dealer"
