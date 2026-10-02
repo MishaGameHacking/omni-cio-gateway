@@ -165,8 +165,14 @@ class FakeBroker:
             access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
         )
 
-    def observation_bundle(self, user_id: UUID) -> BrokerObservationBundle:
+    def observation_bundle(
+        self,
+        user_id: UUID,
+        *,
+        full_catalog: bool = False,
+    ) -> BrokerObservationBundle:
         assert user_id == USER_ID
+        assert full_catalog is True
         return bundle(self.analysis_status)
 
     def history_page(
