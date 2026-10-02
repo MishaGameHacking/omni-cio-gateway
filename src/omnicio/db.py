@@ -480,13 +480,10 @@ class Database:
                 "SELECT set_config('omnicio.user_id', %s, true)",
                 (str(user_id),),
             )
-            for table in (
-                "broker_sync_state",
-                "operation_observations",
-                "portfolio_snapshots",
-                "job_runs",
-            ):
-                cur.execute(f"DELETE FROM {table} WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM broker_sync_state WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM operation_observations WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM portfolio_snapshots WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM job_runs WHERE user_id = %s", (user_id,))
 
             cur.execute(
                 """
