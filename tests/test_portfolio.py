@@ -149,6 +149,7 @@ def test_unconfirmed_or_inconsistent_cash_cannot_be_a_purchase_budget(
     "item",
     [
         position("short", "-1", "100"),
+        replace(position("blocked", "1", "100"), blocked_lots="-1"),
         position("future", "1", "100", "futures"),
         position("overvalued", "10", "100"),
     ],
