@@ -486,7 +486,14 @@ class Database:
             cur.execute("DELETE FROM account_instrument_access WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM operation_observations WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM portfolio_snapshots WHERE user_id = %s", (user_id,))
-            cur.execute("DELETE FROM job_runs WHERE user_id = %s", (user_id,))
+            cur.execute(
+                """
+                DELETE FROM job_runs
+                WHERE user_id = %s
+                  AND job_type = 'portfolio_daily'
+                """,
+                (user_id,),
+            )
 
             cur.execute(
                 """
