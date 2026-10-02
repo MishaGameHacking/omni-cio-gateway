@@ -43,6 +43,10 @@ jobs:
 
   configure:
     name: Configure omnicio.ru HTTPS
+    concurrency:
+      group: omnicio-production-ssh
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       actions: read
