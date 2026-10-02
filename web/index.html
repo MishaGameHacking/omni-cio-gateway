@@ -360,46 +360,7 @@
               </button>
             </article>
 
-            <section class="status-section" aria-labelledby="working-now-title">
-              <div class="section-heading">
-                <h3 id="working-now-title">Что работает сейчас</h3>
-                <span class="section-note">Без скрытых функций</span>
-              </div>
 
-              <div class="status-list">
-                <div class="status-row">
-                  <div>
-                    <strong id="home-login-title">Вход владельца</strong>
-                    <span id="home-login-note">VK ID + защищённая сессия OmniCIO</span>
-                  </div>
-                  <span class="state-badge state-ok">Работает</span>
-                </div>
-
-                <div class="status-row">
-                  <div>
-                    <strong>Подключение T-Invest</strong>
-                    <span>Проверка и защищённое хранение API-токена</span>
-                  </div>
-                  <span class="state-badge" id="home-tbank-state">Проверяем</span>
-                </div>
-
-                <div class="status-row">
-                  <div>
-                    <strong>Данные портфеля</strong>
-                    <span>Стоимость, позиции и доходность</span>
-                  </div>
-                  <span class="state-badge" id="home-portfolio-state">Загружаем</span>
-                </div>
-
-                <div class="status-row">
-                  <div>
-                    <strong>USD/RUB</strong>
-                    <span>Оперативная котировка T-Invest + официальный курс ЦБ РФ</span>
-                  </div>
-                  <span class="state-badge" id="home-fx-state">Подключаем</span>
-                </div>
-              </div>
-            </section>
 
           </section>
 
@@ -778,12 +739,53 @@
               <p class="section-label">Настройки</p>
               <h2>Параметры приложения</h2>
               <p>
-                Интерфейс, экран, интеграции и служебные параметры сгруппированы
+                Интерфейс, состояние системы, экран, интеграции и служебные параметры сгруппированы
                 по назначению. Профиль пользователя вынесен в отдельный раздел.
               </p>
             </div>
 
             <section class="settings-stack">
+              <section class="status-section" aria-labelledby="working-now-title">
+                <div class="section-heading">
+                  <h3 id="working-now-title">Состояние системы</h3>
+                  <span class="section-note">Текущий статус</span>
+                </div>
+  
+                <div class="status-list">
+                  <div class="status-row">
+                    <div>
+                      <strong id="home-login-title">Вход владельца</strong>
+                      <span id="home-login-note">VK ID + защищённая сессия OmniCIO</span>
+                    </div>
+                    <span class="state-badge state-ok">Работает</span>
+                  </div>
+  
+                  <div class="status-row">
+                    <div>
+                      <strong>Подключение T-Invest</strong>
+                      <span>Проверка и защищённое хранение API-токена</span>
+                    </div>
+                    <span class="state-badge" id="home-tbank-state">Проверяем</span>
+                  </div>
+  
+                  <div class="status-row">
+                    <div>
+                      <strong>Данные портфеля</strong>
+                      <span>Стоимость, позиции и доходность</span>
+                    </div>
+                    <span class="state-badge" id="home-portfolio-state">Загружаем</span>
+                  </div>
+  
+                  <div class="status-row">
+                    <div>
+                      <strong>USD/RUB</strong>
+                      <span>Оперативная котировка T-Invest + официальный курс ЦБ РФ</span>
+                    </div>
+                    <span class="state-badge" id="home-fx-state">Подключаем</span>
+                  </div>
+                </div>
+              </section>
+
               <article class="settings-card">
                 <header class="card-header">
                   <div>
