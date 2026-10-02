@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import Lock
+from time import monotonic, sleep
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from collections.abc import Callable
 from typing import Any, cast
 from uuid import UUID
 
@@ -30,6 +33,9 @@ from .tbank import (
     TBankUnavailable,
     TBankUserInfo,
 )
+
+
+INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
 
 
 class BrokerConnectionError(RuntimeError):
@@ -116,6 +122,8 @@ class BrokerService:
         self.database = database
         self.credential_key = credential_key
         self.tbank = tbank
+        self._instrument_evidence_lock = Lock()
+        self._next_instrument_evidence_at = 0.0
 
     def preview_accounts(
         self,
@@ -311,6 +319,24 @@ class BrokerService:
             catalog_status = "partial"
         return tuple(metadata), tuple(requested), catalog_status
 
+    def _paced_evidence_read(
+        self,
+        operation: Callable[..., Any],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        with self._instrument_evidence_lock:
+            now = monotonic()
+            delay = self._next_instrument_evidence_at - now
+            if delay > 0:
+                sleep(delay)
+                now = monotonic()
+            self._next_instrument_evidence_at = (
+                now + INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS
+            )
+        return operation(*args, **kwargs)
+
     def evidence(
         self,
         user_id: UUID,
@@ -347,7 +373,8 @@ class BrokerService:
         for start in range(0, len(asset_uids), 100):
             try:
                 fundamentals.extend(
-                    self.tbank.get_asset_fundamentals(
+                    self._paced_evidence_read(
+                        self.tbank.get_asset_fundamentals,
                         credential,
                         environment,
                         asset_uids[start : start + 100],
@@ -368,6 +395,7 @@ class BrokerService:
                 if item.instrument_type == "share":
                     tasks[
                         reads.submit(
+                            self._paced_evidence_read,
                             self.tbank.get_dividends,
                             credential,
                             environment,
@@ -379,6 +407,7 @@ class BrokerService:
                 if item.instrument_type == "bond":
                     tasks[
                         reads.submit(
+                            self._paced_evidence_read,
                             self.tbank.get_bond_coupons,
                             credential,
                             environment,
@@ -389,6 +418,7 @@ class BrokerService:
                     ] = ("GetBondCoupons", item.uid)
                     tasks[
                         reads.submit(
+                            self._paced_evidence_read,
                             self.tbank.get_bond_events,
                             credential,
                             environment,
@@ -400,6 +430,7 @@ class BrokerService:
                 if item.instrument_type in {"share", "bond"}:
                     tasks[
                         reads.submit(
+                            self._paced_evidence_read,
                             self.tbank.get_asset_reports,
                             credential,
                             environment,
