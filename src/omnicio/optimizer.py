@@ -434,12 +434,9 @@ def compare_replacement(
         * years
     )
     residual = funding - invested
-    residual_return = (
-        residual
-        * (policy.inflation_percent + policy.no_trade_band_percent)
-        / Decimal(100)
-        * years
-    )
+    # Residual cash has no verified forward return in R4. Keep it at zero
+    # instead of manufacturing a cash yield assumption.
+    residual_return = Decimal(0)
     improvement = (
         replacement_return
         + residual_return
@@ -598,8 +595,8 @@ def _ceil_div(value: Decimal, step: Decimal) -> int:
     return int(quotient if value % step == 0 else quotient + 1)
 
 
-def _add(target: dict[str, Decimal] | dict[RatingTier, Decimal], key: str, value: Decimal) -> None:
-    target[key] = target.get(key, Decimal(0)) + value  # type: ignore[index]
+def _add[K: str](target: dict[K, Decimal], key: K, value: Decimal) -> None:
+    target[key] = target.get(key, Decimal(0)) + value
 
 
 def _validate_state(state: PortfolioExposureState) -> None:
