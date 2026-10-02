@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import secrets
 import sys
 import tempfile
 import unittest
@@ -123,7 +124,7 @@ class PostgresTests(unittest.TestCase):
             db_type="postgres18",
             preset={"id": 2},
             vpc_id="network-123",
-            password="secret-value",
+            password=secrets.token_urlsafe(18),
         )
         self.assertEqual(payload["network"], {"id": "network-123"})
         self.assertFalse(payload["is_public_ipv6"])
@@ -201,6 +202,22 @@ class PostgresTests(unittest.TestCase):
             "base64.urlsafe_b64encode(os.urandom(32)).decode()",
             MODULE.REMOTE_SECRET_BOOTSTRAP,
         )
+
+    def test_workflow_applies_portfolio_observer_migration_after_existing_schema(self) -> None:
+        root = MODULE_PATH.parents[2]
+        workflow = (root / ".github" / "workflows" / "auth-postgres.yml").read_text()
+
+        migrations = [
+            "migrations/0001_phone_auth.sql",
+            "migrations/0002_tbank_connection.sql",
+            "migrations/0003_vkid_owner_identity.sql",
+            "migrations/0004_user_role.sql",
+            "migrations/0005_drop_phone_auth.sql",
+            "migrations/0006_portfolio_observer.sql",
+        ]
+        positions = [workflow.index(path) for path in migrations]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(workflow.count("--migration migrations/0006_portfolio_observer.sql"), 1)
 
     def test_parser_accepts_multiple_migrations(self) -> None:
         old = sys.argv

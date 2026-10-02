@@ -67,12 +67,42 @@ class Database:
                     AND to_regclass('public.legal_acceptances') IS NOT NULL
                     AND to_regclass('public.vkid_identities') IS NOT NULL
                     AND to_regclass('public.tbank_connection') IS NOT NULL
+                    AND to_regclass('public.instrument_catalog') IS NOT NULL
+                    AND to_regclass('public.account_instrument_access') IS NOT NULL
+                    AND to_regclass('public.issuer_groups') IS NOT NULL
+                    AND to_regclass('public.issuers') IS NOT NULL
+                    AND to_regclass('public.instrument_issuer_map') IS NOT NULL
+                    AND to_regclass('public.investment_profile_versions') IS NOT NULL
+                    AND to_regclass('public.job_runs') IS NOT NULL
+                    AND to_regclass('public.portfolio_snapshots') IS NOT NULL
+                    AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL
+                    AND to_regclass('public.operation_observations') IS NOT NULL
+                    AND to_regclass('public.broker_sync_state') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
                         WHERE table_schema = 'public'
                           AND table_name = 'users'
                           AND column_name = 'role'
+                    )
+                    AND (
+                        SELECT count(*) = 7
+                        FROM pg_class AS c
+                        JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                        WHERE n.nspname = 'public'
+                          AND c.relname = ANY (
+                              ARRAY[
+                                  'account_instrument_access',
+                                  'investment_profile_versions',
+                                  'job_runs',
+                                  'portfolio_snapshots',
+                                  'portfolio_snapshot_positions',
+                                  'operation_observations',
+                                  'broker_sync_state'
+                              ]
+                          )
+                          AND c.relrowsecurity
+                          AND c.relforcerowsecurity
                     )
                     AS ready
                 """
@@ -316,6 +346,32 @@ class Database:
             )
             return cur.fetchone() is not None
 
+    def has_legal_versions(
+        self,
+        user_id: UUID,
+        legal_versions: dict[str, str],
+    ) -> bool:
+        if not legal_versions or any(not version for version in legal_versions.values()):
+            return False
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            for document_type, version in legal_versions.items():
+                cur.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM legal_acceptances
+                        WHERE user_id = %s
+                          AND document_type = %s
+                          AND document_version = %s
+                    ) AS accepted
+                    """,
+                    (user_id, document_type, version),
+                )
+                fetched = cur.fetchone()
+                if fetched is None or not bool(cast(dict[str, Any], fetched)["accepted"]):
+                    return False
+        return True
+
     def tbank_connection(self, user_id: UUID) -> TBankConnectionRecord | None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
@@ -408,9 +464,10 @@ class Database:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(
                 """
-                DELETE FROM tbank_connection
+                SELECT environment
+                FROM tbank_connection
                 WHERE user_id = %s
-                RETURNING environment
+                FOR UPDATE
                 """,
                 (user_id,),
             )
@@ -418,6 +475,33 @@ class Database:
             if fetched is None:
                 return False
             row = cast(dict[str, Any], fetched)
+
+            # Derived broker facts are retained only while the integration is
+            # connected. The user-owned investment profile remains independent.
+            cur.execute(
+                "SELECT set_config('omnicio.user_id', %s, true)",
+                (str(user_id),),
+            )
+            cur.execute("DELETE FROM broker_sync_state WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM account_instrument_access WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM operation_observations WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM portfolio_snapshots WHERE user_id = %s", (user_id,))
+            cur.execute(
+                """
+                DELETE FROM job_runs
+                WHERE user_id = %s
+                  AND job_type = 'portfolio_daily'
+                """,
+                (user_id,),
+            )
+
+            cur.execute(
+                """
+                DELETE FROM tbank_connection
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
             cur.execute(
                 """
                 INSERT INTO audit_events (user_id, event_type, metadata)

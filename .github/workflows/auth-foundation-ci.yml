@@ -32,6 +32,22 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      OMNICIO_TEST_DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/omnicio_test
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+          POSTGRES_DB: omnicio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d omnicio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout candidate state
@@ -93,7 +109,7 @@ jobs:
           - name: Security tests
             command: '"%OMNICIO_PYTHON%" -m pytest tests/test_security.py'
           - name: Service and support tests
-            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_vkid.py tests/test_support.py tests/test_broker.py tests/test_portfolio.py'
+            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_vkid.py tests/test_support.py tests/test_broker.py tests/test_portfolio.py tests/test_observer.py'
 
     steps:
       - name: Checkout accepted main state

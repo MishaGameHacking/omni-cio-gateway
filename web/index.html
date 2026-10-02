@@ -860,6 +860,59 @@
                   <span>Выйти из аккаунта</span>
                 </button>
               </article>
+
+              <article class="settings-card profile-constraints-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Инвестиционные ограничения</p>
+                    <h3>Профиль капитала</h3>
+                  </div>
+                  <span class="state-badge" id="investment-profile-version">Не заполнен</span>
+                </header>
+                <p class="card-description">
+                  Эти параметры фиксируют резерв, горизонт и допустимый риск для будущих
+                  сценариев. Они не дают OmniCIO полномочий совершать сделки и не включают
+                  автоматическое исполнение.
+                </p>
+                <form id="investment-profile-form" class="form-stack" novalidate>
+                  <div class="constraint-form-grid">
+                    <div class="field">
+                      <label for="profile-reserve-rub">Резерв, ₽</label>
+                      <input id="profile-reserve-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="profile-withdrawal-rub">Планируемые снятия, ₽</label>
+                      <input id="profile-withdrawal-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="profile-horizon-months">Горизонт, месяцев</label>
+                      <input id="profile-horizon-months" type="number" min="1" max="1200" step="1" inputmode="numeric" required>
+                    </div>
+                    <div class="field">
+                      <label for="profile-max-drawdown">Допустимая просадка, %</label>
+                      <input id="profile-max-drawdown" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="profile-liquidity-days">Горизонт ликвидности, дней</label>
+                      <input id="profile-liquidity-days" type="number" min="0" max="36500" step="1" inputmode="numeric" required>
+                    </div>
+                  </div>
+                  <label class="check">
+                    <input id="profile-allow-below-grade" type="checkbox">
+                    <span>
+                      Разрешать рассматривать бумаги ниже инвестиционного уровня.
+                      Это ограничение не является рекомендацией и не включает торговые права.
+                    </span>
+                  </label>
+                  <div class="profile-constraint-meta">
+                    <span id="investment-profile-created">Версия ещё не сохранена</span>
+                  </div>
+                  <button id="investment-profile-save" class="button button-primary" type="submit">
+                    Сохранить новую версию профиля
+                  </button>
+                  <p id="investment-profile-message" class="message" role="status" aria-live="polite"></p>
+                </form>
+              </article>
             </section>
           </section>
 

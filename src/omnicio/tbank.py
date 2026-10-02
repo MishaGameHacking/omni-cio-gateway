@@ -8,7 +8,7 @@ import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal, cast
 
@@ -42,6 +42,17 @@ class TBankAccount:
     name: str
     type: str
     status: str
+    opened_at: datetime | None = None
+    access_level: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TBankUserInfo:
+    premium: bool
+    qualified: bool
+    qualified_for_work_with: tuple[str, ...]
+    tariff: str
+    risk_level_code: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +120,17 @@ class TBankInstrumentMetadata:
     sector: str
     country_of_risk: str
     for_qual_investor: bool | None
+    figi: str = ""
+    asset_uid: str = ""
+    position_uid: str = ""
+    currency: str = ""
+    class_code: str = ""
+    lot: int = 0
+    for_iis: bool | None = None
+    api_trade_available: bool | None = None
+    buy_available: bool | None = None
+    sell_available: bool | None = None
+    required_tests: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +148,49 @@ class TBankPositions:
     money: tuple[TBankMoney, ...]
     blocked_money: tuple[TBankMoney, ...]
     limits_loading_in_progress: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOperationTrade:
+    num: str
+    date: datetime
+    quantity: str
+    price: TBankMoney | None
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOperation:
+    cursor: str
+    broker_account_id: str
+    id: str
+    parent_operation_id: str
+    name: str
+    date: datetime
+    operation_type: str
+    description: str
+    state: str
+    instrument_uid: str
+    figi: str
+    instrument_type: str
+    position_uid: str
+    ticker: str
+    class_code: str
+    payment: TBankMoney | None
+    price: TBankMoney | None
+    commission: TBankMoney | None
+    accrued_int: TBankMoney | None
+    quantity: str
+    quantity_rest: str
+    quantity_done: str
+    asset_uid: str
+    trades: tuple[TBankOperationTrade, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOperationsPage:
+    has_next: bool
+    next_cursor: str
+    items: tuple[TBankOperation, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,9 +225,21 @@ class TBankInvestClient:
                 raise TBankUnavailable("T-Invest metadata has missing or duplicate uid")
             seen.add(uid)
 
-            for_qual = item.get("forQualInvestorFlag")
-            if for_qual is not None and not isinstance(for_qual, bool):
-                raise TBankUnavailable("T-Invest metadata has invalid qualification flag")
+            lot_raw = item.get("lot", 0)
+            if isinstance(lot_raw, bool):
+                raise TBankUnavailable("T-Invest metadata has invalid lot size")
+            try:
+                lot = int(str(lot_raw))
+            except ValueError as exc:
+                raise TBankUnavailable("T-Invest metadata has invalid lot size") from exc
+            if lot < 0:
+                raise TBankUnavailable("T-Invest metadata has invalid lot size")
+
+            required_tests = tuple(
+                _text(value).strip()
+                for value in _optional_list(item, "requiredTests")
+                if _text(value).strip()
+            )
 
             result.append(
                 TBankInstrumentMetadata(
@@ -173,7 +250,18 @@ class TBankInvestClient:
                     instrument_type=instrument_type,
                     sector=_text(item.get("sector")).strip(),
                     country_of_risk=_text(item.get("countryOfRisk")).strip().upper(),
-                    for_qual_investor=for_qual,
+                    for_qual_investor=_optional_bool(item, "forQualInvestorFlag"),
+                    figi=_text(item.get("figi")).strip(),
+                    asset_uid=_text(item.get("assetUid")).strip(),
+                    position_uid=_text(item.get("positionUid")).strip(),
+                    currency=_text(item.get("currency")).strip().upper(),
+                    class_code=_text(item.get("classCode")).strip(),
+                    lot=lot,
+                    for_iis=_optional_bool(item, "forIisFlag"),
+                    api_trade_available=_optional_bool(item, "apiTradeAvailableFlag"),
+                    buy_available=_optional_bool(item, "buyAvailableFlag"),
+                    sell_available=_optional_bool(item, "sellAvailableFlag"),
+                    required_tests=required_tests,
                 )
             )
         return tuple(result)
@@ -204,9 +292,41 @@ class TBankInvestClient:
                     name=_text(item.get("name")).strip(),
                     type=_text(item.get("type")).strip(),
                     status=_text(item.get("status")).strip(),
+                    opened_at=_optional_provider_timestamp(item.get("openedDate")),
+                    access_level=_text(item.get("accessLevel")).strip(),
                 )
             )
         return accounts
+
+    def get_user_info(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+    ) -> TBankUserInfo:
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="UsersService",
+            method="GetInfo",
+            body={},
+        )
+        premium = payload.get("premStatus")
+        qualified = payload.get("qualStatus")
+        if not isinstance(premium, bool) or not isinstance(qualified, bool):
+            raise TBankUnavailable("T-Invest user info has invalid qualification flags")
+
+        qualified_for = tuple(
+            value
+            for raw in _optional_list(payload, "qualifiedForWorkWith")
+            if (value := _text(raw).strip())
+        )
+        return TBankUserInfo(
+            premium=premium,
+            qualified=qualified,
+            qualified_for_work_with=qualified_for,
+            tariff=_text(payload.get("tariff")).strip(),
+            risk_level_code=_text(payload.get("riskLevelCode")).strip(),
+        )
 
     def find_instruments(
         self,
@@ -491,6 +611,124 @@ class TBankInvestClient:
             limits_loading_in_progress=loading,
         )
 
+    def get_operations_by_cursor(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        cursor: str = "",
+        limit: int = 1000,
+    ) -> TBankOperationsPage:
+        if from_at.tzinfo is None or to_at.tzinfo is None:
+            raise ValueError("operation history boundaries must be timezone-aware")
+        if from_at > to_at:
+            raise ValueError("operation history start must not be after end")
+        if not 1 <= limit <= 1000:
+            raise ValueError("operation history limit must be between 1 and 1000")
+        if len(cursor) > 4096 or "\n" in cursor or "\r" in cursor:
+            raise ValueError("operation history cursor is invalid")
+
+        # The project selects the sandbox by host. T-Invest documents this as
+        # the preferred sandbox mode, so the ordinary OperationsService method is
+        # used on both hosts instead of mixing the sandbox host with SandboxService.
+        service = "OperationsService"
+        method = "GetOperationsByCursor"
+
+        body: dict[str, object] = {
+            "accountId": _validate_account_id(account_id),
+            "from": _utc_timestamp(from_at),
+            "to": _utc_timestamp(to_at),
+            "limit": limit,
+            "state": "OPERATION_STATE_UNSPECIFIED",
+            "withoutCommissions": False,
+            "withoutTrades": False,
+            "withoutOvernights": False,
+        }
+        if cursor:
+            body["cursor"] = cursor
+
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service=service,
+            method=method,
+            body=body,
+        )
+
+        has_next = payload.get("hasNext", False)
+        if not isinstance(has_next, bool):
+            raise TBankUnavailable("T-Invest operation page has invalid hasNext flag")
+        next_cursor = _text(payload.get("nextCursor")).strip()
+        if has_next and not next_cursor:
+            raise TBankUnavailable("T-Invest operation page is missing next cursor")
+
+        operations: list[TBankOperation] = []
+        for raw in _required_list(payload, "items"):
+            item = _required_object(raw, "operation item")
+            operation_date = _optional_provider_timestamp(item.get("date"))
+            if operation_date is None:
+                raise TBankUnavailable("T-Invest operation item has no date")
+
+            trades_info = item.get("tradesInfo")
+            trade_rows: list[object] = []
+            if trades_info is not None:
+                trade_rows = _optional_list(
+                    _required_object(trades_info, "operation trades"),
+                    "trades",
+                )
+            trades: list[TBankOperationTrade] = []
+            for trade_raw in trade_rows:
+                trade = _required_object(trade_raw, "operation trade")
+                trade_date = _optional_provider_timestamp(trade.get("date"))
+                if trade_date is None:
+                    raise TBankUnavailable("T-Invest operation trade has no date")
+                trades.append(
+                    TBankOperationTrade(
+                        num=_text(trade.get("num")).strip(),
+                        date=trade_date,
+                        quantity=_integer_text(trade.get("quantity")),
+                        price=_money(trade.get("price")),
+                    )
+                )
+
+            operations.append(
+                TBankOperation(
+                    cursor=_text(item.get("cursor")).strip(),
+                    broker_account_id=_text(item.get("brokerAccountId")).strip(),
+                    id=_text(item.get("id")).strip(),
+                    parent_operation_id=_text(item.get("parentOperationId")).strip(),
+                    name=_text(item.get("name")).strip(),
+                    date=operation_date,
+                    operation_type=_text(item.get("type")).strip(),
+                    description=_text(item.get("description")).strip(),
+                    state=_text(item.get("state")).strip(),
+                    instrument_uid=_text(item.get("instrumentUid")).strip(),
+                    figi=_text(item.get("figi")).strip(),
+                    instrument_type=_text(item.get("instrumentType")).strip(),
+                    position_uid=_text(item.get("positionUid")).strip(),
+                    ticker=_text(item.get("ticker")).strip(),
+                    class_code=_text(item.get("classCode")).strip(),
+                    payment=_money(item.get("payment")),
+                    price=_money(item.get("price")),
+                    commission=_money(item.get("commission")),
+                    accrued_int=_money(item.get("accruedInt")),
+                    quantity=_integer_text(item.get("quantity")),
+                    quantity_rest=_integer_text(item.get("quantityRest")),
+                    quantity_done=_integer_text(item.get("quantityDone")),
+                    asset_uid=_text(item.get("assetUid")).strip(),
+                    trades=tuple(trades),
+                )
+            )
+
+        return TBankOperationsPage(
+            has_next=has_next,
+            next_cursor=next_cursor,
+            items=tuple(operations),
+        )
+
     def _post(
         self,
         *,
@@ -585,11 +823,34 @@ def _validate_account_id(account_id: str) -> str:
 
 def _provider_timestamp(value: str) -> datetime:
     if not value:
-        raise TBankUnavailable("T-Invest market value has no timestamp")
+        raise TBankUnavailable("T-Invest value has no timestamp")
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise TBankUnavailable("T-Invest market value has invalid timestamp") from exc
+        raise TBankUnavailable("T-Invest value has invalid timestamp") from exc
+    if parsed.tzinfo is None:
+        raise TBankUnavailable("T-Invest timestamp has no timezone")
+    return parsed.astimezone(UTC)
+
+
+def _optional_provider_timestamp(value: object) -> datetime | None:
+    text = _text(value).strip()
+    return _provider_timestamp(text) if text else None
+
+
+def _utc_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        raise ValueError("timestamp must be timezone-aware")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _optional_bool(payload: dict[str, object], key: str) -> bool | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TBankUnavailable(f"T-Invest API returned invalid {key} flag")
+    return value
 
 
 def _required_object(value: object, name: str) -> dict[str, object]:

@@ -12,6 +12,17 @@
   const homeLoginTitle = document.querySelector("#home-login-title");
   const homeLoginNote = document.querySelector("#home-login-note");
   const accountModeBadge = document.querySelector("#account-mode-badge");
+  const investmentProfileForm = document.querySelector("#investment-profile-form");
+  const investmentProfileVersion = document.querySelector("#investment-profile-version");
+  const investmentProfileCreated = document.querySelector("#investment-profile-created");
+  const investmentProfileMessage = document.querySelector("#investment-profile-message");
+  const investmentProfileSave = document.querySelector("#investment-profile-save");
+  const profileReserveRub = document.querySelector("#profile-reserve-rub");
+  const profileWithdrawalRub = document.querySelector("#profile-withdrawal-rub");
+  const profileHorizonMonths = document.querySelector("#profile-horizon-months");
+  const profileMaxDrawdown = document.querySelector("#profile-max-drawdown");
+  const profileLiquidityDays = document.querySelector("#profile-liquidity-days");
+  const profileAllowBelowGrade = document.querySelector("#profile-allow-below-grade");
 
   const profileId = document.querySelector("#profile-id");
   const drawerProfileId = document.querySelector("#drawer-profile-id");
@@ -1445,6 +1456,41 @@
     }
   };
 
+  const renderInvestmentProfile = (profile) => {
+    showMessage(investmentProfileMessage, "");
+    if (!profile) {
+      investmentProfileVersion.textContent = "Не заполнен";
+      investmentProfileCreated.textContent = "Версия ещё не сохранена";
+      return;
+    }
+
+    investmentProfileVersion.textContent = `v${profile.version}`;
+    investmentProfileCreated.textContent = `Сохранено: ${formatDateTime(profile.created_at)}`;
+    profileReserveRub.value = String(profile.reserve_rub);
+    profileWithdrawalRub.value = String(profile.planned_withdrawal_rub);
+    profileHorizonMonths.value = String(profile.horizon_months);
+    profileMaxDrawdown.value = String(profile.max_drawdown_percent);
+    profileLiquidityDays.value = String(profile.liquidity_horizon_days);
+    profileAllowBelowGrade.checked = profile.allow_below_investment_grade === true;
+  };
+
+  const loadInvestmentProfile = async () => {
+    try {
+      const result = await api("/api/profile/investment", {method: "GET"});
+      renderInvestmentProfile(result.profile || null);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        investmentProfileMessage,
+        "Не удалось загрузить инвестиционные ограничения.",
+        true,
+      );
+    }
+  };
+
   const showProfile = (profile) => {
     currentProfileId = profile.public_id;
     profileId.textContent = profile.public_id;
@@ -1458,6 +1504,7 @@
     profilePanel.classList.remove("hidden");
     initializeNavigation();
     void loadTbankStatus();
+    void loadInvestmentProfile();
   };
 
   const showAuth = () => {
@@ -1775,6 +1822,71 @@
       } else {
         showMessage(authMessage, "Не удалось начать авторизацию через VK ID.", true);
       }
+    }
+  });
+
+  investmentProfileForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    showMessage(investmentProfileMessage, "");
+
+    if (!investmentProfileForm.reportValidity()) {
+      return;
+    }
+
+    investmentProfileSave.disabled = true;
+    try {
+      const result = await api("/api/profile/investment", {
+        method: "PUT",
+        body: JSON.stringify({
+          reserve_rub: profileReserveRub.value,
+          planned_withdrawal_rub: profileWithdrawalRub.value,
+          horizon_months: Number(profileHorizonMonths.value),
+          max_drawdown_percent: profileMaxDrawdown.value,
+          liquidity_horizon_days: Number(profileLiquidityDays.value),
+          allow_below_investment_grade: profileAllowBelowGrade.checked,
+        }),
+      });
+      renderInvestmentProfile(result.profile);
+      showMessage(
+        investmentProfileMessage,
+        "Новая версия ограничений сохранена. Предыдущие версии остаются в журнале.",
+      );
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (error.status === 409) {
+        showMessage(
+          investmentProfileMessage,
+          "Для новых финансовых параметров нужны обновлённые документы. Выйдите из аккаунта и войдите через VK ID снова, приняв актуальные версии.",
+          true,
+        );
+        return;
+      }
+      if (error.status === 409) {
+        showMessage(
+          investmentProfileMessage,
+          "Требуется обновить согласие с правилами. Выйдите из аккаунта и снова войдите через VK ID.",
+          true,
+        );
+        return;
+      }
+      if (error.status === 422) {
+        showMessage(
+          investmentProfileMessage,
+          "Проверьте резерв, горизонт и допустимую просадку.",
+          true,
+        );
+        return;
+      }
+      showMessage(
+        investmentProfileMessage,
+        "Не удалось сохранить профиль. Действующая версия не изменена.",
+        true,
+      );
+    } finally {
+      investmentProfileSave.disabled = false;
     }
   });
 

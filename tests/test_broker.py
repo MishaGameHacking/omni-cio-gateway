@@ -27,6 +27,7 @@ from omnicio.tbank import (
     TBankPositions,
     TBankTokenRejected,
     TBankUnavailable,
+    TBankUserInfo,
 )
 
 
@@ -55,6 +56,8 @@ def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
                     "name": "Основной",
                     "type": "ACCOUNT_TYPE_TINKOFF",
                     "status": "ACCOUNT_STATUS_OPEN",
+                    "openedDate": "2024-01-02T03:04:05Z",
+                    "accessLevel": "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
                 }
             ]
         }
@@ -69,12 +72,162 @@ def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
             name="Основной",
             type="ACCOUNT_TYPE_TINKOFF",
             status="ACCOUNT_STATUS_OPEN",
+            opened_at=datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC),
+            access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
         )
     ]
     request = urlopen.call_args.args[0]
     assert request.full_url.endswith("UsersService/GetAccounts")
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {"status": "ACCOUNT_STATUS_OPEN"}
+
+
+def test_tbank_get_user_info_parses_qualification_context() -> None:
+    credential = "t.fake-owner-credential-1234567890"
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "premStatus": False,
+            "qualStatus": True,
+            "qualifiedForWorkWith": ["bond", "russian_shares"],
+            "tariff": "Investor",
+            "riskLevelCode": "CONSERVATIVE",
+            "userId": "provider-user-id",
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        info = client.get_user_info(credential, "prod")
+
+    assert info == TBankUserInfo(
+        premium=False,
+        qualified=True,
+        qualified_for_work_with=("bond", "russian_shares"),
+        tariff="Investor",
+        risk_level_code="CONSERVATIVE",
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("UsersService/GetInfo")
+    assert request.get_header("Authorization") == f"Bearer {credential}"
+    assert json.loads(request.data.decode()) == {}
+    assert "provider-user-id" not in repr(info)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"premStatus": "false", "qualStatus": False},
+        {"premStatus": False, "qualStatus": "false"},
+        {"premStatus": False, "qualStatus": False, "qualifiedForWorkWith": "bond"},
+    ],
+)
+def test_tbank_get_user_info_rejects_malformed_capabilities(
+    payload: dict[str, object],
+) -> None:
+    client = TBankInvestClient()
+    with (
+        patch("urllib.request.urlopen", return_value=FakeResponse(payload)),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_user_info("t.fake-owner-credential-1234567890", "prod")
+
+
+def test_tbank_operation_history_uses_cursor_without_write_methods() -> None:
+    credential = "t.fake-owner-credential-1234567890"
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "hasNext": True,
+            "nextCursor": "cursor-2",
+            "items": [
+                {
+                    "cursor": "cursor-1",
+                    "brokerAccountId": "account-1",
+                    "id": "operation-1",
+                    "parentOperationId": "",
+                    "name": "Покупка",
+                    "date": "2026-10-01T12:00:00Z",
+                    "type": "OPERATION_TYPE_BUY",
+                    "description": "Исполненная покупка",
+                    "state": "OPERATION_STATE_EXECUTED",
+                    "instrumentUid": "uid-1",
+                    "figi": "figi-1",
+                    "instrumentType": "share",
+                    "positionUid": "position-1",
+                    "ticker": "TEST",
+                    "classCode": "TQBR",
+                    "payment": {"currency": "rub", "units": "-100", "nano": 0},
+                    "price": {"currency": "rub", "units": "10", "nano": 0},
+                    "commission": {"currency": "rub", "units": "-1", "nano": 0},
+                    "accruedInt": {"currency": "rub", "units": "0", "nano": 0},
+                    "quantity": "10",
+                    "quantityRest": "0",
+                    "quantityDone": "10",
+                    "assetUid": "asset-1",
+                    "tradesInfo": {
+                        "trades": [
+                            {
+                                "num": "trade-1",
+                                "date": "2026-10-01T12:00:01Z",
+                                "quantity": "10",
+                                "price": {"currency": "rub", "units": "10", "nano": 0},
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        page = client.get_operations_by_cursor(
+            credential,
+            "prod",
+            "account-1",
+            from_at=datetime(2026, 9, 1, tzinfo=UTC),
+            to_at=datetime(2026, 10, 2, tzinfo=UTC),
+            cursor="cursor-1",
+            limit=1000,
+        )
+
+    assert page.has_next is True
+    assert page.next_cursor == "cursor-2"
+    assert page.items[0].id == "operation-1"
+    assert page.items[0].quantity_done == "10"
+    assert page.items[0].trades[0].num == "trade-1"
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("OperationsService/GetOperationsByCursor")
+    assert "OrdersService" not in request.full_url
+    assert json.loads(request.data.decode()) == {
+        "accountId": "account-1",
+        "from": "2026-09-01T00:00:00Z",
+        "to": "2026-10-02T00:00:00Z",
+        "limit": 1000,
+        "state": "OPERATION_STATE_UNSPECIFIED",
+        "withoutCommissions": False,
+        "withoutTrades": False,
+        "withoutOvernights": False,
+        "cursor": "cursor-1",
+    }
+
+
+def test_tbank_operation_history_uses_operations_service_on_sandbox_host() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse({"hasNext": False, "nextCursor": "", "items": []})
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        client.get_operations_by_cursor(
+            "t.fake-owner-credential-1234567890",
+            "sandbox",
+            "account-1",
+            from_at=datetime(2026, 10, 1, tzinfo=UTC),
+            to_at=datetime(2026, 10, 2, tzinfo=UTC),
+        )
+
+    request = urlopen.call_args.args[0]
+    assert request.full_url.startswith("https://sandbox-invest-public-api.tbank.ru/rest/")
+    assert request.full_url.endswith("OperationsService/GetOperationsByCursor")
+    assert "SandboxService" not in request.full_url
 
 
 def test_tbank_find_instruments_filters_to_api_trade_available_results() -> None:
@@ -359,6 +512,7 @@ def test_metadata_adapter_preserves_unknown_qualification_and_all_status_records
             sector="energy",
             country_of_risk="RU",
             for_qual_investor=None,
+            api_trade_available=False,
         ),
     )
     request = urlopen.call_args.args[0]
@@ -448,6 +602,8 @@ class FakeTBank:
                 name="Основной",
                 type="ACCOUNT_TYPE_TINKOFF",
                 status="ACCOUNT_STATUS_OPEN",
+                opened_at=datetime(2024, 1, 2, tzinfo=UTC),
+                access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
             )
         ]
 
@@ -637,6 +793,65 @@ def test_broker_service_keeps_two_users_strictly_isolated() -> None:
     assert service.status(first_user).connected is True
 
 
+@pytest.mark.parametrize(
+    ("status", "access_level"),
+    [
+        ("ACCOUNT_STATUS_CLOSED", "ACCOUNT_ACCESS_LEVEL_READ_ONLY"),
+        ("ACCOUNT_STATUS_OPEN", "ACCOUNT_ACCESS_LEVEL_NO_ACCESS"),
+        ("ACCOUNT_STATUS_OPEN", ""),
+        ("ACCOUNT_STATUS_OPEN", "ACCOUNT_ACCESS_LEVEL_UNSPECIFIED"),
+    ],
+)
+def test_broker_connect_fails_closed_without_verified_read_access(
+    status: str,
+    access_level: str,
+) -> None:
+    database = FakeDatabase()
+    fake = FakeTBank()
+    fake.accounts = [replace(fake.accounts[0], status=status, access_level=access_level)]
+    service = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=fake,
+    )
+
+    with pytest.raises(BrokerAccountNotAccessible):
+        service.connect(
+            user_id=UUID("00000000-0000-0000-0000-000000000001"),
+            credential="t.fake-owner-credential-1234567890",
+            environment="prod",
+            account_id="account-1",
+            terms_version="2026-10-02-v6",
+        )
+
+    assert database.record is None
+
+
+def test_broker_revalidates_selected_account_read_permission() -> None:
+    database = FakeDatabase()
+    user_id = UUID("00000000-0000-0000-0000-000000000001")
+    fake = FakeTBank()
+    service = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=fake,
+    )
+    service.connect(
+        user_id=user_id,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
+    )
+
+    account = service.revalidate_account(user_id)
+    assert account.access_level == "ACCOUNT_ACCESS_LEVEL_READ_ONLY"
+
+    fake.accounts = [replace(account, access_level="ACCOUNT_ACCESS_LEVEL_NO_ACCESS")]
+    with pytest.raises(BrokerAccountNotAccessible):
+        service.revalidate_account(user_id)
+
+
 def test_broker_service_refuses_account_outside_credential_scope() -> None:
     database = FakeDatabase()
     service = BrokerService(
@@ -655,6 +870,36 @@ def test_broker_service_refuses_account_outside_credential_scope() -> None:
         )
 
     assert database.record is None
+
+
+def test_daily_observation_can_refresh_all_supported_catalog_kinds() -> None:
+    database = FakeDatabase()
+    user_id = UUID("00000000-0000-0000-0000-000000000001")
+    fake = FakeTBank()
+    service = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=fake,
+    )
+    service.connect(
+        user_id=user_id,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
+    )
+
+    with patch.object(
+        fake,
+        "get_instrument_metadata",
+        create=True,
+        return_value=(),
+    ) as catalog:
+        snapshot = service.observation_bundle(user_id, full_catalog=True)
+
+    assert catalog.call_count == 3
+    assert {call.args[2] for call in catalog.call_args_list} == {"share", "bond", "etf"}
+    assert snapshot.sources[-1].status == "received"
 
 
 def test_analysis_metadata_outage_is_partial_and_calls_are_bounded_by_kind() -> None:
