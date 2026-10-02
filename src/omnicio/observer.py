@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import random
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Callable, TypeVar
+from functools import partial
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -35,10 +36,7 @@ HISTORY_PAGE_SIZE = 1000
 HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
 PROVIDER_READ_ATTEMPTS = 3
 
-T = TypeVar("T")
-
-
-def provider_read(operation: Callable[[], T]) -> T:
+def provider_read[T](operation: Callable[[], T]) -> T:
     """Retry idempotent provider reads with bounded exponential jitter."""
     for attempt in range(PROVIDER_READ_ATTEMPTS):
         try:
@@ -298,7 +296,8 @@ class PortfolioObserver:
         inserted = 0
         for page_number in range(1, MAX_HISTORY_PAGES_PER_RUN + 1):
             page = provider_read(
-                lambda: self.broker.history_page(
+                partial(
+                    self.broker.history_page,
                     user_id,
                     from_at=window_from,
                     to_at=window_to,
