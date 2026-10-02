@@ -68,6 +68,7 @@ class Database:
                     AND to_regclass('public.vkid_identities') IS NOT NULL
                     AND to_regclass('public.tbank_connection') IS NOT NULL
                     AND to_regclass('public.instrument_catalog') IS NOT NULL
+                    AND to_regclass('public.account_instrument_access') IS NOT NULL
                     AND to_regclass('public.issuer_groups') IS NOT NULL
                     AND to_regclass('public.issuers') IS NOT NULL
                     AND to_regclass('public.instrument_issuer_map') IS NOT NULL
@@ -85,12 +86,13 @@ class Database:
                           AND column_name = 'role'
                     )
                     AND (
-                        SELECT count(*) = 6
+                        SELECT count(*) = 7
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
                           AND c.relname = ANY (
                               ARRAY[
+                                  'account_instrument_access',
                                   'investment_profile_versions',
                                   'job_runs',
                                   'portfolio_snapshots',
@@ -481,6 +483,7 @@ class Database:
                 (str(user_id),),
             )
             cur.execute("DELETE FROM broker_sync_state WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM account_instrument_access WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM operation_observations WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM portfolio_snapshots WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM job_runs WHERE user_id = %s", (user_id,))
