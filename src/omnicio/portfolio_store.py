@@ -14,7 +14,13 @@ from uuid import UUID
 
 from .broker import BrokerObservationBundle
 from .db import Database
-from .tbank import TBankMoney, TBankOperation, TBankOperationsPage
+from .tbank import (
+    TBankAccount,
+    TBankMoney,
+    TBankOperation,
+    TBankOperationsPage,
+    TBankUserInfo,
+)
 
 JobStatus = Literal["running", "succeeded", "degraded", "failed"]
 
@@ -395,11 +401,28 @@ class PortfolioStore:
         *,
         job_run_id: UUID,
         bundle: BrokerObservationBundle,
+        account: TBankAccount | None = None,
+        user_info: TBankUserInfo | None = None,
     ) -> UUID:
-        evidence = {
+        evidence: dict[str, object] = {
             "analysis": asdict(bundle.analysis),
             "sources": [asdict(source) for source in bundle.sources],
         }
+        if account is not None:
+            evidence["account"] = {
+                "type": account.type,
+                "status": account.status,
+                "access_level": account.access_level,
+                "opened_at": account.opened_at,
+            }
+        if user_info is not None:
+            evidence["broker_user"] = {
+                "premium": user_info.premium,
+                "qualified": user_info.qualified,
+                "qualified_for_work_with": list(user_info.qualified_for_work_with),
+                "tariff": user_info.tariff,
+                "risk_level_code": user_info.risk_level_code,
+            }
         securities = {item.uid: item for item in bundle.analysis.securities}
         metadata = {item.uid: item for item in bundle.metadata}
         catalog_retrieved_at = next(
