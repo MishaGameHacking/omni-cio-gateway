@@ -114,7 +114,7 @@ def build_tbank_evidence(
     fundamentals = {item.asset_uid: item for item in evidence.fundamentals}
 
     for fundamental in evidence.fundamentals:
-        documents.append(_fundamental_document(fundamental, evidence.refreshed_at))
+        documents.append(_fundamental_document(fundamental))
 
     for dividend in evidence.dividends:
         payload = asdict(dividend)
@@ -297,14 +297,9 @@ def build_tbank_evidence(
             )
         )
 
-    source_status: EvidenceStatus = (
-        "partial"
-        if any(
-            source.status != "received"
-            for source in evidence.sources
-            if source.id != "credit_ratings"
-        )
-        else "received"
+    source_status, evidence_stale = _source_status(
+        evidence,
+        assessed_at=assessed_at,
     )
     metadata_by_uid = {item.uid: item for item in bundle.metadata}
     metadata_by_figi = {item.figi: item for item in bundle.metadata if item.figi}
@@ -344,7 +339,9 @@ def build_tbank_evidence(
                 reasons.append("fundamental_data_missing")
             elif fundamental_status == "stale":
                 reasons.append("fundamental_data_stale")
-            if source_status != "received":
+            if evidence_stale:
+                reasons.append("provider_evidence_stale")
+            elif source_status != "received":
                 reasons.append("provider_evidence_partial")
             if position.instrument_type == "etf":
                 reasons.append("fund_look_through_not_verified")
@@ -367,6 +364,10 @@ def build_tbank_evidence(
                     ),
                     "rating_policy": "missing_until_licensed_feed_is_verified",
                     "fundamental_max_age_days": FUNDAMENTAL_MAX_AGE.days,
+                    "evidence_retrieval_max_age_hours": int(
+                        EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds() // 3600
+                    ),
+                    "evidence_refreshed_at": evidence.refreshed_at.isoformat(),
                     "ruleset_version": RISK_RULESET_VERSION,
                 },
             )
@@ -375,10 +376,7 @@ def build_tbank_evidence(
     return tuple(documents), tuple(assessments)
 
 
-def _fundamental_document(
-    item: TBankAssetFundamental,
-    retrieved_at: datetime,
-) -> EvidenceDocument:
+def _fundamental_document(item: TBankAssetFundamental) -> EvidenceDocument:
     payload = asdict(item)
     facts: list[EvidenceFact] = []
     monetary_fields = set(MONETARY_FUNDAMENTAL_FIELDS)
@@ -418,6 +416,33 @@ def _fundamental_document(
         payload=payload,
         facts=tuple(facts),
     )
+
+
+def _source_status(
+    evidence: BrokerEvidenceSnapshot,
+    *,
+    assessed_at: datetime,
+) -> tuple[EvidenceStatus, bool]:
+    relevant = tuple(
+        source for source in evidence.sources if source.id != "credit_ratings"
+    )
+    if not relevant:
+        return "unavailable", True
+
+    timestamps = (evidence.refreshed_at, *(source.retrieved_at for source in relevant))
+    stale = any(
+        timestamp.tzinfo is None
+        or timestamp.astimezone(UTC) > assessed_at
+        or assessed_at - timestamp.astimezone(UTC) > EVIDENCE_RETRIEVAL_MAX_AGE
+        for timestamp in timestamps
+    )
+    if stale:
+        return "partial", True
+    if all(source.status == "received" for source in relevant):
+        return "received", False
+    if all(source.status == "unavailable" for source in relevant):
+        return "unavailable", False
+    return "partial", False
 
 
 def _fundamental_status(
