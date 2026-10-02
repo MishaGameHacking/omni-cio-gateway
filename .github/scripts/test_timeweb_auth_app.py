@@ -107,7 +107,6 @@ class AuthAppDeployTests(unittest.TestCase):
         os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
         os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
         os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
-        os.environ["LEGAL_OPERATOR_ADDRESS"] = "Moscow, Russian Federation"
         os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
         os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v3"
         os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v3"
