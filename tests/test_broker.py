@@ -793,6 +793,40 @@ def test_broker_service_keeps_two_users_strictly_isolated() -> None:
     assert service.status(first_user).connected is True
 
 
+@pytest.mark.parametrize(
+    ("status", "access_level"),
+    [
+        ("ACCOUNT_STATUS_CLOSED", "ACCOUNT_ACCESS_LEVEL_READ_ONLY"),
+        ("ACCOUNT_STATUS_OPEN", "ACCOUNT_ACCESS_LEVEL_NO_ACCESS"),
+        ("ACCOUNT_STATUS_OPEN", ""),
+        ("ACCOUNT_STATUS_OPEN", "ACCOUNT_ACCESS_LEVEL_UNSPECIFIED"),
+    ],
+)
+def test_broker_connect_fails_closed_without_verified_read_access(
+    status: str,
+    access_level: str,
+) -> None:
+    database = FakeDatabase()
+    fake = FakeTBank()
+    fake.accounts = [replace(fake.accounts[0], status=status, access_level=access_level)]
+    service = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=fake,
+    )
+
+    with pytest.raises(BrokerAccountNotAccessible):
+        service.connect(
+            user_id=UUID("00000000-0000-0000-0000-000000000001"),
+            credential="t.fake-owner-credential-1234567890",
+            environment="prod",
+            account_id="account-1",
+            terms_version="2026-10-02-v6",
+        )
+
+    assert database.record is None
+
+
 def test_broker_revalidates_selected_account_read_permission() -> None:
     database = FakeDatabase()
     user_id = UUID("00000000-0000-0000-0000-000000000001")
