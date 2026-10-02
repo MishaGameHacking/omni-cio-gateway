@@ -113,6 +113,33 @@ class InstrumentRiskAssessment:
     evidence: dict[str, object]
 
 
+def rating_source_references() -> tuple[dict[str, str], ...]:
+    """Describe official rating sources without pretending unconfigured feeds were ingested."""
+    return (
+        {
+            "id": "cbr_rating_repository",
+            "name": "Банк России — рейтинговый репозитарий",
+            "url": "https://ratings.cbr.ru/",
+            "access": "public_reference",
+            "ingestion": "reference_only",
+        },
+        {
+            "id": "expert_ra_rating_export",
+            "name": "Эксперт РА — REST/SOAP выгрузка рейтингов",
+            "url": "https://raexpert.ru/all-services/rating-export/",
+            "access": "subscription",
+            "ingestion": "not_configured",
+        },
+        {
+            "id": "acra_rating_feed",
+            "name": "АКРА — CSV data feed рейтингов",
+            "url": "https://www.acra-ratings.ru/services/predostavlenie-dannykh/",
+            "access": "subscription",
+            "ingestion": "not_configured",
+        },
+    )
+
+
 def build_tbank_evidence(
     bundle: BrokerObservationBundle,
     evidence: BrokerEvidenceSnapshot,
