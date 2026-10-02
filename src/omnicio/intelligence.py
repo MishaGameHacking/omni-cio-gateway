@@ -140,7 +140,13 @@ def build_tbank_evidence(
 
     for coupon in evidence.coupons:
         payload = asdict(coupon)
-        key = f"{coupon.instrument_uid}|{coupon.coupon_number}|{_time_key(coupon.coupon_date)}"
+        key = "|".join(
+            [
+                coupon.instrument_uid,
+                str(coupon.coupon_number),
+                _time_key(coupon.coupon_date),
+            ]
+        )
         documents.append(
             EvidenceDocument(
                 provider="tbank",
@@ -207,7 +213,10 @@ def build_tbank_evidence(
                         value_text=_time_key(bond_event.default_date) or None,
                         effective_at=bond_event.default_date,
                         published_at=bond_event.event_date,
-                        payload={"event_type": bond_event.event_type, "execution": bond_event.execution},
+                        payload={
+                            "event_type": bond_event.event_type,
+                            "execution": bond_event.execution,
+                        },
                     ),
                 ) if bond_event.default_date is not None else (),
                 payout=PayoutEvidence(
@@ -223,7 +232,11 @@ def build_tbank_evidence(
                         if bond_event.pay_one_bond is not None
                         else None
                     ),
-                    currency=bond_event.pay_one_bond.currency if bond_event.pay_one_bond else None,
+                    currency=(
+                        bond_event.pay_one_bond.currency
+                        if bond_event.pay_one_bond
+                        else None
+                    ),
                     status=status,
                     payload=payload,
                 ),
