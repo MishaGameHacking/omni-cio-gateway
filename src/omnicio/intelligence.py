@@ -42,7 +42,21 @@ RATIO_FUNDAMENTAL_FIELDS = (
     "roa",
 )
 FUNDAMENTAL_FIELDS = MONETARY_FUNDAMENTAL_FIELDS + RATIO_FUNDAMENTAL_FIELDS
-TBANK_INSTRUMENTS_SOURCE = "https://developer.tbank.ru/invest/services/instruments/methods"
+TBANK_DIVIDENDS_SOURCE = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
+)
+TBANK_BOND_COUPONS_SOURCE = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-bond-coupons"
+)
+TBANK_BOND_EVENTS_SOURCE = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-bond-events"
+)
+TBANK_ASSET_REPORTS_SOURCE = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-asset-reports"
+)
+TBANK_FUNDAMENTALS_SOURCE = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-asset-fundamentals"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +148,7 @@ def build_tbank_evidence(
                 document_type="dividend",
                 subject_uid=dividend.instrument_uid,
                 provider_key=key,
-                source_url=TBANK_INSTRUMENTS_SOURCE,
+                source_url=TBANK_DIVIDENDS_SOURCE,
                 published_at=dividend.created_at or dividend.declared_date,
                 effective_at=effective_at,
                 payload=payload,
@@ -173,7 +187,7 @@ def build_tbank_evidence(
                 document_type="bond_coupon",
                 subject_uid=coupon.instrument_uid,
                 provider_key=key,
-                source_url=TBANK_INSTRUMENTS_SOURCE,
+                source_url=TBANK_BOND_COUPONS_SOURCE,
                 published_at=None,
                 effective_at=coupon.coupon_date,
                 payload=payload,
@@ -216,7 +230,7 @@ def build_tbank_evidence(
                 document_type="bond_event",
                 subject_uid=bond_event.instrument_uid,
                 provider_key=key,
-                source_url=TBANK_INSTRUMENTS_SOURCE,
+                source_url=TBANK_BOND_EVENTS_SOURCE,
                 published_at=bond_event.event_date,
                 effective_at=(
                     bond_event.default_date
@@ -275,7 +289,7 @@ def build_tbank_evidence(
                 document_type="issuer_report_calendar",
                 subject_uid=report.instrument_uid,
                 provider_key=key,
-                source_url=TBANK_INSTRUMENTS_SOURCE,
+                source_url=TBANK_ASSET_REPORTS_SOURCE,
                 published_at=report.report_date,
                 effective_at=report.report_date,
                 payload=payload,
@@ -528,7 +542,7 @@ def _fundamental_document(item: TBankAssetFundamental) -> EvidenceDocument:
         document_type="asset_fundamentals",
         subject_uid=item.asset_uid,
         provider_key=provider_key,
-        source_url=TBANK_INSTRUMENTS_SOURCE,
+        source_url=TBANK_FUNDAMENTALS_SOURCE,
         published_at=None,
         effective_at=item.fiscal_period_end_date,
         payload=payload,
