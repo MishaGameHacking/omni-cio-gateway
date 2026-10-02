@@ -14,6 +14,7 @@ from omnicio.db import (
     UserRecord,
 )
 from omnicio.service import (
+    AccountDeletionRejected,
     AuthService,
     LoginUnavailable,
     RegistrationCapacityReached,
@@ -30,6 +31,7 @@ class FakeDatabase:
         self.registration_enabled: bool | None = None
         self.registration_max_users: int | None = None
         self.login_error: RuntimeError | None = None
+        self.deleted_user_id: UUID | None = None
         self.user = UserRecord(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
@@ -58,6 +60,10 @@ class FakeDatabase:
             return self.user
         return None
 
+    def delete_user_account(self, user_id: UUID) -> bool:
+        self.deleted_user_id = user_id
+        return True
+
     def revoke_session(self, token_digest):
         if token_digest == self.session_digest:
             self.session_digest = None
@@ -73,9 +79,9 @@ def settings(**overrides: object) -> Settings:
         "vkid_login_enabled": True,
         "registration_enabled": True,
         "registration_max_users": 2,
-        "privacy_version": "2026-10-02-v4",
-        "consent_version": "2026-10-02-v4",
-        "terms_version": "2026-10-02-v4",
+        "privacy_version": "2026-10-02-v5",
+        "consent_version": "2026-10-02-v5",
+        "terms_version": "2026-10-02-v5",
         "vkid_flow_ttl_seconds": 600,
         "session_ttl_seconds": 34_560_000,
     }
@@ -159,6 +165,24 @@ def test_vkid_login_rejects_stale_legal_versions() -> None:
         )
 
     assert db.session_digest is None
+
+
+def test_self_service_account_deletion_requires_exact_public_id() -> None:
+    db = FakeDatabase()
+    auth = AuthService(settings(), db)
+
+    assert auth.delete_account(db.user, "000000001") is True
+    assert db.deleted_user_id == db.user.id
+
+
+def test_self_service_account_deletion_rejects_wrong_public_id() -> None:
+    db = FakeDatabase()
+    auth = AuthService(settings(), db)
+
+    with pytest.raises(AccountDeletionRejected):
+        auth.delete_account(db.user, "000000002")
+
+    assert db.deleted_user_id is None
 
 
 def test_access_mode_reflects_registration_gate() -> None:

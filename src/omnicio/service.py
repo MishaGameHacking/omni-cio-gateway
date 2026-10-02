@@ -35,6 +35,10 @@ class RegistrationCapacityReached(AuthError):
     """A new VK ID cannot create an account because all slots are occupied."""
 
 
+class AccountDeletionRejected(AuthError):
+    """A self-service account deletion confirmation is invalid."""
+
+
 @dataclass(frozen=True, slots=True)
 class LoginSucceeded:
     session_token: str
@@ -101,6 +105,12 @@ class AuthService:
             session_digest(token),
             session_ttl_seconds=self.settings.session_ttl_seconds,
         )
+
+    def delete_account(self, user: UserRecord, confirmation_public_id: str) -> bool:
+        expected = format_public_id(user.public_id)
+        if confirmation_public_id != expected:
+            raise AccountDeletionRejected("profile ID confirmation does not match")
+        return self.database.delete_user_account(user.id)
 
     def logout(self, token: str) -> None:
         if token:

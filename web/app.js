@@ -18,6 +18,14 @@
   const settingsProfileRole = document.querySelector("#settings-profile-role");
   const settingsRegistrationState = document.querySelector("#settings-registration-state");
   const logoutButton = document.querySelector("#logout");
+  const deleteAccountStart = document.querySelector("#delete-account-start");
+  const deleteAccountForm = document.querySelector("#delete-account-form");
+  const deleteAccountProfileId = document.querySelector("#delete-account-profile-id");
+  const deleteAccountConfirmation = document.querySelector("#delete-account-confirmation");
+  const deleteAccountIrreversible = document.querySelector("#delete-account-irreversible");
+  const deleteAccountCancel = document.querySelector("#delete-account-cancel");
+  const deleteAccountSubmit = document.querySelector("#delete-account-submit");
+  const deleteAccountMessage = document.querySelector("#delete-account-message");
 
   const tbankForm = document.querySelector("#tbank-form");
   const tbankAccountForm = document.querySelector("#tbank-account-form");
@@ -112,6 +120,7 @@
   };
 
   let currentView = "home";
+  let currentProfileId = "";
   let pendingTbankCredential = null;
   let pendingTbankEnvironment = null;
   let deferredInstallPrompt = null;
@@ -1177,8 +1186,10 @@
   };
 
   const showProfile = (profile) => {
+    currentProfileId = profile.public_id;
     profileId.textContent = profile.public_id;
     settingsProfileId.textContent = profile.public_id;
+    deleteAccountProfileId.textContent = profile.public_id;
     settingsProfileRole.textContent = profile.role === "user" ? "Пользователь" : profile.role;
     authCard.classList.add("hidden");
     profilePanel.classList.remove("hidden");
@@ -1516,6 +1527,95 @@
       showMessage(tbankMessage, "Не удалось удалить подключение.", true);
     } finally {
       tbankDisconnect.disabled = false;
+    }
+  });
+
+  const closeDeleteAccountForm = () => {
+    deleteAccountForm.classList.add("hidden");
+    deleteAccountStart.setAttribute("aria-expanded", "false");
+    deleteAccountConfirmation.value = "";
+    deleteAccountIrreversible.checked = false;
+    deleteAccountSubmit.disabled = false;
+    deleteAccountCancel.disabled = false;
+    showMessage(deleteAccountMessage, "");
+  };
+
+  deleteAccountStart.addEventListener("click", () => {
+    const opening = deleteAccountForm.classList.contains("hidden");
+    if (!opening) {
+      closeDeleteAccountForm();
+      return;
+    }
+
+    deleteAccountForm.classList.remove("hidden");
+    deleteAccountStart.setAttribute("aria-expanded", "true");
+    showMessage(deleteAccountMessage, "");
+    deleteAccountConfirmation.focus();
+  });
+
+  deleteAccountCancel.addEventListener("click", () => {
+    closeDeleteAccountForm();
+    deleteAccountStart.focus();
+  });
+
+  deleteAccountForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    showMessage(deleteAccountMessage, "");
+
+    const confirmation = deleteAccountConfirmation.value.trim();
+    if (confirmation !== currentProfileId) {
+      showMessage(
+        deleteAccountMessage,
+        "ID профиля не совпадает. Введите текущий девятизначный ID полностью.",
+        true,
+      );
+      return;
+    }
+    if (!deleteAccountIrreversible.checked) {
+      showMessage(
+        deleteAccountMessage,
+        "Подтвердите, что понимаете необратимость удаления.",
+        true,
+      );
+      return;
+    }
+
+    deleteAccountSubmit.disabled = true;
+    deleteAccountCancel.disabled = true;
+    deleteAccountStart.disabled = true;
+    stopUsdRubStream();
+
+    try {
+      await api("/api/account/delete", {
+        method: "POST",
+        body: JSON.stringify({
+          confirm_public_id: confirmation,
+          confirm_irreversible: true,
+        }),
+      });
+      pendingTbankCredential = null;
+      location.replace("/");
+    } catch (error) {
+      deleteAccountSubmit.disabled = false;
+      deleteAccountCancel.disabled = false;
+      deleteAccountStart.disabled = false;
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (error.status === 400) {
+        showMessage(
+          deleteAccountMessage,
+          "Подтверждение не принято. Проверьте ID профиля и попробуйте снова.",
+          true,
+        );
+        return;
+      }
+      showMessage(
+        deleteAccountMessage,
+        "Аккаунт не удалён. Обновите страницу и повторите попытку.",
+        true,
+      );
     }
   });
 

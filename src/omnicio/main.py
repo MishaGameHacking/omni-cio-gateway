@@ -34,6 +34,7 @@ from .security import (
     seal_vkid_flow,
 )
 from .service import (
+    AccountDeletionRejected,
     AuthService,
     LoginUnavailable,
     RegistrationCapacityReached,
@@ -64,6 +65,11 @@ class TBankCredentialBody(BaseModel):
 
 class TBankConnectBody(TBankCredentialBody):
     account_id: str = Field(min_length=1, max_length=128)
+
+
+class DeleteAccountBody(BaseModel):
+    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_irreversible: bool
 
 
 def client_ip(request: Request) -> str:
@@ -646,6 +652,51 @@ def disconnect_tbank(
     require_same_origin(request)
     user = authenticated_user(request, session_token)
     broker_service(request).disconnect(user.id)
+    response.status_code = 204
+    return response
+
+
+@app.post("/api/account/delete", status_code=204)
+def delete_account(
+    body: DeleteAccountBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> Response:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    if not body.confirm_irreversible:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="irreversible deletion confirmation is required",
+        )
+
+    try:
+        deleted = service(request).delete_account(user, body.confirm_public_id)
+    except AccountDeletionRejected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="profile ID confirmation does not match",
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="account is not active",
+        ) from exc
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="account could not be deleted",
+        )
+
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
     response.status_code = 204
     return response
 

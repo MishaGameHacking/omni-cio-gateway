@@ -6,7 +6,7 @@ Current user-facing legal documents are published directly from:
 - `web/legal/consent.html`;
 - `web/legal/terms.html`.
 
-Version: `2026-10-02-v4`.
+Version: `2026-10-02-v5`.
 
 The personal-data consent is intentionally separate from the terms and privacy
 policy. Production registration must fail closed unless current legal versions,

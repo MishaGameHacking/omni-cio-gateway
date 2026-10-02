@@ -393,6 +393,20 @@ body[data-theme="dark"] .button-primary {
   background: var(--danger-soft);
 }
 
+.button-danger {
+  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: #ffffff;
+}
+
+body[data-theme="dark"] .button-danger {
+  color: #111720;
+}
+
+.button-danger:hover:not(:disabled) {
+  filter: brightness(.94);
+}
+
 #vkid-login {
   width: 100%;
   min-height: 52px;
@@ -1081,6 +1095,44 @@ select:hover {
 
 #logout {
   margin-top: 18px;
+}
+
+.danger-zone {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+}
+
+.danger-zone .card-label,
+.danger-zone h3 {
+  color: var(--danger);
+}
+
+#delete-account-start {
+  margin-top: 18px;
+}
+
+.account-delete-form {
+  max-width: 760px;
+  margin-top: 18px;
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+}
+
+.account-delete-form .field label {
+  line-height: 1.5;
+}
+
+.account-delete-form .field strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.danger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .mobile-nav {
