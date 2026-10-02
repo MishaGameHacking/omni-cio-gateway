@@ -86,6 +86,40 @@ CREATE TABLE IF NOT EXISTS source_facts (
 CREATE INDEX IF NOT EXISTS source_facts_subject_type_idx
     ON source_facts (subject_uid, fact_type, effective_at DESC);
 
+CREATE TABLE IF NOT EXISTS payout_events (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    source_document_id uuid NOT NULL REFERENCES source_documents(id) ON DELETE RESTRICT,
+    provider text NOT NULL,
+    instrument_uid text NOT NULL,
+    event_type text NOT NULL CHECK (
+        event_type IN ('dividend', 'coupon', 'bond_event', 'issuer_report')
+    ),
+    provider_key text NOT NULL,
+    announced_at timestamptz,
+    record_at timestamptz,
+    expected_at timestamptz,
+    actual_at timestamptz,
+    amount numeric(24, 9),
+    currency text,
+    status text NOT NULL CHECK (
+        status IN ('announced', 'scheduled', 'cancelled', 'paid', 'defaulted', 'observed')
+    ),
+    payload jsonb NOT NULL,
+    semantic_hash bytea NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT payout_events_uid_nonempty CHECK (
+        char_length(instrument_uid) BETWEEN 1 AND 128
+    ),
+    CONSTRAINT payout_events_key_nonempty CHECK (
+        char_length(provider_key) BETWEEN 1 AND 512
+    ),
+    CONSTRAINT payout_events_hash_size CHECK (octet_length(semantic_hash) = 32),
+    UNIQUE (provider, instrument_uid, event_type, provider_key, semantic_hash)
+);
+
+CREATE INDEX IF NOT EXISTS payout_events_instrument_date_idx
+    ON payout_events (instrument_uid, expected_at, actual_at);
+
 CREATE TABLE IF NOT EXISTS portfolio_risk_assessments (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -158,6 +192,12 @@ EXECUTE FUNCTION omnicio_reject_immutable_evidence_mutation();
 DROP TRIGGER IF EXISTS source_facts_immutable ON source_facts;
 CREATE TRIGGER source_facts_immutable
 BEFORE UPDATE OR DELETE ON source_facts
+FOR EACH ROW
+EXECUTE FUNCTION omnicio_reject_immutable_evidence_mutation();
+
+DROP TRIGGER IF EXISTS payout_events_immutable ON payout_events;
+CREATE TRIGGER payout_events_immutable
+BEFORE UPDATE OR DELETE ON payout_events
 FOR EACH ROW
 EXECUTE FUNCTION omnicio_reject_immutable_evidence_mutation();
 
