@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import random
+import secrets
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -46,7 +46,8 @@ def provider_read[T](operation: Callable[[], T]) -> T:
             if attempt + 1 == PROVIDER_READ_ATTEMPTS:
                 raise
             base = min(8.0, 2.0**attempt)
-            delay = base * (0.75 + random.random() * 0.5)
+            jitter = secrets.randbelow(1001) / 1000
+            delay = base * (0.75 + jitter * 0.5)
             time.sleep(delay)
     raise RuntimeError("provider read retry loop exhausted")
 
