@@ -720,8 +720,8 @@ def test_evidence_reads_are_paced_across_concurrent_users() -> None:
     )
 
     with (
-        patch("omnicio.broker.monotonic", side_effect=[0.0, 0.1, 0.31]),
-        patch("omnicio.broker.sleep") as sleep_mock,
+        patch("omnicio.broker.time.monotonic", side_effect=[0.0, 0.1, 0.31]),
+        patch("omnicio.broker.time.sleep") as sleep_mock,
     ):
         first = service._paced_evidence_read(lambda: "first")
         second = service._paced_evidence_read(lambda: "second")
