@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID
 
 import psycopg
+from psycopg import sql
 import pytest
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
@@ -124,17 +125,21 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
 
         admin.execute("DROP ROLE IF EXISTS omnicio_runtime_test")
         admin.execute(
-            """
-            CREATE ROLE omnicio_runtime_test
-            LOGIN
-            PASSWORD %s
-            NOSUPERUSER
-            NOCREATEDB
-            NOCREATEROLE
-            NOINHERIT
-            NOREPLICATION
-            """,
-            (RUNTIME_PASSWORD,),
+            sql.SQL(
+                """
+                CREATE ROLE {}
+                LOGIN
+                PASSWORD {}
+                NOSUPERUSER
+                NOCREATEDB
+                NOCREATEROLE
+                NOINHERIT
+                NOREPLICATION
+                """
+            ).format(
+                sql.Identifier("omnicio_runtime_test"),
+                sql.Literal(RUNTIME_PASSWORD),
+            )
         )
         admin.execute("GRANT CONNECT ON DATABASE omnicio_test TO omnicio_runtime_test")
         admin.execute("GRANT USAGE ON SCHEMA public TO omnicio_runtime_test")
