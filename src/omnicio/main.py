@@ -8,6 +8,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal, cast
 
@@ -560,6 +561,26 @@ def tbank_portfolio(
         "blocked_cash": [asdict(item) for item in snapshot.positions.blocked_money],
         "limits_loading_in_progress": snapshot.positions.limits_loading_in_progress,
     }
+
+
+@app.get(
+    "/api/portfolio/risk",
+    responses={401: {"description": "Authenticated session required"}},
+)
+def portfolio_risk_summary(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    now = datetime.now(UTC)
+    summary = portfolio_store(request).latest_risk_summary(
+        user.id,
+        payout_from=now - timedelta(days=30),
+        payout_to=now + timedelta(days=400),
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"summary": asdict(summary) if summary is not None else None}
 
 
 @app.get(
