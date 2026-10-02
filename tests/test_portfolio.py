@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,13 @@ from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
 from omnicio.main import app
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
 from omnicio.portfolio_store import InvestmentProfileRecord
+from omnicio.risk import (
+    PayoutEvidence,
+    RiskAssessment,
+    RiskReason,
+    RiskSnapshotSummary,
+    SourceEvidenceStatus,
+)
 from omnicio.tbank import (
     TBankAssetTotal,
     TBankInstrumentMetadata,
@@ -198,6 +206,75 @@ def test_duplicate_identity_is_rejected_instead_of_double_counted() -> None:
     item = position("duplicate", "1", "100")
     with pytest.raises(PortfolioAnalysisError):
         analyze_portfolio(portfolio(item, item), cash(), ())
+
+
+def test_risk_summary_http_is_private_and_uses_session_tenant() -> None:
+    now = datetime.now(UTC)
+    summary = RiskSnapshotSummary(
+        snapshot_id=uuid4(),
+        captured_at=now,
+        assessments=(
+            RiskAssessment(
+                instrument_uid="uid-1",
+                ticker="TEST",
+                state="watch",
+                sector_model="ordinary_company",
+                coverage="partial",
+                reasons=(
+                    RiskReason(
+                        code="leverage_watch",
+                        severity="watch",
+                        title="Наблюдение",
+                        detail="Проверяемый индикатор.",
+                        source_ids=("tbank_fundamentals",),
+                    ),
+                ),
+                evaluated_at=now,
+                latest_fundamental_period_end=now,
+                latest_report_date=now,
+            ),
+        ),
+        payouts=(
+            PayoutEvidence(
+                instrument_uid="uid-1",
+                kind="dividend",
+                event_key="dividend:test",
+                event_date=now,
+                record_date=now,
+                declared_at=now,
+                provider_payment_at=now,
+                amount_value="10",
+                amount_currency="RUB",
+                status="scheduled",
+                source_id="tbank_dividends",
+                source_url="https://developer.tbank.ru/invest/api/instruments-service-get-dividends",
+                details={},
+            ),
+        ),
+        sources=(
+            SourceEvidenceStatus(
+                source_id="tbank_fundamentals",
+                scope_key="uid-1",
+                status="received",
+                retrieved_at=now,
+                source_url="https://developer.tbank.ru/",
+            ),
+        ),
+    )
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-user"
+        store.return_value.latest_risk_summary.return_value = summary
+        response = TestClient(app).get("/api/portfolio/risk?user_id=attacker")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["summary"]["assessments"][0]["state"] == "watch"
+    store.return_value.latest_risk_summary.assert_called_once()
+    assert store.return_value.latest_risk_summary.call_args.args[0] == "server-user"
 
 
 def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
