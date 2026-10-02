@@ -1049,6 +1049,36 @@ def test_tbank_bond_events_preserve_documented_default_date() -> None:
     }
 
 
+def test_tbank_asset_reports_reject_mismatched_instrument_subject() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "events": [
+                {
+                    "instrumentId": "other-uid",
+                    "reportDate": "2026-09-30T00:00:00Z",
+                    "periodYear": 2026,
+                    "periodNum": 3,
+                    "periodType": "PERIOD_TYPE_QUARTER",
+                    "createdAt": "2026-09-29T18:00:00Z",
+                }
+            ]
+        }
+    )
+
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(TBankUnavailable, match="instrument does not match"),
+    ):
+        client.get_asset_reports(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "asset-report-uid",
+            from_at=datetime(2026, 9, 1, tzinfo=UTC),
+            to_at=datetime(2026, 10, 2, tzinfo=UTC),
+        )
+
+
 def test_tbank_fundamentals_reject_non_finite_provider_values() -> None:
     client = TBankInvestClient()
     response = FakeResponse(
