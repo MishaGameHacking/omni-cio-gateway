@@ -111,6 +111,15 @@ class TBankPortfolioPosition:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankRating:
+    agency_name: str
+    rating_level: str
+    rating_date: datetime
+    forecast: str
+    is_under_watch: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TBankInstrumentMetadata:
     uid: str
     name: str
@@ -145,6 +154,8 @@ class TBankInstrumentMetadata:
     real_exchange: str = ""
     tax_free: bool | None = None
     collateral: bool | None = None
+    risk_level: str = ""
+    ratings: tuple[TBankRating, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,6 +360,31 @@ class TBankInvestClient:
                 for value in _optional_list(item, "requiredTests")
                 if _text(value).strip()
             )
+            ratings: list[TBankRating] = []
+            for rating_raw in _optional_list(item, "ratings"):
+                rating = _required_object(rating_raw, "bond rating")
+                agency_name = _text(rating.get("agencyName")).strip()
+                rating_level = _text(rating.get("ratingLevel")).strip()
+                rating_date = _optional_provider_timestamp(rating.get("ratingDate"))
+                under_watch = rating.get("isUnderWatch", False)
+                if (
+                    not agency_name
+                    or not rating_level
+                    or rating_date is None
+                    or not isinstance(under_watch, bool)
+                ):
+                    raise TBankUnavailable(
+                        "T-Invest bond rating is missing required fields"
+                    )
+                ratings.append(
+                    TBankRating(
+                        agency_name=agency_name,
+                        rating_level=rating_level,
+                        rating_date=rating_date,
+                        forecast=_text(rating.get("forecast")).strip(),
+                        is_under_watch=under_watch,
+                    )
+                )
 
             result.append(
                 TBankInstrumentMetadata(
@@ -388,6 +424,8 @@ class TBankInvestClient:
                     real_exchange=_text(item.get("realExchange")).strip(),
                     tax_free=_optional_bool(item, "taxFreeFlag"),
                     collateral=_optional_bool(item, "collateralFlag"),
+                    risk_level=_text(item.get("riskLevel")).strip(),
+                    ratings=tuple(ratings),
                 )
             )
         return tuple(result)
