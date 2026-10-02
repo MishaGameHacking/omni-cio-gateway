@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from omnicio.optimizer import (
     OptimizationPolicy,
@@ -18,7 +19,7 @@ from omnicio.optimizer import (
 NOW = datetime(2026, 10, 2, 18, 0, tzinfo=UTC)
 
 
-def _policy(**overrides: object) -> OptimizationPolicy:
+def _policy(**overrides: Any) -> OptimizationPolicy:
     values: dict[str, object] = {
         "reserve_rub": Decimal("5000"),
         "planned_withdrawal_rub": Decimal("0"),
@@ -55,10 +56,10 @@ def _policy(**overrides: object) -> OptimizationPolicy:
         "is_qualified_investor": False,
     }
     values.update(overrides)
-    return OptimizationPolicy(**values)  # type: ignore[arg-type]
+    return OptimizationPolicy(**values)
 
 
-def _candidate(**overrides: object) -> OptimizerCandidate:
+def _candidate(**overrides: Any) -> OptimizerCandidate:
     candidate = OptimizerCandidate(
         instrument_uid="bond-1",
         ticker="BOND1",
@@ -93,7 +94,7 @@ def _candidate(**overrides: object) -> OptimizerCandidate:
     return replace(candidate, **overrides)
 
 
-def _state(**overrides: object) -> PortfolioExposureState:
+def _state(**overrides: Any) -> PortfolioExposureState:
     state = PortfolioExposureState(
         nav_rub=Decimal("100000"),
         available_cash_rub=Decimal("30000"),
