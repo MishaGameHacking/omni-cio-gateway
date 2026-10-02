@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from threading import Lock
-from time import monotonic, sleep
 from typing import Any, cast
 from uuid import UUID
 
@@ -124,7 +124,7 @@ class BrokerService:
         self.database = database
         self.credential_key = credential_key
         self.tbank = tbank
-        self._instrument_evidence_lock = Lock()
+        self._instrument_evidence_lock = threading.Lock()
         self._next_instrument_evidence_at = 0.0
 
     def preview_accounts(
@@ -329,11 +329,11 @@ class BrokerService:
         **kwargs: Any,
     ) -> Any:
         with self._instrument_evidence_lock:
-            now = monotonic()
+            now = time.monotonic()
             delay = self._next_instrument_evidence_at - now
             if delay > 0:
-                sleep(delay)
-                now = monotonic()
+                time.sleep(delay)
+                now = time.monotonic()
             self._next_instrument_evidence_at = (
                 now + INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS
             )
