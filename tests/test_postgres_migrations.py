@@ -37,13 +37,13 @@ def _apply_all_migrations() -> None:
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0006_portfolio_observer.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0007_risk_evidence.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        # The additive R2 migration is safe to retry after an interrupted
+        # The current additive migration is safe to retry after an interrupted
         # reconciler run. Accepted migrations are never rewritten after release.
-        admin.execute((ROOT / "migrations" / "0006_portfolio_observer.sql").read_text())
+        admin.execute((ROOT / "migrations" / "0007_risk_evidence.sql").read_text())
 
         table_names = {
             row[0]
@@ -64,6 +64,11 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "portfolio_snapshot_positions",
             "operation_observations",
             "broker_sync_state",
+            "source_documents",
+            "source_facts",
+            "risk_source_runs",
+            "payout_observations",
+            "risk_assessments",
         } <= table_names
 
         protected = {
@@ -82,13 +87,18 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_snapshots',
                           'portfolio_snapshot_positions',
                           'operation_observations',
-                          'broker_sync_state'
+                          'broker_sync_state',
+                          'source_documents',
+                          'source_facts',
+                          'risk_source_runs',
+                          'payout_observations',
+                          'risk_assessments'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 7
+        assert len(protected) == 12
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
@@ -201,6 +211,31 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             (USER_ONE,),
         )
         runtime.execute(
+            """
+            INSERT INTO source_documents (
+                user_id,
+                source_id,
+                scope_key,
+                document_kind,
+                source_url,
+                retrieved_at,
+                content_hash,
+                payload
+            )
+            VALUES (
+                %s,
+                'test-source',
+                'instrument-1',
+                'test-document',
+                'https://example.invalid/source',
+                now(),
+                digest('document-one', 'sha256'),
+                '{"value": 1}'::jsonb
+            )
+            """,
+            (USER_ONE,),
+        )
+        runtime.execute(
             "SELECT set_config('omnicio.user_id', %s, false)",
             (str(USER_TWO),),
         )
@@ -209,6 +244,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         ).fetchone()[0] == 0
         assert runtime.execute(
             "SELECT count(*) FROM account_instrument_access"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM source_documents"
         ).fetchone()[0] == 0
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
