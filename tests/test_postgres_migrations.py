@@ -40,13 +40,15 @@ def _apply_all_migrations() -> None:
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0007_portfolio_evidence.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0008_portfolio_optimizer_metadata.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        # The additive R3 migration is safe to retry before release. Once
+        # The additive R4 migration is safe to retry before release. Once
         # accepted on main it becomes immutable migration history.
-        admin.execute((ROOT / "migrations" / "0007_portfolio_evidence.sql").read_text())
+        admin.execute(
+            (ROOT / "migrations" / "0008_portfolio_optimizer_metadata.sql").read_text()
+        )
 
         table_names = {
             row[0]
