@@ -24,8 +24,23 @@ from .config import load_settings
 from .db import Database
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import PortfolioStore
+from .risk import (
+    FundamentalEvidence,
+    InstrumentRiskEvidence,
+    PayoutEvidence,
+    ReportEvidence,
+    SourceEvidenceStatus,
+    assess_instrument,
+)
 from .security import SecurityValueError
-from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
+from .tbank import (
+    TBankBondEvent,
+    TBankCoupon,
+    TBankDividend,
+    TBankInvestClient,
+    TBankTokenRejected,
+    TBankUnavailable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +51,26 @@ MAX_HISTORY_PAGES_PER_RUN = 20
 HISTORY_PAGE_SIZE = 1000
 HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
 PROVIDER_READ_ATTEMPTS = 3
+RISK_LOOKBACK = timedelta(days=550)
+RISK_LOOKAHEAD = timedelta(days=400)
+INSTRUMENT_SERVICE_MIN_INTERVAL_SECONDS = 0.35
+
+TBANK_FUNDAMENTALS_URL = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-asset-fundamentals"
+)
+TBANK_REPORTS_URL = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-asset-reports"
+)
+TBANK_DIVIDENDS_URL = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
+)
+TBANK_COUPONS_URL = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-bond-coupons"
+)
+TBANK_BOND_EVENTS_URL = (
+    "https://developer.tbank.ru/invest/api/instruments-service-get-bond-events"
+)
+CBR_RATING_REPOSITORY_URL = "https://ratings.cbr.ru/"
 
 def provider_read[T](operation: Callable[[], T]) -> T:
     """Retry idempotent provider reads with bounded exponential jitter."""
@@ -50,6 +85,96 @@ def provider_read[T](operation: Callable[[], T]) -> T:
             delay = base * (0.75 + jitter * 0.5)
             time.sleep(delay)
     raise RuntimeError("provider read retry loop exhausted")
+
+
+def _dividend_evidence(item: TBankDividend) -> PayoutEvidence:
+    cancelled = item.dividend_type.strip().casefold() == "cancelled"
+    event_key = (
+        f"dividend:{item.record_date.date().isoformat()}:"
+        f"{item.dividend_type.strip().casefold() or 'unspecified'}"
+    )
+    return PayoutEvidence(
+        instrument_uid=item.instrument_uid,
+        kind="dividend",
+        event_key=event_key,
+        event_date=item.payment_date,
+        record_date=item.record_date,
+        declared_at=item.declared_date,
+        provider_payment_at=item.payment_date,
+        amount_value=item.amount.value,
+        amount_currency=item.amount.currency,
+        status="cancelled" if cancelled else "scheduled",
+        source_id="tbank_dividends",
+        source_url=TBANK_DIVIDENDS_URL,
+        details={
+            "last_buy_date": item.last_buy_date,
+            "dividend_type": item.dividend_type,
+            "regularity": item.regularity,
+            "provider_created_at": item.created_at,
+        },
+    )
+
+
+def _coupon_evidence(item: TBankCoupon) -> PayoutEvidence:
+    return PayoutEvidence(
+        instrument_uid=item.instrument_uid,
+        kind="coupon",
+        event_key=(
+            f"coupon:{item.coupon_number}:{item.coupon_date.date().isoformat()}"
+        ),
+        event_date=item.coupon_date,
+        record_date=item.fix_date,
+        declared_at=None,
+        provider_payment_at=item.coupon_date,
+        amount_value=item.amount.value,
+        amount_currency=item.amount.currency,
+        status="scheduled",
+        source_id="tbank_bond_coupons",
+        source_url=TBANK_COUPONS_URL,
+        details={
+            "figi": item.figi,
+            "coupon_number": item.coupon_number,
+            "coupon_type": item.coupon_type,
+            "coupon_start_date": item.coupon_start_date,
+            "coupon_end_date": item.coupon_end_date,
+            "coupon_period_days": item.coupon_period_days,
+        },
+    )
+
+
+def _bond_event_evidence(item: TBankBondEvent) -> PayoutEvidence:
+    status = "default_reported" if item.default_date is not None else (
+        item.execution or item.event_type or "scheduled"
+    )
+    return PayoutEvidence(
+        instrument_uid=item.instrument_uid,
+        kind="bond_event",
+        event_key=(
+            f"bond-event:{item.event_type}:{item.event_number}:"
+            f"{item.event_date.date().isoformat()}"
+        ),
+        event_date=item.event_date,
+        record_date=item.fix_date,
+        declared_at=item.rate_date,
+        provider_payment_at=item.real_pay_date or item.pay_date,
+        amount_value=item.pay_one_bond.value if item.pay_one_bond is not None else None,
+        amount_currency=(
+            item.pay_one_bond.currency if item.pay_one_bond is not None else None
+        ),
+        status=status,
+        source_id="tbank_bond_events",
+        source_url=TBANK_BOND_EVENTS_URL,
+        details={
+            "event_number": item.event_number,
+            "event_type": item.event_type,
+            "default_date": item.default_date,
+            "real_pay_date": item.real_pay_date,
+            "pay_date": item.pay_date,
+            "execution": item.execution,
+            "operation_type": item.operation_type,
+            "note": item.note,
+        },
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +313,7 @@ class PortfolioObserver:
             bundle = provider_read(
                 lambda: self.broker.observation_bundle(user_id, full_catalog=True)
             )
-            self.store.save_snapshot(
+            snapshot_id = self.store.save_snapshot(
                 user_id,
                 job_run_id=job.id,
                 bundle=bundle,
@@ -209,6 +334,16 @@ class PortfolioObserver:
             profile = self.store.current_profile(user_id)
             details["profile_version"] = profile.version if profile else None
 
+            risk_result = self._sync_risk_evidence(
+                user_id,
+                snapshot_id=snapshot_id,
+                bundle=bundle,
+                now=now,
+            )
+            details["risk_assessments"] = risk_result[0]
+            details["risk_unavailable_sources"] = risk_result[1]
+            details["risk_states"] = risk_result[2]
+
             history_result = self._sync_history(
                 user_id,
                 account_id=bundle.account_id,
@@ -226,6 +361,7 @@ class PortfolioObserver:
                 or details["catalog_status"] == "partial"
                 or details["broker_user_info_status"] != "received"
                 or details["history_status"] != "complete"
+                or int(details["risk_unavailable_sources"]) > 0
             )
             final_status: Literal["succeeded", "degraded"] = (
                 "degraded" if degraded else "succeeded"
@@ -283,6 +419,312 @@ class PortfolioObserver:
                     type(finish_exc).__name__,
                 )
             raise
+
+    def _sync_risk_evidence(
+        self,
+        user_id: UUID,
+        *,
+        snapshot_id: UUID,
+        bundle: object,
+        now: datetime,
+    ) -> tuple[int, int, dict[str, int]]:
+        # The observer only deep-reads current holdings. Candidate research is a
+        # separate bounded stage; broad catalog metadata must not trigger N×API calls.
+        securities = tuple(getattr(bundle.analysis, "securities"))
+        metadata_by_uid = {item.uid: item for item in getattr(bundle, "metadata")}
+        if not securities:
+            self.store.save_risk_evidence(
+                user_id,
+                snapshot_id=snapshot_id,
+                evidences=(),
+                assessments=(),
+            )
+            return 0, 0, {}
+
+        next_instrument_call_at = 0.0
+
+        def paced_read[T](operation: Callable[[], T]) -> T:
+            nonlocal next_instrument_call_at
+            now_monotonic = time.monotonic()
+            delay = next_instrument_call_at - now_monotonic
+            if delay > 0:
+                time.sleep(delay)
+            result = provider_read(operation)
+            next_instrument_call_at = (
+                time.monotonic() + INSTRUMENT_SERVICE_MIN_INTERVAL_SECONDS
+            )
+            return result
+
+        asset_uids = tuple(
+            dict.fromkeys(
+                item.asset_uid
+                for security in securities
+                if (item := metadata_by_uid.get(security.uid)) is not None
+                and item.asset_uid
+            )
+        )
+        fundamentals_by_asset: dict[str, object] = {}
+        fundamental_failed_assets: set[str] = set()
+        for offset in range(0, len(asset_uids), 100):
+            batch = asset_uids[offset : offset + 100]
+            try:
+                rows = paced_read(lambda batch=batch: self.broker.asset_fundamentals(
+                    user_id,
+                    batch,
+                ))
+            except TBankUnavailable:
+                fundamental_failed_assets.update(batch)
+            else:
+                fundamentals_by_asset.update({item.asset_uid: item for item in rows})
+
+        window_from = now - RISK_LOOKBACK
+        window_to = now + RISK_LOOKAHEAD
+        evidences: list[InstrumentRiskEvidence] = []
+        assessments = []
+        unavailable_count = 0
+
+        for security in securities:
+            metadata = metadata_by_uid.get(security.uid)
+            asset_uid = metadata.asset_uid if metadata is not None else ""
+            source_rows: list[SourceEvidenceStatus] = []
+            payout_rows: list[PayoutEvidence] = []
+            report_rows: tuple[ReportEvidence, ...] = ()
+            fundamental = None
+            confirmed_default_at = None
+
+            fundamental_row = fundamentals_by_asset.get(asset_uid) if asset_uid else None
+            if fundamental_row is not None:
+                fundamental = FundamentalEvidence(
+                    instrument_uid=security.uid,
+                    asset_uid=asset_uid,
+                    currency=fundamental_row.currency,
+                    retrieved_at=now,
+                    fiscal_period_end=fundamental_row.fiscal_period_end_date,
+                    metrics={
+                        "revenue_ttm": fundamental_row.revenue_ttm,
+                        "ebitda_ttm": fundamental_row.ebitda_ttm,
+                        "net_income_ttm": fundamental_row.net_income_ttm,
+                        "free_cash_flow_ttm": fundamental_row.free_cash_flow_ttm,
+                        "total_debt_mrq": fundamental_row.total_debt_mrq,
+                        "total_debt_to_equity_mrq": (
+                            fundamental_row.total_debt_to_equity_mrq
+                        ),
+                        "total_debt_to_ebitda_mrq": (
+                            fundamental_row.total_debt_to_ebitda_mrq
+                        ),
+                        "net_debt_to_ebitda": fundamental_row.net_debt_to_ebitda,
+                        "current_ratio_mrq": fundamental_row.current_ratio_mrq,
+                        "fixed_charge_coverage_ratio_fy": (
+                            fundamental_row.fixed_charge_coverage_ratio_fy
+                        ),
+                        "net_interest_margin_mrq": fundamental_row.net_interest_margin_mrq,
+                        "roe": fundamental_row.roe,
+                        "roa": fundamental_row.roa,
+                        "total_debt_change_five_years": (
+                            fundamental_row.total_debt_change_five_years
+                        ),
+                    },
+                )
+                fundamental_status: Literal["received", "partial", "unavailable"] = "received"
+            elif asset_uid in fundamental_failed_assets:
+                fundamental_status = "unavailable"
+                unavailable_count += 1
+            else:
+                fundamental_status = "partial"
+            source_rows.append(
+                SourceEvidenceStatus(
+                    source_id="tbank_fundamentals",
+                    scope_key=security.uid,
+                    status=fundamental_status,
+                    retrieved_at=now,
+                    source_url=TBANK_FUNDAMENTALS_URL,
+                )
+            )
+
+            try:
+                reports = paced_read(
+                    lambda uid=security.uid: self.broker.asset_reports(
+                        user_id,
+                        uid,
+                        from_at=window_from,
+                        to_at=window_to,
+                    )
+                )
+            except TBankUnavailable:
+                source_rows.append(
+                    SourceEvidenceStatus(
+                        source_id="tbank_reports",
+                        scope_key=security.uid,
+                        status="unavailable",
+                        retrieved_at=now,
+                        source_url=TBANK_REPORTS_URL,
+                    )
+                )
+                unavailable_count += 1
+            else:
+                report_rows = tuple(
+                    ReportEvidence(
+                        instrument_uid=security.uid,
+                        report_date=item.report_date,
+                        period_year=item.period_year,
+                        period_num=item.period_num,
+                        period_type=item.period_type,
+                        created_at=item.created_at,
+                    )
+                    for item in reports
+                )
+                source_rows.append(
+                    SourceEvidenceStatus(
+                        source_id="tbank_reports",
+                        scope_key=security.uid,
+                        status="received",
+                        retrieved_at=now,
+                        source_url=TBANK_REPORTS_URL,
+                    )
+                )
+
+            if security.instrument_type in {"share", "etf"}:
+                try:
+                    dividends = paced_read(
+                        lambda uid=security.uid: self.broker.dividends(
+                            user_id,
+                            uid,
+                            from_at=window_from,
+                            to_at=window_to,
+                        )
+                    )
+                except TBankUnavailable:
+                    source_rows.append(
+                        SourceEvidenceStatus(
+                            source_id="tbank_dividends",
+                            scope_key=security.uid,
+                            status="unavailable",
+                            retrieved_at=now,
+                            source_url=TBANK_DIVIDENDS_URL,
+                        )
+                    )
+                    unavailable_count += 1
+                else:
+                    payout_rows.extend(_dividend_evidence(item) for item in dividends)
+                    source_rows.append(
+                        SourceEvidenceStatus(
+                            source_id="tbank_dividends",
+                            scope_key=security.uid,
+                            status="received",
+                            retrieved_at=now,
+                            source_url=TBANK_DIVIDENDS_URL,
+                        )
+                    )
+
+            if security.instrument_type == "bond":
+                try:
+                    coupons = paced_read(
+                        lambda uid=security.uid: self.broker.bond_coupons(
+                            user_id,
+                            uid,
+                            from_at=window_from,
+                            to_at=window_to,
+                        )
+                    )
+                except TBankUnavailable:
+                    source_rows.append(
+                        SourceEvidenceStatus(
+                            source_id="tbank_bond_coupons",
+                            scope_key=security.uid,
+                            status="unavailable",
+                            retrieved_at=now,
+                            source_url=TBANK_COUPONS_URL,
+                        )
+                    )
+                    unavailable_count += 1
+                else:
+                    payout_rows.extend(_coupon_evidence(item) for item in coupons)
+                    source_rows.append(
+                        SourceEvidenceStatus(
+                            source_id="tbank_bond_coupons",
+                            scope_key=security.uid,
+                            status="received",
+                            retrieved_at=now,
+                            source_url=TBANK_COUPONS_URL,
+                        )
+                    )
+
+                try:
+                    bond_events = paced_read(
+                        lambda uid=security.uid: self.broker.bond_events(
+                            user_id,
+                            uid,
+                            from_at=window_from,
+                            to_at=window_to,
+                        )
+                    )
+                except TBankUnavailable:
+                    source_rows.append(
+                        SourceEvidenceStatus(
+                            source_id="tbank_bond_events",
+                            scope_key=security.uid,
+                            status="unavailable",
+                            retrieved_at=now,
+                            source_url=TBANK_BOND_EVENTS_URL,
+                        )
+                    )
+                    unavailable_count += 1
+                else:
+                    payout_rows.extend(_bond_event_evidence(item) for item in bond_events)
+                    default_dates = [
+                        item.default_date
+                        for item in bond_events
+                        if item.default_date is not None
+                    ]
+                    if default_dates:
+                        confirmed_default_at = min(default_dates)
+                    source_rows.append(
+                        SourceEvidenceStatus(
+                            source_id="tbank_bond_events",
+                            scope_key=security.uid,
+                            status="received",
+                            retrieved_at=now,
+                            source_url=TBANK_BOND_EVENTS_URL,
+                        )
+                    )
+
+            # The CBR rating repository is an official public reference, but this
+            # release does not scrape undocumented HTML nor assume agency feed rights.
+            source_rows.append(
+                SourceEvidenceStatus(
+                    source_id="cbr_cra_registry",
+                    scope_key=security.uid,
+                    status="not_configured",
+                    retrieved_at=now,
+                    source_url=CBR_RATING_REPOSITORY_URL,
+                )
+            )
+
+            evidence = InstrumentRiskEvidence(
+                instrument_uid=security.uid,
+                ticker=security.ticker,
+                instrument_type=security.instrument_type,
+                sector=security.sector,
+                fundamental=fundamental,
+                reports=report_rows,
+                payouts=tuple(payout_rows),
+                confirmed_default_at=confirmed_default_at,
+                sources=tuple(source_rows),
+            )
+            evidences.append(evidence)
+            assessments.append(assess_instrument(evidence, now=now))
+
+        assessment_tuple = tuple(assessments)
+        self.store.save_risk_evidence(
+            user_id,
+            snapshot_id=snapshot_id,
+            evidences=tuple(evidences),
+            assessments=assessment_tuple,
+        )
+        state_counts: dict[str, int] = {}
+        for assessment in assessment_tuple:
+            state_counts[assessment.state] = state_counts.get(assessment.state, 0) + 1
+        return len(assessment_tuple), unavailable_count, state_counts
 
     def _sync_history(
         self,
