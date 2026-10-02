@@ -323,6 +323,17 @@ def build_tbank_evidence(
         provider_uid = info.uid if info is not None else uid
         default_date = defaults.get(provider_uid)
         fundamental_status = _fundamental_status(info, fundamentals, assessed_at)
+        fundamental = (
+            fundamentals.get(info.asset_uid)
+            if info is not None and info.asset_uid
+            else None
+        )
+        metric_state, metric_reasons, metric_profile, metric_signals = (
+            _fundamental_watch_signals(
+                fundamental,
+                status=fundamental_status,
+            )
+        )
         rating_status: DataStatus = (
             "not_applicable" if position.instrument_type == "etf" else "data_missing"
         )
@@ -333,6 +344,7 @@ def build_tbank_evidence(
             state = "confirmed_default"
             reasons.append("tbank_bond_event_contains_default_date")
         else:
+            reasons.extend(metric_reasons)
             if rating_status == "data_missing":
                 reasons.append("credit_rating_feed_not_verified")
             if fundamental_status == "data_missing":
@@ -345,7 +357,13 @@ def build_tbank_evidence(
                 reasons.append("provider_evidence_partial")
             if position.instrument_type == "etf":
                 reasons.append("fund_look_through_not_verified")
-            state = "data_missing" if reasons else "normal"
+
+            if evidence_stale:
+                state = "data_missing"
+            elif metric_state is not None:
+                state = metric_state
+            else:
+                state = "data_missing" if reasons else "normal"
 
         assessments.append(
             InstrumentRiskAssessment(
@@ -369,11 +387,111 @@ def build_tbank_evidence(
                     ),
                     "evidence_refreshed_at": evidence.refreshed_at.isoformat(),
                     "ruleset_version": RISK_RULESET_VERSION,
+                    "metric_profile": metric_profile,
+                    "metric_signals": metric_signals,
                 },
             )
         )
 
     return tuple(documents), tuple(assessments)
+
+
+def _fundamental_watch_signals(
+    item: TBankAssetFundamental | None,
+    *,
+    status: DataStatus,
+) -> tuple[
+    Literal["watch", "elevated"] | None,
+    tuple[str, ...],
+    str,
+    tuple[dict[str, object], ...],
+]:
+    if item is None or status != "received":
+        return None, (), "unknown", ()
+
+    if item.net_interest_margin_mrq is not None:
+        profile = "bank_like"
+    elif any(
+        value is not None
+        for value in (
+            item.ebitda_ttm,
+            item.fixed_charge_coverage_ratio_fy,
+            item.net_debt_to_ebitda,
+            item.current_ratio_mrq,
+        )
+    ):
+        profile = "corporate"
+    else:
+        return None, (), "unknown", ()
+
+    reasons: list[str] = []
+    signals: list[dict[str, object]] = []
+    elevated = False
+
+    def record(code: str, metric: str, value: Decimal) -> None:
+        reasons.append(code)
+        signals.append(
+            {
+                "code": code,
+                "metric": metric,
+                "value": str(value),
+            }
+        )
+
+    if profile == "bank_like":
+        for metric in ("net_interest_margin_mrq", "roe", "roa"):
+            raw = getattr(item, metric)
+            if raw is None:
+                continue
+            value = Decimal(raw)
+            if value < 0:
+                record(f"{metric}_negative", metric, value)
+    else:
+        if item.fixed_charge_coverage_ratio_fy is not None:
+            fccr = Decimal(item.fixed_charge_coverage_ratio_fy)
+            if fccr < 1:
+                record(
+                    "fixed_charge_coverage_ratio_below_one",
+                    "fixed_charge_coverage_ratio_fy",
+                    fccr,
+                )
+                elevated = True
+
+        if item.ebitda_ttm is not None:
+            ebitda = Decimal(item.ebitda_ttm)
+            if ebitda < 0:
+                record("ebitda_negative", "ebitda_ttm", ebitda)
+
+        if (
+            item.free_cash_flow_ttm is not None
+            and item.total_debt_mrq is not None
+        ):
+            free_cash_flow = Decimal(item.free_cash_flow_ttm)
+            debt = Decimal(item.total_debt_mrq)
+            if free_cash_flow < 0 and debt > 0:
+                record(
+                    "free_cash_flow_negative_with_debt",
+                    "free_cash_flow_ttm",
+                    free_cash_flow,
+                )
+
+        if item.current_ratio_mrq is not None:
+            current_ratio = Decimal(item.current_ratio_mrq)
+            if current_ratio < 1:
+                record(
+                    "current_ratio_below_one",
+                    "current_ratio_mrq",
+                    current_ratio,
+                )
+
+    if not reasons:
+        return None, (), profile, ()
+    return (
+        "elevated" if elevated else "watch",
+        tuple(reasons),
+        profile,
+        tuple(signals),
+    )
 
 
 def _fundamental_document(item: TBankAssetFundamental) -> EvidenceDocument:
