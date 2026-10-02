@@ -7,6 +7,7 @@ from omnicio.intelligence import build_tbank_evidence
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.tbank import (
     TBankAssetFundamental,
+    TBankAssetReport,
     TBankBondEvent,
     TBankInstrumentMetadata,
     TBankMoney,
@@ -208,6 +209,39 @@ def test_documented_bond_default_date_is_confirmed_default() -> None:
     assert documents[0].payout.status == "defaulted"
     assert assessments[0].state == "confirmed_default"
     assert assessments[0].evidence["default_date"] == "2026-09-30T00:00:00+00:00"
+
+
+def test_report_date_is_preserved_as_publication_time() -> None:
+    report_date = datetime(2026, 9, 30, 7, 0, tzinfo=UTC)
+    created_at = datetime(2026, 9, 29, 18, 0, tzinfo=UTC)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
+        dividends=(),
+        coupons=(),
+        bond_events=(),
+        reports=(
+            TBankAssetReport(
+                instrument_uid="bond-uid",
+                report_date=report_date,
+                period_year=2026,
+                period_num=3,
+                period_type="PERIOD_TYPE_QUARTER",
+                created_at=created_at,
+            ),
+        ),
+        fundamentals=(),
+        sources=_sources(datetime(2026, 10, 2, 6, 0, tzinfo=UTC)),
+    )
+
+    documents, _ = build_tbank_evidence(
+        _bundle(),
+        evidence,
+        assessed_at=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
+    )
+
+    report = next(item for item in documents if item.document_type == "issuer_report_calendar")
+    assert report.published_at == report_date
+    assert report.facts[0].published_at == report_date
 
 
 def test_partial_provider_evidence_never_becomes_normal() -> None:
