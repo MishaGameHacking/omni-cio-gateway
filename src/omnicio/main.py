@@ -488,6 +488,12 @@ def save_investment_profile(
 ) -> dict[str, object]:
     require_same_origin(request)
     user = authenticated_user(request, session_token)
+    database: Database = request.app.state.database
+    if not database.has_legal_versions(user.id, service(request).legal_versions()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="updated legal consent required",
+        )
     profile = portfolio_store(request).save_profile(
         user.id,
         reserve_rub=body.reserve_rub,
