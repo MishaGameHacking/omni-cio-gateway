@@ -100,6 +100,9 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         "AND to_regclass('public.legal_acceptances') IS NOT NULL "
         "AND to_regclass('public.vkid_identities') IS NOT NULL "
         "AND to_regclass('public.tbank_connection') IS NOT NULL "
+        "AND EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'users' "
+        "AND column_name = 'role') "
         "THEN 'ready' ELSE 'missing' END"
     )
     command = (
@@ -107,7 +110,6 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
         f"grep -q '^VKID_FLOW_CRYPTO_KEY=' {RUNTIME_ENV} && "
         f"grep -q '^BROKER_TOKEN_CRYPTO_KEY=' {RUNTIME_ENV} && "
-        f"grep -q '^REGISTRATION_ENABLED=false$' {RUNTIME_ENV} && "
         "command -v psql >/dev/null 2>&1 && "
         "set -a && "
         f". {RUNTIME_ENV} && "
@@ -148,12 +150,23 @@ def registration_enabled() -> bool:
     return _strict_boolean_environment("REGISTRATION_ENABLED", False)
 
 
+def registration_max_users() -> int:
+    raw = os.environ.get("REGISTRATION_MAX_USERS", "1").strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise InfraError("REGISTRATION_MAX_USERS must be an integer") from exc
+    if value <= 0:
+        raise InfraError("REGISTRATION_MAX_USERS must be positive")
+    return value
+
+
 def vkid_configuration_ready() -> bool:
-    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
-    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    if not _positive_numeric_id(vkid_app_id):
-        return False
-    return registration_enabled() or _positive_numeric_id(owner_vk_id)
+    return _positive_numeric_id(os.environ.get("VKID_APP_ID", "").strip())
+
+
+def legacy_profile_reset_enabled() -> bool:
+    return _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
 
 
 def validate_product_environment() -> None:
@@ -173,45 +186,45 @@ def validate_product_environment() -> None:
             + ", ".join(missing)
         )
 
-    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
-    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    is_registration_enabled = registration_enabled()
+    if not vkid_configuration_ready():
+        raise InfraError("VKID_APP_ID must be a positive numeric value")
 
-    if is_registration_enabled:
+    if registration_enabled():
         if not _strict_boolean_environment("MULTIUSER_LEGAL_APPROVED", False):
             raise InfraError(
-                "Public registration requires an explicit reviewed legal approval gate"
+                "Registration requires an explicit reviewed legal approval gate"
             )
-        if not _positive_numeric_id(vkid_app_id):
+        if not _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False):
             raise InfraError(
-                "Public registration requires a positive numeric VKID_APP_ID"
+                "Registration requires the confirmed personal-data regulatory gate"
             )
-        if owner_vk_id and not _positive_numeric_id(owner_vk_id):
-            raise InfraError("OWNER_VK_ID must be a positive numeric value when set")
-    else:
-        if bool(vkid_app_id) != bool(owner_vk_id):
+        registration_max_users()
+
+
+def validate_legal_documents(repository_root: pathlib.Path) -> None:
+    markers = ("__LEGAL_OPERATOR_NAME__", "__LEGAL_OPERATOR_CONTACT__")
+    for relative in (
+        "web/legal/privacy.html",
+        "web/legal/consent.html",
+        "web/legal/terms.html",
+    ):
+        path = repository_root / relative
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise InfraError(f"Legal document is unavailable: {relative}") from exc
+        if any(marker in body for marker in markers):
             raise InfraError(
-                "Owner-only VK ID configuration is incomplete: VKID_APP_ID and "
-                "OWNER_VK_ID must be configured together"
-            )
-        if vkid_app_id and not vkid_configuration_ready():
-            raise InfraError(
-                "Owner-only VK ID configuration must use positive numeric "
-                "VKID_APP_ID and OWNER_VK_ID values"
+                "Legal operator details must be completed before registration release"
             )
 
 
 def build_product_environment() -> str:
-    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
-    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    vkid_enabled = "true" if vkid_configuration_ready() else "false"
-    registration = "true" if registration_enabled() else "false"
-
     values = {
-        "VKID_APP_ID": vkid_app_id,
-        "OWNER_VK_ID": owner_vk_id,
-        "VKID_LOGIN_ENABLED": vkid_enabled,
-        "REGISTRATION_ENABLED": registration,
+        "VKID_APP_ID": os.environ.get("VKID_APP_ID", "").strip(),
+        "VKID_LOGIN_ENABLED": "true" if vkid_configuration_ready() else "false",
+        "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",
+        "REGISTRATION_MAX_USERS": str(registration_max_users()),
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
@@ -577,6 +590,82 @@ def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     ssh.run(f"bash -s -- {release_sha}", input_text=REMOTE_DEPLOY_SCRIPT)
 
 
+def retire_legacy_profile(ssh: EphemeralSsh) -> None:
+    if not legacy_profile_reset_enabled():
+        return
+
+    sql = """
+BEGIN;
+SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0));
+
+WITH target AS (
+    SELECT id
+    FROM users
+    WHERE public_id = 1 AND status <> 'deleted'
+    FOR UPDATE
+)
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, now())
+WHERE user_id IN (SELECT id FROM target)
+  AND revoked_at IS NULL;
+
+WITH target AS (
+    SELECT id
+    FROM users
+    WHERE public_id = 1 AND status <> 'deleted'
+    FOR UPDATE
+)
+DELETE FROM tbank_connection
+WHERE user_id IN (SELECT id FROM target);
+
+WITH target AS (
+    SELECT id
+    FROM users
+    WHERE public_id = 1 AND status <> 'deleted'
+    FOR UPDATE
+)
+DELETE FROM phone_identities
+WHERE user_id IN (SELECT id FROM target);
+
+WITH target AS (
+    SELECT id
+    FROM users
+    WHERE public_id = 1 AND status <> 'deleted'
+    FOR UPDATE
+)
+DELETE FROM vkid_identities
+WHERE user_id IN (SELECT id FROM target);
+
+WITH target AS (
+    SELECT id
+    FROM users
+    WHERE public_id = 1 AND status <> 'deleted'
+    FOR UPDATE
+)
+INSERT INTO audit_events (user_id, event_type, metadata)
+SELECT id, 'legacy_profile_retired', '{"reason":"multi_user_cutover"}'::jsonb
+FROM target;
+
+UPDATE users
+SET status = 'deleted',
+    deleted_at = COALESCE(deleted_at, now()),
+    updated_at = now()
+WHERE public_id = 1
+  AND status <> 'deleted';
+
+COMMIT;
+"""
+    command = (
+        "set -a && "
+        f". {RUNTIME_ENV} && "
+        "set +a && "
+        'export PGCONNECT_TIMEOUT=10; '
+        'export PGOPTIONS="-c statement_timeout=30000 -c lock_timeout=5000"; '
+        'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q'
+    )
+    ssh.run(command, input_text=sql)
+
+
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     try:
         ssh.run(f"bash -s -- {release_sha}", input_text=REMOTE_ROLLBACK_SCRIPT)
@@ -621,8 +710,11 @@ def verify_public_config(body: bytes) -> None:
     expected_registration = registration_enabled()
     if payload.get("registration_enabled") is not expected_registration:
         raise InfraError("Public registration mode does not match deployment config")
-    if payload.get("mode") != ("open" if expected_registration else "owner_only"):
+    expected_mode = "limited_registration" if expected_registration else "closed"
+    if payload.get("mode") != expected_mode:
         raise InfraError("Public access mode does not match deployment config")
+    if payload.get("registration_max_users") != registration_max_users():
+        raise InfraError("Public registration capacity does not match deployment config")
     if payload.get("auth_provider") != "vkid":
         raise InfraError("Public auth provider is not VK ID")
 
@@ -686,6 +778,7 @@ def reconcile(
 
     add_summary("## OmniCIO auth application deploy")
     validate_product_environment()
+    validate_legal_documents(repository_root)
     server_summary = find_managed_server(
         client.get_servers(),
         name=server_name,
@@ -735,6 +828,7 @@ def reconcile(
         write_product_environment(ssh)
         upload_release(ssh, archive_b64=archive_b64, release_sha=release_sha)
         deploy_remote(ssh, release_sha=release_sha)
+        retire_legacy_profile(ssh)
 
         try:
             for _ in range(6):
@@ -751,9 +845,14 @@ def reconcile(
 
     vkid_ready = vkid_configuration_ready()
     login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
+    registration_state = (
+        f"open with capacity {registration_max_users()}"
+        if registration_enabled()
+        else "closed"
+    )
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
-        f"VK ID owner login is {login_state}; public registration remains disabled."
+        f"VK ID login is {login_state}; registration is {registration_state}."
     )
     set_output("status", "app_ready")
     return 0
