@@ -349,6 +349,7 @@ def me(
     return {
         "public_id": format_public_id(user.public_id),
         "status": user.status,
+        "role": user.role,
     }
 
 
