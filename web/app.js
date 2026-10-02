@@ -1164,16 +1164,27 @@
     });
   };
 
+  const EVIDENCE_SOURCE_HOSTS = new Set([
+    "developer.tbank.ru",
+    "cbr.ru",
+    "www.cbr.ru",
+    "ratings.cbr.ru",
+    "raexpert.ru",
+    "www.raexpert.ru",
+  ]);
+
   const analysisSourceNode = (source) => {
     const label = typeof source.name === "string" && source.name
       ? source.name
       : "Источник";
     try {
       const url = new URL(source.url);
+      const tbankPathAllowed = url.hostname !== "developer.tbank.ru"
+        || url.pathname.startsWith("/invest/");
       if (
         url.protocol === "https:"
-        && url.hostname === "developer.tbank.ru"
-        && url.pathname.startsWith("/invest/")
+        && EVIDENCE_SOURCE_HOSTS.has(url.hostname)
+        && tbankPathAllowed
       ) {
         const link = document.createElement("a");
         link.textContent = label;
@@ -1433,8 +1444,13 @@
     intelligenceSources.replaceChildren();
     (snapshot.sources || []).forEach((source) => {
       const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = (source.provider || "Источник") + " · " + (source.document_type || "document");
+      const titleText = (source.provider || "Источник")
+        + " · "
+        + (source.document_type || "document");
+      const title = analysisSourceNode({
+        name: titleText,
+        url: source.source_url || "",
+      });
       const details = document.createElement("small");
       details.textContent = [
         intelligenceLabel(source.freshness_status),
