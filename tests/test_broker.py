@@ -960,3 +960,141 @@ def test_analysis_metadata_outage_is_partial_and_calls_are_bounded_by_kind() -> 
     assert snapshot.sources[-1].status == "partial"
     assert snapshot.analysis.rub_cash_unblocked == "100"
     assert "t.fake" not in repr(snapshot)
+
+
+def test_tbank_fundamentals_batch_treats_provider_zero_as_missing() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "fundamentals": [
+                {
+                    "assetUid": "asset-1",
+                    "currency": "rub",
+                    "fiscalPeriodStartDate": "2026-01-01T00:00:00Z",
+                    "fiscalPeriodEndDate": "2026-06-30T00:00:00Z",
+                    "revenueTtm": 123.45,
+                    "ebitdaTtm": 0,
+                    "netDebtToEbitda": 4.2,
+                    "fixedChargeCoverageRatioFy": 1.5,
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        rows = client.get_asset_fundamentals(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            ("asset-1",),
+        )
+
+    assert len(rows) == 1
+    assert rows[0].asset_uid == "asset-1"
+    assert rows[0].currency == "RUB"
+    assert rows[0].revenue_ttm == "123.45"
+    assert rows[0].ebitda_ttm is None
+    assert rows[0].net_debt_to_ebitda == "4.2"
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/GetAssetFundamentals")
+    assert json.loads(request.data.decode()) == {"assets": ["asset-1"]}
+
+
+def test_tbank_asset_reports_preserve_report_and_created_dates() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "events": [
+                {
+                    "reportDate": "2026-08-29T00:00:00Z",
+                    "periodYear": 2026,
+                    "periodNum": 2,
+                    "periodType": "PERIOD_TYPE_QUARTER",
+                    "createdAt": "2026-08-01T10:00:00Z",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        rows = client.get_asset_reports(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-1",
+            from_at=datetime(2026, 1, 1, tzinfo=UTC),
+            to_at=datetime(2027, 1, 1, tzinfo=UTC),
+        )
+
+    assert rows[0].period_year == 2026
+    assert rows[0].period_num == 2
+    assert rows[0].period_type == "PERIOD_TYPE_QUARTER"
+    assert rows[0].report_date == datetime(2026, 8, 29, tzinfo=UTC)
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/GetAssetReports")
+
+
+def test_tbank_dividend_calendar_keeps_record_and_payment_dates_distinct() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "dividends": [
+                {
+                    "dividendNet": {"currency": "rub", "units": "15", "nano": 500000000},
+                    "paymentDate": "2026-11-20T00:00:00Z",
+                    "declaredDate": "2026-09-15T00:00:00Z",
+                    "lastBuyDate": "2026-10-08T00:00:00Z",
+                    "dividendType": "Regular Cash",
+                    "recordDate": "2026-10-10T00:00:00Z",
+                    "regularity": "Annual",
+                    "createdAt": "2026-09-15T12:00:00Z",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response):
+        rows = client.get_dividends(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-1",
+            from_at=datetime(2026, 1, 1, tzinfo=UTC),
+            to_at=datetime(2027, 1, 1, tzinfo=UTC),
+        )
+
+    assert rows[0].amount == TBankMoney("RUB", "15.5")
+    assert rows[0].record_date == datetime(2026, 10, 10, tzinfo=UTC)
+    assert rows[0].payment_date == datetime(2026, 11, 20, tzinfo=UTC)
+
+
+def test_tbank_bond_events_preserve_explicit_default_date() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "events": [
+                {
+                    "eventNumber": 7,
+                    "eventDate": "2026-10-02T00:00:00Z",
+                    "eventType": "EVENT_TYPE_CPN",
+                    "defaultDate": "2026-10-01T00:00:00Z",
+                    "payDate": "2026-10-02T00:00:00Z",
+                    "payOneBond": {"currency": "rub", "units": "25", "nano": 0},
+                    "execution": "not_paid",
+                    "operationType": "coupon",
+                    "note": "provider fact",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        rows = client.get_bond_events(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-bond",
+            from_at=datetime(2026, 1, 1, tzinfo=UTC),
+            to_at=datetime(2027, 1, 1, tzinfo=UTC),
+        )
+
+    assert rows[0].default_date == datetime(2026, 10, 1, tzinfo=UTC)
+    assert rows[0].pay_one_bond == TBankMoney("RUB", "25")
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/GetBondEvents")
