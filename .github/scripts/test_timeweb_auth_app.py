@@ -103,15 +103,15 @@ class AuthAppDeployTests(unittest.TestCase):
     def _base_registration_environment(self) -> None:
         os.environ["VKID_APP_ID"] = "123456"
         os.environ["REGISTRATION_ENABLED"] = "true"
-        os.environ["REGISTRATION_MAX_USERS"] = "1"
+        os.environ["REGISTRATION_MAX_USERS"] = "2"
         os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
         os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
-        os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "false"
+        os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
         os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
         os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
-        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v3"
-        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v3"
-        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v3"
+        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v4"
+        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v4"
+        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v4"
 
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
@@ -152,44 +152,44 @@ class AuthAppDeployTests(unittest.TestCase):
         try:
             self._base_registration_environment()
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "false"
+            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-    def test_single_user_live_test_allows_exactly_one_registration_slot(self) -> None:
+    def test_controlled_live_test_allows_two_registration_slots(self) -> None:
         old = dict(os.environ)
         try:
             self._base_registration_environment()
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
-            os.environ["REGISTRATION_MAX_USERS"] = "1"
+            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
+            os.environ["REGISTRATION_MAX_USERS"] = "2"
             MODULE.validate_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-    def test_single_user_live_test_rejects_more_than_one_slot(self) -> None:
+    def test_controlled_live_test_rejects_more_than_two_slots(self) -> None:
         old = dict(os.environ)
         try:
             self._base_registration_environment()
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
-            os.environ["REGISTRATION_MAX_USERS"] = "2"
+            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
+            os.environ["REGISTRATION_MAX_USERS"] = "3"
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-    def test_single_user_live_test_must_be_disabled_after_regulatory_confirmation(self) -> None:
+    def test_controlled_live_test_must_be_disabled_after_regulatory_confirmation(self) -> None:
         old = dict(os.environ)
         try:
             self._base_registration_environment()
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
-            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
+            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
         finally:
@@ -207,7 +207,7 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_builds_one_slot_registration(self) -> None:
+    def test_product_environment_builds_two_slot_registration(self) -> None:
         old = dict(os.environ)
         try:
             self._base_registration_environment()
@@ -220,7 +220,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('VKID_APP_ID="123456"', product_env)
         self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
         self.assertIn('REGISTRATION_ENABLED="true"', product_env)
-        self.assertIn('REGISTRATION_MAX_USERS="1"', product_env)
+        self.assertIn('REGISTRATION_MAX_USERS="2"', product_env)
         self.assertIn('LEGAL_OPERATOR_EMAIL="operator@example.com"', product_env)
         self.assertNotIn("OWNER_VK_ID", product_env)
 
@@ -253,7 +253,7 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
             os.environ["REGISTRATION_ENABLED"] = "false"
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "false"
+            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
             ssh = FakeSsh(True)
             MODULE.retire_legacy_profile(ssh)
             self.assertEqual(ssh.commands, [])
@@ -265,13 +265,13 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_legacy_reset_is_allowed_for_explicit_single_user_live_test(self) -> None:
+    def test_legacy_reset_is_allowed_for_explicit_controlled_live_test(self) -> None:
         old = dict(os.environ)
         try:
             os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
             os.environ["REGISTRATION_ENABLED"] = "true"
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
+            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
             ssh = FakeSsh(True)
             MODULE.retire_legacy_profile(ssh)
         finally:
@@ -387,12 +387,12 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-02-v3", document)
+            self.assertIn("2026-10-02-v4", document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
 
         self.assertIn("OmniCIO Personal", privacy)
         self.assertIn("T-Invest API", privacy)
-        self.assertIn("Текущий лимит при её включении — один пользовательский аккаунт", terms)
+        self.assertIn("Текущий временный live-test лимит — два пользовательских аккаунта", terms)
         self.assertIn("ролью <code>user</code>", terms)
 
     def test_personal_dashboard_keeps_auth_and_broker_contracts(self) -> None:
@@ -557,7 +557,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.6.1"', project)
+        self.assertIn('version = "0.6.2"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
