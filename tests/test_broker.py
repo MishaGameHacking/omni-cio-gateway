@@ -512,6 +512,7 @@ def test_metadata_adapter_preserves_unknown_qualification_and_all_status_records
             sector="energy",
             country_of_risk="RU",
             for_qual_investor=None,
+            api_trade_available=False,
         ),
     )
     request = urlopen.call_args.args[0]
