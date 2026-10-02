@@ -382,12 +382,11 @@ class PortfolioStore:
                         api_trade_available,
                         buy_available,
                         sell_available,
-                        required_tests,
                         provider_retrieved_at
                     )
                     VALUES (
                         'tbank', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (provider, instrument_uid) DO UPDATE SET
                         figi = EXCLUDED.figi,
@@ -407,7 +406,6 @@ class PortfolioStore:
                         api_trade_available = EXCLUDED.api_trade_available,
                         buy_available = EXCLUDED.buy_available,
                         sell_available = EXCLUDED.sell_available,
-                        required_tests = EXCLUDED.required_tests,
                         last_seen_at = now(),
                         provider_retrieved_at = EXCLUDED.provider_retrieved_at
                     """,
@@ -430,6 +428,29 @@ class PortfolioStore:
                         item.api_trade_available,
                         item.buy_available,
                         item.sell_available,
+                        catalog_retrieved_at,
+                    ),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO account_instrument_access (
+                        user_id,
+                        account_id,
+                        provider,
+                        instrument_uid,
+                        required_tests,
+                        observed_at
+                    )
+                    VALUES (%s, %s, 'tbank', %s, %s::jsonb, %s)
+                    ON CONFLICT (user_id, account_id, provider, instrument_uid)
+                    DO UPDATE SET
+                        required_tests = EXCLUDED.required_tests,
+                        observed_at = EXCLUDED.observed_at
+                    """,
+                    (
+                        user_id,
+                        bundle.account_id,
+                        item.uid,
                         _json(list(item.required_tests)),
                         catalog_retrieved_at,
                     ),
