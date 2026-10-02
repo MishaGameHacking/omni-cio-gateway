@@ -7,6 +7,7 @@ import copy
 import io
 import json
 import os
+import pathlib
 import unittest
 from unittest.mock import Mock, patch
 
@@ -146,6 +147,33 @@ class ReleaseEvidenceTests(unittest.TestCase):
                     self.assertRaises(gate.ReleaseBlocked):
                 gate.wait_for_release(client, SHA)
             sleep.assert_not_called()
+
+
+class SelfHostedCiPolicyTests(unittest.TestCase):
+    def test_owner_same_repo_prs_use_the_four_runner_pool(self) -> None:
+        workflow = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "workflows"
+            / "auth-foundation-ci.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            workflow,
+        )
+        self.assertIn(
+            "github.event.pull_request.author_association == 'OWNER'",
+            workflow,
+        )
+        self.assertIn(
+            "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+            workflow,
+        )
+        self.assertIn("max-parallel: 4", workflow)
+        self.assertIn(
+            "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+            workflow,
+        )
 
 
 class GitHubTransportTests(unittest.TestCase):
