@@ -47,6 +47,15 @@ class TBankAccount:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankUserInfo:
+    premium: bool
+    qualified: bool
+    qualified_for_work_with: tuple[str, ...]
+    tariff: str
+    risk_level_code: str
+
+
+@dataclass(frozen=True, slots=True)
 class TBankInstrument:
     uid: str
     figi: str
@@ -288,6 +297,36 @@ class TBankInvestClient:
                 )
             )
         return accounts
+
+    def get_user_info(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+    ) -> TBankUserInfo:
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="UsersService",
+            method="GetInfo",
+            body={},
+        )
+        premium = payload.get("premStatus")
+        qualified = payload.get("qualStatus")
+        if not isinstance(premium, bool) or not isinstance(qualified, bool):
+            raise TBankUnavailable("T-Invest user info has invalid qualification flags")
+
+        qualified_for = tuple(
+            value
+            for raw in _optional_list(payload, "qualifiedForWorkWith")
+            if (value := _text(raw).strip())
+        )
+        return TBankUserInfo(
+            premium=premium,
+            qualified=qualified,
+            qualified_for_work_with=qualified_for,
+            tariff=_text(payload.get("tariff")).strip(),
+            risk_level_code=_text(payload.get("riskLevelCode")).strip(),
+        )
 
     def find_instruments(
         self,
