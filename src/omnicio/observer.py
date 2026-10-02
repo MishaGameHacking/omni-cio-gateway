@@ -225,7 +225,9 @@ class PortfolioObserver:
                 or details["broker_user_info_status"] != "received"
                 or details["history_status"] != "complete"
             )
-            final_status = "degraded" if degraded else "succeeded"
+            final_status: Literal["succeeded", "degraded"] = (
+                "degraded" if degraded else "succeeded"
+            )
             self.store.finish_job(
                 user_id,
                 job.id,
