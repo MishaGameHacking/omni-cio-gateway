@@ -13,7 +13,12 @@ from unittest.mock import Mock, patch
 
 import timeweb_auth_postgres as postgres
 import timeweb_domain_tls as tls
-from timeweb_ssh_trust import managed_server_identity, ssh_base_args, trusted_host_entry
+from timeweb_ssh_trust import (
+    managed_server_identity,
+    ssh_base_args,
+    trusted_host_entry,
+    trusted_host_fingerprint,
+)
 
 SERVER = "194.87.151.244"
 KEY = base64.b64encode(
@@ -88,6 +93,68 @@ class SshTrustTests(unittest.TestCase):
                 command.assert_not_called()
                 self.assertEqual(client.mock_calls, [])
 
+    def test_verified_host_fingerprint_is_deterministic(self) -> None:
+        self.assertEqual(
+            trusted_host_fingerprint(ENTRY, SERVER),
+            "SHA256:ZkAslGjFiUHdGf/WUL8rQvkib4PTvQatUV0OUQSncCA",
+        )
+
+    def test_postgres_host_key_mismatch_fails_immediately_and_cleans_up(self) -> None:
+        ssh_calls = 0
+        observed = "SHA256:networkPresentedFingerprint1234567890+/"
+
+        def execute(
+            args: list[str], **kwargs: object,
+        ) -> subprocess.CompletedProcess[str]:
+            nonlocal ssh_calls
+            if args[0] == "/usr/bin/ssh-keygen":
+                private_key = pathlib.Path(args[args.index("-f") + 1])
+                private_key.with_suffix(".pub").write_text("synthetic-public-key")
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+            ssh_calls += 1
+            return subprocess.CompletedProcess(
+                args,
+                255,
+                stdout="",
+                stderr=(
+                    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+                    "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n"
+                    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+                    "The fingerprint for the ED25519 key sent by the remote host is\n"
+                    f"{observed}.\n"
+                ),
+            )
+
+        with patch.dict(
+            os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY},
+        ), patch.object(
+            subprocess, "run", side_effect=execute,
+        ), patch.object(
+            postgres.time, "sleep",
+        ) as sleep:
+            client = Mock()
+            client.create_ssh_key.return_value = 123
+            session = postgres.EphemeralSsh(
+                client=client, server_id=9235089, server_ip=SERVER,
+            )
+            with self.assertRaises(postgres.InfraError) as error:
+                session.__enter__()
+
+        message = str(error.exception)
+        self.assertIn("SSH host key mismatch", message)
+        self.assertIn(
+            "SHA256:ZkAslGjFiUHdGf/WUL8rQvkib4PTvQatUV0OUQSncCA",
+            message,
+        )
+        self.assertIn(observed, message)
+        self.assertNotIn(KEY, message)
+        self.assertEqual(ssh_calls, 1)
+        sleep.assert_not_called()
+        client.detach_ssh_key.assert_called_once_with(9235089, 123)
+        client.delete_ssh_key.assert_called_once_with(123)
+        self.assertIsNone(session._tmp)
+
     def test_postgres_uses_configured_key_without_network_key_discovery(self) -> None:
         self._exercise_consumer("postgres")
 
@@ -144,7 +211,6 @@ class SshTrustTests(unittest.TestCase):
                 self.assertIn("group: omnicio-production-ssh", content)
                 self.assertIn("queue: max", content)
                 self.assertIn("cancel-in-progress: false", content)
-
 
     def test_postgres_tolerates_slow_provider_key_propagation(self) -> None:
         ssh_attempts = 0
