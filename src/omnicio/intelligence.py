@@ -326,12 +326,14 @@ def _fundamental_document(
 ) -> EvidenceDocument:
     payload = asdict(item)
     facts: list[EvidenceFact] = []
-    numeric_fields = (
+    monetary_fields = {
         "revenue_ttm",
         "ebitda_ttm",
         "net_income_ttm",
         "free_cash_flow_ttm",
         "total_debt_mrq",
+    }
+    ratio_fields = {
         "total_debt_to_equity_mrq",
         "total_debt_to_ebitda_mrq",
         "net_debt_to_ebitda",
@@ -340,8 +342,8 @@ def _fundamental_document(
         "net_interest_margin_mrq",
         "roe",
         "roa",
-    )
-    for name in numeric_fields:
+    }
+    for name in (*sorted(monetary_fields), *sorted(ratio_fields)):
         raw = getattr(item, name)
         if raw is None:
             continue
@@ -351,7 +353,8 @@ def _fundamental_document(
                 fact_type="fundamental",
                 fact_key=name,
                 value_numeric=Decimal(raw),
-                currency=item.currency if name.endswith("_ttm") or name.endswith("_mrq") else None,
+                currency=item.currency if name in monetary_fields else None,
+                unit="ratio" if name in ratio_fields else None,
                 effective_at=item.fiscal_period_end_date,
                 published_at=None,
                 payload={"source_field": name},
