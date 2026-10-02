@@ -32,7 +32,12 @@ from .security import (
     pkce_challenge,
     seal_vkid_flow,
 )
-from .service import AuthService, LoginUnavailable, OwnerAccessDenied
+from .service import (
+    AuthService,
+    LoginUnavailable,
+    RegistrationCapacityReached,
+    RegistrationClosed,
+)
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 from .vkid import VKIDClient, VKIDRejected, VKIDUnavailable
 
@@ -72,7 +77,7 @@ def client_ip(request: Request) -> str:
 
 def require_same_origin(request: Request) -> None:
     origin = request.headers.get("origin")
-    if origin and origin != CANONICAL_ORIGIN:
+    if origin != CANONICAL_ORIGIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="origin rejected")
 
 
@@ -220,8 +225,8 @@ def auth_config(request: Request) -> dict[str, object]:
         "mode": cfg.access_mode,
         "auth_provider": "vkid",
         "registration_enabled": cfg.registration_enabled,
+        "registration_max_users": cfg.registration_max_users,
         "login_enabled": cfg.vkid_ready,
-        "owner_login_enabled": cfg.vkid_ready,
         "legal_versions": {
             "privacy_policy": cfg.privacy_version,
             "personal_data_consent": cfg.consent_version,
@@ -299,8 +304,10 @@ def vkid_callback(
             client_ip=client_ip(request),
             accepted_legal_versions=legal_versions,
         )
-    except OwnerAccessDenied:
-        return auth_redirect("/?auth_error=access")
+    except RegistrationClosed:
+        return auth_redirect("/?auth_error=registration")
+    except RegistrationCapacityReached:
+        return auth_redirect("/?auth_error=capacity")
     except (SecurityValueError, VKIDRejected):
         return auth_redirect("/?auth_error=flow")
     except (VKIDUnavailable, LoginUnavailable):
