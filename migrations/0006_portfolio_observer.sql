@@ -103,7 +103,11 @@ CREATE TABLE IF NOT EXISTS job_runs (
     finished_at timestamptz,
     details jsonb NOT NULL DEFAULT '{}'::jsonb,
     UNIQUE (user_id, job_type, scheduled_for),
-    CONSTRAINT job_runs_type_nonempty CHECK (char_length(job_type) BETWEEN 1 AND 128)
+    CONSTRAINT job_runs_type_nonempty CHECK (char_length(job_type) BETWEEN 1 AND 128),
+    CONSTRAINT job_runs_finish_state_consistent CHECK (
+        (status = 'running' AND finished_at IS NULL)
+        OR (status <> 'running' AND finished_at IS NOT NULL)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS job_runs_user_started_idx
@@ -216,7 +220,20 @@ CREATE TABLE IF NOT EXISTS broker_sync_state (
     last_complete_watermark timestamptz,
     updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, account_id),
-    CONSTRAINT broker_sync_state_account_nonempty CHECK (char_length(account_id) BETWEEN 1 AND 128)
+    CONSTRAINT broker_sync_state_account_nonempty CHECK (char_length(account_id) BETWEEN 1 AND 128),
+    CONSTRAINT broker_sync_state_cursor_window_consistent CHECK (
+        (
+            pending_cursor IS NULL
+            AND history_window_from IS NULL
+            AND history_window_to IS NULL
+        )
+        OR (
+            pending_cursor IS NOT NULL
+            AND history_window_from IS NOT NULL
+            AND history_window_to IS NOT NULL
+            AND history_window_from <= history_window_to
+        )
+    )
 );
 
 ALTER TABLE investment_profile_versions ENABLE ROW LEVEL SECURITY;
