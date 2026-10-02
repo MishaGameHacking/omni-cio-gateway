@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from threading import Lock
-from time import monotonic, sleep
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from collections.abc import Callable
+from threading import Lock
+from time import monotonic, sleep
 from typing import Any, cast
 from uuid import UUID
 
