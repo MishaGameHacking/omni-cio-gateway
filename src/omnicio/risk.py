@@ -28,6 +28,7 @@ class FundamentalEvidence:
     asset_uid: str
     currency: str
     retrieved_at: datetime
+    fiscal_period_start: datetime | None
     fiscal_period_end: datetime | None
     metrics: dict[str, str | None]
 
