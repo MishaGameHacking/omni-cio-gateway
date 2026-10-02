@@ -1000,7 +1000,7 @@ def test_tbank_asset_fundamentals_are_batched_and_finite() -> None:
     assert len(result) == 1
     assert result[0].asset_uid == "asset-1"
     assert result[0].revenue_ttm == "1250.5"
-    assert result[0].net_interest_margin_mrq == "0"
+    assert result[0].net_interest_margin_mrq is None
     assert result[0].fiscal_period_end_date == datetime(2025, 12, 31, tzinfo=UTC)
     request = urlopen.call_args.args[0]
     assert request.full_url.endswith("InstrumentsService/GetAssetFundamentals")
