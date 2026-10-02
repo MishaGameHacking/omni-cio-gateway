@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from pathlib import Path
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from omnicio.broker import AnalysisSource, BrokerObservationBundle
-from omnicio.observer import PortfolioObserver
+from omnicio.observer import PortfolioObserver, provider_read
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.portfolio_store import BrokerSyncState, JobRunRecord
 from omnicio.tbank import (
@@ -14,6 +15,7 @@ from omnicio.tbank import (
     TBankOperationsPage,
     TBankPortfolio,
     TBankPositions,
+    TBankUnavailable,
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -195,6 +197,26 @@ class FakeBroker:
         assert limit == 1000
         self.seen_cursors.append(cursor)
         return self.pages[cursor]
+
+
+def test_provider_read_retries_unavailable_reads_with_bounded_jitter() -> None:
+    attempts = 0
+
+    def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise TBankUnavailable("temporary")
+        return "ok"
+
+    with (
+        patch("omnicio.observer.random.random", side_effect=[0.0, 1.0]),
+        patch("omnicio.observer.time.sleep") as sleep,
+    ):
+        assert provider_read(operation) == "ok"
+
+    assert attempts == 3
+    assert [call.args[0] for call in sleep.call_args_list] == [0.75, 2.5]
 
 
 def test_daily_observer_pages_history_and_finishes_once() -> None:
