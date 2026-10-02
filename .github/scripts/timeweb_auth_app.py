@@ -561,6 +561,7 @@ ExecStart=/opt/omnicio/current/.venv/bin/python -m omnicio.observer
 Restart=on-failure
 RestartSec=180
 TimeoutStartSec=1200
+RuntimeMaxSec=1500
 TimeoutStopSec=30
 UMask=0077
 NoNewPrivileges=true
