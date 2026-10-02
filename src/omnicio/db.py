@@ -129,9 +129,8 @@ class Database:
                 cur.execute(
                     """
                     SELECT count(*) AS total
-                    FROM users AS u
-                    JOIN vkid_identities AS v ON v.user_id = u.id
-                    WHERE u.status <> 'deleted'
+                    FROM users
+                    WHERE status <> 'deleted'
                     """
                 )
                 count_row = cur.fetchone()
