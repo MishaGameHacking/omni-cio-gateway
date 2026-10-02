@@ -57,7 +57,6 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         }
         assert {
             "instrument_catalog",
-            "account_instrument_access",
             "investment_profile_versions",
             "job_runs",
             "portfolio_snapshots",
@@ -88,7 +87,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 """
             ).fetchall()
         }
-        assert len(protected) == 7
+        assert len(protected) == 6
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
@@ -102,7 +101,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 """
             ).fetchall()
         }
-        assert "required_tests" not in catalog_columns
+        assert "required_tests" in catalog_columns
 
         admin.execute(
             """
@@ -174,29 +173,11 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             (USER_ONE,),
         )
         runtime.execute(
-            """
-            INSERT INTO account_instrument_access (
-                user_id,
-                account_id,
-                provider,
-                instrument_uid,
-                required_tests,
-                observed_at
-            )
-            VALUES (%s, 'account-1', 'tbank', 'instrument-1', '["bond"]'::jsonb, now())
-            """,
-            (USER_ONE,),
-        )
-
-        runtime.execute(
             "SELECT set_config('omnicio.user_id', %s, false)",
             (str(USER_TWO),),
         )
         assert runtime.execute(
             "SELECT count(*) FROM investment_profile_versions"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM account_instrument_access"
         ).fetchone()[0] == 0
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
