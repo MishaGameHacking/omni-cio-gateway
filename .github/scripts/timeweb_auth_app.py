@@ -40,7 +40,6 @@ LEGAL_PAGES = {
 }
 LEGAL_OPERATOR_MARKERS = (
     "__OMNICIO_OPERATOR_NAME__",
-    "__OMNICIO_OPERATOR_ADDRESS__",
     "__OMNICIO_OPERATOR_EMAIL__",
 )
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
@@ -172,7 +171,11 @@ def vkid_configuration_ready() -> bool:
 
 
 def legacy_profile_reset_enabled() -> bool:
-    return _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
+    return (
+        registration_enabled()
+        and _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False)
+        and _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
+    )
 
 
 def validate_product_environment() -> None:
@@ -207,12 +210,9 @@ def validate_product_environment() -> None:
         registration_max_users()
 
         operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
-        operator_address = os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip()
         operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
         if not 3 <= len(operator_name) <= 200:
             raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
-        if not 5 <= len(operator_address) <= 300:
-            raise InfraError("LEGAL_OPERATOR_ADDRESS must contain 5-300 characters")
         if not re.fullmatch(
             r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
             operator_email,
@@ -245,7 +245,6 @@ def build_product_environment() -> str:
         "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",
         "REGISTRATION_MAX_USERS": str(registration_max_users()),
         "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
-        "LEGAL_OPERATOR_ADDRESS": os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),
         "LEGAL_OPERATOR_EMAIL": os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
@@ -402,7 +401,6 @@ source = pathlib.Path(sys.argv[1])
 destination = pathlib.Path(sys.argv[2])
 replacements = {
     "__OMNICIO_OPERATOR_NAME__": html.escape(os.environ["LEGAL_OPERATOR_NAME"], quote=True),
-    "__OMNICIO_OPERATOR_ADDRESS__": html.escape(os.environ["LEGAL_OPERATOR_ADDRESS"], quote=True),
     "__OMNICIO_OPERATOR_EMAIL__": html.escape(os.environ["LEGAL_OPERATOR_EMAIL"], quote=True),
 }
 for name in ("privacy.html", "consent.html", "terms.html"):
