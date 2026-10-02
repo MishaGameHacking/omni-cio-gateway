@@ -141,6 +141,10 @@ class TBankInstrumentMetadata:
     amortization: bool | None = None
     subordinated: bool | None = None
     liquidity: bool | None = None
+    exchange: str = ""
+    real_exchange: str = ""
+    tax_free: bool | None = None
+    collateral: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,6 +384,10 @@ class TBankInvestClient:
                     amortization=_optional_bool(item, "amortizationFlag"),
                     subordinated=_optional_bool(item, "subordinatedFlag"),
                     liquidity=_optional_bool(item, "liquidityFlag"),
+                    exchange=_text(item.get("exchange")).strip(),
+                    real_exchange=_text(item.get("realExchange")).strip(),
+                    tax_free=_optional_bool(item, "taxFreeFlag"),
+                    collateral=_optional_bool(item, "collateralFlag"),
                 )
             )
         return tuple(result)
