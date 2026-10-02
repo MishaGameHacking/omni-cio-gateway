@@ -692,9 +692,22 @@ SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0)
 
 DO $$
 DECLARE
+    reset_done boolean;
     total_users bigint;
     legacy_users bigint;
+    legacy_user_id uuid;
 BEGIN
+    SELECT EXISTS (
+        SELECT 1
+        FROM audit_events
+        WHERE event_type = 'legacy_profile_retired'
+          AND metadata ->> 'reason' = 'limited_user_cutover'
+    ) INTO reset_done;
+
+    IF reset_done THEN
+        RETURN;
+    END IF;
+
     SELECT count(*) INTO total_users FROM users;
     SELECT count(*) INTO legacy_users FROM users WHERE public_id = 1;
 
@@ -704,21 +717,21 @@ BEGIN
     IF total_users = 1 AND legacy_users <> 1 THEN
         RAISE EXCEPTION 'legacy reset refuses to delete a non-legacy user';
     END IF;
-END
-$$;
 
-INSERT INTO audit_events (user_id, event_type, metadata)
-SELECT id, 'legacy_profile_retired', '{"reason":"limited_user_cutover"}'::jsonb
-FROM users
-WHERE public_id = 1;
+    SELECT id INTO legacy_user_id
+    FROM users
+    WHERE public_id = 1
+    FOR UPDATE;
 
-DELETE FROM users
-WHERE public_id = 1;
+    INSERT INTO audit_events (user_id, event_type, metadata)
+    VALUES (
+        legacy_user_id,
+        'legacy_profile_retired',
+        '{"reason":"limited_user_cutover"}'::jsonb
+    );
 
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM users WHERE public_id = 1) THEN
-        RAISE EXCEPTION 'legacy reset postcondition failed';
+    IF legacy_user_id IS NOT NULL THEN
+        DELETE FROM users WHERE id = legacy_user_id;
     END IF;
 END
 $$;
@@ -740,10 +753,9 @@ COMMIT;
             f"touch {LEGACY_RESET_MARKER}; chmod 0600 {LEGACY_RESET_MARKER}"
         )
     except InfraError:
-        # The database transaction is already committed. A missing marker only
-        # causes a future idempotent reset attempt; it is not a reason to roll
-        # back the healthy release to an incompatible authentication model.
-        add_summary("- Warning: legacy reset marker could not be persisted.")
+        # The database audit marker is authoritative. A filesystem marker is
+        # only an optimization to avoid the no-op database transaction later.
+        add_summary("- Warning: legacy reset filesystem marker could not be persisted.")
 
 
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
