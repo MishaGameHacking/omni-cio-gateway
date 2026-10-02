@@ -27,6 +27,7 @@ from omnicio.tbank import (
     TBankPositions,
     TBankTokenRejected,
     TBankUnavailable,
+    TBankUserInfo,
 )
 
 
@@ -79,6 +80,56 @@ def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
     assert request.full_url.endswith("UsersService/GetAccounts")
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {"status": "ACCOUNT_STATUS_OPEN"}
+
+
+def test_tbank_get_user_info_parses_qualification_context() -> None:
+    credential = "t.fake-owner-credential-1234567890"
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "premStatus": False,
+            "qualStatus": True,
+            "qualifiedForWorkWith": ["bond", "russian_shares"],
+            "tariff": "Investor",
+            "riskLevelCode": "CONSERVATIVE",
+            "userId": "provider-user-id",
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        info = client.get_user_info(credential, "prod")
+
+    assert info == TBankUserInfo(
+        premium=False,
+        qualified=True,
+        qualified_for_work_with=("bond", "russian_shares"),
+        tariff="Investor",
+        risk_level_code="CONSERVATIVE",
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("UsersService/GetInfo")
+    assert request.get_header("Authorization") == f"Bearer {credential}"
+    assert json.loads(request.data.decode()) == {}
+    assert "provider-user-id" not in repr(info)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"premStatus": "false", "qualStatus": False},
+        {"premStatus": False, "qualStatus": "false"},
+        {"premStatus": False, "qualStatus": False, "qualifiedForWorkWith": "bond"},
+    ],
+)
+def test_tbank_get_user_info_rejects_malformed_capabilities(
+    payload: dict[str, object],
+) -> None:
+    client = TBankInvestClient()
+    with (
+        patch("urllib.request.urlopen", return_value=FakeResponse(payload)),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_user_info("t.fake-owner-credential-1234567890", "prod")
 
 
 def test_tbank_operation_history_uses_cursor_without_write_methods() -> None:
