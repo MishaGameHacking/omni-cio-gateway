@@ -167,6 +167,21 @@ class PortfolioObserver:
             account = provider_read(lambda: self.broker.revalidate_account(user_id))
             details["account_access"] = account.access_level
             details["account_status"] = account.status
+            details["account_type"] = account.type
+
+            user_info = None
+            try:
+                user_info = provider_read(lambda: self.broker.user_info(user_id))
+            except TBankUnavailable:
+                details["broker_user_info_status"] = "unavailable"
+            else:
+                details["broker_user_info_status"] = "received"
+                details["broker_qualified"] = user_info.qualified
+                details["broker_qualified_for_work_with"] = list(
+                    user_info.qualified_for_work_with
+                )
+                details["broker_risk_level_code"] = user_info.risk_level_code
+                details["broker_tariff"] = user_info.tariff
 
             bundle = provider_read(
                 lambda: self.broker.observation_bundle(user_id, full_catalog=True)
@@ -175,6 +190,8 @@ class PortfolioObserver:
                 user_id,
                 job_run_id=job.id,
                 bundle=bundle,
+                account=account,
+                user_info=user_info,
             )
             snapshot_saved = True
             details["analysis_status"] = bundle.analysis.status
@@ -205,6 +222,7 @@ class PortfolioObserver:
             degraded = (
                 bundle.analysis.status == "needs_reconciliation"
                 or details["catalog_status"] == "partial"
+                or details["broker_user_info_status"] != "received"
                 or details["history_status"] != "complete"
             )
             final_status = "degraded" if degraded else "succeeded"
