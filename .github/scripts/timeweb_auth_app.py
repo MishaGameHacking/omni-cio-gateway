@@ -170,10 +170,18 @@ def vkid_configuration_ready() -> bool:
     return _positive_numeric_id(os.environ.get("VKID_APP_ID", "").strip())
 
 
+def single_user_live_test_mode() -> bool:
+    return _strict_boolean_environment("SINGLE_USER_LIVE_TEST_MODE", False)
+
+
+def regulatory_gate_satisfied() -> bool:
+    return _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False)
+
+
 def legacy_profile_reset_enabled() -> bool:
     return (
         registration_enabled()
-        and _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False)
+        and (regulatory_gate_satisfied() or single_user_live_test_mode())
         and _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
     )
 
@@ -203,11 +211,23 @@ def validate_product_environment() -> None:
             raise InfraError(
                 "Registration requires an explicit reviewed legal approval gate"
             )
-        if not _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False):
+
+        capacity = registration_max_users()
+        regulatory_ready = regulatory_gate_satisfied()
+        live_test = single_user_live_test_mode()
+        if not regulatory_ready and not live_test:
             raise InfraError(
-                "Registration requires the confirmed personal-data regulatory gate"
+                "Registration requires either confirmed regulatory readiness "
+                "or an explicit single-user live-test exception"
             )
-        registration_max_users()
+        if live_test and capacity != 1:
+            raise InfraError(
+                "SINGLE_USER_LIVE_TEST_MODE requires REGISTRATION_MAX_USERS=1"
+            )
+        if live_test and regulatory_ready:
+            raise InfraError(
+                "Disable SINGLE_USER_LIVE_TEST_MODE after regulatory readiness is confirmed"
+            )
 
         operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
         operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
@@ -975,11 +995,12 @@ def reconcile(
 
     vkid_ready = vkid_configuration_ready()
     login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
-    registration_state = (
-        f"open with capacity {registration_max_users()}"
-        if registration_enabled()
-        else "closed"
-    )
+    if registration_enabled():
+        registration_state = f"open with capacity {registration_max_users()}"
+        if single_user_live_test_mode():
+            registration_state += " (single-user live-test exception)"
+    else:
+        registration_state = "closed"
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
         f"VK ID login is {login_state}; registration is {registration_state}."

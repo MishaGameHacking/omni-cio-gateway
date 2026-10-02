@@ -106,6 +106,7 @@ class AuthAppDeployTests(unittest.TestCase):
         os.environ["REGISTRATION_MAX_USERS"] = "1"
         os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
         os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
+        os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "false"
         os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
         os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
         os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v3"
@@ -146,11 +147,49 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_limited_registration_requires_regulatory_gate(self) -> None:
+    def test_limited_registration_requires_regulatory_or_live_test_gate(self) -> None:
         old = dict(os.environ)
         try:
             self._base_registration_environment()
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "false"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_single_user_live_test_allows_exactly_one_registration_slot(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
+            os.environ["REGISTRATION_MAX_USERS"] = "1"
+            MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_single_user_live_test_rejects_more_than_one_slot(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
+            os.environ["REGISTRATION_MAX_USERS"] = "2"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_single_user_live_test_must_be_disabled_after_regulatory_confirmation(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
+            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
         finally:
@@ -208,12 +247,13 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_legal_templates_require_operator_placeholders(self) -> None:
         MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
 
-    def test_legacy_reset_is_disabled_without_full_cutover_gates(self) -> None:
+    def test_legacy_reset_is_disabled_without_regulatory_or_live_test_gate(self) -> None:
         old = dict(os.environ)
         try:
             os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
             os.environ["REGISTRATION_ENABLED"] = "false"
             os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "false"
             ssh = FakeSsh(True)
             MODULE.retire_legacy_profile(ssh)
             self.assertEqual(ssh.commands, [])
@@ -224,6 +264,21 @@ class AuthAppDeployTests(unittest.TestCase):
         finally:
             os.environ.clear()
             os.environ.update(old)
+
+    def test_legacy_reset_is_allowed_for_explicit_single_user_live_test(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            os.environ["SINGLE_USER_LIVE_TEST_MODE"] = "true"
+            ssh = FakeSsh(True)
+            MODULE.retire_legacy_profile(ssh)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        self.assertGreaterEqual(len(ssh.commands), 1)
 
     def test_legacy_reset_only_targets_public_id_one(self) -> None:
         old = dict(os.environ)
@@ -502,7 +557,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.6.0"', project)
+        self.assertIn('version = "0.6.1"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
