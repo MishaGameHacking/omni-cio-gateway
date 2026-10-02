@@ -170,8 +170,11 @@ def vkid_configuration_ready() -> bool:
     return _positive_numeric_id(os.environ.get("VKID_APP_ID", "").strip())
 
 
-def single_user_live_test_mode() -> bool:
-    return _strict_boolean_environment("SINGLE_USER_LIVE_TEST_MODE", False)
+CONTROLLED_LIVE_TEST_MAX_USERS = 2
+
+
+def controlled_live_test_mode() -> bool:
+    return _strict_boolean_environment("CONTROLLED_LIVE_TEST_MODE", False)
 
 
 def regulatory_gate_satisfied() -> bool:
@@ -181,7 +184,7 @@ def regulatory_gate_satisfied() -> bool:
 def legacy_profile_reset_enabled() -> bool:
     return (
         registration_enabled()
-        and (regulatory_gate_satisfied() or single_user_live_test_mode())
+        and (regulatory_gate_satisfied() or controlled_live_test_mode())
         and _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
     )
 
@@ -214,19 +217,20 @@ def validate_product_environment() -> None:
 
         capacity = registration_max_users()
         regulatory_ready = regulatory_gate_satisfied()
-        live_test = single_user_live_test_mode()
+        live_test = controlled_live_test_mode()
         if not regulatory_ready and not live_test:
             raise InfraError(
                 "Registration requires either confirmed regulatory readiness "
                 "or an explicit single-user live-test exception"
             )
-        if live_test and capacity != 1:
+        if live_test and capacity > CONTROLLED_LIVE_TEST_MAX_USERS:
             raise InfraError(
-                "SINGLE_USER_LIVE_TEST_MODE requires REGISTRATION_MAX_USERS=1"
+                "CONTROLLED_LIVE_TEST_MODE allows at most "
+                f"{CONTROLLED_LIVE_TEST_MAX_USERS} users"
             )
         if live_test and regulatory_ready:
             raise InfraError(
-                "Disable SINGLE_USER_LIVE_TEST_MODE after regulatory readiness is confirmed"
+                "Disable CONTROLLED_LIVE_TEST_MODE after regulatory readiness is confirmed"
             )
 
         operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
@@ -997,8 +1001,8 @@ def reconcile(
     login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
     if registration_enabled():
         registration_state = f"open with capacity {registration_max_users()}"
-        if single_user_live_test_mode():
-            registration_state += " (single-user live-test exception)"
+        if controlled_live_test_mode():
+            registration_state += " (controlled live-test exception)"
     else:
         registration_state = "closed"
     add_summary(
