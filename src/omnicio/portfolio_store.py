@@ -14,7 +14,6 @@ from uuid import UUID
 
 from .broker import BrokerObservationBundle
 from .db import Database
-from .risk import InstrumentRiskEvidence, RiskAssessment
 from .risk import (
     FundamentalEvidence,
     InstrumentRiskEvidence,
@@ -677,274 +676,6 @@ class PortfolioStore:
                 )
             return snapshot_id
 
-    def save_risk_evidence(
-        self,
-        user_id: UUID,
-        *,
-        snapshot_id: UUID,
-        evidences: tuple[InstrumentRiskEvidence, ...],
-        assessments: tuple[RiskAssessment, ...],
-    ) -> None:
-        assessment_by_uid = {item.instrument_uid: item for item in assessments}
-        if len(assessment_by_uid) != len(assessments):
-            raise ValueError("risk assessments contain duplicate instrument ids")
-        if {item.instrument_uid for item in evidences} != set(assessment_by_uid):
-            raise ValueError("risk evidence and assessments must cover the same instruments")
-
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                """
-                SELECT 1
-                FROM portfolio_snapshots
-                WHERE id = %s
-                  AND user_id = %s
-                """,
-                (snapshot_id, user_id),
-            )
-            if cur.fetchone() is None:
-                raise RuntimeError("risk evidence snapshot does not belong to tenant")
-
-            for evidence in evidences:
-                for source in evidence.sources:
-                    cur.execute(
-                        """
-                        INSERT INTO risk_source_runs (
-                            user_id,
-                            snapshot_id,
-                            source_id,
-                            scope_key,
-                            status,
-                            source_url,
-                            retrieved_at,
-                            details
-                        )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, '{}'::jsonb)
-                        ON CONFLICT (snapshot_id, source_id, scope_key)
-                        DO UPDATE SET
-                            status = EXCLUDED.status,
-                            source_url = EXCLUDED.source_url,
-                            retrieved_at = EXCLUDED.retrieved_at
-                        """,
-                        (
-                            user_id,
-                            snapshot_id,
-                            source.source_id,
-                            evidence.instrument_uid,
-                            source.status,
-                            source.source_url,
-                            source.retrieved_at,
-                        ),
-                    )
-
-                if evidence.fundamental is not None:
-                    fundamental = evidence.fundamental
-                    normalized: dict[str, object] = {
-                        "asset_uid": fundamental.asset_uid,
-                        "currency": fundamental.currency,
-                        "fiscal_period_start_date": fundamental.fiscal_period_start,
-                        "fiscal_period_end_date": fundamental.fiscal_period_end,
-                        "metrics": fundamental.metrics,
-                    }
-                    fact_key = (
-                        "fundamentals:"
-                        + (fundamental.fiscal_period_end.isoformat()
-                           if fundamental.fiscal_period_end is not None else "unknown")
-                    )
-                    cur.execute(
-                        """
-                        INSERT INTO risk_facts (
-                            user_id,
-                            snapshot_id,
-                            instrument_uid,
-                            asset_uid,
-                            source_id,
-                            source_url,
-                            fact_kind,
-                            fact_key,
-                            effective_at,
-                            publication_at,
-                            retrieved_at,
-                            value_json,
-                            semantic_hash
-                        )
-                        VALUES (
-                            %s, %s, %s, %s, 'tbank_fundamentals', %s,
-                            'fundamentals', %s, %s, NULL, %s, %s::jsonb, %s
-                        )
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            user_id,
-                            snapshot_id,
-                            evidence.instrument_uid,
-                            fundamental.asset_uid,
-                            _source_url(evidence.sources, "tbank_fundamentals"),
-                            fact_key,
-                            fundamental.fiscal_period_end,
-                            fundamental.retrieved_at,
-                            _json(normalized),
-                            _hash_json(normalized),
-                        ),
-                    )
-
-                for report in evidence.reports:
-                    normalized = {
-                        "report_date": report.report_date,
-                        "period_year": report.period_year,
-                        "period_num": report.period_num,
-                        "period_type": report.period_type,
-                        "created_at": report.created_at,
-                    }
-                    fact_key = (
-                        f"report:{report.period_year}:{report.period_num}:"
-                        f"{report.period_type}:{report.report_date.isoformat()}"
-                    )
-                    cur.execute(
-                        """
-                        INSERT INTO risk_facts (
-                            user_id,
-                            snapshot_id,
-                            instrument_uid,
-                            source_id,
-                            source_url,
-                            fact_kind,
-                            fact_key,
-                            effective_at,
-                            publication_at,
-                            retrieved_at,
-                            value_json,
-                            semantic_hash
-                        )
-                        VALUES (
-                            %s, %s, %s, 'tbank_reports', %s, 'report_schedule',
-                            %s, %s, %s, %s, %s::jsonb, %s
-                        )
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            user_id,
-                            snapshot_id,
-                            evidence.instrument_uid,
-                            _source_url(evidence.sources, "tbank_reports"),
-                            fact_key,
-                            report.report_date,
-                            report.created_at,
-                            report.created_at,
-                            _json(normalized),
-                            _hash_json(normalized),
-                        ),
-                    )
-
-                for payout in evidence.payouts:
-                    normalized = {
-                        "event_date": payout.event_date,
-                        "record_date": payout.record_date,
-                        "declared_at": payout.declared_at,
-                        "provider_payment_at": payout.provider_payment_at,
-                        "amount_value": payout.amount_value,
-                        "amount_currency": payout.amount_currency,
-                        "status": payout.status,
-                        "details": payout.details,
-                    }
-                    cur.execute(
-                        """
-                        INSERT INTO payout_observations (
-                            user_id,
-                            snapshot_id,
-                            instrument_uid,
-                            event_kind,
-                            event_key,
-                            event_date,
-                            record_date,
-                            declared_at,
-                            provider_payment_at,
-                            amount_value,
-                            amount_currency,
-                            status,
-                            source_id,
-                            source_url,
-                            normalized,
-                            semantic_hash
-                        )
-                        VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s::jsonb, %s
-                        )
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            user_id,
-                            snapshot_id,
-                            evidence.instrument_uid,
-                            payout.kind,
-                            payout.event_key,
-                            payout.event_date,
-                            payout.record_date,
-                            payout.declared_at,
-                            payout.provider_payment_at,
-                            (
-                                Decimal(payout.amount_value)
-                                if payout.amount_value is not None
-                                else None
-                            ),
-                            payout.amount_currency,
-                            payout.status,
-                            payout.source_id,
-                            payout.source_url,
-                            _json(normalized),
-                            _hash_json(normalized),
-                        ),
-                    )
-
-                assessment = assessment_by_uid[evidence.instrument_uid]
-                cur.execute(
-                    """
-                    INSERT INTO risk_assessments (
-                        user_id,
-                        snapshot_id,
-                        instrument_uid,
-                        ticker,
-                        state,
-                        sector_model,
-                        coverage,
-                        reasons,
-                        evaluated_at,
-                        latest_fundamental_period_end,
-                        latest_report_date
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
-                    ON CONFLICT (snapshot_id, instrument_uid)
-                    DO UPDATE SET
-                        ticker = EXCLUDED.ticker,
-                        state = EXCLUDED.state,
-                        sector_model = EXCLUDED.sector_model,
-                        coverage = EXCLUDED.coverage,
-                        reasons = EXCLUDED.reasons,
-                        evaluated_at = EXCLUDED.evaluated_at,
-                        latest_fundamental_period_end =
-                            EXCLUDED.latest_fundamental_period_end,
-                        latest_report_date = EXCLUDED.latest_report_date
-                    """,
-                    (
-                        user_id,
-                        snapshot_id,
-                        assessment.instrument_uid,
-                        assessment.ticker,
-                        assessment.state,
-                        assessment.sector_model,
-                        assessment.coverage,
-                        _json([asdict(reason) for reason in assessment.reasons]),
-                        assessment.evaluated_at,
-                        assessment.latest_fundamental_period_end,
-                        assessment.latest_report_date,
-                    ),
-                )
-
     def latest_risk_summary(
         self,
         user_id: UUID,
@@ -1113,6 +844,23 @@ class PortfolioStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT 1
+                FROM portfolio_snapshots
+                WHERE id = %s
+                  AND user_id = %s
+                """,
+                (snapshot_id, user_id),
+            )
+            if cur.fetchone() is None:
+                raise RuntimeError("risk evidence snapshot does not belong to tenant")
+
+            if {item.instrument_uid for item in evidences} != set(assessment_by_uid):
+                raise ValueError(
+                    "risk evidence and assessments must cover the same instruments"
+                )
+
             for evidence in evidences:
                 assessment = assessment_by_uid.get(evidence.instrument_uid)
                 if assessment is None:
@@ -1162,6 +910,7 @@ class PortfolioStore:
                     fundamental_payload = {
                         "asset_uid": evidence.fundamental.asset_uid,
                         "currency": evidence.fundamental.currency,
+                        "fiscal_period_start": evidence.fundamental.fiscal_period_start,
                         "fiscal_period_end": evidence.fundamental.fiscal_period_end,
                         "metrics": evidence.fundamental.metrics,
                     }
@@ -1285,7 +1034,7 @@ class PortfolioStore:
                             ),
                         )
 
-                payouts_by_source: dict[str, list[object]] = {}
+                payouts_by_source: dict[str, list[PayoutEvidence]] = {}
                 for payout in evidence.payouts:
                     payouts_by_source.setdefault(payout.source_id, []).append(payout)
 
