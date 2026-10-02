@@ -466,6 +466,34 @@ class PortfolioStore:
                         item.api_trade_available,
                         item.buy_available,
                         item.sell_available,
+                        (
+                            Decimal(item.min_price_increment)
+                            if item.min_price_increment is not None
+                            else None
+                        ),
+                        (
+                            Decimal(item.nominal.value)
+                            if item.nominal is not None
+                            else None
+                        ),
+                        item.nominal.currency if item.nominal is not None else None,
+                        (
+                            Decimal(item.aci_value.value)
+                            if item.aci_value is not None
+                            else None
+                        ),
+                        item.aci_value.currency if item.aci_value is not None else None,
+                        item.maturity_date,
+                        item.coupon_quantity_per_year,
+                        item.floating_coupon,
+                        item.perpetual,
+                        item.amortization,
+                        item.subordinated,
+                        item.liquidity,
+                        item.exchange,
+                        item.real_exchange,
+                        item.tax_free,
+                        item.collateral,
                         catalog_retrieved_at,
                     )
                     for item in bundle.metadata
@@ -492,11 +520,30 @@ class PortfolioStore:
                         api_trade_available,
                         buy_available,
                         sell_available,
+                        min_price_increment,
+                        nominal_value,
+                        nominal_currency,
+                        aci_value,
+                        aci_currency,
+                        maturity_date,
+                        coupon_quantity_per_year,
+                        floating_coupon,
+                        perpetual,
+                        amortization,
+                        subordinated,
+                        liquidity,
+                        exchange,
+                        real_exchange,
+                        tax_free,
+                        collateral,
                         provider_retrieved_at
                     )
                     VALUES (
-                        'tbank', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        'tbank',
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (provider, instrument_uid) DO UPDATE SET
                         figi = EXCLUDED.figi,
@@ -516,6 +563,22 @@ class PortfolioStore:
                         api_trade_available = EXCLUDED.api_trade_available,
                         buy_available = EXCLUDED.buy_available,
                         sell_available = EXCLUDED.sell_available,
+                        min_price_increment = EXCLUDED.min_price_increment,
+                        nominal_value = EXCLUDED.nominal_value,
+                        nominal_currency = EXCLUDED.nominal_currency,
+                        aci_value = EXCLUDED.aci_value,
+                        aci_currency = EXCLUDED.aci_currency,
+                        maturity_date = EXCLUDED.maturity_date,
+                        coupon_quantity_per_year = EXCLUDED.coupon_quantity_per_year,
+                        floating_coupon = EXCLUDED.floating_coupon,
+                        perpetual = EXCLUDED.perpetual,
+                        amortization = EXCLUDED.amortization,
+                        subordinated = EXCLUDED.subordinated,
+                        liquidity = EXCLUDED.liquidity,
+                        exchange = EXCLUDED.exchange,
+                        real_exchange = EXCLUDED.real_exchange,
+                        tax_free = EXCLUDED.tax_free,
+                        collateral = EXCLUDED.collateral,
                         last_seen_at = now(),
                         provider_retrieved_at = EXCLUDED.provider_retrieved_at
                     """,
