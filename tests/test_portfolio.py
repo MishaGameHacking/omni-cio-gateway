@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
 from omnicio.main import app
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
+from omnicio.portfolio_store import InvestmentProfileRecord
 from omnicio.tbank import (
     TBankAssetTotal,
     TBankInstrumentMetadata,
@@ -196,6 +198,104 @@ def test_duplicate_identity_is_rejected_instead_of_double_counted() -> None:
     item = position("duplicate", "1", "100")
     with pytest.raises(PortfolioAnalysisError):
         analyze_portfolio(portfolio(item, item), cash(), ())
+
+
+def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
+    now = datetime.now(UTC)
+    profile = InvestmentProfileRecord(
+        id=1,
+        user_id="server-user",
+        version=3,
+        reserve_rub=Decimal("100000"),
+        planned_withdrawal_rub=Decimal("25000"),
+        horizon_months=60,
+        max_drawdown_percent=Decimal("20"),
+        liquidity_horizon_days=30,
+        allow_below_investment_grade=False,
+        created_at=now,
+    )
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-user"
+        store.return_value.current_profile.return_value = profile
+        response = TestClient(app).get(
+            "/api/profile/investment?user_id=attacker",
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["profile"]["version"] == 3
+    store.return_value.current_profile.assert_called_once_with("server-user")
+
+
+def test_investment_profile_write_requires_origin_and_current_consent() -> None:
+    payload = {
+        "reserve_rub": "100000",
+        "planned_withdrawal_rub": "25000",
+        "horizon_months": 60,
+        "max_drawdown_percent": "20",
+        "liquidity_horizon_days": 30,
+        "allow_below_investment_grade": False,
+    }
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: False},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {
+                "privacy_policy": "2026-10-02-v6",
+                "personal_data_consent": "2026-10-02-v6",
+                "terms": "2026-10-02-v6",
+            }
+
+            cross_origin = TestClient(app).put(
+                "/api/profile/investment",
+                json=payload,
+                headers={"Origin": "https://evil.example"},
+            )
+            assert cross_origin.status_code == 403
+
+            missing_consent = TestClient(app).put(
+                "/api/profile/investment",
+                json=payload,
+                headers={"Origin": "https://omnicio.ru"},
+            )
+            assert missing_consent.status_code == 409
+            store.return_value.save_profile.assert_not_called()
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_investment_profile_rejects_non_finite_decimal_values() -> None:
+    response = TestClient(app).put(
+        "/api/profile/investment",
+        json={
+            "reserve_rub": "NaN",
+            "planned_withdrawal_rub": "0",
+            "horizon_months": 12,
+            "max_drawdown_percent": "10",
+            "liquidity_horizon_days": 7,
+            "allow_below_investment_grade": False,
+        },
+        headers={"Origin": "https://omnicio.ru"},
+    )
+    assert response.status_code == 422
 
 
 def test_analysis_http_requires_a_session_before_touching_the_broker() -> None:
