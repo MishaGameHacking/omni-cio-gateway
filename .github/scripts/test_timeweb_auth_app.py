@@ -131,9 +131,9 @@ class AuthAppDeployTests(unittest.TestCase):
         os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
         os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
         os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
-        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v4"
-        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v4"
-        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v4"
+        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v5"
+        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v5"
+        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v5"
 
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
@@ -409,13 +409,15 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-02-v4", document)
+            self.assertIn("2026-10-02-v5", document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
 
         self.assertIn("OmniCIO Personal", privacy)
         self.assertIn("T-Invest API", privacy)
         self.assertIn("Текущий временный live-test лимит — два пользовательских аккаунта", terms)
         self.assertIn("ролью <code>user</code>", terms)
+        self.assertIn("Самостоятельное удаление аккаунта", terms)
+        self.assertIn("восстановление удалённого аккаунта невозможно", privacy)
 
     def test_personal_dashboard_keeps_auth_and_broker_contracts(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -431,6 +433,10 @@ class AuthAppDeployTests(unittest.TestCase):
             "tbank-connected",
             "profile-id",
             "logout",
+            "delete-account-start",
+            "delete-account-form",
+            "delete-account-confirmation",
+            "delete-account-submit",
         ):
             self.assertIn(f'id="{element_id}"', page)
 
@@ -439,6 +445,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/auth/config",
             "/api/auth/vkid/start",
             "/api/auth/logout",
+            "/api/account/delete",
             "/api/broker/tbank",
             "/api/broker/tbank/accounts",
             "/api/broker/tbank/portfolio",
@@ -579,7 +586,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.6.3"', project)
+        self.assertIn('version = "0.6.4"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
