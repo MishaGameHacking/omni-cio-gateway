@@ -6,8 +6,11 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import sys
+import tempfile
 import unittest
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
 
 MODULE_PATH = pathlib.Path(__file__).with_name("timeweb_auth_postgres.py")
 SPEC = importlib.util.spec_from_file_location("timeweb_auth_postgres", MODULE_PATH)
@@ -200,6 +203,47 @@ class PostgresTests(unittest.TestCase):
             args.migration,
             ["migrations/0001.sql", "migrations/0002.sql"],
         )
+
+    def test_migrations_are_loaded_from_checkout_in_requested_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            migrations = root / "migrations"
+            migrations.mkdir()
+            (migrations / "0001.sql").write_text("SELECT 1;", encoding="utf-8")
+            (migrations / "0002.sql").write_text("SELECT 2;", encoding="utf-8")
+            with patch.object(MODULE, "__file__", root / ".github/scripts/deployer.py"):
+                result = MODULE.load_migrations(["migrations/0001.sql", "migrations/0002.sql"])
+        self.assertEqual(result, ["SELECT 1;", "SELECT 2;"])
+
+    def test_migration_paths_fail_before_provider_access(self) -> None:
+        paths = (
+            "../outside.sql", "/tmp/outside.sql", "migrations/../outside.sql",
+            "migrations/nested/file.sql", "migrations/config.env", "migrations/missing.sql",
+            "migrations/invalid\x00.sql",
+        )
+        for path in paths:
+            with (
+                self.subTest(path=path),
+                patch.object(MODULE, "parse_args", return_value=SimpleNamespace(migration=[path])),
+                patch.object(MODULE, "TimewebClient") as provider,
+                patch("sys.stderr"),
+            ):
+                self.assertEqual(MODULE.main(), 1)
+                provider.assert_not_called()
+
+    def test_migration_symlink_cannot_read_an_outside_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            migrations = root / "migrations"
+            migrations.mkdir()
+            outside = root / "outside.sql"
+            outside.write_text("SELECT 'outside';", encoding="utf-8")
+            (migrations / "0001.sql").symlink_to(outside)
+            with (
+                patch.object(MODULE, "__file__", root / ".github/scripts/deployer.py"),
+                self.assertRaises(MODULE.InfraError),
+            ):
+                MODULE.load_migrations(["migrations/0001.sql"])
 
     def test_existing_cluster_rejects_public_network(self) -> None:
         cluster = {

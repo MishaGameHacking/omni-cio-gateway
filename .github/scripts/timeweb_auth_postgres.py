@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from timeweb_ssh_trust import ssh_base_args, trusted_host_entry
+
 API_ROOT = "https://api.timeweb.cloud/api"
 REMOTE_SECRET_PATH = "/etc/omnicio/auth-secrets.env"
 REMOTE_RUNTIME_PATH = "/etc/omnicio/runtime.env"
@@ -535,42 +537,34 @@ class EphemeralSsh:
         self._known_hosts: pathlib.Path | None = None
         self._ssh_key_id: int | None = None
 
-    def __enter__(self) -> "EphemeralSsh":
+    def __enter__(self) -> EphemeralSsh:
+        try:
+            host_entry = trusted_host_entry(
+                os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), self.server_ip,
+            )
+        except ValueError as exc:
+            raise InfraError("Verified Timeweb SSH host key is missing or invalid") from exc
         self._tmp = tempfile.TemporaryDirectory(prefix="omnicio-auth-ssh-")
         root = pathlib.Path(self._tmp.name)
         self._key_path = root / "id_ed25519"
         self._known_hosts = root / "known_hosts"
 
-        subprocess.run(
-            [
-                "ssh-keygen",
-                "-q",
-                "-t",
-                "ed25519",
-                "-N",
-                "",
-                "-f",
-                str(self._key_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        public_key = self._key_path.with_suffix(".pub").read_text().strip()
-        key_name = f"omnicio-auth-{os.environ.get('GITHUB_RUN_ID', 'manual')}"
-        self._ssh_key_id = self.client.create_ssh_key(public_key, key_name)
         try:
-            self.client.attach_ssh_key(self.server_id, self._ssh_key_id)
-
-            scan = subprocess.run(
-                ["ssh-keyscan", "-T", "10", "-H", self.server_ip],
-                check=False,
+            self._known_hosts.write_text(host_entry, encoding="utf-8")
+            subprocess.run(
+                [
+                    "/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "",
+                    "-f", str(self._key_path),
+                ],
+                check=True,
                 capture_output=True,
                 text=True,
+                timeout=30,
             )
-            if scan.returncode != 0 or not scan.stdout.strip():
-                raise InfraError("Unable to capture managed VDS SSH host key")
-            self._known_hosts.write_text(scan.stdout)
+            public_key = self._key_path.with_suffix(".pub").read_text().strip()
+            key_name = f"omnicio-auth-{os.environ.get('GITHUB_RUN_ID', 'manual')}"
+            self._ssh_key_id = self.client.create_ssh_key(public_key, key_name)
+            self.client.attach_ssh_key(self.server_id, self._ssh_key_id)
 
             for _ in range(18):
                 try:
@@ -607,23 +601,8 @@ class EphemeralSsh:
             raise InfraError("SSH session is not initialized")
 
         completed = subprocess.run(
-            [
-                "ssh",
-                "-i",
-                str(self._key_path),
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "IdentitiesOnly=yes",
-                "-o",
-                "StrictHostKeyChecking=yes",
-                "-o",
-                f"UserKnownHostsFile={self._known_hosts}",
-                "-o",
-                "ConnectTimeout=10",
-                f"root@{self.server_ip}",
-                "--",
-                command,
+            ssh_base_args(self._key_path, self._known_hosts) + [
+                f"root@{self.server_ip}", "--", command,
             ],
             input=input_text,
             check=False,
@@ -1162,13 +1141,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_migrations(paths: list[str]) -> list[str]:
+    """Read only direct SQL files from this checkout's migrations directory."""
+    migration_dir = pathlib.Path(__file__).resolve().parents[2] / "migrations"
+    statements: list[str] = []
+    for value in paths:
+        supplied = pathlib.Path(value)
+        if supplied.parent != pathlib.Path("migrations") or supplied.suffix != ".sql":
+            raise InfraError("Migration must be a direct repository migrations/*.sql file")
+        candidate = migration_dir / supplied.name
+        try:
+            if candidate.is_symlink():
+                raise InfraError("Migration symlinks are not allowed")
+            resolved = candidate.resolve(strict=True)
+            if resolved.parent != migration_dir or not resolved.is_file():
+                raise InfraError("Migration is outside the approved directory")
+            statements.append(resolved.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise InfraError("Migration SQL file is unavailable or invalid") from exc
+    return statements
+
+
 def main() -> int:
     args = parse_args()
     try:
-        migration_sqls = [
-            pathlib.Path(path).read_text(encoding="utf-8")
-            for path in args.migration
-        ]
+        migration_sqls = load_migrations(args.migration)
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,

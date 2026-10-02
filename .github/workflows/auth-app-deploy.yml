@@ -6,9 +6,13 @@ on:
       - main
     paths:
       - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - "src/omnicio/**"
       - "web/**"
       - "assets/brand/**"
@@ -18,9 +22,13 @@ on:
       - main
     paths:
       - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - "src/omnicio/**"
       - "web/**"
       - "assets/brand/**"
@@ -62,7 +70,9 @@ jobs:
             .github/scripts/timeweb_auth_app.py
 
       - name: Run deployer tests
-        run: python3 .github/scripts/test_timeweb_auth_app.py
+        run: |
+          python3 .github/scripts/test_timeweb_ssh_trust.py
+          python3 .github/scripts/test_timeweb_auth_app.py
 
       - name: Verify auth page markers
         run: |
@@ -73,19 +83,26 @@ jobs:
           fi
 
   deploy:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
     name: Deploy auth application
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_sha == github.sha)
     needs: tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
       DB_CLUSTER_NAME: omnicio-auth-postgres
@@ -103,7 +120,16 @@ jobs:
       - name: Checkout accepted main state
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           persist-credentials: false
+
+      - name: Verify current main release checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/verify_main_release.py
+
+      - name: Validate verified SSH server key
+        run: python3 .github/scripts/timeweb_ssh_trust.py
 
       - name: Validate Timeweb secret
         run: |

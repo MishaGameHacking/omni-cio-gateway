@@ -23,6 +23,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from timeweb_ssh_trust import ssh_base_args, trusted_host_entry
+
 API_ROOT = "https://api.timeweb.cloud/api/v1"
 SITE_MARKER = 'name="omni-cio-white-site"'
 DOMAIN_NAME = "omnicio.ru"
@@ -326,49 +328,6 @@ systemctl reload nginx
 """
 
 
-def capture_host_key(known_hosts: pathlib.Path) -> None:
-    """Capture the pinned server key, then require strict matching for SSH."""
-    result = subprocess.run(
-        ["ssh-keyscan", "-T", "10", "-t", "ed25519", EXPECTED_SERVER_IPV4],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    host_keys = [
-        line
-        for line in result.stdout.splitlines()
-        if line and not line.startswith("#")
-    ]
-    if result.returncode != 0 or not host_keys:
-        detail = (result.stderr or "no ED25519 host key returned").strip()
-        raise DeploymentError(
-            "Unable to capture the managed server SSH host key: "
-            + detail[:300]
-        )
-
-    known_hosts.write_text("\n".join(host_keys) + "\n", encoding="utf-8")
-
-
-def ssh_base_args(private_key: pathlib.Path, known_hosts: pathlib.Path) -> list[str]:
-    return [
-        "ssh",
-        "-i",
-        str(private_key),
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=10",
-        "-o",
-        "StrictHostKeyChecking=yes",
-        "-o",
-        f"UserKnownHostsFile={known_hosts}",
-        "-o",
-        "LogLevel=ERROR",
-    ]
-
-
 def wait_for_ssh(
     *,
     private_key: pathlib.Path,
@@ -476,6 +435,13 @@ def configure_with_ephemeral_key(
     client: TimewebClient,
     server_id: int,
 ) -> None:
+    try:
+        host_entry = trusted_host_entry(
+            os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), EXPECTED_SERVER_IPV4,
+        )
+    except ValueError as exc:
+        raise DeploymentError("Verified Timeweb SSH host key is missing or invalid") from exc
+
     with tempfile.TemporaryDirectory(prefix="omni-cio-tls-") as tempdir:
         temp_path = pathlib.Path(tempdir)
         private_key = temp_path / "id_ed25519"
@@ -483,7 +449,7 @@ def configure_with_ephemeral_key(
 
         subprocess.run(
             [
-                "ssh-keygen",
+                "/usr/bin/ssh-keygen",
                 "-q",
                 "-t",
                 "ed25519",
@@ -500,7 +466,7 @@ def configure_with_ephemeral_key(
         public_key = private_key.with_suffix(".pub").read_text(
             encoding="utf-8"
         ).strip()
-        capture_host_key(known_hosts)
+        known_hosts.write_text(host_entry, encoding="utf-8")
 
         run_id = os.environ.get("GITHUB_RUN_ID", "")
         if run_id and not run_id.isdigit():
