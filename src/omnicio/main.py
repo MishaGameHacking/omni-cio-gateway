@@ -24,8 +24,8 @@ from .broker import (
 from .cbr import CBRClient
 from .config import Settings, load_settings
 from .db import Database, UserRecord
-from .market import MarketService
 from .intelligence import rating_source_references
+from .market import MarketService
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import InvestmentProfileRecord, PortfolioStore
 from .security import (
