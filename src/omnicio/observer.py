@@ -84,6 +84,13 @@ class PortfolioObserver:
 
     def run(self, *, now: datetime | None = None) -> ObserverRunResult:
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        with self.store.observer_lock() as locked:
+            if not locked:
+                logger.info("portfolio observer skipped because another run holds the lock")
+                return ObserverRunResult(0, 0, 0, 0, 0)
+            return self._run_locked(observed_at)
+
+    def _run_locked(self, observed_at: datetime) -> ObserverRunResult:
         user_ids = self.store.observer_user_ids(self.legal_versions)
         if not user_ids:
             return ObserverRunResult(0, 0, 0, 0, 0)
@@ -91,7 +98,12 @@ class PortfolioObserver:
         results: list[UserObservationResult] = []
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as workers:
             futures = {
-                workers.submit(self.run_user, user_id, now=observed_at): user_id
+                workers.submit(
+                    self.run_user,
+                    user_id,
+                    now=observed_at,
+                    recover_running=True,
+                ): user_id
                 for user_id in user_ids
             }
             for future in as_completed(futures):
@@ -130,6 +142,7 @@ class PortfolioObserver:
         user_id: UUID,
         *,
         now: datetime,
+        recover_running: bool = False,
     ) -> UserObservationResult | None:
         if now.tzinfo is None:
             raise ValueError("observer time must be timezone-aware")
@@ -139,6 +152,7 @@ class PortfolioObserver:
             user_id,
             job_type=JOB_TYPE,
             scheduled_for=scheduled_for,
+            recover_running=recover_running,
         )
         if job is None:
             return None
