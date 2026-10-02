@@ -1109,12 +1109,8 @@ class PortfolioStore:
             source_rows = [dict(row) for row in cur.fetchall()]
 
         captured_at = cast(datetime, snapshot_row["captured_at"]).astimezone(UTC)
-        snapshot_age = max(0, int((observed_at - captured_at).total_seconds()))
-        snapshot_freshness = (
-            "stale"
-            if observed_at - captured_at > EVIDENCE_RETRIEVAL_MAX_AGE
-            else "fresh"
-        )
+        snapshot_age = _age_seconds(captured_at, now=observed_at)
+        snapshot_freshness = _freshness_status(captured_at, now=observed_at)
         for row in risk_rows:
             assessed_at = cast(datetime | None, row.get("assessed_at"))
             row["assessment_freshness"] = _freshness_status(
@@ -1397,6 +1393,26 @@ def _semantic_operation_payload(normalized: dict[str, object]) -> dict[str, obje
         for key, value in normalized.items()
         if key not in {"provider_operation_id", "parent_operation_id"}
     }
+
+
+def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:
+    if value is None or value.tzinfo is None or now.tzinfo is None:
+        return None
+    delta = now.astimezone(UTC) - value.astimezone(UTC)
+    if delta.total_seconds() < 0:
+        return None
+    return int(delta.total_seconds())
+
+
+def _freshness_status(value: datetime | None, *, now: datetime) -> str:
+    age = _age_seconds(value, now=now)
+    if age is None:
+        return "stale"
+    return (
+        "stale"
+        if age > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds())
+        else "fresh"
+    )
 
 
 def _hash_json(value: Mapping[str, object]) -> bytes:
