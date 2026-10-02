@@ -786,6 +786,36 @@ def test_broker_service_refuses_account_outside_credential_scope() -> None:
     assert database.record is None
 
 
+def test_daily_observation_can_refresh_all_supported_catalog_kinds() -> None:
+    database = FakeDatabase()
+    user_id = UUID("00000000-0000-0000-0000-000000000001")
+    fake = FakeTBank()
+    service = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=fake,
+    )
+    service.connect(
+        user_id=user_id,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
+    )
+
+    with patch.object(
+        fake,
+        "get_instrument_metadata",
+        create=True,
+        return_value=(),
+    ) as catalog:
+        snapshot = service.observation_bundle(user_id, full_catalog=True)
+
+    assert catalog.call_count == 3
+    assert {call.args[2] for call in catalog.call_args_list} == {"share", "bond", "etf"}
+    assert snapshot.sources[-1].status == "received"
+
+
 def test_analysis_metadata_outage_is_partial_and_calls_are_bounded_by_kind() -> None:
     database = FakeDatabase()
     user_id = UUID("00000000-0000-0000-0000-000000000001")
