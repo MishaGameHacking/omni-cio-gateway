@@ -256,7 +256,7 @@ def build_tbank_evidence(
                 subject_uid=report.instrument_uid,
                 provider_key=key,
                 source_url=TBANK_INSTRUMENTS_SOURCE,
-                published_at=report.created_at,
+                published_at=report.report_date,
                 effective_at=report.report_date,
                 payload=payload,
                 facts=(
@@ -266,7 +266,7 @@ def build_tbank_evidence(
                         fact_key="report_date",
                         value_text=_time_key(report.report_date),
                         effective_at=report.report_date,
-                        published_at=report.created_at,
+                        published_at=report.report_date,
                         payload={
                             "period_year": report.period_year,
                             "period_num": report.period_num,
