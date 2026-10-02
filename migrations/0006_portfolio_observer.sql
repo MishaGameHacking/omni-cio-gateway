@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS instrument_catalog (
     api_trade_available boolean,
     buy_available boolean,
     sell_available boolean,
+    required_tests jsonb NOT NULL DEFAULT '[]'::jsonb,
     first_seen_at timestamptz NOT NULL DEFAULT now(),
     last_seen_at timestamptz NOT NULL DEFAULT now(),
     provider_retrieved_at timestamptz NOT NULL,
@@ -34,25 +35,6 @@ CREATE INDEX IF NOT EXISTS instrument_catalog_isin_idx
 CREATE INDEX IF NOT EXISTS instrument_catalog_ticker_idx
     ON instrument_catalog (ticker)
     WHERE ticker <> '';
-
-CREATE TABLE IF NOT EXISTS account_instrument_access (
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    account_id text NOT NULL,
-    provider text NOT NULL,
-    instrument_uid text NOT NULL,
-    required_tests jsonb NOT NULL DEFAULT '[]'::jsonb,
-    observed_at timestamptz NOT NULL,
-    PRIMARY KEY (user_id, account_id, provider, instrument_uid),
-    FOREIGN KEY (provider, instrument_uid)
-        REFERENCES instrument_catalog(provider, instrument_uid)
-        ON DELETE CASCADE,
-    CONSTRAINT account_instrument_access_account_nonempty CHECK (
-        char_length(account_id) BETWEEN 1 AND 128
-    )
-);
-
-CREATE INDEX IF NOT EXISTS account_instrument_access_user_account_idx
-    ON account_instrument_access (user_id, account_id);
 
 CREATE TABLE IF NOT EXISTS issuer_groups (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -253,14 +235,6 @@ CREATE TABLE IF NOT EXISTS broker_sync_state (
         )
     )
 );
-
-ALTER TABLE account_instrument_access ENABLE ROW LEVEL SECURITY;
-ALTER TABLE account_instrument_access FORCE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS account_instrument_access_tenant ON account_instrument_access;
-CREATE POLICY account_instrument_access_tenant
-    ON account_instrument_access
-    USING (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid)
-    WITH CHECK (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid);
 
 ALTER TABLE investment_profile_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE investment_profile_versions FORCE ROW LEVEL SECURITY;
