@@ -241,13 +241,22 @@
     });
   };
 
+  const mobileDrawerMode = () => window.matchMedia("(max-width: 820px)").matches;
+
   const closeDrawer = () => {
     document.body.classList.remove("drawer-open");
     appMenuToggle.setAttribute("aria-expanded", "false");
-    appDrawer.setAttribute("aria-hidden", "true");
+    if (mobileDrawerMode()) {
+      appDrawer.setAttribute("aria-hidden", "true");
+    } else {
+      appDrawer.removeAttribute("aria-hidden");
+    }
   };
 
   const openDrawer = () => {
+    if (!mobileDrawerMode()) {
+      return;
+    }
     drawerBackdrop.hidden = false;
     document.body.classList.add("drawer-open");
     appMenuToggle.setAttribute("aria-expanded", "true");
@@ -1361,6 +1370,12 @@
   drawerBackdrop.addEventListener("click", closeDrawer);
   appBack.addEventListener("click", goBack);
 
+  window.addEventListener("resize", () => {
+    if (!mobileDrawerMode()) {
+      closeDrawer();
+    }
+  });
+
   window.addEventListener("popstate", (event) => {
     const state = event.state;
     if (!state?.omnicio || !VIEW_TITLES[state.view]) {
@@ -1412,7 +1427,11 @@
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       } else if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen({navigationUI: "hide"});
+        try {
+          await document.documentElement.requestFullscreen({navigationUI: "hide"});
+        } catch {
+          await document.documentElement.requestFullscreen();
+        }
       }
     } catch {
       fullscreenStatus.textContent = "Браузер не разрешил полноэкранный режим";
