@@ -457,11 +457,11 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.sha[:12],
         )).encode()
         config = json.dumps({
-            "mode": "owner_only",
+            "mode": "closed",
             "registration_enabled": False,
+            "registration_max_users": 1,
             "auth_provider": "vkid",
             "login_enabled": False,
-            "owner_login_enabled": False,
         }).encode()
         self.responses = {
             "/": (root, "text/html", 200),
@@ -474,7 +474,11 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "/api/auth/config": (config, "application/json", 200),
         }
         for path, marker in MODULE.LEGAL_PAGES.items():
-            self.responses[path] = (marker.encode(), "text/html", 200)
+            self.responses[path] = (
+                f"{marker} Test Operator operator@example.com".encode(),
+                "text/html",
+                200,
+            )
 
     def verify(self) -> set[str]:
         requested: set[str] = set()
@@ -514,7 +518,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),
             (
                 "/api/auth/config",
-                b'{"mode":"open","registration_enabled":false,"auth_provider":"vkid","login_enabled":false}',
+                b'{"mode":"limited_registration","registration_enabled":false,"registration_max_users":1,"auth_provider":"vkid","login_enabled":false}',
                 "application/json",
                 200,
             ),
