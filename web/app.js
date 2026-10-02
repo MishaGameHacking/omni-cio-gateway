@@ -1316,6 +1316,29 @@
     lastAnalysisAt = Date.now();
   };
 
+  const RISK_REASON_LABELS = {
+    tbank_bond_event_contains_default_date: "T-Invest содержит подтверждённую дату дефолта",
+    credit_rating_feed_not_verified: "Разрешённый источник кредитного рейтинга не подключён",
+    fundamental_data_missing: "Фундаментальные показатели отсутствуют",
+    fundamental_data_stale: "Фундаментальные показатели устарели",
+    provider_evidence_stale: "Доказательства давно не обновлялись",
+    provider_evidence_partial: "Часть доказательных источников недоступна",
+    fund_look_through_not_verified: "Состав фонда не подтверждён",
+    fixed_charge_coverage_ratio_below_one: "FCCR ниже 1",
+    ebitda_negative: "EBITDA отрицательная",
+    free_cash_flow_negative_with_debt: "Свободный денежный поток отрицательный при наличии долга",
+    current_ratio_below_one: "Коэффициент текущей ликвидности ниже 1",
+    net_interest_margin_mrq_negative: "Чистая процентная маржа отрицательная",
+    roe_negative: "ROE отрицательный",
+    roa_negative: "ROA отрицательный",
+  };
+
+  const metricProfileLabel = (value) => ({
+    corporate: "корпоративные метрики",
+    bank_like: "bank-like метрики",
+    unknown: "профиль метрик не определён",
+  }[value] || "");
+
   const intelligenceLabel = (value) => ({
     data_missing: "Данных недостаточно",
     normal: "Норма",
@@ -1345,10 +1368,13 @@
       const title = document.createElement("strong");
       title.textContent = risk.ticker || risk.instrument_uid || "Инструмент";
       const detail = document.createElement("small");
-      const reasons = Array.isArray(risk.reasons) ? risk.reasons.join(" · ") : "";
+      const reasons = Array.isArray(risk.reasons)
+        ? risk.reasons.map((reason) => RISK_REASON_LABELS[reason] || reason).join(" · ")
+        : "";
       detail.textContent = [
         INSTRUMENT_LABELS[risk.instrument_type] || risk.instrument_type,
         risk.sector || "Сектор не подтверждён",
+        metricProfileLabel(risk.evidence?.metric_profile),
         reasons,
       ].filter(Boolean).join(" · ");
       instrument.append(title, detail);
