@@ -836,10 +836,9 @@ def reconcile(
 
         write_product_environment(ssh)
         upload_release(ssh, archive_b64=archive_b64, release_sha=release_sha)
-        deploy_remote(ssh, release_sha=release_sha)
-        retire_legacy_profile(ssh)
 
         try:
+            deploy_remote(ssh, release_sha=release_sha)
             for _ in range(6):
                 try:
                     verify_public(release_sha)
@@ -848,6 +847,11 @@ def reconcile(
                     time.sleep(5)
             else:
                 raise InfraError("Public verification did not become healthy")
+
+            # The legacy account is removed only after the replacement release
+            # is already healthy. The reset itself is one transaction and
+            # refuses to touch a database containing more than one user.
+            retire_legacy_profile(ssh)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise
