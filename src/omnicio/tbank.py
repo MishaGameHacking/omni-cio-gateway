@@ -592,11 +592,11 @@ class TBankInvestClient:
         if len(cursor) > 4096 or "\n" in cursor or "\r" in cursor:
             raise ValueError("operation history cursor is invalid")
 
+        # The project selects the sandbox by host. T-Invest documents this as
+        # the preferred sandbox mode, so the ordinary OperationsService method is
+        # used on both hosts instead of mixing the sandbox host with SandboxService.
         service = "OperationsService"
         method = "GetOperationsByCursor"
-        if environment == "sandbox":
-            service = "SandboxService"
-            method = "GetSandboxOperationsByCursor"
 
         body: dict[str, object] = {
             "accountId": _validate_account_id(account_id),
