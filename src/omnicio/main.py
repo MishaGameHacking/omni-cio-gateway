@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -32,7 +33,12 @@ from .security import (
     pkce_challenge,
     seal_vkid_flow,
 )
-from .service import AuthService, LoginUnavailable, OwnerAccessDenied
+from .service import (
+    AuthService,
+    LoginUnavailable,
+    RegistrationCapacityReached,
+    RegistrationClosed,
+)
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 from .vkid import VKIDClient, VKIDRejected, VKIDUnavailable
 
@@ -62,17 +68,21 @@ class TBankConnectBody(TBankCredentialBody):
 
 def client_ip(request: Request) -> str:
     direct = request.client.host if request.client else ""
+    candidate = direct
     if direct in {"127.0.0.1", "::1"}:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        first = forwarded.split(",", 1)[0].strip()
-        if first:
-            return first
-    return direct or "unknown"
+        # Nginx overwrites X-Real-IP with the TCP peer address. Do not trust the
+        # first X-Forwarded-For element because a client can supply it itself.
+        candidate = request.headers.get("x-real-ip", "").strip()
+
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return "unknown"
 
 
 def require_same_origin(request: Request) -> None:
     origin = request.headers.get("origin")
-    if origin and origin != CANONICAL_ORIGIN:
+    if origin != CANONICAL_ORIGIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="origin rejected")
 
 
@@ -220,8 +230,8 @@ def auth_config(request: Request) -> dict[str, object]:
         "mode": cfg.access_mode,
         "auth_provider": "vkid",
         "registration_enabled": cfg.registration_enabled,
+        "registration_max_users": cfg.registration_max_users,
         "login_enabled": cfg.vkid_ready,
-        "owner_login_enabled": cfg.vkid_ready,
         "legal_versions": {
             "privacy_policy": cfg.privacy_version,
             "personal_data_consent": cfg.consent_version,
@@ -299,8 +309,10 @@ def vkid_callback(
             client_ip=client_ip(request),
             accepted_legal_versions=legal_versions,
         )
-    except OwnerAccessDenied:
-        return auth_redirect("/?auth_error=access")
+    except RegistrationClosed:
+        return auth_redirect("/?auth_error=registration")
+    except RegistrationCapacityReached:
+        return auth_redirect("/?auth_error=capacity")
     except (SecurityValueError, VKIDRejected):
         return auth_redirect("/?auth_error=flow")
     except (VKIDUnavailable, LoginUnavailable):
@@ -342,6 +354,7 @@ def me(
     return {
         "public_id": format_public_id(user.public_id),
         "status": user.status,
+        "role": user.role,
     }
 
 

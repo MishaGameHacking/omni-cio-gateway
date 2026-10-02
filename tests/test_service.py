@@ -8,29 +8,42 @@ import pytest
 from cryptography.fernet import Fernet
 
 from omnicio.config import Settings
-from omnicio.db import UserRecord
-from omnicio.service import AuthService, LoginUnavailable, OwnerAccessDenied
+from omnicio.db import (
+    RegistrationCapacityError,
+    RegistrationClosedError,
+    UserRecord,
+)
+from omnicio.service import (
+    AuthService,
+    LoginUnavailable,
+    RegistrationCapacityReached,
+    RegistrationClosed,
+)
 
 
 class FakeDatabase:
     def __init__(self) -> None:
         self.session_digest: bytes | None = None
-        self.refreshed_owner_vk_id: str | None = None
         self.refreshed_ttl: int | None = None
         self.completed_vk_user_id: str | None = None
         self.accepted_versions: dict[str, str] | None = None
-        self.reuse_existing_user: bool | None = None
-        self.required_vk_user_id: str | None = None
+        self.registration_enabled: bool | None = None
+        self.registration_max_users: int | None = None
+        self.login_error: RuntimeError | None = None
         self.user = UserRecord(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
             status="active",
+            role="user",
         )
 
     def complete_vkid_login(self, **kwargs):
+        if self.login_error is not None:
+            raise self.login_error
         self.completed_vk_user_id = kwargs["vk_user_id"]
         self.accepted_versions = kwargs["legal_versions"]
-        self.reuse_existing_user = kwargs["reuse_existing_user"]
+        self.registration_enabled = kwargs["registration_enabled"]
+        self.registration_max_users = kwargs["registration_max_users"]
         self.session_digest = kwargs["session_token_digest"]
         return self.user, True
 
@@ -38,11 +51,8 @@ class FakeDatabase:
         self,
         token_digest,
         *,
-        required_vk_user_id,
         session_ttl_seconds,
     ):
-        self.refreshed_owner_vk_id = required_vk_user_id
-        self.required_vk_user_id = required_vk_user_id
         self.refreshed_ttl = session_ttl_seconds
         if token_digest == self.session_digest:
             return self.user
@@ -60,12 +70,12 @@ def settings(**overrides: object) -> Settings:
         "broker_token_crypto_key": Fernet.generate_key().decode("ascii"),
         "vkid_flow_crypto_key": Fernet.generate_key().decode("ascii"),
         "vkid_app_id": "123456",
-        "owner_vk_id": "987654321",
         "vkid_login_enabled": True,
-        "registration_enabled": False,
-        "privacy_version": "2026-10-01-v2",
-        "consent_version": "2026-10-01-v2",
-        "terms_version": "2026-10-01-v2",
+        "registration_enabled": True,
+        "registration_max_users": 1,
+        "privacy_version": "2026-10-02-v3",
+        "consent_version": "2026-10-02-v3",
+        "terms_version": "2026-10-02-v3",
         "vkid_flow_ttl_seconds": 600,
         "session_ttl_seconds": 34_560_000,
     }
@@ -73,44 +83,9 @@ def settings(**overrides: object) -> Settings:
     return Settings(**values)
 
 
-def test_vkid_owner_login_creates_session() -> None:
+def test_vkid_login_creates_user_session_without_owner_binding() -> None:
     db = FakeDatabase()
     auth = AuthService(settings(), db)
-
-    result = auth.complete_vkid_login(
-        vk_user_id="987654321",
-        client_ip="203.0.113.10",
-        accepted_legal_versions=auth.legal_versions(),
-    )
-
-    assert result.public_id == "000000001"
-    assert result.created is True
-    assert db.completed_vk_user_id == "987654321"
-    assert db.accepted_versions == auth.legal_versions()
-    assert db.reuse_existing_user is True
-    assert auth.refresh_session(result.session_token) == db.user
-    assert db.refreshed_owner_vk_id == "987654321"
-    assert db.refreshed_ttl == 34_560_000
-
-
-def test_vkid_login_rejects_non_owner_before_session_creation() -> None:
-    db = FakeDatabase()
-    auth = AuthService(settings(), db)
-
-    with pytest.raises(OwnerAccessDenied):
-        auth.complete_vkid_login(
-            vk_user_id="111111111",
-            client_ip="203.0.113.10",
-            accepted_legal_versions=auth.legal_versions(),
-        )
-
-    assert db.session_digest is None
-    assert db.completed_vk_user_id is None
-
-
-def test_open_registration_creates_separate_non_owner_identity() -> None:
-    db = FakeDatabase()
-    auth = AuthService(settings(registration_enabled=True), db)
 
     result = auth.complete_vkid_login(
         vk_user_id="111111111",
@@ -118,29 +93,45 @@ def test_open_registration_creates_separate_non_owner_identity() -> None:
         accepted_legal_versions=auth.legal_versions(),
     )
 
+    assert result.public_id == "000000001"
     assert result.created is True
     assert db.completed_vk_user_id == "111111111"
-    assert db.reuse_existing_user is False
+    assert db.accepted_versions == auth.legal_versions()
+    assert db.registration_enabled is True
+    assert db.registration_max_users == 1
     assert auth.refresh_session(result.session_token) == db.user
-    assert db.required_vk_user_id is None
+    assert db.refreshed_ttl == 34_560_000
 
 
-def test_open_registration_still_reuses_legacy_owner_identity() -> None:
+def test_unknown_identity_fails_closed_when_registration_is_closed() -> None:
     db = FakeDatabase()
-    auth = AuthService(settings(registration_enabled=True), db)
+    db.login_error = RegistrationClosedError("registration is closed")
+    auth = AuthService(settings(registration_enabled=False), db)
 
-    auth.complete_vkid_login(
-        vk_user_id="987654321",
-        client_ip="203.0.113.10",
-        accepted_legal_versions=auth.legal_versions(),
-    )
+    with pytest.raises(RegistrationClosed):
+        auth.complete_vkid_login(
+            vk_user_id="111111111",
+            client_ip="203.0.113.11",
+            accepted_legal_versions=auth.legal_versions(),
+        )
 
-    assert db.reuse_existing_user is True
 
-
-def test_open_registration_rejects_malformed_provider_subject() -> None:
+def test_unknown_identity_fails_closed_when_capacity_is_full() -> None:
     db = FakeDatabase()
-    auth = AuthService(settings(registration_enabled=True), db)
+    db.login_error = RegistrationCapacityError("registration capacity reached")
+    auth = AuthService(settings(registration_max_users=1), db)
+
+    with pytest.raises(RegistrationCapacityReached):
+        auth.complete_vkid_login(
+            vk_user_id="222222222",
+            client_ip="203.0.113.12",
+            accepted_legal_versions=auth.legal_versions(),
+        )
+
+
+def test_vkid_login_rejects_malformed_provider_subject() -> None:
+    db = FakeDatabase()
+    auth = AuthService(settings(), db)
 
     with pytest.raises(LoginUnavailable):
         auth.complete_vkid_login(
@@ -158,7 +149,7 @@ def test_vkid_login_rejects_stale_legal_versions() -> None:
 
     with pytest.raises(LoginUnavailable):
         auth.complete_vkid_login(
-            vk_user_id="987654321",
+            vk_user_id="111111111",
             client_ip="203.0.113.10",
             accepted_legal_versions={
                 "privacy_policy": "old",
@@ -170,45 +161,21 @@ def test_vkid_login_rejects_stale_legal_versions() -> None:
     assert db.session_digest is None
 
 
-def test_open_mode_can_be_ready_without_owner_id() -> None:
-    cfg = settings(registration_enabled=True, owner_vk_id="")
-    assert cfg.vkid_ready is True
-    assert cfg.access_mode == "open"
-
-
-def test_owner_only_mode_requires_owner_id() -> None:
-    cfg = settings(registration_enabled=False, owner_vk_id="")
-    assert cfg.vkid_ready is False
-    assert cfg.access_mode == "owner_only"
+def test_access_mode_reflects_registration_gate() -> None:
+    assert settings(registration_enabled=True).access_mode == "limited_registration"
+    assert settings(registration_enabled=False).access_mode == "closed"
 
 
 def test_session_fails_closed_when_vkid_is_not_configured() -> None:
     db = FakeDatabase()
-    auth = AuthService(
-        settings(vkid_login_enabled=False, owner_vk_id=""),
-        db,
-    )
+    auth = AuthService(settings(vkid_login_enabled=False), db)
 
     assert auth.refresh_session("anything") is None
 
 
-@pytest.mark.parametrize(
-    ("app_id", "owner_vk_id"),
-    [
-        ("app", "987654321"),
-        ("123456", "owner"),
-        ("0", "987654321"),
-        ("123456", "0"),
-    ],
-)
-def test_session_fails_closed_for_invalid_vkid_ids(
-    app_id: str,
-    owner_vk_id: str,
-) -> None:
+@pytest.mark.parametrize("app_id", ["app", "0", ""])
+def test_session_fails_closed_for_invalid_vkid_app_id(app_id: str) -> None:
     db = FakeDatabase()
-    auth = AuthService(
-        settings(vkid_app_id=app_id, owner_vk_id=owner_vk_id),
-        db,
-    )
+    auth = AuthService(settings(vkid_app_id=app_id), db)
 
     assert auth.refresh_session("anything") is None

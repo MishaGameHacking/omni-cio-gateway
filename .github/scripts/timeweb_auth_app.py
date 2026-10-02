@@ -34,12 +34,17 @@ from timeweb_auth_postgres import (
 DOMAIN = "omnicio.ru"
 SITE_MARKER = 'name="omni-cio-white-site"'
 LEGAL_PAGES = {
-    "/legal/privacy.html": "Уведомление о конфиденциальности и обработке данных",
-    "/legal/consent.html": "Отдельное согласие на обработку данных для входа",
-    "/legal/terms.html": "Правила личного использования OmniCIO Personal",
+    "/legal/privacy.html": "Политика обработки персональных данных",
+    "/legal/consent.html": "Согласие на обработку персональных данных",
+    "/legal/terms.html": "Пользовательские правила OmniCIO Personal",
 }
+LEGAL_OPERATOR_MARKERS = (
+    "__OMNICIO_OPERATOR_NAME__",
+    "__OMNICIO_OPERATOR_EMAIL__",
+)
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
+LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 BRAND_RUNTIME_FILES = (
     "assets/brand/transparent/omni-sentinel-core-color-1024.png",
@@ -100,6 +105,9 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         "AND to_regclass('public.legal_acceptances') IS NOT NULL "
         "AND to_regclass('public.vkid_identities') IS NOT NULL "
         "AND to_regclass('public.tbank_connection') IS NOT NULL "
+        "AND EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'users' "
+        "AND column_name = 'role') "
         "THEN 'ready' ELSE 'missing' END"
     )
     command = (
@@ -107,7 +115,6 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
         f"grep -q '^VKID_FLOW_CRYPTO_KEY=' {RUNTIME_ENV} && "
         f"grep -q '^BROKER_TOKEN_CRYPTO_KEY=' {RUNTIME_ENV} && "
-        f"grep -q '^REGISTRATION_ENABLED=false$' {RUNTIME_ENV} && "
         "command -v psql >/dev/null 2>&1 && "
         "set -a && "
         f". {RUNTIME_ENV} && "
@@ -148,12 +155,27 @@ def registration_enabled() -> bool:
     return _strict_boolean_environment("REGISTRATION_ENABLED", False)
 
 
+def registration_max_users() -> int:
+    raw = os.environ.get("REGISTRATION_MAX_USERS", "1").strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise InfraError("REGISTRATION_MAX_USERS must be an integer") from exc
+    if value <= 0:
+        raise InfraError("REGISTRATION_MAX_USERS must be positive")
+    return value
+
+
 def vkid_configuration_ready() -> bool:
-    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
-    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    if not _positive_numeric_id(vkid_app_id):
-        return False
-    return registration_enabled() or _positive_numeric_id(owner_vk_id)
+    return _positive_numeric_id(os.environ.get("VKID_APP_ID", "").strip())
+
+
+def legacy_profile_reset_enabled() -> bool:
+    return (
+        registration_enabled()
+        and _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False)
+        and _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
+    )
 
 
 def validate_product_environment() -> None:
@@ -173,45 +195,57 @@ def validate_product_environment() -> None:
             + ", ".join(missing)
         )
 
-    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
-    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    is_registration_enabled = registration_enabled()
+    if not vkid_configuration_ready():
+        raise InfraError("VKID_APP_ID must be a positive numeric value")
 
-    if is_registration_enabled:
+    if registration_enabled():
         if not _strict_boolean_environment("MULTIUSER_LEGAL_APPROVED", False):
             raise InfraError(
-                "Public registration requires an explicit reviewed legal approval gate"
+                "Registration requires an explicit reviewed legal approval gate"
             )
-        if not _positive_numeric_id(vkid_app_id):
+        if not _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False):
             raise InfraError(
-                "Public registration requires a positive numeric VKID_APP_ID"
+                "Registration requires the confirmed personal-data regulatory gate"
             )
-        if owner_vk_id and not _positive_numeric_id(owner_vk_id):
-            raise InfraError("OWNER_VK_ID must be a positive numeric value when set")
-    else:
-        if bool(vkid_app_id) != bool(owner_vk_id):
+        registration_max_users()
+
+        operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
+        operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
+        if not 3 <= len(operator_name) <= 200:
+            raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
+        if not re.fullmatch(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
+            operator_email,
+        ):
+            raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
+
+
+def validate_legal_documents(repository_root: pathlib.Path) -> None:
+    for relative in (
+        "web/legal/privacy.html",
+        "web/legal/consent.html",
+        "web/legal/terms.html",
+    ):
+        path = repository_root / relative
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise InfraError(f"Legal document is unavailable: {relative}") from exc
+        missing = [marker for marker in LEGAL_OPERATOR_MARKERS if marker not in body]
+        if missing:
             raise InfraError(
-                "Owner-only VK ID configuration is incomplete: VKID_APP_ID and "
-                "OWNER_VK_ID must be configured together"
-            )
-        if vkid_app_id and not vkid_configuration_ready():
-            raise InfraError(
-                "Owner-only VK ID configuration must use positive numeric "
-                "VKID_APP_ID and OWNER_VK_ID values"
+                f"Legal document {relative} is missing operator placeholders"
             )
 
 
 def build_product_environment() -> str:
-    vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
-    owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    vkid_enabled = "true" if vkid_configuration_ready() else "false"
-    registration = "true" if registration_enabled() else "false"
-
     values = {
-        "VKID_APP_ID": vkid_app_id,
-        "OWNER_VK_ID": owner_vk_id,
-        "VKID_LOGIN_ENABLED": vkid_enabled,
-        "REGISTRATION_ENABLED": registration,
+        "VKID_APP_ID": os.environ.get("VKID_APP_ID", "").strip(),
+        "VKID_LOGIN_ENABLED": "true" if vkid_configuration_ready() else "false",
+        "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",
+        "REGISTRATION_MAX_USERS": str(registration_max_users()),
+        "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
+        "LEGAL_OPERATOR_EMAIL": os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
@@ -224,11 +258,37 @@ def build_product_environment() -> str:
     )
 
 
-def write_product_environment(ssh: EphemeralSsh) -> None:
-    ssh.run(
-        f"umask 077; cat > {PRODUCT_ENV}; chmod 600 {PRODUCT_ENV}",
-        input_text=build_product_environment(),
+def product_environment_backup_paths(release_sha: str) -> tuple[str, str]:
+    if not RELEASE_RE.fullmatch(release_sha):
+        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
+    return (
+        f"{PRODUCT_ENV}.pre-{release_sha}",
+        f"{PRODUCT_ENV}.pre-{release_sha}.state",
     )
+
+
+def write_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
+    backup, state = product_environment_backup_paths(release_sha)
+    command = (
+        "set -euo pipefail; umask 077; "
+        f"tmp={PRODUCT_ENV}.tmp-{release_sha}; "
+        f"if [ -f {PRODUCT_ENV} ]; then "
+        f"cp -p {PRODUCT_ENV} {backup}; printf 'present\\n' > {state}; "
+        f"else rm -f {backup}; printf 'absent\\n' > {state}; fi; "
+        'cat > "$tmp"; chmod 600 "$tmp"; '
+        f"mv -f \"$tmp\" {PRODUCT_ENV}"
+    )
+    ssh.run(command, input_text=build_product_environment())
+
+
+def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
+    backup, state = product_environment_backup_paths(release_sha)
+    try:
+        ssh.run(f"rm -f {backup} {state}")
+    except InfraError:
+        # Backup cleanup is housekeeping after a proven healthy release. It must
+        # never roll back a release after a destructive account cutover.
+        add_summary("- Warning: stale product environment rollback backup remains.")
 
 
 REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
@@ -327,9 +387,31 @@ install -m 0644 "$RELEASE/assets/brand/web/favicon.ico" "$WEB_RELEASE/assets/bra
 install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-192.png" "$WEB_RELEASE/assets/brand/pwa-icon-192.png"
 install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-512.png" "$WEB_RELEASE/assets/brand/pwa-icon-512.png"
 install -m 0644 "$RELEASE/assets/brand/web/pwa-maskable-512.png" "$WEB_RELEASE/assets/brand/pwa-maskable-512.png"
-install -m 0644 "$RELEASE/web/legal/privacy.html" "$WEB_RELEASE/legal/privacy.html"
-install -m 0644 "$RELEASE/web/legal/consent.html" "$WEB_RELEASE/legal/consent.html"
-install -m 0644 "$RELEASE/web/legal/terms.html" "$WEB_RELEASE/legal/terms.html"
+set -a
+. /etc/omnicio/product.env
+set +a
+
+python3 - "$RELEASE/web/legal" "$WEB_RELEASE/legal" <<'PY'
+import html
+import os
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+replacements = {
+    "__OMNICIO_OPERATOR_NAME__": html.escape(os.environ["LEGAL_OPERATOR_NAME"], quote=True),
+    "__OMNICIO_OPERATOR_EMAIL__": html.escape(os.environ["LEGAL_OPERATOR_EMAIL"], quote=True),
+}
+for name in ("privacy.html", "consent.html", "terms.html"):
+    body = (source / name).read_text(encoding="utf-8")
+    for marker, value in replacements.items():
+        body = body.replace(marker, value)
+    if "__OMNICIO_OPERATOR_" in body:
+        raise SystemExit(f"unresolved legal operator marker: {name}")
+    (destination / name).write_text(body, encoding="utf-8")
+PY
+chmod 0644 "$WEB_RELEASE/legal/privacy.html" "$WEB_RELEASE/legal/consent.html" "$WEB_RELEASE/legal/terms.html"
 
 python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" <<'PY'
 import json
@@ -426,6 +508,9 @@ if [ -f "$NGINX_SITE" ]; then
 fi
 
 cat > "$NGINX_SITE.new" <<'EOF'
+limit_req_zone $binary_remote_addr zone=omnicio_auth_start:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=omnicio_auth_callback:10m rate=30r/m;
+
 server {
     listen 80;
     listen [::]:80;
@@ -457,7 +542,36 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" always;
+
+    location = /api/auth/vkid/start {
+        limit_req zone=omnicio_auth_start burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/auth/vkid/callback {
+        limit_req zone=omnicio_auth_callback burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
 
     location /api/ {
         proxy_pass http://127.0.0.1:8001;
@@ -539,6 +653,21 @@ REMOTE_ROLLBACK_SCRIPT = r"""set -euo pipefail
 SHA="$1"
 STATE="/run/omnicio-auth-deploy-$SHA.state"
 NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"
+PRODUCT_ENV="/etc/omnicio/product.env"
+PRODUCT_ENV_BACKUP="$PRODUCT_ENV.pre-$SHA"
+PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"
+
+if [ -f "$PRODUCT_ENV_STATE" ]; then
+    PRODUCT_ENV_PREVIOUS="$(cat "$PRODUCT_ENV_STATE")"
+    if [ "$PRODUCT_ENV_PREVIOUS" = "present" ]; then
+        test -f "$PRODUCT_ENV_BACKUP"
+        cp -p "$PRODUCT_ENV_BACKUP" "$PRODUCT_ENV"
+    elif [ "$PRODUCT_ENV_PREVIOUS" = "absent" ]; then
+        rm -f "$PRODUCT_ENV"
+    else
+        exit 44
+    fi
+fi
 
 if [ -s "$STATE" ]; then
     . "$STATE"
@@ -575,6 +704,88 @@ def upload_release(
 
 def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     ssh.run(f"bash -s -- {release_sha}", input_text=REMOTE_DEPLOY_SCRIPT)
+
+
+def retire_legacy_profile(ssh: EphemeralSsh) -> None:
+    if not legacy_profile_reset_enabled():
+        return
+
+    try:
+        ssh.run(f"test -f {LEGACY_RESET_MARKER}")
+        return
+    except InfraError:
+        pass
+
+    sql = """
+BEGIN;
+SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0));
+
+DO $$
+DECLARE
+    reset_done boolean;
+    total_users bigint;
+    legacy_users bigint;
+    legacy_user_id uuid;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1
+        FROM audit_events
+        WHERE event_type = 'legacy_profile_retired'
+          AND metadata ->> 'reason' = 'limited_user_cutover'
+    ) INTO reset_done;
+
+    IF reset_done THEN
+        RETURN;
+    END IF;
+
+    SELECT count(*) INTO total_users FROM users;
+    SELECT count(*) INTO legacy_users FROM users WHERE public_id = 1;
+
+    IF total_users > 1 THEN
+        RAISE EXCEPTION 'legacy reset refuses a database containing multiple users';
+    END IF;
+    IF total_users = 1 AND legacy_users <> 1 THEN
+        RAISE EXCEPTION 'legacy reset refuses to delete a non-legacy user';
+    END IF;
+
+    SELECT id INTO legacy_user_id
+    FROM users
+    WHERE public_id = 1
+    FOR UPDATE;
+
+    INSERT INTO audit_events (user_id, event_type, metadata)
+    VALUES (
+        legacy_user_id,
+        'legacy_profile_retired',
+        '{"reason":"limited_user_cutover"}'::jsonb
+    );
+
+    IF legacy_user_id IS NOT NULL THEN
+        DELETE FROM users WHERE id = legacy_user_id;
+    END IF;
+END
+$$;
+
+COMMIT;
+"""
+    command = (
+        "set -a && "
+        f". {RUNTIME_ENV} && "
+        "set +a && "
+        'export PGCONNECT_TIMEOUT=10; '
+        'export PGOPTIONS="-c statement_timeout=30000 -c lock_timeout=5000"; '
+        'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q'
+    )
+    ssh.run(command, input_text=sql)
+    try:
+        ssh.run(
+            f"umask 077; install -d -m 0700 /etc/omnicio; "
+            f"touch {LEGACY_RESET_MARKER}; chmod 0600 {LEGACY_RESET_MARKER}"
+        )
+    except InfraError:
+        # The database audit marker is authoritative. A filesystem marker is
+        # only an optimization to avoid the no-op database transaction later.
+        add_summary("- Warning: legacy reset filesystem marker could not be persisted.")
 
 
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
@@ -621,8 +832,11 @@ def verify_public_config(body: bytes) -> None:
     expected_registration = registration_enabled()
     if payload.get("registration_enabled") is not expected_registration:
         raise InfraError("Public registration mode does not match deployment config")
-    if payload.get("mode") != ("open" if expected_registration else "owner_only"):
+    expected_mode = "limited_registration" if expected_registration else "closed"
+    if payload.get("mode") != expected_mode:
         raise InfraError("Public access mode does not match deployment config")
+    if payload.get("registration_max_users") != registration_max_users():
+        raise InfraError("Public registration capacity does not match deployment config")
     if payload.get("auth_provider") != "vkid":
         raise InfraError("Public auth provider is not VK ID")
 
@@ -659,8 +873,11 @@ def verify_public(release_sha: str) -> None:
         verify_public_config(config)
         for path, marker in LEGAL_PAGES.items():
             body, _ = fetch_public(path, context)
-            if marker not in body.decode(errors="replace"):
+            rendered = body.decode(errors="replace")
+            if marker not in rendered:
                 raise InfraError(f"Public legal page verification failed: {path}")
+            if "__OMNICIO_OPERATOR_" in rendered:
+                raise InfraError(f"Public legal page contains unresolved operator data: {path}")
     except (
         urllib.error.URLError, TimeoutError, ssl.SSLError, json.JSONDecodeError, UnicodeDecodeError,
     ) as exc:
@@ -686,6 +903,7 @@ def reconcile(
 
     add_summary("## OmniCIO auth application deploy")
     validate_product_environment()
+    validate_legal_documents(repository_root)
     server_summary = find_managed_server(
         client.get_servers(),
         name=server_name,
@@ -732,11 +950,11 @@ def reconcile(
             set_output("status", "pending_database")
             return 0
 
-        write_product_environment(ssh)
         upload_release(ssh, archive_b64=archive_b64, release_sha=release_sha)
-        deploy_remote(ssh, release_sha=release_sha)
 
         try:
+            write_product_environment(ssh, release_sha=release_sha)
+            deploy_remote(ssh, release_sha=release_sha)
             for _ in range(6):
                 try:
                     verify_public(release_sha)
@@ -745,15 +963,26 @@ def reconcile(
                     time.sleep(5)
             else:
                 raise InfraError("Public verification did not become healthy")
+
+            # The legacy account is removed only after the replacement release
+            # is already healthy. The reset itself is one transaction and
+            # refuses to touch a database containing more than one user.
+            retire_legacy_profile(ssh)
+            commit_product_environment(ssh, release_sha=release_sha)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise
 
     vkid_ready = vkid_configuration_ready()
     login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
+    registration_state = (
+        f"open with capacity {registration_max_users()}"
+        if registration_enabled()
+        else "closed"
+    )
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
-        f"VK ID owner login is {login_state}; public registration remains disabled."
+        f"VK ID login is {login_state}; registration is {registration_state}."
     )
     set_output("status", "app_ready")
     return 0

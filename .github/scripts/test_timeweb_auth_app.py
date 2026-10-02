@@ -40,6 +40,19 @@ class FakeSsh:
         return ""
 
 
+class MissingLegacyMarkerSsh:
+    def __init__(self) -> None:
+        self.commands: list[str] = []
+        self.inputs: list[str | None] = []
+
+    def run(self, command: str, *, input_text: str | None = None) -> str:
+        self.commands.append(command)
+        self.inputs.append(input_text)
+        if command.startswith("test -f "):
+            raise MODULE.InfraError("marker missing")
+        return ""
+
+
 class AuthAppDeployTests(unittest.TestCase):
     def test_release_sha_requires_full_lowercase_commit(self) -> None:
         self.assertIsNotNone(MODULE.RELEASE_RE.fullmatch("a" * 40))
@@ -52,11 +65,11 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertTrue(MODULE.runtime_is_ready(ready))
         self.assertFalse(MODULE.runtime_is_ready(missing))
-        self.assertIn("REGISTRATION_ENABLED=false", ready.commands[0])
         self.assertIn("BROKER_TOKEN_CRYPTO_KEY", ready.commands[0])
         self.assertIn("VKID_FLOW_CRYPTO_KEY", ready.commands[0])
         self.assertIn("command -v psql", ready.commands[0])
         self.assertIn("vkid_identities", ready.commands[0])
+        self.assertIn("column_name = 'role'", ready.commands[0])
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -87,16 +100,23 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(relative, names)
         self.assertNotIn("tests/secret-test.txt", names)
 
+    def _base_registration_environment(self) -> None:
+        os.environ["VKID_APP_ID"] = "123456"
+        os.environ["REGISTRATION_ENABLED"] = "true"
+        os.environ["REGISTRATION_MAX_USERS"] = "1"
+        os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
+        os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
+        os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
+        os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
+        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v3"
+        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v3"
+        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v3"
+
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-            os.environ.pop("VKID_APP_ID", None)
-            os.environ.pop("OWNER_VK_ID", None)
+            self._base_registration_environment()
             MODULE.validate_product_environment()
-
             os.environ.pop("LEGAL_TERMS_VERSION")
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
@@ -104,64 +124,54 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_fails_on_partial_vkid_config(self) -> None:
+    def test_product_environment_requires_numeric_vkid_app_id(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ.pop("OWNER_VK_ID", None)
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_product_environment_rejects_non_numeric_vkid_config(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
+            self._base_registration_environment()
             os.environ["VKID_APP_ID"] = "app"
-            os.environ["OWNER_VK_ID"] = "987654321"
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_keeps_vkid_fail_closed_without_owner_config(self) -> None:
+    def test_limited_registration_requires_reviewed_legal_gate(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ.pop("VKID_APP_ID", None)
-            os.environ.pop("OWNER_VK_ID", None)
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-
-            product_env = MODULE.build_product_environment()
+            self._base_registration_environment()
+            os.environ["MULTIUSER_LEGAL_APPROVED"] = "false"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('VKID_APP_ID=""', product_env)
-        self.assertIn('OWNER_VK_ID=""', product_env)
-        self.assertIn('VKID_LOGIN_ENABLED="false"', product_env)
-        self.assertIn('REGISTRATION_ENABLED="false"', product_env)
-
-    def test_product_environment_supports_reviewed_open_registration(self) -> None:
+    def test_limited_registration_requires_regulatory_gate(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ.pop("OWNER_VK_ID", None)
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
+            self._base_registration_environment()
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
 
+    def test_limited_registration_requires_operator_identity(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
+            os.environ["LEGAL_OPERATOR_EMAIL"] = "not-an-email"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_product_environment_builds_one_slot_registration(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
             MODULE.validate_product_environment()
             product_env = MODULE.build_product_environment()
         finally:
@@ -169,25 +179,11 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.update(old)
 
         self.assertIn('VKID_APP_ID="123456"', product_env)
-        self.assertIn('OWNER_VK_ID=""', product_env)
         self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
         self.assertIn('REGISTRATION_ENABLED="true"', product_env)
-
-    def test_open_registration_requires_reviewed_legal_gate(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            os.environ["MULTIUSER_LEGAL_APPROVED"] = "false"
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
+        self.assertIn('REGISTRATION_MAX_USERS="1"', product_env)
+        self.assertIn('LEGAL_OPERATOR_EMAIL="operator@example.com"', product_env)
+        self.assertNotIn("OWNER_VK_ID", product_env)
 
     def test_registration_environment_rejects_invalid_boolean(self) -> None:
         old = dict(os.environ)
@@ -199,20 +195,69 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_enables_vkid_only_with_owner_config(self) -> None:
+    def test_registration_capacity_must_be_positive(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ["OWNER_VK_ID"] = "987654321"
-            product_env = MODULE.build_product_environment()
+            os.environ["REGISTRATION_MAX_USERS"] = "0"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.registration_max_users()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('VKID_APP_ID="123456"', product_env)
-        self.assertIn('OWNER_VK_ID="987654321"', product_env)
-        self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
-        self.assertIn('REGISTRATION_ENABLED="false"', product_env)
+    def test_legal_templates_require_operator_placeholders(self) -> None:
+        MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+
+    def test_legacy_reset_is_disabled_without_full_cutover_gates(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
+            os.environ["REGISTRATION_ENABLED"] = "false"
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            ssh = FakeSsh(True)
+            MODULE.retire_legacy_profile(ssh)
+            self.assertEqual(ssh.commands, [])
+
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            MODULE.retire_legacy_profile(ssh)
+            self.assertEqual(ssh.commands, [])
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_legacy_reset_only_targets_public_id_one(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
+            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
+            ssh = MissingLegacyMarkerSsh()
+            MODULE.retire_legacy_profile(ssh)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        migration = next(value for value in ssh.inputs if value and "BEGIN;" in value)
+        self.assertIn("WHERE public_id = 1", migration)
+        self.assertIn("refuses to delete a non-legacy user", migration)
+        self.assertIn("DO $", migration)
+        self.assertNotIn("\nDELETE FROM users;\n", migration)
+        self.assertTrue(any(MODULE.LEGACY_RESET_MARKER in command for command in ssh.commands))
+
+    def test_legacy_reset_marker_makes_cleanup_idempotent(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
+            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
+            ssh = FakeSsh(True)
+            MODULE.retire_legacy_profile(ssh)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        self.assertEqual(ssh.commands, [f"test -f {MODULE.LEGACY_RESET_MARKER}"])
+
 
     def test_auth_deploy_workflow_separates_pr_and_production_concurrency(self) -> None:
         workflow = (
@@ -227,6 +272,37 @@ class AuthAppDeployTests(unittest.TestCase):
             "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
             workflow,
         )
+
+    def test_product_environment_is_backed_up_for_rollback(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["VKID_APP_ID"] = "123456"
+            os.environ["REGISTRATION_ENABLED"] = "false"
+            ssh = FakeSsh(True)
+            sha = "a" * 40
+            MODULE.write_product_environment(ssh, release_sha=sha)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        backup, state = MODULE.product_environment_backup_paths(sha)
+        self.assertIn(backup, ssh.commands[0])
+        self.assertIn(state, ssh.commands[0])
+        self.assertIn(f"{MODULE.PRODUCT_ENV}.tmp-{sha}", ssh.commands[0])
+        self.assertIn('PRODUCT_ENV_BACKUP="$PRODUCT_ENV.pre-$SHA"', MODULE.REMOTE_ROLLBACK_SCRIPT)
+        self.assertIn('PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"', MODULE.REMOTE_ROLLBACK_SCRIPT)
+
+    def test_product_environment_backup_rejects_invalid_release_sha(self) -> None:
+        with self.assertRaises(MODULE.InfraError):
+            MODULE.product_environment_backup_paths("short")
+
+    def test_public_vk_id_endpoints_are_rate_limited(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        self.assertIn("zone=omnicio_auth_start:10m rate=10r/m", script)
+        self.assertIn("zone=omnicio_auth_callback:10m rate=30r/m", script)
+        self.assertIn("location = /api/auth/vkid/start", script)
+        self.assertIn("location = /api/auth/vkid/callback", script)
+        self.assertIn("limit_req_status 429", script)
 
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -248,7 +324,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("curl -k", script)
         self.assertNotIn("--insecure", script)
 
-    def test_legal_pages_are_private_owner_documents(self) -> None:
+    def test_legal_pages_describe_limited_user_registration(self) -> None:
         root = SCRIPT_DIR.parent.parent
         privacy = (root / "web" / "legal" / "privacy.html").read_text()
         consent = (root / "web" / "legal" / "consent.html").read_text()
@@ -256,12 +332,13 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-01-v2", document)
+            self.assertIn("2026-10-02-v3", document)
+            self.assertIn("__OMNICIO_OPERATOR_", document)
 
         self.assertIn("OmniCIO Personal", privacy)
         self.assertIn("T-Invest API", privacy)
-        self.assertIn("статьи 437", terms)
-        self.assertNotIn("omnicioinfo@gmail.com", privacy)
+        self.assertIn("Текущий лимит при её включении — один пользовательский аккаунт", terms)
+        self.assertIn("ролью <code>user</code>", terms)
 
     def test_personal_dashboard_keeps_auth_and_broker_contracts(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -425,7 +502,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.5.3"', project)
+        self.assertIn('version = "0.6.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -444,9 +521,12 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
+        self.assertIn('"$RELEASE/web/legal"', script)
+        self.assertIn('"$WEB_RELEASE/legal"', script)
         for filename in ("privacy.html", "consent.html", "terms.html"):
-            self.assertIn(f'web/legal/{filename}', script)
-            self.assertIn(f'legal/{filename}', script)
+            self.assertIn(filename, script)
+        for marker in MODULE.LEGAL_OPERATOR_MARKERS:
+            self.assertIn(marker, script)
 
         self.assertEqual(
             set(MODULE.LEGAL_PAGES),
@@ -474,11 +554,11 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.sha[:12],
         )).encode()
         config = json.dumps({
-            "mode": "owner_only",
+            "mode": "closed",
             "registration_enabled": False,
+            "registration_max_users": 1,
             "auth_provider": "vkid",
             "login_enabled": False,
-            "owner_login_enabled": False,
         }).encode()
         self.responses = {
             "/": (root, "text/html", 200),
@@ -491,7 +571,11 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "/api/auth/config": (config, "application/json", 200),
         }
         for path, marker in MODULE.LEGAL_PAGES.items():
-            self.responses[path] = (marker.encode(), "text/html", 200)
+            self.responses[path] = (
+                f"{marker} Test Operator operator@example.com".encode(),
+                "text/html",
+                200,
+            )
 
     def verify(self) -> set[str]:
         requested: set[str] = set()
@@ -531,7 +615,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),
             (
                 "/api/auth/config",
-                b'{"mode":"open","registration_enabled":false,"auth_provider":"vkid","login_enabled":false}',
+                b'{"mode":"limited_registration","registration_enabled":false,"registration_max_users":1,"auth_provider":"vkid","login_enabled":false}',
                 "application/json",
                 200,
             ),

@@ -17,6 +17,7 @@ class UserRecord:
     id: UUID
     public_id: int
     status: str
+    role: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,14 @@ class TBankConnectionRecord:
     encrypted_credential: bytes
     verified_at: datetime
     updated_at: datetime
+
+
+class RegistrationClosedError(RuntimeError):
+    """Raised when an unknown VK identity cannot create an account."""
+
+
+class RegistrationCapacityError(RuntimeError):
+    """Raised when the configured user-account capacity is exhausted."""
 
 
 class Database:
@@ -58,6 +67,13 @@ class Database:
                     AND to_regclass('public.legal_acceptances') IS NOT NULL
                     AND to_regclass('public.vkid_identities') IS NOT NULL
                     AND to_regclass('public.tbank_connection') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'users'
+                          AND column_name = 'role'
+                    )
                     AS ready
                 """
             )
@@ -75,7 +91,8 @@ class Database:
         session_token_digest: bytes,
         session_ttl_seconds: int,
         legal_versions: dict[str, str],
-        reuse_existing_user: bool,
+        registration_enabled: bool,
+        registration_max_users: int,
     ) -> tuple[UserRecord, bool]:
         """Resolve one VK ID identity and create its isolated application session."""
 
@@ -90,7 +107,7 @@ class Database:
             )
             cur.execute(
                 """
-                SELECT u.id, u.public_id, u.status
+                SELECT u.id, u.public_id, u.status, u.role
                 FROM users AS u
                 JOIN vkid_identities AS v ON v.user_id = u.id
                 WHERE v.vk_user_id = %s
@@ -102,39 +119,35 @@ class Database:
             linked = False
 
             if fetched_user is None:
-                user: UserRecord | None = None
-                if reuse_existing_user:
-                    cur.execute(
-                        """
-                        SELECT id, public_id, status
-                        FROM users
-                        WHERE status <> 'deleted'
-                          AND NOT EXISTS (
-                              SELECT 1
-                              FROM vkid_identities AS existing_identity
-                              WHERE existing_identity.user_id = users.id
-                          )
-                        ORDER BY created_at
-                        FOR UPDATE
-                        """
-                    )
-                    existing = cur.fetchall()
-                    if len(existing) > 1:
-                        raise RuntimeError(
-                            "multiple unlinked users require manual owner reconciliation"
-                        )
-                    if existing:
-                        user = _user(cast(dict[str, Any], existing[0]))
+                if not registration_enabled:
+                    raise RegistrationClosedError("registration is closed")
 
-                if user is None:
-                    cur.execute(
-                        "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status"
-                    )
-                    inserted = cur.fetchone()
-                    if inserted is None:
-                        raise RuntimeError("user insert returned no row")
-                    user = _user(cast(dict[str, Any], inserted))
-                    created = True
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    ("omnicio-registration-capacity",),
+                )
+                cur.execute(
+                    """
+                    SELECT count(*) AS total
+                    FROM users
+                    WHERE status <> 'deleted'
+                    """
+                )
+                count_row = cur.fetchone()
+                if count_row is None:
+                    raise RuntimeError("registration capacity query returned no row")
+                total = int(cast(dict[str, Any], count_row)["total"])
+                if total >= registration_max_users:
+                    raise RegistrationCapacityError("registration capacity reached")
+
+                cur.execute(
+                    "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role"
+                )
+                inserted = cur.fetchone()
+                if inserted is None:
+                    raise RuntimeError("user insert returned no row")
+                user = _user(cast(dict[str, Any], inserted))
+                created = True
 
                 cur.execute(
                     """
@@ -208,7 +221,6 @@ class Database:
         self,
         token_digest: bytes,
         *,
-        required_vk_user_id: str | None,
         session_ttl_seconds: int,
     ) -> UserRecord | None:
         """Validate an active VK ID session and extend its rolling expiry."""
@@ -223,19 +235,13 @@ class Database:
                 FROM users AS u, vkid_identities AS v
                 WHERE s.user_id = u.id
                   AND v.user_id = u.id
-                  AND (%s IS NULL OR v.vk_user_id = %s)
                   AND s.token_digest = %s
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
                   AND u.status = 'active'
-                RETURNING u.id, u.public_id, u.status
+                RETURNING u.id, u.public_id, u.status, u.role
                 """,
-                (
-                    session_ttl_seconds,
-                    required_vk_user_id,
-                    required_vk_user_id,
-                    token_digest,
-                ),
+                (session_ttl_seconds, token_digest),
             )
             fetched = cur.fetchone()
             if fetched is None:
@@ -371,7 +377,7 @@ class Database:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, public_id, status
+                SELECT id, public_id, status, role
                 FROM users
                 WHERE public_id = %s
                 """,
@@ -436,7 +442,7 @@ class Database:
                 UPDATE users
                 SET status = %s, updated_at = now()
                 WHERE id = %s
-                RETURNING id, public_id, status
+                RETURNING id, public_id, status, role
                 """,
                 (target_status, user.id),
             )
@@ -468,7 +474,7 @@ class Database:
     def _support_locked_user(cur: Any, public_id: int) -> UserRecord | None:
         cur.execute(
             """
-            SELECT id, public_id, status
+            SELECT id, public_id, status, role
             FROM users
             WHERE public_id = %s
             FOR UPDATE
@@ -486,6 +492,7 @@ def _user(row: dict[str, Any]) -> UserRecord:
         id=row["id"],
         public_id=int(row["public_id"]),
         status=str(row["status"]),
+        role=str(row["role"]),
     )
 
 

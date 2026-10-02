@@ -53,9 +53,9 @@ class Settings:
     broker_token_crypto_key: str
     vkid_flow_crypto_key: str
     vkid_app_id: str
-    owner_vk_id: str
     vkid_login_enabled: bool
     registration_enabled: bool
+    registration_max_users: int
     privacy_version: str
     consent_version: str
     terms_version: str
@@ -64,19 +64,11 @@ class Settings:
 
     @property
     def vkid_ready(self) -> bool:
-        owner_requirement_met = (
-            self.registration_enabled
-            or positive_numeric_id(self.owner_vk_id)
-        )
-        return (
-            self.vkid_login_enabled
-            and positive_numeric_id(self.vkid_app_id)
-            and owner_requirement_met
-        )
+        return self.vkid_login_enabled and positive_numeric_id(self.vkid_app_id)
 
     @property
     def access_mode(self) -> str:
-        return "open" if self.registration_enabled else "owner_only"
+        return "limited_registration" if self.registration_enabled else "closed"
 
 
 def load_settings() -> Settings:
@@ -86,9 +78,9 @@ def load_settings() -> Settings:
         broker_token_crypto_key=required("BROKER_TOKEN_CRYPTO_KEY"),
         vkid_flow_crypto_key=required("VKID_FLOW_CRYPTO_KEY"),
         vkid_app_id=os.environ.get("VKID_APP_ID", "").strip(),
-        owner_vk_id=os.environ.get("OWNER_VK_ID", "").strip(),
         vkid_login_enabled=boolean("VKID_LOGIN_ENABLED", False),
         registration_enabled=boolean("REGISTRATION_ENABLED", False),
+        registration_max_users=positive_int("REGISTRATION_MAX_USERS", 1),
         privacy_version=os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         consent_version=os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),

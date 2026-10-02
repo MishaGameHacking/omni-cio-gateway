@@ -15,6 +15,8 @@
 
   const profileId = document.querySelector("#profile-id");
   const settingsProfileId = document.querySelector("#settings-profile-id");
+  const settingsProfileRole = document.querySelector("#settings-profile-role");
+  const settingsRegistrationState = document.querySelector("#settings-registration-state");
   const logoutButton = document.querySelector("#logout");
 
   const tbankForm = document.querySelector("#tbank-form");
@@ -165,15 +167,23 @@
   };
 
   const renderAccessMode = (config) => {
-    const open = config && config.registration_enabled === true;
-    accessEyebrow.textContent = open ? "Персональный инвестиционный кабинет" : "Личный закрытый контур";
-    accessLead.textContent = open
-      ? "Каждый пользователь входит через свой VK ID и работает только со своим профилем и брокерским подключением."
-      : "Один аккаунт владельца, вход через VK ID и защищённое подключение собственного брокерского счёта T-Invest.";
-    accessScope.textContent = open ? "Доступ: зарегистрированные пользователи" : "Доступ: только владелец";
-    homeLoginTitle.textContent = open ? "Вход пользователя" : "Вход владельца";
-    homeLoginNote.textContent = "VK ID + защищённая сессия OmniCIO";
-    accountModeBadge.textContent = open ? "Multi-user" : "Owner-only";
+    const registrationOpen = config && config.registration_enabled === true;
+    const capacity = Number(config && config.registration_max_users) || 1;
+    accessEyebrow.textContent = "Персональный инвестиционный кабинет";
+    accessLead.textContent = registrationOpen
+      ? `Первый пользователь, прошедший VK ID, получает один из ${capacity} доступных пользовательских аккаунтов. Данные и брокерские подключения изолированы по профилям.`
+      : "Регистрация новых аккаунтов закрыта. Уже зарегистрированный пользователь может продолжать вход через свой VK ID.";
+    accessScope.textContent = registrationOpen
+      ? `Регистрация: до ${capacity} аккаунта`
+      : "Регистрация: закрыта";
+    homeLoginTitle.textContent = "Вход через VK ID";
+    homeLoginNote.textContent = "Только пользовательские права · защищённая сессия OmniCIO";
+    accountModeBadge.textContent = "User";
+    if (settingsRegistrationState) {
+      settingsRegistrationState.textContent = registrationOpen
+        ? `Открыта · лимит ${capacity}`
+        : "Закрыта";
+    }
   };
 
   const storedTheme = () => {
@@ -1166,9 +1176,10 @@
     }
   };
 
-  const showProfile = (id) => {
-    profileId.textContent = id;
-    settingsProfileId.textContent = id;
+  const showProfile = (profile) => {
+    profileId.textContent = profile.public_id;
+    settingsProfileId.textContent = profile.public_id;
+    settingsProfileRole.textContent = profile.role === "user" ? "Пользователь" : profile.role;
     authCard.classList.add("hidden");
     profilePanel.classList.remove("hidden");
     setView(currentView, {scroll: false});
@@ -1184,8 +1195,10 @@
     const params = new URLSearchParams(location.search);
     const authError = params.get("auth_error");
 
-    if (authError === "owner" || authError === "access") {
-      showMessage(authMessage, "Этот VK ID не имеет доступа к текущему режиму OmniCIO.", true);
+    if (authError === "registration") {
+      showMessage(authMessage, "Регистрация новых аккаунтов сейчас закрыта. Уже зарегистрированный пользователь может войти через свой VK ID.", true);
+    } else if (authError === "capacity") {
+      showMessage(authMessage, "Свободных пользовательских аккаунтов сейчас нет: текущий лимит регистрации уже заполнен.", true);
     } else if (authError === "provider") {
       showMessage(authMessage, "VK ID временно недоступен. Попробуйте позже.", true);
     } else if (authError === "account") {
@@ -1200,9 +1213,17 @@
   };
 
   const loadState = async () => {
+    let config = null;
+    try {
+      config = await api("/api/auth/config", {method: "GET"});
+      renderAccessMode(config);
+    } catch {
+      // A valid existing session can still be rendered if public config is temporarily unavailable.
+    }
+
     try {
       const me = await api("/api/me", {method: "GET"});
-      showProfile(me.public_id);
+      showProfile(me);
       return;
     } catch (error) {
       if (error.status !== 401) {
@@ -1213,21 +1234,19 @@
     showAuth();
     showCallbackResult();
 
-    try {
-      const config = await api("/api/auth/config", {method: "GET"});
-      renderAccessMode(config);
-      const loginEnabled = config.login_enabled ?? config.owner_login_enabled;
-      if (config.auth_provider !== "vkid" || !loginEnabled) {
-        vkidLogin.disabled = true;
-        showMessage(
-          authMessage,
-          "VK ID ещё не настроен для текущего режима доступа.",
-          true,
-        );
-      }
-    } catch {
+    if (!config) {
       vkidLogin.disabled = true;
       showMessage(authMessage, "Сервис авторизации временно недоступен.", true);
+      return;
+    }
+
+    if (config.auth_provider !== "vkid" || !config.login_enabled) {
+      vkidLogin.disabled = true;
+      showMessage(
+        authMessage,
+        "VK ID ещё не настроен для текущего режима доступа.",
+        true,
+      );
     }
   };
 

@@ -132,7 +132,9 @@ jobs:
             --min-disk-mb "${MIN_DB_DISK_MB}" \
             --migration migrations/0001_phone_auth.sql \
             --migration migrations/0002_tbank_connection.sql \
-            --migration migrations/0003_vkid_owner_identity.sql
+            --migration migrations/0003_vkid_owner_identity.sql \
+            --migration migrations/0004_user_role.sql \
+            --migration migrations/0005_drop_phone_auth.sql
 
       - name: Surface private network gate
         if: steps.postgres.outputs.status == 'pending_server_network'
