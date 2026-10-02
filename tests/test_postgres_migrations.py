@@ -433,11 +433,13 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         finally:
             database.close()
         assert intelligence is not None
+        assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
             "provider-bond-uid"
         ]
         assert any(
             item["document_type"] == "bond_coupon"
+            and item["freshness_status"] == "fresh"
             for item in intelligence["sources"]
         )
 
