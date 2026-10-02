@@ -286,7 +286,8 @@ def build_tbank_evidence(
         )
         else "received"
     )
-    metadata = {item.uid: item for item in bundle.metadata}
+    metadata_by_uid = {item.uid: item for item in bundle.metadata}
+    metadata_by_figi = {item.figi: item for item in bundle.metadata if item.figi}
     defaults = {
         item.instrument_uid: item.default_date
         for item in evidence.bond_events
@@ -301,7 +302,11 @@ def build_tbank_evidence(
         if uid in seen:
             continue
         seen.add(uid)
-        info = metadata.get(position.instrument_uid)
+        info = metadata_by_uid.get(position.instrument_uid)
+        if info is None and position.figi:
+            info = metadata_by_figi.get(position.figi)
+        provider_uid = info.uid if info is not None else uid
+        default_date = defaults.get(provider_uid)
         fundamental_status = _fundamental_status(info, fundamentals, assessed_at)
         rating_status: DataStatus = (
             "not_applicable" if position.instrument_type == "etf" else "data_missing"
@@ -309,7 +314,7 @@ def build_tbank_evidence(
 
         reasons: list[str] = []
         state: RiskState
-        if uid in defaults:
+        if default_date is not None:
             state = "confirmed_default"
             reasons.append("tbank_bond_event_contains_default_date")
         else:
@@ -338,7 +343,7 @@ def build_tbank_evidence(
                     "sector": info.sector if info else "",
                     "asset_uid": info.asset_uid if info else "",
                     "default_date": (
-                        defaults[uid].isoformat() if uid in defaults else None
+                        default_date.isoformat() if default_date is not None else None
                     ),
                     "rating_policy": "missing_until_licensed_feed_is_verified",
                     "fundamental_max_age_days": FUNDAMENTAL_MAX_AGE.days,
