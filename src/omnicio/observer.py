@@ -260,7 +260,6 @@ class PortfolioObserver:
                 or details["catalog_status"] == "partial"
                 or details["broker_user_info_status"] != "received"
                 or details["history_status"] != "complete"
-                or details["credit_rating_status"] != "received"
                 or any(
                     status != "received"
                     for source_id, status in cast(dict[str, str], details["evidence_sources"]).items()
