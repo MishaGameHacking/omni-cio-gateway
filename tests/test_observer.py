@@ -10,10 +10,10 @@ from omnicio.portfolio import PortfolioAnalysis
 from omnicio.portfolio_store import BrokerSyncState, JobRunRecord
 from omnicio.tbank import (
     TBankAccount,
+    TBankMoney,
     TBankOperationsPage,
     TBankPortfolio,
     TBankPositions,
-    TBankMoney,
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
