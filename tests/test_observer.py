@@ -17,6 +17,7 @@ from omnicio.tbank import (
     TBankPortfolio,
     TBankPositions,
     TBankUnavailable,
+    TBankUserInfo,
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -167,6 +168,7 @@ class FakeBroker:
         pages: dict[str, TBankOperationsPage] | None = None,
         opened_at: datetime | None = datetime(2024, 1, 1, tzinfo=UTC),
         analysis_status: str = "observed",
+        user_info_unavailable: bool = False,
     ) -> None:
         self.pages = pages or {
             "": TBankOperationsPage(True, "cursor-2", ()),
@@ -174,6 +176,7 @@ class FakeBroker:
         }
         self.opened_at = opened_at
         self.analysis_status = analysis_status
+        self.user_info_unavailable = user_info_unavailable
         self.seen_cursors: list[str] = []
 
     def revalidate_account(self, user_id: UUID) -> TBankAccount:
@@ -185,6 +188,18 @@ class FakeBroker:
             status="ACCOUNT_STATUS_OPEN",
             opened_at=self.opened_at,
             access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+        )
+
+    def user_info(self, user_id: UUID) -> TBankUserInfo:
+        assert user_id == USER_ID
+        if self.user_info_unavailable:
+            raise TBankUnavailable("temporary")
+        return TBankUserInfo(
+            premium=False,
+            qualified=False,
+            qualified_for_work_with=("russian_shares",),
+            tariff="Investor",
+            risk_level_code="CONSERVATIVE",
         )
 
     def observation_bundle(
@@ -300,6 +315,30 @@ def test_daily_observer_resumes_durable_cursor_window() -> None:
     assert result is not None
     assert result.status == "succeeded"
     assert broker.seen_cursors == ["resume-me"]
+
+
+def test_user_info_outage_degrades_but_keeps_portfolio_snapshot() -> None:
+    store = FakeStore()
+    broker = FakeBroker(user_info_unavailable=True)
+
+    with (
+        patch("omnicio.observer.time.sleep"),
+        patch("omnicio.observer.random.random", return_value=0.0),
+    ):
+        result = PortfolioObserver(
+            store,
+            broker,
+            legal_versions=LEGAL_VERSIONS,
+        ).run_user(
+            USER_ID,
+            now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
+        )
+
+    assert result is not None
+    assert result.status == "degraded"
+    assert result.snapshot_saved is True
+    assert store.saved_snapshots == 1
+    assert store.finished[0][1]["broker_user_info_status"] == "unavailable"
 
 
 def test_missing_account_open_date_degrades_without_inventing_history() -> None:
