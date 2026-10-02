@@ -1,5 +1,76 @@
 BEGIN;
 
+CREATE TABLE IF NOT EXISTS source_documents (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source_id text NOT NULL,
+    scope_key text NOT NULL,
+    document_kind text NOT NULL,
+    source_url text NOT NULL,
+    effective_at timestamptz,
+    publication_at timestamptz,
+    retrieved_at timestamptz NOT NULL,
+    content_hash bytea NOT NULL,
+    payload jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (id, user_id),
+    UNIQUE (
+        user_id,
+        source_id,
+        scope_key,
+        document_kind,
+        content_hash
+    ),
+    CONSTRAINT source_documents_source_nonempty CHECK (
+        char_length(source_id) BETWEEN 1 AND 128
+    ),
+    CONSTRAINT source_documents_scope_nonempty CHECK (
+        char_length(scope_key) BETWEEN 1 AND 256
+    ),
+    CONSTRAINT source_documents_kind_nonempty CHECK (
+        char_length(document_kind) BETWEEN 1 AND 128
+    ),
+    CONSTRAINT source_documents_url_nonempty CHECK (
+        char_length(source_url) BETWEEN 1 AND 2048
+    ),
+    CONSTRAINT source_documents_hash_size CHECK (octet_length(content_hash) = 32)
+);
+
+CREATE INDEX IF NOT EXISTS source_documents_user_retrieved_idx
+    ON source_documents (user_id, retrieved_at DESC);
+
+CREATE TABLE IF NOT EXISTS source_facts (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    document_id uuid NOT NULL,
+    instrument_uid text NOT NULL,
+    asset_uid text NOT NULL DEFAULT '',
+    fact_kind text NOT NULL,
+    fact_key text NOT NULL,
+    effective_at timestamptz,
+    publication_at timestamptz,
+    value_json jsonb NOT NULL,
+    semantic_hash bytea NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (document_id, user_id)
+        REFERENCES source_documents(id, user_id)
+        ON DELETE CASCADE,
+    UNIQUE (document_id, fact_key, semantic_hash),
+    CONSTRAINT source_facts_instrument_nonempty CHECK (
+        char_length(instrument_uid) BETWEEN 1 AND 128
+    ),
+    CONSTRAINT source_facts_kind_nonempty CHECK (
+        char_length(fact_kind) BETWEEN 1 AND 128
+    ),
+    CONSTRAINT source_facts_key_nonempty CHECK (
+        char_length(fact_key) BETWEEN 1 AND 512
+    ),
+    CONSTRAINT source_facts_hash_size CHECK (octet_length(semantic_hash) = 32)
+);
+
+CREATE INDEX IF NOT EXISTS source_facts_user_instrument_idx
+    ON source_facts (user_id, instrument_uid, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS risk_source_runs (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -31,54 +102,11 @@ CREATE TABLE IF NOT EXISTS risk_source_runs (
 CREATE INDEX IF NOT EXISTS risk_source_runs_user_retrieved_idx
     ON risk_source_runs (user_id, retrieved_at DESC);
 
-CREATE TABLE IF NOT EXISTS risk_facts (
-    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    snapshot_id uuid NOT NULL,
-    instrument_uid text NOT NULL,
-    asset_uid text NOT NULL DEFAULT '',
-    source_id text NOT NULL,
-    source_url text NOT NULL,
-    fact_kind text NOT NULL,
-    fact_key text NOT NULL,
-    effective_at timestamptz,
-    publication_at timestamptz,
-    retrieved_at timestamptz NOT NULL,
-    value_json jsonb NOT NULL,
-    semantic_hash bytea NOT NULL,
-    observed_at timestamptz NOT NULL DEFAULT now(),
-    FOREIGN KEY (snapshot_id, user_id)
-        REFERENCES portfolio_snapshots(id, user_id)
-        ON DELETE CASCADE,
-    UNIQUE (
-        user_id,
-        instrument_uid,
-        source_id,
-        fact_key,
-        semantic_hash
-    ),
-    CONSTRAINT risk_facts_instrument_nonempty CHECK (
-        char_length(instrument_uid) BETWEEN 1 AND 128
-    ),
-    CONSTRAINT risk_facts_source_nonempty CHECK (
-        char_length(source_id) BETWEEN 1 AND 128
-    ),
-    CONSTRAINT risk_facts_kind_nonempty CHECK (
-        char_length(fact_kind) BETWEEN 1 AND 128
-    ),
-    CONSTRAINT risk_facts_key_nonempty CHECK (
-        char_length(fact_key) BETWEEN 1 AND 512
-    ),
-    CONSTRAINT risk_facts_hash_size CHECK (octet_length(semantic_hash) = 32)
-);
-
-CREATE INDEX IF NOT EXISTS risk_facts_user_instrument_idx
-    ON risk_facts (user_id, instrument_uid, retrieved_at DESC);
-
 CREATE TABLE IF NOT EXISTS payout_observations (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     snapshot_id uuid NOT NULL,
+    source_document_id uuid NOT NULL,
     instrument_uid text NOT NULL,
     event_kind text NOT NULL CHECK (
         event_kind IN ('dividend', 'coupon', 'bond_event')
@@ -98,6 +126,9 @@ CREATE TABLE IF NOT EXISTS payout_observations (
     observed_at timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (snapshot_id, user_id)
         REFERENCES portfolio_snapshots(id, user_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (source_document_id, user_id)
+        REFERENCES source_documents(id, user_id)
         ON DELETE CASCADE,
     UNIQUE (
         user_id,
@@ -161,19 +192,27 @@ CREATE TABLE IF NOT EXISTS risk_assessments (
 CREATE INDEX IF NOT EXISTS risk_assessments_user_evaluated_idx
     ON risk_assessments (user_id, evaluated_at DESC);
 
+ALTER TABLE source_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE source_documents FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS source_documents_tenant ON source_documents;
+CREATE POLICY source_documents_tenant
+    ON source_documents
+    USING (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid)
+    WITH CHECK (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid);
+
+ALTER TABLE source_facts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE source_facts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS source_facts_tenant ON source_facts;
+CREATE POLICY source_facts_tenant
+    ON source_facts
+    USING (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid)
+    WITH CHECK (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid);
+
 ALTER TABLE risk_source_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk_source_runs FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS risk_source_runs_tenant ON risk_source_runs;
 CREATE POLICY risk_source_runs_tenant
     ON risk_source_runs
-    USING (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid)
-    WITH CHECK (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid);
-
-ALTER TABLE risk_facts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE risk_facts FORCE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS risk_facts_tenant ON risk_facts;
-CREATE POLICY risk_facts_tenant
-    ON risk_facts
     USING (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid)
     WITH CHECK (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid);
 
