@@ -506,3 +506,44 @@ def test_negative_bank_profitability_is_watch_not_default_prediction() -> None:
     assert "roe_negative" in risk.reasons
     assert "roa_negative" in risk.reasons
     assert risk.state != "confirmed_default"
+
+
+
+def test_future_default_date_is_not_reported_as_confirmed_default() -> None:
+    now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now,
+        dividends=(),
+        coupons=(),
+        bond_events=(
+            TBankBondEvent(
+                instrument_uid="bond-uid",
+                event_number=11,
+                event_date=now,
+                event_type="EVENT_TYPE_COUPON",
+                default_date=datetime(2026, 10, 10, tzinfo=UTC),
+                real_pay_date=datetime(2026, 10, 9, tzinfo=UTC),
+                pay_date=datetime(2026, 10, 5, tzinfo=UTC),
+                pay_one_bond=TBankMoney("RUB", "50"),
+                execution="",
+                operation_type="",
+                note="",
+            ),
+        ),
+        reports=(),
+        fundamentals=(),
+        sources=_sources(now),
+    )
+
+    documents, assessments = build_tbank_evidence(
+        _bundle(),
+        evidence,
+        assessed_at=now,
+    )
+
+    event = next(item for item in documents if item.document_type == "bond_event")
+    assert event.payout is not None
+    assert event.payout.status == "observed"
+    assert event.payout.actual_at is None
+    assert assessments[0].state == "data_missing"
+    assert assessments[0].evidence["default_date"] is None
