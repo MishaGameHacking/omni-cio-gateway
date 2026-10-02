@@ -35,6 +35,9 @@ TIMEWEB_DB_PASSWORD_SAFE = frozenset(
     "_-"
 )
 DB_OWNERSHIP_MARKER = "Managed by GitHub Actions: omnicio-auth-postgres"
+SSH_READY_ATTEMPTS = 36
+SSH_READY_DELAY_SECONDS = 10
+SSH_ERROR_DETAIL_LIMIT = 300
 
 
 class InfraError(RuntimeError):
@@ -549,13 +552,18 @@ class EphemeralSsh:
             self._ssh_key_id = self.client.create_ssh_key(public_key, key_name)
             self.client.attach_ssh_key(self.server_id, self._ssh_key_id)
 
-            for _ in range(18):
-                try:
-                    self.run("true")
+            last_error = "SSH not attempted"
+            for attempt in range(SSH_READY_ATTEMPTS):
+                ready, last_error = self._probe()
+                if ready:
                     return self
-                except InfraError:
-                    time.sleep(10)
-            raise InfraError("Ephemeral SSH key did not become usable in time")
+                if attempt + 1 < SSH_READY_ATTEMPTS:
+                    time.sleep(SSH_READY_DELAY_SECONDS)
+            raise InfraError(
+                "Ephemeral SSH key did not become usable within the bounded "
+                f"provider propagation window; last SSH error: "
+                f"{last_error[:SSH_ERROR_DETAIL_LIMIT]}"
+            )
         except Exception:
             self._cleanup()
             raise
@@ -578,6 +586,29 @@ class EphemeralSsh:
         if self._tmp is not None:
             self._tmp.cleanup()
             self._tmp = None
+
+    def _probe(self) -> tuple[bool, str]:
+        if self._key_path is None or self._known_hosts is None:
+            raise InfraError("SSH session is not initialized")
+
+        completed = subprocess.run(
+            ssh_base_args(self._key_path, self._known_hosts) + [
+                f"root@{self.server_ip}", "--", "true",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if completed.returncode == 0:
+            return True, ""
+        detail = " ".join(
+            (completed.stderr or f"ssh exit code {completed.returncode}").split()
+        )
+        private_path = str(self._key_path)
+        if private_path:
+            detail = detail.replace(private_path, "<ephemeral-key>")
+        return False, detail or f"ssh exit code {completed.returncode}"
 
     def run(self, command: str, *, input_text: str | None = None) -> str:
         if self._key_path is None or self._known_hosts is None:
