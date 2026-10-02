@@ -57,6 +57,7 @@ TBANK_ASSET_REPORTS_SOURCE = (
 TBANK_FUNDAMENTALS_SOURCE = (
     "https://developer.tbank.ru/invest/api/instruments-service-get-asset-fundamentals"
 )
+TBANK_BONDS_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-bonds"
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +154,61 @@ def build_tbank_evidence(
 
     documents: list[EvidenceDocument] = []
     fundamentals = {item.asset_uid: item for item in evidence.fundamentals}
+    held_uids = {
+        position.instrument_uid
+        for position in bundle.portfolio.positions
+        if position.instrument_uid and Decimal(position.quantity) != 0
+    }
+    held_figis = {
+        position.figi
+        for position in bundle.portfolio.positions
+        if position.figi and Decimal(position.quantity) != 0
+    }
+    held_metadata = tuple(
+        item
+        for item in bundle.metadata
+        if item.uid in held_uids or (item.figi and item.figi in held_figis)
+    )
+
+    for item in held_metadata:
+        for rating in item.ratings:
+            payload = asdict(rating)
+            key = "|".join(
+                [
+                    item.uid,
+                    rating.agency_name,
+                    rating.rating_level,
+                    rating.rating_date.astimezone(UTC).isoformat(),
+                    rating.forecast,
+                    "watch" if rating.is_under_watch else "stable",
+                ]
+            )
+            documents.append(
+                EvidenceDocument(
+                    provider="tbank",
+                    document_type="credit_rating",
+                    subject_uid=item.uid,
+                    provider_key=key,
+                    source_url=TBANK_BONDS_SOURCE,
+                    published_at=rating.rating_date,
+                    effective_at=rating.rating_date,
+                    payload=payload,
+                    facts=(
+                        EvidenceFact(
+                            subject_uid=item.uid,
+                            fact_type="credit_rating",
+                            fact_key=rating.agency_name,
+                            value_text=rating.rating_level,
+                            effective_at=rating.rating_date,
+                            published_at=rating.rating_date,
+                            payload={
+                                "forecast": rating.forecast,
+                                "is_under_watch": rating.is_under_watch,
+                            },
+                        ),
+                    ),
+                )
+            )
 
     for fundamental in evidence.fundamentals:
         documents.append(_fundamental_document(fundamental))
@@ -387,8 +443,11 @@ def build_tbank_evidence(
                 status=fundamental_status,
             )
         )
-        rating_status: DataStatus = (
-            "not_applicable" if position.instrument_type == "etf" else "data_missing"
+        rating_status = _rating_status(
+            position.instrument_type,
+            info,
+            bundle,
+            assessed_at,
         )
 
         reasons: list[str] = []
@@ -399,7 +458,9 @@ def build_tbank_evidence(
         else:
             reasons.extend(metric_reasons)
             if rating_status == "data_missing":
-                reasons.append("credit_rating_feed_not_verified")
+                reasons.append("credit_rating_data_missing")
+            elif rating_status == "stale":
+                reasons.append("credit_rating_data_stale")
             if fundamental_status == "data_missing":
                 reasons.append("fundamental_data_missing")
             elif fundamental_status == "stale":
@@ -433,7 +494,12 @@ def build_tbank_evidence(
                     "default_date": (
                         default_date.isoformat() if default_date is not None else None
                     ),
-                    "rating_policy": "missing_until_licensed_feed_is_verified",
+                    "rating_policy": "structured_tbank_bond_ratings_or_data_missing",
+                    "ratings": (
+                        [asdict(rating) for rating in info.ratings]
+                        if info is not None
+                        else []
+                    ),
                     "fundamental_max_age_days": FUNDAMENTAL_MAX_AGE.days,
                     "evidence_retrieval_max_age_hours": int(
                         EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds() // 3600
@@ -614,6 +680,29 @@ def _source_status(
     if all(source.status == "unavailable" for source in relevant):
         return "unavailable", False
     return "partial", False
+
+
+def _rating_status(
+    instrument_type: str,
+    info: TBankInstrumentMetadata | None,
+    bundle: BrokerObservationBundle,
+    assessed_at: datetime,
+) -> DataStatus:
+    if instrument_type == "etf":
+        return "not_applicable"
+    if instrument_type != "bond" or info is None or not info.ratings:
+        return "data_missing"
+    if any(rating.rating_date.astimezone(UTC) > assessed_at for rating in info.ratings):
+        return "data_missing"
+    catalog = next((source for source in bundle.sources if source.id == "catalog"), None)
+    if catalog is None or catalog.status != "received":
+        return "data_missing"
+    retrieved_at = catalog.retrieved_at
+    if retrieved_at.tzinfo is None or retrieved_at.astimezone(UTC) > assessed_at:
+        return "stale"
+    if assessed_at - retrieved_at.astimezone(UTC) > EVIDENCE_RETRIEVAL_MAX_AGE:
+        return "stale"
+    return "received"
 
 
 def _fundamental_status(
