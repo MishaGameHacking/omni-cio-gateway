@@ -417,8 +417,32 @@ class PortfolioStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
-            for item in bundle.metadata:
-                cur.execute(
+            if bundle.metadata:
+                catalog_rows = [
+                    (
+                        item.uid,
+                        item.figi,
+                        item.asset_uid,
+                        item.position_uid,
+                        item.ticker,
+                        item.name,
+                        item.isin,
+                        item.instrument_type,
+                        item.currency,
+                        item.class_code,
+                        item.lot,
+                        item.sector,
+                        item.country_of_risk,
+                        item.for_qual_investor,
+                        item.for_iis,
+                        item.api_trade_available,
+                        item.buy_available,
+                        item.sell_available,
+                        catalog_retrieved_at,
+                    )
+                    for item in bundle.metadata
+                ]
+                cur.executemany(
                     """
                     INSERT INTO instrument_catalog (
                         provider,
@@ -467,29 +491,20 @@ class PortfolioStore:
                         last_seen_at = now(),
                         provider_retrieved_at = EXCLUDED.provider_retrieved_at
                     """,
-                    (
-                        item.uid,
-                        item.figi,
-                        item.asset_uid,
-                        item.position_uid,
-                        item.ticker,
-                        item.name,
-                        item.isin,
-                        item.instrument_type,
-                        item.currency,
-                        item.class_code,
-                        item.lot,
-                        item.sector,
-                        item.country_of_risk,
-                        item.for_qual_investor,
-                        item.for_iis,
-                        item.api_trade_available,
-                        item.buy_available,
-                        item.sell_available,
-                        catalog_retrieved_at,
-                    ),
+                    catalog_rows,
                 )
-                cur.execute(
+
+                access_rows = [
+                    (
+                        user_id,
+                        bundle.account_id,
+                        item.uid,
+                        _json(list(item.required_tests)),
+                        catalog_retrieved_at,
+                    )
+                    for item in bundle.metadata
+                ]
+                cur.executemany(
                     """
                     INSERT INTO account_instrument_access (
                         user_id,
@@ -505,13 +520,7 @@ class PortfolioStore:
                         required_tests = EXCLUDED.required_tests,
                         observed_at = EXCLUDED.observed_at
                     """,
-                    (
-                        user_id,
-                        bundle.account_id,
-                        item.uid,
-                        _json(list(item.required_tests)),
-                        catalog_retrieved_at,
-                    ),
+                    access_rows,
                 )
 
             cur.execute(
