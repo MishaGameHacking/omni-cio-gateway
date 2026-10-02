@@ -87,6 +87,20 @@ class Database:
                         SELECT 1
                         FROM information_schema.columns
                         WHERE table_schema = 'public'
+                          AND table_name = 'instrument_catalog'
+                          AND column_name = 'liquidity'
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'instrument_catalog'
+                          AND column_name = 'min_price_increment'
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
                           AND table_name = 'users'
                           AND column_name = 'role'
                     )
