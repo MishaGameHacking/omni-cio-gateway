@@ -6,10 +6,11 @@ execution authority.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Mapping
+from typing import Literal
 
 RatingTier = Literal["AAA", "AA", "A", "BBB", "below_investment_grade", "unknown"]
 PlanStatus = Literal["feasible", "hold", "infeasible"]
