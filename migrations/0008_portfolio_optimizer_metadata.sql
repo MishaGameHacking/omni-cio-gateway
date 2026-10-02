@@ -20,7 +20,9 @@ ALTER TABLE instrument_catalog
     ADD COLUMN IF NOT EXISTS exchange text NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS real_exchange text NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS tax_free boolean,
-    ADD COLUMN IF NOT EXISTS collateral boolean;
+    ADD COLUMN IF NOT EXISTS collateral boolean,
+    ADD COLUMN IF NOT EXISTS risk_level text NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS ratings jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS instrument_catalog_candidate_screen_idx
     ON instrument_catalog (
