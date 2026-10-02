@@ -139,7 +139,10 @@ def _cash_state(
     compatible = compatible and all(
         _number(item.value) >= 0 for item in (*positions.money, *positions.blocked_money)
     )
-    compatible = compatible and all(_number(position.quantity) >= 0 for position in portfolio.positions)
+    compatible = compatible and all(
+        _number(position.quantity) >= 0 and _number(position.blocked_lots) >= 0
+        for position in portfolio.positions
+    )
     compatible = compatible and all(
         _number(item.money.value) >= 0
         for item in portfolio.asset_totals
