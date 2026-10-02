@@ -977,10 +977,21 @@ class PortfolioStore:
             cur.execute(
                 """
                 WITH held AS (
-                    SELECT instrument_uid
-                    FROM portfolio_snapshot_positions
-                    WHERE snapshot_id = %s
-                      AND user_id = %s
+                    SELECT p.instrument_uid
+                    FROM portfolio_snapshot_positions AS p
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                    UNION
+                    SELECT c.instrument_uid
+                    FROM portfolio_snapshot_positions AS p
+                    JOIN instrument_catalog AS c
+                      ON c.provider = 'tbank'
+                     AND (
+                         c.instrument_uid = p.instrument_uid
+                         OR (p.figi <> '' AND c.figi = p.figi)
+                     )
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
                 ),
                 latest AS (
                     SELECT DISTINCT ON (
@@ -1025,7 +1036,7 @@ class PortfolioStore:
                     instrument_uid
                 LIMIT 200
                 """,
-                (snapshot_id, user_id),
+                (snapshot_id, user_id, snapshot_id, user_id),
             )
             payout_rows = [dict(row) for row in cur.fetchall()]
 
@@ -1037,11 +1048,25 @@ class PortfolioStore:
                     WHERE p.snapshot_id = %s
                       AND p.user_id = %s
                     UNION
+                    SELECT c.instrument_uid
+                    FROM portfolio_snapshot_positions AS p
+                    JOIN instrument_catalog AS c
+                      ON c.provider = 'tbank'
+                     AND (
+                         c.instrument_uid = p.instrument_uid
+                         OR (p.figi <> '' AND c.figi = p.figi)
+                     )
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                    UNION
                     SELECT c.asset_uid
                     FROM portfolio_snapshot_positions AS p
                     JOIN instrument_catalog AS c
                       ON c.provider = 'tbank'
-                     AND c.instrument_uid = p.instrument_uid
+                     AND (
+                         c.instrument_uid = p.instrument_uid
+                         OR (p.figi <> '' AND c.figi = p.figi)
+                     )
                     WHERE p.snapshot_id = %s
                       AND p.user_id = %s
                       AND c.asset_uid <> ''
@@ -1059,7 +1084,14 @@ class PortfolioStore:
                 GROUP BY sd.provider, sd.document_type
                 ORDER BY sd.provider, sd.document_type
                 """,
-                (snapshot_id, user_id, snapshot_id, user_id),
+                (
+                    snapshot_id,
+                    user_id,
+                    snapshot_id,
+                    user_id,
+                    snapshot_id,
+                    user_id,
+                ),
             )
             source_rows = [dict(row) for row in cur.fetchall()]
 
