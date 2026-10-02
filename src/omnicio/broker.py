@@ -22,6 +22,7 @@ from .tbank import (
     TBankPortfolio,
     TBankPositions,
     TBankUnavailable,
+    TBankUserInfo,
 )
 
 
@@ -289,6 +290,10 @@ class BrokerService:
         if failed:
             catalog_status = "partial"
         return tuple(metadata), tuple(requested), catalog_status
+
+    def user_info(self, user_id: UUID) -> TBankUserInfo:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_user_info(credential, environment)
 
     def revalidate_account(self, user_id: UUID) -> TBankAccount:
         record, credential, environment = self._connected_credential(user_id)
