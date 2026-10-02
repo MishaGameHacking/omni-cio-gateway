@@ -117,6 +117,13 @@
   const analysisSecurities = document.querySelector("#analysis-securities");
   const analysisSources = document.querySelector("#analysis-sources");
 
+  const riskSummaryBadge = document.querySelector("#risk-summary-badge");
+  const riskStatus = document.querySelector("#risk-status");
+  const riskContent = document.querySelector("#risk-content");
+  const riskAssessments = document.querySelector("#risk-assessments");
+  const riskPayouts = document.querySelector("#risk-payouts");
+  const riskSources = document.querySelector("#risk-sources");
+
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
   const owlFxStatus = document.querySelector("#owl-fx-status");
@@ -1112,8 +1119,236 @@
     }
   };
 
+  const resetRiskSummary = () => {
+    riskContent.classList.add("hidden");
+    riskAssessments.replaceChildren();
+    riskPayouts.replaceChildren();
+    riskSources.replaceChildren();
+    setStateBadge(riskSummaryBadge, "Ожидает наблюдения", "state-next");
+    riskStatus.textContent = "Ежедневный снимок риска ещё не загружен.";
+  };
+
+  const riskSourceNode = (source) => {
+    const labels = {
+      tbank_fundamentals: "T-Invest · фундаментальные показатели",
+      tbank_reports: "T-Invest · отчётность",
+      tbank_dividends: "T-Invest · дивиденды",
+      tbank_bond_coupons: "T-Invest · купоны",
+      tbank_bond_events: "T-Invest · события облигаций",
+      cbr_cra_registry: "Банк России · рейтинговый репозитарий",
+    };
+    const label = labels[source.source_id] || source.source_id || "Источник";
+    try {
+      const url = new URL(source.source_url);
+      const allowed = (
+        (url.hostname === "developer.tbank.ru" && url.pathname.startsWith("/invest/"))
+        || url.hostname === "ratings.cbr.ru"
+      );
+      if (url.protocol === "https:" && allowed) {
+        const link = document.createElement("a");
+        link.textContent = label;
+        link.href = url.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        return link;
+      }
+    } catch {
+      // Unknown evidence URLs remain inert text.
+    }
+    const text = document.createElement("span");
+    text.textContent = label;
+    return text;
+  };
+
+  const renderRiskSummary = (summary) => {
+    riskAssessments.replaceChildren();
+    riskPayouts.replaceChildren();
+    riskSources.replaceChildren();
+
+    if (!summary) {
+      resetRiskSummary();
+      riskStatus.textContent = "Ежедневный наблюдатель ещё не сохранил R3-снимок.";
+      return;
+    }
+
+    const assessments = Array.isArray(summary.assessments) ? summary.assessments : [];
+    const sources = Array.isArray(summary.sources) ? summary.sources : [];
+    const payouts = Array.isArray(summary.payouts) ? summary.payouts : [];
+    const assessmentByUid = new Map(
+      assessments.map((item) => [item.instrument_uid, item]),
+    );
+
+    const stateLabels = {
+      confirmed_default: "Подтверждённый дефолт",
+      critical: "Критический",
+      elevated: "Повышенный",
+      watch: "Наблюдение",
+      data_missing: "Недостаточно данных",
+      normal: "Без watch-сигналов",
+    };
+    const stateClass = (state) => {
+      if (state === "confirmed_default" || state === "critical") return "state-error";
+      if (state === "normal") return "state-ok";
+      return "state-next";
+    };
+    const stateRank = {
+      confirmed_default: 0,
+      critical: 1,
+      elevated: 2,
+      watch: 3,
+      data_missing: 4,
+      normal: 5,
+    };
+
+    assessments.forEach((assessment) => {
+      const card = document.createElement("article");
+      card.className = "risk-assessment-item";
+
+      const header = document.createElement("div");
+      header.className = "risk-assessment-header";
+      const identity = document.createElement("div");
+      const ticker = document.createElement("strong");
+      ticker.textContent = assessment.ticker || assessment.instrument_uid;
+      const model = document.createElement("small");
+      const modelLabels = {
+        bank: "Банковская модель",
+        insurer: "Страховой сектор · ограниченное покрытие",
+        developer: "Девелопмент · ограниченное покрытие",
+        ordinary_company: "Корпоративная модель",
+      };
+      model.textContent = [
+        modelLabels[assessment.sector_model] || assessment.sector_model,
+        assessment.coverage === "complete" ? "полное покрытие" : "неполное покрытие",
+      ].filter(Boolean).join(" · ");
+      identity.append(ticker, model);
+
+      const badge = document.createElement("span");
+      badge.className = `state-badge ${stateClass(assessment.state)}`;
+      badge.textContent = stateLabels[assessment.state] || "Не определён";
+      header.append(identity, badge);
+      card.append(header);
+
+      const reasons = document.createElement("div");
+      reasons.className = "risk-reason-list";
+      (assessment.reasons || []).forEach((reason) => {
+        const row = document.createElement("div");
+        row.className = "risk-reason";
+        row.dataset.severity = reason.severity || "info";
+        const title = document.createElement("strong");
+        title.textContent = reason.title || reason.code || "Наблюдение";
+        const detail = document.createElement("p");
+        detail.textContent = reason.detail || "";
+        row.append(title, detail);
+        reasons.append(row);
+      });
+      if (!reasons.childElementCount) {
+        appendEmptyState(reasons, "Дополнительных watch-индикаторов нет.");
+      }
+      card.append(reasons);
+      riskAssessments.append(card);
+    });
+    if (!riskAssessments.childElementCount) {
+      appendEmptyState(riskAssessments, "В снимке нет инструментов для оценки риска.");
+    }
+
+    payouts.forEach((payout) => {
+      const row = document.createElement("div");
+      row.className = "risk-payout-row";
+      const left = document.createElement("div");
+      const title = document.createElement("strong");
+      const kind = {
+        dividend: "Дивиденд",
+        coupon: "Купон",
+        bond_event: "Событие облигации",
+      }[payout.kind] || "Событие";
+      const assessment = assessmentByUid.get(payout.instrument_uid);
+      title.textContent = `${kind} · ${assessment?.ticker || payout.instrument_uid}`;
+      const meta = document.createElement("small");
+      meta.textContent = [
+        formatDateTime(payout.event_date),
+        payout.status || "статус не указан",
+      ].filter(Boolean).join(" · ");
+      left.append(title, meta);
+
+      const amount = document.createElement("span");
+      amount.className = "risk-payout-amount";
+      amount.textContent = payout.amount_value === null || payout.amount_value === undefined
+        ? "Сумма не подтверждена"
+        : formatMoney({
+          currency: payout.amount_currency || "",
+          value: payout.amount_value,
+        });
+      row.append(left, amount);
+      riskPayouts.append(row);
+    });
+    if (!riskPayouts.childElementCount) {
+      appendEmptyState(
+        riskPayouts,
+        "В выбранном окне нет подтверждённых источником событий выплат.",
+      );
+    }
+
+    const sourcePriority = {unavailable: 0, partial: 1, not_configured: 2, received: 3};
+    const sourceGroups = new Map();
+    sources.forEach((source) => {
+      const current = sourceGroups.get(source.source_id);
+      if (!current) {
+        sourceGroups.set(source.source_id, {...source, scopes: 1});
+        return;
+      }
+      current.scopes += 1;
+      if (
+        (sourcePriority[source.status] ?? 0)
+        < (sourcePriority[current.status] ?? 0)
+      ) {
+        current.status = source.status;
+      }
+      if (new Date(source.retrieved_at) > new Date(current.retrieved_at)) {
+        current.retrieved_at = source.retrieved_at;
+      }
+    });
+    [...sourceGroups.values()].forEach((source) => {
+      const row = document.createElement("div");
+      const details = document.createElement("small");
+      const statusText = {
+        received: "Получено",
+        partial: "Неполно",
+        unavailable: "Источник недоступен",
+        not_configured: "Автоматический feed не подключён",
+      }[source.status] || "Не подтверждено";
+      details.textContent = [
+        statusText,
+        `инструментов: ${source.scopes}`,
+        formatDateTime(source.retrieved_at),
+      ].join(" · ");
+      row.append(riskSourceNode(source), details);
+      riskSources.append(row);
+    });
+
+    const worst = [...assessments].sort(
+      (a, b) => (stateRank[a.state] ?? 99) - (stateRank[b.state] ?? 99),
+    )[0];
+    if (worst) {
+      setStateBadge(
+        riskSummaryBadge,
+        stateLabels[worst.state] || "Проверено",
+        stateClass(worst.state),
+      );
+    } else {
+      setStateBadge(riskSummaryBadge, "Нет позиций", "state-next");
+    }
+
+    riskStatus.textContent = [
+      `Снимок: ${formatDateTime(summary.captured_at)}`,
+      `инструментов: ${assessments.length}`,
+      `событий выплат: ${payouts.length}`,
+    ].join(" · ");
+    riskContent.classList.remove("hidden");
+  };
+
   const resetAnalysis = () => {
     analysisGeneration += 1;
+    resetRiskSummary();
     lastAnalysisAt = 0;
     analysisContent.classList.add("hidden");
     [
@@ -1327,6 +1562,25 @@
       const snapshot = await api("/api/broker/tbank/analysis", {method: "GET"});
       if (generation === analysisGeneration && tbankIsConnected) {
         renderAnalysis(snapshot);
+      }
+
+      try {
+        const riskPayload = await api("/api/portfolio/risk", {method: "GET"});
+        if (generation === analysisGeneration && tbankIsConnected) {
+          renderRiskSummary(riskPayload.summary);
+        }
+      } catch (riskError) {
+        if (riskError.status === 401) {
+          location.reload();
+          return;
+        }
+        if (generation === analysisGeneration && tbankIsConnected) {
+          resetRiskSummary();
+          riskStatus.textContent = (
+            "Сохранённый снимок риска сейчас недоступен. "
+            + "Live-анализ портфеля выше остаётся отдельным подтверждённым чтением."
+          );
+        }
       }
     } catch (error) {
       if (error.status === 401) {
