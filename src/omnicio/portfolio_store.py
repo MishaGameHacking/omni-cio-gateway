@@ -1087,6 +1087,7 @@ class PortfolioStore:
                 SELECT
                     sd.provider,
                     sd.document_type,
+                    min(sd.source_url) AS source_url,
                     max(sr.retrieved_at) AS retrieved_at,
                     count(DISTINCT sd.id) AS versions
                 FROM source_documents AS sd
