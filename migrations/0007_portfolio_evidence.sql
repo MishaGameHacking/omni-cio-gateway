@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS payout_events (
     provider text NOT NULL,
     instrument_uid text NOT NULL,
     event_type text NOT NULL CHECK (
-        event_type IN ('dividend', 'coupon', 'bond_event', 'issuer_report')
+        event_type IN ('dividend', 'coupon', 'bond_event')
     ),
     provider_key text NOT NULL,
     announced_at timestamptz,
