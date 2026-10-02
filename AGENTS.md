@@ -30,11 +30,11 @@ Green CI необходим, но сам по себе не означает, ч
 
 - GitHub — код, ветки, pull request, CI, review и release provenance;
 - Timeweb Cloud — production runtime, App Platform, сеть, секреты и PostgreSQL;
-- production OmniCIO Personal по умолчанию остаётся закрытой owner-only системой; многопользовательская регистрация поддерживается кодом только за versioned fail-closed gate `REGISTRATION_ENABLED=false`;
-- human login — только через VK ID OAuth 2.1 + PKCE; в owner-only режиме сервер разрешает сессию только если подтверждённый `vk_user_id` совпадает с `OWNER_VK_ID`, а в явно включённом multi-user режиме каждый подтверждённый VK ID получает отдельного пользователя и отдельную сессию; браузер не определяет authority;
+- production OmniCIO Personal использует многопользовательскую tenant-модель с ограничиваемой регистрацией; лимит новых аккаунтов задаётся server-side `REGISTRATION_MAX_USERS`, а существующий подтверждённый пользователь продолжает входить независимо от заполнения лимита;
+- human login — только через VK ID OAuth 2.1 + PKCE; подтверждённый `vk_user_id` связывается ровно с одним `user_id`, новые identity создаются только при открытой регистрации и наличии server-side capacity; browser input не определяет tenant authority и не может назначить роль/профиль;
 - T-Invest credential всегда принадлежит конкретному `user_id`, вводится только в аутентифицированной сессии этого пользователя, проверяется сервером и хранится только в зашифрованном виде; данные разных пользователей нельзя смешивать или читать по browser-provided identity;
 - публичные legal pages обязаны описывать фактически включённый access mode и не публикуют домашний адрес, ИНН, паспортные или иные избыточные персональные реквизиты OWNER;
-- включение `REGISTRATION_ENABLED=true` требует отдельного юридического и security review, обновлённых legal documents и явного versioned `MULTIUSER_LEGAL_APPROVED=true`; до этого production deploy обязан fail closed;
+- включение `REGISTRATION_ENABLED=true` требует актуальных legal documents, явного versioned `MULTIUSER_LEGAL_APPROVED=true`, подтверждённого обязательного regulatory gate и опубликованных реквизитов оператора; при отсутствии любого gate production deploy обязан fail closed;
 - Python — основной backend/runtime язык, если задача не требует другого языка;
 - браузерный frontend — только тот код, который реально нужен сайту.
 
@@ -177,7 +177,7 @@ Python-код должен следовать принципам PEP 8 и PEP 20
 
 Browser input никогда не является источником tenant authority.
 
-VK ID подтверждает внешнюю идентичность через Authorization Code flow с PKCE. Только server-side `OWNER_VK_ID` определяет OWNER; callback/query/browser input не может назначить владельца. OAuth `state` обязателен, flow имеет короткий TTL, access/refresh tokens VK ID не являются сессией OmniCIO и не сохраняются после получения подтверждённого `vk_user_id`. Публичный 9-значный profile ID является только идентификатором для UI/поддержки и никогда не предоставляет authority.
+VK ID подтверждает внешнюю идентичность через Authorization Code flow с PKCE. Tenant authority определяется только server-side связью `vk_user_id -> user_id`; callback/query/browser input не может назначить другой профиль, роль или tenant. OAuth `state` обязателен, flow имеет короткий TTL, access/refresh tokens VK ID не являются сессией OmniCIO и не сохраняются после получения подтверждённого `vk_user_id`. Публичный 9-значный profile ID является только идентификатором для UI/поддержки и никогда не предоставляет authority.
 
 Сохранённый T-Invest credential запрещено возвращать в browser/API response, логировать или хранить в открытом виде. Browser может передать новый credential только для проверки/замены в уже аутентифицированной owner-сессии. Выбранный broker account обязан повторно подтверждаться через provider перед сохранением.
 
@@ -213,7 +213,7 @@ PostgreSQL является relational authority после принятого p
 - VK ID owner identity хранить как проверенный provider subject, полученный только после успешного code exchange и user-info запроса;
 - PKCE verifier/state хранить только в краткоживущем зашифрованном Secure + HttpOnly + SameSite=Lax flow cookie и удалять после callback;
 - session token хранить у клиента только в Secure + HttpOnly + SameSite cookie, а в БД хранить только digest;
-- публичная регистрация в OmniCIO Personal всегда выключена; owner login fail-closed при отсутствии полного `VKID_APP_ID` + `OWNER_VK_ID` или при provider failure;
+- VK ID login fail-closed при отсутствии валидного `VKID_APP_ID` или provider failure; создание новой identity дополнительно fail-closed при закрытой регистрации, исчерпанном `REGISTRATION_MAX_USERS` или неполных legal/regulatory gates;
 - broker credential хранить только encrypted-at-rest отдельным server-side ключом, не возвращать через API и не включать в audit/log metadata;
 - login/session не дают broker write authority; любые будущие реальные торговые действия требуют отдельного execution/risk boundary и явной authorization модели.
 
