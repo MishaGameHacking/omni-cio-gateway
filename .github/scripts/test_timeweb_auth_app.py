@@ -52,11 +52,11 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertTrue(MODULE.runtime_is_ready(ready))
         self.assertFalse(MODULE.runtime_is_ready(missing))
-        self.assertIn("REGISTRATION_ENABLED=false", ready.commands[0])
         self.assertIn("BROKER_TOKEN_CRYPTO_KEY", ready.commands[0])
         self.assertIn("VKID_FLOW_CRYPTO_KEY", ready.commands[0])
         self.assertIn("command -v psql", ready.commands[0])
         self.assertIn("vkid_identities", ready.commands[0])
+        self.assertIn("column_name = 'role'", ready.commands[0])
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
