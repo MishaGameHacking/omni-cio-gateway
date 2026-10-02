@@ -242,26 +242,19 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 user_id,
                 job_run_id,
                 account_id,
-                account_type,
-                account_status,
-                account_access_level,
                 environment,
                 captured_at,
+                analysis_status,
                 nav_rub,
                 rub_cash_total,
                 rub_cash_blocked,
                 rub_cash_unblocked,
-                security_count,
-                valued_security_count,
-                analysis_status,
-                analysis,
-                broker_user_info,
-                sources
+                limits_loading_in_progress,
+                evidence
             )
             VALUES (
-                %s, %s, 'account-1', 'broker', 'open', 'read_only', 'prod',
-                now(), 1000, 100, 0, 100, 1, 1, 'observed',
-                '{}'::jsonb, '{}'::jsonb, '[]'::jsonb
+                %s, %s, 'account-1', 'prod', now(), 'observed',
+                1000, 100, 0, 100, false, '{}'::jsonb
             )
             RETURNING id
             """,
