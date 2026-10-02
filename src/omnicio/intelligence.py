@@ -169,7 +169,14 @@ def build_tbank_evidence(
 
     for item in evidence.bond_events:
         payload = asdict(item)
-        key = f"{item.instrument_uid}|{item.event_number}|{item.event_type}|{_time_key(item.event_date)}"
+        key = "|".join(
+            [
+                item.instrument_uid,
+                str(item.event_number),
+                item.event_type,
+                _time_key(item.event_date),
+            ]
+        )
         status: Literal["announced", "scheduled", "cancelled", "paid", "defaulted", "observed"]
         if item.default_date is not None:
             status = "defaulted"
@@ -185,7 +192,12 @@ def build_tbank_evidence(
                 provider_key=key,
                 source_url=TBANK_INSTRUMENTS_SOURCE,
                 published_at=item.event_date,
-                effective_at=item.default_date or item.real_pay_date or item.pay_date or item.event_date,
+                effective_at=(
+                    item.default_date
+                    or item.real_pay_date
+                    or item.pay_date
+                    or item.event_date
+                ),
                 payload=payload,
                 facts=(
                     EvidenceFact(
@@ -254,7 +266,11 @@ def build_tbank_evidence(
 
     source_status: EvidenceStatus = (
         "partial"
-        if any(source.status != "received" for source in evidence.sources if source.id != "credit_ratings")
+        if any(
+            source.status != "received"
+            for source in evidence.sources
+            if source.id != "credit_ratings"
+        )
         else "received"
     )
     metadata = {item.uid: item for item in bundle.metadata}
