@@ -8,6 +8,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from decimal import Decimal
 from typing import Literal, cast
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
@@ -25,6 +26,7 @@ from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .market import MarketService
 from .portfolio import PortfolioAnalysisError
+from .portfolio_store import InvestmentProfileRecord, PortfolioStore
 from .security import (
     SecurityValueError,
     format_public_id,
@@ -73,6 +75,15 @@ class DeleteAccountBody(BaseModel):
     confirm_irreversible: bool
 
 
+class InvestmentProfileBody(BaseModel):
+    reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000)
+    planned_withdrawal_rub: Decimal = Field(ge=0, le=1_000_000_000_000)
+    horizon_months: int = Field(ge=1, le=1200)
+    max_drawdown_percent: Decimal = Field(ge=0, le=100)
+    liquidity_horizon_days: int = Field(ge=0, le=36500)
+    allow_below_investment_grade: bool = False
+
+
 def client_ip(request: Request) -> str:
     direct = request.client.host if request.client else ""
     candidate = direct
@@ -107,6 +118,10 @@ def broker_service(request: Request) -> BrokerService:
 
 def market_service(request: Request) -> MarketService:
     return cast(MarketService, request.app.state.market_service)
+
+
+def portfolio_store(request: Request) -> PortfolioStore:
+    return cast(PortfolioStore, request.app.state.portfolio_store)
 
 
 def vkid_client(request: Request) -> VKIDClient:
@@ -188,6 +203,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = cfg
     app.state.database = database
     app.state.auth_service = AuthService(cfg, database)
+    app.state.portfolio_store = PortfolioStore(database)
     app.state.vkid_client = VKIDClient(
         app_id=cfg.vkid_app_id,
         redirect_uri=VKID_CALLBACK,
@@ -439,6 +455,49 @@ async def usd_rub_market_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _profile_payload(profile: InvestmentProfileRecord) -> dict[str, object]:
+    return {
+        "version": profile.version,
+        "reserve_rub": str(profile.reserve_rub),
+        "planned_withdrawal_rub": str(profile.planned_withdrawal_rub),
+        "horizon_months": profile.horizon_months,
+        "max_drawdown_percent": str(profile.max_drawdown_percent),
+        "liquidity_horizon_days": profile.liquidity_horizon_days,
+        "allow_below_investment_grade": profile.allow_below_investment_grade,
+        "created_at": profile.created_at,
+    }
+
+
+@app.get("/api/profile/investment")
+def investment_profile(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    profile = portfolio_store(request).current_profile(user.id)
+    return {"profile": _profile_payload(profile) if profile is not None else None}
+
+
+@app.put("/api/profile/investment")
+def save_investment_profile(
+    body: InvestmentProfileBody,
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    profile = portfolio_store(request).save_profile(
+        user.id,
+        reserve_rub=body.reserve_rub,
+        planned_withdrawal_rub=body.planned_withdrawal_rub,
+        horizon_months=body.horizon_months,
+        max_drawdown_percent=body.max_drawdown_percent,
+        liquidity_horizon_days=body.liquidity_horizon_days,
+        allow_below_investment_grade=body.allow_below_investment_grade,
+    )
+    return {"profile": _profile_payload(profile)}
 
 
 @app.get("/api/broker/tbank")
