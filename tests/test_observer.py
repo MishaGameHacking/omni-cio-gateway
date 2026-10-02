@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -85,14 +86,27 @@ class FakeStore:
         self.saved_snapshots = 0
         self.saved_pages: list[str] = []
         self.claimed = False
+        self.lock_available = True
+        self.recover_running_values: list[bool] = []
+
+    def observer_lock(self):
+        return nullcontext(self.lock_available)
 
     def observer_user_ids(self, legal_versions: dict[str, str]) -> tuple[UUID, ...]:
         assert legal_versions == LEGAL_VERSIONS
         return (USER_ID,)
 
-    def claim_daily_job(self, user_id: UUID, *, job_type: str, scheduled_for: date):
+    def claim_daily_job(
+        self,
+        user_id: UUID,
+        *,
+        job_type: str,
+        scheduled_for: date,
+        recover_running: bool = False,
+    ):
         assert user_id == USER_ID
         assert job_type == "portfolio_daily"
+        self.recover_running_values.append(recover_running)
         if self.claimed:
             return None
         self.claimed = True
@@ -219,6 +233,29 @@ def test_provider_read_retries_unavailable_reads_with_bounded_jitter() -> None:
     assert [call.args[0] for call in sleep.call_args_list] == [0.75, 2.5]
 
 
+def test_full_observer_run_uses_process_lock_and_recovers_running_jobs() -> None:
+    store = FakeStore()
+    broker = FakeBroker()
+    observer = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
+
+    result = observer.run(now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC))
+
+    assert result.total_users == 1
+    assert result.claimed_jobs == 1
+    assert store.recover_running_values == [True]
+
+
+def test_full_observer_run_skips_when_another_process_holds_lock() -> None:
+    store = FakeStore()
+    store.lock_available = False
+    observer = PortfolioObserver(store, FakeBroker(), legal_versions=LEGAL_VERSIONS)
+
+    result = observer.run(now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC))
+
+    assert result == type(result)(0, 0, 0, 0, 0)
+    assert store.recover_running_values == []
+
+
 def test_daily_observer_pages_history_and_finishes_once() -> None:
     store = FakeStore()
     broker = FakeBroker()
@@ -306,7 +343,9 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "UNIQUE (job_run_id)" in migration
     assert "job_runs_finish_state_consistent" in migration
     assert "broker_sync_state_cursor_window_consistent" in migration
+    assert "pg_try_advisory_lock" in store
     assert "pg_try_advisory_xact_lock" in store
+    assert "recover_running" in store
     assert "ON CONFLICT (job_run_id) DO NOTHING" in store
     assert "pending_cursor" in store
 
