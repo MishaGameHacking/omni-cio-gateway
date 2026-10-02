@@ -15,6 +15,7 @@ class FakeDatabase:
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
             status="active",
+            role="user",
         )
         self.last_reason = ""
 
@@ -33,6 +34,7 @@ class FakeDatabase:
             id=self.user.id,
             public_id=self.user.public_id,
             status=kwargs["target_status"],
+            role=self.user.role,
         )
         return self.user, True
 
