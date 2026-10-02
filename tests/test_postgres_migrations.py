@@ -104,6 +104,19 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         }
         assert "required_tests" not in catalog_columns
 
+        semantic_indexes = {
+            row[0]
+            for row in admin.execute(
+                """
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND tablename = 'operation_observations'
+                """
+            ).fetchall()
+        }
+        assert "operation_observations_semantic_unique_idx" in semantic_indexes
+
         admin.execute(
             """
             INSERT INTO users (id)
