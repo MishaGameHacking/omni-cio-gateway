@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
@@ -270,3 +271,42 @@ def test_partial_provider_evidence_never_becomes_normal() -> None:
     assert assessments[0].source_status == "partial"
     assert assessments[0].state == "data_missing"
     assert "provider_evidence_partial" in assessments[0].reasons
+
+
+def test_figi_fallback_keeps_default_evidence_joined_to_snapshot_key() -> None:
+    now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+    bundle = _bundle()
+    position = replace(bundle.portfolio.positions[0], instrument_uid="")
+    bundle = replace(
+        bundle,
+        portfolio=replace(bundle.portfolio, positions=(position,)),
+    )
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now,
+        dividends=(),
+        coupons=(),
+        bond_events=(
+            TBankBondEvent(
+                instrument_uid="bond-uid",
+                event_number=9,
+                event_date=datetime(2026, 9, 20, tzinfo=UTC),
+                event_type="EVENT_TYPE_COUPON",
+                default_date=datetime(2026, 9, 30, tzinfo=UTC),
+                real_pay_date=None,
+                pay_date=datetime(2026, 9, 25, tzinfo=UTC),
+                pay_one_bond=TBankMoney("RUB", "50"),
+                execution="",
+                operation_type="",
+                note="",
+            ),
+        ),
+        reports=(),
+        fundamentals=(),
+        sources=_sources(now),
+    )
+
+    _, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+
+    assert assessments[0].instrument_uid == "FIGI-BOND"
+    assert assessments[0].state == "confirmed_default"
+    assert assessments[0].evidence["asset_uid"] == "issuer-asset"
