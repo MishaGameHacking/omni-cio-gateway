@@ -122,13 +122,16 @@ class BrokerService:
             (account for account in accounts if account.id == account_id),
             None,
         )
-        if selected is None:
+        if selected is None or selected.status != "ACCOUNT_STATUS_OPEN":
             raise BrokerAccountNotAccessible(
                 "selected T-Invest account is not accessible"
             )
-        if selected.access_level == "ACCOUNT_ACCESS_LEVEL_NO_ACCESS":
+        if selected.access_level not in {
+            "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
+            "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+        }:
             raise BrokerAccountNotAccessible(
-                "selected T-Invest account has no token access"
+                "selected T-Invest account has no verified read access"
             )
 
         encrypted = encrypt_secret(credential.strip(), self.credential_key)
