@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Literal
+from uuid import UUID
 
 RiskState = Literal[
     "data_missing",
@@ -100,6 +101,15 @@ class RiskAssessment:
     evaluated_at: datetime
     latest_fundamental_period_end: datetime | None
     latest_report_date: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class RiskSnapshotSummary:
+    snapshot_id: UUID
+    captured_at: datetime
+    assessments: tuple[RiskAssessment, ...]
+    payouts: tuple[PayoutEvidence, ...]
+    sources: tuple[SourceEvidenceStatus, ...]
 
 
 def _number(metrics: dict[str, str | None], key: str) -> Decimal | None:
