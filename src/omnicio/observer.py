@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
