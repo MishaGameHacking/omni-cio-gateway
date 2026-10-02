@@ -37,6 +37,8 @@ class FakeSsh:
         self.commands.append(command)
         if not self.succeeds:
             raise MODULE.InfraError("not ready")
+        if "count(*) FILTER" in command:
+            return "1|1\n"
         return ""
 
 
