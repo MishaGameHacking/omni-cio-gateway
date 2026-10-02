@@ -657,7 +657,6 @@ INSERT INTO audit_events (user_id, event_type, metadata)
 SELECT id, 'legacy_profile_retired', '{"reason":"limited_user_cutover"}'::jsonb
 FROM users;
 
-DELETE FROM otp_challenges;
 DELETE FROM users;
 
 COMMIT;
