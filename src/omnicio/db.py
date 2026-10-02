@@ -67,12 +67,40 @@ class Database:
                     AND to_regclass('public.legal_acceptances') IS NOT NULL
                     AND to_regclass('public.vkid_identities') IS NOT NULL
                     AND to_regclass('public.tbank_connection') IS NOT NULL
+                    AND to_regclass('public.instrument_catalog') IS NOT NULL
+                    AND to_regclass('public.issuer_groups') IS NOT NULL
+                    AND to_regclass('public.issuers') IS NOT NULL
+                    AND to_regclass('public.instrument_issuer_map') IS NOT NULL
+                    AND to_regclass('public.investment_profile_versions') IS NOT NULL
+                    AND to_regclass('public.job_runs') IS NOT NULL
+                    AND to_regclass('public.portfolio_snapshots') IS NOT NULL
+                    AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL
+                    AND to_regclass('public.operation_observations') IS NOT NULL
+                    AND to_regclass('public.broker_sync_state') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
                         WHERE table_schema = 'public'
                           AND table_name = 'users'
                           AND column_name = 'role'
+                    )
+                    AND (
+                        SELECT count(*) = 6
+                        FROM pg_class AS c
+                        JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                        WHERE n.nspname = 'public'
+                          AND c.relname = ANY (
+                              ARRAY[
+                                  'investment_profile_versions',
+                                  'job_runs',
+                                  'portfolio_snapshots',
+                                  'portfolio_snapshot_positions',
+                                  'operation_observations',
+                                  'broker_sync_state'
+                              ]
+                          )
+                          AND c.relrowsecurity
+                          AND c.relforcerowsecurity
                     )
                     AS ready
                 """
