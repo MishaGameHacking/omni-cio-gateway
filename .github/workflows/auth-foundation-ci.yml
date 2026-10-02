@@ -69,7 +69,14 @@ jobs:
 
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Persistent self-hosted machines must not execute untrusted fork PR code.
+    # Run owner-authored same-repository PRs for early parallel feedback, and
+    # keep accepted main as the release-provenance run.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.author_association == 'OWNER')
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 15
     strategy:
