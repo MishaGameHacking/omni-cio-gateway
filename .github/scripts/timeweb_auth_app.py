@@ -508,6 +508,9 @@ if [ -f "$NGINX_SITE" ]; then
 fi
 
 cat > "$NGINX_SITE.new" <<'EOF'
+limit_req_zone $binary_remote_addr zone=omnicio_auth_start:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=omnicio_auth_callback:10m rate=30r/m;
+
 server {
     listen 80;
     listen [::]:80;
@@ -539,7 +542,36 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" always;
+
+    location = /api/auth/vkid/start {
+        limit_req zone=omnicio_auth_start burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/auth/vkid/callback {
+        limit_req zone=omnicio_auth_callback burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
 
     location /api/ {
         proxy_pass http://127.0.0.1:8001;
