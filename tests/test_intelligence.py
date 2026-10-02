@@ -175,6 +175,7 @@ def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> Non
     assert assessments[0].state == "data_missing"
     assert assessments[0].rating_status == "data_missing"
     assert assessments[0].fundamental_status == "received"
+    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
     assert "credit_rating_feed_not_verified" in assessments[0].reasons
 
 
