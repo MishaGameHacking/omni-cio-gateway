@@ -371,3 +371,76 @@ def test_analysis_endpoint_has_no_write_method() -> None:
         json={"confirm": True},
     )
     assert response.status_code == 405
+
+
+
+def test_intelligence_http_requires_session_before_touching_store() -> None:
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        auth.return_value.refresh_session.return_value = None
+        response = TestClient(app).get("/api/portfolio/intelligence")
+
+    assert response.status_code == 401
+    store.assert_not_called()
+
+
+def test_intelligence_http_is_private_tenant_scoped_and_read_only() -> None:
+    now = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+    snapshot = {
+        "snapshot_id": "11111111-1111-1111-1111-111111111111",
+        "captured_at": now,
+        "snapshot_age_seconds": 0,
+        "snapshot_freshness": "fresh",
+        "analysis_status": "observed",
+        "execution_enabled": False,
+        "rating_feed_status": "data_missing",
+        "risks": [],
+        "payouts": [],
+        "sources": [],
+    }
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-resolved-user"
+        store.return_value.latest_intelligence.return_value = snapshot
+        response = TestClient(app).get(
+            "/api/portfolio/intelligence?user_id=attacker"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["execution_enabled"] is False
+    assert response.json()["rating_feed_status"] == "data_missing"
+    store.return_value.latest_intelligence.assert_called_once_with(
+        "server-resolved-user"
+    )
+
+    write_response = TestClient(app).post(
+        "/api/portfolio/intelligence",
+        json={"confirm": True},
+    )
+    assert write_response.status_code == 405
+
+
+def test_intelligence_http_pending_never_implies_execution() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-resolved-user"
+        store.return_value.latest_intelligence.return_value = None
+        response = TestClient(app).get("/api/portfolio/intelligence")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "pending",
+        "execution_enabled": False,
+        "rating_feed_status": "data_missing",
+        "risks": [],
+        "payouts": [],
+        "sources": [],
+    }
