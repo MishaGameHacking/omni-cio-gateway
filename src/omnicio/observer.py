@@ -262,7 +262,10 @@ class PortfolioObserver:
                 or details["history_status"] != "complete"
                 or any(
                     status != "received"
-                    for source_id, status in cast(dict[str, str], details["evidence_sources"]).items()
+                    for source_id, status in cast(
+                        dict[str, str],
+                        details["evidence_sources"],
+                    ).items()
                     if source_id != "credit_ratings"
                 )
             )
