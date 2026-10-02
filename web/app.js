@@ -171,10 +171,10 @@
     const capacity = Number(config && config.registration_max_users) || 1;
     accessEyebrow.textContent = "Персональный инвестиционный кабинет";
     accessLead.textContent = registrationOpen
-      ? `Первый пользователь, прошедший VK ID, получает один из ${capacity} доступных пользовательских аккаунтов. Данные и брокерские подключения изолированы по профилям.`
+      ? `Новый пользователь, прошедший VK ID, занимает один из ${capacity} доступных пользовательских слотов. Данные и брокерские подключения изолированы по профилям.`
       : "Регистрация новых аккаунтов закрыта. Уже зарегистрированный пользователь может продолжать вход через свой VK ID.";
     accessScope.textContent = registrationOpen
-      ? `Регистрация: до ${capacity} аккаунта`
+      ? `Регистрация: лимит ${capacity}`
       : "Регистрация: закрыта";
     homeLoginTitle.textContent = "Вход через VK ID";
     homeLoginNote.textContent = "Только пользовательские права · защищённая сессия OmniCIO";

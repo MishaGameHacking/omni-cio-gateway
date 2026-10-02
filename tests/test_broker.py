@@ -11,7 +11,7 @@ from uuid import UUID
 import pytest
 from cryptography.fernet import Fernet
 
-from omnicio.broker import BrokerAccountNotAccessible, BrokerService
+from omnicio.broker import BrokerAccountNotAccessible, BrokerNotConnected, BrokerService
 from omnicio.db import TBankConnectionRecord
 from omnicio.tbank import (
     TBankAccount,
@@ -586,6 +586,32 @@ def test_broker_service_decrypts_saved_credential_only_for_read_calls() -> None:
     assert quote.source == "dealer"
     assert not hasattr(portfolio, "credential")
     assert credential.encode() not in database.saved_ciphertext
+
+
+def test_broker_service_keeps_two_users_strictly_isolated() -> None:
+    database = FakeDatabase()
+    first_user = UUID("00000000-0000-0000-0000-000000000001")
+    second_user = UUID("00000000-0000-0000-0000-000000000002")
+    service = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=FakeTBank(),
+    )
+
+    service.connect(
+        user_id=first_user,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
+    )
+
+    assert service.status(first_user).connected is True
+    assert service.status(second_user).connected is False
+    with pytest.raises(BrokerNotConnected):
+        service.portfolio(second_user)
+    assert service.disconnect(second_user) is False
+    assert service.status(first_user).connected is True
 
 
 def test_broker_service_refuses_account_outside_credential_scope() -> None:
