@@ -427,9 +427,12 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
+        self.assertIn('"$RELEASE/web/legal"', script)
+        self.assertIn('"$WEB_RELEASE/legal"', script)
         for filename in ("privacy.html", "consent.html", "terms.html"):
-            self.assertIn(f'web/legal/{filename}', script)
-            self.assertIn(f'legal/{filename}', script)
+            self.assertIn(filename, script)
+        for marker in MODULE.LEGAL_OPERATOR_MARKERS:
+            self.assertIn(marker, script)
 
         self.assertEqual(
             set(MODULE.LEGAL_PAGES),
