@@ -72,7 +72,7 @@ def settings(**overrides: object) -> Settings:
         "vkid_app_id": "123456",
         "vkid_login_enabled": True,
         "registration_enabled": True,
-        "registration_max_users": 1,
+        "registration_max_users": 2,
         "privacy_version": "2026-10-02-v3",
         "consent_version": "2026-10-02-v3",
         "terms_version": "2026-10-02-v3",
@@ -98,7 +98,7 @@ def test_vkid_login_creates_user_session_without_owner_binding() -> None:
     assert db.completed_vk_user_id == "111111111"
     assert db.accepted_versions == auth.legal_versions()
     assert db.registration_enabled is True
-    assert db.registration_max_users == 1
+    assert db.registration_max_users == 2
     assert auth.refresh_session(result.session_token) == db.user
     assert db.refreshed_ttl == 34_560_000
 
@@ -119,7 +119,7 @@ def test_unknown_identity_fails_closed_when_registration_is_closed() -> None:
 def test_unknown_identity_fails_closed_when_capacity_is_full() -> None:
     db = FakeDatabase()
     db.login_error = RegistrationCapacityError("registration capacity reached")
-    auth = AuthService(settings(registration_max_users=1), db)
+    auth = AuthService(settings(registration_max_users=2), db)
 
     with pytest.raises(RegistrationCapacityReached):
         auth.complete_vkid_login(
