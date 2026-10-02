@@ -67,7 +67,7 @@ class PortfolioStore:
             (str(user_id),),
         )
 
-    def observer_user_ids(self) -> tuple[UUID, ...]:
+    def observer_user_ids(self, legal_versions: dict[str, str]) -> tuple[UUID, ...]:
         with self.database.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -76,10 +76,15 @@ class PortfolioStore:
                 ORDER BY user_id
                 """
             )
-            return tuple(
+            candidates = tuple(
                 cast(UUID, cast(dict[str, Any], row)["user_id"])
                 for row in cur.fetchall()
             )
+        return tuple(
+            user_id
+            for user_id in candidates
+            if self.database.has_legal_versions(user_id, legal_versions)
+        )
 
     def current_profile(self, user_id: UUID) -> InvestmentProfileRecord | None:
         with (
