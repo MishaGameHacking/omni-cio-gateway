@@ -16,12 +16,13 @@ versioned and satisfied:
 - a positive server-side `REGISTRATION_MAX_USERS`;
 - reviewed multi-user legal approval;
 - confirmed personal-data operator/regulatory readiness;
-- complete operator name, address and contact email for the rendered legal pages;
+- complete operator name and contact email for the rendered legal pages;
 - VK ID configuration and successful end-to-end deployment verification.
 
-Operator identity/contact values are deployment configuration because they may
-contain personal contact data that must not be guessed or committed without an
-explicit decision. The public pages are rendered during deployment and the
+Operator identity/contact values are deployment configuration and must not be
+guessed. The operator address required for a regulatory notification is handled
+through that filing and is not duplicated on the public website unless there is
+a separate legal reason to publish it. The public pages are rendered during deployment and the
 deployer rejects unresolved placeholders.
 
 Do not store passport details, scans, secret keys, API tokens or other sensitive
