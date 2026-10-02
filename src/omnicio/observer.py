@@ -51,13 +51,20 @@ class ObserverRunResult:
 
 
 class PortfolioObserver:
-    def __init__(self, store: PortfolioStore, broker: BrokerService) -> None:
+    def __init__(
+        self,
+        store: PortfolioStore,
+        broker: BrokerService,
+        *,
+        legal_versions: dict[str, str],
+    ) -> None:
         self.store = store
         self.broker = broker
+        self.legal_versions = dict(legal_versions)
 
     def run(self, *, now: datetime | None = None) -> ObserverRunResult:
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
-        user_ids = self.store.observer_user_ids()
+        user_ids = self.store.observer_user_ids(self.legal_versions)
         if not user_ids:
             return ObserverRunResult(0, 0, 0, 0, 0)
 
@@ -296,7 +303,15 @@ def main() -> int:
             credential_key=cfg.broker_token_crypto_key,
             tbank=TBankInvestClient(),
         )
-        result = PortfolioObserver(store, broker).run()
+        result = PortfolioObserver(
+            store,
+            broker,
+            legal_versions={
+                "privacy_policy": cfg.privacy_version,
+                "personal_data_consent": cfg.consent_version,
+                "terms": cfg.terms_version,
+            },
+        ).run()
         logger.info(
             "portfolio observer complete users=%s claimed=%s succeeded=%s degraded=%s failed=%s",
             result.total_users,
