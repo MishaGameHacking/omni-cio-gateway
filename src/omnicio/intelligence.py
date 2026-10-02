@@ -218,9 +218,17 @@ def build_tbank_evidence(
             ]
         )
         status: Literal["announced", "scheduled", "cancelled", "paid", "defaulted", "observed"]
-        if bond_event.default_date is not None:
+        confirmed_default = (
+            bond_event.default_date is not None
+            and bond_event.default_date <= assessed_at
+        )
+        confirmed_payment = (
+            bond_event.real_pay_date is not None
+            and bond_event.real_pay_date <= assessed_at
+        )
+        if confirmed_default:
             status = "defaulted"
-        elif bond_event.real_pay_date is not None:
+        elif confirmed_payment:
             status = "paid"
         else:
             status = "observed"
@@ -260,7 +268,11 @@ def build_tbank_evidence(
                     announced_at=bond_event.event_date,
                     record_at=None,
                     expected_at=bond_event.pay_date,
-                    actual_at=bond_event.real_pay_date,
+                    actual_at=(
+                        bond_event.real_pay_date
+                        if confirmed_payment
+                        else None
+                    ),
                     amount=(
                         Decimal(bond_event.pay_one_bond.value)
                         if bond_event.pay_one_bond is not None
