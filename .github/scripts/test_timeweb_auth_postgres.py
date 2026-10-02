@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import secrets
 import sys
 import tempfile
 import unittest
@@ -123,7 +124,7 @@ class PostgresTests(unittest.TestCase):
             db_type="postgres18",
             preset={"id": 2},
             vpc_id="network-123",
-            password="secret-value",
+            password=secrets.token_urlsafe(18),
         )
         self.assertEqual(payload["network"], {"id": "network-123"})
         self.assertFalse(payload["is_public_ipv6"])
