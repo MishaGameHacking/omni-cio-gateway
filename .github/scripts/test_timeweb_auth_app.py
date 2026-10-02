@@ -458,6 +458,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank",
             "/api/broker/tbank/accounts",
             "/api/broker/tbank/portfolio",
+            "/api/broker/tbank/analysis",
             "/api/broker/tbank/instruments/search",
             "/api/market/usd-rub",
             "/api/market/usd-rub/stream",
@@ -556,7 +557,16 @@ class AuthAppDeployTests(unittest.TestCase):
         script = (root / "web" / "app.js").read_text()
         stylesheet = (root / "web" / "app.css").read_text()
 
-        for view in ("home", "portfolio", "system", "connections", "profile", "settings", "support"):
+        for view in (
+            "home",
+            "portfolio",
+            "decisions",
+            "system",
+            "connections",
+            "profile",
+            "settings",
+            "support",
+        ):
             self.assertIn(f'data-view="{view}"', page)
             self.assertIn(f'data-view-panel="{view}"', page)
 
