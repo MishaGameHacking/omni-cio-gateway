@@ -269,8 +269,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn(backup, ssh.commands[0])
         self.assertIn(state, ssh.commands[0])
         self.assertIn(f"{MODULE.PRODUCT_ENV}.tmp-{sha}", ssh.commands[0])
-        self.assertIn(backup, MODULE.REMOTE_ROLLBACK_SCRIPT)
-        self.assertIn(state, MODULE.REMOTE_ROLLBACK_SCRIPT)
+        self.assertIn('PRODUCT_ENV_BACKUP="$PRODUCT_ENV.pre-$SHA"', MODULE.REMOTE_ROLLBACK_SCRIPT)
+        self.assertIn('PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"', MODULE.REMOTE_ROLLBACK_SCRIPT)
 
     def test_product_environment_backup_rejects_invalid_release_sha(self) -> None:
         with self.assertRaises(MODULE.InfraError):
