@@ -6,6 +6,12 @@
   const vkidForm = document.querySelector("#vkid-form");
   const vkidLogin = document.querySelector("#vkid-login");
   const authMessage = document.querySelector("#auth-message");
+  const accessEyebrow = document.querySelector("#access-eyebrow");
+  const accessLead = document.querySelector("#access-lead");
+  const accessScope = document.querySelector("#access-scope");
+  const homeLoginTitle = document.querySelector("#home-login-title");
+  const homeLoginNote = document.querySelector("#home-login-note");
+  const accountModeBadge = document.querySelector("#account-mode-badge");
 
   const profileId = document.querySelector("#profile-id");
   const settingsProfileId = document.querySelector("#settings-profile-id");
@@ -156,6 +162,18 @@
     document.querySelectorAll("[data-app-build]").forEach((element) => {
       element.textContent = build;
     });
+  };
+
+  const renderAccessMode = (config) => {
+    const open = config && config.registration_enabled === true;
+    accessEyebrow.textContent = open ? "Персональный инвестиционный кабинет" : "Личный закрытый контур";
+    accessLead.textContent = open
+      ? "Каждый пользователь входит через свой VK ID и работает только со своим профилем и брокерским подключением."
+      : "Один аккаунт владельца, вход через VK ID и защищённое подключение собственного брокерского счёта T-Invest.";
+    accessScope.textContent = open ? "Доступ: зарегистрированные пользователи" : "Доступ: только владелец";
+    homeLoginTitle.textContent = open ? "Вход пользователя" : "Вход владельца";
+    homeLoginNote.textContent = "VK ID + защищённая сессия OmniCIO";
+    accountModeBadge.textContent = open ? "Multi-user" : "Owner-only";
   };
 
   const storedTheme = () => {
@@ -1166,8 +1184,8 @@
     const params = new URLSearchParams(location.search);
     const authError = params.get("auth_error");
 
-    if (authError === "owner") {
-      showMessage(authMessage, "Этот VK ID не имеет доступа к личному аккаунту OmniCIO.", true);
+    if (authError === "owner" || authError === "access") {
+      showMessage(authMessage, "Этот VK ID не имеет доступа к текущему режиму OmniCIO.", true);
     } else if (authError === "provider") {
       showMessage(authMessage, "VK ID временно недоступен. Попробуйте позже.", true);
     } else if (authError === "account") {
@@ -1197,11 +1215,13 @@
 
     try {
       const config = await api("/api/auth/config", {method: "GET"});
-      if (config.auth_provider !== "vkid" || !config.owner_login_enabled) {
+      renderAccessMode(config);
+      const loginEnabled = config.login_enabled ?? config.owner_login_enabled;
+      if (config.auth_provider !== "vkid" || !loginEnabled) {
         vkidLogin.disabled = true;
         showMessage(
           authMessage,
-          "VK ID ещё не настроен для этого личного аккаунта.",
+          "VK ID ещё не настроен для текущего режима доступа.",
           true,
         );
       }

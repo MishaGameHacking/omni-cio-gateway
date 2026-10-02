@@ -132,13 +132,28 @@ def _positive_numeric_id(value: str) -> bool:
     return value.isdigit() and int(value) > 0
 
 
+def _strict_boolean_environment(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    normalized = raw.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise InfraError(f"{name} must be true or false")
+
+
+def registration_enabled() -> bool:
+    return _strict_boolean_environment("REGISTRATION_ENABLED", False)
+
+
 def vkid_configuration_ready() -> bool:
     vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
     owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    return (
-        _positive_numeric_id(vkid_app_id)
-        and _positive_numeric_id(owner_vk_id)
-    )
+    if not _positive_numeric_id(vkid_app_id):
+        return False
+    return registration_enabled() or _positive_numeric_id(owner_vk_id)
 
 
 def validate_product_environment() -> None:
@@ -160,28 +175,43 @@ def validate_product_environment() -> None:
 
     vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
     owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
-    if bool(vkid_app_id) != bool(owner_vk_id):
-        raise InfraError(
-            "VK ID configuration is incomplete: VKID_APP_ID and OWNER_VK_ID "
-            "must be configured together"
-        )
-    if vkid_app_id and not vkid_configuration_ready():
-        raise InfraError(
-            "VK ID configuration must use positive numeric VKID_APP_ID "
-            "and OWNER_VK_ID values"
-        )
+    is_registration_enabled = registration_enabled()
+
+    if is_registration_enabled:
+        if not _strict_boolean_environment("MULTIUSER_LEGAL_APPROVED", False):
+            raise InfraError(
+                "Public registration requires an explicit reviewed legal approval gate"
+            )
+        if not _positive_numeric_id(vkid_app_id):
+            raise InfraError(
+                "Public registration requires a positive numeric VKID_APP_ID"
+            )
+        if owner_vk_id and not _positive_numeric_id(owner_vk_id):
+            raise InfraError("OWNER_VK_ID must be a positive numeric value when set")
+    else:
+        if bool(vkid_app_id) != bool(owner_vk_id):
+            raise InfraError(
+                "Owner-only VK ID configuration is incomplete: VKID_APP_ID and "
+                "OWNER_VK_ID must be configured together"
+            )
+        if vkid_app_id and not vkid_configuration_ready():
+            raise InfraError(
+                "Owner-only VK ID configuration must use positive numeric "
+                "VKID_APP_ID and OWNER_VK_ID values"
+            )
 
 
 def build_product_environment() -> str:
     vkid_app_id = os.environ.get("VKID_APP_ID", "").strip()
     owner_vk_id = os.environ.get("OWNER_VK_ID", "").strip()
     vkid_enabled = "true" if vkid_configuration_ready() else "false"
+    registration = "true" if registration_enabled() else "false"
 
     values = {
         "VKID_APP_ID": vkid_app_id,
         "OWNER_VK_ID": owner_vk_id,
         "VKID_LOGIN_ENABLED": vkid_enabled,
-        "REGISTRATION_ENABLED": "false",
+        "REGISTRATION_ENABLED": registration,
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
@@ -587,11 +617,17 @@ def verify_public_config(body: bytes) -> None:
     payload = json.loads(body)
     if not isinstance(payload, dict):
         raise InfraError("Public auth config is not an object")
-    if payload.get("registration_enabled") is not False:
-        raise InfraError("Public registration unexpectedly became enabled")
+
+    expected_registration = registration_enabled()
+    if payload.get("registration_enabled") is not expected_registration:
+        raise InfraError("Public registration mode does not match deployment config")
+    if payload.get("mode") != ("open" if expected_registration else "owner_only"):
+        raise InfraError("Public access mode does not match deployment config")
     if payload.get("auth_provider") != "vkid":
         raise InfraError("Public auth provider is not VK ID")
-    if payload.get("owner_login_enabled") is not vkid_configuration_ready():
+
+    expected_login = vkid_configuration_ready()
+    if payload.get("login_enabled") is not expected_login:
         raise InfraError("Public VK ID readiness does not match deployment config")
 
 

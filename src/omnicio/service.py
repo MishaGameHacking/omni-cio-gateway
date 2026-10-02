@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import Settings
+from .config import Settings, positive_numeric_id
 from .db import Database, UserRecord
 from .security import (
     client_ip_digest,
@@ -54,8 +54,13 @@ class AuthService:
         accepted_legal_versions: dict[str, str],
     ) -> LoginSucceeded:
         if not self.settings.vkid_ready:
-            raise LoginUnavailable("VK ID owner login is not enabled")
-        if vk_user_id != self.settings.owner_vk_id:
+            raise LoginUnavailable("VK ID login is not enabled")
+        if not positive_numeric_id(vk_user_id):
+            raise LoginUnavailable("VK ID subject is invalid")
+        if (
+            not self.settings.registration_enabled
+            and vk_user_id != self.settings.owner_vk_id
+        ):
             raise OwnerAccessDenied("VK ID account is not the configured owner")
         if accepted_legal_versions != self.legal_versions():
             raise LoginUnavailable("legal document versions changed")
@@ -70,6 +75,10 @@ class AuthService:
             session_token_digest=token_hash,
             session_ttl_seconds=self.settings.session_ttl_seconds,
             legal_versions=accepted_legal_versions,
+            reuse_existing_user=(
+                bool(self.settings.owner_vk_id)
+                and vk_user_id == self.settings.owner_vk_id
+            ),
         )
         return LoginSucceeded(
             session_token=token,
@@ -83,7 +92,11 @@ class AuthService:
             return None
         return self.database.refresh_session_digest(
             session_digest(token),
-            owner_vk_id=self.settings.owner_vk_id,
+            required_vk_user_id=(
+                None
+                if self.settings.registration_enabled
+                else self.settings.owner_vk_id
+            ),
             session_ttl_seconds=self.settings.session_ttl_seconds,
         )
 

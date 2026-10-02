@@ -55,6 +55,7 @@ class Settings:
     vkid_app_id: str
     owner_vk_id: str
     vkid_login_enabled: bool
+    registration_enabled: bool
     privacy_version: str
     consent_version: str
     terms_version: str
@@ -63,11 +64,19 @@ class Settings:
 
     @property
     def vkid_ready(self) -> bool:
+        owner_requirement_met = (
+            self.registration_enabled
+            or positive_numeric_id(self.owner_vk_id)
+        )
         return (
             self.vkid_login_enabled
             and positive_numeric_id(self.vkid_app_id)
-            and positive_numeric_id(self.owner_vk_id)
+            and owner_requirement_met
         )
+
+    @property
+    def access_mode(self) -> str:
+        return "open" if self.registration_enabled else "owner_only"
 
 
 def load_settings() -> Settings:
@@ -79,6 +88,7 @@ def load_settings() -> Settings:
         vkid_app_id=os.environ.get("VKID_APP_ID", "").strip(),
         owner_vk_id=os.environ.get("OWNER_VK_ID", "").strip(),
         vkid_login_enabled=boolean("VKID_LOGIN_ENABLED", False),
+        registration_enabled=boolean("REGISTRATION_ENABLED", False),
         privacy_version=os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         consent_version=os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),

@@ -151,6 +151,54 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('VKID_LOGIN_ENABLED="false"', product_env)
         self.assertIn('REGISTRATION_ENABLED="false"', product_env)
 
+    def test_product_environment_supports_reviewed_open_registration(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["VKID_APP_ID"] = "123456"
+            os.environ.pop("OWNER_VK_ID", None)
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
+
+            MODULE.validate_product_environment()
+            product_env = MODULE.build_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        self.assertIn('VKID_APP_ID="123456"', product_env)
+        self.assertIn('OWNER_VK_ID=""', product_env)
+        self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
+        self.assertIn('REGISTRATION_ENABLED="true"', product_env)
+
+    def test_open_registration_requires_reviewed_legal_gate(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["VKID_APP_ID"] = "123456"
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            os.environ["MULTIUSER_LEGAL_APPROVED"] = "false"
+            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
+            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
+
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_registration_environment_rejects_invalid_boolean(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["REGISTRATION_ENABLED"] = "yes"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.registration_enabled()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
     def test_product_environment_enables_vkid_only_with_owner_config(self) -> None:
         old = dict(os.environ)
         try:
@@ -377,7 +425,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.5.2"', project)
+        self.assertIn('version = "0.5.3"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -426,7 +474,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.sha[:12],
         )).encode()
         config = json.dumps({
-            "registration_enabled": False, "auth_provider": "vkid",
+            "mode": "owner_only",
+            "registration_enabled": False,
+            "auth_provider": "vkid",
+            "login_enabled": False,
             "owner_login_enabled": False,
         }).encode()
         self.responses = {
@@ -478,6 +529,12 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/api/auth/config", b"[]", "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),
+            (
+                "/api/auth/config",
+                b'{"mode":"open","registration_enabled":false,"auth_provider":"vkid","login_enabled":false}',
+                "application/json",
+                200,
+            ),
         ]
         cases.extend((path, b"missing legal text", "text/html", 200) for path in MODULE.LEGAL_PAGES)
         for path, body, content_type, status in cases:

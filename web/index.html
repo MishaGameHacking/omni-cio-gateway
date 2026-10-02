@@ -50,15 +50,15 @@
             aria-hidden="true"
             decoding="async"
           >
-          <p class="eyebrow">Личный закрытый контур</p>
+          <p class="eyebrow" id="access-eyebrow">Личный закрытый контур</p>
           <h1 id="auth-title">Инвестиционный кабинет без лишнего шума.</h1>
-          <p class="lead">
+          <p class="lead" id="access-lead">
             Один аккаунт владельца, вход через VK ID и защищённое подключение
             собственного брокерского счёта T-Invest.
           </p>
           <div class="trust-list" aria-label="Ключевые свойства">
             <span>Вход: VK ID</span>
-            <span>Доступ: только владелец</span>
+            <span id="access-scope">Доступ: только владелец</span>
             <span>Токен T-Invest: зашифрован</span>
           </div>
         </section>
@@ -265,8 +265,8 @@
               <div class="status-list">
                 <div class="status-row">
                   <div>
-                    <strong>Вход владельца</strong>
-                    <span>VK ID + защищённая сессия OmniCIO</span>
+                    <strong id="home-login-title">Вход владельца</strong>
+                    <span id="home-login-note">VK ID + защищённая сессия OmniCIO</span>
                   </div>
                   <span class="state-badge state-ok">Работает</span>
                 </div>
@@ -703,7 +703,7 @@
                     <p class="card-label">Профиль</p>
                     <h3>Личный аккаунт</h3>
                   </div>
-                  <span class="state-badge state-ok">Owner-only</span>
+                  <span class="state-badge state-ok" id="account-mode-badge">Owner-only</span>
                 </header>
 
                 <dl class="info-list">

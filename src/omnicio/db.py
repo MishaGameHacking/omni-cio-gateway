@@ -75,8 +75,9 @@ class Database:
         session_token_digest: bytes,
         session_ttl_seconds: int,
         legal_versions: dict[str, str],
+        reuse_existing_user: bool,
     ) -> tuple[UserRecord, bool]:
-        """Resolve the single owner, bind VK ID if needed, and create a session."""
+        """Resolve one VK ID identity and create its isolated application session."""
 
         with (
             self.pool.connection() as conn,
@@ -101,23 +102,31 @@ class Database:
             linked = False
 
             if fetched_user is None:
-                cur.execute(
-                    """
-                    SELECT id, public_id, status
-                    FROM users
-                    WHERE status <> 'deleted'
-                    ORDER BY created_at
-                    FOR UPDATE
-                    """
-                )
-                existing = cur.fetchall()
-                if len(existing) > 1:
-                    raise RuntimeError(
-                        "multiple existing users require manual owner reconciliation"
+                user: UserRecord | None = None
+                if reuse_existing_user:
+                    cur.execute(
+                        """
+                        SELECT id, public_id, status
+                        FROM users
+                        WHERE status <> 'deleted'
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM vkid_identities AS existing_identity
+                              WHERE existing_identity.user_id = users.id
+                          )
+                        ORDER BY created_at
+                        FOR UPDATE
+                        """
                     )
-                if existing:
-                    user = _user(cast(dict[str, Any], existing[0]))
-                else:
+                    existing = cur.fetchall()
+                    if len(existing) > 1:
+                        raise RuntimeError(
+                            "multiple unlinked users require manual owner reconciliation"
+                        )
+                    if existing:
+                        user = _user(cast(dict[str, Any], existing[0]))
+
+                if user is None:
                     cur.execute(
                         "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status"
                     )
@@ -199,10 +208,10 @@ class Database:
         self,
         token_digest: bytes,
         *,
-        owner_vk_id: str,
+        required_vk_user_id: str | None,
         session_ttl_seconds: int,
     ) -> UserRecord | None:
-        """Validate an owner VK ID session and extend its rolling expiry."""
+        """Validate an active VK ID session and extend its rolling expiry."""
 
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
@@ -214,14 +223,19 @@ class Database:
                 FROM users AS u, vkid_identities AS v
                 WHERE s.user_id = u.id
                   AND v.user_id = u.id
-                  AND v.vk_user_id = %s
+                  AND (%s IS NULL OR v.vk_user_id = %s)
                   AND s.token_digest = %s
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
                   AND u.status = 'active'
                 RETURNING u.id, u.public_id, u.status
                 """,
-                (session_ttl_seconds, owner_vk_id, token_digest),
+                (
+                    session_ttl_seconds,
+                    required_vk_user_id,
+                    required_vk_user_id,
+                    token_digest,
+                ),
             )
             fetched = cur.fetchone()
             if fetched is None:
