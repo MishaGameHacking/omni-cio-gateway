@@ -253,6 +253,29 @@ class AuthAppDeployTests(unittest.TestCase):
             workflow,
         )
 
+    def test_product_environment_is_backed_up_for_rollback(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["VKID_APP_ID"] = "123456"
+            os.environ["REGISTRATION_ENABLED"] = "false"
+            ssh = FakeSsh(True)
+            sha = "a" * 40
+            MODULE.write_product_environment(ssh, release_sha=sha)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        backup, state = MODULE.product_environment_backup_paths(sha)
+        self.assertIn(backup, ssh.commands[0])
+        self.assertIn(state, ssh.commands[0])
+        self.assertIn(f"{MODULE.PRODUCT_ENV}.tmp-{sha}", ssh.commands[0])
+        self.assertIn(backup, MODULE.REMOTE_ROLLBACK_SCRIPT)
+        self.assertIn(state, MODULE.REMOTE_ROLLBACK_SCRIPT)
+
+    def test_product_environment_backup_rejects_invalid_release_sha(self) -> None:
+        with self.assertRaises(MODULE.InfraError):
+            MODULE.product_environment_backup_paths("short")
+
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
