@@ -51,7 +51,7 @@ def trusted_host_entry(value: str, server_ip: str) -> str:
     return f"{address} ssh-ed25519 {encoded}\n"
 
 
-FINGERPRINT_RE = re.compile(r"\bSHA256:[A-Za-z0-9+/]+={0,2}\b")
+FINGERPRINT_RE = re.compile(r"SHA256:[A-Za-z0-9+/]+={0,2}")
 REMOTE_HOST_CHANGED = "REMOTE HOST IDENTIFICATION HAS CHANGED!"
 
 
