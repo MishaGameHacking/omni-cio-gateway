@@ -365,6 +365,7 @@ def test_account_specific_required_tests_are_not_global_catalog_metadata() -> No
     assert "required_tests jsonb NOT NULL" in migration
     assert "account_instrument_access_tenant" in migration
     assert "INSERT INTO account_instrument_access" in store
+    assert store.count("cur.executemany(") >= 2
 
 
 def test_issuer_mapping_foundation_never_guesses_unverified_relationships() -> None:
