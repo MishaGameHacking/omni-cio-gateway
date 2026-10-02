@@ -329,7 +329,11 @@ class BrokerService:
             if position.instrument_type != "currency"
             and Decimal(position.quantity) != 0
         )
-        held_uids = {position.instrument_uid for position in held_positions if position.instrument_uid}
+        held_uids = {
+            position.instrument_uid
+            for position in held_positions
+            if position.instrument_uid
+        }
         held_figis = {position.figi for position in held_positions if position.figi}
         metadata = tuple(
             item
