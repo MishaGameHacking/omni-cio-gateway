@@ -71,9 +71,11 @@ class PortfolioStore:
         with self.database.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT user_id
-                FROM tbank_connection
-                ORDER BY user_id
+                SELECT t.user_id
+                FROM tbank_connection AS t
+                JOIN users AS u ON u.id = t.user_id
+                WHERE u.status = 'active'
+                ORDER BY t.user_id
                 """
             )
             candidates = tuple(
