@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 from .db import Database, TBankConnectionRecord
@@ -350,7 +350,7 @@ class BrokerService:
         reports: list[TBankAssetReport] = []
         failed_methods: set[str] = set()
 
-        tasks: dict[object, tuple[str, str]] = {}
+        tasks: dict[Any, tuple[str, str]] = {}
         with ThreadPoolExecutor(max_workers=4) as reads:
             for item in metadata:
                 if item.instrument_type == "share":
