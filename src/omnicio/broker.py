@@ -18,6 +18,7 @@ from .tbank import (
     TBankInstrument,
     TBankInstrumentMetadata,
     TBankInvestClient,
+    TBankOperationsPage,
     TBankPortfolio,
     TBankPositions,
     TBankUnavailable,
@@ -73,6 +74,19 @@ class BrokerAnalysisSnapshot:
     sources: tuple[AnalysisSource, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class BrokerObservationBundle:
+    account_id: str
+    account_name: str
+    environment: TBankEnvironment
+    refreshed_at: datetime
+    portfolio: TBankPortfolio
+    positions: TBankPositions
+    metadata: tuple[TBankInstrumentMetadata, ...]
+    analysis: PortfolioAnalysis
+    sources: tuple[AnalysisSource, ...]
+
+
 class BrokerService:
     def __init__(
         self,
@@ -110,6 +124,10 @@ class BrokerService:
         if selected is None:
             raise BrokerAccountNotAccessible(
                 "selected T-Invest account is not accessible"
+            )
+        if selected.access_level == "ACCOUNT_ACCESS_LEVEL_NO_ACCESS":
+            raise BrokerAccountNotAccessible(
+                "selected T-Invest account has no token access"
             )
 
         encrypted = encrypt_secret(credential.strip(), self.credential_key)
@@ -164,11 +182,25 @@ class BrokerService:
         )
 
     def analysis(self, user_id: UUID) -> BrokerAnalysisSnapshot:
+        bundle = self.observation_bundle(user_id)
+        return BrokerAnalysisSnapshot(
+            account_name=bundle.account_name,
+            environment=bundle.environment,
+            refreshed_at=bundle.refreshed_at,
+            analysis=bundle.analysis,
+            sources=bundle.sources,
+        )
+
+    def observation_bundle(self, user_id: UUID) -> BrokerObservationBundle:
         record, credential, environment = self._connected_credential(user_id)
         snapshot = self._read_portfolio(record, credential, environment)
+        metadata, catalog_methods, catalog_status = self._read_catalog(
+            credential,
+            environment,
+            snapshot.portfolio,
+        )
         source_root = "https://developer.tbank.ru/invest/api/"
-
-        sources = [
+        sources = (
             AnalysisSource(
                 id="portfolio",
                 name="T-Invest: портфель",
@@ -185,13 +217,42 @@ class BrokerService:
                 retrieved_at=snapshot.refreshed_at,
                 status="received",
             ),
-        ]
+            AnalysisSource(
+                id="catalog",
+                name="T-Invest: справочники инструментов",
+                url=source_root + "instruments-service",
+                methods=catalog_methods,
+                retrieved_at=datetime.now(UTC),
+                status=catalog_status,
+            ),
+        )
+        return BrokerObservationBundle(
+            account_id=record.account_id,
+            account_name=record.account_name,
+            environment=environment,
+            refreshed_at=snapshot.refreshed_at,
+            portfolio=snapshot.portfolio,
+            positions=snapshot.positions,
+            metadata=metadata,
+            analysis=analyze_portfolio(
+                snapshot.portfolio,
+                snapshot.positions,
+                metadata,
+            ),
+            sources=sources,
+        )
 
+    def _read_catalog(
+        self,
+        credential: str,
+        environment: TBankEnvironment,
+        portfolio: TBankPortfolio,
+    ) -> tuple[tuple[TBankInstrumentMetadata, ...], tuple[str, ...], str]:
         metadata: list[TBankInstrumentMetadata] = []
         methods = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}
         requested: list[str] = []
         failed: list[str] = []
-        kinds = {item.instrument_type for item in snapshot.portfolio.positions}
+        kinds = {item.instrument_type for item in portfolio.positions}
 
         with ThreadPoolExecutor(max_workers=3) as catalog_reads:
             pending = {
@@ -215,28 +276,39 @@ class BrokerService:
             catalog_status = "received"
         if failed:
             catalog_status = "partial"
+        return tuple(metadata), tuple(requested), catalog_status
 
-        sources.append(
-            AnalysisSource(
-                id="catalog",
-                name="T-Invest: справочники инструментов",
-                url=source_root + "instruments-service",
-                methods=tuple(requested),
-                retrieved_at=datetime.now(UTC),
-                status=catalog_status,
-            )
-        )
+    def revalidate_account(self, user_id: UUID) -> TBankAccount:
+        record, credential, environment = self._connected_credential(user_id)
+        accounts = self.tbank.get_accounts(credential, environment)
+        account = next((item for item in accounts if item.id == record.account_id), None)
+        if account is None or account.status != "ACCOUNT_STATUS_OPEN":
+            raise BrokerAccountNotAccessible("selected T-Invest account is no longer open")
+        if account.access_level not in {
+            "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
+            "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+        }:
+            raise BrokerAccountNotAccessible("T-Invest read access could not be verified")
+        return account
 
-        return BrokerAnalysisSnapshot(
-            account_name=record.account_name,
-            environment=environment,
-            refreshed_at=snapshot.refreshed_at,
-            analysis=analyze_portfolio(
-                snapshot.portfolio,
-                snapshot.positions,
-                tuple(metadata),
-            ),
-            sources=tuple(sources),
+    def history_page(
+        self,
+        user_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        cursor: str = "",
+        limit: int = 1000,
+    ) -> TBankOperationsPage:
+        record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_operations_by_cursor(
+            credential,
+            environment,
+            record.account_id,
+            from_at=from_at,
+            to_at=to_at,
+            cursor=cursor,
+            limit=limit,
         )
 
     def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
