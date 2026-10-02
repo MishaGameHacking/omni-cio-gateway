@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/timeweb_addresses.py"
+      - "pyproject.toml"
       - ".github/workflows/timeweb-domain-tls.yml"
       - ".github/workflows/timeweb-domain-tls-ci.yml"
       - ".github/scripts/timeweb_domain_tls.py"

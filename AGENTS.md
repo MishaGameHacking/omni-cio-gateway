@@ -137,8 +137,9 @@ Python-код должен следовать принципам PEP 8 и PEP 20
 
 После bootstrap проекта стремиться к:
 
-- pyproject.toml — Python dependencies и tooling configuration;
-- один lock/source dependency mechanism;
+- pyproject.toml — Python dependencies, tooling configuration и единственный versioned Timeweb target в `[tool.omnicio.timeweb]`;
+- uv.lock — единственный resolved dependency lock; `requirements-runtime.txt` и `requirements-dev.txt` являются его generated exports, CI проверяет их совпадение с lock;
+- сторонние Python packages устанавливать только как wheels с проверкой хешей; собственный reviewed checkout собирать offline, без разрешения зависимостей и build isolation, используя build tools из того же lock;
 - Dockerfile — production image contract;
 - environment variables / Timeweb secrets — runtime configuration;
 - AGENTS.md — developer law.

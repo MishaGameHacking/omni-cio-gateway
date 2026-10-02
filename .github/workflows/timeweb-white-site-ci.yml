@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/timeweb_addresses.py"
       - ".github/workflows/timeweb-white-site.yml"
       - ".github/workflows/timeweb-white-site-ci.yml"
       - ".github/scripts/timeweb_white_site.py"
@@ -32,3 +33,4 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/test_timeweb_white_site.py
+

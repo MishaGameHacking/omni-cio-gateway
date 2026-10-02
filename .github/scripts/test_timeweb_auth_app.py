@@ -6,12 +6,15 @@ from __future__ import annotations
 import base64
 import importlib.util
 import io
+import json
 import os
 import pathlib
 import sys
 import tarfile
 import tempfile
 import unittest
+from email.message import Message
+from unittest.mock import patch
 
 SCRIPT_DIR = pathlib.Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -62,6 +65,7 @@ class AuthAppDeployTests(unittest.TestCase):
             (root / "web").mkdir()
             (root / "tests").mkdir()
             (root / "pyproject.toml").write_text("[project]\nname='x'\n")
+            (root / "requirements-runtime.txt").write_text("# Locked deployment dependencies\n")
             (root / "src" / "omnicio" / "__init__.py").write_text("")
             (root / "web" / "index.html").write_text("<html></html>")
             (root / "tests" / "secret-test.txt").write_text("not shipped")
@@ -76,6 +80,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 names = set(archive.getnames())
 
         self.assertIn("pyproject.toml", names)
+        self.assertIn("requirements-runtime.txt", names)
         self.assertIn("src/omnicio/__init__.py", names)
         self.assertIn("web/index.html", names)
         for relative in MODULE.BRAND_RUNTIME_FILES:
@@ -356,7 +361,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("safe-area-inset-bottom", stylesheet)
         self.assertIn("@media (prefers-reduced-motion: reduce)", stylesheet)
         self.assertIn("beforeinstallprompt", script)
-        self.assertIn('"display": "standalone"', (root / "web" / "manifest.webmanifest").read_text())
+        manifest = (root / "web" / "manifest.webmanifest").read_text()
+        self.assertIn('"display": "standalone"', manifest)
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -371,7 +377,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.5.1"', project)
+        self.assertIn('version = "0.5.2"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -402,6 +408,92 @@ class AuthAppDeployTests(unittest.TestCase):
                 "/legal/terms.html",
             },
         )
+
+
+class PublicResponse(io.BytesIO):
+    def __init__(self, body: bytes, content_type: str, status: int = 200) -> None:
+        super().__init__(body)
+        self.status = status
+        self.headers = Message()
+        self.headers["Content-Type"] = content_type
+
+
+class PublicReleaseVerificationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.sha = "a" * 40
+        root = " ".join((
+            MODULE.SITE_MARKER, MODULE.BRAND_PUBLIC_MARK, MODULE.WEB_MANIFEST_PATH,
+            self.sha[:12],
+        )).encode()
+        config = json.dumps({
+            "registration_enabled": False, "auth_provider": "vkid",
+            "owner_login_enabled": False,
+        }).encode()
+        self.responses = {
+            "/": (root, "text/html", 200),
+            MODULE.BRAND_PUBLIC_MARK: (b"png", "image/png", 200),
+            MODULE.WEB_MANIFEST_PATH: (b'{"icons": []}', "application/json", 200),
+            MODULE.VERSION_PUBLIC_PATH: (
+                f'window.OMNICIO_RELEASE = {{"build": "{self.sha[:12]}"}}'.encode(),
+                "text/javascript", 200,
+            ),
+            "/api/auth/config": (config, "application/json", 200),
+        }
+        for path, marker in MODULE.LEGAL_PAGES.items():
+            self.responses[path] = (marker.encode(), "text/html", 200)
+
+    def verify(self) -> set[str]:
+        requested: set[str] = set()
+
+        def open_response(request, *, timeout, context):
+            prefix = f"https://{MODULE.DOMAIN}"
+            self.assertTrue(request.full_url.startswith(prefix + "/"))
+            self.assertEqual(timeout, 15)
+            self.assertTrue(context.check_hostname)
+            self.assertEqual(context.verify_mode, MODULE.ssl.CERT_REQUIRED)
+            path = request.full_url.removeprefix(prefix)
+            requested.add(path)
+            return PublicResponse(*self.responses[path])
+
+        with (
+            patch.object(MODULE.urllib.request, "urlopen", side_effect=open_response),
+            patch.object(MODULE, "vkid_configuration_ready", return_value=False),
+        ):
+            MODULE.verify_public(self.sha)
+        return requested
+
+    def test_matching_release_checks_every_public_surface(self) -> None:
+        self.assertEqual(self.verify(), set(self.responses))
+
+    def test_invalid_public_release_is_rejected(self) -> None:
+        cases = [
+            ("/", b"wrong site", "text/html", 200),
+            ("/", self.responses["/"][0] + b"__OMNICIO_BUILD__", "text/html", 200),
+            ("/", self.responses["/"][0], "text/html", 503),
+            (MODULE.BRAND_PUBLIC_MARK, b"", "image/png", 200),
+            (MODULE.BRAND_PUBLIC_MARK, b"png", "text/html", 200),
+            (MODULE.WEB_MANIFEST_PATH, b"[]", "application/json", 200),
+            (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
+            (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
+            ("/api/auth/config", b"[]", "application/json", 200),
+            ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),
+            ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),
+        ]
+        cases.extend((path, b"missing legal text", "text/html", 200) for path in MODULE.LEGAL_PAGES)
+        for path, body, content_type, status in cases:
+            previous = self.responses[path]
+            with self.subTest(path=path, body=body[:80]):
+                self.responses[path] = (body, content_type, status)
+                try:
+                    with self.assertRaises(MODULE.InfraError):
+                        self.verify()
+                finally:
+                    self.responses[path] = previous
+
+    def test_excessive_public_response_is_rejected(self) -> None:
+        self.responses["/"] = (b"x" * (4 * 1024 * 1024 + 1), "text/html", 200)
+        with self.assertRaises(MODULE.InfraError):
+            self.verify()
 
 
 if __name__ == "__main__":

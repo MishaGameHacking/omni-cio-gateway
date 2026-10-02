@@ -40,6 +40,7 @@ SESSION_COOKIE = "omnicio_session"
 VKID_FLOW_COOKIE = "omnicio_vkid_flow"
 CANONICAL_ORIGIN = "https://omnicio.ru"
 VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
+INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
 
 
 class StartVKIDBody(BaseModel):
@@ -114,16 +115,16 @@ def callback_values(request: Request) -> dict[str, str]:
         try:
             payload = json.loads(payload_raw)
         except json.JSONDecodeError as exc:
-            raise VKIDRejected("VK ID callback payload is invalid") from exc
+            raise VKIDRejected(INVALID_VKID_CALLBACK) from exc
         if not isinstance(payload, dict):
-            raise VKIDRejected("VK ID callback payload is invalid")
+            raise VKIDRejected(INVALID_VKID_CALLBACK)
         values: dict[str, str] = {}
         for key in ("code", "state", "device_id", "error"):
             value = payload.get(key)
             if value is None:
                 continue
             if not isinstance(value, str):
-                raise VKIDRejected("VK ID callback payload is invalid")
+                raise VKIDRejected(INVALID_VKID_CALLBACK)
             values[key] = value
         return values
 
@@ -204,7 +205,7 @@ def live() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/health/ready")
+@app.get("/health/ready", responses={503: {"description": "Database unavailable"}})
 def ready(request: Request) -> dict[str, str]:
     database: Database = request.app.state.database
     if not database.healthcheck():

@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/timeweb_addresses.py"
+      - "pyproject.toml"
       - ".github/workflows/auth-postgres.yml"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
@@ -17,6 +19,8 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/timeweb_addresses.py"
+      - "pyproject.toml"
       - ".github/workflows/auth-postgres.yml"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"

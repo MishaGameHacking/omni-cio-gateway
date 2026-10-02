@@ -5,6 +5,9 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/timeweb_addresses.py"
+      - "uv.lock"
+      - "requirements-runtime.txt"
       - ".github/workflows/auth-app-deploy.yml"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
@@ -21,6 +24,9 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/timeweb_addresses.py"
+      - "uv.lock"
+      - "requirements-runtime.txt"
       - ".github/workflows/auth-app-deploy.yml"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"

@@ -7,8 +7,22 @@ import ipaddress
 import os
 import pathlib
 import sys
+import tomllib
 
-EXPECTED_SERVER_IPV4 = "194.87.151.244"
+
+def managed_server_identity() -> tuple[int, str]:
+    """Read the one versioned deployment target shared by TLS and SSH checks."""
+    path = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
+    try:
+        with path.open("rb") as stream:
+            target = tomllib.load(stream)["tool"]["omnicio"]["timeweb"]
+        server_id = target["server-id"]
+        address = ipaddress.IPv4Address(target["ipv4"])
+        if type(server_id) is not int or server_id <= 0 or not address.is_global:
+            raise ValueError("Invalid managed server identity")
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Managed Timeweb target configuration is missing or invalid") from exc
+    return server_id, str(address)
 
 
 def trusted_host_entry(value: str, server_ip: str) -> str:
@@ -57,7 +71,8 @@ def ssh_base_args(private_key: pathlib.Path, known_hosts: pathlib.Path) -> list[
 def main() -> int:
     """Check required server trust before any infrastructure reconciliation."""
     try:
-        trusted_host_entry(os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), EXPECTED_SERVER_IPV4)
+        _, server_ip = managed_server_identity()
+        trusted_host_entry(os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), server_ip)
     except ValueError:
         print("::error::Verified Timeweb SSH host key is missing or invalid", file=sys.stderr)
         return 1
