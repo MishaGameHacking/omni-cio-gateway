@@ -143,16 +143,39 @@ class PortfolioStore:
             )
             cur.execute(
                 """
-                SELECT COALESCE(max(version), 0) + 1 AS next_version
+                SELECT
+                    id,
+                    user_id,
+                    version,
+                    reserve_rub,
+                    planned_withdrawal_rub,
+                    horizon_months,
+                    max_drawdown_percent,
+                    liquidity_horizon_days,
+                    allow_below_investment_grade,
+                    created_at
                 FROM investment_profile_versions
                 WHERE user_id = %s
+                ORDER BY version DESC
+                LIMIT 1
                 """,
                 (user_id,),
             )
-            version_row = cur.fetchone()
-            if version_row is None:
-                raise RuntimeError("investment profile version query returned no row")
-            version = int(cast(dict[str, Any], version_row)["next_version"])
+            latest_row = cur.fetchone()
+            if latest_row is None:
+                version = 1
+            else:
+                latest = _profile(cast(dict[str, Any], latest_row))
+                if (
+                    latest.reserve_rub == reserve_rub
+                    and latest.planned_withdrawal_rub == planned_withdrawal_rub
+                    and latest.horizon_months == horizon_months
+                    and latest.max_drawdown_percent == max_drawdown_percent
+                    and latest.liquidity_horizon_days == liquidity_horizon_days
+                    and latest.allow_below_investment_grade == allow_below_investment_grade
+                ):
+                    return latest
+                version = latest.version + 1
             cur.execute(
                 """
                 INSERT INTO investment_profile_versions (
