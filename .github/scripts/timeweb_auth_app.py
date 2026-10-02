@@ -652,27 +652,35 @@ SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0)
 DO $$
 DECLARE
     total_users bigint;
+    legacy_users bigint;
 BEGIN
     SELECT count(*) INTO total_users FROM users;
+    SELECT count(*) INTO legacy_users FROM users WHERE public_id = 1;
+
     IF total_users > 1 THEN
-        RAISE EXCEPTION 'legacy reset refuses to delete more than one user';
+        RAISE EXCEPTION 'legacy reset refuses a database containing multiple users';
+    END IF;
+    IF total_users = 1 AND legacy_users <> 1 THEN
+        RAISE EXCEPTION 'legacy reset refuses to delete a non-legacy user';
     END IF;
 END
 $$;
 
 INSERT INTO audit_events (user_id, event_type, metadata)
 SELECT id, 'legacy_profile_retired', '{"reason":"limited_user_cutover"}'::jsonb
-FROM users;
+FROM users
+WHERE public_id = 1;
 
-DELETE FROM users;
+DELETE FROM users
+WHERE public_id = 1;
 
-DO $
+DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM users) THEN
+    IF EXISTS (SELECT 1 FROM users WHERE public_id = 1) THEN
         RAISE EXCEPTION 'legacy reset postcondition failed';
     END IF;
 END
-$;
+$$;
 
 COMMIT;
 """
