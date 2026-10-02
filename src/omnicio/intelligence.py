@@ -93,44 +93,44 @@ def build_tbank_evidence(
     documents: list[EvidenceDocument] = []
     fundamentals = {item.asset_uid: item for item in evidence.fundamentals}
 
-    for item in evidence.fundamentals:
-        documents.append(_fundamental_document(item, evidence.refreshed_at))
+    for fundamental in evidence.fundamentals:
+        documents.append(_fundamental_document(fundamental, evidence.refreshed_at))
 
-    for item in evidence.dividends:
-        payload = asdict(item)
-        effective_at = item.record_date or item.payment_date
+    for dividend in evidence.dividends:
+        payload = asdict(dividend)
+        effective_at = dividend.record_date or dividend.payment_date
         key = "|".join(
             [
-                item.instrument_uid,
-                _time_key(item.record_date),
-                _time_key(item.payment_date),
-                item.dividend_net.currency,
-                item.dividend_net.value,
+                dividend.instrument_uid,
+                _time_key(dividend.record_date),
+                _time_key(dividend.payment_date),
+                dividend.dividend_net.currency,
+                dividend.dividend_net.value,
             ]
         )
         documents.append(
             EvidenceDocument(
                 provider="tbank",
                 document_type="dividend",
-                subject_uid=item.instrument_uid,
+                subject_uid=dividend.instrument_uid,
                 provider_key=key,
                 source_url=TBANK_INSTRUMENTS_SOURCE,
-                published_at=item.created_at or item.declared_date,
+                published_at=dividend.created_at or dividend.declared_date,
                 effective_at=effective_at,
                 payload=payload,
                 payout=PayoutEvidence(
-                    instrument_uid=item.instrument_uid,
+                    instrument_uid=dividend.instrument_uid,
                     event_type="dividend",
                     provider_key=key,
-                    announced_at=item.declared_date or item.created_at,
-                    record_at=item.record_date,
-                    expected_at=item.payment_date,
+                    announced_at=dividend.declared_date or dividend.created_at,
+                    record_at=dividend.record_date,
+                    expected_at=dividend.payment_date,
                     actual_at=None,
-                    amount=Decimal(item.dividend_net.value),
-                    currency=item.dividend_net.currency,
+                    amount=Decimal(dividend.dividend_net.value),
+                    currency=dividend.dividend_net.currency,
                     status=(
                         "cancelled"
-                        if item.dividend_type.strip().lower() == "cancelled"
+                        if dividend.dividend_type.strip().lower() == "cancelled"
                         else "scheduled"
                     ),
                     payload=payload,
@@ -138,49 +138,49 @@ def build_tbank_evidence(
             )
         )
 
-    for item in evidence.coupons:
-        payload = asdict(item)
-        key = f"{item.instrument_uid}|{item.coupon_number}|{_time_key(item.coupon_date)}"
+    for coupon in evidence.coupons:
+        payload = asdict(coupon)
+        key = f"{coupon.instrument_uid}|{coupon.coupon_number}|{_time_key(coupon.coupon_date)}"
         documents.append(
             EvidenceDocument(
                 provider="tbank",
                 document_type="bond_coupon",
-                subject_uid=item.instrument_uid,
+                subject_uid=coupon.instrument_uid,
                 provider_key=key,
                 source_url=TBANK_INSTRUMENTS_SOURCE,
                 published_at=None,
-                effective_at=item.coupon_date,
+                effective_at=coupon.coupon_date,
                 payload=payload,
                 payout=PayoutEvidence(
-                    instrument_uid=item.instrument_uid,
+                    instrument_uid=coupon.instrument_uid,
                     event_type="coupon",
                     provider_key=key,
                     announced_at=None,
-                    record_at=item.fix_date,
-                    expected_at=item.coupon_date,
+                    record_at=coupon.fix_date,
+                    expected_at=coupon.coupon_date,
                     actual_at=None,
-                    amount=Decimal(item.pay_one_bond.value),
-                    currency=item.pay_one_bond.currency,
+                    amount=Decimal(coupon.pay_one_bond.value),
+                    currency=coupon.pay_one_bond.currency,
                     status="scheduled",
                     payload=payload,
                 ),
             )
         )
 
-    for item in evidence.bond_events:
-        payload = asdict(item)
+    for bond_event in evidence.bond_events:
+        payload = asdict(bond_event)
         key = "|".join(
             [
-                item.instrument_uid,
-                str(item.event_number),
-                item.event_type,
-                _time_key(item.event_date),
+                bond_event.instrument_uid,
+                str(bond_event.event_number),
+                bond_event.event_type,
+                _time_key(bond_event.event_date),
             ]
         )
         status: Literal["announced", "scheduled", "cancelled", "paid", "defaulted", "observed"]
-        if item.default_date is not None:
+        if bond_event.default_date is not None:
             status = "defaulted"
-        elif item.real_pay_date is not None:
+        elif bond_event.real_pay_date is not None:
             status = "paid"
         else:
             status = "observed"
@@ -188,76 +188,76 @@ def build_tbank_evidence(
             EvidenceDocument(
                 provider="tbank",
                 document_type="bond_event",
-                subject_uid=item.instrument_uid,
+                subject_uid=bond_event.instrument_uid,
                 provider_key=key,
                 source_url=TBANK_INSTRUMENTS_SOURCE,
-                published_at=item.event_date,
+                published_at=bond_event.event_date,
                 effective_at=(
-                    item.default_date
-                    or item.real_pay_date
-                    or item.pay_date
-                    or item.event_date
+                    bond_event.default_date
+                    or bond_event.real_pay_date
+                    or bond_event.pay_date
+                    or bond_event.event_date
                 ),
                 payload=payload,
                 facts=(
                     EvidenceFact(
-                        subject_uid=item.instrument_uid,
+                        subject_uid=bond_event.instrument_uid,
                         fact_type="bond_event",
                         fact_key="default_date",
-                        value_text=_time_key(item.default_date) or None,
-                        effective_at=item.default_date,
-                        published_at=item.event_date,
-                        payload={"event_type": item.event_type, "execution": item.execution},
+                        value_text=_time_key(bond_event.default_date) or None,
+                        effective_at=bond_event.default_date,
+                        published_at=bond_event.event_date,
+                        payload={"event_type": bond_event.event_type, "execution": bond_event.execution},
                     ),
-                ) if item.default_date is not None else (),
+                ) if bond_event.default_date is not None else (),
                 payout=PayoutEvidence(
-                    instrument_uid=item.instrument_uid,
+                    instrument_uid=bond_event.instrument_uid,
                     event_type="bond_event",
                     provider_key=key,
-                    announced_at=item.event_date,
+                    announced_at=bond_event.event_date,
                     record_at=None,
-                    expected_at=item.pay_date,
-                    actual_at=item.real_pay_date,
+                    expected_at=bond_event.pay_date,
+                    actual_at=bond_event.real_pay_date,
                     amount=(
-                        Decimal(item.pay_one_bond.value)
-                        if item.pay_one_bond is not None
+                        Decimal(bond_event.pay_one_bond.value)
+                        if bond_event.pay_one_bond is not None
                         else None
                     ),
-                    currency=item.pay_one_bond.currency if item.pay_one_bond else None,
+                    currency=bond_event.pay_one_bond.currency if bond_event.pay_one_bond else None,
                     status=status,
                     payload=payload,
                 ),
             )
         )
 
-    for item in evidence.reports:
-        payload = asdict(item)
+    for report in evidence.reports:
+        payload = asdict(report)
         key = (
-            f"{item.instrument_uid}|{item.period_year}|{item.period_num}|"
-            f"{item.period_type}|{_time_key(item.report_date)}"
+            f"{report.instrument_uid}|{report.period_year}|{report.period_num}|"
+            f"{report.period_type}|{_time_key(report.report_date)}"
         )
         documents.append(
             EvidenceDocument(
                 provider="tbank",
                 document_type="issuer_report_calendar",
-                subject_uid=item.instrument_uid,
+                subject_uid=report.instrument_uid,
                 provider_key=key,
                 source_url=TBANK_INSTRUMENTS_SOURCE,
-                published_at=item.created_at,
-                effective_at=item.report_date,
+                published_at=report.created_at,
+                effective_at=report.report_date,
                 payload=payload,
                 facts=(
                     EvidenceFact(
-                        subject_uid=item.instrument_uid,
+                        subject_uid=report.instrument_uid,
                         fact_type="issuer_report",
                         fact_key="report_date",
-                        value_text=_time_key(item.report_date),
-                        effective_at=item.report_date,
-                        published_at=item.created_at,
+                        value_text=_time_key(report.report_date),
+                        effective_at=report.report_date,
+                        published_at=report.created_at,
                         payload={
-                            "period_year": item.period_year,
-                            "period_num": item.period_num,
-                            "period_type": item.period_type,
+                            "period_year": report.period_year,
+                            "period_num": report.period_num,
+                            "period_type": report.period_type,
                         },
                     ),
                 ),
