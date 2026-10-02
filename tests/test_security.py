@@ -5,7 +5,9 @@ import os
 
 import pytest
 from cryptography.fernet import Fernet
+from starlette.requests import Request
 
+from omnicio.main import client_ip
 from omnicio.security import (
     SecurityValueError,
     client_ip_digest,
@@ -74,9 +76,9 @@ def test_vkid_flow_round_trip_and_tamper_rejection() -> None:
     state = generate_oauth_state()
     verifier = generate_pkce_verifier()
     versions = {
-        "privacy_policy": "2026-10-01-v2",
-        "personal_data_consent": "2026-10-01-v2",
-        "terms": "2026-10-01-v2",
+        "privacy_policy": "2026-10-02-v3",
+        "personal_data_consent": "2026-10-02-v3",
+        "terms": "2026-10-02-v3",
     }
     token = seal_vkid_flow(
         state=state,
@@ -107,3 +109,59 @@ def test_client_ip_digest_is_keyed() -> None:
         "203.0.113.10",
         second,
     )
+
+
+def _request(client_host: str, headers: dict[str, str]) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "https",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [
+                (name.lower().encode("ascii"), value.encode("ascii"))
+                for name, value in headers.items()
+            ],
+            "client": (client_host, 12345),
+            "server": ("omnicio.ru", 443),
+        }
+    )
+
+
+def test_client_ip_ignores_untrusted_forwarded_headers() -> None:
+    request = _request(
+        "198.51.100.20",
+        {
+            "x-real-ip": "203.0.113.10",
+            "x-forwarded-for": "203.0.113.11",
+        },
+    )
+
+    assert client_ip(request) == "198.51.100.20"
+
+
+def test_client_ip_trusts_nginx_overwritten_real_ip_only_from_loopback() -> None:
+    request = _request(
+        "127.0.0.1",
+        {
+            "x-real-ip": "203.0.113.10",
+            "x-forwarded-for": "192.0.2.55, 203.0.113.10",
+        },
+    )
+
+    assert client_ip(request) == "203.0.113.10"
+
+
+def test_client_ip_rejects_invalid_proxy_value() -> None:
+    request = _request(
+        "127.0.0.1",
+        {
+            "x-real-ip": "not-an-ip",
+            "x-forwarded-for": "203.0.113.10",
+        },
+    )
+
+    assert client_ip(request) == "unknown"
