@@ -1856,6 +1856,14 @@
         location.reload();
         return;
       }
+      if (error.status === 409) {
+        showMessage(
+          investmentProfileMessage,
+          "Для новых финансовых параметров нужны обновлённые документы. Выйдите из аккаунта и войдите через VK ID снова, приняв актуальные версии.",
+          true,
+        );
+        return;
+      }
       if (error.status === 422) {
         showMessage(
           investmentProfileMessage,
