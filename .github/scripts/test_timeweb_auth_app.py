@@ -410,6 +410,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Persistent=true", script)
         self.assertIn("Restart=on-failure", script)
         self.assertIn("StartLimitBurst=3", script)
+        self.assertIn("RuntimeMaxSec=1500", script)
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("OBSERVER_TIMER_WAS_ENABLED", script)
         self.assertIn("OBSERVER_TIMER_WAS_ACTIVE", script)
