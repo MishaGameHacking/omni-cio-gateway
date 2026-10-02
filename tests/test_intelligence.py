@@ -15,6 +15,7 @@ from omnicio.tbank import (
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
+    TBankRating,
 )
 
 
@@ -176,7 +177,7 @@ def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> Non
     assert assessments[0].rating_status == "data_missing"
     assert assessments[0].fundamental_status == "received"
     assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
-    assert "credit_rating_feed_not_verified" in assessments[0].reasons
+    assert "credit_rating_data_missing" in assessments[0].reasons
 
 
 def test_documented_bond_default_date_is_confirmed_default() -> None:
@@ -244,6 +245,59 @@ def test_report_date_is_preserved_as_publication_time() -> None:
     report = next(item for item in documents if item.document_type == "issuer_report_calendar")
     assert report.published_at == report_date
     assert report.facts[0].published_at == report_date
+
+
+def test_structured_tbank_bond_rating_becomes_immutable_received_evidence() -> None:
+    now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+    base = _bundle()
+    rated = replace(
+        base.metadata[0],
+        ratings=(
+            TBankRating(
+                agency_name="АКРА",
+                rating_level="AA+(RU)",
+                rating_date=datetime(2026, 9, 1, tzinfo=UTC),
+                forecast="Стабильный",
+                is_under_watch=False,
+            ),
+        ),
+    )
+    bundle = replace(
+        base,
+        metadata=(rated,),
+        sources=(
+            AnalysisSource(
+                id="catalog",
+                name="catalog",
+                url="https://developer.tbank.ru/invest/api/instruments-service-bonds",
+                methods=("InstrumentsService/Bonds",),
+                retrieved_at=now,
+                status="received",
+            ),
+        ),
+    )
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now,
+        dividends=(),
+        coupons=(),
+        bond_events=(),
+        reports=(),
+        fundamentals=(),
+        sources=_sources(now),
+    )
+
+    documents, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+
+    rating_document = next(
+        item for item in documents if item.document_type == "credit_rating"
+    )
+    assert rating_document.subject_uid == "bond-uid"
+    assert rating_document.source_url.endswith("instruments-service-bonds")
+    assert rating_document.published_at == datetime(2026, 9, 1, tzinfo=UTC)
+    assert rating_document.facts[0].value_text == "AA+(RU)"
+    assert assessments[0].rating_status == "received"
+    assert assessments[0].evidence["ratings"][0]["agency_name"] == "АКРА"
+    assert "credit_rating_data_missing" not in assessments[0].reasons
 
 
 def test_partial_provider_evidence_never_becomes_normal() -> None:
@@ -414,7 +468,7 @@ def test_corporate_fccr_below_one_is_explainable_elevated_watch() -> None:
     assert risk.rating_status == "data_missing"
     assert risk.evidence["metric_profile"] == "corporate"
     assert "fixed_charge_coverage_ratio_below_one" in risk.reasons
-    assert "credit_rating_feed_not_verified" in risk.reasons
+    assert "credit_rating_data_missing" in risk.reasons
     signals = risk.evidence["metric_signals"]
     assert any(
         item["metric"] == "fixed_charge_coverage_ratio_fy"
@@ -462,7 +516,7 @@ def test_bank_like_metrics_do_not_apply_corporate_leverage_rules() -> None:
     assert risk.evidence["metric_profile"] == "bank_like"
     assert "fixed_charge_coverage_ratio_below_one" not in risk.reasons
     assert "ebitda_negative" not in risk.reasons
-    assert "credit_rating_feed_not_verified" in risk.reasons
+    assert "credit_rating_data_missing" in risk.reasons
 
 
 def test_negative_bank_profitability_is_watch_not_default_prediction() -> None:
