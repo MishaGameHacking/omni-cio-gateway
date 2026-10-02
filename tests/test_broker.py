@@ -712,6 +712,26 @@ class FakeDatabase:
         return False
 
 
+def test_evidence_reads_are_paced_across_concurrent_users() -> None:
+    service = BrokerService(
+        FakeDatabase(),
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=FakeTBank(),
+    )
+
+    with (
+        patch("omnicio.broker.monotonic", side_effect=[0.0, 0.1, 0.31]),
+        patch("omnicio.broker.sleep") as sleep_mock,
+    ):
+        first = service._paced_evidence_read(lambda: "first")
+        second = service._paced_evidence_read(lambda: "second")
+
+    assert first == "first"
+    assert second == "second"
+    sleep_mock.assert_called_once()
+    assert sleep_mock.call_args.args[0] == pytest.approx(0.21)
+
+
 def test_broker_service_encrypts_credential_and_returns_safe_status() -> None:
     database = FakeDatabase()
     owner_id = UUID("00000000-0000-0000-0000-000000000001")
