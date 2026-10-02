@@ -31,6 +31,7 @@ def serialize_user(user: UserRecord, *, changed: bool | None = None) -> str:
     payload: dict[str, object] = {
         "public_id": format_public_id(user.public_id),
         "status": user.status,
+        "role": user.role,
     }
     if changed is not None:
         payload["changed"] = changed
