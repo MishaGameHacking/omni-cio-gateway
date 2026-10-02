@@ -73,9 +73,9 @@ def settings(**overrides: object) -> Settings:
         "vkid_login_enabled": True,
         "registration_enabled": True,
         "registration_max_users": 2,
-        "privacy_version": "2026-10-02-v3",
-        "consent_version": "2026-10-02-v3",
-        "terms_version": "2026-10-02-v3",
+        "privacy_version": "2026-10-02-v4",
+        "consent_version": "2026-10-02-v4",
+        "terms_version": "2026-10-02-v4",
         "vkid_flow_ttl_seconds": 600,
         "session_ttl_seconds": 34_560_000,
     }
