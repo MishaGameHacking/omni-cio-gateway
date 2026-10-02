@@ -18,6 +18,7 @@ from .broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
     BrokerNotConnected,
+    BrokerObservationBundle,
     BrokerService,
 )
 from .config import load_settings
@@ -29,11 +30,13 @@ from .risk import (
     InstrumentRiskEvidence,
     PayoutEvidence,
     ReportEvidence,
+    RiskAssessment,
     SourceEvidenceStatus,
     assess_instrument,
 )
 from .security import SecurityValueError
 from .tbank import (
+    TBankAssetFundamental,
     TBankBondEvent,
     TBankCoupon,
     TBankDividend,
@@ -340,8 +343,9 @@ class PortfolioObserver:
                 bundle=bundle,
                 now=now,
             )
+            risk_unavailable_count = risk_result[1]
             details["risk_assessments"] = risk_result[0]
-            details["risk_unavailable_sources"] = risk_result[1]
+            details["risk_unavailable_sources"] = risk_unavailable_count
             details["risk_states"] = risk_result[2]
 
             history_result = self._sync_history(
@@ -361,7 +365,7 @@ class PortfolioObserver:
                 or details["catalog_status"] == "partial"
                 or details["broker_user_info_status"] != "received"
                 or details["history_status"] != "complete"
-                or int(details["risk_unavailable_sources"]) > 0
+                or risk_unavailable_count > 0
             )
             final_status: Literal["succeeded", "degraded"] = (
                 "degraded" if degraded else "succeeded"
@@ -425,20 +429,14 @@ class PortfolioObserver:
         user_id: UUID,
         *,
         snapshot_id: UUID,
-        bundle: object,
+        bundle: BrokerObservationBundle,
         now: datetime,
     ) -> tuple[int, int, dict[str, int]]:
         # The observer only deep-reads current holdings. Candidate research is a
         # separate bounded stage; broad catalog metadata must not trigger N×API calls.
-        securities = tuple(getattr(bundle.analysis, "securities"))
-        metadata_by_uid = {item.uid: item for item in getattr(bundle, "metadata")}
+        securities = bundle.analysis.securities
+        metadata_by_uid = {item.uid: item for item in bundle.metadata}
         if not securities:
-            self.store.save_risk_evidence(
-                user_id,
-                snapshot_id=snapshot_id,
-                evidences=(),
-                assessments=(),
-            )
             return 0, 0, {}
 
         next_instrument_call_at = 0.0
@@ -463,7 +461,7 @@ class PortfolioObserver:
                 and item.asset_uid
             )
         )
-        fundamentals_by_asset: dict[str, object] = {}
+        fundamentals_by_asset: dict[str, TBankAssetFundamental] = {}
         fundamental_failed_assets: set[str] = set()
         for offset in range(0, len(asset_uids), 100):
             batch = asset_uids[offset : offset + 100]
@@ -480,7 +478,7 @@ class PortfolioObserver:
         window_from = now - RISK_LOOKBACK
         window_to = now + RISK_LOOKAHEAD
         evidences: list[InstrumentRiskEvidence] = []
-        assessments = []
+        assessments: list[RiskAssessment] = []
         unavailable_count = 0
 
         for security in securities:
@@ -499,6 +497,7 @@ class PortfolioObserver:
                     asset_uid=asset_uid,
                     currency=fundamental_row.currency,
                     retrieved_at=now,
+                    fiscal_period_start=fundamental_row.fiscal_period_start_date,
                     fiscal_period_end=fundamental_row.fiscal_period_end_date,
                     metrics={
                         "revenue_ttm": fundamental_row.revenue_ttm,
