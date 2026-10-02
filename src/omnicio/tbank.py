@@ -1127,8 +1127,9 @@ def _double_text(value: object) -> str | None:
     number = Decimal(str(value))
     if not number.is_finite():
         raise TBankUnavailable("T-Invest API returned non-finite double value")
+    # T-Invest documents zero in GetAssetFundamentals as missing data.
     if number == 0:
-        return "0"
+        return None
     return format(number.normalize(), "f")
 
 
