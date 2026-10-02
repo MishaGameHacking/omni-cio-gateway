@@ -275,6 +275,14 @@ class AuthAppDeployTests(unittest.TestCase):
         with self.assertRaises(MODULE.InfraError):
             MODULE.product_environment_backup_paths("short")
 
+    def test_public_vk_id_endpoints_are_rate_limited(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        self.assertIn("zone=omnicio_auth_start:10m rate=10r/m", script)
+        self.assertIn("zone=omnicio_auth_callback:10m rate=30r/m", script)
+        self.assertIn("location = /api/auth/vkid/start", script)
+        self.assertIn("location = /api/auth/vkid/callback", script)
+        self.assertIn("limit_req_status 429", script)
+
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
