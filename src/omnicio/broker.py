@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import threading
+import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import cast
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any, cast
 from uuid import UUID
 
 from .db import Database, TBankConnectionRecord
@@ -13,6 +17,11 @@ from .portfolio import PortfolioAnalysis, analyze_portfolio
 from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     TBankAccount,
+    TBankAssetFundamental,
+    TBankAssetReport,
+    TBankBondCoupon,
+    TBankBondEvent,
+    TBankDividend,
     TBankEnvironment,
     TBankFxQuote,
     TBankInstrument,
@@ -24,6 +33,10 @@ from .tbank import (
     TBankUnavailable,
     TBankUserInfo,
 )
+
+# T-Invest documents 200 unary requests/minute for InstrumentsService.
+# 0.31s keeps evidence reads below that ceiling with a small scheduling margin.
+INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
 
 
 class BrokerConnectionError(RuntimeError):
@@ -76,6 +89,17 @@ class BrokerAnalysisSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class BrokerEvidenceSnapshot:
+    refreshed_at: datetime
+    dividends: tuple[TBankDividend, ...]
+    coupons: tuple[TBankBondCoupon, ...]
+    bond_events: tuple[TBankBondEvent, ...]
+    reports: tuple[TBankAssetReport, ...]
+    fundamentals: tuple[TBankAssetFundamental, ...]
+    sources: tuple[AnalysisSource, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BrokerObservationBundle:
     account_id: str
     account_name: str
@@ -99,6 +123,8 @@ class BrokerService:
         self.database = database
         self.credential_key = credential_key
         self.tbank = tbank
+        self._instrument_evidence_lock = threading.Lock()
+        self._next_instrument_evidence_at = 0.0
 
     def preview_accounts(
         self,
@@ -293,6 +319,191 @@ class BrokerService:
         if failed:
             catalog_status = "partial"
         return tuple(metadata), tuple(requested), catalog_status
+
+    def _paced_evidence_read(
+        self,
+        operation: Callable[..., Any],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        with self._instrument_evidence_lock:
+            now = time.monotonic()
+            delay = self._next_instrument_evidence_at - now
+            if delay > 0:
+                time.sleep(delay)
+                now = time.monotonic()
+            self._next_instrument_evidence_at = (
+                now + INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS
+            )
+        return operation(*args, **kwargs)
+
+    def evidence(
+        self,
+        user_id: UUID,
+        bundle: BrokerObservationBundle,
+        *,
+        now: datetime | None = None,
+    ) -> BrokerEvidenceSnapshot:
+        _record, credential, environment = self._connected_credential(user_id)
+        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        window_from = observed_at - timedelta(days=400)
+        window_to = observed_at + timedelta(days=400)
+
+        held_positions = tuple(
+            position
+            for position in bundle.portfolio.positions
+            if position.instrument_type != "currency"
+            and Decimal(position.quantity) != 0
+        )
+        held_uids = {
+            position.instrument_uid
+            for position in held_positions
+            if position.instrument_uid
+        }
+        held_figis = {position.figi for position in held_positions if position.figi}
+        metadata = tuple(
+            item
+            for item in bundle.metadata
+            if item.uid in held_uids or (item.figi and item.figi in held_figis)
+        )
+        asset_uids = tuple(dict.fromkeys(item.asset_uid for item in metadata if item.asset_uid))
+
+        fundamentals: list[TBankAssetFundamental] = []
+        fundamentals_failed = False
+        for start in range(0, len(asset_uids), 100):
+            try:
+                fundamentals.extend(
+                    self._paced_evidence_read(
+                        self.tbank.get_asset_fundamentals,
+                        credential,
+                        environment,
+                        asset_uids[start : start + 100],
+                    )
+                )
+            except TBankUnavailable:
+                fundamentals_failed = True
+
+        dividends: list[TBankDividend] = []
+        coupons: list[TBankBondCoupon] = []
+        bond_events: list[TBankBondEvent] = []
+        reports: list[TBankAssetReport] = []
+        failed_methods: set[str] = set()
+
+        tasks: dict[Any, tuple[str, str]] = {}
+        with ThreadPoolExecutor(max_workers=4) as reads:
+            for item in metadata:
+                if item.instrument_type == "share":
+                    tasks[
+                        reads.submit(
+                            self._paced_evidence_read,
+                            self.tbank.get_dividends,
+                            credential,
+                            environment,
+                            item.uid,
+                            from_at=window_from,
+                            to_at=window_to,
+                        )
+                    ] = ("GetDividends", item.uid)
+                if item.instrument_type == "bond":
+                    tasks[
+                        reads.submit(
+                            self._paced_evidence_read,
+                            self.tbank.get_bond_coupons,
+                            credential,
+                            environment,
+                            item.uid,
+                            from_at=window_from,
+                            to_at=window_to,
+                        )
+                    ] = ("GetBondCoupons", item.uid)
+                    tasks[
+                        reads.submit(
+                            self._paced_evidence_read,
+                            self.tbank.get_bond_events,
+                            credential,
+                            environment,
+                            item.uid,
+                            from_at=window_from,
+                            to_at=window_to,
+                        )
+                    ] = ("GetBondEvents", item.uid)
+                if item.instrument_type in {"share", "bond"}:
+                    tasks[
+                        reads.submit(
+                            self._paced_evidence_read,
+                            self.tbank.get_asset_reports,
+                            credential,
+                            environment,
+                            item.uid,
+                            from_at=window_from,
+                            to_at=window_to,
+                        )
+                    ] = ("GetAssetReports", item.uid)
+
+            for future, (method, _instrument_uid) in tasks.items():
+                try:
+                    rows = future.result()
+                except TBankUnavailable:
+                    failed_methods.add(method)
+                    continue
+                if method == "GetDividends":
+                    dividends.extend(cast(tuple[TBankDividend, ...], rows))
+                elif method == "GetBondCoupons":
+                    coupons.extend(cast(tuple[TBankBondCoupon, ...], rows))
+                elif method == "GetBondEvents":
+                    bond_events.extend(cast(tuple[TBankBondEvent, ...], rows))
+                elif method == "GetAssetReports":
+                    reports.extend(cast(tuple[TBankAssetReport, ...], rows))
+
+        root = "https://developer.tbank.ru/invest/services/instruments/methods"
+        calendar_methods = ("InstrumentsService/GetDividends", "InstrumentsService/GetBondCoupons")
+        event_methods = ("InstrumentsService/GetBondEvents", "InstrumentsService/GetAssetReports")
+        fundamental_methods = ("InstrumentsService/GetAssetFundamentals",)
+        calendar_failed = bool({"GetDividends", "GetBondCoupons"} & failed_methods)
+        events_failed = bool({"GetBondEvents", "GetAssetReports"} & failed_methods)
+        return BrokerEvidenceSnapshot(
+            refreshed_at=observed_at,
+            dividends=tuple(dividends),
+            coupons=tuple(coupons),
+            bond_events=tuple(bond_events),
+            reports=tuple(reports),
+            fundamentals=tuple(fundamentals),
+            sources=(
+                AnalysisSource(
+                    id="payout_calendar",
+                    name="T-Invest: календарь выплат",
+                    url=root,
+                    methods=calendar_methods,
+                    retrieved_at=observed_at,
+                    status="partial" if calendar_failed else "received",
+                ),
+                AnalysisSource(
+                    id="issuer_events",
+                    name="T-Invest: события и отчётность",
+                    url=root,
+                    methods=event_methods,
+                    retrieved_at=observed_at,
+                    status="partial" if events_failed else "received",
+                ),
+                AnalysisSource(
+                    id="fundamentals",
+                    name="T-Invest: фундаментальные показатели",
+                    url=root,
+                    methods=fundamental_methods,
+                    retrieved_at=observed_at,
+                    status="partial" if fundamentals_failed else "received",
+                ),
+                AnalysisSource(
+                    id="credit_ratings",
+                    name="Банк России: рейтинговый репозитарий — reference only",
+                    url="https://ratings.cbr.ru/",
+                    methods=(),
+                    retrieved_at=observed_at,
+                    status="not_requested",
+                ),
+            ),
+        )
 
     def user_info(self, user_id: UUID) -> TBankUserInfo:
         _record, credential, environment = self._connected_credential(user_id)

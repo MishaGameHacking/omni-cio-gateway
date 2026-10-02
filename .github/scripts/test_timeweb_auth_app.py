@@ -489,6 +489,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank/accounts",
             "/api/broker/tbank/portfolio",
             "/api/broker/tbank/analysis",
+            "/api/portfolio/intelligence",
             "/api/broker/tbank/instruments/search",
             "/api/market/usd-rub",
             "/api/market/usd-rub/stream",
@@ -728,7 +729,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.9.0"', project)
+        self.assertIn('version = "0.10.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

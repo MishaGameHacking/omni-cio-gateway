@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -22,6 +22,7 @@ from .broker import (
 )
 from .config import load_settings
 from .db import Database
+from .intelligence import build_tbank_evidence
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import PortfolioStore
 from .security import SecurityValueError
@@ -188,7 +189,7 @@ class PortfolioObserver:
             bundle = provider_read(
                 lambda: self.broker.observation_bundle(user_id, full_catalog=True)
             )
-            self.store.save_snapshot(
+            snapshot_id = self.store.save_snapshot(
                 user_id,
                 job_run_id=job.id,
                 bundle=bundle,
@@ -205,6 +206,39 @@ class PortfolioObserver:
                 ),
                 "not_requested",
             )
+
+            evidence = provider_read(
+                lambda: self.broker.evidence(user_id, bundle, now=now)
+            )
+            documents, assessments = build_tbank_evidence(
+                bundle,
+                evidence,
+                assessed_at=now,
+            )
+            evidence_documents, risk_assessments = self.store.save_evidence(
+                user_id,
+                snapshot_id=snapshot_id,
+                documents=documents,
+                assessments=assessments,
+                retrieved_at=evidence.refreshed_at,
+            )
+            details["evidence_documents_new"] = evidence_documents
+            details["risk_assessments_new"] = risk_assessments
+            details["evidence_sources"] = {
+                source.id: source.status for source in evidence.sources
+            }
+            details["credit_rating_status"] = "data_missing"
+            details["risk_states"] = {
+                state: sum(item.state == state for item in assessments)
+                for state in (
+                    "data_missing",
+                    "normal",
+                    "watch",
+                    "elevated",
+                    "critical",
+                    "confirmed_default",
+                )
+            }
 
             profile = self.store.current_profile(user_id)
             details["profile_version"] = profile.version if profile else None
@@ -226,6 +260,14 @@ class PortfolioObserver:
                 or details["catalog_status"] == "partial"
                 or details["broker_user_info_status"] != "received"
                 or details["history_status"] != "complete"
+                or any(
+                    status != "received"
+                    for source_id, status in cast(
+                        dict[str, str],
+                        details["evidence_sources"],
+                    ).items()
+                    if source_id != "credit_ratings"
+                )
             )
             final_status: Literal["succeeded", "degraded"] = (
                 "degraded" if degraded else "succeeded"

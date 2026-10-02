@@ -135,7 +135,8 @@ jobs:
             --migration migrations/0003_vkid_owner_identity.sql \
             --migration migrations/0004_user_role.sql \
             --migration migrations/0005_drop_phone_auth.sql \
-            --migration migrations/0006_portfolio_observer.sql
+            --migration migrations/0006_portfolio_observer.sql \
+            --migration migrations/0007_portfolio_evidence.sql
 
       - name: Surface private network gate
         if: steps.postgres.outputs.status == 'pending_server_network'

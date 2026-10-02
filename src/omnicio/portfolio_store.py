@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
@@ -14,6 +14,11 @@ from uuid import UUID
 
 from .broker import BrokerObservationBundle
 from .db import Database
+from .intelligence import (
+    EVIDENCE_RETRIEVAL_MAX_AGE,
+    EvidenceDocument,
+    InstrumentRiskAssessment,
+)
 from .tbank import (
     TBankAccount,
     TBankMoney,
@@ -666,6 +671,474 @@ class PortfolioStore:
                 )
             return snapshot_id
 
+    def save_evidence(
+        self,
+        user_id: UUID,
+        *,
+        snapshot_id: UUID,
+        documents: tuple[EvidenceDocument, ...],
+        assessments: tuple[InstrumentRiskAssessment, ...],
+        retrieved_at: datetime,
+    ) -> tuple[int, int]:
+        if retrieved_at.tzinfo is None:
+            raise ValueError("evidence retrieval time must be timezone-aware")
+        documents_written = 0
+        assessments_written = 0
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            for document in documents:
+                content_hash = _hash_json(document.payload)
+                cur.execute(
+                    """
+                    INSERT INTO source_documents (
+                        provider,
+                        document_type,
+                        subject_uid,
+                        provider_key,
+                        source_url,
+                        published_at,
+                        effective_at,
+                        first_retrieved_at,
+                        content_hash,
+                        payload
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (
+                        provider,
+                        document_type,
+                        subject_uid,
+                        provider_key,
+                        content_hash
+                    ) DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        document.provider,
+                        document.document_type,
+                        document.subject_uid,
+                        document.provider_key,
+                        document.source_url,
+                        document.published_at,
+                        document.effective_at,
+                        retrieved_at,
+                        content_hash,
+                        _json(document.payload),
+                    ),
+                )
+                inserted = cur.fetchone()
+                if inserted is None:
+                    cur.execute(
+                        """
+                        SELECT id
+                        FROM source_documents
+                        WHERE provider = %s
+                          AND document_type = %s
+                          AND subject_uid = %s
+                          AND provider_key = %s
+                          AND content_hash = %s
+                        """,
+                        (
+                            document.provider,
+                            document.document_type,
+                            document.subject_uid,
+                            document.provider_key,
+                            content_hash,
+                        ),
+                    )
+                    inserted = cur.fetchone()
+                    if inserted is None:
+                        raise RuntimeError("evidence document conflict could not be resolved")
+                else:
+                    documents_written += 1
+                document_id = cast(UUID, cast(dict[str, Any], inserted)["id"])
+
+                cur.execute(
+                    """
+                    INSERT INTO source_retrievals (source_document_id, retrieved_at)
+                    VALUES (%s, %s)
+                    ON CONFLICT (source_document_id, retrieved_at) DO NOTHING
+                    """,
+                    (document_id, retrieved_at),
+                )
+
+                for fact in document.facts:
+                    fact_payload = {
+                        "subject_uid": fact.subject_uid,
+                        "fact_type": fact.fact_type,
+                        "fact_key": fact.fact_key,
+                        "value_numeric": fact.value_numeric,
+                        "value_text": fact.value_text,
+                        "currency": fact.currency,
+                        "unit": fact.unit,
+                        "effective_at": fact.effective_at,
+                        "published_at": fact.published_at,
+                        "payload": fact.payload or {},
+                    }
+                    cur.execute(
+                        """
+                        INSERT INTO source_facts (
+                            source_document_id,
+                            subject_uid,
+                            fact_type,
+                            fact_key,
+                            value_numeric,
+                            value_text,
+                            currency,
+                            unit,
+                            effective_at,
+                            published_at,
+                            payload,
+                            semantic_hash
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                        )
+                        ON CONFLICT (source_document_id, semantic_hash) DO NOTHING
+                        """,
+                        (
+                            document_id,
+                            fact.subject_uid,
+                            fact.fact_type,
+                            fact.fact_key,
+                            fact.value_numeric,
+                            fact.value_text,
+                            fact.currency,
+                            fact.unit,
+                            fact.effective_at,
+                            fact.published_at,
+                            _json(fact.payload or {}),
+                            _hash_json(fact_payload),
+                        ),
+                    )
+
+                if document.payout is not None:
+                    payout = document.payout
+                    payout_payload = {
+                        "provider": document.provider,
+                        "instrument_uid": payout.instrument_uid,
+                        "event_type": payout.event_type,
+                        "provider_key": payout.provider_key,
+                        "announced_at": payout.announced_at,
+                        "record_at": payout.record_at,
+                        "expected_at": payout.expected_at,
+                        "actual_at": payout.actual_at,
+                        "amount": payout.amount,
+                        "currency": payout.currency,
+                        "status": payout.status,
+                        "payload": payout.payload,
+                    }
+                    cur.execute(
+                        """
+                        INSERT INTO payout_events (
+                            source_document_id,
+                            provider,
+                            instrument_uid,
+                            event_type,
+                            provider_key,
+                            announced_at,
+                            record_at,
+                            expected_at,
+                            actual_at,
+                            amount,
+                            currency,
+                            status,
+                            payload,
+                            semantic_hash
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                        )
+                        ON CONFLICT (
+                            provider,
+                            instrument_uid,
+                            event_type,
+                            provider_key,
+                            semantic_hash
+                        ) DO NOTHING
+                        """,
+                        (
+                            document_id,
+                            document.provider,
+                            payout.instrument_uid,
+                            payout.event_type,
+                            payout.provider_key,
+                            payout.announced_at,
+                            payout.record_at,
+                            payout.expected_at,
+                            payout.actual_at,
+                            payout.amount,
+                            payout.currency,
+                            payout.status,
+                            _json(payout.payload),
+                            _hash_json(payout_payload),
+                        ),
+                    )
+
+            for assessment in assessments:
+                cur.execute(
+                    """
+                    INSERT INTO portfolio_risk_assessments (
+                        user_id,
+                        snapshot_id,
+                        instrument_uid,
+                        state,
+                        rating_status,
+                        fundamental_status,
+                        source_status,
+                        reasons,
+                        evidence,
+                        assessed_at
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
+                    )
+                    ON CONFLICT (snapshot_id, instrument_uid) DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        user_id,
+                        snapshot_id,
+                        assessment.instrument_uid,
+                        assessment.state,
+                        assessment.rating_status,
+                        assessment.fundamental_status,
+                        assessment.source_status,
+                        _json(list(assessment.reasons)),
+                        _json(assessment.evidence),
+                        retrieved_at,
+                    ),
+                )
+                if cur.fetchone() is not None:
+                    assessments_written += 1
+        return documents_written, assessments_written
+
+    def latest_intelligence(
+        self,
+        user_id: UUID,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, object] | None:
+        observed_at = now or datetime.now(UTC)
+        if observed_at.tzinfo is None:
+            raise ValueError("intelligence time must be timezone-aware")
+        observed_at = observed_at.astimezone(UTC)
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT id, captured_at, analysis_status
+                FROM portfolio_snapshots
+                WHERE user_id = %s
+                ORDER BY captured_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            snapshot = cur.fetchone()
+            if snapshot is None:
+                return None
+            snapshot_row = cast(dict[str, Any], snapshot)
+            snapshot_id = cast(UUID, snapshot_row["id"])
+
+            cur.execute(
+                """
+                SELECT
+                    p.instrument_uid,
+                    p.ticker,
+                    p.instrument_type,
+                    p.sector,
+                    p.value_rub,
+                    p.nav_percent,
+                    r.state,
+                    r.rating_status,
+                    r.fundamental_status,
+                    r.source_status,
+                    r.reasons,
+                    r.evidence,
+                    r.assessed_at
+                FROM portfolio_snapshot_positions AS p
+                LEFT JOIN portfolio_risk_assessments AS r
+                  ON r.snapshot_id = p.snapshot_id
+                 AND r.user_id = p.user_id
+                 AND r.instrument_uid = p.instrument_uid
+                WHERE p.snapshot_id = %s
+                  AND p.user_id = %s
+                ORDER BY
+                    CASE COALESCE(r.state, 'data_missing')
+                        WHEN 'confirmed_default' THEN 0
+                        WHEN 'critical' THEN 1
+                        WHEN 'elevated' THEN 2
+                        WHEN 'watch' THEN 3
+                        WHEN 'data_missing' THEN 4
+                        ELSE 5
+                    END,
+                    p.nav_percent DESC NULLS LAST,
+                    p.ticker
+                """,
+                (snapshot_id, user_id),
+            )
+            risk_rows = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                WITH held AS (
+                    SELECT p.instrument_uid
+                    FROM portfolio_snapshot_positions AS p
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                    UNION
+                    SELECT c.instrument_uid
+                    FROM portfolio_snapshot_positions AS p
+                    JOIN instrument_catalog AS c
+                      ON c.provider = 'tbank'
+                     AND (
+                         c.instrument_uid = p.instrument_uid
+                         OR (p.figi <> '' AND c.figi = p.figi)
+                     )
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (
+                        pe.provider,
+                        pe.instrument_uid,
+                        pe.event_type,
+                        pe.provider_key
+                    )
+                        pe.provider,
+                        pe.instrument_uid,
+                        pe.event_type,
+                        pe.provider_key,
+                        pe.announced_at,
+                        pe.record_at,
+                        pe.expected_at,
+                        pe.actual_at,
+                        pe.amount,
+                        pe.currency,
+                        pe.status,
+                        pe.payload,
+                        sd.source_url,
+                        sd.first_retrieved_at
+                    FROM payout_events AS pe
+                    JOIN source_documents AS sd
+                      ON sd.id = pe.source_document_id
+                    JOIN held
+                      ON held.instrument_uid = pe.instrument_uid
+                    ORDER BY
+                        pe.provider,
+                        pe.instrument_uid,
+                        pe.event_type,
+                        pe.provider_key,
+                        sd.first_retrieved_at DESC,
+                        pe.id DESC
+                )
+                SELECT *
+                FROM latest
+                WHERE COALESCE(actual_at, expected_at, announced_at)
+                    >= now() - interval '45 days'
+                ORDER BY
+                    COALESCE(actual_at, expected_at, announced_at) ASC NULLS LAST,
+                    instrument_uid
+                LIMIT 200
+                """,
+                (snapshot_id, user_id, snapshot_id, user_id),
+            )
+            payout_rows = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                WITH held_subjects AS (
+                    SELECT p.instrument_uid AS subject_uid
+                    FROM portfolio_snapshot_positions AS p
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                    UNION
+                    SELECT c.instrument_uid
+                    FROM portfolio_snapshot_positions AS p
+                    JOIN instrument_catalog AS c
+                      ON c.provider = 'tbank'
+                     AND (
+                         c.instrument_uid = p.instrument_uid
+                         OR (p.figi <> '' AND c.figi = p.figi)
+                     )
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                    UNION
+                    SELECT c.asset_uid
+                    FROM portfolio_snapshot_positions AS p
+                    JOIN instrument_catalog AS c
+                      ON c.provider = 'tbank'
+                     AND (
+                         c.instrument_uid = p.instrument_uid
+                         OR (p.figi <> '' AND c.figi = p.figi)
+                     )
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                      AND c.asset_uid <> ''
+                )
+                SELECT
+                    sd.provider,
+                    sd.document_type,
+                    min(sd.source_url) AS source_url,
+                    max(sr.retrieved_at) AS retrieved_at,
+                    count(DISTINCT sd.id) AS versions
+                FROM source_documents AS sd
+                JOIN source_retrievals AS sr
+                  ON sr.source_document_id = sd.id
+                JOIN held_subjects AS hs
+                  ON hs.subject_uid = sd.subject_uid
+                GROUP BY sd.provider, sd.document_type
+                ORDER BY sd.provider, sd.document_type
+                """,
+                (
+                    snapshot_id,
+                    user_id,
+                    snapshot_id,
+                    user_id,
+                    snapshot_id,
+                    user_id,
+                ),
+            )
+            source_rows = [dict(row) for row in cur.fetchall()]
+
+        captured_at = cast(datetime, snapshot_row["captured_at"]).astimezone(UTC)
+        snapshot_age = _age_seconds(captured_at, now=observed_at)
+        snapshot_freshness = _freshness_status(captured_at, now=observed_at)
+        for row in risk_rows:
+            assessed_at = cast(datetime | None, row.get("assessed_at"))
+            row["assessment_freshness"] = _freshness_status(
+                assessed_at,
+                now=observed_at,
+            )
+        for row in source_rows:
+            retrieved_at = cast(datetime | None, row.get("retrieved_at"))
+            row["freshness_status"] = _freshness_status(
+                retrieved_at,
+                now=observed_at,
+            )
+            row["age_seconds"] = _age_seconds(retrieved_at, now=observed_at)
+
+        return {
+            "snapshot_id": str(snapshot_id),
+            "captured_at": captured_at,
+            "snapshot_age_seconds": snapshot_age,
+            "snapshot_freshness": snapshot_freshness,
+            "analysis_status": snapshot_row["analysis_status"],
+            "execution_enabled": False,
+            "rating_feed_status": "data_missing",
+            "risks": risk_rows,
+            "payouts": payout_rows,
+            "sources": source_rows,
+        }
+
     def save_history_page(
         self,
         user_id: UUID,
@@ -806,6 +1279,32 @@ class PortfolioStore:
         return inserted
 
 
+def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:
+    if value is None or value.tzinfo is None or now.tzinfo is None:
+        return None
+    delta = now.astimezone(UTC) - value.astimezone(UTC)
+    if delta.total_seconds() < 0:
+        return None
+    return int(delta.total_seconds())
+
+
+def _freshness_status(
+    value: datetime | None,
+    *,
+    now: datetime,
+) -> Literal["fresh", "stale", "data_missing"]:
+    if value is None:
+        return "data_missing"
+    age = _age_seconds(value, now=now)
+    if age is None:
+        return "stale"
+    return (
+        "stale"
+        if age > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds())
+        else "fresh"
+    )
+
+
 def _profile(row: dict[str, Any]) -> InvestmentProfileRecord:
     return InvestmentProfileRecord(
         id=int(row["id"]),
@@ -902,7 +1401,7 @@ def _semantic_operation_payload(normalized: dict[str, object]) -> dict[str, obje
     }
 
 
-def _hash_json(value: dict[str, object]) -> bytes:
+def _hash_json(value: Mapping[str, object]) -> bytes:
     return hashlib.sha256(
         _json(value).encode("utf-8"),
         usedforsecurity=False,

@@ -701,9 +701,9 @@
                   </table>
                 </div>
                 <p class="field-hint">
-                  Облигации оцениваются с НКД. Кредитный рейтинг, группа связанных компаний,
-                  look-through фондов и доступность будущей покупки будут проверяться
-                  следующими этапами и сейчас не предполагаются.
+                  Облигации оцениваются с НКД. До подключения разрешённого рейтингового
+                  feed неизвестный рейтинг остаётся <code>data_missing</code>. Группа связанных
+                  компаний и look-through фондов не угадываются по названию или сектору.
                 </p>
               </article>
 
@@ -721,6 +721,58 @@
                   неполное покрытие, а не заменяется догадкой.
                 </p>
               </article>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Portfolio Intelligence R3</p>
+                    <h3>Доказательный риск-контур</h3>
+                  </div>
+                  <span class="state-badge state-next" id="intelligence-status">Ожидает ежедневный снимок</span>
+                </header>
+                <div class="analysis-table-scroll">
+                  <table class="analysis-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Инструмент</th>
+                        <th scope="col">Состояние</th>
+                        <th scope="col">Рейтинг</th>
+                        <th scope="col">Фундаментальные данные</th>
+                      </tr>
+                    </thead>
+                    <tbody id="intelligence-risks"></tbody>
+                  </table>
+                </div>
+                <p class="field-hint">
+                  <code>confirmed_default</code> появляется только из подтверждённого provider
+                  evidence. Отсутствие рейтинга или свежих данных не превращается в
+                  «нормальный риск».
+                </p>
+              </article>
+
+              <section class="portfolio-two-column">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Календарь</p>
+                      <h3>Выплаты и события</h3>
+                    </div>
+                  </header>
+                  <div id="intelligence-payouts" class="analysis-sources"></div>
+                  <p class="field-hint">
+                    Плановая дата выплаты не считается фактическим зачислением на счёт.
+                  </p>
+                </article>
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Свежесть</p>
+                      <h3>Версии доказательств</h3>
+                    </div>
+                  </header>
+                  <div id="intelligence-sources" class="analysis-sources"></div>
+                </article>
+              </section>
             </div>
           </section>
 
