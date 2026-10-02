@@ -267,6 +267,8 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "UNIQUE (user_id, job_type, scheduled_for)" in migration
     assert "UNIQUE (user_id, account_id, observation_hash)" in migration
     assert "UNIQUE (job_run_id)" in migration
+    assert "job_runs_finish_state_consistent" in migration
+    assert "broker_sync_state_cursor_window_consistent" in migration
     assert "pg_try_advisory_xact_lock" in store
     assert "ON CONFLICT (job_run_id) DO NOTHING" in store
     assert "pending_cursor" in store
