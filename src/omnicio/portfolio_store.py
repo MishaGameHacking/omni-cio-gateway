@@ -745,11 +745,7 @@ class PortfolioStore:
                     normalized: dict[str, object] = {
                         "asset_uid": fundamental.asset_uid,
                         "currency": fundamental.currency,
-                        "fiscal_period_start_date": (
-                            fundamental.fiscal_period_end
-                            if fundamental.fiscal_period_end is not None
-                            else None
-                        ),
+                        "fiscal_period_start_date": fundamental.fiscal_period_start,
                         "fiscal_period_end_date": fundamental.fiscal_period_end,
                         "metrics": fundamental.metrics,
                     }
