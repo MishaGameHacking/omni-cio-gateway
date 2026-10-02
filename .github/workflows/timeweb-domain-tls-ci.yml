@@ -38,3 +38,11 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/test_timeweb_ssh_trust.py
           python3 .github/scripts/test_timeweb_domain_tls.py
+
+      - name: Report untrusted network host fingerprint for operator comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan="$(ssh-keyscan -T 10 -t ed25519 194.87.151.244 2>/dev/null)"
+          test -n "$scan"
+          printf '%s\n' "$scan" | ssh-keygen -lf - -E sha256
