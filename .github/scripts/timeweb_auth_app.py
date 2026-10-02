@@ -221,7 +221,7 @@ def validate_product_environment() -> None:
         if not regulatory_ready and not live_test:
             raise InfraError(
                 "Registration requires either confirmed regulatory readiness "
-                "or an explicit single-user live-test exception"
+                "or an explicit controlled live-test exception"
             )
         if live_test and capacity > CONTROLLED_LIVE_TEST_MAX_USERS:
             raise InfraError(
