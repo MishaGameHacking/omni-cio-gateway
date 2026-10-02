@@ -355,6 +355,7 @@
       viewUrl(initialView),
     );
     renderView(initialView, {scroll: false});
+    closeDrawer();
   };
 
   const goBack = () => {
@@ -1084,7 +1085,7 @@
       lastPortfolioSnapshot = null;
       lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
-      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
+      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Интеграции».";
       homeConnectionCard.classList.add("is-offline");
       topConnectionIndicator.classList.add("is-offline");
       topConnectionText.textContent = "T-Invest не подключён";
