@@ -1324,6 +1324,7 @@
     critical: "Критический риск",
     confirmed_default: "Подтверждённый дефолт",
     received: "Получено",
+    fresh: "Актуально",
     stale: "Устарело",
     not_applicable: "Не применяется",
     partial: "Частично",
@@ -1410,6 +1411,7 @@
       title.textContent = (source.provider || "Источник") + " · " + (source.document_type || "document");
       const details = document.createElement("small");
       details.textContent = [
+        intelligenceLabel(source.freshness_status),
         source.retrieved_at ? "получено " + formatDateTime(source.retrieved_at) : "",
         Number.isFinite(Number(source.versions)) ? "версий: " + source.versions : "",
       ].filter(Boolean).join(" · ");
@@ -1430,6 +1432,8 @@
         "Подтверждённый дефолт: " + defaults,
         "state-error",
       );
+    } else if (snapshot.snapshot_freshness === "stale") {
+      setStateBadge(intelligenceStatus, "Доказательства устарели", "state-next");
     } else if (missing > 0 || snapshot.rating_feed_status === "data_missing") {
       setStateBadge(intelligenceStatus, "Неполные данные: " + missing, "state-next");
     } else if (snapshot.status === "pending") {
