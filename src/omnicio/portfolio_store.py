@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
+from contextlib import contextmanager
 import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
@@ -66,6 +68,30 @@ class PortfolioStore:
             "SELECT set_config('omnicio.user_id', %s, true)",
             (str(user_id),),
         )
+
+    @contextmanager
+    def observer_lock(self) -> Iterator[bool]:
+        lock_name = "omnicio-portfolio-observer"
+        with self.database.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT pg_try_advisory_lock(hashtextextended(%s, 0)) AS locked",
+                (lock_name,),
+            )
+            row = cur.fetchone()
+            locked = row is not None and bool(cast(dict[str, Any], row)["locked"])
+            if not locked:
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                cur.execute(
+                    "SELECT pg_advisory_unlock(hashtextextended(%s, 0)) AS unlocked",
+                    (lock_name,),
+                )
+                released = cur.fetchone()
+                if released is None or not bool(cast(dict[str, Any], released)["unlocked"]):
+                    raise RuntimeError("portfolio observer advisory lock was not released")
 
     def observer_user_ids(self, legal_versions: dict[str, str]) -> tuple[UUID, ...]:
         with self.database.pool.connection() as conn, conn.cursor() as cur:
@@ -223,6 +249,7 @@ class PortfolioStore:
         *,
         job_type: str,
         scheduled_for: date,
+        recover_running: bool = False,
     ) -> JobRunRecord | None:
         if not job_type or len(job_type) > 128:
             raise ValueError("job_type must contain 1 to 128 characters")
@@ -277,7 +304,13 @@ class PortfolioStore:
                       AND scheduled_for = %s
                       AND attempt < 3
                       AND (
-                          (status = 'running' AND started_at < now() - interval '30 minutes')
+                          (
+                              status = 'running'
+                              AND (
+                                  %s
+                                  OR started_at < now() - interval '30 minutes'
+                              )
+                          )
                           OR (status = 'failed' AND finished_at < now() - interval '2 minutes')
                       )
                     RETURNING
@@ -290,7 +323,7 @@ class PortfolioStore:
                         started_at,
                         finished_at
                     """,
-                    (user_id, job_type, scheduled_for),
+                    (user_id, job_type, scheduled_for, recover_running),
                 )
                 fetched = cur.fetchone()
             if fetched is None:
