@@ -284,7 +284,12 @@ def write_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
 
 def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
     backup, state = product_environment_backup_paths(release_sha)
-    ssh.run(f"rm -f {backup} {state}")
+    try:
+        ssh.run(f"rm -f {backup} {state}")
+    except InfraError:
+        # Backup cleanup is housekeeping after a proven healthy release. It must
+        # never roll back a release after a destructive account cutover.
+        add_summary("- Warning: stale product environment rollback backup remains.")
 
 
 REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
@@ -729,10 +734,16 @@ COMMIT;
         'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q'
     )
     ssh.run(command, input_text=sql)
-    ssh.run(
-        f"umask 077; install -d -m 0700 /etc/omnicio; "
-        f"touch {LEGACY_RESET_MARKER}; chmod 0600 {LEGACY_RESET_MARKER}"
-    )
+    try:
+        ssh.run(
+            f"umask 077; install -d -m 0700 /etc/omnicio; "
+            f"touch {LEGACY_RESET_MARKER}; chmod 0600 {LEGACY_RESET_MARKER}"
+        )
+    except InfraError:
+        # The database transaction is already committed. A missing marker only
+        # causes a future idempotent reset attempt; it is not a reason to roll
+        # back the healthy release to an incompatible authentication model.
+        add_summary("- Warning: legacy reset marker could not be persisted.")
 
 
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
