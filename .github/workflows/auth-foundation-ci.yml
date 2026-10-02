@@ -12,19 +12,10 @@ on:
       - "legal/**"
       - "pyproject.toml"
       - "AGENTS.md"
-      - ".github/workflows/auth-foundation-ci.yml"
+      - ".github/**"
   push:
     branches:
       - main
-    paths:
-      - "src/omnicio/**"
-      - "tests/**"
-      - "migrations/**"
-      - "web/**"
-      - "legal/**"
-      - "pyproject.toml"
-      - "AGENTS.md"
-      - ".github/workflows/auth-foundation-ci.yml"
 
 permissions:
   contents: read
@@ -58,13 +49,15 @@ jobs:
           python -m pip install -e ".[dev]"
 
       - name: Ruff
-        run: ruff check src tests
+        run: ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py
 
       - name: Mypy
-        run: mypy src
+        run: mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py
 
       - name: Tests
-        run: pytest
+        run: |
+          pytest
+          python .github/scripts/test_release_gate.py
 
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
@@ -77,9 +70,11 @@ jobs:
       matrix:
         include:
           - name: Ruff
-            command: '"%OMNICIO_PYTHON%" -m ruff check src tests'
+            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py'
           - name: Mypy
-            command: '"%OMNICIO_PYTHON%" -m mypy src'
+            command: '"%OMNICIO_PYTHON%" -m mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py'
+          - name: Release gate tests
+            command: '"%OMNICIO_PYTHON%" .github/scripts/test_release_gate.py'
           - name: Security tests
             command: '"%OMNICIO_PYTHON%" -m pytest tests/test_security.py'
           - name: Service and support tests

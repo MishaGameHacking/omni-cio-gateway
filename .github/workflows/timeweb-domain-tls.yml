@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - ".github/workflows/timeweb-domain-tls.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_domain_tls.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
@@ -43,10 +45,12 @@ jobs:
     name: Configure omnicio.ru HTTPS
     permissions:
       contents: read
+      actions: read
+      checks: read
     if: github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
@@ -55,7 +59,16 @@ jobs:
       - name: Checkout accepted main state
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: main
           persist-credentials: false
+
+      - name: Verify current main release checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/verify_main_release.py
+
+      - name: Validate verified SSH server key
+        run: python3 .github/scripts/timeweb_ssh_trust.py
 
       - name: Validate Timeweb secret
         shell: bash

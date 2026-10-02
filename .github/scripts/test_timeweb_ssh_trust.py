@@ -6,6 +6,7 @@ import base64
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -22,6 +23,21 @@ ENTRY = f"{SERVER} ssh-ed25519 {KEY}"
 
 
 class SshTrustTests(unittest.TestCase):
+    def test_preflight_cli_blocks_missing_or_wrong_key_without_echoing_input(self) -> None:
+        script = pathlib.Path(__file__).with_name("timeweb_ssh_trust.py")
+        cases = (("", 1), (ENTRY.replace(SERVER, "203.0.113.10"), 1), (ENTRY, 0))
+        for value, expected_status in cases:
+            with self.subTest(expected_status=expected_status):
+                result = subprocess.run(
+                    [sys.executable, str(script)],
+                    env={"TIMEWEB_SSH_KNOWN_HOSTS": value},
+                    check=False, capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, expected_status)
+                self.assertEqual(result.stdout, "")
+                self.assertNotIn(KEY, result.stderr)
+                self.assertEqual(bool(result.stderr), bool(expected_status))
+
     def test_exact_key_round_trip(self) -> None:
         self.assertEqual(trusted_host_entry(ENTRY + "\n", SERVER), ENTRY + "\n")
 

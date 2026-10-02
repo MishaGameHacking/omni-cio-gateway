@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import base64
 import ipaddress
+import os
 import pathlib
+import sys
+
+EXPECTED_SERVER_IPV4 = "194.87.151.244"
 
 
 def trusted_host_entry(value: str, server_ip: str) -> str:
@@ -48,3 +52,17 @@ def ssh_base_args(private_key: pathlib.Path, known_hosts: pathlib.Path) -> list[
         "-o", "ConnectTimeout=10",
         "-o", "LogLevel=ERROR",
     ]
+
+
+def main() -> int:
+    """Check required server trust before any infrastructure reconciliation."""
+    try:
+        trusted_host_entry(os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), EXPECTED_SERVER_IPV4)
+    except ValueError:
+        print("::error::Verified Timeweb SSH host key is missing or invalid", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

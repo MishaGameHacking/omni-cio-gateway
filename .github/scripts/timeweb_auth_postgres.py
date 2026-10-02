@@ -1141,13 +1141,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_migrations(paths: list[str]) -> list[str]:
+    """Read only direct SQL files from this checkout's migrations directory."""
+    migration_dir = pathlib.Path(__file__).resolve().parents[2] / "migrations"
+    statements: list[str] = []
+    for value in paths:
+        supplied = pathlib.Path(value)
+        if supplied.parent != pathlib.Path("migrations") or supplied.suffix != ".sql":
+            raise InfraError("Migration must be a direct repository migrations/*.sql file")
+        candidate = migration_dir / supplied.name
+        try:
+            if candidate.is_symlink():
+                raise InfraError("Migration symlinks are not allowed")
+            resolved = candidate.resolve(strict=True)
+            if resolved.parent != migration_dir or not resolved.is_file():
+                raise InfraError("Migration is outside the approved directory")
+            statements.append(resolved.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise InfraError("Migration SQL file is unavailable or invalid") from exc
+    return statements
+
+
 def main() -> int:
     args = parse_args()
     try:
-        migration_sqls = [
-            pathlib.Path(path).read_text(encoding="utf-8")
-            for path in args.migration
-        ]
+        migration_sqls = load_migrations(args.migration)
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,
