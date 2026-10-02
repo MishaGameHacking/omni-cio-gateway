@@ -45,6 +45,7 @@ LEGAL_OPERATOR_MARKERS = (
 )
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
+LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 BRAND_RUNTIME_FILES = (
     "assets/brand/transparent/omni-sentinel-core-color-1024.png",
@@ -638,6 +639,12 @@ def retire_legacy_profile(ssh: EphemeralSsh) -> None:
     if not legacy_profile_reset_enabled():
         return
 
+    try:
+        ssh.run(f"test -f {LEGACY_RESET_MARKER}")
+        return
+    except InfraError:
+        pass
+
     sql = """
 BEGIN;
 SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0));
@@ -659,6 +666,14 @@ FROM users;
 
 DELETE FROM users;
 
+DO $
+BEGIN
+    IF EXISTS (SELECT 1 FROM users) THEN
+        RAISE EXCEPTION 'legacy reset postcondition failed';
+    END IF;
+END
+$;
+
 COMMIT;
 """
     command = (
@@ -670,6 +685,10 @@ COMMIT;
         'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q'
     )
     ssh.run(command, input_text=sql)
+    ssh.run(
+        f"umask 077; install -d -m 0700 /etc/omnicio; "
+        f"touch {LEGACY_RESET_MARKER}; chmod 0600 {LEGACY_RESET_MARKER}"
+    )
 
 
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
