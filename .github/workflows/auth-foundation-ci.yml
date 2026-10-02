@@ -11,6 +11,8 @@ on:
       - "web/**"
       - "legal/**"
       - "pyproject.toml"
+      - "uv.lock"
+      - "requirements-*.txt"
       - "AGENTS.md"
       - ".github/**"
   push:
@@ -45,14 +47,20 @@ jobs:
 
       - name: Install project and test tooling
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
+          python -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
+
+      - name: Verify dependency exports match the lock
+        run: |
+          uv export --locked --group build --no-emit-project --no-header --output-file requirements-runtime.txt > /dev/null
+          uv export --locked --group build --extra dev --no-emit-project --no-header --output-file requirements-dev.txt > /dev/null
+          git diff --exit-code -- requirements-runtime.txt requirements-dev.txt
 
       - name: Ruff
-        run: ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py
+        run: ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py
 
       - name: Mypy
-        run: mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py
+        run: mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py
 
       - name: Tests
         run: |
@@ -70,9 +78,9 @@ jobs:
       matrix:
         include:
           - name: Ruff
-            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py'
+            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py'
           - name: Mypy
-            command: '"%OMNICIO_PYTHON%" -m mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py'
+            command: '"%OMNICIO_PYTHON%" -m mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py'
           - name: Release gate tests
             command: '"%OMNICIO_PYTHON%" .github/scripts/test_release_gate.py'
           - name: Security tests
@@ -152,9 +160,9 @@ jobs:
       - name: Install project and test tooling
         shell: cmd
         run: |
-          "%OMNICIO_PYTHON%" -m pip install --upgrade pip
+          "%OMNICIO_PYTHON%" -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
           if errorlevel 1 exit /b 1
-          "%OMNICIO_PYTHON%" -m pip install -e ".[dev]"
+          "%OMNICIO_PYTHON%" -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
           if errorlevel 1 exit /b 1
 
       - name: Run ${{ matrix.name }}

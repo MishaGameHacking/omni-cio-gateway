@@ -9,6 +9,7 @@ import sys
 import unittest
 from decimal import Decimal
 from typing import Any
+from unittest.mock import patch
 
 MODULE_PATH = pathlib.Path(__file__).with_name("timeweb_white_site.py")
 SPEC = importlib.util.spec_from_file_location("timeweb_white_site", MODULE_PATH)
@@ -374,11 +375,26 @@ class TimewebWhiteSiteTests(unittest.TestCase):
 
         self.assertEqual(len(client.create_payloads), 1)
 
+    def test_unknown_conflicts_never_trigger_a_second_create(self) -> None:
+        for status in (409, 423):
+            error = MODULE.TimewebApiError(
+                status_code=status, error_code="unknown_conflict",
+                message="conflict", response_id="test",
+            )
+            client = FakeClient([error])
+            with self.subTest(status=status), patch.object(MODULE.time, "sleep"):
+                with self.assertRaises(MODULE.TimewebApiError) as raised:
+                    MODULE.create_server_candidate(
+                        client, {}, server_name="managed", server_comment="owned",
+                    )
+                self.assertIs(raised.exception, error)
+                self.assertEqual(client.create_payloads, [{}])
+
     def test_wait_for_web_port_uses_canonical_ipv4_only(self) -> None:
         calls: list[tuple[tuple[str, int], int]] = []
 
         class FakeConnection:
-            def __enter__(self) -> "FakeConnection":
+            def __enter__(self) -> FakeConnection:
                 return self
 
             def __exit__(self, *_args: object) -> None:

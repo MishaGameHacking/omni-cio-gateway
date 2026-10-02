@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from timeweb_addresses import network_addresses
+
 API_ROOT = "https://api.timeweb.cloud/api"
 PLACEMENT_CAPACITY_ERROR_CODE = "no_free_node"
 LOCATION_CAPACITY_ERROR_CODE = "servers_is_run_out_error"
@@ -128,7 +130,7 @@ class TimewebClient:
                 message=message,
                 response_id=str(error.get("response_id") or ""),
             ) from exc
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        except (urllib.error.URLError, TimeoutError) as exc:
             raise AmbiguousProviderError(
                 f"Ambiguous Timeweb {method} {path}: {type(exc).__name__}"
             ) from exc
@@ -208,6 +210,16 @@ def select_ubuntu_2404(client: TimewebClient) -> dict[str, Any]:
     return max(matches, key=lambda item: decimal_value(item.get("id", 0)))
 
 
+def preset_meets_requirements(
+    preset: dict[str, Any], *, location: str, minimums: dict[str, Decimal],
+) -> bool:
+    if str(preset.get("location") or "").strip().lower() != location:
+        return False
+    if decimal_value(preset.get("price") or 0) <= 0:
+        return False
+    return all(decimal_value(preset.get(key) or 0) >= value for key, value in minimums.items())
+
+
 def select_compatible_presets(
     *,
     os_info: dict[str, Any],
@@ -215,30 +227,17 @@ def select_compatible_presets(
     target_location: str,
 ) -> list[dict[str, Any]]:
     requirements = dict(os_info.get("requirements") or {})
-    cpu_min = decimal_value(requirements.get("cpu_min") or 0)
-    ram_min = decimal_value(requirements.get("ram_min") or 0)
-    disk_min_mb = os_disk_min_mb(requirements.get("disk_min") or 0)
-    bandwidth_min = decimal_value(requirements.get("bandwidth_min") or 0)
-
-    normalized_target_location = target_location.strip().lower()
-    compatible: list[dict[str, Any]] = []
-    for preset in presets:
-        preset_location = str(preset.get("location") or "").strip().lower()
-        if preset_location != normalized_target_location:
-            continue
-
-        price = decimal_value(preset.get("price") or 0)
-        if price <= 0:
-            continue
-        if decimal_value(preset.get("cpu") or 0) < cpu_min:
-            continue
-        if decimal_value(preset.get("ram") or 0) < ram_min:
-            continue
-        if decimal_value(preset.get("disk") or 0) < disk_min_mb:
-            continue
-        if decimal_value(preset.get("bandwidth") or 0) < bandwidth_min:
-            continue
-        compatible.append(preset)
+    minimums = {
+        "cpu": decimal_value(requirements.get("cpu_min") or 0),
+        "ram": decimal_value(requirements.get("ram_min") or 0),
+        "disk": os_disk_min_mb(requirements.get("disk_min") or 0),
+        "bandwidth": decimal_value(requirements.get("bandwidth_min") or 0),
+    }
+    location = target_location.strip().lower()
+    compatible = [
+        preset for preset in presets
+        if preset_meets_requirements(preset, location=location, minimums=minimums)
+    ]
 
     return sorted(
         compatible,
@@ -365,22 +364,11 @@ def server_id(server: dict[str, Any]) -> int:
 
 
 def public_ipv4_addresses(server: dict[str, Any]) -> list[str]:
-    result: list[str] = []
-    for network in server.get("networks") or []:
-        network_type = str(network.get("type") or "").lower()
-        if network_type in {"local", "private"}:
-            continue
-        for item in network.get("ips") or []:
-            value = item.get("ip")
-            if not value:
-                continue
-            try:
-                address = ipaddress.ip_address(value)
-            except ValueError:
-                continue
-            if address.version == 4:
-                result.append(value)
-    return result
+    return [
+        str(address)
+        for address in network_addresses(server, public_only=True)
+        if address.version == 4
+    ]
 
 
 def add_summary(line: str) -> None:
@@ -511,6 +499,42 @@ def create_payload(
     return payload
 
 
+def capacity_scope(error: TimewebApiError) -> str | None:
+    if error.status_code == 409 and error.error_code == PLACEMENT_CAPACITY_ERROR_CODE:
+        return "placement"
+    if error.status_code in {400, 409} and error.error_code == LOCATION_CAPACITY_ERROR_CODE:
+        return "location"
+    return None
+
+
+def create_server_candidate(
+    client: TimewebClient, payload: dict[str, Any], *, server_name: str, server_comment: str,
+) -> dict[str, Any]:
+    try:
+        return client.create_server(payload)
+    except AmbiguousProviderError:
+        add_summary("- Create response was ambiguous; performing bounded read-only reconciliation.")
+        created = reconcile_after_ambiguous_create(
+            client=client, server_name=server_name, server_comment=server_comment,
+        )
+        if not created:
+            raise DeploymentError(
+                "Create request had an ambiguous result and reconciliation "
+                "did not prove whether a server was created. Refusing to "
+                "issue another create mutation."
+            ) from None
+        return created
+    except TimewebApiError as exc:
+        if capacity_scope(exc) is None and exc.status_code in {409, 423}:
+            add_summary("- Provider returned conflict/locked; performing read-only reconciliation.")
+            created = reconcile_after_ambiguous_create(
+                client=client, server_name=server_name, server_comment=server_comment,
+            )
+            if created:
+                return created
+        raise
+
+
 def create_with_capacity_fallback(
     *,
     client: TimewebClient,
@@ -521,99 +545,88 @@ def create_with_capacity_fallback(
 ) -> tuple[dict[str, Any] | None, list[str]]:
     capacity_failures: list[str] = []
     exhausted_locations: set[str] = set()
-
     for placement in placements:
         if placement.location in exhausted_locations:
             capacity_failures.append(placement.label)
-            add_summary(
-                f"- Skipping `{placement.label}`: location "
-                f"`{placement.location}` is already proven out of capacity."
-            )
+            add_summary(f"- Skipping `{placement.label}`: location is already out of capacity.")
             continue
-
         payload = create_payload(
-            os_info=os_info,
-            placement=placement,
-            server_name=server_name,
-            server_comment=server_comment,
+            os_info=os_info, placement=placement,
+            server_name=server_name, server_comment=server_comment,
         )
         add_summary(
-            "- Create candidate: "
-            f"preset `{placement.preset_id}`, "
-            f"zone `{placement.availability_zone or 'provider-auto'}`, "
-            f"price {placement.price_rub} RUB."
+            f"- Create candidate: `{placement.label}`, price {placement.price_rub} RUB."
         )
-
         try:
-            created = client.create_server(payload)
-        except AmbiguousProviderError:
-            add_summary(
-                "- Create response was ambiguous; performing bounded "
-                "read-only reconciliation before any further mutation."
+            created = create_server_candidate(
+                client, payload, server_name=server_name, server_comment=server_comment,
             )
-            created = reconcile_after_ambiguous_create(
-                client=client,
-                server_name=server_name,
-                server_comment=server_comment,
-            )
-            if not created:
-                raise DeploymentError(
-                    "Create request had an ambiguous result and reconciliation "
-                    "did not prove whether a server was created. Refusing to "
-                    "issue another create mutation."
-                )
-            return created, capacity_failures
         except TimewebApiError as exc:
-            is_placement_capacity = (
-                exc.status_code == 409
-                and exc.error_code == PLACEMENT_CAPACITY_ERROR_CODE
-            )
-            is_location_capacity = (
-                exc.status_code in {400, 409}
-                and exc.error_code == LOCATION_CAPACITY_ERROR_CODE
-            )
-
-            if is_placement_capacity:
-                capacity_failures.append(placement.label)
-                add_summary(
-                    f"- Capacity unavailable for `{placement.label}`; "
-                    "trying the next pre-approved placement."
-                )
-                continue
-
-            if is_location_capacity:
-                capacity_failures.append(placement.label)
+            scope = capacity_scope(exc)
+            if scope is None:
+                raise
+            capacity_failures.append(placement.label)
+            if scope == "location":
                 exhausted_locations.add(placement.location)
-                add_summary(
-                    f"- Location `{placement.location}` is out of server "
-                    "capacity; remaining candidates in that location will be "
-                    "skipped without provider mutations."
-                )
-                continue
+            add_summary(f"- Capacity unavailable for `{placement.label}`; scope={scope}.")
+            continue
+        if not created:
+            raise DeploymentError(
+                "Timeweb returned success without a server object; refusing to "
+                "guess whether the create mutation succeeded."
+            )
+        return created, capacity_failures
+    return None, capacity_failures
 
-            if exc.status_code in {409, 423}:
-                add_summary(
-                    "- Provider returned a conflict/locked response; "
-                    "performing bounded read-only reconciliation."
-                )
-                created = reconcile_after_ambiguous_create(
-                    client=client,
-                    server_name=server_name,
-                    server_comment=server_comment,
-                )
-                if created:
-                    return created, capacity_failures
-            raise
 
-        if created:
-            return created, capacity_failures
+def reconcile_existing_server(
+    client: TimewebClient, existing: dict[str, Any], *, server_name: str,
+    server_comment: str, target_location: str, target_availability_zone: str, mode: str,
+) -> int:
+    existing_id = server_id(existing)
+    addresses = public_ipv4_addresses(existing)
+    add_summary(
+        f"- Existing server: `{server_name}` (id `{existing_id}`, "
+        f"status `{existing.get('status', 'unknown')}`)."
+    )
+    if addresses:
+        add_summary(f"- IPv4: http://{addresses[0]}/")
 
+    if existing.get("comment") != server_comment:
         raise DeploymentError(
-            "Timeweb returned success without a server object; refusing to "
-            "guess whether the create mutation succeeded."
+            "A same-name server already exists but is not marked as "
+            "managed by this reconciler. Refusing to mutate it."
         )
 
-    return None, capacity_failures
+    existing_location = str(existing.get("location") or "").lower()
+    existing_zone = str(existing.get("availability_zone") or "").lower()
+    if (
+        existing_location != target_location.lower()
+        or existing_zone != target_availability_zone.lower()
+    ):
+        raise DeploymentError(
+            "Managed server exists outside the required Moscow placement: "
+            f"actual={existing_location or 'unknown'}/"
+            f"{existing_zone or 'unknown'}, required="
+            f"{target_location}/{target_availability_zone}. "
+            "Automatic cross-region migration/deletion is not permitted."
+        )
+
+    if mode == "plan":
+        add_summary(
+            "- Plan result: managed server already exists; no resource "
+            "would be created."
+        )
+        return 0
+
+    latest, ip = wait_for_ipv4(client, existing_id)
+    add_summary(
+        f"- Server status: `{latest.get('status', 'unknown')}`; "
+        f"IPv4: {ip}"
+    )
+    wait_for_web_port(ip)
+    add_summary(f"- Result: existing managed server web port is ready on {ip}.")
+    return 0
 
 
 def reconcile(
@@ -697,50 +710,11 @@ def reconcile(
 
     existing = find_named_server(client, server_name)
     if existing:
-        existing_id = server_id(existing)
-        addresses = public_ipv4_addresses(existing)
-        add_summary(
-            f"- Existing server: `{server_name}` (id `{existing_id}`, "
-            f"status `{existing.get('status', 'unknown')}`)."
+        return reconcile_existing_server(
+            client, existing, server_name=server_name, server_comment=server_comment,
+            target_location=target_location, target_availability_zone=target_availability_zone,
+            mode=mode,
         )
-        if addresses:
-            add_summary(f"- IPv4: http://{addresses[0]}/")
-
-        if existing.get("comment") != server_comment:
-            raise DeploymentError(
-                "A same-name server already exists but is not marked as "
-                "managed by this reconciler. Refusing to mutate it."
-            )
-
-        existing_location = str(existing.get("location") or "").lower()
-        existing_zone = str(existing.get("availability_zone") or "").lower()
-        if (
-            existing_location != target_location.lower()
-            or existing_zone != target_availability_zone.lower()
-        ):
-            raise DeploymentError(
-                "Managed server exists outside the required Moscow placement: "
-                f"actual={existing_location or 'unknown'}/"
-                f"{existing_zone or 'unknown'}, required="
-                f"{target_location}/{target_availability_zone}. "
-                "Automatic cross-region migration/deletion is not permitted."
-            )
-
-        if mode == "plan":
-            add_summary(
-                "- Plan result: managed server already exists; no resource "
-                "would be created."
-            )
-            return 0
-
-        latest, ip = wait_for_ipv4(client, existing_id)
-        add_summary(
-            f"- Server status: `{latest.get('status', 'unknown')}`; "
-            f"IPv4: {ip}"
-        )
-        wait_for_web_port(ip)
-        add_summary(f"- Result: existing managed server web port is ready on {ip}.")
-        return 0
 
     if mode == "plan":
         add_summary(
@@ -841,3 +815,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

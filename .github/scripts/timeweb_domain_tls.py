@@ -8,7 +8,6 @@ key is temporarily registered in Timeweb and attached to the server.
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import pathlib
@@ -23,15 +22,15 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from timeweb_ssh_trust import ssh_base_args, trusted_host_entry
+from timeweb_addresses import network_addresses
+from timeweb_ssh_trust import managed_server_identity, ssh_base_args, trusted_host_entry
 
 API_ROOT = "https://api.timeweb.cloud/api/v1"
 SITE_MARKER = 'name="omni-cio-white-site"'
 DOMAIN_NAME = "omnicio.ru"
 SERVER_NAME = "omni-cio-white-site"
 SERVER_COMMENT = "Managed by GitHub Actions: timeweb-white-site"
-EXPECTED_SERVER_ID = 9235089
-EXPECTED_SERVER_IPV4 = "194.87.151.244"
+EXPECTED_SERVER_ID, EXPECTED_SERVER_IPV4 = managed_server_identity()
 
 
 class DeploymentError(RuntimeError):
@@ -177,25 +176,11 @@ def find_managed_server(
 def public_addresses(server: dict[str, Any]) -> tuple[set[str], set[str]]:
     ipv4: set[str] = set()
     ipv6: set[str] = set()
-
-    for network in server.get("networks") or []:
-        network_type = str(network.get("type") or "").lower()
-        if network_type in {"local", "private"}:
-            continue
-        for item in network.get("ips") or []:
-            value = str(item.get("ip") or "").strip()
-            if not value:
-                continue
-            try:
-                address = ipaddress.ip_address(value)
-            except ValueError:
-                continue
-            canonical = str(address)
-            if address.version == 4:
-                ipv4.add(canonical)
-            else:
-                ipv6.add(canonical)
-
+    for address in network_addresses(server, public_only=True):
+        if address.version == 4:
+            ipv4.add(str(address))
+        else:
+            ipv6.add(str(address))
     return ipv4, ipv6
 
 
@@ -242,6 +227,9 @@ def assess_dns(
 
 
 def verify_https() -> bool:
+    context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.check_hostname = True
     request = urllib.request.Request(
         f"https://{DOMAIN_NAME}/",
         headers={"User-Agent": "omni-cio-deploy-verifier/1.0"},
@@ -250,11 +238,11 @@ def verify_https() -> bool:
         with urllib.request.urlopen(
             request,
             timeout=15,
-            context=ssl.create_default_context(),
+            context=context,
         ) as response:
             body = response.read().decode("utf-8", errors="replace")
             return response.status == 200 and SITE_MARKER in body
-    except (urllib.error.URLError, TimeoutError, socket.timeout, ssl.SSLError):
+    except (urllib.error.URLError, TimeoutError, ssl.SSLError):
         return False
 
 

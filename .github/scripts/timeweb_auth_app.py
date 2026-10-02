@@ -10,7 +10,6 @@ import json
 import os
 import pathlib
 import re
-import socket
 import ssl
 import subprocess
 import sys
@@ -18,7 +17,7 @@ import tarfile
 import time
 import urllib.error
 import urllib.request
-from typing import Iterable
+from collections.abc import Iterable
 
 from timeweb_auth_postgres import (
     AmbiguousProviderError,
@@ -67,7 +66,8 @@ def set_output(name: str, value: str) -> None:
 
 
 def iter_release_files(root: pathlib.Path) -> Iterable[pathlib.Path]:
-    for relative in ("pyproject.toml", "src", "web", *BRAND_RUNTIME_FILES):
+    paths = ("pyproject.toml", "requirements-runtime.txt", "src", "web", *BRAND_RUNTIME_FILES)
+    for relative in paths:
         path = root / relative
         if path.is_file():
             yield path
@@ -282,8 +282,10 @@ if ! id omnicio >/dev/null 2>&1; then
 fi
 
 python3 -m venv "$RELEASE/.venv"
-"$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q --upgrade pip
-"$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q "$RELEASE"
+"$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q \
+    --only-binary=:all: --require-hashes -r "$RELEASE/requirements-runtime.txt"
+"$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q \
+    --no-deps --no-build-isolation --no-index --only-binary=:all: "$RELEASE"
 
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
@@ -552,120 +554,79 @@ def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
         pass
 
 
+def fetch_public(path: str, context: ssl.SSLContext) -> tuple[bytes, str]:
+    request = urllib.request.Request(
+        f"https://{DOMAIN}{path}",
+        headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=15, context=context) as response:
+        if response.status != 200:
+            raise InfraError(f"Public application returned non-200: {path}")
+        body = response.read(4 * 1024 * 1024 + 1)
+        if len(body) > 4 * 1024 * 1024:
+            raise InfraError(f"Public application response is too large: {path}")
+        return body, response.headers.get_content_type()
+
+
+def verify_public_root(body: bytes, release_sha: str) -> None:
+    root_body = body.decode(errors="replace")
+    required = {
+        SITE_MARKER: "Public auth page verification failed",
+        BRAND_PUBLIC_MARK: "Public auth page does not use approved brand mark",
+        WEB_MANIFEST_PATH: "Public auth page does not expose web manifest",
+        release_sha[:12]: "Public auth page asset build does not match release",
+    }
+    for marker, message in required.items():
+        if marker not in root_body:
+            raise InfraError(message)
+    if "__OMNICIO_VERSION__" in root_body or "__OMNICIO_BUILD__" in root_body:
+        raise InfraError("Public auth page contains unresolved release markers")
+
+
+def verify_public_config(body: bytes) -> None:
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+        raise InfraError("Public auth config is not an object")
+    if payload.get("registration_enabled") is not False:
+        raise InfraError("Public registration unexpectedly became enabled")
+    if payload.get("auth_provider") != "vkid":
+        raise InfraError("Public auth provider is not VK ID")
+    if payload.get("owner_login_enabled") is not vkid_configuration_ready():
+        raise InfraError("Public VK ID readiness does not match deployment config")
+
+
+def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
+    brand, content_type = fetch_public(BRAND_PUBLIC_MARK, context)
+    if content_type != "image/png" or not brand:
+        raise InfraError("Public approved brand mark verification failed")
+
+    manifest_body, _ = fetch_public(WEB_MANIFEST_PATH, context)
+    manifest = json.loads(manifest_body)
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("icons"), list):
+        raise InfraError("Public web manifest verification failed")
+
+    version_body, _ = fetch_public(VERSION_PUBLIC_PATH, context)
+    version = version_body.decode()
+    if "window.OMNICIO_RELEASE" not in version:
+        raise InfraError("Public application version marker is missing")
+    if release_sha[:12] not in version:
+        raise InfraError("Public application build does not match release")
+
+
 def verify_public(release_sha: str) -> None:
     context = ssl.create_default_context()
-    root_request = urllib.request.Request(
-        f"https://{DOMAIN}/",
-        headers={"User-Agent": "omnicio-auth-deploy/1.0"},
-    )
-    config_request = urllib.request.Request(
-        f"https://{DOMAIN}/api/auth/config",
-        headers={"User-Agent": "omnicio-auth-deploy/1.0"},
-    )
-
     try:
-        with urllib.request.urlopen(
-            root_request,
-            timeout=15,
-            context=context,
-        ) as response:
-            root_body = response.read().decode(errors="replace")
-            if response.status != 200 or SITE_MARKER not in root_body:
-                raise InfraError("Public auth page verification failed")
-            if BRAND_PUBLIC_MARK not in root_body:
-                raise InfraError("Public auth page does not use approved brand mark")
-            if WEB_MANIFEST_PATH not in root_body:
-                raise InfraError("Public auth page does not expose web manifest")
-            if "__OMNICIO_VERSION__" in root_body or "__OMNICIO_BUILD__" in root_body:
-                raise InfraError("Public auth page contains unresolved release markers")
-            if release_sha[:12] not in root_body:
-                raise InfraError("Public auth page asset build does not match release")
-
-        brand_request = urllib.request.Request(
-            f"https://{DOMAIN}{BRAND_PUBLIC_MARK}",
-            headers={"User-Agent": "omnicio-auth-deploy/1.0"},
-        )
-        with urllib.request.urlopen(
-            brand_request,
-            timeout=15,
-            context=context,
-        ) as response:
-            if response.status != 200 or response.headers.get_content_type() != "image/png":
-                raise InfraError("Public approved brand mark verification failed")
-            if not response.read(1):
-                raise InfraError("Public approved brand mark is empty")
-
-        manifest_request = urllib.request.Request(
-            f"https://{DOMAIN}{WEB_MANIFEST_PATH}",
-            headers={"User-Agent": "omnicio-auth-deploy/1.0"},
-        )
-        with urllib.request.urlopen(
-            manifest_request,
-            timeout=15,
-            context=context,
-        ) as response:
-            manifest = json.loads(response.read().decode())
-            if response.status != 200 or not isinstance(manifest.get("icons"), list):
-                raise InfraError("Public web manifest verification failed")
-
-        version_request = urllib.request.Request(
-            f"https://{DOMAIN}{VERSION_PUBLIC_PATH}",
-            headers={"User-Agent": "omnicio-auth-deploy/1.0"},
-        )
-        with urllib.request.urlopen(
-            version_request,
-            timeout=15,
-            context=context,
-        ) as response:
-            version_body = response.read().decode()
-            if response.status != 200:
-                raise InfraError("Public application version verification failed")
-            if "window.OMNICIO_RELEASE" not in version_body:
-                raise InfraError("Public application version marker is missing")
-            if release_sha[:12] not in version_body:
-                raise InfraError("Public application build does not match release")
-
-        with urllib.request.urlopen(
-            config_request,
-            timeout=15,
-            context=context,
-        ) as response:
-            payload = json.loads(response.read().decode())
-            if response.status != 200:
-                raise InfraError("Public auth config returned non-200")
-            if payload.get("registration_enabled") is not False:
-                raise InfraError(
-                    "Public registration unexpectedly became enabled"
-                )
-            if payload.get("auth_provider") != "vkid":
-                raise InfraError("Public auth provider is not VK ID")
-            expected_ready = vkid_configuration_ready()
-            if payload.get("owner_login_enabled") is not expected_ready:
-                raise InfraError(
-                    "Public VK ID readiness does not match deployment config"
-                )
-
+        root, _ = fetch_public("/", context)
+        verify_public_root(root, release_sha)
+        verify_public_assets(context, release_sha)
+        config, _ = fetch_public("/api/auth/config", context)
+        verify_public_config(config)
         for path, marker in LEGAL_PAGES.items():
-            legal_request = urllib.request.Request(
-                f"https://{DOMAIN}{path}",
-                headers={"User-Agent": "omnicio-auth-deploy/1.0"},
-            )
-            with urllib.request.urlopen(
-                legal_request,
-                timeout=15,
-                context=context,
-            ) as response:
-                body = response.read().decode(errors="replace")
-                if response.status != 200 or marker not in body:
-                    raise InfraError(
-                        f"Public legal page verification failed: {path}"
-                    )
+            body, _ = fetch_public(path, context)
+            if marker not in body.decode(errors="replace"):
+                raise InfraError(f"Public legal page verification failed: {path}")
     except (
-        urllib.error.URLError,
-        TimeoutError,
-        socket.timeout,
-        ssl.SSLError,
-        json.JSONDecodeError,
+        urllib.error.URLError, TimeoutError, ssl.SSLError, json.JSONDecodeError, UnicodeDecodeError,
     ) as exc:
         raise InfraError(
             f"Public application verification failed: {type(exc).__name__}"

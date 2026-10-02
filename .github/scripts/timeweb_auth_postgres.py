@@ -9,7 +9,6 @@ import json
 import os
 import pathlib
 import shlex
-import socket
 import subprocess
 import sys
 import tempfile
@@ -21,6 +20,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from timeweb_addresses import network_addresses
 from timeweb_ssh_trust import ssh_base_args, trusted_host_entry
 
 API_ROOT = "https://api.timeweb.cloud/api"
@@ -129,7 +129,7 @@ class TimewebClient:
                 str(parsed.get("error_code") or ""),
                 message,
             ) from exc
-        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+        except (urllib.error.URLError, TimeoutError) as exc:
             if method in {"POST", "PUT", "PATCH", "DELETE"}:
                 raise AmbiguousProviderError(
                     f"Ambiguous Timeweb {method} {path}: {type(exc).__name__}"
@@ -373,27 +373,27 @@ def select_postgres_type(
     return str(matches[0]["type"])
 
 
+def database_preset_is_compatible(preset: dict[str, Any], desired: DesiredDatabase) -> bool:
+    if str(preset.get("type") or "").strip().lower() != "postgres":
+        return False
+    if str(preset.get("location") or "").strip() != desired.location:
+        return False
+    price = decimal_value(preset.get("price") or 0)
+    if price <= 0 or price > desired.max_price_rub:
+        return False
+    minimums = {
+        "cpu": desired.min_cpu,
+        "ram": desired.min_ram_mb,
+        "disk": desired.min_disk_mb,
+    }
+    return all(integer_value(preset.get(key) or 0) >= value for key, value in minimums.items())
+
+
 def select_database_preset(
     presets: list[dict[str, Any]],
     desired: DesiredDatabase,
 ) -> dict[str, Any]:
-    compatible: list[dict[str, Any]] = []
-    for preset in presets:
-        if str(preset.get("type") or "").strip().lower() != "postgres":
-            continue
-        if str(preset.get("location") or "").strip() != desired.location:
-            continue
-
-        price = decimal_value(preset.get("price") or 0)
-        if price <= 0 or price > desired.max_price_rub:
-            continue
-        if integer_value(preset.get("cpu") or 0) < desired.min_cpu:
-            continue
-        if integer_value(preset.get("ram") or 0) < desired.min_ram_mb:
-            continue
-        if integer_value(preset.get("disk") or 0) < desired.min_disk_mb:
-            continue
-        compatible.append(preset)
+    compatible = [preset for preset in presets if database_preset_is_compatible(preset, desired)]
 
     if not compatible:
         raise InfraError(
@@ -426,21 +426,11 @@ def find_database_cluster(
 
 
 def public_ipv4(server: dict[str, Any]) -> str:
-    values: list[str] = []
-    for network in server.get("networks") or []:
-        network_type = str(network.get("type") or "").lower()
-        if network_type in {"local", "private"}:
-            continue
-        for item in network.get("ips") or []:
-            raw = str(item.get("ip") or "").strip()
-            if not raw:
-                continue
-            try:
-                address = ipaddress.ip_address(raw)
-            except ValueError:
-                continue
-            if address.version == 4 and not address.is_private:
-                values.append(str(address))
+    values = [
+        str(address)
+        for address in network_addresses(server, public_only=True)
+        if address.version == 4 and not address.is_private
+    ]
     if len(values) != 1:
         raise InfraError(
             f"Expected exactly one public IPv4 on managed VDS; found {len(values)}"
@@ -449,18 +439,11 @@ def public_ipv4(server: dict[str, Any]) -> str:
 
 
 def private_database_endpoint(cluster: dict[str, Any]) -> DatabaseEndpoint | None:
-    candidates: list[str] = []
-    for network in cluster.get("networks") or []:
-        for item in network.get("ips") or []:
-            raw = str(item.get("ip") or "").strip()
-            if not raw:
-                continue
-            try:
-                address = ipaddress.ip_address(raw)
-            except ValueError:
-                continue
-            if address.version == 4 and address.is_private:
-                candidates.append(str(address))
+    candidates = [
+        str(address)
+        for address in network_addresses(cluster)
+        if address.version == 4 and address.is_private
+    ]
 
     if not candidates:
         return None
@@ -947,6 +930,33 @@ def reconcile_after_ambiguous_create(
     return None
 
 
+def create_database_cluster(
+    client: TimewebClient, payload: dict[str, Any], *, cluster_name: str,
+) -> int:
+    add_summary("- Creating the approved private PostgreSQL cluster.")
+    try:
+        cluster = client.create_database_cluster(payload)
+    except AmbiguousProviderError:
+        add_summary(
+            "- Create result was ambiguous; reconciling by managed "
+            "cluster name before any retry."
+        )
+        cluster = reconcile_after_ambiguous_create(
+            client,
+            cluster_name=cluster_name,
+        )
+        if cluster is None:
+            raise InfraError(
+                "Database create was ambiguous and reconciliation did "
+                "not prove the resulting state"
+            ) from None
+    if "id" not in cluster:
+        raise InfraError("Timeweb returned database success without an id")
+    cluster_id = integer_value(cluster["id"])
+    add_summary(f"- Created PostgreSQL cluster id {cluster_id}.")
+    return cluster_id
+
+
 def reconcile(
     client: TimewebClient,
     *,
@@ -1056,27 +1066,9 @@ def reconcile(
                 vpc_id=vpc_id,
                 password=secret_bundle["OMNICIO_DB_ADMIN_PASSWORD"],
             )
-            add_summary("- Creating the approved private PostgreSQL cluster.")
-            try:
-                cluster = client.create_database_cluster(payload)
-            except AmbiguousProviderError:
-                add_summary(
-                    "- Create result was ambiguous; reconciling by managed "
-                    "cluster name before any retry."
-                )
-                cluster = reconcile_after_ambiguous_create(
-                    client,
-                    cluster_name=desired.cluster_name,
-                )
-                if cluster is None:
-                    raise InfraError(
-                        "Database create was ambiguous and reconciliation did "
-                        "not prove the resulting state"
-                    )
-            if "id" not in cluster:
-                raise InfraError("Timeweb returned database success without an id")
-            cluster_id = integer_value(cluster["id"])
-            add_summary(f"- Created PostgreSQL cluster id {cluster_id}.")
+            cluster_id = create_database_cluster(
+                client, payload, cluster_name=desired.cluster_name,
+            )
         else:
             cluster_id = integer_value(existing["id"])
             cluster = client.get_database_cluster(cluster_id)

@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 import timeweb_auth_postgres as postgres
 import timeweb_domain_tls as tls
-from timeweb_ssh_trust import ssh_base_args, trusted_host_entry
+from timeweb_ssh_trust import managed_server_identity, ssh_base_args, trusted_host_entry
 
 SERVER = "194.87.151.244"
 KEY = base64.b64encode(
@@ -37,6 +37,21 @@ class SshTrustTests(unittest.TestCase):
                 self.assertEqual(result.stdout, "")
                 self.assertNotIn(KEY, result.stderr)
                 self.assertEqual(bool(result.stderr), bool(expected_status))
+
+    def test_invalid_managed_target_fails_closed(self) -> None:
+        invalid = (
+            {}, {"server-id": True, "ipv4": SERVER},
+            {"server-id": 0, "ipv4": SERVER},
+            {"server-id": 1, "ipv4": "127.0.0.1"},
+            {"server-id": 1, "ipv4": "::1"},
+            {"server-id": 1, "ipv4": "not-an-address"},
+        )
+        for target in invalid:
+            with self.subTest(target=target), patch(
+                "timeweb_ssh_trust.tomllib.load",
+                return_value={"tool": {"omnicio": {"timeweb": target}}},
+            ), self.assertRaises(ValueError):
+                managed_server_identity()
 
     def test_exact_key_round_trip(self) -> None:
         self.assertEqual(trusted_host_entry(ENTRY + "\n", SERVER), ENTRY + "\n")

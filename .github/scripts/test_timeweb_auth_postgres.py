@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 MODULE_PATH = pathlib.Path(__file__).with_name("timeweb_auth_postgres.py")
 SPEC = importlib.util.spec_from_file_location("timeweb_auth_postgres", MODULE_PATH)
@@ -35,6 +35,34 @@ class PostgresTests(unittest.TestCase):
             min_ram_mb=2048,
             min_disk_mb=20480,
         )
+
+    def test_ambiguous_database_creation_is_not_retried(self) -> None:
+        for recovered in (None, {"id": 42}):
+            with self.subTest(recovered=recovered):
+                client = Mock()
+                error = MODULE.AmbiguousProviderError("timeout")
+                client.create_database_cluster.side_effect = error
+                with patch.object(
+                    MODULE, "reconcile_after_ambiguous_create", return_value=recovered,
+                ):
+                    if recovered is None:
+                        with self.assertRaises(MODULE.InfraError):
+                            MODULE.create_database_cluster(client, {}, cluster_name="managed")
+                    else:
+                        result = MODULE.create_database_cluster(client, {}, cluster_name="managed")
+                        self.assertEqual(result, 42)
+                client.create_database_cluster.assert_called_once_with({})
+
+    def test_address_inventory_keeps_private_endpoint_separate(self) -> None:
+        cluster = {"networks": [
+            {"type": "private", "ips": [{"ip": "10.0.0.5"}, {"ip": "10.0.0.5"}]},
+            {"type": "public", "ips": [{"ip": "invalid"}, {}, {"ip": "8.8.8.8"}]},
+        ]}
+        self.assertEqual(MODULE.private_database_endpoint(cluster).host, "10.0.0.5")
+        self.assertEqual(MODULE.public_ipv4(cluster), "8.8.8.8")
+        cluster["networks"][0]["ips"].append({"ip": "10.0.0.6"})
+        with self.assertRaises(MODULE.InfraError):
+            MODULE.private_database_endpoint(cluster)
 
     def test_selects_supported_postgres_18_type(self) -> None:
         types = [
