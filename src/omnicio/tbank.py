@@ -194,6 +194,79 @@ class TBankOperationsPage:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankDividend:
+    instrument_uid: str
+    dividend_net: TBankMoney
+    payment_date: datetime | None
+    declared_date: datetime | None
+    last_buy_date: datetime | None
+    record_date: datetime | None
+    dividend_type: str
+    regularity: str
+    yield_value: str | None
+    created_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class TBankBondCoupon:
+    instrument_uid: str
+    coupon_date: datetime
+    coupon_number: int
+    fix_date: datetime | None
+    pay_one_bond: TBankMoney
+    coupon_type: str
+    coupon_start_date: datetime | None
+    coupon_end_date: datetime | None
+    coupon_period_days: int
+
+
+@dataclass(frozen=True, slots=True)
+class TBankBondEvent:
+    instrument_uid: str
+    event_number: int
+    event_date: datetime | None
+    event_type: str
+    default_date: datetime | None
+    real_pay_date: datetime | None
+    pay_date: datetime | None
+    pay_one_bond: TBankMoney | None
+    execution: str
+    operation_type: str
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
+class TBankAssetReport:
+    instrument_uid: str
+    report_date: datetime
+    period_year: int
+    period_num: int
+    period_type: str
+    created_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class TBankAssetFundamental:
+    asset_uid: str
+    currency: str
+    revenue_ttm: str | None
+    ebitda_ttm: str | None
+    net_income_ttm: str | None
+    free_cash_flow_ttm: str | None
+    total_debt_mrq: str | None
+    total_debt_to_equity_mrq: str | None
+    total_debt_to_ebitda_mrq: str | None
+    net_debt_to_ebitda: str | None
+    current_ratio_mrq: str | None
+    fixed_charge_coverage_ratio_fy: str | None
+    net_interest_margin_mrq: str | None
+    roe: str | None
+    roa: str | None
+    fiscal_period_start_date: datetime | None
+    fiscal_period_end_date: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
 
@@ -729,6 +802,215 @@ class TBankInvestClient:
             items=tuple(operations),
         )
 
+    def get_dividends(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankDividend, ...]:
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="GetDividends",
+            body=_instrument_window_body(instrument_uid, from_at, to_at),
+        )
+        result: list[TBankDividend] = []
+        for raw in _required_list(payload, "dividends"):
+            item = _required_object(raw, "dividend")
+            payment = _money(item.get("dividendNet"))
+            if payment is None:
+                raise TBankUnavailable("T-Invest dividend has no payment amount")
+            result.append(
+                TBankDividend(
+                    instrument_uid=instrument_uid,
+                    dividend_net=payment,
+                    payment_date=_optional_provider_timestamp(item.get("paymentDate")),
+                    declared_date=_optional_provider_timestamp(item.get("declaredDate")),
+                    last_buy_date=_optional_provider_timestamp(item.get("lastBuyDate")),
+                    record_date=_optional_provider_timestamp(item.get("recordDate")),
+                    dividend_type=_text(item.get("dividendType")).strip(),
+                    regularity=_text(item.get("regularity")).strip(),
+                    yield_value=_quotation(item.get("yieldValue")),
+                    created_at=_optional_provider_timestamp(item.get("createdAt")),
+                )
+            )
+        return tuple(result)
+
+    def get_bond_coupons(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankBondCoupon, ...]:
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="GetBondCoupons",
+            body=_instrument_window_body(instrument_uid, from_at, to_at),
+        )
+        result: list[TBankBondCoupon] = []
+        for raw in _required_list(payload, "events"):
+            item = _required_object(raw, "bond coupon")
+            coupon_date = _optional_provider_timestamp(item.get("couponDate"))
+            payment = _money(item.get("payOneBond"))
+            if coupon_date is None or payment is None:
+                raise TBankUnavailable("T-Invest bond coupon is missing required fields")
+            result.append(
+                TBankBondCoupon(
+                    instrument_uid=instrument_uid,
+                    coupon_date=coupon_date,
+                    coupon_number=_int_value(item.get("couponNumber"), "coupon number"),
+                    fix_date=_optional_provider_timestamp(item.get("fixDate")),
+                    pay_one_bond=payment,
+                    coupon_type=_text(item.get("couponType")).strip(),
+                    coupon_start_date=_optional_provider_timestamp(item.get("couponStartDate")),
+                    coupon_end_date=_optional_provider_timestamp(item.get("couponEndDate")),
+                    coupon_period_days=_int_value(item.get("couponPeriod"), "coupon period"),
+                )
+            )
+        return tuple(result)
+
+    def get_bond_events(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankBondEvent, ...]:
+        body = _instrument_window_body(instrument_uid, from_at, to_at)
+        body["type"] = "EVENT_TYPE_UNSPECIFIED"
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="GetBondEvents",
+            body=body,
+        )
+        result: list[TBankBondEvent] = []
+        for raw in _required_list(payload, "events"):
+            item = _required_object(raw, "bond event")
+            returned_uid = _text(item.get("instrumentId")).strip()
+            if returned_uid and returned_uid != instrument_uid:
+                raise TBankUnavailable("T-Invest bond event instrument does not match request")
+            result.append(
+                TBankBondEvent(
+                    instrument_uid=instrument_uid,
+                    event_number=_int_value(item.get("eventNumber"), "bond event number"),
+                    event_date=_optional_provider_timestamp(item.get("eventDate")),
+                    event_type=_text(item.get("eventType")).strip(),
+                    default_date=_optional_provider_timestamp(item.get("defaultDate")),
+                    real_pay_date=_optional_provider_timestamp(item.get("realPayDate")),
+                    pay_date=_optional_provider_timestamp(item.get("payDate")),
+                    pay_one_bond=_money(item.get("payOneBond")),
+                    execution=_text(item.get("execution")).strip(),
+                    operation_type=_text(item.get("operationType")).strip(),
+                    note=_text(item.get("note")).strip(),
+                )
+            )
+        return tuple(result)
+
+    def get_asset_reports(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankAssetReport, ...]:
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="GetAssetReports",
+            body=_instrument_window_body(instrument_uid, from_at, to_at),
+        )
+        result: list[TBankAssetReport] = []
+        for raw in _required_list(payload, "events"):
+            item = _required_object(raw, "asset report")
+            report_date = _optional_provider_timestamp(item.get("reportDate"))
+            if report_date is None:
+                raise TBankUnavailable("T-Invest asset report has no report date")
+            result.append(
+                TBankAssetReport(
+                    instrument_uid=instrument_uid,
+                    report_date=report_date,
+                    period_year=_int_value(item.get("periodYear"), "report period year"),
+                    period_num=_int_value(item.get("periodNum"), "report period number"),
+                    period_type=_text(item.get("periodType")).strip(),
+                    created_at=_optional_provider_timestamp(item.get("createdAt")),
+                )
+            )
+        return tuple(result)
+
+    def get_asset_fundamentals(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        asset_uids: tuple[str, ...],
+    ) -> tuple[TBankAssetFundamental, ...]:
+        clean = tuple(
+            dict.fromkeys(_validate_provider_id(value, "asset uid") for value in asset_uids)
+        )
+        if not clean:
+            return ()
+        if len(clean) > 100:
+            raise ValueError("T-Invest fundamentals request supports at most 100 assets")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="GetAssetFundamentals",
+            body={"assets": list(clean)},
+        )
+        requested = set(clean)
+        seen: set[str] = set()
+        result: list[TBankAssetFundamental] = []
+        for raw in _required_list(payload, "fundamentals"):
+            item = _required_object(raw, "asset fundamental")
+            asset_uid = _text(item.get("assetUid")).strip()
+            if not asset_uid or asset_uid not in requested or asset_uid in seen:
+                raise TBankUnavailable("T-Invest fundamentals returned invalid asset uid")
+            seen.add(asset_uid)
+            result.append(
+                TBankAssetFundamental(
+                    asset_uid=asset_uid,
+                    currency=_text(item.get("currency")).strip().upper(),
+                    revenue_ttm=_double_text(item.get("revenueTtm")),
+                    ebitda_ttm=_double_text(item.get("ebitdaTtm")),
+                    net_income_ttm=_double_text(item.get("netIncomeTtm")),
+                    free_cash_flow_ttm=_double_text(item.get("freeCashFlowTtm")),
+                    total_debt_mrq=_double_text(item.get("totalDebtMrq")),
+                    total_debt_to_equity_mrq=_double_text(item.get("totalDebtToEquityMrq")),
+                    total_debt_to_ebitda_mrq=_double_text(item.get("totalDebtToEbitdaMrq")),
+                    net_debt_to_ebitda=_double_text(item.get("netDebtToEbitda")),
+                    current_ratio_mrq=_double_text(item.get("currentRatioMrq")),
+                    fixed_charge_coverage_ratio_fy=_double_text(
+                        item.get("fixedChargeCoverageRatioFy")
+                    ),
+                    net_interest_margin_mrq=_double_text(item.get("netInterestMarginMrq")),
+                    roe=_double_text(item.get("roe")),
+                    roa=_double_text(item.get("roa")),
+                    fiscal_period_start_date=_optional_provider_timestamp(
+                        item.get("fiscalPeriodStartDate")
+                    ),
+                    fiscal_period_end_date=_optional_provider_timestamp(
+                        item.get("fiscalPeriodEndDate")
+                    ),
+                )
+            )
+        return tuple(result)
+
     def _post(
         self,
         *,
@@ -803,6 +1085,51 @@ class TBankInvestClient:
         if not isinstance(payload_raw, dict):
             raise TBankUnavailable("T-Invest API returned invalid payload")
         return cast(dict[str, object], payload_raw)
+
+
+def _validate_provider_id(value: str, name: str) -> str:
+    clean = value.strip()
+    if not clean or len(clean) > 256 or "\n" in clean or "\r" in clean:
+        raise ValueError(f"{name} is invalid")
+    return clean
+
+
+def _instrument_window_body(
+    instrument_uid: str,
+    from_at: datetime,
+    to_at: datetime,
+) -> dict[str, object]:
+    if from_at.tzinfo is None or to_at.tzinfo is None:
+        raise ValueError("evidence window boundaries must be timezone-aware")
+    if from_at > to_at:
+        raise ValueError("evidence window start must not be after end")
+    return {
+        "instrumentId": _validate_provider_id(instrument_uid, "instrument uid"),
+        "from": _utc_timestamp(from_at),
+        "to": _utc_timestamp(to_at),
+    }
+
+
+def _int_value(value: object, name: str) -> int:
+    if isinstance(value, bool) or value is None:
+        raise TBankUnavailable(f"T-Invest {name} is invalid")
+    try:
+        return int(str(value))
+    except ValueError as exc:
+        raise TBankUnavailable(f"T-Invest {name} is invalid") from exc
+
+
+def _double_text(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TBankUnavailable("T-Invest API returned invalid double value")
+    number = Decimal(str(value))
+    if not number.is_finite():
+        raise TBankUnavailable("T-Invest API returned non-finite double value")
+    if number == 0:
+        return "0"
+    return format(number.normalize(), "f")
 
 
 def _validate_token(token: str) -> str:
