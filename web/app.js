@@ -1458,9 +1458,11 @@
   const loadAnalysis = async () => {
     if (!tbankIsConnected) {
       resetAnalysis();
-      analysisStatus.textContent = "Подключите счёт T-Invest для анализа.";
+      analysisStatus.textContent = "Подключите счёт T-Invest для живого анализа.";
+      void loadIntelligence();
       return;
     }
+    void loadIntelligence();
     if (analysisInFlight) {
       return;
     }
@@ -1474,7 +1476,6 @@
       const snapshot = await api("/api/broker/tbank/analysis", {method: "GET"});
       if (generation === analysisGeneration && tbankIsConnected) {
         renderAnalysis(snapshot);
-        void loadIntelligence();
       }
     } catch (error) {
       if (error.status === 401) {
