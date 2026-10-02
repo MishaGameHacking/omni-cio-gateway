@@ -14,6 +14,7 @@ from uuid import UUID
 
 from .broker import BrokerObservationBundle
 from .db import Database
+from .risk import InstrumentRiskEvidence, RiskAssessment
 from .risk import (
     FundamentalEvidence,
     InstrumentRiskEvidence,
@@ -1092,6 +1093,432 @@ class PortfolioStore:
                 payouts=payouts,
                 sources=sources,
             )
+
+    def save_risk_evidence(
+        self,
+        user_id: UUID,
+        *,
+        snapshot_id: UUID,
+        evidences: tuple[InstrumentRiskEvidence, ...],
+        assessments: tuple[RiskAssessment, ...],
+    ) -> None:
+        """Persist immutable source evidence plus the snapshot-scoped assessment."""
+        assessment_by_uid = {item.instrument_uid: item for item in assessments}
+        if len(assessment_by_uid) != len(assessments):
+            raise ValueError("risk assessments contain duplicate instrument uid")
+
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            for evidence in evidences:
+                assessment = assessment_by_uid.get(evidence.instrument_uid)
+                if assessment is None:
+                    raise ValueError("risk evidence has no matching assessment")
+
+                sources = {item.source_id: item for item in evidence.sources}
+                if len(sources) != len(evidence.sources):
+                    raise ValueError("risk evidence contains duplicate source id")
+
+                for source in evidence.sources:
+                    cur.execute(
+                        """
+                        INSERT INTO risk_source_runs (
+                            user_id,
+                            snapshot_id,
+                            source_id,
+                            scope_key,
+                            status,
+                            source_url,
+                            retrieved_at,
+                            details
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        ON CONFLICT (snapshot_id, source_id, scope_key)
+                        DO UPDATE SET
+                            status = EXCLUDED.status,
+                            source_url = EXCLUDED.source_url,
+                            retrieved_at = EXCLUDED.retrieved_at,
+                            details = EXCLUDED.details
+                        """,
+                        (
+                            user_id,
+                            snapshot_id,
+                            source.source_id,
+                            source.scope_key,
+                            source.status,
+                            source.source_url,
+                            source.retrieved_at,
+                            _json({}),
+                        ),
+                    )
+
+                if evidence.fundamental is not None:
+                    source = sources.get("tbank_fundamentals")
+                    if source is None:
+                        raise ValueError("fundamental evidence has no source status")
+                    fundamental_payload = {
+                        "asset_uid": evidence.fundamental.asset_uid,
+                        "currency": evidence.fundamental.currency,
+                        "fiscal_period_end": evidence.fundamental.fiscal_period_end,
+                        "metrics": evidence.fundamental.metrics,
+                    }
+                    document_id = self._ensure_source_document(
+                        cur,
+                        user_id=user_id,
+                        source_id=source.source_id,
+                        scope_key=source.scope_key,
+                        document_kind="asset_fundamentals",
+                        source_url=source.source_url,
+                        effective_at=evidence.fundamental.fiscal_period_end,
+                        publication_at=None,
+                        retrieved_at=source.retrieved_at,
+                        payload=fundamental_payload,
+                    )
+                    for metric, value in sorted(evidence.fundamental.metrics.items()):
+                        fact_payload = {
+                            "value": value,
+                            "currency": evidence.fundamental.currency,
+                        }
+                        cur.execute(
+                            """
+                            INSERT INTO source_facts (
+                                user_id,
+                                document_id,
+                                instrument_uid,
+                                asset_uid,
+                                fact_kind,
+                                fact_key,
+                                effective_at,
+                                publication_at,
+                                value_json,
+                                semantic_hash
+                            )
+                            VALUES (
+                                %s, %s, %s, %s, 'fundamental_metric', %s,
+                                %s, NULL, %s::jsonb, %s
+                            )
+                            ON CONFLICT (document_id, fact_key, semantic_hash) DO NOTHING
+                            """,
+                            (
+                                user_id,
+                                document_id,
+                                evidence.instrument_uid,
+                                evidence.fundamental.asset_uid,
+                                metric,
+                                evidence.fundamental.fiscal_period_end,
+                                _json(fact_payload),
+                                _hash_json(fact_payload),
+                            ),
+                        )
+
+                reports_source = sources.get("tbank_reports")
+                if reports_source is not None and reports_source.status == "received":
+                    reports_payload = {
+                        "events": [
+                            {
+                                "report_date": item.report_date,
+                                "period_year": item.period_year,
+                                "period_num": item.period_num,
+                                "period_type": item.period_type,
+                                "created_at": item.created_at,
+                            }
+                            for item in evidence.reports
+                        ]
+                    }
+                    document_id = self._ensure_source_document(
+                        cur,
+                        user_id=user_id,
+                        source_id=reports_source.source_id,
+                        scope_key=reports_source.scope_key,
+                        document_kind="asset_reports",
+                        source_url=reports_source.source_url,
+                        effective_at=max(
+                            (item.report_date for item in evidence.reports),
+                            default=None,
+                        ),
+                        publication_at=max(
+                            (item.report_date for item in evidence.reports),
+                            default=None,
+                        ),
+                        retrieved_at=reports_source.retrieved_at,
+                        payload=reports_payload,
+                    )
+                    for item in evidence.reports:
+                        fact_key = (
+                            f"report:{item.period_year}:{item.period_num}:{item.period_type}"
+                        )
+                        fact_payload = {
+                            "report_date": item.report_date,
+                            "created_at": item.created_at,
+                        }
+                        cur.execute(
+                            """
+                            INSERT INTO source_facts (
+                                user_id,
+                                document_id,
+                                instrument_uid,
+                                fact_kind,
+                                fact_key,
+                                effective_at,
+                                publication_at,
+                                value_json,
+                                semantic_hash
+                            )
+                            VALUES (
+                                %s, %s, %s, 'report_event', %s, %s, %s,
+                                %s::jsonb, %s
+                            )
+                            ON CONFLICT (document_id, fact_key, semantic_hash) DO NOTHING
+                            """,
+                            (
+                                user_id,
+                                document_id,
+                                evidence.instrument_uid,
+                                fact_key,
+                                item.report_date,
+                                item.report_date,
+                                _json(fact_payload),
+                                _hash_json(fact_payload),
+                            ),
+                        )
+
+                payouts_by_source: dict[str, list[object]] = {}
+                for payout in evidence.payouts:
+                    payouts_by_source.setdefault(payout.source_id, []).append(payout)
+
+                for source_id in ("tbank_dividends", "tbank_bond_coupons", "tbank_bond_events"):
+                    source = sources.get(source_id)
+                    if source is None or source.status != "received":
+                        continue
+                    source_payouts = payouts_by_source.get(source_id, [])
+                    document_payload = {
+                        "events": [
+                            {
+                                "event_key": item.event_key,
+                                "kind": item.kind,
+                                "event_date": item.event_date,
+                                "record_date": item.record_date,
+                                "declared_at": item.declared_at,
+                                "provider_payment_at": item.provider_payment_at,
+                                "amount_value": item.amount_value,
+                                "amount_currency": item.amount_currency,
+                                "status": item.status,
+                                "details": item.details,
+                            }
+                            for item in source_payouts
+                        ]
+                    }
+                    document_id = self._ensure_source_document(
+                        cur,
+                        user_id=user_id,
+                        source_id=source.source_id,
+                        scope_key=source.scope_key,
+                        document_kind=source_id.removeprefix("tbank_"),
+                        source_url=source.source_url,
+                        effective_at=max(
+                            (item.event_date for item in source_payouts),
+                            default=None,
+                        ),
+                        publication_at=max(
+                            (
+                                item.declared_at
+                                for item in source_payouts
+                                if item.declared_at is not None
+                            ),
+                            default=None,
+                        ),
+                        retrieved_at=source.retrieved_at,
+                        payload=document_payload,
+                    )
+                    for payout in source_payouts:
+                        normalized = {
+                            "event_key": payout.event_key,
+                            "kind": payout.kind,
+                            "event_date": payout.event_date,
+                            "record_date": payout.record_date,
+                            "declared_at": payout.declared_at,
+                            "provider_payment_at": payout.provider_payment_at,
+                            "amount_value": payout.amount_value,
+                            "amount_currency": payout.amount_currency,
+                            "status": payout.status,
+                            "details": payout.details,
+                        }
+                        semantic_hash = _hash_json(normalized)
+                        cur.execute(
+                            """
+                            INSERT INTO payout_observations (
+                                user_id,
+                                snapshot_id,
+                                source_document_id,
+                                instrument_uid,
+                                event_kind,
+                                event_key,
+                                event_date,
+                                record_date,
+                                declared_at,
+                                provider_payment_at,
+                                amount_value,
+                                amount_currency,
+                                status,
+                                source_id,
+                                source_url,
+                                normalized,
+                                semantic_hash,
+                                observed_at
+                            )
+                            VALUES (
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s
+                            )
+                            ON CONFLICT DO NOTHING
+                            """,
+                            (
+                                user_id,
+                                snapshot_id,
+                                document_id,
+                                evidence.instrument_uid,
+                                payout.kind,
+                                payout.event_key,
+                                payout.event_date,
+                                payout.record_date,
+                                payout.declared_at,
+                                payout.provider_payment_at,
+                                (
+                                    Decimal(payout.amount_value)
+                                    if payout.amount_value is not None
+                                    else None
+                                ),
+                                payout.amount_currency,
+                                payout.status,
+                                payout.source_id,
+                                payout.source_url,
+                                _json(normalized),
+                                semantic_hash,
+                                assessment.evaluated_at,
+                            ),
+                        )
+
+                cur.execute(
+                    """
+                    INSERT INTO risk_assessments (
+                        user_id,
+                        snapshot_id,
+                        instrument_uid,
+                        ticker,
+                        state,
+                        sector_model,
+                        coverage,
+                        reasons,
+                        evaluated_at,
+                        latest_fundamental_period_end,
+                        latest_report_date
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
+                        %s, %s, %s
+                    )
+                    ON CONFLICT (snapshot_id, instrument_uid)
+                    DO UPDATE SET
+                        ticker = EXCLUDED.ticker,
+                        state = EXCLUDED.state,
+                        sector_model = EXCLUDED.sector_model,
+                        coverage = EXCLUDED.coverage,
+                        reasons = EXCLUDED.reasons,
+                        evaluated_at = EXCLUDED.evaluated_at,
+                        latest_fundamental_period_end =
+                            EXCLUDED.latest_fundamental_period_end,
+                        latest_report_date = EXCLUDED.latest_report_date
+                    """,
+                    (
+                        user_id,
+                        snapshot_id,
+                        assessment.instrument_uid,
+                        assessment.ticker,
+                        assessment.state,
+                        assessment.sector_model,
+                        assessment.coverage,
+                        _json([asdict(reason) for reason in assessment.reasons]),
+                        assessment.evaluated_at,
+                        assessment.latest_fundamental_period_end,
+                        assessment.latest_report_date,
+                    ),
+                )
+
+    @staticmethod
+    def _ensure_source_document(
+        cur: Any,
+        *,
+        user_id: UUID,
+        source_id: str,
+        scope_key: str,
+        document_kind: str,
+        source_url: str,
+        effective_at: datetime | None,
+        publication_at: datetime | None,
+        retrieved_at: datetime,
+        payload: dict[str, object],
+    ) -> UUID:
+        content_hash = _hash_json(payload)
+        cur.execute(
+            """
+            INSERT INTO source_documents (
+                user_id,
+                source_id,
+                scope_key,
+                document_kind,
+                source_url,
+                effective_at,
+                publication_at,
+                retrieved_at,
+                content_hash,
+                payload
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (
+                user_id,
+                source_id,
+                scope_key,
+                document_kind,
+                content_hash
+            )
+            DO NOTHING
+            RETURNING id
+            """,
+            (
+                user_id,
+                source_id,
+                scope_key,
+                document_kind,
+                source_url,
+                effective_at,
+                publication_at,
+                retrieved_at,
+                content_hash,
+                _json(payload),
+            ),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            return cast(UUID, cast(dict[str, Any], row)["id"])
+        cur.execute(
+            """
+            SELECT id
+            FROM source_documents
+            WHERE user_id = %s
+              AND source_id = %s
+              AND scope_key = %s
+              AND document_kind = %s
+              AND content_hash = %s
+            """,
+            (user_id, source_id, scope_key, document_kind, content_hash),
+        )
+        existing = cur.fetchone()
+        if existing is None:
+            raise RuntimeError("source document conflict could not be resolved")
+        return cast(UUID, cast(dict[str, Any], existing)["id"])
 
     def save_history_page(
         self,
