@@ -873,7 +873,6 @@ body[data-theme="dark"] .nav-icon-gray { background: #242c37; color: #bec7d4; }
 }
 
 .status-section {
-  margin-top: 18px;
   padding: 22px;
   border-radius: var(--radius-lg);
 }
