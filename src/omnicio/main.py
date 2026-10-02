@@ -217,9 +217,10 @@ def ready(request: Request) -> dict[str, str]:
 def auth_config(request: Request) -> dict[str, object]:
     cfg = settings(request)
     return {
-        "mode": "owner_only",
+        "mode": cfg.access_mode,
         "auth_provider": "vkid",
-        "registration_enabled": False,
+        "registration_enabled": cfg.registration_enabled,
+        "login_enabled": cfg.vkid_ready,
         "owner_login_enabled": cfg.vkid_ready,
         "legal_versions": {
             "privacy_policy": cfg.privacy_version,
@@ -238,11 +239,11 @@ def start_vkid(
     require_same_origin(request)
     cfg = settings(request)
     if not cfg.vkid_ready:
-        raise HTTPException(status_code=503, detail="VK ID owner login is not configured")
+        raise HTTPException(status_code=503, detail="VK ID login is not configured")
     if not (body.accept_privacy and body.accept_personal_data and body.accept_terms):
         raise HTTPException(status_code=400, detail="legal acknowledgments are required")
     if not body.confirm_age_18:
-        raise HTTPException(status_code=400, detail="owner must confirm age 18+")
+        raise HTTPException(status_code=400, detail="user must confirm age 18+")
 
     state_value = generate_oauth_state()
     verifier = generate_pkce_verifier()
@@ -287,19 +288,19 @@ def vkid_callback(
         values = callback_values(request)
         code, device_id = validate_vkid_callback_values(values, expected_state)
 
-        owner = vkid_client(request).exchange_code(
+        identity = vkid_client(request).exchange_code(
             code=code,
             device_id=device_id,
             code_verifier=verifier,
             expected_state=expected_state,
         )
         result = service(request).complete_vkid_login(
-            vk_user_id=owner.user_id,
+            vk_user_id=identity.user_id,
             client_ip=client_ip(request),
             accepted_legal_versions=legal_versions,
         )
     except OwnerAccessDenied:
-        return auth_redirect("/?auth_error=owner")
+        return auth_redirect("/?auth_error=access")
     except (SecurityValueError, VKIDRejected):
         return auth_redirect("/?auth_error=flow")
     except (VKIDUnavailable, LoginUnavailable):
