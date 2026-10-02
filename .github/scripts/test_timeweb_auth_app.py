@@ -208,6 +208,23 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_legal_templates_require_operator_placeholders(self) -> None:
         MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
 
+    def test_legacy_reset_is_disabled_without_full_cutover_gates(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
+            os.environ["REGISTRATION_ENABLED"] = "false"
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            ssh = FakeSsh(True)
+            MODULE.retire_legacy_profile(ssh)
+            self.assertEqual(ssh.commands, [])
+
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            MODULE.retire_legacy_profile(ssh)
+            self.assertEqual(ssh.commands, [])
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
     def test_legacy_reset_only_targets_public_id_one(self) -> None:
         old = dict(os.environ)
         try:
