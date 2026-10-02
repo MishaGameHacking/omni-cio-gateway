@@ -129,7 +129,7 @@ class PortfolioObserver:
             details["account_access"] = account.access_level
             details["account_status"] = account.status
 
-            bundle = self.broker.observation_bundle(user_id)
+            bundle = self.broker.observation_bundle(user_id, full_catalog=True)
             self.store.save_snapshot(
                 user_id,
                 job_run_id=job.id,
