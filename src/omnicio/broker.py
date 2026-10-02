@@ -34,7 +34,6 @@ from .tbank import (
     TBankUserInfo,
 )
 
-
 # T-Invest documents 200 unary requests/minute for InstrumentsService.
 # 0.31s keeps evidence reads below that ceiling with a small scheduling margin.
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
