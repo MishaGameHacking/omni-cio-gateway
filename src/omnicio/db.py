@@ -17,6 +17,7 @@ class UserRecord:
     id: UUID
     public_id: int
     status: str
+    role: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +100,7 @@ class Database:
             )
             cur.execute(
                 """
-                SELECT u.id, u.public_id, u.status
+                SELECT u.id, u.public_id, u.status, u.role
                 FROM users AS u
                 JOIN vkid_identities AS v ON v.user_id = u.id
                 WHERE v.vk_user_id = %s
@@ -134,7 +135,7 @@ class Database:
                     raise RegistrationCapacityError("registration capacity reached")
 
                 cur.execute(
-                    "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status"
+                    "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role"
                 )
                 inserted = cur.fetchone()
                 if inserted is None:
@@ -232,7 +233,7 @@ class Database:
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
                   AND u.status = 'active'
-                RETURNING u.id, u.public_id, u.status
+                RETURNING u.id, u.public_id, u.status, u.role
                 """,
                 (session_ttl_seconds, token_digest),
             )
@@ -370,7 +371,7 @@ class Database:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, public_id, status
+                SELECT id, public_id, status, role
                 FROM users
                 WHERE public_id = %s
                 """,
@@ -435,7 +436,7 @@ class Database:
                 UPDATE users
                 SET status = %s, updated_at = now()
                 WHERE id = %s
-                RETURNING id, public_id, status
+                RETURNING id, public_id, status, role
                 """,
                 (target_status, user.id),
             )
@@ -467,7 +468,7 @@ class Database:
     def _support_locked_user(cur: Any, public_id: int) -> UserRecord | None:
         cur.execute(
             """
-            SELECT id, public_id, status
+            SELECT id, public_id, status, role
             FROM users
             WHERE public_id = %s
             FOR UPDATE
@@ -485,6 +486,7 @@ def _user(row: dict[str, Any]) -> UserRecord:
         id=row["id"],
         public_id=int(row["public_id"]),
         status=str(row["status"]),
+        role=str(row["role"]),
     )
 
 
