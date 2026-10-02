@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
@@ -322,12 +323,19 @@ class BrokerService:
         window_from = observed_at - timedelta(days=400)
         window_to = observed_at + timedelta(days=400)
 
-        held_uids = {
-            (position.instrument_uid or position.figi)
+        held_positions = tuple(
+            position
             for position in bundle.portfolio.positions
-            if position.instrument_type != "currency" and position.quantity != "0"
-        }
-        metadata = tuple(item for item in bundle.metadata if item.uid in held_uids)
+            if position.instrument_type != "currency"
+            and Decimal(position.quantity) != 0
+        )
+        held_uids = {position.instrument_uid for position in held_positions if position.instrument_uid}
+        held_figis = {position.figi for position in held_positions if position.figi}
+        metadata = tuple(
+            item
+            for item in bundle.metadata
+            if item.uid in held_uids or (item.figi and item.figi in held_figis)
+        )
         asset_uids = tuple(dict.fromkeys(item.asset_uid for item in metadata if item.asset_uid))
 
         fundamentals: list[TBankAssetFundamental] = []
@@ -452,7 +460,7 @@ class BrokerService:
                 ),
                 AnalysisSource(
                     id="credit_ratings",
-                    name="Кредитные рейтинги: разрешённый feed не подключён",
+                    name="Банк России: реестр КРА — только gate источников",
                     url="https://www.cbr.ru/finm_infrastructure/ra/",
                     methods=(),
                     retrieved_at=observed_at,
