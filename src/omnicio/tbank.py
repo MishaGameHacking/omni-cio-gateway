@@ -1229,8 +1229,10 @@ def _double_text(value: object) -> str | None:
         raise TBankUnavailable("T-Invest API returned invalid decimal value") from exc
     if not amount.is_finite():
         raise TBankUnavailable("T-Invest API returned non-finite decimal value")
+    # T-Invest documents zero-valued fundamentals as unavailable data.
+    # Preserve that contract instead of turning a provider sentinel into a real metric.
     if amount == 0:
-        return "0"
+        return None
     return format(amount.normalize(), "f")
 
 
