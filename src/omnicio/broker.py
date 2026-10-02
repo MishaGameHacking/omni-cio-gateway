@@ -464,8 +464,8 @@ class BrokerService:
                 ),
                 AnalysisSource(
                     id="credit_ratings",
-                    name="Банк России: реестр КРА — только gate источников",
-                    url="https://www.cbr.ru/finm_infrastructure/ra/",
+                    name="Банк России: рейтинговый репозитарий — reference only",
+                    url="https://ratings.cbr.ru/",
                     methods=(),
                     retrieved_at=observed_at,
                     status="not_requested",
