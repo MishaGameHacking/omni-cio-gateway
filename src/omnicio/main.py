@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -67,12 +68,16 @@ class TBankConnectBody(TBankCredentialBody):
 
 def client_ip(request: Request) -> str:
     direct = request.client.host if request.client else ""
+    candidate = direct
     if direct in {"127.0.0.1", "::1"}:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        first = forwarded.split(",", 1)[0].strip()
-        if first:
-            return first
-    return direct or "unknown"
+        # Nginx overwrites X-Real-IP with the TCP peer address. Do not trust the
+        # first X-Forwarded-For element because a client can supply it itself.
+        candidate = request.headers.get("x-real-ip", "").strip()
+
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return "unknown"
 
 
 def require_same_origin(request: Request) -> None:
