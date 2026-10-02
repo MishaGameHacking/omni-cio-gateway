@@ -239,7 +239,7 @@ def test_provider_read_retries_unavailable_reads_with_bounded_jitter() -> None:
         return "ok"
 
     with (
-        patch("omnicio.observer.random.random", side_effect=[0.0, 1.0]),
+        patch("omnicio.observer.secrets.randbelow", side_effect=[0, 1000]),
         patch("omnicio.observer.time.sleep") as sleep,
     ):
         assert provider_read(operation) == "ok"
