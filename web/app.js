@@ -1331,7 +1331,8 @@
 
   const RISK_REASON_LABELS = {
     tbank_bond_event_contains_default_date: "T-Invest содержит подтверждённую дату дефолта",
-    credit_rating_feed_not_verified: "Разрешённый источник кредитного рейтинга не подключён",
+    credit_rating_data_missing: "Структурированный кредитный рейтинг не подтверждён",
+    credit_rating_data_stale: "Данные кредитного рейтинга устарели",
     fundamental_data_missing: "Фундаментальные показатели отсутствуют",
     fundamental_data_stale: "Фундаментальные показатели устарели",
     provider_evidence_stale: "Доказательства давно не обновлялись",
