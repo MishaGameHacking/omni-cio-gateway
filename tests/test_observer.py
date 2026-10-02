@@ -17,6 +17,11 @@ from omnicio.tbank import (
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+LEGAL_VERSIONS = {
+    "privacy_policy": "2026-10-02-v6",
+    "personal_data_consent": "2026-10-02-v6",
+    "terms": "2026-10-02-v6",
+}
 
 
 def analysis(status: str = "observed") -> PortfolioAnalysis:
@@ -79,7 +84,8 @@ class FakeStore:
         self.saved_pages: list[str] = []
         self.claimed = False
 
-    def observer_user_ids(self) -> tuple[UUID, ...]:
+    def observer_user_ids(self, legal_versions: dict[str, str]) -> tuple[UUID, ...]:
+        assert legal_versions == LEGAL_VERSIONS
         return (USER_ID,)
 
     def claim_daily_job(self, user_id: UUID, *, job_type: str, scheduled_for: date):
@@ -194,7 +200,7 @@ class FakeBroker:
 def test_daily_observer_pages_history_and_finishes_once() -> None:
     store = FakeStore()
     broker = FakeBroker()
-    observer = PortfolioObserver(store, broker)
+    observer = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
 
     result = observer.run_user(USER_ID, now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC))
 
@@ -223,7 +229,11 @@ def test_daily_observer_resumes_durable_cursor_window() -> None:
         pages={"resume-me": TBankOperationsPage(False, "", ())},
     )
 
-    result = PortfolioObserver(store, broker).run_user(
+    result = PortfolioObserver(
+        store,
+        broker,
+        legal_versions=LEGAL_VERSIONS,
+    ).run_user(
         USER_ID,
         now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
     )
