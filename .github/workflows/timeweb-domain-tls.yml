@@ -9,6 +9,8 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_domain_tls.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_domain_tls.py"
   schedule:
     - cron: "*/15 * * * *"
@@ -36,6 +38,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 .github/scripts/test_timeweb_ssh_trust.py
           python3 .github/scripts/test_timeweb_domain_tls.py
 
   configure:
@@ -50,6 +53,7 @@ jobs:
     timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
 
     steps:
       - name: Checkout accepted main state
@@ -62,6 +66,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/verify_main_release.py
+
+      - name: Validate verified SSH server key
+        run: python3 .github/scripts/timeweb_ssh_trust.py
 
       - name: Validate Timeweb secret
         shell: bash

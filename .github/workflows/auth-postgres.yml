@@ -9,6 +9,8 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
   push:
@@ -19,6 +21,8 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
   workflow_dispatch:
@@ -46,7 +50,9 @@ jobs:
         run: python3 -m py_compile .github/scripts/timeweb_auth_postgres.py
 
       - name: Run reconciler tests
-        run: python3 .github/scripts/test_timeweb_auth_postgres.py
+        run: |
+          python3 .github/scripts/test_timeweb_ssh_trust.py
+          python3 .github/scripts/test_timeweb_auth_postgres.py
 
   reconcile:
     permissions:
@@ -60,6 +66,7 @@ jobs:
     timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
       SERVER_NAME: omni-cio-white-site
       SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
       VPC_NAME: omni-cio-private
@@ -85,6 +92,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/verify_main_release.py
+
+      - name: Validate verified SSH server key
+        run: python3 .github/scripts/timeweb_ssh_trust.py
 
       - name: Validate Timeweb secret
         run: |
