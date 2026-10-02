@@ -1170,7 +1170,9 @@
     "www.cbr.ru",
     "ratings.cbr.ru",
     "raexpert.ru",
+    "acra-ratings.ru",
     "www.raexpert.ru",
+    "www.acra-ratings.ru",
   ]);
 
   const analysisSourceNode = (source) => {
@@ -1457,6 +1459,19 @@
         source.retrieved_at ? "получено " + formatDateTime(source.retrieved_at) : "",
         Number.isFinite(Number(source.versions)) ? "версий: " + source.versions : "",
       ].filter(Boolean).join(" · ");
+      row.append(title, details);
+      intelligenceSources.append(row);
+    });
+    (snapshot.rating_sources || []).forEach((source) => {
+      const row = document.createElement("div");
+      const title = analysisSourceNode({
+        name: source.name || "Официальный источник рейтингов",
+        url: source.url || "",
+      });
+      const details = document.createElement("small");
+      details.textContent = source.access === "public_reference"
+        ? "Открытый официальный источник · автоматическое извлечение не подтверждено"
+        : "Официальный структурированный feed · требуется отдельный доступ/подписка";
       row.append(title, details);
       intelligenceSources.append(row);
     });
