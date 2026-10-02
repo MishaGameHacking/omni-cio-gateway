@@ -6,8 +6,8 @@ from pathlib import Path
 from uuid import UUID
 
 import psycopg
-from psycopg import sql
 import pytest
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
