@@ -22,6 +22,24 @@ EvidenceStatus = Literal["received", "partial", "unavailable"]
 DataStatus = Literal["data_missing", "received", "stale", "not_applicable"]
 
 FUNDAMENTAL_MAX_AGE = timedelta(days=550)
+MONETARY_FUNDAMENTAL_FIELDS = (
+    "revenue_ttm",
+    "ebitda_ttm",
+    "net_income_ttm",
+    "free_cash_flow_ttm",
+    "total_debt_mrq",
+)
+RATIO_FUNDAMENTAL_FIELDS = (
+    "total_debt_to_equity_mrq",
+    "total_debt_to_ebitda_mrq",
+    "net_debt_to_ebitda",
+    "current_ratio_mrq",
+    "fixed_charge_coverage_ratio_fy",
+    "net_interest_margin_mrq",
+    "roe",
+    "roa",
+)
+FUNDAMENTAL_FIELDS = MONETARY_FUNDAMENTAL_FIELDS + RATIO_FUNDAMENTAL_FIELDS
 TBANK_INSTRUMENTS_SOURCE = "https://developer.tbank.ru/invest/services/instruments/methods"
 
 
@@ -360,24 +378,9 @@ def _fundamental_document(
 ) -> EvidenceDocument:
     payload = asdict(item)
     facts: list[EvidenceFact] = []
-    monetary_fields = {
-        "revenue_ttm",
-        "ebitda_ttm",
-        "net_income_ttm",
-        "free_cash_flow_ttm",
-        "total_debt_mrq",
-    }
-    ratio_fields = {
-        "total_debt_to_equity_mrq",
-        "total_debt_to_ebitda_mrq",
-        "net_debt_to_ebitda",
-        "current_ratio_mrq",
-        "fixed_charge_coverage_ratio_fy",
-        "net_interest_margin_mrq",
-        "roe",
-        "roa",
-    }
-    for name in (*sorted(monetary_fields), *sorted(ratio_fields)):
+    monetary_fields = set(MONETARY_FUNDAMENTAL_FIELDS)
+    ratio_fields = set(RATIO_FUNDAMENTAL_FIELDS)
+    for name in FUNDAMENTAL_FIELDS:
         raw = getattr(item, name)
         if raw is None:
             continue
@@ -426,7 +429,12 @@ def _fundamental_status(
         return "data_missing"
     if item.fiscal_period_end_date is None:
         return "data_missing"
-    if assessed_at - item.fiscal_period_end_date.astimezone(UTC) > FUNDAMENTAL_MAX_AGE:
+    if not any(getattr(item, field) is not None for field in FUNDAMENTAL_FIELDS):
+        return "data_missing"
+    period_end = item.fiscal_period_end_date.astimezone(UTC)
+    if period_end > assessed_at:
+        return "data_missing"
+    if assessed_at - period_end > FUNDAMENTAL_MAX_AGE:
         return "stale"
     return "received"
 
