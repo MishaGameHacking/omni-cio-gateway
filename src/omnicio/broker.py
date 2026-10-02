@@ -453,7 +453,7 @@ class BrokerService:
                 AnalysisSource(
                     id="credit_ratings",
                     name="Кредитные рейтинги: разрешённый feed не подключён",
-                    url="https://www.cbr.ru/finorg/foinfo/ratings/",
+                    url="https://www.cbr.ru/finm_infrastructure/ra/",
                     methods=(),
                     retrieved_at=observed_at,
                     status="not_requested",
