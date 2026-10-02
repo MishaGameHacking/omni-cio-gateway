@@ -489,6 +489,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank/accounts",
             "/api/broker/tbank/portfolio",
             "/api/broker/tbank/analysis",
+            "/api/portfolio/intelligence",
             "/api/broker/tbank/instruments/search",
             "/api/market/usd-rub",
             "/api/market/usd-rub/stream",
