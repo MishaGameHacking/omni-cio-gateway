@@ -960,3 +960,115 @@ def test_analysis_metadata_outage_is_partial_and_calls_are_bounded_by_kind() -> 
     assert snapshot.sources[-1].status == "partial"
     assert snapshot.analysis.rub_cash_unblocked == "100"
     assert "t.fake" not in repr(snapshot)
+
+
+def test_tbank_asset_fundamentals_are_batched_and_finite() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "fundamentals": [
+                {
+                    "assetUid": "asset-1",
+                    "currency": "rub",
+                    "revenueTtm": 1250.5,
+                    "ebitdaTtm": 200.0,
+                    "netIncomeTtm": 100.0,
+                    "freeCashFlowTtm": 80.0,
+                    "totalDebtMrq": 300.0,
+                    "totalDebtToEquityMrq": 0.4,
+                    "totalDebtToEbitdaMrq": 1.5,
+                    "netDebtToEbitda": 1.2,
+                    "currentRatioMrq": 1.3,
+                    "fixedChargeCoverageRatioFy": 4.1,
+                    "netInterestMarginMrq": 0.0,
+                    "roe": 0.15,
+                    "roa": 0.08,
+                    "fiscalPeriodStartDate": "2025-01-01T00:00:00Z",
+                    "fiscalPeriodEndDate": "2025-12-31T00:00:00Z",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_asset_fundamentals(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            ("asset-1", "asset-1"),
+        )
+
+    assert len(result) == 1
+    assert result[0].asset_uid == "asset-1"
+    assert result[0].revenue_ttm == "1250.5"
+    assert result[0].net_interest_margin_mrq == "0"
+    assert result[0].fiscal_period_end_date == datetime(2025, 12, 31, tzinfo=UTC)
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/GetAssetFundamentals")
+    assert json.loads(request.data.decode()) == {"assets": ["asset-1"]}
+
+
+def test_tbank_bond_events_preserve_documented_default_date() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "events": [
+                {
+                    "instrumentId": "bond-uid",
+                    "eventNumber": 8,
+                    "eventDate": "2026-09-20T00:00:00Z",
+                    "eventType": "EVENT_TYPE_COUPON",
+                    "defaultDate": "2026-09-30T00:00:00Z",
+                    "payDate": "2026-09-25T00:00:00Z",
+                    "payOneBond": {"currency": "rub", "units": "50", "nano": 0},
+                    "execution": "not_executed",
+                    "operationType": "OPERATION_TYPE_COUPON",
+                    "note": "",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        events = client.get_bond_events(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            from_at=datetime(2026, 9, 1, tzinfo=UTC),
+            to_at=datetime(2026, 10, 2, tzinfo=UTC),
+        )
+
+    assert events[0].default_date == datetime(2026, 9, 30, tzinfo=UTC)
+    assert events[0].pay_one_bond == TBankMoney("RUB", "50")
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/GetBondEvents")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": "bond-uid",
+        "from": "2026-09-01T00:00:00Z",
+        "to": "2026-10-02T00:00:00Z",
+        "type": "EVENT_TYPE_UNSPECIFIED",
+    }
+
+
+def test_tbank_fundamentals_reject_non_finite_provider_values() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "fundamentals": [
+                {
+                    "assetUid": "asset-1",
+                    "currency": "rub",
+                    "revenueTtm": float("inf"),
+                }
+            ]
+        }
+    )
+
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(TBankUnavailable, match="non-finite"),
+    ):
+        client.get_asset_fundamentals(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            ("asset-1",),
+        )
