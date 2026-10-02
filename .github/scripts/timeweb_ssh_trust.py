@@ -5,8 +5,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import ipaddress
-import re
 import os
+import re
 import pathlib
 import sys
 import tomllib
