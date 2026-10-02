@@ -133,6 +133,7 @@ class SshTrustTests(unittest.TestCase):
     def test_production_ssh_mutations_share_one_serial_queue(self) -> None:
         workflows = (
             "timeweb-domain-tls.yml",
+            "auth-private-network.yml",
             "auth-postgres.yml",
             "auth-app-deploy.yml",
         )
@@ -144,6 +145,48 @@ class SshTrustTests(unittest.TestCase):
                 self.assertIn("queue: max", content)
                 self.assertIn("cancel-in-progress: false", content)
 
+
+    def test_postgres_tolerates_slow_provider_key_propagation(self) -> None:
+        ssh_attempts = 0
+
+        def execute(
+            args: list[str], **kwargs: object,
+        ) -> subprocess.CompletedProcess[str]:
+            nonlocal ssh_attempts
+            if args[0] == "/usr/bin/ssh-keygen":
+                private_key = pathlib.Path(args[args.index("-f") + 1])
+                private_key.with_suffix(".pub").write_text("synthetic-public-key")
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+            ssh_attempts += 1
+            if ssh_attempts <= 18:
+                return subprocess.CompletedProcess(
+                    args,
+                    255,
+                    stdout="",
+                    stderr=f"root@{SERVER}: Permission denied (publickey).",
+                )
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        with patch.dict(
+            os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY},
+        ), patch.object(
+            subprocess, "run", side_effect=execute,
+        ), patch.object(
+            postgres.time, "sleep",
+        ) as sleep:
+            client = Mock()
+            client.create_ssh_key.return_value = 123
+            with postgres.EphemeralSsh(
+                client=client, server_id=9235089, server_ip=SERVER,
+            ):
+                pass
+
+        self.assertEqual(ssh_attempts, 19)
+        self.assertEqual(sleep.call_count, 18)
+        client.attach_ssh_key.assert_called_once_with(9235089, 123)
+        client.detach_ssh_key.assert_called_once_with(9235089, 123)
+        client.delete_ssh_key.assert_called_once_with(123)
 
     def test_key_generation_failure_cleans_postgres_temporary_directory(self) -> None:
         with patch.dict(os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY}), patch.object(
