@@ -1864,6 +1864,14 @@
         );
         return;
       }
+      if (error.status === 409) {
+        showMessage(
+          investmentProfileMessage,
+          "Требуется обновить согласие с правилами. Выйдите из аккаунта и снова войдите через VK ID.",
+          true,
+        );
+        return;
+      }
       if (error.status === 422) {
         showMessage(
           investmentProfileMessage,
