@@ -130,6 +130,21 @@ class SshTrustTests(unittest.TestCase):
             client.delete_ssh_key.assert_called_once_with(123)
             self.assertTrue(all(not path.exists() for path in paths))
 
+    def test_production_ssh_mutations_share_one_serial_queue(self) -> None:
+        workflows = (
+            "timeweb-domain-tls.yml",
+            "auth-postgres.yml",
+            "auth-app-deploy.yml",
+        )
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        for filename in workflows:
+            with self.subTest(filename=filename):
+                content = (workflow_dir / filename).read_text()
+                self.assertIn("group: omnicio-production-ssh", content)
+                self.assertIn("queue: max", content)
+                self.assertIn("cancel-in-progress: false", content)
+
+
     def test_key_generation_failure_cleans_postgres_temporary_directory(self) -> None:
         with patch.dict(os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY}), patch.object(
             subprocess, "run", side_effect=subprocess.CalledProcessError(1, "keygen"),
