@@ -93,7 +93,7 @@ jobs:
           - name: Security tests
             command: '"%OMNICIO_PYTHON%" -m pytest tests/test_security.py'
           - name: Service and support tests
-            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_vkid.py tests/test_support.py tests/test_broker.py tests/test_portfolio.py'
+            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_vkid.py tests/test_support.py tests/test_broker.py tests/test_portfolio.py tests/test_observer.py'
 
     steps:
       - name: Checkout accepted main state
