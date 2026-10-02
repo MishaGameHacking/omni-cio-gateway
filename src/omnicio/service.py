@@ -1,11 +1,16 @@
-"""Owner authentication business logic."""
+"""VK ID authentication and registration business logic."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from .config import Settings, positive_numeric_id
-from .db import Database, UserRecord
+from .db import (
+    Database,
+    RegistrationCapacityError,
+    RegistrationClosedError,
+    UserRecord,
+)
 from .security import (
     client_ip_digest,
     format_public_id,
@@ -19,11 +24,15 @@ class AuthError(RuntimeError):
 
 
 class LoginUnavailable(AuthError):
-    """Owner login is not operationally ready."""
+    """VK ID login is not operationally ready."""
 
 
-class OwnerAccessDenied(AuthError):
-    """The VK ID subject does not match the configured private owner."""
+class RegistrationClosed(AuthError):
+    """A new VK ID cannot create an account while registration is closed."""
+
+
+class RegistrationCapacityReached(AuthError):
+    """A new VK ID cannot create an account because all slots are occupied."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,11 +66,6 @@ class AuthService:
             raise LoginUnavailable("VK ID login is not enabled")
         if not positive_numeric_id(vk_user_id):
             raise LoginUnavailable("VK ID subject is invalid")
-        if (
-            not self.settings.registration_enabled
-            and vk_user_id != self.settings.owner_vk_id
-        ):
-            raise OwnerAccessDenied("VK ID account is not the configured owner")
         if accepted_legal_versions != self.legal_versions():
             raise LoginUnavailable("legal document versions changed")
 
@@ -69,17 +73,20 @@ class AuthService:
         token_hash = session_digest(token)
         ip_hash = client_ip_digest(client_ip, self.settings.ip_key)
 
-        user, created = self.database.complete_vkid_login(
-            vk_user_id=vk_user_id,
-            client_ip_hash=ip_hash,
-            session_token_digest=token_hash,
-            session_ttl_seconds=self.settings.session_ttl_seconds,
-            legal_versions=accepted_legal_versions,
-            reuse_existing_user=(
-                bool(self.settings.owner_vk_id)
-                and vk_user_id == self.settings.owner_vk_id
-            ),
-        )
+        try:
+            user, created = self.database.complete_vkid_login(
+                vk_user_id=vk_user_id,
+                client_ip_hash=ip_hash,
+                session_token_digest=token_hash,
+                session_ttl_seconds=self.settings.session_ttl_seconds,
+                legal_versions=accepted_legal_versions,
+                registration_enabled=self.settings.registration_enabled,
+                registration_max_users=self.settings.registration_max_users,
+            )
+        except RegistrationClosedError as exc:
+            raise RegistrationClosed(str(exc)) from exc
+        except RegistrationCapacityError as exc:
+            raise RegistrationCapacityReached(str(exc)) from exc
         return LoginSucceeded(
             session_token=token,
             public_id=format_public_id(user.public_id),
@@ -92,11 +99,6 @@ class AuthService:
             return None
         return self.database.refresh_session_digest(
             session_digest(token),
-            required_vk_user_id=(
-                None
-                if self.settings.registration_enabled
-                else self.settings.owner_vk_id
-            ),
             session_ttl_seconds=self.settings.session_ttl_seconds,
         )
 
