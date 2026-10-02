@@ -5,9 +5,10 @@ import os
 
 import pytest
 from cryptography.fernet import Fernet
+from fastapi import HTTPException
 from starlette.requests import Request
 
-from omnicio.main import client_ip
+from omnicio.main import CANONICAL_ORIGIN, client_ip, require_same_origin
 from omnicio.security import (
     SecurityValueError,
     client_ip_digest,
@@ -165,3 +166,13 @@ def test_client_ip_rejects_invalid_proxy_value() -> None:
     )
 
     assert client_ip(request) == "unknown"
+
+
+def test_state_changing_requests_require_canonical_origin() -> None:
+    accepted = _request("127.0.0.1", {"origin": CANONICAL_ORIGIN})
+    require_same_origin(accepted)
+
+    for headers in ({}, {"origin": "https://evil.example"}):
+        with pytest.raises(HTTPException) as error:
+            require_same_origin(_request("127.0.0.1", headers))
+        assert error.value.status_code == 403
