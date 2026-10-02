@@ -259,6 +259,63 @@ class Database:
                 (token_digest,),
             )
 
+    def delete_user_account(self, user_id: UUID) -> bool:
+        """Permanently delete one authenticated user's account and linked data."""
+
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT vk_user_id
+                FROM vkid_identities
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            identity = cur.fetchone()
+            if identity is None:
+                return False
+
+            vk_user_id = str(cast(dict[str, Any], identity)["vk_user_id"])
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (vk_user_id,),
+            )
+            cur.execute(
+                """
+                SELECT u.id, u.public_id, u.status, u.role
+                FROM users AS u
+                JOIN vkid_identities AS v ON v.user_id = u.id
+                WHERE u.id = %s
+                  AND v.vk_user_id = %s
+                FOR UPDATE
+                """,
+                (user_id, vk_user_id),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return False
+
+            user = _user(cast(dict[str, Any], fetched))
+            if user.status != "active":
+                raise PermissionError("account is not active")
+
+            cur.execute(
+                """
+                INSERT INTO audit_events (user_id, event_type, metadata)
+                VALUES (%s, 'self_account_deleted', '{"source":"settings"}'::jsonb)
+                """,
+                (user.id,),
+            )
+            cur.execute(
+                """
+                DELETE FROM users
+                WHERE id = %s
+                RETURNING id
+                """,
+                (user.id,),
+            )
+            return cur.fetchone() is not None
+
     def tbank_connection(self, user_id: UUID) -> TBankConnectionRecord | None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
