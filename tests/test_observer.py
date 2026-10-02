@@ -247,7 +247,11 @@ def test_missing_account_open_date_degrades_without_inventing_history() -> None:
     store = FakeStore()
     broker = FakeBroker(opened_at=None)
 
-    result = PortfolioObserver(store, broker).run_user(
+    result = PortfolioObserver(
+        store,
+        broker,
+        legal_versions=LEGAL_VERSIONS,
+    ).run_user(
         USER_ID,
         now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
     )
