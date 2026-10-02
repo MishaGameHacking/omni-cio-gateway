@@ -19,6 +19,8 @@ class FakeDatabase:
         self.refreshed_ttl: int | None = None
         self.completed_vk_user_id: str | None = None
         self.accepted_versions: dict[str, str] | None = None
+        self.reuse_existing_user: bool | None = None
+        self.required_vk_user_id: str | None = None
         self.user = UserRecord(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             public_id=1,
@@ -28,6 +30,7 @@ class FakeDatabase:
     def complete_vkid_login(self, **kwargs):
         self.completed_vk_user_id = kwargs["vk_user_id"]
         self.accepted_versions = kwargs["legal_versions"]
+        self.reuse_existing_user = kwargs["reuse_existing_user"]
         self.session_digest = kwargs["session_token_digest"]
         return self.user, True
 
@@ -35,10 +38,11 @@ class FakeDatabase:
         self,
         token_digest,
         *,
-        owner_vk_id,
+        required_vk_user_id,
         session_ttl_seconds,
     ):
-        self.refreshed_owner_vk_id = owner_vk_id
+        self.refreshed_owner_vk_id = required_vk_user_id
+        self.required_vk_user_id = required_vk_user_id
         self.refreshed_ttl = session_ttl_seconds
         if token_digest == self.session_digest:
             return self.user
@@ -58,6 +62,7 @@ def settings(**overrides: object) -> Settings:
         "vkid_app_id": "123456",
         "owner_vk_id": "987654321",
         "vkid_login_enabled": True,
+        "registration_enabled": False,
         "privacy_version": "2026-10-01-v2",
         "consent_version": "2026-10-01-v2",
         "terms_version": "2026-10-01-v2",
@@ -82,6 +87,7 @@ def test_vkid_owner_login_creates_session() -> None:
     assert result.created is True
     assert db.completed_vk_user_id == "987654321"
     assert db.accepted_versions == auth.legal_versions()
+    assert db.reuse_existing_user is True
     assert auth.refresh_session(result.session_token) == db.user
     assert db.refreshed_owner_vk_id == "987654321"
     assert db.refreshed_ttl == 34_560_000
@@ -102,6 +108,50 @@ def test_vkid_login_rejects_non_owner_before_session_creation() -> None:
     assert db.completed_vk_user_id is None
 
 
+def test_open_registration_creates_separate_non_owner_identity() -> None:
+    db = FakeDatabase()
+    auth = AuthService(settings(registration_enabled=True), db)
+
+    result = auth.complete_vkid_login(
+        vk_user_id="111111111",
+        client_ip="203.0.113.11",
+        accepted_legal_versions=auth.legal_versions(),
+    )
+
+    assert result.created is True
+    assert db.completed_vk_user_id == "111111111"
+    assert db.reuse_existing_user is False
+    assert auth.refresh_session(result.session_token) == db.user
+    assert db.required_vk_user_id is None
+
+
+def test_open_registration_still_reuses_legacy_owner_identity() -> None:
+    db = FakeDatabase()
+    auth = AuthService(settings(registration_enabled=True), db)
+
+    auth.complete_vkid_login(
+        vk_user_id="987654321",
+        client_ip="203.0.113.10",
+        accepted_legal_versions=auth.legal_versions(),
+    )
+
+    assert db.reuse_existing_user is True
+
+
+def test_open_registration_rejects_malformed_provider_subject() -> None:
+    db = FakeDatabase()
+    auth = AuthService(settings(registration_enabled=True), db)
+
+    with pytest.raises(LoginUnavailable):
+        auth.complete_vkid_login(
+            vk_user_id="not-a-vk-id",
+            client_ip="203.0.113.10",
+            accepted_legal_versions=auth.legal_versions(),
+        )
+
+    assert db.session_digest is None
+
+
 def test_vkid_login_rejects_stale_legal_versions() -> None:
     db = FakeDatabase()
     auth = AuthService(settings(), db)
@@ -118,6 +168,18 @@ def test_vkid_login_rejects_stale_legal_versions() -> None:
         )
 
     assert db.session_digest is None
+
+
+def test_open_mode_can_be_ready_without_owner_id() -> None:
+    cfg = settings(registration_enabled=True, owner_vk_id="")
+    assert cfg.vkid_ready is True
+    assert cfg.access_mode == "open"
+
+
+def test_owner_only_mode_requires_owner_id() -> None:
+    cfg = settings(registration_enabled=False, owner_vk_id="")
+    assert cfg.vkid_ready is False
+    assert cfg.access_mode == "owner_only"
 
 
 def test_session_fails_closed_when_vkid_is_not_configured() -> None:
