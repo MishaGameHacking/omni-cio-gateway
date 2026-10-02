@@ -78,6 +78,11 @@ class Database:
                     AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL
                     AND to_regclass('public.operation_observations') IS NOT NULL
                     AND to_regclass('public.broker_sync_state') IS NOT NULL
+                    AND to_regclass('public.source_documents') IS NOT NULL
+                    AND to_regclass('public.source_facts') IS NOT NULL
+                    AND to_regclass('public.risk_source_runs') IS NOT NULL
+                    AND to_regclass('public.payout_observations') IS NOT NULL
+                    AND to_regclass('public.risk_assessments') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
@@ -86,7 +91,7 @@ class Database:
                           AND column_name = 'role'
                     )
                     AND (
-                        SELECT count(*) = 7
+                        SELECT count(*) = 12
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -98,7 +103,12 @@ class Database:
                                   'portfolio_snapshots',
                                   'portfolio_snapshot_positions',
                                   'operation_observations',
-                                  'broker_sync_state'
+                                  'broker_sync_state',
+                                  'source_documents',
+                                  'source_facts',
+                                  'risk_source_runs',
+                                  'payout_observations',
+                                  'risk_assessments'
                               ]
                           )
                           AND c.relrowsecurity
@@ -485,6 +495,7 @@ class Database:
             cur.execute("DELETE FROM broker_sync_state WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM account_instrument_access WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM operation_observations WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM source_documents WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM portfolio_snapshots WHERE user_id = %s", (user_id,))
             cur.execute(
                 """
