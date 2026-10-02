@@ -396,6 +396,29 @@ def test_intelligence_http_is_private_tenant_scoped_and_read_only() -> None:
         "analysis_status": "observed",
         "execution_enabled": False,
         "rating_feed_status": "data_missing",
+        "rating_sources": [
+            {
+                "id": "cbr_rating_repository",
+                "name": "Банк России — рейтинговый репозитарий",
+                "url": "https://ratings.cbr.ru/",
+                "access": "public_reference",
+                "ingestion": "reference_only",
+            },
+            {
+                "id": "expert_ra_rating_export",
+                "name": "Эксперт РА — REST/SOAP выгрузка рейтингов",
+                "url": "https://raexpert.ru/all-services/rating-export/",
+                "access": "subscription",
+                "ingestion": "not_configured",
+            },
+            {
+                "id": "acra_rating_feed",
+                "name": "АКРА — CSV data feed рейтингов",
+                "url": "https://www.acra-ratings.ru/services/predostavlenie-dannykh/",
+                "access": "subscription",
+                "ingestion": "not_configured",
+            },
+        ],
         "risks": [],
         "payouts": [],
         "sources": [],
@@ -415,6 +438,13 @@ def test_intelligence_http_is_private_tenant_scoped_and_read_only() -> None:
     assert response.headers["cache-control"] == "private, no-store"
     assert response.json()["execution_enabled"] is False
     assert response.json()["rating_feed_status"] == "data_missing"
+    assert {
+        item["id"] for item in response.json()["rating_sources"]
+    } == {
+        "cbr_rating_repository",
+        "expert_ra_rating_export",
+        "acra_rating_feed",
+    }
     store.return_value.latest_intelligence.assert_called_once_with(
         "server-resolved-user"
     )
