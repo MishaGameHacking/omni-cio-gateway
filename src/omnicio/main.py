@@ -24,6 +24,7 @@ from .cbr import CBRClient
 from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .market import MarketService
+from .portfolio import PortfolioAnalysisError
 from .security import (
     SecurityValueError,
     format_public_id,
@@ -486,6 +487,44 @@ def tbank_portfolio(
         "blocked_cash": [asdict(item) for item in snapshot.positions.blocked_money],
         "limits_loading_in_progress": snapshot.positions.limits_loading_in_progress,
     }
+
+
+@app.get(
+    "/api/broker/tbank/analysis",
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": "Broker connection or credential must be checked"},
+        503: {"description": "Broker analysis is temporarily unavailable"},
+    },
+)
+def tbank_analysis(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        snapshot = broker_service(request).analysis(user.id)
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except (
+        TBankUnavailable,
+        BrokerConnectionError,
+        PortfolioAnalysisError,
+        SecurityValueError,
+    ) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="T-Invest analysis unavailable",
+        ) from exc
+
+    response.headers["Cache-Control"] = "private, no-store"
+    return asdict(snapshot)
 
 
 @app.get("/api/broker/tbank/instruments/search")

@@ -94,6 +94,18 @@
   const positionsList = document.querySelector("#positions-list");
   const portfolioRetry = document.querySelector("[data-portfolio-retry]");
 
+  const analysisRefresh = document.querySelector("#analysis-refresh");
+  const analysisStatus = document.querySelector("#analysis-status");
+  const analysisContent = document.querySelector("#analysis-content");
+  const analysisCash = document.querySelector("#analysis-cash");
+  const analysisCount = document.querySelector("#analysis-count");
+  const analysisCoverage = document.querySelector("#analysis-coverage");
+  const analysisObservations = document.querySelector("#analysis-observations");
+  const analysisClasses = document.querySelector("#analysis-classes");
+  const analysisSectors = document.querySelector("#analysis-sectors");
+  const analysisSecurities = document.querySelector("#analysis-securities");
+  const analysisSources = document.querySelector("#analysis-sources");
+
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
   const owlFxStatus = document.querySelector("#owl-fx-status");
@@ -123,6 +135,7 @@
   const VIEW_TITLES = {
     home: "Главная",
     portfolio: "Портфель",
+    decisions: "Решения",
     system: "Система",
     connections: "Интеграции",
     profile: "Профиль",
@@ -140,6 +153,9 @@
   let portfolioRequestInFlight = false;
   let lastPortfolioSnapshot = null;
   let lastPortfolioRefreshAt = 0;
+  let analysisInFlight = false;
+  let analysisGeneration = 0;
+  let lastAnalysisAt = 0;
   let owlTimer = null;
   let usdRubEventSource = null;
   let usdRubFallbackTimer = null;
@@ -293,6 +309,13 @@
 
     if (view === "portfolio" && tbankIsConnected && !portfolioLoaded) {
       void loadPortfolioData();
+    }
+    if (
+      view === "decisions"
+      && tbankIsConnected
+      && Date.now() - lastAnalysisAt >= 5 * 60 * 1000
+    ) {
+      void loadAnalysis();
     }
   };
 
@@ -948,10 +971,13 @@
       const type = document.createElement("span");
       type.textContent = INSTRUMENT_LABELS[position.instrument_type] || position.instrument_type || "Инструмент";
       name.append(ticker, type);
-      if (position.blocked) {
+      const blockedLots = numericValue(position.blocked_lots);
+      if (position.blocked || blockedLots > 0) {
         const blocked = document.createElement("em");
         blocked.className = "position-blocked";
-        blocked.textContent = "Заблокировано биржей";
+        blocked.textContent = blockedLots > 0
+          ? `Есть блокировка · заявками: ${formatQuantity(position.blocked_lots)}`
+          : "Есть биржевая блокировка";
         name.append(blocked);
       }
 
@@ -1075,7 +1101,241 @@
     }
   };
 
+  const resetAnalysis = () => {
+    analysisGeneration += 1;
+    lastAnalysisAt = 0;
+    analysisContent.classList.add("hidden");
+    [
+      analysisObservations,
+      analysisClasses,
+      analysisSectors,
+      analysisSecurities,
+      analysisSources,
+    ].forEach((element) => element.replaceChildren());
+    analysisStatus.textContent = "Обновите анализ после проверки подключения T-Invest.";
+  };
+
+  const renderAnalysisAllocations = (container, allocations) => {
+    container.replaceChildren();
+    if (!allocations?.length) {
+      appendEmptyState(container, "Для этого распределения пока нет оценённых данных.");
+      return;
+    }
+
+    allocations.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "allocation-row analysis-allocation-row";
+
+      const label = document.createElement("div");
+      label.className = "allocation-label";
+      const name = document.createElement("strong");
+      name.textContent = item.label;
+      const percent = document.createElement("span");
+      percent.textContent = item.nav_percent === null
+        ? "—"
+        : formatPercent(item.nav_percent);
+      label.append(name, percent);
+
+      const amount = document.createElement("div");
+      amount.className = "allocation-value";
+      amount.textContent = formatMoney({currency: "RUB", value: item.value_rub});
+
+      row.append(label, amount);
+      container.append(row);
+    });
+  };
+
+  const analysisSourceNode = (source) => {
+    const label = typeof source.name === "string" && source.name
+      ? source.name
+      : "Источник";
+    try {
+      const url = new URL(source.url);
+      if (
+        url.protocol === "https:"
+        && url.hostname === "developer.tbank.ru"
+        && url.pathname.startsWith("/invest/")
+      ) {
+        const link = document.createElement("a");
+        link.textContent = label;
+        link.href = url.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        return link;
+      }
+    } catch {
+      // A malformed source URL is rendered as inert text, never as a link.
+    }
+    const text = document.createElement("span");
+    text.textContent = label;
+    return text;
+  };
+
+  const renderAnalysis = (snapshot) => {
+    const report = snapshot.analysis;
+    const sourceItems = Array.isArray(snapshot.sources) ? snapshot.sources : [];
+    const sources = new Map(sourceItems.map((source) => [source.id, source]));
+
+    analysisCash.textContent = report.rub_cash_unblocked === null
+      ? "Не подтверждены"
+      : formatMoney({currency: "RUB", value: report.rub_cash_unblocked});
+    analysisCount.textContent = String(report.security_count);
+    analysisCoverage.textContent = report.sector_coverage_percent === null
+      ? "Не определено"
+      : formatPercent(report.sector_coverage_percent);
+
+    analysisObservations.replaceChildren();
+    (report.observations || []).forEach((observation) => {
+      const card = document.createElement("article");
+      card.className = "analysis-observation";
+      card.dataset.priority = String(observation.priority);
+
+      const title = document.createElement("h4");
+      title.textContent = observation.title;
+      const detail = document.createElement("p");
+      detail.textContent = observation.detail;
+      const references = document.createElement("div");
+      references.className = "analysis-references";
+
+      (observation.source_ids || []).forEach((id) => {
+        const source = sources.get(id);
+        if (source) {
+          references.append(analysisSourceNode(source));
+        }
+      });
+
+      card.append(title, detail);
+      if (references.childElementCount) {
+        card.append(references);
+      }
+      analysisObservations.append(card);
+    });
+    if (!analysisObservations.childElementCount) {
+      appendEmptyState(
+        analysisObservations,
+        "Дополнительных наблюдений по текущему снимку нет.",
+      );
+    }
+
+    renderAnalysisAllocations(analysisClasses, report.classes);
+    renderAnalysisAllocations(analysisSectors, report.sectors);
+
+    analysisSecurities.replaceChildren();
+    (report.securities || []).forEach((security) => {
+      const row = document.createElement("tr");
+
+      const instrument = document.createElement("td");
+      const name = document.createElement("strong");
+      name.textContent = security.name;
+      const note = document.createElement("small");
+      note.textContent = [
+        security.ticker || security.uid,
+        INSTRUMENT_LABELS[security.instrument_type] || security.instrument_type,
+        security.blocked ? "Есть блокировка" : "",
+        security.for_qual_investor === true ? "Для квалифицированных инвесторов" : "",
+      ].filter(Boolean).join(" · ");
+      instrument.append(name, note);
+
+      const sector = document.createElement("td");
+      sector.textContent = security.sector || "Не определён";
+
+      const value = document.createElement("td");
+      value.textContent = security.value_rub === null
+        ? "Нет подтверждённой оценки в ₽"
+        : formatMoney({currency: "RUB", value: security.value_rub});
+
+      const weight = document.createElement("td");
+      weight.textContent = security.nav_percent === null
+        ? "—"
+        : formatPercent(security.nav_percent);
+
+      row.append(instrument, sector, value, weight);
+      analysisSecurities.append(row);
+    });
+
+    if (!analysisSecurities.childElementCount) {
+      const row = document.createElement("tr");
+      const empty = document.createElement("td");
+      empty.colSpan = 4;
+      empty.textContent = "Ненулевых позиций в инструментах пока нет.";
+      row.append(empty);
+      analysisSecurities.append(row);
+    }
+
+    analysisSources.replaceChildren();
+    sourceItems.forEach((source) => {
+      const row = document.createElement("div");
+      const details = document.createElement("small");
+      const state = {
+        received: "Получено",
+        partial: "Часть данных недоступна",
+        not_requested: "Не запрашивалось",
+      }[source.status] || "Не подтверждено";
+      details.textContent = [
+        state,
+        formatDateTime(source.retrieved_at),
+        Array.isArray(source.methods) ? source.methods.join(", ") : "",
+      ].filter(Boolean).join(" · ");
+      row.append(analysisSourceNode(source), details);
+      analysisSources.append(row);
+    });
+
+    const analysisState = {
+      needs_reconciliation: "Нужна сверка счёта",
+      partial: "Частичное покрытие",
+      observed: "Структура получена; проверка эмитентов не завершена",
+    }[report.status] || "Статус анализа не подтверждён";
+    const environment = snapshot.environment === "sandbox" ? "Песочница" : "Биржа";
+    analysisStatus.textContent = [
+      analysisState,
+      environment,
+      snapshot.account_name,
+      formatDateTime(snapshot.refreshed_at),
+    ].filter(Boolean).join(" · ");
+
+    analysisContent.classList.remove("hidden");
+    lastAnalysisAt = Date.now();
+  };
+
+  const loadAnalysis = async () => {
+    if (!tbankIsConnected) {
+      resetAnalysis();
+      analysisStatus.textContent = "Подключите счёт T-Invest для анализа.";
+      return;
+    }
+    if (analysisInFlight) {
+      return;
+    }
+
+    const generation = analysisGeneration;
+    analysisInFlight = true;
+    analysisRefresh.disabled = true;
+    analysisStatus.textContent = "Проверяем позиции, деньги и справочники T-Invest…";
+
+    try {
+      const snapshot = await api("/api/broker/tbank/analysis", {method: "GET"});
+      if (generation === analysisGeneration && tbankIsConnected) {
+        renderAnalysis(snapshot);
+      }
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (generation === analysisGeneration) {
+        resetAnalysis();
+        analysisStatus.textContent = error.status === 409
+          ? "Проверьте подключение и действительность токена T-Invest."
+          : "Анализ не получен. Данные не подтверждены; попробуйте обновить позже.";
+      }
+    } finally {
+      analysisInFlight = false;
+      analysisRefresh.disabled = false;
+    }
+  };
+
   const renderTbankSummary = (status) => {
+    resetAnalysis();
     homeConnectionCard.classList.remove("is-offline", "is-error");
     topConnectionIndicator.classList.remove("is-offline", "is-error");
     tbankIsConnected = Boolean(status.connected);
@@ -1143,6 +1403,7 @@
   };
 
   const renderTbankFailure = () => {
+    resetAnalysis();
     overviewAccount.textContent = "Не удалось проверить подключение";
     overviewConnectionText.textContent = "Обновите страницу или попробуйте позже.";
     homeConnectionCard.classList.add("is-error");
@@ -1349,6 +1610,10 @@
 
   portfolioRetry.addEventListener("click", () => {
     void loadPortfolioData({force: true});
+  });
+
+  analysisRefresh.addEventListener("click", () => {
+    void loadAnalysis();
   });
 
   desktopNavItems.forEach((item) => {

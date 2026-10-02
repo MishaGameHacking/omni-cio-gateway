@@ -31,6 +31,10 @@
       <circle cx="12" cy="12" r="3.25"/>
       <path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6 6 18M18 18l-1.4-1.4M7.4 7.4 6 6"/>
     </symbol>
+    <symbol id="icon-decisions" viewBox="0 0 24 24">
+      <path d="M5 4.5h14M5 9.5h9M5 14.5h6M5 19.5h4"/>
+      <path d="m14.5 17 2.2 2.2 3.8-4.4"/>
+    </symbol>
     <symbol id="icon-link" viewBox="0 0 24 24">
       <path d="M9.5 14.5 14.5 9.5M8 16H6.75A4.25 4.25 0 0 1 6.75 7.5H10M16 8h1.25a4.25 4.25 0 0 1 0 8.5H14"/>
     </symbol>
@@ -218,6 +222,10 @@
             <button class="nav-item" type="button" data-view="portfolio">
               <span class="nav-icon nav-icon-green"><svg class="ui-icon" aria-hidden="true"><use href="#icon-portfolio"></use></svg></span>
               <span>Портфель</span>
+            </button>
+            <button class="nav-item" type="button" data-view="decisions">
+              <span class="nav-icon nav-icon-cyan"><svg class="ui-icon" aria-hidden="true"><use href="#icon-decisions"></use></svg></span>
+              <span>Решения</span>
             </button>
             <button class="nav-item" type="button" data-view="system">
               <span class="nav-icon nav-icon-violet"><svg class="ui-icon" aria-hidden="true"><use href="#icon-system"></use></svg></span>
@@ -592,6 +600,127 @@
                 <div class="positions-list" id="positions-list"></div>
               </article>
 
+            </div>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="decisions">
+            <div class="page-heading portfolio-heading">
+              <div class="heading-with-state">
+                <div>
+                  <p class="section-label">Решения · этап R1</p>
+                  <h2>Фактический анализ портфеля</h2>
+                </div>
+                <span class="state-badge state-next">Только наблюдение</span>
+              </div>
+              <p>
+                OmniCIO проверяет структуру счёта, доступность данных, блокировки и
+                концентрацию по подтверждённым чтениям T-Invest. На этом этапе система
+                не формирует пакет сделок и не получает торговых полномочий.
+              </p>
+              <button id="analysis-refresh" class="button button-secondary" type="button">
+                Обновить анализ
+              </button>
+              <output id="analysis-status" class="message" aria-live="polite">
+                Подключите счёт T-Invest для анализа.
+              </output>
+            </div>
+
+            <div id="analysis-content" class="analysis-content hidden">
+              <section class="portfolio-metrics analysis-metrics" aria-label="Показатели анализа">
+                <article class="portfolio-metric">
+                  <span>Незаблокированные рубли</span>
+                  <strong id="analysis-cash">—</strong>
+                  <small>До резерва, налогов, комиссий и активных заявок</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Позиций в инструментах</span>
+                  <strong id="analysis-count">—</strong>
+                  <small>Не равно числу независимых эмитентов</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Покрытие секторов</span>
+                  <strong id="analysis-coverage">—</strong>
+                  <small>Только среди оценённых рублёвых позиций</small>
+                </article>
+              </section>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Контроль</p>
+                    <h3>Что требует внимания</h3>
+                  </div>
+                </header>
+                <div id="analysis-observations" class="analysis-observations"></div>
+              </article>
+
+              <section class="portfolio-two-column">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Структура</p>
+                      <h3>Типы активов</h3>
+                    </div>
+                  </header>
+                  <div id="analysis-classes" class="allocation-list"></div>
+                </article>
+
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Покрытие</p>
+                      <h3>Сектора</h3>
+                    </div>
+                  </header>
+                  <div id="analysis-sectors" class="allocation-list"></div>
+                  <p class="field-hint">
+                    Неизвестные сектора и состав фондов остаются неизвестными. Страна риска
+                    и сектор брокера не заменяют проверку юридического эмитента.
+                  </p>
+                </article>
+              </section>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Экспозиции</p>
+                    <h3>Доли отдельных инструментов</h3>
+                  </div>
+                </header>
+                <div class="analysis-table-scroll">
+                  <table class="analysis-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Инструмент</th>
+                        <th scope="col">Сектор</th>
+                        <th scope="col">Оценка</th>
+                        <th scope="col">Доля</th>
+                      </tr>
+                    </thead>
+                    <tbody id="analysis-securities"></tbody>
+                  </table>
+                </div>
+                <p class="field-hint">
+                  Облигации оцениваются с НКД. Кредитный рейтинг, группа связанных компаний,
+                  look-through фондов и доступность будущей покупки будут проверяться
+                  следующими этапами и сейчас не предполагаются.
+                </p>
+              </article>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Доказательства</p>
+                    <h3>Источники и время проверки</h3>
+                  </div>
+                </header>
+                <div id="analysis-sources" class="analysis-sources"></div>
+                <p class="field-hint">
+                  Время получения данных не является временем последней сделки и само по себе
+                  не доказывает свежесть рыночной цены. Недоступный источник отмечается как
+                  неполное покрытие, а не заменяется догадкой.
+                </p>
+              </article>
             </div>
           </section>
 
