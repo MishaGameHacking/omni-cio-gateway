@@ -14,7 +14,11 @@ from uuid import UUID
 
 from .broker import BrokerObservationBundle
 from .db import Database
-from .intelligence import EvidenceDocument, InstrumentRiskAssessment
+from .intelligence import (
+    EVIDENCE_RETRIEVAL_MAX_AGE,
+    EvidenceDocument,
+    InstrumentRiskAssessment,
+)
 from .tbank import (
     TBankAccount,
     TBankMoney,
@@ -912,7 +916,16 @@ class PortfolioStore:
                     assessments_written += 1
         return documents_written, assessments_written
 
-    def latest_intelligence(self, user_id: UUID) -> dict[str, object] | None:
+    def latest_intelligence(
+        self,
+        user_id: UUID,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, object] | None:
+        observed_at = now or datetime.now(UTC)
+        if observed_at.tzinfo is None:
+            raise ValueError("intelligence time must be timezone-aware")
+        observed_at = observed_at.astimezone(UTC)
         with (
             self.database.pool.connection() as conn,
             conn.transaction(),
@@ -1095,9 +1108,32 @@ class PortfolioStore:
             )
             source_rows = [dict(row) for row in cur.fetchall()]
 
+        captured_at = cast(datetime, snapshot_row["captured_at"]).astimezone(UTC)
+        snapshot_age = max(0, int((observed_at - captured_at).total_seconds()))
+        snapshot_freshness = (
+            "stale"
+            if observed_at - captured_at > EVIDENCE_RETRIEVAL_MAX_AGE
+            else "fresh"
+        )
+        for row in risk_rows:
+            assessed_at = cast(datetime | None, row.get("assessed_at"))
+            row["assessment_freshness"] = _freshness_status(
+                assessed_at,
+                now=observed_at,
+            )
+        for row in source_rows:
+            retrieved_at = cast(datetime | None, row.get("retrieved_at"))
+            row["freshness_status"] = _freshness_status(
+                retrieved_at,
+                now=observed_at,
+            )
+            row["age_seconds"] = _age_seconds(retrieved_at, now=observed_at)
+
         return {
             "snapshot_id": str(snapshot_id),
-            "captured_at": snapshot_row["captured_at"],
+            "captured_at": captured_at,
+            "snapshot_age_seconds": snapshot_age,
+            "snapshot_freshness": snapshot_freshness,
             "analysis_status": snapshot_row["analysis_status"],
             "execution_enabled": False,
             "rating_feed_status": "data_missing",
@@ -1244,6 +1280,27 @@ class PortfolioStore:
                     (user_id, account_id, window_to),
                 )
         return inserted
+
+
+def _freshness_status(
+    value: datetime | None,
+    *,
+    now: datetime,
+) -> Literal["fresh", "stale", "data_missing"]:
+    if value is None:
+        return "data_missing"
+    normalized = value.astimezone(UTC)
+    return (
+        "stale"
+        if now - normalized > EVIDENCE_RETRIEVAL_MAX_AGE
+        else "fresh"
+    )
+
+
+def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:
+    if value is None:
+        return None
+    return max(0, int((now - value.astimezone(UTC)).total_seconds()))
 
 
 def _profile(row: dict[str, Any]) -> InvestmentProfileRecord:
