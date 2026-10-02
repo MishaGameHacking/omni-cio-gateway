@@ -642,60 +642,23 @@ def retire_legacy_profile(ssh: EphemeralSsh) -> None:
 BEGIN;
 SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0));
 
-WITH target AS (
-    SELECT id
-    FROM users
-    WHERE public_id = 1 AND status <> 'deleted'
-    FOR UPDATE
-)
-UPDATE sessions
-SET revoked_at = COALESCE(revoked_at, now())
-WHERE user_id IN (SELECT id FROM target)
-  AND revoked_at IS NULL;
+DO $$
+DECLARE
+    total_users bigint;
+BEGIN
+    SELECT count(*) INTO total_users FROM users;
+    IF total_users > 1 THEN
+        RAISE EXCEPTION 'legacy reset refuses to delete more than one user';
+    END IF;
+END
+$$;
 
-WITH target AS (
-    SELECT id
-    FROM users
-    WHERE public_id = 1 AND status <> 'deleted'
-    FOR UPDATE
-)
-DELETE FROM tbank_connection
-WHERE user_id IN (SELECT id FROM target);
-
-WITH target AS (
-    SELECT id
-    FROM users
-    WHERE public_id = 1 AND status <> 'deleted'
-    FOR UPDATE
-)
-DELETE FROM phone_identities
-WHERE user_id IN (SELECT id FROM target);
-
-WITH target AS (
-    SELECT id
-    FROM users
-    WHERE public_id = 1 AND status <> 'deleted'
-    FOR UPDATE
-)
-DELETE FROM vkid_identities
-WHERE user_id IN (SELECT id FROM target);
-
-WITH target AS (
-    SELECT id
-    FROM users
-    WHERE public_id = 1 AND status <> 'deleted'
-    FOR UPDATE
-)
 INSERT INTO audit_events (user_id, event_type, metadata)
-SELECT id, 'legacy_profile_retired', '{"reason":"multi_user_cutover"}'::jsonb
-FROM target;
+SELECT id, 'legacy_profile_retired', '{"reason":"limited_user_cutover"}'::jsonb
+FROM users;
 
-UPDATE users
-SET status = 'deleted',
-    deleted_at = COALESCE(deleted_at, now()),
-    updated_at = now()
-WHERE public_id = 1
-  AND status <> 'deleted';
+DELETE FROM otp_challenges;
+DELETE FROM users;
 
 COMMIT;
 """
