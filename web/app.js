@@ -116,6 +116,10 @@
   const analysisSectors = document.querySelector("#analysis-sectors");
   const analysisSecurities = document.querySelector("#analysis-securities");
   const analysisSources = document.querySelector("#analysis-sources");
+  const intelligenceStatus = document.querySelector("#intelligence-status");
+  const intelligenceRisks = document.querySelector("#intelligence-risks");
+  const intelligencePayouts = document.querySelector("#intelligence-payouts");
+  const intelligenceSources = document.querySelector("#intelligence-sources");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
@@ -1122,7 +1126,11 @@
       analysisSectors,
       analysisSecurities,
       analysisSources,
+      intelligenceRisks,
+      intelligencePayouts,
+      intelligenceSources,
     ].forEach((element) => element.replaceChildren());
+    setStateBadge(intelligenceStatus, "Ожидает ежедневный снимок", "state-next");
     analysisStatus.textContent = "Обновите анализ после проверки подключения T-Invest.";
   };
 
@@ -1308,6 +1316,145 @@
     lastAnalysisAt = Date.now();
   };
 
+  const intelligenceLabel = (value) => ({
+    data_missing: "Данных недостаточно",
+    normal: "Норма",
+    watch: "Наблюдение",
+    elevated: "Повышенный риск",
+    critical: "Критический риск",
+    confirmed_default: "Подтверждённый дефолт",
+    received: "Получено",
+    stale: "Устарело",
+    not_applicable: "Не применяется",
+    partial: "Частично",
+    unavailable: "Недоступно",
+    announced: "Объявлено",
+    scheduled: "Запланировано",
+    cancelled: "Отменено",
+    paid: "Исполнено",
+    defaulted: "Дефолт",
+    observed: "Наблюдается",
+  }[value] || String(value || "—"));
+
+  const renderIntelligence = (snapshot) => {
+    intelligenceRisks.replaceChildren();
+    (snapshot.risks || []).forEach((risk) => {
+      const row = document.createElement("tr");
+      const instrument = document.createElement("td");
+      const title = document.createElement("strong");
+      title.textContent = risk.ticker || risk.instrument_uid || "Инструмент";
+      const detail = document.createElement("small");
+      const reasons = Array.isArray(risk.reasons) ? risk.reasons.join(" · ") : "";
+      detail.textContent = [
+        INSTRUMENT_LABELS[risk.instrument_type] || risk.instrument_type,
+        risk.sector || "Сектор не подтверждён",
+        reasons,
+      ].filter(Boolean).join(" · ");
+      instrument.append(title, detail);
+
+      const state = document.createElement("td");
+      state.textContent = intelligenceLabel(risk.state || "data_missing");
+      const rating = document.createElement("td");
+      rating.textContent = intelligenceLabel(risk.rating_status || "data_missing");
+      const fundamentals = document.createElement("td");
+      fundamentals.textContent = intelligenceLabel(risk.fundamental_status || "data_missing");
+      row.append(instrument, state, rating, fundamentals);
+      intelligenceRisks.append(row);
+    });
+    if (!intelligenceRisks.childElementCount) {
+      const row = document.createElement("tr");
+      const empty = document.createElement("td");
+      empty.colSpan = 4;
+      empty.textContent = "Risk assessment появится после ежедневного доказательного снимка.";
+      row.append(empty);
+      intelligenceRisks.append(row);
+    }
+
+    intelligencePayouts.replaceChildren();
+    (snapshot.payouts || []).forEach((event) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = [
+        event.instrument_uid || "Инструмент",
+        {
+          dividend: "дивиденд",
+          coupon: "купон",
+          bond_event: "событие облигации",
+        }[event.event_type] || event.event_type,
+      ].filter(Boolean).join(" · ");
+      const details = document.createElement("small");
+      const amount = event.amount === null || event.amount === undefined
+        ? ""
+        : formatMoney({currency: event.currency || "", value: event.amount});
+      details.textContent = [
+        intelligenceLabel(event.status),
+        amount,
+        event.expected_at ? "ожидается " + formatDateTime(event.expected_at) : "",
+        event.actual_at ? "факт " + formatDateTime(event.actual_at) : "",
+        event.record_at ? "реестр " + formatDateTime(event.record_at) : "",
+      ].filter(Boolean).join(" · ");
+      row.append(title, details);
+      intelligencePayouts.append(row);
+    });
+    if (!intelligencePayouts.childElementCount) {
+      appendEmptyState(
+        intelligencePayouts,
+        "В сохранённом окне нет подтверждённых календарных событий.",
+      );
+    }
+
+    intelligenceSources.replaceChildren();
+    (snapshot.sources || []).forEach((source) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = (source.provider || "Источник") + " · " + (source.document_type || "document");
+      const details = document.createElement("small");
+      details.textContent = [
+        source.retrieved_at ? "получено " + formatDateTime(source.retrieved_at) : "",
+        Number.isFinite(Number(source.versions)) ? "версий: " + source.versions : "",
+      ].filter(Boolean).join(" · ");
+      row.append(title, details);
+      intelligenceSources.append(row);
+    });
+    if (!intelligenceSources.childElementCount) {
+      appendEmptyState(intelligenceSources, "Evidence ещё не сохранён.");
+    }
+
+    const missing = (snapshot.risks || []).filter((item) => item.state === "data_missing").length;
+    const defaults = (snapshot.risks || []).filter(
+      (item) => item.state === "confirmed_default"
+    ).length;
+    if (defaults > 0) {
+      setStateBadge(
+        intelligenceStatus,
+        "Подтверждённый дефолт: " + defaults,
+        "state-error",
+      );
+    } else if (missing > 0 || snapshot.rating_feed_status === "data_missing") {
+      setStateBadge(intelligenceStatus, "Неполные данные: " + missing, "state-next");
+    } else if (snapshot.status === "pending") {
+      setStateBadge(intelligenceStatus, "Ожидает ежедневный снимок", "state-next");
+    } else {
+      setStateBadge(intelligenceStatus, "Доказательства получены", "state-ok");
+    }
+  };
+
+  const loadIntelligence = async () => {
+    try {
+      const snapshot = await api("/api/portfolio/intelligence", {method: "GET"});
+      renderIntelligence(snapshot);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      intelligenceRisks.replaceChildren();
+      intelligencePayouts.replaceChildren();
+      intelligenceSources.replaceChildren();
+      setStateBadge(intelligenceStatus, "Evidence временно недоступен", "state-error");
+    }
+  };
+
   const loadAnalysis = async () => {
     if (!tbankIsConnected) {
       resetAnalysis();
@@ -1327,6 +1474,7 @@
       const snapshot = await api("/api/broker/tbank/analysis", {method: "GET"});
       if (generation === analysisGeneration && tbankIsConnected) {
         renderAnalysis(snapshot);
+        void loadIntelligence();
       }
     } catch (error) {
       if (error.status === 401) {
