@@ -494,6 +494,8 @@ class PortfolioStore:
                         item.real_exchange,
                         item.tax_free,
                         item.collateral,
+                        item.risk_level,
+                        _json([asdict(rating) for rating in item.ratings]),
                         catalog_retrieved_at,
                     )
                     for item in bundle.metadata
@@ -536,6 +538,8 @@ class PortfolioStore:
                         real_exchange,
                         tax_free,
                         collateral,
+                        risk_level,
+                        ratings,
                         provider_retrieved_at
                     )
                     VALUES (
@@ -543,7 +547,7 @@ class PortfolioStore:
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (provider, instrument_uid) DO UPDATE SET
                         figi = EXCLUDED.figi,
@@ -579,6 +583,8 @@ class PortfolioStore:
                         real_exchange = EXCLUDED.real_exchange,
                         tax_free = EXCLUDED.tax_free,
                         collateral = EXCLUDED.collateral,
+                        risk_level = EXCLUDED.risk_level,
+                        ratings = EXCLUDED.ratings,
                         last_seen_at = now(),
                         provider_retrieved_at = EXCLUDED.provider_retrieved_at
                     """,
