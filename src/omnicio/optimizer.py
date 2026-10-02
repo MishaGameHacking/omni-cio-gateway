@@ -274,7 +274,7 @@ def optimize_integer_lots(
     ]
     eligible.sort(
         key=lambda item: (
-            -item.net_real_ytw_percent,
+            -_screen_score(item),
             item.candidate.instrument_uid,
         )
     )
@@ -482,6 +482,12 @@ def _hold_replacement(case: ReplacementCase, reason: str) -> ReplacementScenario
         projected_improvement_rub=None,
         reasons=(reason,),
     )
+
+
+def _screen_score(screen: CandidateScreen) -> Decimal:
+    if screen.net_real_ytw_percent is None:
+        raise ValueError("eligible screen is missing optimizer score")
+    return screen.net_real_ytw_percent
 
 
 def _candidate_capacity(
