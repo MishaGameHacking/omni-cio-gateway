@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 from uuid import UUID
 
@@ -18,12 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = tuple(sorted((ROOT / "migrations").glob("*.sql")))
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
+RUNTIME_PASSWORD = secrets.token_urlsafe(32)
 
 
 def _runtime_url() -> str:
     values = conninfo_to_dict(DATABASE_URL)
     values["user"] = "omnicio_runtime_test"
-    values["password"] = "runtime-test-password"
+    values["password"] = RUNTIME_PASSWORD
     return make_conninfo(**values)
 
 
@@ -125,13 +127,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             """
             CREATE ROLE omnicio_runtime_test
             LOGIN
-            PASSWORD 'runtime-test-password'
+            PASSWORD %s
             NOSUPERUSER
             NOCREATEDB
             NOCREATEROLE
             NOINHERIT
             NOREPLICATION
-            """
+            """,
+            (RUNTIME_PASSWORD,),
         )
         admin.execute("GRANT CONNECT ON DATABASE omnicio_test TO omnicio_runtime_test")
         admin.execute("GRANT USAGE ON SCHEMA public TO omnicio_runtime_test")
