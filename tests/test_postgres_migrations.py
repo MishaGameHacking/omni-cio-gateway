@@ -229,7 +229,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 'test-document',
                 'https://example.invalid/source',
                 now(),
-                digest('document-one', 'sha256'),
+                decode(repeat('00', 32), 'hex'),
                 '{"value": 1}'::jsonb
             )
             """,
