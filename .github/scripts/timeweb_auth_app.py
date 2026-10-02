@@ -259,11 +259,32 @@ def build_product_environment() -> str:
     )
 
 
-def write_product_environment(ssh: EphemeralSsh) -> None:
-    ssh.run(
-        f"umask 077; cat > {PRODUCT_ENV}; chmod 600 {PRODUCT_ENV}",
-        input_text=build_product_environment(),
+def product_environment_backup_paths(release_sha: str) -> tuple[str, str]:
+    if not RELEASE_RE.fullmatch(release_sha):
+        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
+    return (
+        f"{PRODUCT_ENV}.pre-{release_sha}",
+        f"{PRODUCT_ENV}.pre-{release_sha}.state",
     )
+
+
+def write_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
+    backup, state = product_environment_backup_paths(release_sha)
+    command = (
+        "set -euo pipefail; umask 077; "
+        f"tmp={PRODUCT_ENV}.tmp-{release_sha}; "
+        f"if [ -f {PRODUCT_ENV} ]; then "
+        f"cp -p {PRODUCT_ENV} {backup}; printf 'present\\n' > {state}; "
+        f"else rm -f {backup}; printf 'absent\\n' > {state}; fi; "
+        'cat > "$tmp"; chmod 600 "$tmp"; '
+        f"mv -f \"$tmp\" {PRODUCT_ENV}"
+    )
+    ssh.run(command, input_text=build_product_environment())
+
+
+def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
+    backup, state = product_environment_backup_paths(release_sha)
+    ssh.run(f"rm -f {backup} {state}")
 
 
 REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
@@ -597,6 +618,21 @@ REMOTE_ROLLBACK_SCRIPT = r"""set -euo pipefail
 SHA="$1"
 STATE="/run/omnicio-auth-deploy-$SHA.state"
 NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"
+PRODUCT_ENV="/etc/omnicio/product.env"
+PRODUCT_ENV_BACKUP="$PRODUCT_ENV.pre-$SHA"
+PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"
+
+if [ -f "$PRODUCT_ENV_STATE" ]; then
+    PRODUCT_ENV_PREVIOUS="$(cat "$PRODUCT_ENV_STATE")"
+    if [ "$PRODUCT_ENV_PREVIOUS" = "present" ]; then
+        test -f "$PRODUCT_ENV_BACKUP"
+        cp -p "$PRODUCT_ENV_BACKUP" "$PRODUCT_ENV"
+    elif [ "$PRODUCT_ENV_PREVIOUS" = "absent" ]; then
+        rm -f "$PRODUCT_ENV"
+    else
+        exit 44
+    fi
+fi
 
 if [ -s "$STATE" ]; then
     . "$STATE"
@@ -861,10 +897,10 @@ def reconcile(
             set_output("status", "pending_database")
             return 0
 
-        write_product_environment(ssh)
         upload_release(ssh, archive_b64=archive_b64, release_sha=release_sha)
 
         try:
+            write_product_environment(ssh, release_sha=release_sha)
             deploy_remote(ssh, release_sha=release_sha)
             for _ in range(6):
                 try:
@@ -879,6 +915,7 @@ def reconcile(
             # is already healthy. The reset itself is one transaction and
             # refuses to touch a database containing more than one user.
             retire_legacy_profile(ssh)
+            commit_product_environment(ssh, release_sha=release_sha)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise
