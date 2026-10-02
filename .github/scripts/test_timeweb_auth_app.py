@@ -230,7 +230,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("curl -k", script)
         self.assertNotIn("--insecure", script)
 
-    def test_legal_pages_are_private_owner_documents(self) -> None:
+    def test_legal_pages_describe_limited_user_registration(self) -> None:
         root = SCRIPT_DIR.parent.parent
         privacy = (root / "web" / "legal" / "privacy.html").read_text()
         consent = (root / "web" / "legal" / "consent.html").read_text()
@@ -238,12 +238,13 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-01-v2", document)
+            self.assertIn("2026-10-02-v3", document)
+            self.assertIn("__OMNICIO_OPERATOR_", document)
 
         self.assertIn("OmniCIO Personal", privacy)
         self.assertIn("T-Invest API", privacy)
-        self.assertIn("статьи 437", terms)
-        self.assertNotIn("omnicioinfo@gmail.com", privacy)
+        self.assertIn("текущий лимит регистрации — один пользовательский аккаунт", terms)
+        self.assertIn("ролью <code>user</code>", terms)
 
     def test_personal_dashboard_keeps_auth_and_broker_contracts(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -407,7 +408,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.5.3"', project)
+        self.assertIn('version = "0.6.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
