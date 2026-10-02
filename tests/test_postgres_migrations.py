@@ -217,6 +217,112 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "SELECT count(*) FROM account_instrument_access"
         ).fetchone()[0] == 0
 
+        runtime.execute(
+            "SELECT set_config('omnicio.user_id', %s, false)",
+            (str(USER_ONE),),
+        )
+        job_id = runtime.execute(
+            """
+            INSERT INTO job_runs (
+                user_id,
+                job_type,
+                scheduled_for,
+                status,
+                attempt,
+                started_at
+            )
+            VALUES (%s, 'portfolio_daily', current_date, 'running', 1, now())
+            RETURNING id
+            """,
+            (USER_ONE,),
+        ).fetchone()[0]
+        snapshot_id = runtime.execute(
+            """
+            INSERT INTO portfolio_snapshots (
+                user_id,
+                job_run_id,
+                account_id,
+                account_type,
+                account_status,
+                account_access_level,
+                environment,
+                captured_at,
+                nav_rub,
+                rub_cash_total,
+                rub_cash_blocked,
+                rub_cash_unblocked,
+                security_count,
+                valued_security_count,
+                analysis_status,
+                analysis,
+                broker_user_info,
+                sources
+            )
+            VALUES (
+                %s, %s, 'account-1', 'broker', 'open', 'read_only', 'prod',
+                now(), 1000, 100, 0, 100, 1, 1, 'observed',
+                '{}'::jsonb, '{}'::jsonb, '[]'::jsonb
+            )
+            RETURNING id
+            """,
+            (USER_ONE, job_id),
+        ).fetchone()[0]
+        runtime.execute(
+            """
+            INSERT INTO portfolio_risk_assessments (
+                user_id,
+                snapshot_id,
+                instrument_uid,
+                state,
+                rating_status,
+                fundamental_status,
+                source_status,
+                reasons,
+                evidence,
+                assessed_at
+            )
+            VALUES (
+                %s, %s, 'instrument-1', 'data_missing', 'data_missing',
+                'received', 'received', '[]'::jsonb, '{}'::jsonb, now()
+            )
+            """,
+            (USER_ONE, snapshot_id),
+        )
+
+        source_id = runtime.execute(
+            """
+            INSERT INTO source_documents (
+                provider,
+                document_type,
+                subject_uid,
+                provider_key,
+                source_url,
+                first_retrieved_at,
+                content_hash,
+                payload
+            )
+            VALUES (
+                'test', 'fundamental', 'asset-1', 'v1',
+                'https://example.invalid/evidence', now(),
+                decode(repeat('00', 32), 'hex'), '{"value": 1}'::jsonb
+            )
+            RETURNING id
+            """
+        ).fetchone()[0]
+        with pytest.raises(psycopg.errors.RaiseException, match="immutable evidence"):
+            runtime.execute(
+                "UPDATE source_documents SET provider_key = 'changed' WHERE id = %s",
+                (source_id,),
+            )
+
+        runtime.execute(
+            "SELECT set_config('omnicio.user_id', %s, false)",
+            (str(USER_TWO),),
+        )
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_risk_assessments"
+        ).fetchone()[0] == 0
+
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             runtime.execute(
                 """
