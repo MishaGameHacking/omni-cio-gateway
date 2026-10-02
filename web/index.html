@@ -729,6 +729,74 @@
                   Выйти из аккаунта
                 </button>
               </article>
+
+              <article class="settings-card danger-zone" aria-labelledby="delete-account-title">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Опасная зона</p>
+                    <h3 id="delete-account-title">Удаление аккаунта</h3>
+                  </div>
+                </header>
+
+                <p class="card-description">
+                  Удаление необратимо. OmniCIO удалит профиль, привязку VK ID,
+                  все активные сессии, сохранённое подключение T-Invest и
+                  связанные данные аккаунта. Освободившийся пользовательский
+                  слот снова станет доступен для регистрации.
+                </p>
+
+                <button
+                  id="delete-account-start"
+                  class="button button-danger-secondary"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="delete-account-form"
+                >
+                  Удалить аккаунт
+                </button>
+
+                <form id="delete-account-form" class="account-delete-form hidden" novalidate>
+                  <div class="field">
+                    <label for="delete-account-confirmation">
+                      Для подтверждения введите ID профиля
+                      <strong id="delete-account-profile-id">000000000</strong>
+                    </label>
+                    <input
+                      id="delete-account-confirmation"
+                      name="confirmation"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                      pattern="[0-9]{9}"
+                      minlength="9"
+                      maxlength="9"
+                      placeholder="000000000"
+                      required
+                    >
+                  </div>
+
+                  <label class="check">
+                    <input id="delete-account-irreversible" type="checkbox" required>
+                    <span>
+                      Я понимаю, что удаление необратимо и текущая сессия будет
+                      завершена сразу после удаления.
+                    </span>
+                  </label>
+
+                  <div class="danger-actions">
+                    <button id="delete-account-cancel" class="button button-secondary" type="button">
+                      Отмена
+                    </button>
+                    <button id="delete-account-submit" class="button button-danger" type="submit">
+                      Удалить навсегда
+                    </button>
+                  </div>
+
+                  <p id="delete-account-message" class="message" role="status" aria-live="polite"></p>
+                </form>
+              </article>
             </section>
           </section>
         </div>
