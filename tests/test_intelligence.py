@@ -310,3 +310,42 @@ def test_figi_fallback_keeps_default_evidence_joined_to_snapshot_key() -> None:
     assert assessments[0].instrument_uid == "FIGI-BOND"
     assert assessments[0].state == "confirmed_default"
     assert assessments[0].evidence["asset_uid"] == "issuer-asset"
+
+
+def test_empty_fundamental_record_remains_data_missing() -> None:
+    now = datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now,
+        dividends=(),
+        coupons=(),
+        bond_events=(),
+        reports=(),
+        fundamentals=(
+            TBankAssetFundamental(
+                asset_uid="issuer-asset",
+                currency="RUB",
+                revenue_ttm=None,
+                ebitda_ttm=None,
+                net_income_ttm=None,
+                free_cash_flow_ttm=None,
+                total_debt_mrq=None,
+                total_debt_to_equity_mrq=None,
+                total_debt_to_ebitda_mrq=None,
+                net_debt_to_ebitda=None,
+                current_ratio_mrq=None,
+                fixed_charge_coverage_ratio_fy=None,
+                net_interest_margin_mrq=None,
+                roe=None,
+                roa=None,
+                fiscal_period_start_date=datetime(2025, 1, 1, tzinfo=UTC),
+                fiscal_period_end_date=datetime(2025, 12, 31, tzinfo=UTC),
+            ),
+        ),
+        sources=_sources(now),
+    )
+
+    _, assessments = build_tbank_evidence(_bundle(), evidence, assessed_at=now)
+
+    assert assessments[0].fundamental_status == "data_missing"
+    assert assessments[0].state == "data_missing"
+    assert "fundamental_data_missing" in assessments[0].reasons
