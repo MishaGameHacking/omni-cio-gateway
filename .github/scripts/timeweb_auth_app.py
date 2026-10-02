@@ -347,6 +347,8 @@ WEB_BASE="/var/www/omnicio.ru"
 WEB_RELEASE="$WEB_BASE/releases/$SHA"
 WEB_CURRENT="$WEB_BASE/current"
 SERVICE="/etc/systemd/system/omnicio-auth.service"
+OBSERVER_SERVICE="/etc/systemd/system/omnicio-observer.service"
+OBSERVER_TIMER="/etc/systemd/system/omnicio-observer.timer"
 NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"
 STATE="/run/omnicio-auth-deploy-$SHA.state"
 
@@ -358,9 +360,19 @@ test -s "$RELEASE/web/index.html"
 
 PREVIOUS_APP="$(readlink -f "$APP_CURRENT" 2>/dev/null || true)"
 PREVIOUS_WEB="$(readlink -f "$WEB_CURRENT" 2>/dev/null || true)"
+OBSERVER_TIMER_WAS_ENABLED=0
+OBSERVER_TIMER_WAS_ACTIVE=0
+if systemctl is-enabled omnicio-observer.timer >/dev/null 2>&1; then
+    OBSERVER_TIMER_WAS_ENABLED=1
+fi
+if systemctl is-active omnicio-observer.timer >/dev/null 2>&1; then
+    OBSERVER_TIMER_WAS_ACTIVE=1
+fi
 {
     printf 'PREVIOUS_APP=%q\n' "$PREVIOUS_APP"
     printf 'PREVIOUS_WEB=%q\n' "$PREVIOUS_WEB"
+    printf 'OBSERVER_TIMER_WAS_ENABLED=%q\n' "$OBSERVER_TIMER_WAS_ENABLED"
+    printf 'OBSERVER_TIMER_WAS_ACTIVE=%q\n' "$OBSERVER_TIMER_WAS_ACTIVE"
 } > "$STATE"
 chmod 600 "$STATE"
 
@@ -528,6 +540,63 @@ EOF
 mv "$SERVICE.new" "$SERVICE"
 chmod 0644 "$SERVICE"
 
+cat > "$OBSERVER_SERVICE.new" <<'EOF'
+[Unit]
+Description=OmniCIO daily portfolio observer
+After=network-online.target omnicio-auth.service
+Wants=network-online.target
+StartLimitIntervalSec=1800
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=omnicio
+Group=omnicio
+WorkingDirectory=/opt/omnicio/current
+EnvironmentFile=/etc/omnicio/runtime.env
+EnvironmentFile=/etc/omnicio/product.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ExecStart=/opt/omnicio/current/.venv/bin/python -m omnicio.observer
+Restart=on-failure
+RestartSec=180
+TimeoutStartSec=1200
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
+EOF
+mv "$OBSERVER_SERVICE.new" "$OBSERVER_SERVICE"
+chmod 0644 "$OBSERVER_SERVICE"
+
+cat > "$OBSERVER_TIMER.new" <<'EOF'
+[Unit]
+Description=Run OmniCIO portfolio observer daily in Moscow time
+
+[Timer]
+OnCalendar=*-*-* 06:15:00 Europe/Moscow
+Persistent=true
+AccuracySec=1min
+Unit=omnicio-observer.service
+
+[Install]
+WantedBy=timers.target
+EOF
+mv "$OBSERVER_TIMER.new" "$OBSERVER_TIMER"
+chmod 0644 "$OBSERVER_TIMER"
+
 ln -sfn "$RELEASE" "$APP_CURRENT"
 systemctl daemon-reload
 systemctl enable omnicio-auth.service >/dev/null
@@ -692,6 +761,10 @@ if ! nginx -t; then
 fi
 
 systemctl reload nginx
+systemctl enable omnicio-observer.timer >/dev/null
+systemctl restart omnicio-observer.timer
+systemctl is-enabled omnicio-observer.timer >/dev/null
+systemctl is-active omnicio-observer.timer >/dev/null
 """
 
 
@@ -724,6 +797,17 @@ if [ -s "$STATE" ]; then
     fi
     if [ -n "$PREVIOUS_WEB" ] && [ -d "$PREVIOUS_WEB" ]; then
         ln -sfn "$PREVIOUS_WEB" /var/www/omnicio.ru/current
+    fi
+
+    if [ "${OBSERVER_TIMER_WAS_ENABLED:-0}" = "1" ]; then
+        systemctl enable omnicio-observer.timer >/dev/null 2>&1 || true
+    else
+        systemctl disable omnicio-observer.timer >/dev/null 2>&1 || true
+    fi
+    if [ "${OBSERVER_TIMER_WAS_ACTIVE:-0}" = "1" ]; then
+        systemctl restart omnicio-observer.timer >/dev/null 2>&1 || true
+    else
+        systemctl stop omnicio-observer.timer >/dev/null 2>&1 || true
     fi
 fi
 
