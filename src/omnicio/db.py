@@ -67,6 +67,13 @@ class Database:
                     AND to_regclass('public.legal_acceptances') IS NOT NULL
                     AND to_regclass('public.vkid_identities') IS NOT NULL
                     AND to_regclass('public.tbank_connection') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'users'
+                          AND column_name = 'role'
+                    )
                     AS ready
                 """
             )
