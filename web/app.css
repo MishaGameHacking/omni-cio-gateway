@@ -1578,6 +1578,133 @@ select:hover {
   overflow-wrap: anywhere;
 }
 
+.risk-content,
+.risk-assessment-list,
+.risk-reason-list,
+.risk-payout-list {
+  display: grid;
+  gap: 12px;
+}
+
+.risk-content {
+  margin-top: 16px;
+}
+
+.risk-assessment-item {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.risk-assessment-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.risk-assessment-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.risk-assessment-header strong {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.risk-assessment-header small,
+.risk-payout-row small {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.risk-reason-list {
+  margin-top: 12px;
+}
+
+.risk-reason {
+  padding: 12px 14px;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.risk-reason[data-severity="watch"] {
+  border-left-color: var(--warning);
+}
+
+.risk-reason[data-severity="elevated"],
+.risk-reason[data-severity="critical"] {
+  border-left-color: var(--danger);
+}
+
+.risk-reason strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.risk-reason p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.risk-subsection {
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.portfolio-card-header.compact {
+  margin-bottom: 8px;
+}
+
+.portfolio-card-header.compact h4 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.risk-payout-row {
+  min-height: 58px;
+  padding: 11px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.risk-payout-row:first-child {
+  border-top: 0;
+}
+
+.risk-payout-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.risk-payout-row strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.risk-payout-amount {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .analysis-table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -2311,6 +2438,20 @@ select:hover {
 
   .analysis-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .risk-assessment-header,
+  .risk-payout-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .risk-assessment-header .state-badge {
+    width: fit-content;
+  }
+
+  .risk-payout-amount {
+    text-align: left;
   }
 
   .analysis-allocation-row {
