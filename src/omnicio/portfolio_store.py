@@ -723,7 +723,7 @@ class PortfolioStore:
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
                     )
-                    ON CONFLICT (user_id, account_id, observation_hash) DO NOTHING
+                    ON CONFLICT DO NOTHING
                     RETURNING id
                     """,
                     (
