@@ -10,6 +10,9 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from omnicio.db import Database
+from omnicio.portfolio_store import PortfolioStore
+
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
 pytestmark = pytest.mark.skipif(
     not DATABASE_URL,
@@ -307,6 +310,136 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 "UPDATE source_documents SET provider_key = 'changed' WHERE id = %s",
                 (source_id,),
             )
+
+        runtime.execute(
+            """
+            INSERT INTO instrument_catalog (
+                provider,
+                instrument_uid,
+                figi,
+                asset_uid,
+                instrument_type,
+                provider_retrieved_at
+            )
+            VALUES (
+                'tbank',
+                'provider-bond-uid',
+                'FIGI-ONLY',
+                'asset-fallback',
+                'bond',
+                now()
+            )
+            """
+        )
+        runtime.execute(
+            """
+            INSERT INTO portfolio_snapshot_positions (
+                snapshot_id,
+                user_id,
+                instrument_uid,
+                figi,
+                ticker,
+                instrument_type,
+                quantity,
+                blocked,
+                blocked_lots,
+                sector,
+                country_of_risk
+            )
+            VALUES (
+                %s,
+                %s,
+                'FIGI-ONLY',
+                'FIGI-ONLY',
+                'TESTBOND',
+                'bond',
+                1,
+                false,
+                0,
+                'finance',
+                'RU'
+            )
+            """,
+            (snapshot_id, USER_ONE),
+        )
+        payout_source_id = runtime.execute(
+            """
+            INSERT INTO source_documents (
+                provider,
+                document_type,
+                subject_uid,
+                provider_key,
+                source_url,
+                first_retrieved_at,
+                content_hash,
+                payload
+            )
+            VALUES (
+                'tbank',
+                'bond_coupon',
+                'provider-bond-uid',
+                'coupon-1',
+                'https://developer.tbank.ru/invest/services/instruments/methods',
+                now(),
+                decode(repeat('11', 32), 'hex'),
+                '{"coupon": 1}'::jsonb
+            )
+            RETURNING id
+            """
+        ).fetchone()[0]
+        runtime.execute(
+            """
+            INSERT INTO source_retrievals (source_document_id, retrieved_at)
+            VALUES (%s, now())
+            """,
+            (payout_source_id,),
+        )
+        runtime.execute(
+            """
+            INSERT INTO payout_events (
+                source_document_id,
+                provider,
+                instrument_uid,
+                event_type,
+                provider_key,
+                expected_at,
+                amount,
+                currency,
+                status,
+                payload,
+                semantic_hash
+            )
+            VALUES (
+                %s,
+                'tbank',
+                'provider-bond-uid',
+                'coupon',
+                'coupon-1',
+                now() + interval '30 days',
+                42,
+                'RUB',
+                'scheduled',
+                '{"coupon": 1}'::jsonb,
+                decode(repeat('22', 32), 'hex')
+            )
+            """,
+            (payout_source_id,),
+        )
+
+        database = Database(_runtime_url())
+        database.open()
+        try:
+            intelligence = PortfolioStore(database).latest_intelligence(USER_ONE)
+        finally:
+            database.close()
+        assert intelligence is not None
+        assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
+            "provider-bond-uid"
+        ]
+        assert any(
+            item["document_type"] == "bond_coupon"
+            for item in intelligence["sources"]
+        )
 
         runtime.execute(
             "SELECT set_config('omnicio.user_id', %s, false)",
