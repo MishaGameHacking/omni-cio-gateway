@@ -1213,6 +1213,14 @@
   };
 
   const loadState = async () => {
+    let config = null;
+    try {
+      config = await api("/api/auth/config", {method: "GET"});
+      renderAccessMode(config);
+    } catch {
+      // A valid existing session can still be rendered if public config is temporarily unavailable.
+    }
+
     try {
       const me = await api("/api/me", {method: "GET"});
       showProfile(me);
@@ -1226,21 +1234,19 @@
     showAuth();
     showCallbackResult();
 
-    try {
-      const config = await api("/api/auth/config", {method: "GET"});
-      renderAccessMode(config);
-      const loginEnabled = config.login_enabled;
-      if (config.auth_provider !== "vkid" || !loginEnabled) {
-        vkidLogin.disabled = true;
-        showMessage(
-          authMessage,
-          "VK ID ещё не настроен для текущего режима доступа.",
-          true,
-        );
-      }
-    } catch {
+    if (!config) {
       vkidLogin.disabled = true;
       showMessage(authMessage, "Сервис авторизации временно недоступен.", true);
+      return;
+    }
+
+    if (config.auth_provider !== "vkid" || !config.login_enabled) {
+      vkidLogin.disabled = true;
+      showMessage(
+        authMessage,
+        "VK ID ещё не настроен для текущего режима доступа.",
+        true,
+      );
     }
   };
 
