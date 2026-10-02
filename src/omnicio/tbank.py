@@ -938,6 +938,9 @@ class TBankInvestClient:
         result: list[TBankAssetReport] = []
         for raw in _required_list(payload, "events"):
             item = _required_object(raw, "asset report")
+            returned_uid = _text(item.get("instrumentId")).strip()
+            if returned_uid and returned_uid != instrument_uid:
+                raise TBankUnavailable("T-Invest asset report instrument does not match request")
             report_date = _optional_provider_timestamp(item.get("reportDate"))
             if report_date is None:
                 raise TBankUnavailable("T-Invest asset report has no report date")
