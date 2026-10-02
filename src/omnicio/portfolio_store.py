@@ -912,6 +912,168 @@ class PortfolioStore:
                     assessments_written += 1
         return documents_written, assessments_written
 
+    def latest_intelligence(self, user_id: UUID) -> dict[str, object] | None:
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT id, captured_at, analysis_status
+                FROM portfolio_snapshots
+                WHERE user_id = %s
+                ORDER BY captured_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            snapshot = cur.fetchone()
+            if snapshot is None:
+                return None
+            snapshot_row = cast(dict[str, Any], snapshot)
+            snapshot_id = cast(UUID, snapshot_row["id"])
+
+            cur.execute(
+                """
+                SELECT
+                    p.instrument_uid,
+                    p.ticker,
+                    p.instrument_type,
+                    p.sector,
+                    p.value_rub,
+                    p.nav_percent,
+                    r.state,
+                    r.rating_status,
+                    r.fundamental_status,
+                    r.source_status,
+                    r.reasons,
+                    r.evidence,
+                    r.assessed_at
+                FROM portfolio_snapshot_positions AS p
+                LEFT JOIN portfolio_risk_assessments AS r
+                  ON r.snapshot_id = p.snapshot_id
+                 AND r.user_id = p.user_id
+                 AND r.instrument_uid = p.instrument_uid
+                WHERE p.snapshot_id = %s
+                  AND p.user_id = %s
+                ORDER BY
+                    CASE COALESCE(r.state, 'data_missing')
+                        WHEN 'confirmed_default' THEN 0
+                        WHEN 'critical' THEN 1
+                        WHEN 'elevated' THEN 2
+                        WHEN 'watch' THEN 3
+                        WHEN 'data_missing' THEN 4
+                        ELSE 5
+                    END,
+                    p.nav_percent DESC NULLS LAST,
+                    p.ticker
+                """,
+                (snapshot_id, user_id),
+            )
+            risk_rows = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                WITH held AS (
+                    SELECT instrument_uid
+                    FROM portfolio_snapshot_positions
+                    WHERE snapshot_id = %s
+                      AND user_id = %s
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (
+                        pe.provider,
+                        pe.instrument_uid,
+                        pe.event_type,
+                        pe.provider_key
+                    )
+                        pe.provider,
+                        pe.instrument_uid,
+                        pe.event_type,
+                        pe.provider_key,
+                        pe.announced_at,
+                        pe.record_at,
+                        pe.expected_at,
+                        pe.actual_at,
+                        pe.amount,
+                        pe.currency,
+                        pe.status,
+                        pe.payload,
+                        sd.source_url,
+                        sd.first_retrieved_at
+                    FROM payout_events AS pe
+                    JOIN source_documents AS sd
+                      ON sd.id = pe.source_document_id
+                    JOIN held
+                      ON held.instrument_uid = pe.instrument_uid
+                    ORDER BY
+                        pe.provider,
+                        pe.instrument_uid,
+                        pe.event_type,
+                        pe.provider_key,
+                        sd.first_retrieved_at DESC,
+                        pe.id DESC
+                )
+                SELECT *
+                FROM latest
+                WHERE COALESCE(actual_at, expected_at, announced_at)
+                    >= now() - interval '45 days'
+                ORDER BY
+                    COALESCE(actual_at, expected_at, announced_at) ASC NULLS LAST,
+                    instrument_uid
+                LIMIT 200
+                """,
+                (snapshot_id, user_id),
+            )
+            payout_rows = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                WITH held_subjects AS (
+                    SELECT p.instrument_uid AS subject_uid
+                    FROM portfolio_snapshot_positions AS p
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                    UNION
+                    SELECT c.asset_uid
+                    FROM portfolio_snapshot_positions AS p
+                    JOIN instrument_catalog AS c
+                      ON c.provider = 'tbank'
+                     AND c.instrument_uid = p.instrument_uid
+                    WHERE p.snapshot_id = %s
+                      AND p.user_id = %s
+                      AND c.asset_uid <> ''
+                )
+                SELECT
+                    sd.provider,
+                    sd.document_type,
+                    max(sr.retrieved_at) AS retrieved_at,
+                    count(DISTINCT sd.id) AS versions
+                FROM source_documents AS sd
+                JOIN source_retrievals AS sr
+                  ON sr.source_document_id = sd.id
+                JOIN held_subjects AS hs
+                  ON hs.subject_uid = sd.subject_uid
+                GROUP BY sd.provider, sd.document_type
+                ORDER BY sd.provider, sd.document_type
+                """,
+                (snapshot_id, user_id, snapshot_id, user_id),
+            )
+            source_rows = [dict(row) for row in cur.fetchall()]
+
+        return {
+            "snapshot_id": str(snapshot_id),
+            "captured_at": snapshot_row["captured_at"],
+            "analysis_status": snapshot_row["analysis_status"],
+            "execution_enabled": False,
+            "rating_feed_status": "data_missing",
+            "risks": risk_rows,
+            "payouts": payout_rows,
+            "sources": source_rows,
+        }
+
     def save_history_page(
         self,
         user_id: UUID,
