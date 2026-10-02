@@ -37,6 +37,8 @@ class FakeSsh:
         self.commands.append(command)
         if not self.succeeds:
             raise MODULE.InfraError("not ready")
+        if "count(*) FILTER" in command:
+            return "1|1\n"
         return ""
 
 
@@ -70,6 +72,26 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("command -v psql", ready.commands[0])
         self.assertIn("vkid_identities", ready.commands[0])
         self.assertIn("column_name = 'role'", ready.commands[0])
+
+    def test_registration_occupancy_parses_privacy_safe_counts(self) -> None:
+        class OccupancySsh:
+            def run(self, command: str, *, input_text: str | None = None) -> str:
+                self.command = command
+                return "1|1\n"
+
+        ssh = OccupancySsh()
+        self.assertEqual(MODULE.registration_occupancy(ssh), (1, 1))
+        self.assertIn("count(*) FILTER", ssh.command)
+        self.assertNotIn("public_id", ssh.command)
+        self.assertNotIn("vk_user_id", ssh.command)
+
+    def test_registration_occupancy_rejects_invalid_result(self) -> None:
+        class OccupancySsh:
+            def run(self, command: str, *, input_text: str | None = None) -> str:
+                return "two|one\n"
+
+        with self.assertRaises(MODULE.InfraError):
+            MODULE.registration_occupancy(OccupancySsh())
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -557,7 +579,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.6.2"', project)
+        self.assertIn('version = "0.6.3"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

@@ -128,6 +128,29 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         return False
 
 
+def registration_occupancy(ssh: EphemeralSsh) -> tuple[int, int]:
+    command = (
+        "set -a && "
+        f". {RUNTIME_ENV} && "
+        "set +a && "
+        'psql "$DATABASE_URL" -AtF "|" -v ON_ERROR_STOP=1 -c '
+        '"SELECT count(*) FILTER (WHERE status <> \'deleted\'), '
+        'count(*) FILTER (WHERE status = \'active\') FROM users;"'
+    )
+    raw = ssh.run(command).strip()
+    parts = raw.split("|")
+    if len(parts) != 2:
+        raise InfraError("Registration occupancy query returned an invalid result")
+    try:
+        used_slots = int(parts[0])
+        active_users = int(parts[1])
+    except ValueError as exc:
+        raise InfraError("Registration occupancy query returned non-integer values") from exc
+    if used_slots < 0 or active_users < 0 or active_users > used_slots:
+        raise InfraError("Registration occupancy query returned impossible values")
+    return used_slots, active_users
+
+
 def _environment_value(value: str) -> str:
     if "\n" in value or "\r" in value:
         raise InfraError("Runtime environment value contains a newline")
@@ -961,6 +984,8 @@ def reconcile(
 
     archive_b64 = build_release_archive(repository_root)
 
+    used_slots = 0
+    active_users = 0
     with EphemeralSsh(
         client=client,
         server_id=server_id,
@@ -993,6 +1018,7 @@ def reconcile(
             # refuses to touch a database containing more than one user.
             retire_legacy_profile(ssh)
             commit_product_environment(ssh, release_sha=release_sha)
+            used_slots, active_users = registration_occupancy(ssh)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise
@@ -1007,7 +1033,9 @@ def reconcile(
         registration_state = "closed"
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
-        f"VK ID login is {login_state}; registration is {registration_state}."
+        f"VK ID login is {login_state}; registration is {registration_state}; "
+        f"occupancy is {used_slots}/{registration_max_users()} slots "
+        f"with {active_users} active user(s)."
     )
     set_output("status", "app_ready")
     return 0
