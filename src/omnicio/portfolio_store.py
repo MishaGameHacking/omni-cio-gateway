@@ -1289,7 +1289,8 @@ def _freshness_status(
     normalized = value.astimezone(UTC)
     return (
         "stale"
-        if now - normalized > EVIDENCE_RETRIEVAL_MAX_AGE
+        if normalized > now
+        or now - normalized > EVIDENCE_RETRIEVAL_MAX_AGE
         else "fresh"
     )
 
