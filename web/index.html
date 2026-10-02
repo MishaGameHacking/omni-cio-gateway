@@ -50,15 +50,15 @@
             aria-hidden="true"
             decoding="async"
           >
-          <p class="eyebrow" id="access-eyebrow">Личный закрытый контур</p>
+          <p class="eyebrow" id="access-eyebrow">Персональный кабинет</p>
           <h1 id="auth-title">Инвестиционный кабинет без лишнего шума.</h1>
           <p class="lead" id="access-lead">
-            Один аккаунт владельца, вход через VK ID и защищённое подключение
-            собственного брокерского счёта T-Invest.
+            Вход через VK ID, отдельный пользовательский профиль и защищённое
+            подключение собственного брокерского счёта T-Invest.
           </p>
           <div class="trust-list" aria-label="Ключевые свойства">
             <span>Вход: VK ID</span>
-            <span id="access-scope">Доступ: только владелец</span>
+            <span id="access-scope">Регистрация: один аккаунт</span>
             <span>Токен T-Invest: зашифрован</span>
           </div>
         </section>
@@ -79,7 +79,7 @@
                 <input id="accept-privacy" type="checkbox">
                 <span>
                   Я ознакомился с
-                  <a href="/legal/privacy.html" target="_blank" rel="noopener">уведомлением о конфиденциальности</a>.
+                  <a href="/legal/privacy.html" target="_blank" rel="noopener">политикой обработки персональных данных</a>.
                 </span>
               </label>
 
@@ -87,7 +87,7 @@
                 <input id="accept-pd" type="checkbox">
                 <span>
                   Я подтверждаю
-                  <a href="/legal/consent.html" target="_blank" rel="noopener">согласие на обработку данных для входа</a>.
+                  <a href="/legal/consent.html" target="_blank" rel="noopener">отдельное согласие на обработку персональных данных</a>.
                 </span>
               </label>
 
@@ -95,7 +95,7 @@
                 <input id="accept-terms" type="checkbox">
                 <span>
                   Я принимаю
-                  <a href="/legal/terms.html" target="_blank" rel="noopener">правила личного использования OmniCIO Personal</a>.
+                  <a href="/legal/terms.html" target="_blank" rel="noopener">пользовательские правила OmniCIO Personal</a>.
                 </span>
               </label>
 
@@ -703,7 +703,7 @@
                     <p class="card-label">Профиль</p>
                     <h3>Личный аккаунт</h3>
                   </div>
-                  <span class="state-badge state-ok" id="account-mode-badge">Owner-only</span>
+                  <span class="state-badge state-ok" id="account-mode-badge">User</span>
                 </header>
 
                 <dl class="info-list">
@@ -712,12 +712,16 @@
                     <dd id="settings-profile-id">000000000</dd>
                   </div>
                   <div>
+                    <dt>Роль</dt>
+                    <dd id="settings-profile-role">Пользователь</dd>
+                  </div>
+                  <div>
                     <dt>Вход</dt>
                     <dd>VK ID</dd>
                   </div>
                   <div>
-                    <dt>Публичная регистрация</dt>
-                    <dd>Выключена</dd>
+                    <dt>Регистрация новых аккаунтов</dt>
+                    <dd id="settings-registration-state">Проверяем</dd>
                   </div>
                 </dl>
 
