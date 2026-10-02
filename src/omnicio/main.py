@@ -600,6 +600,30 @@ def tbank_analysis(
     return asdict(snapshot)
 
 
+@app.get(
+    "/api/portfolio/intelligence",
+    responses={401: {"description": "Authenticated session required"}},
+)
+def portfolio_intelligence(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    snapshot = portfolio_store(request).latest_intelligence(user.id)
+    response.headers["Cache-Control"] = "private, no-store"
+    if snapshot is None:
+        return {
+            "status": "pending",
+            "execution_enabled": False,
+            "rating_feed_status": "data_missing",
+            "risks": [],
+            "payouts": [],
+            "sources": [],
+        }
+    return {"status": "observed", **snapshot}
+
+
 @app.get("/api/broker/tbank/instruments/search")
 def tbank_instrument_search(
     request: Request,
