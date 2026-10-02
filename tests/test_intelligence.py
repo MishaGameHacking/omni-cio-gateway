@@ -350,3 +350,25 @@ def test_empty_fundamental_record_remains_data_missing() -> None:
     assert assessments[0].fundamental_status == "data_missing"
     assert assessments[0].state == "data_missing"
     assert "fundamental_data_missing" in assessments[0].reasons
+
+
+def test_stale_evidence_retrieval_is_fail_closed() -> None:
+    now = datetime(2026, 10, 2, 18, 0, tzinfo=UTC)
+    stale_at = datetime(2026, 9, 30, 5, 0, tzinfo=UTC)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=stale_at,
+        dividends=(),
+        coupons=(),
+        bond_events=(),
+        reports=(),
+        fundamentals=(),
+        sources=_sources(stale_at),
+    )
+
+    _, assessments = build_tbank_evidence(_bundle(), evidence, assessed_at=now)
+
+    assert assessments[0].source_status == "partial"
+    assert assessments[0].state == "data_missing"
+    assert "provider_evidence_stale" in assessments[0].reasons
+    assert assessments[0].evidence["evidence_retrieval_max_age_hours"] == 36
+    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
