@@ -6,8 +6,8 @@ import base64
 import hashlib
 import ipaddress
 import os
-import re
 import pathlib
+import re
 import sys
 import tomllib
 
