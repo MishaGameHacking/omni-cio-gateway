@@ -337,14 +337,14 @@ def build_tbank_evidence(
         provider_uid = info.uid if info is not None else uid
         default_date = defaults.get(provider_uid)
         fundamental_status = _fundamental_status(info, fundamentals, assessed_at)
-        fundamental = (
+        current_fundamental = (
             fundamentals.get(info.asset_uid)
             if info is not None and info.asset_uid
             else None
         )
         metric_state, metric_reasons, metric_profile, metric_signals = (
             _fundamental_watch_signals(
-                fundamental,
+                current_fundamental,
                 status=fundamental_status,
             )
         )
