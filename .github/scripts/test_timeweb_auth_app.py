@@ -40,6 +40,19 @@ class FakeSsh:
         return ""
 
 
+class MissingLegacyMarkerSsh:
+    def __init__(self) -> None:
+        self.commands: list[str] = []
+        self.inputs: list[str | None] = []
+
+    def run(self, command: str, *, input_text: str | None = None) -> str:
+        self.commands.append(command)
+        self.inputs.append(input_text)
+        if command.startswith("test -f "):
+            raise MODULE.InfraError("marker missing")
+        return ""
+
+
 class AuthAppDeployTests(unittest.TestCase):
     def test_release_sha_requires_full_lowercase_commit(self) -> None:
         self.assertIsNotNone(MODULE.RELEASE_RE.fullmatch("a" * 40))
@@ -195,6 +208,36 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_legal_templates_require_operator_placeholders(self) -> None:
         MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+
+    def test_legacy_reset_only_targets_public_id_one(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
+            ssh = MissingLegacyMarkerSsh()
+            MODULE.retire_legacy_profile(ssh)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        migration = next(value for value in ssh.inputs if value and "BEGIN;" in value)
+        self.assertIn("WHERE public_id = 1", migration)
+        self.assertIn("refuses to delete a non-legacy user", migration)
+        self.assertIn("DO $", migration)
+        self.assertNotIn("\nDELETE FROM users;\n", migration)
+        self.assertTrue(any(MODULE.LEGACY_RESET_MARKER in command for command in ssh.commands))
+
+    def test_legacy_reset_marker_makes_cleanup_idempotent(self) -> None:
+        old = dict(os.environ)
+        try:
+            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
+            ssh = FakeSsh(True)
+            MODULE.retire_legacy_profile(ssh)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        self.assertEqual(ssh.commands, [f"test -f {MODULE.LEGACY_RESET_MARKER}"])
+
 
     def test_auth_deploy_workflow_separates_pr_and_production_concurrency(self) -> None:
         workflow = (
