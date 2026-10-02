@@ -87,16 +87,24 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(relative, names)
         self.assertNotIn("tests/secret-test.txt", names)
 
+    def _base_registration_environment(self) -> None:
+        os.environ["VKID_APP_ID"] = "123456"
+        os.environ["REGISTRATION_ENABLED"] = "true"
+        os.environ["REGISTRATION_MAX_USERS"] = "1"
+        os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
+        os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
+        os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
+        os.environ["LEGAL_OPERATOR_ADDRESS"] = "Moscow, Russian Federation"
+        os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
+        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v3"
+        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v3"
+        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v3"
+
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-            os.environ.pop("VKID_APP_ID", None)
-            os.environ.pop("OWNER_VK_ID", None)
+            self._base_registration_environment()
             MODULE.validate_product_environment()
-
             os.environ.pop("LEGAL_TERMS_VERSION")
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
@@ -104,64 +112,54 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_fails_on_partial_vkid_config(self) -> None:
+    def test_product_environment_requires_numeric_vkid_app_id(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ.pop("OWNER_VK_ID", None)
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_product_environment_rejects_non_numeric_vkid_config(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
+            self._base_registration_environment()
             os.environ["VKID_APP_ID"] = "app"
-            os.environ["OWNER_VK_ID"] = "987654321"
             with self.assertRaises(MODULE.InfraError):
                 MODULE.validate_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_keeps_vkid_fail_closed_without_owner_config(self) -> None:
+    def test_limited_registration_requires_reviewed_legal_gate(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ.pop("VKID_APP_ID", None)
-            os.environ.pop("OWNER_VK_ID", None)
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-
-            product_env = MODULE.build_product_environment()
+            self._base_registration_environment()
+            os.environ["MULTIUSER_LEGAL_APPROVED"] = "false"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('VKID_APP_ID=""', product_env)
-        self.assertIn('OWNER_VK_ID=""', product_env)
-        self.assertIn('VKID_LOGIN_ENABLED="false"', product_env)
-        self.assertIn('REGISTRATION_ENABLED="false"', product_env)
-
-    def test_product_environment_supports_reviewed_open_registration(self) -> None:
+    def test_limited_registration_requires_regulatory_gate(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ.pop("OWNER_VK_ID", None)
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
+            self._base_registration_environment()
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
 
+    def test_limited_registration_requires_operator_identity(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
+            os.environ["LEGAL_OPERATOR_EMAIL"] = "not-an-email"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.validate_product_environment()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def test_product_environment_builds_one_slot_registration(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
             MODULE.validate_product_environment()
             product_env = MODULE.build_product_environment()
         finally:
@@ -169,25 +167,11 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.update(old)
 
         self.assertIn('VKID_APP_ID="123456"', product_env)
-        self.assertIn('OWNER_VK_ID=""', product_env)
         self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
         self.assertIn('REGISTRATION_ENABLED="true"', product_env)
-
-    def test_open_registration_requires_reviewed_legal_gate(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            os.environ["MULTIUSER_LEGAL_APPROVED"] = "false"
-            os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-01-v2"
-            os.environ["LEGAL_TERMS_VERSION"] = "2026-10-01-v2"
-
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
+        self.assertIn('REGISTRATION_MAX_USERS="1"', product_env)
+        self.assertIn('LEGAL_OPERATOR_EMAIL="operator@example.com"', product_env)
+        self.assertNotIn("OWNER_VK_ID", product_env)
 
     def test_registration_environment_rejects_invalid_boolean(self) -> None:
         old = dict(os.environ)
@@ -199,20 +183,18 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_enables_vkid_only_with_owner_config(self) -> None:
+    def test_registration_capacity_must_be_positive(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ["OWNER_VK_ID"] = "987654321"
-            product_env = MODULE.build_product_environment()
+            os.environ["REGISTRATION_MAX_USERS"] = "0"
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.registration_max_users()
         finally:
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('VKID_APP_ID="123456"', product_env)
-        self.assertIn('OWNER_VK_ID="987654321"', product_env)
-        self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
-        self.assertIn('REGISTRATION_ENABLED="false"', product_env)
+    def test_legal_templates_require_operator_placeholders(self) -> None:
+        MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
 
     def test_auth_deploy_workflow_separates_pr_and_production_concurrency(self) -> None:
         workflow = (
