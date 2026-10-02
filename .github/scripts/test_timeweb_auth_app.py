@@ -211,6 +211,8 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_legacy_reset_only_targets_public_id_one(self) -> None:
         old = dict(os.environ)
         try:
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
             os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
             ssh = MissingLegacyMarkerSsh()
             MODULE.retire_legacy_profile(ssh)
@@ -228,6 +230,8 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_legacy_reset_marker_makes_cleanup_idempotent(self) -> None:
         old = dict(os.environ)
         try:
+            os.environ["REGISTRATION_ENABLED"] = "true"
+            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
             os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
             ssh = FakeSsh(True)
             MODULE.retire_legacy_profile(ssh)
@@ -316,7 +320,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn("OmniCIO Personal", privacy)
         self.assertIn("T-Invest API", privacy)
-        self.assertIn("текущий лимит регистрации — один пользовательский аккаунт", terms)
+        self.assertIn("Текущий лимит при её включении — один пользовательский аккаунт", terms)
         self.assertIn("ролью <code>user</code>", terms)
 
     def test_personal_dashboard_keeps_auth_and_broker_contracts(self) -> None:
