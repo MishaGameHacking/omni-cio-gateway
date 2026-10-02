@@ -25,6 +25,7 @@ from .cbr import CBRClient
 from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .market import MarketService
+from .intelligence import rating_source_references
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import InvestmentProfileRecord, PortfolioStore
 from .security import (
@@ -617,11 +618,16 @@ def portfolio_intelligence(
             "status": "pending",
             "execution_enabled": False,
             "rating_feed_status": "data_missing",
+            "rating_sources": rating_source_references(),
             "risks": [],
             "payouts": [],
             "sources": [],
         }
-    return {"status": "observed", **snapshot}
+    return {
+        "status": "observed",
+        "rating_sources": rating_source_references(),
+        **snapshot,
+    }
 
 
 @app.get("/api/broker/tbank/instruments/search")
