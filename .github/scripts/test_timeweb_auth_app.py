@@ -131,9 +131,9 @@ class AuthAppDeployTests(unittest.TestCase):
         os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
         os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
         os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
-        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v5"
-        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v5"
-        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v5"
+        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v6"
+        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v6"
+        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v6"
 
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
@@ -427,7 +427,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-02-v5", document)
+            self.assertIn("2026-10-02-v6", document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
 
         self.assertIn("OmniCIO Personal", privacy)
