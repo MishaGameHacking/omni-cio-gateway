@@ -124,19 +124,33 @@ def _number(metrics: dict[str, str | None], key: str) -> Decimal | None:
     return parsed if parsed.is_finite() else None
 
 
-def _is_bank_sector(sector: str) -> bool:
+def _sector_model(sector: str) -> str:
     normalized = sector.strip().lower()
-    return any(
+    if any(
         token in normalized
         for token in (
             "bank",
             "банк",
-            "financial",
-            "финанс",
             "credit institution",
             "кредитн",
         )
-    )
+    ):
+        return "bank"
+    if any(token in normalized for token in ("insurance", "insurer", "страх")):
+        return "insurer"
+    if any(
+        token in normalized
+        for token in (
+            "developer",
+            "real estate",
+            "construction",
+            "девел",
+            "недвиж",
+            "строит",
+        )
+    ):
+        return "developer"
+    return "ordinary_company"
 
 
 def _latest_report(reports: tuple[ReportEvidence, ...]) -> datetime | None:
@@ -382,7 +396,7 @@ def assess_instrument(
     now = now.astimezone(UTC)
 
     coverage, reasons = _source_coverage(evidence, now=now)
-    sector_model = "bank" if _is_bank_sector(evidence.sector) else "ordinary_company"
+    sector_model = _sector_model(evidence.sector)
 
     if evidence.confirmed_default_at is not None:
         reasons.insert(
@@ -403,6 +417,21 @@ def assess_instrument(
         if evidence.fundamental is not None:
             if sector_model == "bank":
                 reasons.extend(_bank_reasons(evidence.fundamental))
+                coverage = "partial"
+            elif sector_model in {"insurer", "developer"}:
+                reasons.append(
+                    RiskReason(
+                        code=f"{sector_model}_model_limited",
+                        severity="info",
+                        title="Нужна специализированная секторная модель",
+                        detail=(
+                            "OmniCIO не применяет корпоративные Debt/EBITDA-пороги к этому "
+                            "сектору без подтверждённых профильных метрик. Риск остаётся "
+                            "неполностью покрытым."
+                        ),
+                        source_ids=("tbank_fundamentals",),
+                    )
+                )
                 coverage = "partial"
             else:
                 reasons.extend(_ordinary_company_reasons(evidence.fundamental))
