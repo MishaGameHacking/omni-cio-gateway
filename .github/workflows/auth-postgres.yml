@@ -64,6 +64,10 @@ jobs:
       actions: read
       checks: read
     name: Reconcile private PostgreSQL
+    concurrency:
+      group: omnicio-production-ssh
+      cancel-in-progress: false
+      queue: max
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-24.04
