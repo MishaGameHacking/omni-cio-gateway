@@ -34,10 +34,15 @@ from timeweb_auth_postgres import (
 DOMAIN = "omnicio.ru"
 SITE_MARKER = 'name="omni-cio-white-site"'
 LEGAL_PAGES = {
-    "/legal/privacy.html": "Уведомление о конфиденциальности и обработке данных",
-    "/legal/consent.html": "Отдельное согласие на обработку данных для входа",
-    "/legal/terms.html": "Правила личного использования OmniCIO Personal",
+    "/legal/privacy.html": "Политика обработки персональных данных",
+    "/legal/consent.html": "Согласие на обработку персональных данных",
+    "/legal/terms.html": "Пользовательские правила OmniCIO Personal",
 }
+LEGAL_OPERATOR_MARKERS = (
+    "__OMNICIO_OPERATOR_NAME__",
+    "__OMNICIO_OPERATOR_ADDRESS__",
+    "__OMNICIO_OPERATOR_EMAIL__",
+)
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -200,9 +205,21 @@ def validate_product_environment() -> None:
             )
         registration_max_users()
 
+        operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
+        operator_address = os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip()
+        operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
+        if not 3 <= len(operator_name) <= 200:
+            raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
+        if not 5 <= len(operator_address) <= 300:
+            raise InfraError("LEGAL_OPERATOR_ADDRESS must contain 5-300 characters")
+        if not re.fullmatch(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
+            operator_email,
+        ):
+            raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
+
 
 def validate_legal_documents(repository_root: pathlib.Path) -> None:
-    markers = ("__LEGAL_OPERATOR_NAME__", "__LEGAL_OPERATOR_CONTACT__")
     for relative in (
         "web/legal/privacy.html",
         "web/legal/consent.html",
@@ -213,9 +230,10 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
             body = path.read_text(encoding="utf-8")
         except OSError as exc:
             raise InfraError(f"Legal document is unavailable: {relative}") from exc
-        if any(marker in body for marker in markers):
+        missing = [marker for marker in LEGAL_OPERATOR_MARKERS if marker not in body]
+        if missing:
             raise InfraError(
-                "Legal operator details must be completed before registration release"
+                f"Legal document {relative} is missing operator placeholders"
             )
 
 
@@ -225,6 +243,9 @@ def build_product_environment() -> str:
         "VKID_LOGIN_ENABLED": "true" if vkid_configuration_ready() else "false",
         "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",
         "REGISTRATION_MAX_USERS": str(registration_max_users()),
+        "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
+        "LEGAL_OPERATOR_ADDRESS": os.environ.get("LEGAL_OPERATOR_ADDRESS", "").strip(),
+        "LEGAL_OPERATOR_EMAIL": os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
@@ -340,9 +361,32 @@ install -m 0644 "$RELEASE/assets/brand/web/favicon.ico" "$WEB_RELEASE/assets/bra
 install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-192.png" "$WEB_RELEASE/assets/brand/pwa-icon-192.png"
 install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-512.png" "$WEB_RELEASE/assets/brand/pwa-icon-512.png"
 install -m 0644 "$RELEASE/assets/brand/web/pwa-maskable-512.png" "$WEB_RELEASE/assets/brand/pwa-maskable-512.png"
-install -m 0644 "$RELEASE/web/legal/privacy.html" "$WEB_RELEASE/legal/privacy.html"
-install -m 0644 "$RELEASE/web/legal/consent.html" "$WEB_RELEASE/legal/consent.html"
-install -m 0644 "$RELEASE/web/legal/terms.html" "$WEB_RELEASE/legal/terms.html"
+set -a
+. /etc/omnicio/product.env
+set +a
+
+python3 - "$RELEASE/web/legal" "$WEB_RELEASE/legal" <<'PY'
+import html
+import os
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+replacements = {
+    "__OMNICIO_OPERATOR_NAME__": html.escape(os.environ["LEGAL_OPERATOR_NAME"], quote=True),
+    "__OMNICIO_OPERATOR_ADDRESS__": html.escape(os.environ["LEGAL_OPERATOR_ADDRESS"], quote=True),
+    "__OMNICIO_OPERATOR_EMAIL__": html.escape(os.environ["LEGAL_OPERATOR_EMAIL"], quote=True),
+}
+for name in ("privacy.html", "consent.html", "terms.html"):
+    body = (source / name).read_text(encoding="utf-8")
+    for marker, value in replacements.items():
+        body = body.replace(marker, value)
+    if "__OMNICIO_OPERATOR_" in body:
+        raise SystemExit(f"unresolved legal operator marker: {name}")
+    (destination / name).write_text(body, encoding="utf-8")
+PY
+chmod 0644 "$WEB_RELEASE/legal/privacy.html" "$WEB_RELEASE/legal/consent.html" "$WEB_RELEASE/legal/terms.html"
 
 python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" <<'PY'
 import json
@@ -751,8 +795,11 @@ def verify_public(release_sha: str) -> None:
         verify_public_config(config)
         for path, marker in LEGAL_PAGES.items():
             body, _ = fetch_public(path, context)
-            if marker not in body.decode(errors="replace"):
+            rendered = body.decode(errors="replace")
+            if marker not in rendered:
                 raise InfraError(f"Public legal page verification failed: {path}")
+            if "__OMNICIO_OPERATOR_" in rendered:
+                raise InfraError(f"Public legal page contains unresolved operator data: {path}")
     except (
         urllib.error.URLError, TimeoutError, ssl.SSLError, json.JSONDecodeError, UnicodeDecodeError,
     ) as exc:
