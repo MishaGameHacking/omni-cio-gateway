@@ -76,10 +76,14 @@ class DeleteAccountBody(BaseModel):
 
 
 class InvestmentProfileBody(BaseModel):
-    reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000)
-    planned_withdrawal_rub: Decimal = Field(ge=0, le=1_000_000_000_000)
+    reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000, allow_inf_nan=False)
+    planned_withdrawal_rub: Decimal = Field(
+        ge=0,
+        le=1_000_000_000_000,
+        allow_inf_nan=False,
+    )
     horizon_months: int = Field(ge=1, le=1200)
-    max_drawdown_percent: Decimal = Field(ge=0, le=100)
+    max_drawdown_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     liquidity_horizon_days: int = Field(ge=0, le=36500)
     allow_below_investment_grade: bool = False
 
@@ -473,10 +477,12 @@ def _profile_payload(profile: InvestmentProfileRecord) -> dict[str, object]:
 @app.get("/api/profile/investment")
 def investment_profile(
     request: Request,
+    response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     profile = portfolio_store(request).current_profile(user.id)
+    response.headers["Cache-Control"] = "private, no-store"
     return {"profile": _profile_payload(profile) if profile is not None else None}
 
 
@@ -484,6 +490,7 @@ def investment_profile(
 def save_investment_profile(
     body: InvestmentProfileBody,
     request: Request,
+    response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     require_same_origin(request)
@@ -503,6 +510,7 @@ def save_investment_profile(
         liquidity_horizon_days=body.liquidity_horizon_days,
         allow_below_investment_grade=body.allow_below_investment_grade,
     )
+    response.headers["Cache-Control"] = "private, no-store"
     return {"profile": _profile_payload(profile)}
 
 
