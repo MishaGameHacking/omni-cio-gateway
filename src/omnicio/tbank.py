@@ -95,6 +95,20 @@ class TBankPortfolioPosition:
     expected_yield_percent: str
     daily_yield: TBankMoney | None
     blocked: bool
+    current_nkd: TBankMoney | None = None
+    blocked_lots: str = "0"
+
+
+@dataclass(frozen=True, slots=True)
+class TBankInstrumentMetadata:
+    uid: str
+    name: str
+    ticker: str
+    isin: str
+    instrument_type: str
+    sector: str
+    country_of_risk: str
+    for_qual_investor: bool | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +131,52 @@ class TBankPositions:
 @dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
+
+    def get_instrument_metadata(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_type: str,
+    ) -> tuple[TBankInstrumentMetadata, ...]:
+        methods = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}
+        method = methods.get(instrument_type)
+        if method is None:
+            raise ValueError("unsupported metadata instrument type")
+
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method=method,
+            body={"instrumentStatus": "INSTRUMENT_STATUS_ALL"},
+        )
+
+        result: list[TBankInstrumentMetadata] = []
+        seen: set[str] = set()
+        for raw in _required_list(payload, "instruments"):
+            item = _required_object(raw, "instrument metadata")
+            uid = _text(item.get("uid")).strip()
+            if not uid or uid in seen:
+                raise TBankUnavailable("T-Invest metadata has missing or duplicate uid")
+            seen.add(uid)
+
+            for_qual = item.get("forQualInvestorFlag")
+            if for_qual is not None and not isinstance(for_qual, bool):
+                raise TBankUnavailable("T-Invest metadata has invalid qualification flag")
+
+            result.append(
+                TBankInstrumentMetadata(
+                    uid=uid,
+                    name=_text(item.get("name")).strip(),
+                    ticker=_text(item.get("ticker")).strip(),
+                    isin=_text(item.get("isin")).strip(),
+                    instrument_type=instrument_type,
+                    sector=_text(item.get("sector")).strip(),
+                    country_of_risk=_text(item.get("countryOfRisk")).strip().upper(),
+                    for_qual_investor=for_qual,
+                )
+            )
+        return tuple(result)
 
     def get_accounts(
         self,
@@ -385,6 +445,8 @@ class TBankInvestClient:
                     expected_yield_percent=_quotation(position.get("expectedYield")) or "0",
                     daily_yield=_money(position.get("dailyYield")),
                     blocked=blocked_raw,
+                    current_nkd=_money(position.get("currentNkd")),
+                    blocked_lots=_quotation(position.get("blockedLots")) or "0",
                 )
             )
 
@@ -587,6 +649,8 @@ def _quotation(value: object) -> str | None:
         raise TBankUnavailable("T-Invest API returned invalid numeric value") from exc
     if amount == 0:
         return "0"
+    if not amount.is_finite():
+        raise TBankUnavailable("T-Invest API returned non-finite numeric value")
     return format(amount.normalize(), "f")
 
 
