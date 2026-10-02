@@ -27,6 +27,7 @@ from omnicio.tbank import (
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
+    TBankRating,
     TBankTokenRejected,
     TBankUnavailable,
     TBankUserInfo,
@@ -549,6 +550,20 @@ def test_bond_metadata_preserves_optimizer_safety_fields() -> None:
                     "amortizationFlag": False,
                     "subordinatedFlag": False,
                     "liquidityFlag": True,
+                    "exchange": "MOEX",
+                    "realExchange": "REAL_EXCHANGE_MOEX",
+                    "taxFreeFlag": False,
+                    "collateralFlag": True,
+                    "riskLevel": "RISK_LEVEL_LOW",
+                    "ratings": [
+                        {
+                            "agencyName": "АКРА",
+                            "ratingLevel": "AA+(RU)",
+                            "ratingDate": "2026-09-01T00:00:00Z",
+                            "forecast": "Стабильный",
+                            "isUnderWatch": False,
+                        }
+                    ],
                     "apiTradeAvailableFlag": True,
                     "buyAvailableFlag": True,
                     "sellAvailableFlag": True,
@@ -576,6 +591,20 @@ def test_bond_metadata_preserves_optimizer_safety_fields() -> None:
     assert bond.amortization is False
     assert bond.subordinated is False
     assert bond.liquidity is True
+    assert bond.exchange == "MOEX"
+    assert bond.real_exchange == "REAL_EXCHANGE_MOEX"
+    assert bond.tax_free is False
+    assert bond.collateral is True
+    assert bond.risk_level == "RISK_LEVEL_LOW"
+    assert bond.ratings == (
+        TBankRating(
+            agency_name="АКРА",
+            rating_level="AA+(RU)",
+            rating_date=datetime(2026, 9, 1, tzinfo=UTC),
+            forecast="Стабильный",
+            is_under_watch=False,
+        ),
+    )
 
 
 def test_tbank_market_values_return_timestamped_last_price_and_yield() -> None:
