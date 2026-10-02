@@ -21,7 +21,9 @@ RiskState = Literal[
 EvidenceStatus = Literal["received", "partial", "unavailable"]
 DataStatus = Literal["data_missing", "received", "stale", "not_applicable"]
 
+EVIDENCE_RETRIEVAL_MAX_AGE = timedelta(hours=36)
 FUNDAMENTAL_MAX_AGE = timedelta(days=550)
+RISK_RULESET_VERSION = "r3-evidence-v1"
 MONETARY_FUNDAMENTAL_FIELDS = (
     "revenue_ttm",
     "ebitda_ttm",
@@ -365,6 +367,7 @@ def build_tbank_evidence(
                     ),
                     "rating_policy": "missing_until_licensed_feed_is_verified",
                     "fundamental_max_age_days": FUNDAMENTAL_MAX_AGE.days,
+                    "ruleset_version": RISK_RULESET_VERSION,
                 },
             )
         )
