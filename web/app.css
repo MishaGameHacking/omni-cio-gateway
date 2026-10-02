@@ -1329,6 +1329,22 @@ select:hover {
   gap: 16px;
 }
 
+.profile-constraints-card {
+  overflow: hidden;
+}
+
+.constraint-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.profile-constraint-meta {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .profile-hero,
 .support-hero {
   padding: 24px;
@@ -1630,6 +1646,10 @@ select:hover {
 }
 
 @media (max-width: 820px) {
+  .constraint-form-grid {
+    grid-template-columns: 1fr;
+  }
+
   body.drawer-open {
     overflow: hidden;
   }
