@@ -388,6 +388,17 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
+    def test_schema_changes_defer_direct_app_deploy_until_postgres_reconcile(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        workflow = (root / ".github" / "workflows" / "auth-app-deploy.yml").read_text()
+
+        self.assertIn("Detect schema-first release", workflow)
+        self.assertIn('git diff --quiet "${BEFORE_SHA}" "${RELEASE_SHA}" -- migrations/', workflow)
+        self.assertIn("defer=true", workflow)
+        self.assertIn("steps.schema.outputs.defer != \'true\'", workflow)
+        self.assertIn("workflow_run", workflow)
+        self.assertIn("Auth PostgreSQL", workflow)
+
     def test_remote_daily_observer_is_read_only_bounded_and_rollback_safe(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         rollback = MODULE.REMOTE_ROLLBACK_SCRIPT
