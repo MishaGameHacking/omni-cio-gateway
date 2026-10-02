@@ -119,7 +119,7 @@ def _sources(now: datetime) -> tuple[AnalysisSource, ...]:
         AnalysisSource(
             id="credit_ratings",
             name="ratings",
-            url="https://www.cbr.ru/finorg/foinfo/ratings/",
+            url="https://www.cbr.ru/finm_infrastructure/ra/",
             methods=(),
             retrieved_at=now,
             status="not_requested",
