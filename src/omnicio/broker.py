@@ -13,6 +13,11 @@ from .portfolio import PortfolioAnalysis, analyze_portfolio
 from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     TBankAccount,
+    TBankAssetFundamental,
+    TBankAssetReport,
+    TBankBondEvent,
+    TBankCoupon,
+    TBankDividend,
     TBankEnvironment,
     TBankFxQuote,
     TBankInstrument,
@@ -329,6 +334,86 @@ class BrokerService:
             to_at=to_at,
             cursor=cursor,
             limit=limit,
+        )
+
+    def asset_fundamentals(
+        self,
+        user_id: UUID,
+        asset_uids: tuple[str, ...],
+    ) -> tuple[TBankAssetFundamental, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_asset_fundamentals(
+            credential,
+            environment,
+            asset_uids,
+        )
+
+    def asset_reports(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankAssetReport, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_asset_reports(
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+        )
+
+    def dividends(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankDividend, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_dividends(
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+        )
+
+    def bond_coupons(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankCoupon, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_bond_coupons(
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+        )
+
+    def bond_events(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankBondEvent, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_bond_events(
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
         )
 
     def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
