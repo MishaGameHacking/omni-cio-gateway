@@ -388,6 +388,24 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
+    def test_remote_daily_observer_is_read_only_bounded_and_rollback_safe(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        rollback = MODULE.REMOTE_ROLLBACK_SCRIPT
+
+        self.assertIn("omnicio-observer.service", script)
+        self.assertIn("omnicio-observer.timer", script)
+        self.assertIn("ExecStart=/opt/omnicio/current/.venv/bin/python -m omnicio.observer", script)
+        self.assertIn("OnCalendar=*-*-* 06:15:00 Europe/Moscow", script)
+        self.assertIn("Persistent=true", script)
+        self.assertIn("Restart=on-failure", script)
+        self.assertIn("StartLimitBurst=3", script)
+        self.assertIn("NoNewPrivileges=true", script)
+        self.assertIn("OBSERVER_TIMER_WAS_ENABLED", script)
+        self.assertIn("OBSERVER_TIMER_WAS_ACTIVE", script)
+        self.assertIn("OBSERVER_TIMER_WAS_ENABLED", rollback)
+        self.assertIn("OBSERVER_TIMER_WAS_ACTIVE", rollback)
+        self.assertNotIn("omnicio.observer --execute", script)
+
     def test_remote_service_installs_tbank_russian_trusted_ca_safely(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("russian_trusted_root_ca.cer", script)
@@ -482,6 +500,33 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("innerHTML", script)
         self.assertNotIn("₽ 1 000 000", page)
         self.assertNotIn("+12.4%", page)
+
+    def test_versioned_investment_profile_is_user_scoped_and_not_trade_authority(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+        backend = (root / "src" / "omnicio" / "main.py").read_text()
+
+        for element_id in (
+            "investment-profile-form",
+            "investment-profile-version",
+            "profile-reserve-rub",
+            "profile-withdrawal-rub",
+            "profile-horizon-months",
+            "profile-max-drawdown",
+            "profile-liquidity-days",
+            "profile-allow-below-grade",
+            "investment-profile-save",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn('"/api/profile/investment"', script)
+        self.assertIn('@app.get("/api/profile/investment")', backend)
+        self.assertIn('@app.put("/api/profile/investment")', backend)
+        self.assertIn("require_same_origin(request)", backend)
+        self.assertIn("authenticated_user(request, session_token)", backend)
+        self.assertIn("не дают OmniCIO полномочий совершать сделки", page)
+        self.assertNotIn("/api/broker/tbank/operations", script)
 
     def test_user_transaction_history_is_not_exposed(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -671,7 +716,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.8.0"', project)
+        self.assertIn('version = "0.9.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
