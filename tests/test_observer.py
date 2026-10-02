@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from omnicio.broker import AnalysisSource, BrokerObservationBundle
+from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
 from omnicio.observer import PortfolioObserver, provider_read
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.portfolio_store import BrokerSyncState, JobRunRecord
@@ -86,6 +86,7 @@ class FakeStore:
         self.finished: list[tuple[str, dict[str, object]]] = []
         self.saved_snapshots = 0
         self.saved_pages: list[str] = []
+        self.saved_evidence = 0
         self.claimed = False
         self.lock_available = True
         self.recover_running_values: list[bool] = []
@@ -149,6 +150,21 @@ class FakeStore:
             assert user_info.risk_level_code == "CONSERVATIVE"
         self.saved_snapshots += 1
         return uuid4()
+
+    def save_evidence(
+        self,
+        user_id: UUID,
+        *,
+        snapshot_id,
+        documents,
+        assessments,
+        retrieved_at: datetime,
+    ):
+        assert user_id == USER_ID
+        assert snapshot_id
+        assert retrieved_at.tzinfo is not None
+        self.saved_evidence += 1
+        return len(documents), len(assessments)
 
     def sync_state(self, user_id: UUID, account_id: str):
         assert user_id == USER_ID
@@ -223,6 +239,59 @@ class FakeBroker:
         assert full_catalog is True
         return bundle(self.analysis_status)
 
+    def evidence(
+        self,
+        user_id: UUID,
+        bundle: BrokerObservationBundle,
+        *,
+        now: datetime | None = None,
+    ) -> BrokerEvidenceSnapshot:
+        assert user_id == USER_ID
+        assert bundle.account_id == "account-1"
+        observed = now or datetime(2026, 10, 2, 6, 0, tzinfo=UTC)
+        return BrokerEvidenceSnapshot(
+            refreshed_at=observed,
+            dividends=(),
+            coupons=(),
+            bond_events=(),
+            reports=(),
+            fundamentals=(),
+            sources=(
+                AnalysisSource(
+                    id="payout_calendar",
+                    name="payouts",
+                    url="https://developer.tbank.ru/invest/services/instruments/methods",
+                    methods=(),
+                    retrieved_at=observed,
+                    status="received",
+                ),
+                AnalysisSource(
+                    id="issuer_events",
+                    name="events",
+                    url="https://developer.tbank.ru/invest/services/instruments/methods",
+                    methods=(),
+                    retrieved_at=observed,
+                    status="received",
+                ),
+                AnalysisSource(
+                    id="fundamentals",
+                    name="fundamentals",
+                    url="https://developer.tbank.ru/invest/services/instruments/methods",
+                    methods=(),
+                    retrieved_at=observed,
+                    status="received",
+                ),
+                AnalysisSource(
+                    id="credit_ratings",
+                    name="ratings",
+                    url="https://www.cbr.ru/finorg/foinfo/ratings/",
+                    methods=(),
+                    retrieved_at=observed,
+                    status="not_requested",
+                ),
+            ),
+        )
+
     def history_page(
         self,
         user_id: UUID,
@@ -295,6 +364,7 @@ def test_daily_observer_pages_history_and_finishes_once() -> None:
     assert result.history_pages == 2
     assert broker.seen_cursors == ["", "cursor-2"]
     assert store.saved_snapshots == 1
+    assert store.saved_evidence == 1
     assert store.finished[0][0] == "succeeded"
     assert store.finished[0][1]["history_status"] == "complete"
 
