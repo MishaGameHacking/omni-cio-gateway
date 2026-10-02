@@ -37,13 +37,13 @@ def _apply_all_migrations() -> None:
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0006_portfolio_observer.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0007_portfolio_evidence.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        # The additive R2 migration is safe to retry after an interrupted
-        # reconciler run. Accepted migrations are never rewritten after release.
-        admin.execute((ROOT / "migrations" / "0006_portfolio_observer.sql").read_text())
+        # The additive R3 migration is safe to retry before release. Once
+        # accepted on main it becomes immutable migration history.
+        admin.execute((ROOT / "migrations" / "0007_portfolio_evidence.sql").read_text())
 
         table_names = {
             row[0]
@@ -64,6 +64,11 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "portfolio_snapshot_positions",
             "operation_observations",
             "broker_sync_state",
+            "source_documents",
+            "source_retrievals",
+            "source_facts",
+            "payout_events",
+            "portfolio_risk_assessments",
         } <= table_names
 
         protected = {
@@ -82,13 +87,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_snapshots',
                           'portfolio_snapshot_positions',
                           'operation_observations',
-                          'broker_sync_state'
+                          'broker_sync_state',
+                          'portfolio_risk_assessments'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 7
+        assert len(protected) == 8
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
