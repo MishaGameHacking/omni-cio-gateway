@@ -131,6 +131,38 @@ class TBankInstrumentMetadata:
     buy_available: bool | None = None
     sell_available: bool | None = None
     required_tests: tuple[str, ...] = ()
+    min_price_increment: str | None = None
+    nominal: TBankMoney | None = None
+    aci_value: TBankMoney | None = None
+    maturity_date: datetime | None = None
+    coupon_quantity_per_year: int | None = None
+    floating_coupon: bool | None = None
+    perpetual: bool | None = None
+    amortization: bool | None = None
+    subordinated: bool | None = None
+    liquidity: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TBankMarketValue:
+    instrument_uid: str
+    price_currency: str
+    last_price: str | None
+    last_price_at: datetime | None
+    yield_value: str | None
+    yield_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOrderPrice:
+    lots_requested: int
+    total_order_amount: TBankMoney
+    initial_order_amount: TBankMoney
+    executed_commission: TBankMoney | None
+    service_commission: TBankMoney | None
+    deal_commission: TBankMoney | None
+    bond_aci: TBankMoney | None
+    nominal_conversion_rate: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,9 +367,169 @@ class TBankInvestClient:
                     buy_available=_optional_bool(item, "buyAvailableFlag"),
                     sell_available=_optional_bool(item, "sellAvailableFlag"),
                     required_tests=required_tests,
+                    min_price_increment=_quotation(item.get("minPriceIncrement")),
+                    nominal=_money(item.get("nominal")),
+                    aci_value=_money(item.get("aciValue")),
+                    maturity_date=_optional_provider_timestamp(item.get("maturityDate")),
+                    coupon_quantity_per_year=_optional_int(
+                        item.get("couponQuantityPerYear"),
+                        "coupon quantity per year",
+                    ),
+                    floating_coupon=_optional_bool(item, "floatingCouponFlag"),
+                    perpetual=_optional_bool(item, "perpetualFlag"),
+                    amortization=_optional_bool(item, "amortizationFlag"),
+                    subordinated=_optional_bool(item, "subordinatedFlag"),
+                    liquidity=_optional_bool(item, "liquidityFlag"),
                 )
             )
         return tuple(result)
+
+    def get_market_values(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankMarketValue, ...]:
+        if not 1 <= len(instrument_uids) <= 100:
+            raise ValueError("market value batch must contain 1 to 100 instruments")
+        clean_uids = tuple(
+            _validate_provider_id(uid, "instrument uid")
+            for uid in instrument_uids
+        )
+        if len(set(clean_uids)) != len(clean_uids):
+            raise ValueError("market value batch contains duplicate instruments")
+
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetMarketValues",
+            body={
+                "instrumentId": list(clean_uids),
+                "values": [
+                    "INSTRUMENT_VALUE_LAST_PRICE",
+                    "INSTRUMENT_VALUE_YIELD",
+                ],
+            },
+        )
+        requested = set(clean_uids)
+        result: list[TBankMarketValue] = []
+        seen: set[str] = set()
+        for raw in _required_list(payload, "instruments"):
+            item = _required_object(raw, "market value instrument")
+            uid = _text(item.get("instrumentUid")).strip()
+            if not uid or uid not in requested or uid in seen:
+                raise TBankUnavailable(
+                    "T-Invest market values contain an unexpected instrument"
+                )
+            seen.add(uid)
+
+            last_price: str | None = None
+            last_price_at: datetime | None = None
+            yield_value: str | None = None
+            yield_at: datetime | None = None
+            for value_raw in _optional_list(item, "values"):
+                value = _required_object(value_raw, "market value")
+                value_type = _text(value.get("type")).strip()
+                numeric = _quotation(value.get("value"))
+                if numeric is None:
+                    continue
+                timestamp = _optional_provider_timestamp(value.get("time"))
+                if timestamp is None:
+                    raise TBankUnavailable("T-Invest market value has no timestamp")
+                if value_type == "INSTRUMENT_VALUE_LAST_PRICE":
+                    last_price = numeric
+                    last_price_at = timestamp
+                elif value_type == "INSTRUMENT_VALUE_YIELD":
+                    yield_value = numeric
+                    yield_at = timestamp
+
+            price_currency = _text(item.get("priceCurrency")).strip().upper()
+            if last_price is not None and not price_currency:
+                raise TBankUnavailable(
+                    "T-Invest market value price has no currency"
+                )
+            result.append(
+                TBankMarketValue(
+                    instrument_uid=uid,
+                    price_currency=price_currency,
+                    last_price=last_price,
+                    last_price_at=last_price_at,
+                    yield_value=yield_value,
+                    yield_at=yield_at,
+                )
+            )
+        return tuple(result)
+
+    def get_order_price(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        instrument_uid: str,
+        *,
+        price: str,
+        quantity_lots: int,
+        direction: Literal["buy", "sell"],
+    ) -> TBankOrderPrice:
+        if quantity_lots <= 0:
+            raise ValueError("order price quantity must be positive")
+        clean_direction = {
+            "buy": "ORDER_DIRECTION_BUY",
+            "sell": "ORDER_DIRECTION_SELL",
+        }.get(direction)
+        if clean_direction is None:
+            raise ValueError("order price direction is invalid")
+
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="OrdersService",
+            method="GetOrderPrice",
+            body={
+                "accountId": _validate_account_id(account_id),
+                "instrumentId": _validate_provider_id(
+                    instrument_uid,
+                    "instrument uid",
+                ),
+                "price": _quotation_payload(price),
+                "direction": clean_direction,
+                "quantity": str(quantity_lots),
+            },
+        )
+        total = _money(payload.get("totalOrderAmount"))
+        initial = _money(payload.get("initialOrderAmount"))
+        if total is None or initial is None:
+            raise TBankUnavailable(
+                "T-Invest order price is missing required amounts"
+            )
+        lots_requested = _int_value(
+            payload.get("lotsRequested"),
+            "order price lots requested",
+        )
+        if lots_requested != quantity_lots:
+            raise TBankUnavailable(
+                "T-Invest order price lots do not match request"
+            )
+        extra_bond_raw = payload.get("extraBond")
+        bond_aci: TBankMoney | None = None
+        nominal_conversion_rate: str | None = None
+        if extra_bond_raw is not None:
+            extra_bond = _required_object(extra_bond_raw, "order price bond details")
+            bond_aci = _money(extra_bond.get("aciValue"))
+            nominal_conversion_rate = _quotation(
+                extra_bond.get("nominalConversionRate")
+            )
+        return TBankOrderPrice(
+            lots_requested=lots_requested,
+            total_order_amount=total,
+            initial_order_amount=initial,
+            executed_commission=_money(payload.get("executedCommission")),
+            service_commission=_money(payload.get("serviceCommission")),
+            deal_commission=_money(payload.get("dealCommission")),
+            bond_aci=bond_aci,
+            nominal_conversion_rate=nominal_conversion_rate,
+        )
 
     def get_accounts(
         self,
@@ -1120,6 +1312,27 @@ def _int_value(value: object, name: str) -> int:
         return int(str(value))
     except ValueError as exc:
         raise TBankUnavailable(f"T-Invest {name} is invalid") from exc
+
+
+def _optional_int(value: object, name: str) -> int | None:
+    if value is None:
+        return None
+    return _int_value(value, name)
+
+
+def _quotation_payload(value: str) -> dict[str, object]:
+    try:
+        amount = Decimal(value)
+    except InvalidOperation as exc:
+        raise ValueError("quotation must be a decimal number") from exc
+    if not amount.is_finite() or amount <= 0:
+        raise ValueError("quotation must be finite and positive")
+    exponent = amount.as_tuple().exponent
+    if exponent < -9:
+        raise ValueError("quotation supports at most 9 decimal places")
+    units = int(amount)
+    nano = int((amount - Decimal(units)) * Decimal(1_000_000_000))
+    return {"units": str(units), "nano": nano}
 
 
 def _double_text(value: object) -> str | None:
