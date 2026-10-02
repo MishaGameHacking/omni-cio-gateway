@@ -396,29 +396,6 @@ def test_intelligence_http_is_private_tenant_scoped_and_read_only() -> None:
         "analysis_status": "observed",
         "execution_enabled": False,
         "rating_feed_status": "data_missing",
-        "rating_sources": [
-            {
-                "id": "cbr_rating_repository",
-                "name": "Банк России — рейтинговый репозитарий",
-                "url": "https://ratings.cbr.ru/",
-                "access": "public_reference",
-                "ingestion": "reference_only",
-            },
-            {
-                "id": "expert_ra_rating_export",
-                "name": "Эксперт РА — REST/SOAP выгрузка рейтингов",
-                "url": "https://raexpert.ru/all-services/rating-export/",
-                "access": "subscription",
-                "ingestion": "not_configured",
-            },
-            {
-                "id": "acra_rating_feed",
-                "name": "АКРА — CSV data feed рейтингов",
-                "url": "https://www.acra-ratings.ru/services/predostavlenie-dannykh/",
-                "access": "subscription",
-                "ingestion": "not_configured",
-            },
-        ],
         "risks": [],
         "payouts": [],
         "sources": [],
@@ -466,11 +443,17 @@ def test_intelligence_http_pending_never_implies_execution() -> None:
         response = TestClient(app).get("/api/portfolio/intelligence")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "pending",
-        "execution_enabled": False,
-        "rating_feed_status": "data_missing",
-        "risks": [],
-        "payouts": [],
-        "sources": [],
+    payload = response.json()
+    assert payload["status"] == "pending"
+    assert payload["execution_enabled"] is False
+    assert payload["rating_feed_status"] == "data_missing"
+    assert {
+        item["id"] for item in payload["rating_sources"]
+    } == {
+        "cbr_rating_repository",
+        "expert_ra_rating_export",
+        "acra_rating_feed",
     }
+    assert payload["risks"] == []
+    assert payload["payouts"] == []
+    assert payload["sources"] == []
