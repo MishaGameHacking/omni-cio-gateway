@@ -631,6 +631,23 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertLess(status_start, support_start)
         self.assertIn("Состояние системы", page[settings_start:support_start])
 
+    def test_decisions_workspace_is_read_only_and_uses_canonical_navigation(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+
+        self.assertEqual(page.count('data-view="decisions"'), 1)
+        self.assertEqual(page.count('data-view-panel="decisions"'), 1)
+        self.assertIn('id="analysis-refresh"', page)
+        self.assertIn('id="analysis-observations"', page)
+        self.assertIn('id="analysis-sources"', page)
+        self.assertIn("Только наблюдение", page)
+        self.assertNotIn('class="mobile-nav"', page)
+        self.assertIn('"/api/broker/tbank/analysis"', script)
+        self.assertIn('decisions: "Решения"', script)
+        self.assertIn("textContent = observation.detail", script)
+        self.assertNotIn("/api/broker/tbank/operations", script)
+
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text()
@@ -644,7 +661,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.7.1"', project)
+        self.assertIn('version = "0.8.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
