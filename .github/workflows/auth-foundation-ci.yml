@@ -33,14 +33,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      OMNICIO_TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/omnicio_test
+      OMNICIO_TEST_DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/omnicio_test
     services:
       postgres:
         image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ github.run_id }}
           POSTGRES_DB: omnicio_test
-          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
