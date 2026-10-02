@@ -203,6 +203,13 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
+                "SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0)) AS locked",
+                (f"daily-job:{user_id}:{job_type}:{scheduled_for.isoformat()}",),
+            )
+            lock_row = cur.fetchone()
+            if lock_row is None or not bool(cast(dict[str, Any], lock_row)["locked"]):
+                return None
+            cur.execute(
                 """
                 INSERT INTO job_runs (
                     user_id,
@@ -230,6 +237,7 @@ class PortfolioStore:
                     """
                     UPDATE job_runs
                     SET
+                        status = 'running',
                         attempt = attempt + 1,
                         started_at = now(),
                         finished_at = NULL,
@@ -237,8 +245,11 @@ class PortfolioStore:
                     WHERE user_id = %s
                       AND job_type = %s
                       AND scheduled_for = %s
-                      AND status = 'running'
-                      AND started_at < now() - interval '30 minutes'
+                      AND attempt < 3
+                      AND (
+                          (status = 'running' AND started_at < now() - interval '30 minutes')
+                          OR (status = 'failed' AND finished_at < now() - interval '2 minutes')
+                      )
                     RETURNING
                         id,
                         user_id,
@@ -436,6 +447,7 @@ class PortfolioStore:
                     evidence
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (job_run_id) DO NOTHING
                 RETURNING id
                 """,
                 (
@@ -459,7 +471,19 @@ class PortfolioStore:
             )
             snapshot_row = cur.fetchone()
             if snapshot_row is None:
-                raise RuntimeError("portfolio snapshot insert returned no row")
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM portfolio_snapshots
+                    WHERE job_run_id = %s
+                      AND user_id = %s
+                    """,
+                    (job_run_id, user_id),
+                )
+                existing = cur.fetchone()
+                if existing is None:
+                    raise RuntimeError("portfolio snapshot conflict could not be resolved")
+                return cast(UUID, cast(dict[str, Any], existing)["id"])
             snapshot_id = cast(UUID, cast(dict[str, Any], snapshot_row)["id"])
 
             for position in bundle.portfolio.positions:
