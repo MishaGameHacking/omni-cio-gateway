@@ -115,28 +115,6 @@ class TBankPositions:
 
 
 @dataclass(frozen=True, slots=True)
-class TBankOperation:
-    id: str
-    date: str
-    name: str
-    description: str
-    type: str
-    state: str
-    ticker: str
-    payment: TBankMoney | None
-    price: TBankMoney | None
-    commission: TBankMoney | None
-    quantity: str
-
-
-@dataclass(frozen=True, slots=True)
-class TBankOperationsPage:
-    items: tuple[TBankOperation, ...]
-    has_next: bool
-    next_cursor: str
-
-
-@dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
 
@@ -451,64 +429,6 @@ class TBankInvestClient:
             limits_loading_in_progress=loading,
         )
 
-    def get_operations(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        account_id: str,
-        *,
-        limit: int = 30,
-        cursor: str | None = None,
-    ) -> TBankOperationsPage:
-        if not 1 <= limit <= 100:
-            raise ValueError("operation limit must be between 1 and 100")
-        body: dict[str, object] = {
-            "accountId": _validate_account_id(account_id),
-            "limit": limit,
-            "state": "OPERATION_STATE_EXECUTED",
-            "withoutTrades": True,
-        }
-        if cursor:
-            body["cursor"] = _validate_cursor(cursor)
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service="OperationsService",
-            method="GetOperationsByCursor",
-            body=body,
-        )
-        has_next_raw = payload.get("hasNext", False)
-        if not isinstance(has_next_raw, bool):
-            raise TBankUnavailable("T-Invest operations has invalid pagination flag")
-
-        items: list[TBankOperation] = []
-        for operation_raw in _optional_list(payload, "items"):
-            operation = _required_object(operation_raw, "operation")
-            operation_id = _text(operation.get("id")).strip()
-            if not operation_id:
-                raise TBankUnavailable("T-Invest operation has no id")
-            items.append(
-                TBankOperation(
-                    id=operation_id,
-                    date=_text(operation.get("date")).strip(),
-                    name=_text(operation.get("name")).strip(),
-                    description=_text(operation.get("description")).strip(),
-                    type=_text(operation.get("type")).strip(),
-                    state=_text(operation.get("state")).strip(),
-                    ticker=_text(operation.get("ticker")).strip(),
-                    payment=_money(operation.get("payment")),
-                    price=_money(operation.get("price")),
-                    commission=_money(operation.get("commission")),
-                    quantity=_integer_text(operation.get("quantity")),
-                )
-            )
-
-        return TBankOperationsPage(
-            items=tuple(items),
-            has_next=has_next_raw,
-            next_cursor=_text(payload.get("nextCursor")).strip(),
-        )
-
     def _post(
         self,
         *,
@@ -598,13 +518,6 @@ def _validate_account_id(account_id: str) -> str:
     clean = account_id.strip()
     if not clean or len(clean) > 128 or "\n" in clean or "\r" in clean:
         raise TBankUnavailable("invalid T-Invest account id")
-    return clean
-
-
-def _validate_cursor(cursor: str) -> str:
-    clean = cursor.strip()
-    if not clean or len(clean) > 4096 or "\n" in clean or "\r" in clean:
-        raise TBankUnavailable("invalid T-Invest operation cursor")
     return clean
 
 
