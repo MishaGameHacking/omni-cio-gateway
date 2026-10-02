@@ -607,15 +607,16 @@
             <div class="page-heading portfolio-heading">
               <div class="heading-with-state">
                 <div>
-                  <p class="section-label">Решения · этап R1</p>
+                  <p class="section-label">Решения · этапы R1–R3</p>
                   <h2>Фактический анализ портфеля</h2>
                 </div>
                 <span class="state-badge state-next">Только наблюдение</span>
               </div>
               <p>
-                OmniCIO проверяет структуру счёта, доступность данных, блокировки и
-                концентрацию по подтверждённым чтениям T-Invest. На этом этапе система
-                не формирует пакет сделок и не получает торговых полномочий.
+                OmniCIO проверяет структуру счёта, доступность данных, блокировки,
+                концентрацию и накопленные доказательства риска. Система показывает
+                только наблюдения и календарь подтверждённых событий источников:
+                пакет сделок не формируется, торговые полномочия не выдаются.
               </p>
               <button id="analysis-refresh" class="button button-secondary" type="button">
                 Обновить анализ
@@ -701,9 +702,10 @@
                   </table>
                 </div>
                 <p class="field-hint">
-                  Облигации оцениваются с НКД. Кредитный рейтинг, группа связанных компаний,
-                  look-through фондов и доступность будущей покупки будут проверяться
-                  следующими этапами и сейчас не предполагаются.
+                  Облигации оцениваются с НКД. Группа связанных компаний и look-through
+                  фондов ещё требуют следующих этапов. Кредитный рейтинг не предполагается:
+                  пока разрешённый автоматический источник рейтингов не подключён, система
+                  явно показывает неполное покрытие.
                 </p>
               </article>
 
@@ -720,6 +722,54 @@
                   не доказывает свежесть рыночной цены. Недоступный источник отмечается как
                   неполное покрытие, а не заменяется догадкой.
                 </p>
+              </article>
+
+              <article class="portfolio-card risk-evidence-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">R3 · раннее предупреждение</p>
+                    <h3>Доказательства риска</h3>
+                  </div>
+                  <span id="risk-summary-badge" class="state-badge state-next">
+                    Ожидает наблюдения
+                  </span>
+                </header>
+                <output id="risk-status" class="message" aria-live="polite">
+                  Ежедневный снимок риска ещё не загружен.
+                </output>
+                <div id="risk-content" class="risk-content hidden">
+                  <div id="risk-assessments" class="risk-assessment-list"></div>
+                  <p class="field-hint">
+                    Состояния — объяснимые watch-индикаторы, а не вероятность дефолта.
+                    Для банков, страховщиков и девелоперов общие корпоративные пороги
+                    не подменяют профильные секторные показатели.
+                  </p>
+
+                  <section class="risk-subsection" aria-labelledby="payout-calendar-title">
+                    <header class="portfolio-card-header compact">
+                      <div>
+                        <p class="card-label">События</p>
+                        <h4 id="payout-calendar-title">Календарь выплат</h4>
+                      </div>
+                    </header>
+                    <div id="risk-payouts" class="risk-payout-list"></div>
+                    <p class="field-hint">
+                      Здесь показаны даты событий из источника. Они не означают, что деньги
+                      уже зачислены на брокерский счёт; фактическое зачисление подтверждается
+                      отдельно по операциям счёта.
+                    </p>
+                  </section>
+
+                  <section class="risk-subsection" aria-labelledby="risk-sources-title">
+                    <header class="portfolio-card-header compact">
+                      <div>
+                        <p class="card-label">Свежесть</p>
+                        <h4 id="risk-sources-title">Покрытие источников</h4>
+                      </div>
+                    </header>
+                    <div id="risk-sources" class="analysis-sources"></div>
+                  </section>
+                </div>
               </article>
             </div>
           </section>
