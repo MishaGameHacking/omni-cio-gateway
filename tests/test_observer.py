@@ -132,10 +132,21 @@ class FakeStore:
         assert user_id == USER_ID
         return None
 
-    def save_snapshot(self, user_id: UUID, *, job_run_id: UUID, bundle):
+    def save_snapshot(
+        self,
+        user_id: UUID,
+        *,
+        job_run_id: UUID,
+        bundle,
+        account: TBankAccount,
+        user_info: TBankUserInfo | None,
+    ):
         assert user_id == USER_ID
         assert job_run_id
         assert bundle.account_id == "account-1"
+        assert account.id == "account-1"
+        if user_info is not None:
+            assert user_info.risk_level_code == "CONSERVATIVE"
         self.saved_snapshots += 1
         return uuid4()
 
@@ -323,7 +334,7 @@ def test_user_info_outage_degrades_but_keeps_portfolio_snapshot() -> None:
 
     with (
         patch("omnicio.observer.time.sleep"),
-        patch("omnicio.observer.random.random", return_value=0.0),
+        patch("omnicio.observer.secrets.randbelow", return_value=0),
     ):
         result = PortfolioObserver(
             store,
