@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import ipaddress
 import os
 import pathlib
+import re
 import sys
 import tomllib
 
@@ -47,6 +49,41 @@ def trusted_host_entry(value: str, server_ip: str) -> str:
         raise ValueError("SSH host key is not a valid Ed25519 public key")
     encoded = base64.b64encode(key).decode("ascii")
     return f"{address} ssh-ed25519 {encoded}\n"
+
+
+FINGERPRINT_RE = re.compile(r"SHA256:[A-Za-z0-9+/]+={0,2}")
+REMOTE_HOST_CHANGED = "REMOTE HOST IDENTIFICATION HAS CHANGED!"
+
+
+def trusted_host_fingerprint(value: str, server_ip: str) -> str:
+    """Return the SHA256 fingerprint of the independently verified host key."""
+    entry = trusted_host_entry(value, server_ip)
+    encoded = entry.split()[2]
+    key = base64.b64decode(encoded, validate=True)
+    digest = hashlib.sha256(key).digest()
+    return "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
+
+
+def ssh_host_key_mismatch_message(
+    stderr: str,
+    *,
+    expected_fingerprint: str,
+) -> str | None:
+    """Classify a strict-host-key failure without trusting the network key."""
+    if REMOTE_HOST_CHANGED not in stderr:
+        return None
+
+    observed = FINGERPRINT_RE.search(stderr)
+    observed_fingerprint = observed.group(0) if observed else "unavailable"
+    return (
+        "SSH host key mismatch for the managed Timeweb server. "
+        f"Expected verified fingerprint: {expected_fingerprint}; "
+        f"network-presented fingerprint: {observed_fingerprint}. "
+        "Do not accept the network key automatically. Re-verify "
+        "/etc/ssh/ssh_host_ed25519_key.pub in the authenticated Timeweb "
+        "console, then update TIMEWEB_SSH_KNOWN_HOSTS only if that console "
+        "proves the new key."
+    )
 
 
 def ssh_base_args(private_key: pathlib.Path, known_hosts: pathlib.Path) -> list[str]:

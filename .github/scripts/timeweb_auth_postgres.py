@@ -21,7 +21,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from timeweb_addresses import network_addresses
-from timeweb_ssh_trust import ssh_base_args, trusted_host_entry
+from timeweb_ssh_trust import (
+    ssh_base_args,
+    ssh_host_key_mismatch_message,
+    trusted_host_entry,
+    trusted_host_fingerprint,
+)
 
 API_ROOT = "https://api.timeweb.cloud/api"
 REMOTE_SECRET_PATH = "/etc/omnicio/auth-secrets.env"
@@ -37,7 +42,6 @@ TIMEWEB_DB_PASSWORD_SAFE = frozenset(
 DB_OWNERSHIP_MARKER = "Managed by GitHub Actions: omnicio-auth-postgres"
 SSH_READY_ATTEMPTS = 36
 SSH_READY_DELAY_SECONDS = 10
-SSH_ERROR_DETAIL_LIMIT = 300
 
 
 class InfraError(RuntimeError):
@@ -522,11 +526,15 @@ class EphemeralSsh:
         self._key_path: pathlib.Path | None = None
         self._known_hosts: pathlib.Path | None = None
         self._ssh_key_id: int | None = None
+        self._expected_host_fingerprint: str | None = None
 
     def __enter__(self) -> EphemeralSsh:
         try:
-            host_entry = trusted_host_entry(
-                os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), self.server_ip,
+            raw_host_entry = os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", "")
+            host_entry = trusted_host_entry(raw_host_entry, self.server_ip)
+            self._expected_host_fingerprint = trusted_host_fingerprint(
+                raw_host_entry,
+                self.server_ip,
             )
         except ValueError as exc:
             raise InfraError("Verified Timeweb SSH host key is missing or invalid") from exc
@@ -561,8 +569,7 @@ class EphemeralSsh:
                     time.sleep(SSH_READY_DELAY_SECONDS)
             raise InfraError(
                 "Ephemeral SSH key did not become usable within the bounded "
-                f"provider propagation window; last SSH error: "
-                f"{last_error[:SSH_ERROR_DETAIL_LIMIT]}"
+                f"provider propagation window; last SSH error: {last_error[:300]}"
             )
         except Exception:
             self._cleanup()
@@ -586,6 +593,7 @@ class EphemeralSsh:
         if self._tmp is not None:
             self._tmp.cleanup()
             self._tmp = None
+        self._expected_host_fingerprint = None
 
     def _probe(self) -> tuple[bool, str]:
         if self._key_path is None or self._known_hosts is None:
@@ -602,6 +610,14 @@ class EphemeralSsh:
         )
         if completed.returncode == 0:
             return True, ""
+        if self._expected_host_fingerprint is None:
+            raise InfraError("Expected SSH host fingerprint is not initialized")
+        mismatch = ssh_host_key_mismatch_message(
+            completed.stderr,
+            expected_fingerprint=self._expected_host_fingerprint,
+        )
+        if mismatch is not None:
+            raise InfraError(mismatch)
         detail = " ".join(
             (completed.stderr or f"ssh exit code {completed.returncode}").split()
         )

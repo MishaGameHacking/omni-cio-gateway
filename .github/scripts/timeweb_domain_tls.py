@@ -23,7 +23,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from timeweb_addresses import network_addresses
-from timeweb_ssh_trust import managed_server_identity, ssh_base_args, trusted_host_entry
+from timeweb_ssh_trust import (
+    managed_server_identity,
+    ssh_base_args,
+    ssh_host_key_mismatch_message,
+    trusted_host_entry,
+    trusted_host_fingerprint,
+)
 
 API_ROOT = "https://api.timeweb.cloud/api/v1"
 SITE_MARKER = 'name="omni-cio-white-site"'
@@ -320,6 +326,7 @@ def wait_for_ssh(
     *,
     private_key: pathlib.Path,
     known_hosts: pathlib.Path,
+    expected_fingerprint: str,
     attempts: int = 18,
 ) -> None:
     command = ssh_base_args(private_key, known_hosts) + [
@@ -338,6 +345,12 @@ def wait_for_ssh(
         )
         if result.returncode == 0:
             return
+        mismatch = ssh_host_key_mismatch_message(
+            result.stderr,
+            expected_fingerprint=expected_fingerprint,
+        )
+        if mismatch is not None:
+            raise DeploymentError(mismatch)
         last_error = (result.stderr or "SSH failed").strip()
         time.sleep(10)
     raise DeploymentError(
@@ -424,8 +437,11 @@ def configure_with_ephemeral_key(
     server_id: int,
 ) -> None:
     try:
-        host_entry = trusted_host_entry(
-            os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), EXPECTED_SERVER_IPV4,
+        raw_host_entry = os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", "")
+        host_entry = trusted_host_entry(raw_host_entry, EXPECTED_SERVER_IPV4)
+        expected_fingerprint = trusted_host_fingerprint(
+            raw_host_entry,
+            EXPECTED_SERVER_IPV4,
         )
     except ValueError as exc:
         raise DeploymentError("Verified Timeweb SSH host key is missing or invalid") from exc
@@ -471,6 +487,7 @@ def configure_with_ephemeral_key(
             wait_for_ssh(
                 private_key=private_key,
                 known_hosts=known_hosts,
+                expected_fingerprint=expected_fingerprint,
             )
             configure_remote_https(
                 private_key=private_key,
