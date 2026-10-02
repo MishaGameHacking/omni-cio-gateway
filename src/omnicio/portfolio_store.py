@@ -1279,6 +1279,15 @@ class PortfolioStore:
         return inserted
 
 
+def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:
+    if value is None or value.tzinfo is None or now.tzinfo is None:
+        return None
+    delta = now.astimezone(UTC) - value.astimezone(UTC)
+    if delta.total_seconds() < 0:
+        return None
+    return int(delta.total_seconds())
+
+
 def _freshness_status(
     value: datetime | None,
     *,
@@ -1286,19 +1295,14 @@ def _freshness_status(
 ) -> Literal["fresh", "stale", "data_missing"]:
     if value is None:
         return "data_missing"
-    normalized = value.astimezone(UTC)
+    age = _age_seconds(value, now=now)
+    if age is None:
+        return "stale"
     return (
         "stale"
-        if normalized > now
-        or now - normalized > EVIDENCE_RETRIEVAL_MAX_AGE
+        if age > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds())
         else "fresh"
     )
-
-
-def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:
-    if value is None:
-        return None
-    return max(0, int((now - value.astimezone(UTC)).total_seconds()))
 
 
 def _profile(row: dict[str, Any]) -> InvestmentProfileRecord:
@@ -1395,26 +1399,6 @@ def _semantic_operation_payload(normalized: dict[str, object]) -> dict[str, obje
         for key, value in normalized.items()
         if key not in {"provider_operation_id", "parent_operation_id"}
     }
-
-
-def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:
-    if value is None or value.tzinfo is None or now.tzinfo is None:
-        return None
-    delta = now.astimezone(UTC) - value.astimezone(UTC)
-    if delta.total_seconds() < 0:
-        return None
-    return int(delta.total_seconds())
-
-
-def _freshness_status(value: datetime | None, *, now: datetime) -> str:
-    age = _age_seconds(value, now=now)
-    if age is None:
-        return "stale"
-    return (
-        "stale"
-        if age > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds())
-        else "fresh"
-    )
 
 
 def _hash_json(value: Mapping[str, object]) -> bytes:
