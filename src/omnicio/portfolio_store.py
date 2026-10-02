@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
@@ -1310,7 +1310,7 @@ def _semantic_operation_payload(normalized: dict[str, object]) -> dict[str, obje
     }
 
 
-def _hash_json(value: dict[str, object]) -> bytes:
+def _hash_json(value: Mapping[str, object]) -> bytes:
     return hashlib.sha256(
         _json(value).encode("utf-8"),
         usedforsecurity=False,
