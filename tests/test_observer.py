@@ -377,6 +377,7 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     store = (root / "src" / "omnicio" / "portfolio_store.py").read_text()
 
     for table in (
+        "account_instrument_access",
         "investment_profile_versions",
         "job_runs",
         "portfolio_snapshots",
@@ -399,7 +400,7 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "pending_cursor" in store
 
 
-def test_instrument_required_tests_remain_catalog_evidence() -> None:
+def test_instrument_required_tests_are_tenant_account_evidence() -> None:
     root = Path(__file__).resolve().parents[1]
     migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text()
     store = (root / "src" / "omnicio" / "portfolio_store.py").read_text()
@@ -409,9 +410,11 @@ def test_instrument_required_tests_remain_catalog_evidence() -> None:
         1,
     )[1].split("CREATE INDEX IF NOT EXISTS instrument_catalog_isin_idx", 1)[0]
 
-    assert "required_tests jsonb NOT NULL" in catalog_block
-    assert "CREATE TABLE IF NOT EXISTS account_instrument_access" not in migration
-    assert "required_tests = EXCLUDED.required_tests" in store
+    assert "required_tests" not in catalog_block
+    assert "CREATE TABLE IF NOT EXISTS account_instrument_access" in migration
+    assert "required_tests jsonb NOT NULL" in migration
+    assert "account_instrument_access_tenant" in migration
+    assert "INSERT INTO account_instrument_access" in store
 
 
 def test_issuer_mapping_foundation_never_guesses_unverified_relationships() -> None:
