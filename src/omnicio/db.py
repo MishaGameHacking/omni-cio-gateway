@@ -78,6 +78,11 @@ class Database:
                     AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL
                     AND to_regclass('public.operation_observations') IS NOT NULL
                     AND to_regclass('public.broker_sync_state') IS NOT NULL
+                    AND to_regclass('public.source_documents') IS NOT NULL
+                    AND to_regclass('public.source_retrievals') IS NOT NULL
+                    AND to_regclass('public.source_facts') IS NOT NULL
+                    AND to_regclass('public.payout_events') IS NOT NULL
+                    AND to_regclass('public.portfolio_risk_assessments') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
@@ -86,7 +91,7 @@ class Database:
                           AND column_name = 'role'
                     )
                     AND (
-                        SELECT count(*) = 7
+                        SELECT count(*) = 8
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -98,7 +103,8 @@ class Database:
                                   'portfolio_snapshots',
                                   'portfolio_snapshot_positions',
                                   'operation_observations',
-                                  'broker_sync_state'
+                                  'broker_sync_state',
+                                  'portfolio_risk_assessments'
                               ]
                           )
                           AND c.relrowsecurity
