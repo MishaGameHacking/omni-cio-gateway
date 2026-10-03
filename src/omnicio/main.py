@@ -106,6 +106,12 @@ class BalancingPolicyBody(BaseModel):
     max_unknown_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_term_months: int = Field(ge=0, le=1200)
     turnover_budget_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_daily_turnover_participation_percent: Decimal = Field(
+        ge=0,
+        le=100,
+        allow_inf_nan=False,
+    )
+    securities_tax_rate_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     no_trade_band_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     min_replace_benefit_rub: Decimal = Field(
         ge=0,
@@ -516,6 +522,10 @@ def _balancing_policy_payload(
         "max_unknown_percent": str(policy.max_unknown_percent),
         "max_term_months": policy.max_term_months,
         "turnover_budget_percent": str(policy.turnover_budget_percent),
+        "max_daily_turnover_participation_percent": str(
+            policy.max_daily_turnover_participation_percent
+        ),
+        "securities_tax_rate_percent": str(policy.securities_tax_rate_percent),
         "no_trade_band_percent": str(policy.no_trade_band_percent),
         "min_replace_benefit_rub": str(policy.min_replace_benefit_rub),
         "created_at": policy.created_at,
@@ -609,6 +619,10 @@ def save_balancing_policy(
         max_unknown_percent=body.max_unknown_percent,
         max_term_months=body.max_term_months,
         turnover_budget_percent=body.turnover_budget_percent,
+        max_daily_turnover_participation_percent=(
+            body.max_daily_turnover_participation_percent
+        ),
+        securities_tax_rate_percent=body.securities_tax_rate_percent,
         no_trade_band_percent=body.no_trade_band_percent,
         min_replace_benefit_rub=body.min_replace_benefit_rub,
     )
