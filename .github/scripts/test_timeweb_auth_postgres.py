@@ -217,6 +217,7 @@ class PostgresTests(unittest.TestCase):
             "migrations/0007_portfolio_evidence.sql",
             "migrations/0008_balancing_policy.sql",
             "migrations/0009_portfolio_proposals.sql",
+            "migrations/0010_portfolio_execution.sql",
         ]
         positions = [workflow.index(path) for path in migrations]
         self.assertEqual(positions, sorted(positions))
@@ -224,6 +225,7 @@ class PostgresTests(unittest.TestCase):
         self.assertEqual(workflow.count("--migration migrations/0007_portfolio_evidence.sql"), 1)
         self.assertEqual(workflow.count("--migration migrations/0008_balancing_policy.sql"), 1)
         self.assertEqual(workflow.count("--migration migrations/0009_portfolio_proposals.sql"), 1)
+        self.assertEqual(workflow.count("--migration migrations/0010_portfolio_execution.sql"), 1)
 
     def test_parser_accepts_multiple_migrations(self) -> None:
         old = sys.argv
