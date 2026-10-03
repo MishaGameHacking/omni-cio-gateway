@@ -111,12 +111,10 @@ class FakeBroker:
         from_at: datetime,
         to_at: datetime,
         interval: str,
-        limit: int | None = None,
     ) -> tuple[TBankHistoricCandle, ...]:
         assert user_id == UUID("00000000-0000-0000-0000-000000000001")
         assert instrument_uid == "uid-1"
         assert interval == "CANDLE_INTERVAL_4_HOUR"
-        assert limit == 250
         assert to_at - from_at == timedelta(days=31)
         return (
             TBankHistoricCandle(
