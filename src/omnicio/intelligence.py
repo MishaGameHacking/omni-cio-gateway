@@ -449,6 +449,73 @@ def build_tbank_evidence(
     return tuple(documents), tuple(assessments)
 
 
+def assess_candidate_fundamental_risk(
+    info: TBankInstrumentMetadata,
+    fundamental: TBankAssetFundamental | None,
+    *,
+    assessed_at: datetime,
+) -> InstrumentRiskAssessment:
+    """Assess a non-held candidate without inventing a credit rating."""
+    if assessed_at.tzinfo is None:
+        raise ValueError("assessment time must be timezone-aware")
+    assessed_at = assessed_at.astimezone(UTC)
+    fundamentals = (
+        {fundamental.asset_uid: fundamental}
+        if fundamental is not None
+        else {}
+    )
+    fundamental_status = _fundamental_status(
+        info,
+        fundamentals,
+        assessed_at,
+    )
+    metric_state, metric_reasons, metric_profile, metric_signals = (
+        _fundamental_watch_signals(
+            fundamental,
+            status=fundamental_status,
+        )
+    )
+    rating_status: DataStatus = (
+        "data_missing" if info.instrument_type == "bond" else "not_applicable"
+    )
+    reasons = list(metric_reasons)
+    if fundamental_status == "data_missing":
+        reasons.append("fundamental_data_missing")
+    elif fundamental_status == "stale":
+        reasons.append("fundamental_data_stale")
+    if rating_status == "data_missing":
+        reasons.append("credit_rating_feed_not_verified")
+    if info.instrument_type == "etf":
+        reasons.append("fund_look_through_not_verified")
+
+    if fundamental_status != "received" or metric_profile == "unknown":
+        state: RiskState = "data_missing"
+    elif info.instrument_type == "etf":
+        state = "data_missing"
+    elif metric_state is not None:
+        state = metric_state
+    else:
+        state = "normal"
+
+    return InstrumentRiskAssessment(
+        instrument_uid=info.uid,
+        state=state,
+        rating_status=rating_status,
+        fundamental_status=fundamental_status,
+        source_status="received",
+        reasons=tuple(reasons),
+        evidence={
+            "assessed_at": assessed_at.isoformat(),
+            "sector": info.sector,
+            "asset_uid": info.asset_uid,
+            "rating_policy": "unknown_bucket_until_verified_feed",
+            "ruleset_version": RISK_RULESET_VERSION,
+            "metric_profile": metric_profile,
+            "metric_signals": metric_signals,
+        },
+    )
+
+
 def _fundamental_watch_signals(
     item: TBankAssetFundamental | None,
     *,
