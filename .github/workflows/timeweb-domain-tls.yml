@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/timeweb-domain-tls.yml"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_domain_tls.py"
@@ -25,7 +26,7 @@ jobs:
     name: Test TLS bootstrap
     permissions:
       contents: read
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
 
     steps:
@@ -33,13 +34,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Run TLS bootstrap regression tests
-        shell: bash
+        shell: cmd
         run: |
-          set -euo pipefail
-          python3 .github/scripts/test_timeweb_ssh_trust.py
-          python3 .github/scripts/test_timeweb_domain_tls.py
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_ssh_trust.py
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_domain_tls.py
 
   configure:
     name: Configure omnicio.ru HTTPS
@@ -53,7 +59,7 @@ jobs:
       checks: read
     if: github.ref == 'refs/heads/main'
     needs: tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
@@ -65,26 +71,31 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Verify current main release checks
+        shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/verify_main_release.py
+        run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate verified SSH server key
-        run: python3 .github/scripts/timeweb_ssh_trust.py
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_ssh_trust.py'
 
       - name: Validate Timeweb secret
-        shell: bash
+        shell: cmd
         run: |
-          set -euo pipefail
-          if [ -z "${TIMEWEB_CLOUD_TOKEN:-}" ]; then
-            echo "::error::Repository secret TIMEWEB_CLOUD_TOKEN is missing or empty."
-            exit 1
-          fi
+          @echo off
+          if not defined TIMEWEB_CLOUD_TOKEN (
+            echo ::error::Repository secret TIMEWEB_CLOUD_TOKEN is missing or empty.
+            exit /b 1
+          )
 
       - name: Configure domain and TLS
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/timeweb_domain_tls.py
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_domain_tls.py'
