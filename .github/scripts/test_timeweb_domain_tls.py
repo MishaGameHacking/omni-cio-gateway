@@ -24,6 +24,21 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+def openssl_executable() -> str:
+    if os.name == "nt":
+        candidates = (
+            pathlib.Path(r"C:\Program Files\Git\usr\bin\openssl.exe"),
+            pathlib.Path(r"C:\Program Files\Git\mingw64\bin\openssl.exe"),
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate)
+        raise FileNotFoundError("Git for Windows OpenSSL executable is unavailable")
+    if os.name == "posix":
+        return "/usr/bin/openssl"
+    raise RuntimeError(f"Unsupported test operating system: {os.name}")
+
+
 class TlsVerificationTests(unittest.TestCase):
     """Exercise certificate trust and hostname checks against a real TLS peer."""
 
@@ -35,7 +50,7 @@ class TlsVerificationTests(unittest.TestCase):
         key = self.directory / "key.pem"
         subprocess.run(
             [
-                "/usr/bin/openssl", "req", "-x509", "-newkey", "rsa:2048",
+                openssl_executable(), "req", "-x509", "-newkey", "rsa:2048",
                 "-noenc", "-keyout", str(key), "-out", str(self.certificate),
                 "-days", "1", "-subj", "/CN=localhost",
                 "-addext", "subjectAltName=DNS:localhost",

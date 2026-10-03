@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "pyproject.toml"
       - ".github/workflows/timeweb-domain-tls.yml"
       - ".github/workflows/timeweb-domain-tls-ci.yml"
@@ -20,10 +21,14 @@ concurrency:
 
 jobs:
   tests:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.author_association == 'OWNER')
     name: Test TLS bootstrap
     permissions:
       contents: read
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
 
     steps:
@@ -31,10 +36,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Run TLS bootstrap regression tests
-        shell: bash
+        shell: cmd
         run: |
-          set -euo pipefail
-          python3 .github/scripts/test_timeweb_ssh_trust.py
-          python3 .github/scripts/test_timeweb_domain_tls.py
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_ssh_trust.py
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_domain_tls.py

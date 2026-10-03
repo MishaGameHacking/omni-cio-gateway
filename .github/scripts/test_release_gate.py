@@ -170,10 +170,43 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("max-parallel: 4", workflow)
+        self.assertIn("Full tests (includes security)", workflow)
+        self.assertIn(
+            'command: \'"%OMNICIO_PYTHON%" -m pytest\'',
+            workflow,
+        )
+        self.assertNotIn("name: Security tests", workflow)
         self.assertIn(
             "github.event_name == 'push' && github.ref == 'refs/heads/main'",
             workflow,
         )
+
+    def test_pull_request_workflows_are_owner_only_on_self_hosted(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        for workflow_path in workflow_dir.glob("*.yml"):
+            content = workflow_path.read_text(encoding="utf-8")
+            if "pull_request:" not in content:
+                continue
+            with self.subTest(workflow=workflow_path.name):
+                self.assertIn(
+                    "github.event.pull_request.head.repo.full_name == github.repository",
+                    content,
+                )
+                self.assertIn(
+                    "github.event.pull_request.author_association == 'OWNER'",
+                    content,
+                )
+
+    def test_repository_workflows_do_not_depend_on_billed_hosted_runners(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        forbidden = ("runs-on: ubuntu-", "runs-on: windows-", "runs-on: macos-")
+        for workflow_path in workflow_dir.glob("*.yml"):
+            content = workflow_path.read_text(encoding="utf-8")
+            with self.subTest(workflow=workflow_path.name):
+                for marker in forbidden:
+                    self.assertNotIn(marker, content)
+                self.assertNotIn("services:", content)
+
 
 
 class GitHubTransportTests(unittest.TestCase):
@@ -241,6 +274,11 @@ class GitHubTransportTests(unittest.TestCase):
 
 
 class ReleaseContextTests(unittest.TestCase):
+    def test_release_gate_uses_a_trusted_git_executable(self) -> None:
+        executable = pathlib.Path(gate.git_executable())
+        self.assertTrue(executable.is_file())
+        self.assertEqual(executable.name.casefold(), "git.exe" if os.name == "nt" else "git")
+
     def test_checkout_must_match_release_identity(self) -> None:
         for actual in (SHA, "b" * 40):
             result = Mock(stdout=actual + "\n")

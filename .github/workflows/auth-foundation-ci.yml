@@ -27,63 +27,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Hosted PR gate
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      OMNICIO_TEST_DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/omnicio_test
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ${{ github.run_id }}
-          POSTGRES_DB: omnicio_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d omnicio_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-    steps:
-      - name: Checkout candidate state
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install project and test tooling
-        run: |
-          python -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
-          python -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
-
-      - name: Verify dependency exports match the lock
-        run: |
-          uv export --locked --group build --no-emit-project --no-header --output-file requirements-runtime.txt > /dev/null
-          uv export --locked --group build --extra dev --no-emit-project --no-header --output-file requirements-dev.txt > /dev/null
-          git diff --exit-code -- requirements-runtime.txt requirements-dev.txt
-
-      - name: Ruff
-        run: ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py
-
-      - name: Mypy
-        run: mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py
-
-      - name: Tests
-        run: |
-          pytest
-          python .github/scripts/test_release_gate.py
-
-
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
     # Persistent self-hosted machines must not execute untrusted fork PR code.
@@ -107,10 +50,8 @@ jobs:
             command: '"%OMNICIO_PYTHON%" -m mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py'
           - name: Release gate tests
             command: '"%OMNICIO_PYTHON%" .github/scripts/test_release_gate.py'
-          - name: Security tests
-            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_security.py'
-          - name: Service and support tests
-            command: '"%OMNICIO_PYTHON%" -m pytest tests/test_service.py tests/test_vkid.py tests/test_support.py tests/test_broker.py tests/test_portfolio.py tests/test_observer.py'
+          - name: Full tests (includes security)
+            command: '"%OMNICIO_PYTHON%" -m pytest'
 
     steps:
       - name: Checkout accepted main state
@@ -121,65 +62,7 @@ jobs:
 
       - name: Bootstrap pinned Python and isolate job environment
         shell: cmd
-        env:
-          PYTHON_ARCHIVE_URL: https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.zip
-          PYTHON_ARCHIVE_SHA256: 8649692de846c56a7189d6dae5c322ab20deb1b5908b6f39426b62a36f39415d
-        run: |
-          @echo off
-          setlocal EnableExtensions
-
-          set "PYTHON_HOME=%RUNNER_TOOL_CACHE%\omnicio-python-3.12.10"
-          set "PYTHON_EXE=%PYTHON_HOME%\python.exe"
-          set "PYTHON_ARCHIVE=%RUNNER_TEMP%\python-3.12.10-amd64.zip"
-
-          if not exist "%PYTHON_EXE%" (
-            where curl.exe >nul 2>nul
-            if errorlevel 1 (
-              echo ::error::curl.exe is required to bootstrap the pinned Python runtime.
-              exit /b 1
-            )
-
-            echo Downloading pinned CPython 3.12.10 from python.org...
-            curl.exe --fail --location --retry 3 --retry-delay 2 ^
-              --output "%PYTHON_ARCHIVE%" "%PYTHON_ARCHIVE_URL%"
-            if errorlevel 1 exit /b 1
-
-            certutil -hashfile "%PYTHON_ARCHIVE%" SHA256 | findstr /i /c:"%PYTHON_ARCHIVE_SHA256%" >nul
-            if errorlevel 1 (
-              echo ::error::Downloaded Python archive failed SHA256 verification.
-              del /q "%PYTHON_ARCHIVE%" 2>nul
-              exit /b 1
-            )
-
-            if exist "%PYTHON_HOME%" rmdir /s /q "%PYTHON_HOME%"
-            mkdir "%PYTHON_HOME%"
-            if errorlevel 1 exit /b 1
-
-            powershell.exe -NoLogo -NoProfile -NonInteractive -Command ^
-              "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:PYTHON_ARCHIVE, $env:PYTHON_HOME)"
-            if errorlevel 1 exit /b 1
-
-            del /q "%PYTHON_ARCHIVE%" 2>nul
-          )
-
-          "%PYTHON_EXE%" -c "import sys; assert sys.version_info[:2] == (3, 12); print(sys.version)"
-          if errorlevel 1 exit /b 1
-
-          "%PYTHON_EXE%" -m pip --version >nul 2>nul
-          if errorlevel 1 (
-            "%PYTHON_EXE%" -m ensurepip --upgrade
-            if errorlevel 1 exit /b 1
-          )
-
-          "%PYTHON_EXE%" -m venv .venv-ci
-          if errorlevel 1 exit /b 1
-
-          set "VENV_PYTHON=%CD%\.venv-ci\Scripts\python.exe"
-          "%VENV_PYTHON%" -c "import sys; print(sys.version)"
-          if errorlevel 1 exit /b 1
-
-          >>"%GITHUB_ENV%" echo OMNICIO_PYTHON=%VENV_PYTHON%
-          >>"%GITHUB_ENV%" echo PIP_CACHE_DIR=%RUNNER_TOOL_CACHE%\omnicio-pip-cache
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Install project and test tooling
         shell: cmd

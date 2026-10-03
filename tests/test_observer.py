@@ -443,8 +443,8 @@ def test_missing_account_open_date_degrades_without_inventing_history() -> None:
 
 def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     root = Path(__file__).resolve().parents[1]
-    migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text()
-    store = (root / "src" / "omnicio" / "portfolio_store.py").read_text()
+    migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text(encoding="utf-8")
+    store = (root / "src" / "omnicio" / "portfolio_store.py").read_text(encoding="utf-8")
 
     for table in (
         "account_instrument_access",
@@ -474,8 +474,8 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
 
 def test_instrument_required_tests_are_tenant_account_evidence() -> None:
     root = Path(__file__).resolve().parents[1]
-    migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text()
-    store = (root / "src" / "omnicio" / "portfolio_store.py").read_text()
+    migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text(encoding="utf-8")
+    store = (root / "src" / "omnicio" / "portfolio_store.py").read_text(encoding="utf-8")
 
     catalog_block = migration.split(
         "CREATE TABLE IF NOT EXISTS instrument_catalog",
@@ -491,7 +491,7 @@ def test_instrument_required_tests_are_tenant_account_evidence() -> None:
 
 def test_issuer_mapping_foundation_never_guesses_unverified_relationships() -> None:
     root = Path(__file__).resolve().parents[1]
-    migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text()
+    migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS issuer_groups" in migration
     assert "CREATE TABLE IF NOT EXISTS issuers" in migration

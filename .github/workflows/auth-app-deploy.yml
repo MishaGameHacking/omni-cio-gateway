@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "uv.lock"
       - "requirements-runtime.txt"
       - ".github/workflows/auth-app-deploy.yml"
@@ -25,6 +26,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "uv.lock"
       - "requirements-runtime.txt"
       - ".github/workflows/auth-app-deploy.yml"
@@ -59,8 +61,12 @@ concurrency:
 
 jobs:
   tests:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.author_association == 'OWNER')
     name: Test auth deployer
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
 
     steps:
@@ -68,28 +74,38 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Compile deploy scripts
+        shell: cmd
         run: |
-          python3 -m py_compile \
-            .github/scripts/timeweb_auth_postgres.py \
-            .github/scripts/timeweb_auth_app.py
+          "%OMNICIO_PYTHON%" -m py_compile .github\scripts\timeweb_auth_postgres.py .github\scripts\timeweb_auth_app.py
 
       - name: Validate browser JavaScript syntax
-        run: node --check web/app.js
+        shell: cmd
+        run: |
+          where node.exe >nul 2>nul
+          if errorlevel 1 (
+            echo ::error::node.exe is required for browser JavaScript syntax validation.
+            exit /b 1
+          )
+          node.exe --check web\app.js
 
       - name: Run deployer tests
+        shell: cmd
         run: |
-          python3 .github/scripts/test_timeweb_ssh_trust.py
-          python3 .github/scripts/test_timeweb_auth_app.py
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_ssh_trust.py
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_auth_app.py
 
       - name: Verify auth page markers
-        run: |
-          grep -F 'name="omni-cio-white-site"' web/index.html
-          if grep -F '\n' web/index.html; then
-            echo "::error::Auth page contains a literal escaped newline"
-            exit 1
-          fi
+        shell: cmd
+        run: >-
+          "%OMNICIO_PYTHON%" -c "from pathlib import Path; text=Path('web/index.html').read_text(encoding='utf-8'); assert 'name=\"omni-cio-white-site\"' in text; assert r'\n' not in text"
 
   deploy:
     permissions:
@@ -110,7 +126,7 @@ jobs:
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_sha == github.sha)
     needs: tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
@@ -145,43 +161,51 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Verify current main release checks
+        shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/verify_main_release.py
+        run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate verified SSH server key
-        run: python3 .github/scripts/timeweb_ssh_trust.py
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_ssh_trust.py'
 
       - name: Validate Timeweb secret
+        shell: cmd
         run: |
-          set -euo pipefail
-          test -n "${TIMEWEB_CLOUD_TOKEN:-}" || {
-            echo "::error::TIMEWEB_CLOUD_TOKEN is missing"
-            exit 1
-          }
+          @echo off
+          if not defined TIMEWEB_CLOUD_TOKEN (
+            echo ::error::TIMEWEB_CLOUD_TOKEN is missing
+            exit /b 1
+          )
 
       - name: Deploy accepted auth release
         id: app
+        shell: cmd
         run: |
-          set -euo pipefail
-          python3 .github/scripts/timeweb_auth_app.py \
-            --server-name "${SERVER_NAME}" \
-            --server-comment "${SERVER_COMMENT}" \
-            --release-sha "${GITHUB_SHA}" \
-            --repository-root "${GITHUB_WORKSPACE}" \
-            --cluster-name "${DB_CLUSTER_NAME}" \
-            --vpc-name "${VPC_NAME}" \
-            --location "${TARGET_LOCATION}" \
-            --availability-zone "${TARGET_ZONE}"
+          "%OMNICIO_PYTHON%" .github\scripts\timeweb_auth_app.py ^
+            --server-name "%SERVER_NAME%" ^
+            --server-comment "%SERVER_COMMENT%" ^
+            --release-sha "%GITHUB_SHA%" ^
+            --repository-root "%GITHUB_WORKSPACE%" ^
+            --cluster-name "%DB_CLUSTER_NAME%" ^
+            --vpc-name "%VPC_NAME%" ^
+            --location "%TARGET_LOCATION%" ^
+            --availability-zone "%TARGET_ZONE%"
 
       - name: Surface database gate
         if: steps.app.outputs.status == 'pending_database'
-        run: |
-          echo "::warning title=Private PostgreSQL required::Auth application was not changed because the private PostgreSQL/runtime environment is not ready."
+        shell: cmd
+        run: echo ::warning title=Private PostgreSQL required::Auth application was not changed because the private PostgreSQL/runtime environment is not ready.
 
       - name: Confirm application readiness
         if: steps.app.outputs.status == 'app_ready'
-        run: |
-          echo "OmniCIO is healthy over HTTPS. VK ID auth is deployed with the reviewed access mode."
+        shell: cmd
+        run: echo OmniCIO is healthy over HTTPS. VK ID auth is deployed with the reviewed access mode.

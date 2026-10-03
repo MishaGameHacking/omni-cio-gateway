@@ -86,16 +86,34 @@ def ssh_host_key_mismatch_message(
     )
 
 
+def _openssh_binary(name: str) -> str:
+    """Return a trusted OS OpenSSH binary without searching the mutable PATH."""
+    if os.name == "nt":
+        system_root = pathlib.Path(os.environ.get("SYSTEMROOT", r"C:\\Windows"))
+        return str(system_root / "System32" / "OpenSSH" / f"{name}.exe")
+    if os.name == "posix":
+        return f"/usr/bin/{name}"
+    raise RuntimeError(f"Unsupported controller operating system: {os.name}")
+
+
+def ssh_executable() -> str:
+    return _openssh_binary("ssh")
+
+
+def ssh_keygen_executable() -> str:
+    return _openssh_binary("ssh-keygen")
+
+
 def ssh_base_args(private_key: pathlib.Path, known_hosts: pathlib.Path) -> list[str]:
     """Use only the pinned trust file and ephemeral identity, without SSH config."""
     return [
-        "/usr/bin/ssh", "-F", "/dev/null", "-i", str(private_key),
+        ssh_executable(), "-F", os.devnull, "-i", str(private_key),
         "-o", "BatchMode=yes",
         "-o", "IdentitiesOnly=yes",
         "-o", "IdentityAgent=none",
         "-o", "StrictHostKeyChecking=yes",
         "-o", f"UserKnownHostsFile={known_hosts}",
-        "-o", "GlobalKnownHostsFile=/dev/null",
+        "-o", f"GlobalKnownHostsFile={os.devnull}",
         "-o", "HostKeyAlgorithms=ssh-ed25519",
         "-o", "UpdateHostKeys=no",
         "-o", "PasswordAuthentication=no",

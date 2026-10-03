@@ -23,6 +23,7 @@ from typing import Any
 from timeweb_addresses import network_addresses
 from timeweb_ssh_trust import (
     ssh_base_args,
+    ssh_keygen_executable,
     ssh_host_key_mismatch_message,
     trusted_host_entry,
     trusted_host_fingerprint,
@@ -547,7 +548,7 @@ class EphemeralSsh:
             self._known_hosts.write_text(host_entry, encoding="utf-8")
             subprocess.run(
                 [
-                    "/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "",
+                    ssh_keygen_executable(), "-q", "-t", "ed25519", "-N", "",
                     "-f", str(self._key_path),
                 ],
                 check=True,

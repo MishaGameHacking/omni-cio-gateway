@@ -26,6 +26,7 @@ from timeweb_addresses import network_addresses
 from timeweb_ssh_trust import (
     managed_server_identity,
     ssh_base_args,
+    ssh_keygen_executable,
     ssh_host_key_mismatch_message,
     trusted_host_entry,
     trusted_host_fingerprint,
@@ -453,7 +454,7 @@ def configure_with_ephemeral_key(
 
         subprocess.run(
             [
-                "/usr/bin/ssh-keygen",
+                ssh_keygen_executable(),
                 "-q",
                 "-t",
                 "ed25519",

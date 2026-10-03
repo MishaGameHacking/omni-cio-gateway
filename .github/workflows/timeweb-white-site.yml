@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/timeweb-white-site.yml"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_white_site.py"
@@ -38,7 +39,7 @@ jobs:
     name: Test reconciler
     permissions:
       contents: read
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
 
     steps:
@@ -46,12 +47,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Run Timeweb reconciler regression tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/test_timeweb_white_site.py
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\test_timeweb_white_site.py'
 
   timeweb:
     name: Reconcile desired state
@@ -61,7 +65,7 @@ jobs:
       checks: read
     if: github.ref == 'refs/heads/main'
     needs: tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 25
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
@@ -79,30 +83,35 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Verify current main release checks
+        shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/verify_main_release.py
+        run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate Timeweb secret
-        shell: bash
+        shell: cmd
         run: |
-          set -euo pipefail
-          if [ -z "${TIMEWEB_CLOUD_TOKEN:-}" ]; then
-            echo "::error::Repository secret TIMEWEB_CLOUD_TOKEN is missing or empty."
-            exit 1
-          fi
+          @echo off
+          if not defined TIMEWEB_CLOUD_TOKEN (
+            echo ::error::Repository secret TIMEWEB_CLOUD_TOKEN is missing or empty.
+            exit /b 1
+          )
 
       - name: Reconcile Timeweb white site
-        shell: bash
+        shell: cmd
         run: |
-          set -euo pipefail
-          python3 .github/scripts/timeweb_white_site.py \
-            --mode "${ACTION_MODE}" \
-            --confirm "${DEPLOY_CONFIRM}" \
-            --server-name "${SERVER_NAME}" \
-            --server-comment "${SERVER_COMMENT}" \
-            --max-server-price-rub "${MAX_SERVER_PRICE_RUB}" \
-            --target-location "${TARGET_LOCATION}" \
-            --target-availability-zone "${TARGET_AVAILABILITY_ZONE}"
+          "%OMNICIO_PYTHON%" .github\scripts\timeweb_white_site.py ^
+            --mode "%ACTION_MODE%" ^
+            --confirm "%DEPLOY_CONFIRM%" ^
+            --server-name "%SERVER_NAME%" ^
+            --server-comment "%SERVER_COMMENT%" ^
+            --max-server-price-rub "%MAX_SERVER_PRICE_RUB%" ^
+            --target-location "%TARGET_LOCATION%" ^
+            --target-availability-zone "%TARGET_AVAILABILITY_ZONE%"

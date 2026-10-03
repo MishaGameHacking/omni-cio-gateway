@@ -205,7 +205,7 @@ class PostgresTests(unittest.TestCase):
 
     def test_workflow_applies_portfolio_observer_migration_after_existing_schema(self) -> None:
         root = MODULE_PATH.parents[2]
-        workflow = (root / ".github" / "workflows" / "auth-postgres.yml").read_text()
+        workflow = (root / ".github" / "workflows" / "auth-postgres.yml").read_text(encoding="utf-8")
 
         migrations = [
             "migrations/0001_phone_auth.sql",

@@ -17,10 +17,6 @@ from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
 from omnicio.portfolio_store import PortfolioStore, ProposalStateError
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
-pytestmark = pytest.mark.skipif(
-    not DATABASE_URL,
-    reason="ephemeral PostgreSQL is only available in the hosted migration gate",
-)
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = tuple(sorted((ROOT / "migrations").glob("*.sql")))
@@ -39,11 +35,11 @@ def _runtime_url() -> str:
 def _apply_all_migrations() -> None:
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         for migration in MIGRATIONS:
-            conn.execute(migration.read_text())
+            conn.execute(migration.read_text(encoding="utf-8"))
 
 
 def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
-    migration = (ROOT / "migrations" / "0010_portfolio_execution.sql").read_text()
+    migration = (ROOT / "migrations" / "0010_portfolio_execution.sql").read_text(encoding="utf-8")
 
     assert "omnicio_validate_execution_run_source" in migration
     assert "AS $omnicio$" in migration
@@ -61,13 +57,15 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
     assert "portfolio_proposals_source_snapshot_tenant_fkey" in migration
     assert "AS $omnicio_cleanup$" in migration
     assert "\nAS $\n" not in migration
-    database_source = (ROOT / "src" / "omnicio" / "db.py").read_text()
+    database_source = (ROOT / "src" / "omnicio" / "db.py").read_text(encoding="utf-8")
     assert "set_config('omnicio.financial_cleanup', 'account_delete', true)" in database_source
     assert "set_config('omnicio.financial_cleanup', 'broker_disconnect', true)" in database_source
 
 
 def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode() -> None:
-    migration = (ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text()
+    migration = (
+        ROOT / "migrations" / "0011_portfolio_live_execution.sql"
+    ).read_text(encoding="utf-8")
 
     assert "portfolio_live_execution_mandates" in migration
     assert "ENABLE ROW LEVEL SECURITY" in migration
@@ -85,12 +83,18 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     assert "portfolio_execution_legs_live_submission_guard" in migration
     assert "FOR SHARE OF m" in migration
     assert "live execution mandate is inactive before submission" in migration
-    execution_store_source = (ROOT / "src" / "omnicio" / "execution_store.py").read_text()
+    execution_store_source = (
+        ROOT / "src" / "omnicio" / "execution_store.py"
+    ).read_text(encoding="utf-8")
     assert 'run.mode == "live" and new_status == "submitting"' in execution_store_source
     assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
     assert "FOR SHARE" in execution_store_source
 
 
+@pytest.mark.skipif(
+    not DATABASE_URL,
+    reason="ephemeral PostgreSQL is required for migration integration coverage",
+)
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
     assert [item.name for item in MIGRATIONS][-1] == "0011_portfolio_live_execution.sql"
     _apply_all_migrations()
@@ -98,7 +102,11 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
         # The additive latest migration is safe to retry before release. Once
         # accepted on main it becomes immutable migration history.
-        admin.execute((ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text())
+        admin.execute(
+            (
+                ROOT / "migrations" / "0011_portfolio_live_execution.sql"
+            ).read_text(encoding="utf-8")
+        )
 
         table_names = {
             row[0]

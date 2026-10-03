@@ -339,7 +339,7 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_auth_deploy_workflow_separates_pr_and_production_concurrency(self) -> None:
         workflow = (
             SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml"
-        ).read_text()
+        ).read_text(encoding="utf-8")
 
         self.assertIn(
             "github.event.pull_request.number || 'production'",
@@ -392,10 +392,10 @@ class AuthAppDeployTests(unittest.TestCase):
         root = SCRIPT_DIR.parent.parent
         app_workflow = (
             root / ".github" / "workflows" / "auth-app-deploy.yml"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         postgres_workflow = (
             root / ".github" / "workflows" / "auth-postgres.yml"
-        ).read_text()
+        ).read_text(encoding="utf-8")
 
         self.assertIn("workflow_run", app_workflow)
         self.assertIn("Auth PostgreSQL", app_workflow)
@@ -465,9 +465,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_legal_pages_describe_limited_user_registration(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        privacy = (root / "web" / "legal" / "privacy.html").read_text()
-        consent = (root / "web" / "legal" / "consent.html").read_text()
-        terms = (root / "web" / "legal" / "terms.html").read_text()
+        privacy = (root / "web" / "legal" / "privacy.html").read_text(encoding="utf-8")
+        consent = (root / "web" / "legal" / "consent.html").read_text(encoding="utf-8")
+        terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
@@ -483,8 +483,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_keeps_auth_and_broker_contracts(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
 
         for element_id in (
             "auth-card",
@@ -534,10 +534,10 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_r5_proposal_ui_has_human_decisions_without_execution_authority(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
-        backend = (root / "src" / "omnicio" / "main.py").read_text()
-        proposal_backend = (root / "src" / "omnicio" / "proposals.py").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        backend = (root / "src" / "omnicio" / "main.py").read_text(encoding="utf-8")
+        proposal_backend = (root / "src" / "omnicio" / "proposals.py").read_text(encoding="utf-8")
 
         for element_id in (
             "proposal-status",
@@ -567,10 +567,10 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_r7_ui_exposes_dormant_mandate_gated_live_canary(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
-        backend = (root / "src" / "omnicio" / "main.py").read_text()
-        tbank = (root / "src" / "omnicio" / "tbank.py").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        backend = (root / "src" / "omnicio" / "main.py").read_text(encoding="utf-8")
+        tbank = (root / "src" / "omnicio" / "tbank.py").read_text(encoding="utf-8")
 
         for element_id in (
             "execution-status",
@@ -620,9 +620,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_versioned_balancing_policy_has_explicit_limits_and_no_trade_authority(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
-        backend = (root / "src" / "omnicio" / "main.py").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        backend = (root / "src" / "omnicio" / "main.py").read_text(encoding="utf-8")
 
         for element_id in (
             "balancing-policy-form",
@@ -662,8 +662,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_uses_real_portfolio_data_without_fake_values(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
 
         self.assertIn("Данные читаются напрямую из T-Invest", page)
         self.assertIn('id="portfolio-content"', page)
@@ -680,9 +680,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_versioned_investment_profile_is_user_scoped_and_not_trade_authority(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
-        backend = (root / "src" / "omnicio" / "main.py").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        backend = (root / "src" / "omnicio" / "main.py").read_text(encoding="utf-8")
 
         for element_id in (
             "investment-profile-form",
@@ -710,9 +710,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_user_transaction_history_is_not_exposed(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
-        backend = (root / "src" / "omnicio" / "main.py").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        backend = (root / "src" / "omnicio" / "main.py").read_text(encoding="utf-8")
 
         self.assertNotIn("Последние исполненные операции", page)
         self.assertNotIn("/api/broker/tbank/operations", script)
@@ -720,8 +720,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_system_modules_are_real_and_read_only(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
 
         for element_id in (
             "owl-state",
@@ -746,8 +746,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_shows_live_usd_rub_without_fake_rate(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
 
         for element_id in (
             "usd-rub-card",
@@ -778,9 +778,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_uses_grouped_drawer_navigation(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
-        stylesheet = (root / "web" / "app.css").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
 
         for view in (
             "home",
@@ -806,9 +806,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_uses_approved_brand_assets(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        stylesheet = (root / "web" / "app.css").read_text()
-        manifest = (root / "web" / "manifest.webmanifest").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
+        manifest = (root / "web" / "manifest.webmanifest").read_text(encoding="utf-8")
         deploy_script = MODULE.REMOTE_DEPLOY_SCRIPT
 
         self.assertIn(
@@ -834,9 +834,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        stylesheet = (root / "web" / "app.css").read_text()
-        script = (root / "web" / "app.js").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
 
         self.assertIn("viewport-fit=cover", page)
         self.assertIn("interactive-widget=resizes-content", page)
@@ -849,13 +849,13 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('window.addEventListener("popstate"', script)
         self.assertIn('id="app-drawer"', page)
         self.assertNotIn('class="mobile-nav"', page)
-        manifest = (root / "web" / "manifest.webmanifest").read_text()
+        manifest = (root / "web" / "manifest.webmanifest").read_text(encoding="utf-8")
         self.assertIn('"display": "fullscreen"', manifest)
         self.assertIn('"display_override": ["fullscreen", "standalone"]', manifest)
 
     def test_system_status_panel_is_kept_in_settings(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
 
         settings_start = page.index('data-view-panel="settings"')
         support_start = page.index('data-view-panel="support"')
@@ -868,8 +868,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_decisions_workspace_is_read_only_and_uses_canonical_navigation(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
 
         self.assertEqual(page.count('data-view="decisions"'), 1)
         self.assertEqual(page.count('data-view-panel="decisions"'), 1)
@@ -885,8 +885,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_profile_forms_explain_inputs_and_guard_bad_client_actions(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        script = (root / "web" / "app.js").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
 
         for help_id in (
             "investment-profile-help",
@@ -956,8 +956,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        page = (root / "web" / "index.html").read_text()
-        project = (root / "pyproject.toml").read_text()
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        project = (root / "pyproject.toml").read_text(encoding="utf-8")
         deploy_script = MODULE.REMOTE_DEPLOY_SCRIPT
 
         self.assertGreaterEqual(page.count("data-app-version"), 3)
