@@ -952,9 +952,10 @@
                     placeholder="Вставьте токен"
                     minlength="20"
                     maxlength="4096"
+                    aria-describedby="tbank-token-help"
                     required
                   >
-                  <p class="field-hint">
+                  <p id="tbank-token-help" class="field-hint">
                     Для аналитики production-счёта OmniCIO не использует live-исполнение.
                     Для R6 Sandbox токен должен разрешать тестовые методы песочницы.
                     Transfer-access OmniCIO не требуется.
@@ -1042,27 +1043,57 @@
                   сценариев. Они не дают OmniCIO полномочий совершать сделки и не включают
                   автоматическое исполнение.
                 </p>
-                <form id="investment-profile-form" class="form-stack" novalidate>
+                <div id="investment-profile-help" class="field-hint">
+                  Заполняйте только фактические ограничения, которые относятся к вашему капиталу.
+                  Система не подставляет «рекомендуемые» значения: если параметр вам неизвестен,
+                  лучше не сохранять профиль до уточнения. Поля проверяются и в браузере, и на сервере.
+                </div>
+                <form
+                  id="investment-profile-form"
+                  class="form-stack"
+                  aria-describedby="investment-profile-help"
+                  novalidate
+                >
                   <div class="constraint-form-grid">
                     <div class="field">
                       <label for="profile-reserve-rub">Резерв, ₽</label>
-                      <input id="profile-reserve-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                      <input id="profile-reserve-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-reserve-help" required>
+                      <p id="profile-reserve-help" class="field-hint">
+                        Сумма свободных рублей, которую optimizer обязан оставить нетронутой.
+                        Вместе с планируемыми снятиями она вычитается из доступного cash.
+                      </p>
                     </div>
                     <div class="field">
                       <label for="profile-withdrawal-rub">Планируемые снятия, ₽</label>
-                      <input id="profile-withdrawal-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                      <input id="profile-withdrawal-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-withdrawal-help" required>
+                      <p id="profile-withdrawal-help" class="field-hint">
+                        Сумма ожидаемых выводов, которую нельзя считать бюджетом покупки.
+                        Если запланированных снятий нет, укажите 0.
+                      </p>
                     </div>
                     <div class="field">
                       <label for="profile-horizon-months">Горизонт, месяцев</label>
-                      <input id="profile-horizon-months" type="number" min="1" max="1200" step="1" inputmode="numeric" required>
+                      <input id="profile-horizon-months" type="number" min="1" max="1200" step="1" inputmode="numeric" aria-describedby="profile-horizon-help" required>
+                      <p id="profile-horizon-help" class="field-hint">
+                        Ваш горизонт в полных месяцах. Допустимо целое число от 1 до 1200;
+                        это ограничение сценария, а не обещание доходности.
+                      </p>
                     </div>
                     <div class="field">
                       <label for="profile-max-drawdown">Допустимая просадка, %</label>
-                      <input id="profile-max-drawdown" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                      <input id="profile-max-drawdown" type="number" min="0" max="100" step="0.1" inputmode="decimal" aria-describedby="profile-drawdown-help" required>
+                      <p id="profile-drawdown-help" class="field-hint">
+                        Максимальное снижение портфеля, которое вы задаёте как ограничение.
+                        Значение 0–100%; это не прогноз будущего убытка.
+                      </p>
                     </div>
                     <div class="field">
                       <label for="profile-liquidity-days">Горизонт ликвидности, дней</label>
-                      <input id="profile-liquidity-days" type="number" min="0" max="36500" step="1" inputmode="numeric" required>
+                      <input id="profile-liquidity-days" type="number" min="0" max="36500" step="1" inputmode="numeric" aria-describedby="profile-liquidity-help" required>
+                      <p id="profile-liquidity-help" class="field-hint">
+                        За сколько дней позиция должна укладываться в подтверждённую ликвидность.
+                        R4 умножает дневную capacity на этот срок; 0 не даёт нового объёма по этому лимиту.
+                      </p>
                     </div>
                   </div>
                   <label class="check">
@@ -1095,7 +1126,18 @@
                   OmniCIO не подставляет скрытые проценты концентрации и не получает
                   торговых полномочий. Если policy не заполнена, сценарии сделок не строятся.
                 </p>
-                <form id="balancing-policy-form" class="form-stack" novalidate>
+                <div id="balancing-policy-help" class="field-hint">
+                  Лимиты инструмента, сектора, эмитента, группы и класса активов — это верхние
+                  доли портфеля, а не целевые значения. Бюджет оборота и no-trade band ограничивают
+                  лишние перестановки. Налог и haircut — только ваши сценарные допущения:
+                  OmniCIO не определяет их автоматически и не выдаёт haircut за вероятность дефолта.
+                </div>
+                <form
+                  id="balancing-policy-form"
+                  class="form-stack"
+                  aria-describedby="balancing-policy-help"
+                  novalidate
+                >
                   <div class="constraint-form-grid">
                     <div class="field">
                       <label for="balance-max-instrument">Макс. один инструмент, %</label>
