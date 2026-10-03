@@ -407,7 +407,7 @@ def test_material_hash_ignores_retrieval_clock_but_tracks_decision_inputs() -> N
     ]
     retrieval_sources[0]["retrieved_at"] = "2026-10-03T08:04:00+00:00"
     retrieval_only["evidence_sources"] = retrieval_sources
-    retrieval_only["generated_at"] = "2026-10-03T08:06:00+00:00"
+    retrieval_only["created_at"] = "2026-10-03T08:06:00+00:00"
     retrieval_only["expires_at"] = "2026-10-03T08:16:00+00:00"
 
     assert proposal_material_hash(first.payload) == proposal_material_hash(
