@@ -1598,6 +1598,11 @@
     shortlisted_by_tbank_market_yield_signal: "Shortlist: broker yield signal; решение пересчитывается по contractual cash-flow",
     issuer_identity_from_verified_mapping: "Эмитент подтверждён сохранённой verified mapping",
     issuer_group_from_verified_mapping: "Группа взята из проверенной связи инструмента с эмитентом",
+    issuer_ratings_from_tinvest_bond_by: "Кредитные рейтинги эмитента: T-Invest BondBy",
+    issuer_rating_missing: "T-Invest не вернул действующий рейтинг эмитента",
+    issuer_rating_time_invalid: "Дата рейтинга некорректна · рейтинг не используется",
+    issuer_rating_level_unrecognized: "Шкала рейтинга не распознана · используется unknown bucket",
+    issuer_rating_under_watch: "Рейтинг эмитента находится под наблюдением · новый вход блокируется",
     buy_cost_from_tinvest_get_order_price: "Покупка: комиссия и НКД из T-Invest GetOrderPrice",
     ytw_from_tinvest_fixed_cashflows: "YTW: T-Invest купоны + погашение; будущих call/convert событий нет",
     liquidity_from_tinvest_exchange_candles: "Ликвидность: завершённые биржевые дневные свечи T-Invest",
@@ -1610,9 +1615,17 @@
     BALANCING_REASON_LABELS[value] || String(value || "—")
   );
 
-  const balancingNote = (value) => (
-    BALANCING_NOTE_LABELS[value] || String(value || "—")
-  );
+  const balancingNote = (value) => {
+    const text = String(value || "—");
+    if (BALANCING_NOTE_LABELS[text]) {
+      return BALANCING_NOTE_LABELS[text];
+    }
+    if (text.startsWith("issuer_rating:")) {
+      const [, agency, level, date] = text.split(":");
+      return ["Рейтинг", agency, level, date].filter(Boolean).join(" · ");
+    }
+    return text;
+  };
 
   const renderBalancing = (payload) => {
     balancingScenarios.replaceChildren();
