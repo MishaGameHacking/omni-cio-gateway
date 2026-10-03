@@ -169,6 +169,16 @@ class ExecutionStore:
                     raise ExecutionLedgerError("execution_run_source_mismatch")
                 return run, self._legs(cur, user_id, run.id)
 
+            _require_current_execution_source(
+                cur,
+                user_id=user_id,
+                proposal_id=proposal.id,
+                snapshot_id=proposal.source_snapshot_id,
+                account_id=proposal.account_id,
+                profile_version=proposal.profile_version,
+                policy_version=proposal.policy_version,
+            )
+
             cur.execute(
                 """
                 SELECT id
@@ -793,6 +803,73 @@ class ExecutionStore:
             _leg_record(cast(dict[str, Any], row))
             for row in cur.fetchall()
         )
+
+
+def _require_current_execution_source(
+    cur: Any,
+    *,
+    user_id: UUID,
+    proposal_id: UUID,
+    snapshot_id: UUID,
+    account_id: str,
+    profile_version: int,
+    policy_version: int,
+) -> None:
+    cur.execute(
+        """
+        SELECT
+            p.expires_at > now() AS unexpired,
+            (p.source_snapshot_id, p.account_id) = (
+                SELECT s.id, s.account_id
+                FROM portfolio_snapshots AS s
+                WHERE s.user_id = p.user_id
+                ORDER BY s.captured_at DESC, s.created_at DESC
+                LIMIT 1
+            ) AS snapshot_current,
+            p.profile_version = (
+                SELECT ip.version
+                FROM investment_profile_versions AS ip
+                WHERE ip.user_id = p.user_id
+                ORDER BY ip.version DESC
+                LIMIT 1
+            ) AS profile_current,
+            p.policy_version = (
+                SELECT bp.version
+                FROM balancing_policy_versions AS bp
+                WHERE bp.user_id = p.user_id
+                ORDER BY bp.version DESC
+                LIMIT 1
+            ) AS policy_current
+        FROM portfolio_proposals AS p
+        WHERE p.id = %s
+          AND p.user_id = %s
+          AND p.source_snapshot_id = %s
+          AND p.account_id = %s
+          AND p.profile_version = %s
+          AND p.policy_version = %s
+        FOR SHARE
+        """,
+        (
+            proposal_id,
+            user_id,
+            snapshot_id,
+            account_id,
+            profile_version,
+            policy_version,
+        ),
+    )
+    row = cur.fetchone()
+    if row is None:
+        raise ExecutionLedgerError("execution_proposal_source_changed")
+    checks = cast(dict[str, Any], row)
+    if not bool(checks["unexpired"]):
+        raise ExecutionLedgerError("proposal_expired")
+    if not bool(checks["snapshot_current"]):
+        raise ExecutionLedgerError("proposal_snapshot_stale")
+    if not bool(checks["profile_current"]):
+        raise ExecutionLedgerError("proposal_profile_stale")
+    if not bool(checks["policy_current"]):
+        raise ExecutionLedgerError("proposal_policy_stale")
 
 
 def _run_record(row: dict[str, Any]) -> ExecutionRunRecord:
