@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
+from omnicio.db import ActiveLiveExecutionError
 from omnicio.execution_service import ExecutionServiceError
 from omnicio.execution_store import ExecutionLedgerError
 from omnicio.main import app
@@ -1147,6 +1148,51 @@ def test_execution_get_requires_session_before_touching_ledger() -> None:
 
     assert response.status_code == 401
     store.assert_not_called()
+
+
+def test_broker_disconnect_race_is_a_safe_conflict() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.execution_store") as ledger,
+        patch("omnicio.main.broker_service") as broker,
+    ):
+        user.return_value.id = "server-user"
+        ledger.return_value.has_active_live_execution.return_value = False
+        broker.return_value.disconnect.side_effect = ActiveLiveExecutionError(
+            "active live execution must be reconciled before broker disconnect"
+        )
+        response = TestClient(app).delete(
+            "/api/broker/tbank",
+            headers={"Origin": "https://omnicio.ru"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "active_live_execution_must_be_reconciled"
+    ledger.return_value.revoke_live_mandate.assert_called_once_with("server-user")
+
+
+def test_account_delete_race_is_a_safe_conflict() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.execution_store") as ledger,
+        patch("omnicio.main.service") as auth,
+    ):
+        user.return_value.id = "server-user"
+        ledger.return_value.has_active_live_execution.return_value = False
+        auth.return_value.delete_account.side_effect = ActiveLiveExecutionError(
+            "active live execution must be reconciled before account deletion"
+        )
+        response = TestClient(app).post(
+            "/api/account/delete",
+            json={
+                "confirm_public_id": "000000001",
+                "confirm_irreversible": True,
+            },
+            headers={"Origin": "https://omnicio.ru"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "active_live_execution_must_be_reconciled"
 
 
 def test_intelligence_http_requires_session_before_touching_store() -> None:

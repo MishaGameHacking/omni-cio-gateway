@@ -26,7 +26,7 @@ from .broker import (
 )
 from .cbr import CBRClient
 from .config import Settings, load_settings
-from .db import Database, UserRecord
+from .db import ActiveLiveExecutionError, Database, UserRecord
 from .execution_service import ExecutionServiceError, PortfolioExecutionService
 from .execution_store import (
     ExecutionLedgerError,
@@ -1537,7 +1537,13 @@ def disconnect_tbank(
             detail="active_live_execution_must_be_reconciled",
         )
     ledger.revoke_live_mandate(user.id)
-    broker_service(request).disconnect(user.id)
+    try:
+        broker_service(request).disconnect(user.id)
+    except ActiveLiveExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="active_live_execution_must_be_reconciled",
+        ) from exc
     response.status_code = 204
     return response
 
@@ -1564,6 +1570,11 @@ def delete_account(
 
     try:
         deleted = service(request).delete_account(user, body.confirm_public_id)
+    except ActiveLiveExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="active_live_execution_must_be_reconciled",
+        ) from exc
     except AccountDeletionRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
