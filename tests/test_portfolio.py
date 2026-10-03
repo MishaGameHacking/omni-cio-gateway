@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
+from omnicio.execution_service import ExecutionServiceError
 from omnicio.main import app
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
 from omnicio.portfolio_store import (
