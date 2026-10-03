@@ -26,7 +26,6 @@ from .portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
 from .tbank import (
     TBankAssetFundamental,
     TBankBondCoupon,
-    TBankBondEvent,
     TBankHistoricCandle,
     TBankInstrumentMetadata,
     TBankLastPrice,
