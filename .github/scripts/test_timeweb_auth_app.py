@@ -938,6 +938,8 @@ class AuthAppDeployTests(unittest.TestCase):
             "positions-table-body",
             "positions-list",
             "instrument-detail",
+            "instrument-detail-pnl",
+            "instrument-detail-pnl-time",
             "instrument-history-chart",
             "instrument-evidence-summary",
             "instrument-payouts",
@@ -951,6 +953,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('data-allocation-view="position"', page)
         self.assertIn("Время точки — captured_at", page)
         self.assertIn("Не торговый бюджет", page)
+        ids = re.findall(r'\\bid="([^"]+)"', page)
+        self.assertEqual(len(ids), len(set(ids)), "dashboard HTML contains duplicate ids")
 
         self.assertIn("/api/portfolio/visualization?history_limit=90", script)
         self.assertIn("/api/portfolio/instruments/", script)
@@ -958,6 +962,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("createElementNS", script)
         self.assertIn("renderSeriesChart", script)
         self.assertIn("drawdownSeries", script)
+        self.assertIn("livePositionForIdentity", script)
+        self.assertIn("instrumentDetailPnl", script)
         self.assertIn("snapshot_freshness", script)
         self.assertIn("risk_state", script)
         self.assertNotIn("Math.random", script)
@@ -966,6 +972,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn(".portfolio-position-table", stylesheet)
         self.assertIn(".portfolio-position-cards", stylesheet)
         self.assertIn(".portfolio-chart-line", stylesheet)
+        self.assertIn(".portfolio-chart-area", stylesheet)
         self.assertIn(".instrument-detail", stylesheet)
         self.assertIn("@media (max-width: 820px)", stylesheet)
         self.assertIn("@media (max-width: 420px)", stylesheet)
