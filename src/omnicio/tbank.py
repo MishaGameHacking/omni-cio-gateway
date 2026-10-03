@@ -620,9 +620,9 @@ class TBankInvestClient:
                 raise TBankUnavailable(
                     "T-Invest historic candle has negative volume"
                 )
-            if source_name and source_name != "CANDLE_SOURCE_EXCHANGE":
+            if source_name != "CANDLE_SOURCE_EXCHANGE":
                 raise TBankUnavailable(
-                    "T-Invest historic candle is not exchange-sourced"
+                    "T-Invest historic candle is not confirmed exchange-sourced"
                 )
             if candle_time in seen_times:
                 raise TBankUnavailable(
@@ -645,7 +645,7 @@ class TBankInvestClient:
                     volume_lots=volume,
                     time=candle_time,
                     is_complete=complete,
-                    source=source_name or "CANDLE_SOURCE_EXCHANGE",
+                    source=source_name,
                     open=open_value,
                     high=high,
                     low=low,
@@ -691,20 +691,20 @@ class TBankInvestClient:
                 "T-Invest trading status returned a different instrument"
             )
 
-        flags: dict[str, bool] = {}
-        for field in (
-            "limitOrderAvailableFlag",
-            "marketOrderAvailableFlag",
-            "apiTradeAvailableFlag",
-            "bestpriceOrderAvailableFlag",
-            "onlyBestPrice",
-        ):
-            value = payload.get(field)
-            if not isinstance(value, bool):
-                raise TBankUnavailable(
-                    f"T-Invest trading status has invalid {field}"
-                )
-            flags[field] = value
+        limit_order_available = payload.get("limitOrderAvailableFlag")
+        market_order_available = payload.get("marketOrderAvailableFlag")
+        api_trade_available = payload.get("apiTradeAvailableFlag")
+        best_price_order_available = payload.get("bestpriceOrderAvailableFlag")
+        only_best_price = payload.get("onlyBestPrice")
+        flags = (
+            limit_order_available,
+            market_order_available,
+            api_trade_available,
+            best_price_order_available,
+            only_best_price,
+        )
+        if not all(isinstance(value, bool) for value in flags):
+            raise TBankUnavailable("T-Invest trading status has invalid availability flags")
 
         trading_status = _text(payload.get("tradingStatus")).strip()
         if not trading_status:
@@ -712,11 +712,11 @@ class TBankInvestClient:
         return TBankTradingStatus(
             instrument_uid=instrument,
             trading_status=trading_status,
-            limit_order_available=flags["limitOrderAvailableFlag"],
-            market_order_available=flags["marketOrderAvailableFlag"],
-            api_trade_available=flags["apiTradeAvailableFlag"],
-            best_price_order_available=flags["bestpriceOrderAvailableFlag"],
-            only_best_price=flags["onlyBestPrice"],
+            limit_order_available=bool(limit_order_available),
+            market_order_available=bool(market_order_available),
+            api_trade_available=bool(api_trade_available),
+            best_price_order_available=bool(best_price_order_available),
+            only_best_price=bool(only_best_price),
         )
 
     def get_last_prices(
