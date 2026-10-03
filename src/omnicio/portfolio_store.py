@@ -45,6 +45,27 @@ class InvestmentProfileRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class BalancingPolicyRecord:
+    id: int
+    user_id: UUID
+    version: int
+    max_instrument_percent: Decimal
+    max_sector_percent: Decimal
+    max_issuer_percent: Decimal
+    max_group_percent: Decimal
+    max_share_percent: Decimal
+    max_bond_percent: Decimal
+    max_etf_percent: Decimal
+    max_below_grade_percent: Decimal
+    max_unknown_percent: Decimal
+    max_term_months: int
+    turnover_budget_percent: Decimal
+    no_trade_band_percent: Decimal
+    min_replace_benefit_rub: Decimal
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class JobRunRecord:
     id: UUID
     user_id: UUID
@@ -253,6 +274,191 @@ class PortfolioStore:
             if fetched is None:
                 raise RuntimeError("investment profile insert returned no row")
             return _profile(cast(dict[str, Any], fetched))
+
+    def current_balancing_policy(
+        self,
+        user_id: UUID,
+    ) -> BalancingPolicyRecord | None:
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub,
+                    created_at
+                FROM balancing_policy_versions
+                WHERE user_id = %s
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            return _balancing_policy(cast(dict[str, Any], fetched))
+
+    def save_balancing_policy(
+        self,
+        user_id: UUID,
+        *,
+        max_instrument_percent: Decimal,
+        max_sector_percent: Decimal,
+        max_issuer_percent: Decimal,
+        max_group_percent: Decimal,
+        max_share_percent: Decimal,
+        max_bond_percent: Decimal,
+        max_etf_percent: Decimal,
+        max_below_grade_percent: Decimal,
+        max_unknown_percent: Decimal,
+        max_term_months: int,
+        turnover_budget_percent: Decimal,
+        no_trade_band_percent: Decimal,
+        min_replace_benefit_rub: Decimal,
+    ) -> BalancingPolicyRecord:
+        desired = (
+            max_instrument_percent,
+            max_sector_percent,
+            max_issuer_percent,
+            max_group_percent,
+            max_share_percent,
+            max_bond_percent,
+            max_etf_percent,
+            max_below_grade_percent,
+            max_unknown_percent,
+            max_term_months,
+            turnover_budget_percent,
+            no_trade_band_percent,
+            min_replace_benefit_rub,
+        )
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"balancing-policy:{user_id}",),
+            )
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub,
+                    created_at
+                FROM balancing_policy_versions
+                WHERE user_id = %s
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            latest_row = cur.fetchone()
+            if latest_row is None:
+                version = 1
+            else:
+                latest = _balancing_policy(cast(dict[str, Any], latest_row))
+                current = (
+                    latest.max_instrument_percent,
+                    latest.max_sector_percent,
+                    latest.max_issuer_percent,
+                    latest.max_group_percent,
+                    latest.max_share_percent,
+                    latest.max_bond_percent,
+                    latest.max_etf_percent,
+                    latest.max_below_grade_percent,
+                    latest.max_unknown_percent,
+                    latest.max_term_months,
+                    latest.turnover_budget_percent,
+                    latest.no_trade_band_percent,
+                    latest.min_replace_benefit_rub,
+                )
+                if current == desired:
+                    return latest
+                version = latest.version + 1
+
+            cur.execute(
+                """
+                INSERT INTO balancing_policy_versions (
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s
+                )
+                RETURNING
+                    id,
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub,
+                    created_at
+                """,
+                (user_id, version, *desired),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                raise RuntimeError("balancing policy insert returned no row")
+            return _balancing_policy(cast(dict[str, Any], fetched))
 
     def claim_daily_job(
         self,
@@ -1316,6 +1522,28 @@ def _profile(row: dict[str, Any]) -> InvestmentProfileRecord:
         max_drawdown_percent=Decimal(row["max_drawdown_percent"]),
         liquidity_horizon_days=int(row["liquidity_horizon_days"]),
         allow_below_investment_grade=bool(row["allow_below_investment_grade"]),
+        created_at=cast(datetime, row["created_at"]),
+    )
+
+
+def _balancing_policy(row: dict[str, Any]) -> BalancingPolicyRecord:
+    return BalancingPolicyRecord(
+        id=int(row["id"]),
+        user_id=cast(UUID, row["user_id"]),
+        version=int(row["version"]),
+        max_instrument_percent=Decimal(row["max_instrument_percent"]),
+        max_sector_percent=Decimal(row["max_sector_percent"]),
+        max_issuer_percent=Decimal(row["max_issuer_percent"]),
+        max_group_percent=Decimal(row["max_group_percent"]),
+        max_share_percent=Decimal(row["max_share_percent"]),
+        max_bond_percent=Decimal(row["max_bond_percent"]),
+        max_etf_percent=Decimal(row["max_etf_percent"]),
+        max_below_grade_percent=Decimal(row["max_below_grade_percent"]),
+        max_unknown_percent=Decimal(row["max_unknown_percent"]),
+        max_term_months=int(row["max_term_months"]),
+        turnover_budget_percent=Decimal(row["turnover_budget_percent"]),
+        no_trade_band_percent=Decimal(row["no_trade_band_percent"]),
+        min_replace_benefit_rub=Decimal(row["min_replace_benefit_rub"]),
         created_at=cast(datetime, row["created_at"]),
     )
 
