@@ -59,6 +59,8 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
     assert "'account_delete'" in migration
     assert "'broker_disconnect'" in migration
     assert "portfolio_proposals_source_snapshot_tenant_fkey" in migration
+    assert "AS $omnicio_cleanup$" in migration
+    assert "\nAS $\n" not in migration
     database_source = (ROOT / "src" / "omnicio" / "db.py").read_text()
     assert "set_config('omnicio.financial_cleanup', 'account_delete', true)" in database_source
     assert "set_config('omnicio.financial_cleanup', 'broker_disconnect', true)" in database_source
