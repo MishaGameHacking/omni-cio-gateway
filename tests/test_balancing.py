@@ -101,6 +101,8 @@ def _candidate(
         buy_available=True,
         required_tests_passed=True,
         evidence_complete=evidence_complete,
+        limit_price=Decimal("100"),
+        limit_price_type="point" if asset_class == "bond" else "currency",
     )
 
 
@@ -134,6 +136,8 @@ def _holding(
         exit_spread_cost_rub=Decimal(spread),
         tax_if_sold_rub=Decimal(tax),
         blocked=blocked,
+        limit_price=Decimal("100"),
+        limit_price_type="point" if asset_class == "bond" else "currency",
     )
 
 
