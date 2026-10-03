@@ -1009,6 +1009,44 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Изменения не подтверждены", script)
         self.assertIn("apiErrorMessage(response, body)", script)
 
+    def test_r8_reinvestment_ui_is_evidence_only_and_explains_limits(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+
+        for element_id in (
+            "reinvestment-status",
+            "reinvestment-summary",
+            "reinvestment-observed",
+            "reinvestment-spendable",
+            "reinvestment-form",
+            "reinvestment-reserve",
+            "reinvestment-max-order",
+            "reinvestment-max-daily",
+            "reinvestment-max-monthly",
+            "reinvestment-slippage",
+            "reinvestment-expires-at",
+            "reinvestment-profile-id",
+            "reinvestment-dividends",
+            "reinvestment-coupons",
+            "reinvestment-confirm",
+            "reinvestment-save",
+            "reinvestment-revoke",
+            "reinvestment-message",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn("Мандат и учёт выплат без автопокупки", page)
+        self.assertIn("На R8.1 всегда 0 ₽", page)
+        self.assertIn('api("/api/portfolio/reinvestment"', script)
+        self.assertIn('source.execution_enabled !== false', script)
+        self.assertIn('reinvestmentSpendable.textContent = formatRub("0")', script)
+        self.assertIn("Брокерские заявки не отправлялись", script)
+        self.assertNotIn(
+            'api("/api/portfolio/reinvestment/order"',
+            script,
+        )
+
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
