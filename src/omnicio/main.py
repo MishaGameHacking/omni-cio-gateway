@@ -33,6 +33,7 @@ from .execution_store import (
     ExecutionLegRecord,
     ExecutionRunRecord,
     ExecutionStore,
+    LiveExecutionMandateRecord,
 )
 from .intelligence import rating_source_references
 from .market import MarketService
@@ -157,7 +158,26 @@ class PortfolioExecutionBody(BaseModel):
     proposal_id: UUID
     proposal_version: int = Field(ge=1)
     proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-    mode: Literal["shadow", "sandbox"]
+    mode: Literal["shadow", "sandbox", "live"]
+
+
+class PortfolioLiveMandateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: str = Field(min_length=1, max_length=128)
+    max_order_notional_rub: Decimal = Field(
+        gt=0,
+        le=1_000_000_000_000,
+        allow_inf_nan=False,
+    )
+    max_daily_notional_rub: Decimal = Field(
+        gt=0,
+        le=1_000_000_000_000,
+        allow_inf_nan=False,
+    )
+    expires_at: datetime
+    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_live_execution: bool
 
 
 class PortfolioProposalDecisionBody(BaseModel):
@@ -323,6 +343,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.execution_service = PortfolioExecutionService(
         store=execution_ledger,
         broker=broker,
+        live_execution_enabled=cfg.portfolio_live_execution_enabled,
+        live_max_order_rub=cfg.portfolio_live_max_order_rub,
+        live_max_daily_rub=cfg.portfolio_live_max_daily_rub,
     )
     app.state.market_service = MarketService(
         broker=broker,
@@ -998,12 +1021,17 @@ def _execution_run_payload(
         "account_id": run.account_id,
         "mode": run.mode,
         "provider_environment": run.provider_environment,
+        "live_mandate_id": (
+            str(run.live_mandate_id)
+            if run.live_mandate_id is not None
+            else None
+        ),
         "status": run.status,
         "error_code": run.error_code,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
         "finished_at": run.finished_at,
-        "live_execution_enabled": False,
+        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
         "legs": [
             {
                 "id": str(leg.id),
@@ -1041,6 +1069,22 @@ def _execution_run_payload(
     }
 
 
+def _live_mandate_payload(
+    mandate: LiveExecutionMandateRecord | None,
+) -> dict[str, object] | None:
+    if mandate is None:
+        return None
+    return {
+        "id": str(mandate.id),
+        "account_id": mandate.account_id,
+        "max_order_notional_rub": str(mandate.max_order_notional_rub),
+        "max_daily_notional_rub": str(mandate.max_daily_notional_rub),
+        "created_at": mandate.created_at,
+        "expires_at": mandate.expires_at,
+        "revoked_at": mandate.revoked_at,
+    }
+
+
 def _require_current_legal_consent(request: Request, user: UserRecord) -> None:
     database: Database = request.app.state.database
     if not database.has_legal_versions(
@@ -1069,6 +1113,8 @@ def _execution_error(exc: Exception) -> HTTPException:
     if code in {
         "sandbox_connection_changed",
         "sandbox_reconcile_unavailable",
+        "live_connection_changed",
+        "live_reconcile_unavailable",
     }:
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1080,6 +1126,126 @@ def _execution_error(exc: Exception) -> HTTPException:
     )
 
 
+@app.get("/api/portfolio/live-execution/mandate")
+def portfolio_live_execution_mandate(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    cfg = settings(request)
+    mandate = execution_store(request).live_mandate(user.id)
+    broker_status = broker_service(request).status(user.id)
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "operator_enabled": cfg.portfolio_live_execution_enabled,
+        "operator_max_order_notional_rub": cfg.portfolio_live_max_order_rub,
+        "operator_max_daily_notional_rub": cfg.portfolio_live_max_daily_rub,
+        "connected_environment": broker_status.environment,
+        "connected_account_id": broker_status.account_id,
+        "mandate": _live_mandate_payload(mandate),
+        "canary_scope": "deploy_cash_buy_only",
+    }
+
+
+@app.put("/api/portfolio/live-execution/mandate")
+def save_portfolio_live_execution_mandate(
+    body: PortfolioLiveMandateBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    _require_current_legal_consent(request, user)
+    cfg = settings(request)
+    if not cfg.portfolio_live_execution_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="live_execution_disabled",
+        )
+    if not body.confirm_live_execution:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="live_execution_confirmation_required",
+        )
+    if body.confirm_public_id != format_public_id(user.public_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="profile_id_confirmation_mismatch",
+        )
+    if body.max_daily_notional_rub < body.max_order_notional_rub:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="live_daily_cap_below_order_cap",
+        )
+    if (
+        body.max_order_notional_rub > cfg.portfolio_live_max_order_rub
+        or body.max_daily_notional_rub > cfg.portfolio_live_max_daily_rub
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="live_operator_cap_exceeded",
+        )
+    broker_status = broker_service(request).status(user.id)
+    if (
+        not broker_status.connected
+        or broker_status.environment != "prod"
+        or broker_status.account_id != body.account_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="live_account_mismatch",
+        )
+    try:
+        broker_service(request).live_account(user.id)
+        mandate = execution_store(request).create_live_mandate(
+            user.id,
+            account_id=body.account_id,
+            max_order_notional_rub=body.max_order_notional_rub,
+            max_daily_notional_rub=body.max_daily_notional_rub,
+            session_digest=authenticated_session_digest(session_token),
+            expires_at=body.expires_at,
+        )
+    except ExecutionLedgerError as exc:
+        raise _execution_error(exc) from exc
+    except BrokerConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="live_write_access_required",
+        ) from exc
+    except TBankUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="live_account_revalidation_unavailable",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "operator_enabled": True,
+        "mandate": _live_mandate_payload(mandate),
+        "canary_scope": "deploy_cash_buy_only",
+    }
+
+
+@app.delete("/api/portfolio/live-execution/mandate", status_code=204)
+def revoke_portfolio_live_execution_mandate(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> Response:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    execution_store(request).revoke_live_mandate(user.id)
+    response.status_code = 204
+    return response
+
+
 @app.get("/api/portfolio/executions")
 def portfolio_executions(
     request: Request,
@@ -1089,10 +1255,17 @@ def portfolio_executions(
     user = authenticated_user(request, session_token)
     runs = execution_store(request).executions(user.id)
     response.headers["Cache-Control"] = "private, no-store"
+    cfg = settings(request)
+    modes = ["shadow", "sandbox"]
+    if cfg.portfolio_live_execution_enabled:
+        modes.append("live")
     return {
         "executions": [_execution_run_payload(item) for item in runs],
-        "live_execution_enabled": False,
-        "modes": ["shadow", "sandbox"],
+        "live_execution_enabled": cfg.portfolio_live_execution_enabled,
+        "live_mandate": _live_mandate_payload(
+            execution_store(request).live_mandate(user.id)
+        ),
+        "modes": modes,
     }
 
 
@@ -1124,7 +1297,7 @@ def portfolio_execution(
             }
             for event in events
         ],
-        "live_execution_enabled": False,
+        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
     }
 
 
@@ -1152,7 +1325,7 @@ def create_portfolio_execution(
     response.headers["Cache-Control"] = "private, no-store"
     return {
         "execution": _execution_run_payload(run, legs),
-        "live_execution_enabled": False,
+        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
     }
 
 
@@ -1173,7 +1346,7 @@ def advance_portfolio_execution(
     response.headers["Cache-Control"] = "private, no-store"
     return {
         "execution": _execution_run_payload(run, legs),
-        "live_execution_enabled": False,
+        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
     }
 
 
@@ -1194,7 +1367,7 @@ def cancel_portfolio_execution(
     response.headers["Cache-Control"] = "private, no-store"
     return {
         "execution": _execution_run_payload(run, legs),
-        "live_execution_enabled": False,
+        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
     }
 
 
@@ -1353,6 +1526,13 @@ def disconnect_tbank(
 ) -> Response:
     require_same_origin(request)
     user = authenticated_user(request, session_token)
+    ledger = execution_store(request)
+    if ledger.has_active_live_execution(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="active_live_execution_must_be_reconciled",
+        )
+    ledger.revoke_live_mandate(user.id)
     broker_service(request).disconnect(user.id)
     response.status_code = 204
     return response
@@ -1367,6 +1547,11 @@ def delete_account(
 ) -> Response:
     require_same_origin(request)
     user = authenticated_user(request, session_token)
+    if execution_store(request).has_active_live_execution(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="active_live_execution_must_be_reconciled",
+        )
     if not body.confirm_irreversible:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
