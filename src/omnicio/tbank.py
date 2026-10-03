@@ -105,6 +105,13 @@ class TBankAccruedInterest:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankMarketYield:
+    instrument_uid: str
+    yield_percent: str
+    time: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class TBankOrderLevel:
     price: str
     quantity_lots: int
@@ -480,6 +487,69 @@ class TBankInvestClient:
                     value=value,
                     value_percent=value_percent,
                     nominal=nominal,
+                )
+            )
+        return tuple(result)
+
+    def get_market_yields(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankMarketYield, ...]:
+        clean = tuple(
+            dict.fromkeys(
+                _validate_provider_id(value, "instrument uid")
+                for value in instrument_uids
+            )
+        )
+        if not clean:
+            return ()
+        if len(clean) > 100:
+            raise ValueError("market yield batch must contain at most 100 instruments")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetMarketValues",
+            body={
+                "instrumentId": list(clean),
+                "values": ["INSTRUMENT_VALUE_YIELD"],
+            },
+        )
+        requested = set(clean)
+        result: list[TBankMarketYield] = []
+        seen: set[str] = set()
+        for raw in _required_list(payload, "instruments"):
+            item = _required_object(raw, "market value instrument")
+            uid = _text(item.get("instrumentUid")).strip()
+            if not uid or uid not in requested or uid in seen:
+                raise TBankUnavailable(
+                    "T-Invest market values returned invalid instrument uid"
+                )
+            seen.add(uid)
+            yield_value: str | None = None
+            yield_time: datetime | None = None
+            for value_raw in _optional_list(item, "values"):
+                value = _required_object(value_raw, "market value")
+                if _text(value.get("type")).strip() != "INSTRUMENT_VALUE_YIELD":
+                    continue
+                numeric = _quotation(value.get("value"))
+                observed = _optional_provider_timestamp(value.get("time"))
+                if numeric is None or observed is None:
+                    raise TBankUnavailable(
+                        "T-Invest market yield is missing required fields"
+                    )
+                yield_value = numeric
+                yield_time = observed
+                break
+            if yield_value is None or yield_time is None:
+                continue
+            result.append(
+                TBankMarketYield(
+                    instrument_uid=uid,
+                    yield_percent=yield_value,
+                    time=yield_time,
                 )
             )
         return tuple(result)
