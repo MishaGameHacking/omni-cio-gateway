@@ -15,6 +15,7 @@ from omnicio.proposals import (
     build_proposal_draft,
     parse_proposal_hash,
     proposal_action_payload,
+    proposal_generated_at,
     proposal_material_hash,
     proposal_payload,
 )
@@ -425,3 +426,32 @@ def test_material_hash_ignores_retrieval_clock_but_tracks_decision_inputs() -> N
     changed["scenario"] = changed_scenario
 
     assert proposal_material_hash(first.payload) != proposal_material_hash(changed)
+
+
+
+def test_proposal_generated_at_reads_immutable_payload_created_at() -> None:
+    now = datetime(2026, 10, 3, 8, 5, tzinfo=UTC)
+    draft = build_proposal_draft(
+        _balancing(),
+        scenario_kind="deploy_cash",
+        replaced_instrument_uid=None,
+        now=now,
+    )
+    record = PortfolioProposalRecord(
+        id=PROPOSAL_ID,
+        user_id=USER_ID,
+        version=1,
+        source_snapshot_id=SNAPSHOT_ID,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-1",
+        replaced_instrument_uid=None,
+        proposal_hash=draft.proposal_hash,
+        payload=draft.payload,
+        created_at=now,
+        expires_at=draft.expires_at,
+    )
+
+    assert proposal_generated_at(record) == now
