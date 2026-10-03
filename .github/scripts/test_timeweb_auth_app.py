@@ -585,7 +585,11 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('shadow.dataset.executionStart = "shadow"', script)
         self.assertIn('sandbox.dataset.executionStart = "sandbox"', script)
         self.assertIn("button.dataset.proposalAccountId", script)
-        self.assertIn("button.dataset.executionAccountId", script)
+        self.assertIn(
+            'const executionAccountId = element.dataset.executionAccountId || "";',
+            script,
+        )
+        self.assertIn("executionAccountId === connectedAccountId", script)
         self.assertIn("Отправить следующую Sandbox limit-заявку", script)
         self.assertEqual(script.count('executionRefresh.addEventListener("click"'), 1)
         self.assertEqual(script.count('executionHistory.addEventListener("click"'), 1)
