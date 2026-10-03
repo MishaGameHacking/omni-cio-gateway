@@ -138,6 +138,13 @@
   const intelligenceRisks = document.querySelector("#intelligence-risks");
   const intelligencePayouts = document.querySelector("#intelligence-payouts");
   const intelligenceSources = document.querySelector("#intelligence-sources");
+  const balancingStatus = document.querySelector("#balancing-status");
+  const balancingFreeCash = document.querySelector("#balancing-free-cash");
+  const balancingCandidateCount = document.querySelector("#balancing-candidate-count");
+  const balancingEligibleNote = document.querySelector("#balancing-eligible-note");
+  const balancingPolicyVersions = document.querySelector("#balancing-policy-versions");
+  const balancingScenarios = document.querySelector("#balancing-scenarios");
+  const balancingScreening = document.querySelector("#balancing-screening");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
@@ -1518,6 +1525,173 @@
     }
   };
 
+  const BALANCING_REASON_LABELS = {
+    profile_required: "Сначала заполните профиль капитала",
+    balancing_policy_required: "Сохраните явные лимиты балансировки",
+    snapshot_required: "Нет сохранённого снимка портфеля",
+    snapshot_time_missing: "Время снимка не подтверждено",
+    snapshot_time_in_future: "Время снимка некорректно",
+    snapshot_stale: "Снимок портфеля устарел",
+    snapshot_not_observed: "Снимок требует сверки",
+    broker_limits_loading: "T-Invest ещё обновляет лимиты",
+    nav_unavailable: "NAV портфеля не подтверждён",
+    free_cash_unavailable: "Свободные рубли не подтверждены",
+    critical_evidence_missing: "Критичные доказательства неполны",
+    instrument_structure_not_supported: "Структура инструмента пока не поддерживается",
+    api_trade_unavailable: "Инструмент недоступен через API",
+    buy_unavailable: "Покупка инструмента недоступна",
+    required_tests_missing: "Есть непройденные тесты брокера",
+    qualification_required: "Требуется статус квалифицированного инвестора",
+    iis_not_allowed: "Инструмент недоступен для этого типа ИИС",
+    issuer_identity_not_verified: "Юридический эмитент не подтверждён",
+    issuer_group_not_verified: "Группа связанных компаний не подтверждена",
+    fund_look_through_missing: "Состав фонда не подтверждён",
+    catalog_stale: "Каталог инструмента устарел",
+    account_access_stale: "Права счёта нужно обновить",
+    candidate_risk_assessment_missing: "Risk assessment кандидата ещё не получен",
+    quote_missing: "Свежая котировка отсутствует",
+    missing_lot_cost: "Стоимость целого лота не рассчитана",
+    liquidity_evidence_missing: "Ликвидность не подтверждена",
+    provider_liquidity_flag_false: "Provider пометил ликвидность как недоступную",
+    provider_liquidity_flag_missing: "Provider не подтвердил ликвидность",
+    expected_return_model_missing: "Сценарная доходность ещё не рассчитана",
+    bond_ytw_missing: "Yield-to-worst не подтверждён",
+    bond_duration_missing: "Дюрация не подтверждена",
+    bond_term_missing: "Срок облигации не подтверждён",
+    bond_structure_missing: "Структура облигации неполна",
+    rating_state_not_allowed: "Риск-состояние не допускается",
+    risk_state_not_allowed: "Risk state не допускает новую позицию",
+    asset_class_not_allowed: "Класс актива запрещён policy",
+    currency_not_allowed: "Валюта запрещена policy",
+    liquidity_limit: "Не проходит лимит ликвидности",
+    term_limit: "Не проходит лимит срока",
+    asset_class_cap_missing: "Нет лимита класса актива",
+    currency_cap_missing: "Нет лимита валюты",
+    invalid_lot_size: "Некорректная лотность",
+    replacement_cost_model_missing: "Налоги и издержки продажи ещё не подтверждены",
+    no_eligible_positive_candidate: "Нет допустимого кандидата с положительным net-сценарием",
+    integer_lot_or_policy_limits_block_all_buys: "Целые лоты или лимиты блокируют покупку",
+    reserve_or_withdrawal_consumes_free_cash: "Резерв и снятия используют свободные деньги",
+    no_replacement_clears_costs_and_no_trade_band: "Замена не перекрывает издержки и no-trade band",
+    no_eligible_replacement: "Нет допустимой замены",
+    holding_blocked: "Позиция заблокирована",
+    hold_baseline: "Ничего не менять",
+    integer_lot_allocation: "Распределение целыми лотами",
+    net_improvement_after_costs: "Улучшение после издержек",
+  };
+
+  const balancingReason = (value) => (
+    BALANCING_REASON_LABELS[value] || String(value || "—")
+  );
+
+  const renderBalancing = (payload) => {
+    balancingScenarios.replaceChildren();
+    balancingScreening.replaceChildren();
+    balancingFreeCash.textContent = payload.free_cash_rub
+      ? formatMoney({currency: "RUB", value: payload.free_cash_rub})
+      : "—";
+    balancingCandidateCount.textContent = Number.isFinite(Number(payload.candidate_count))
+      ? String(payload.candidate_count)
+      : "—";
+    balancingEligibleNote.textContent = Number.isFinite(Number(payload.eligible_candidate_count))
+      ? `Допустимых сейчас: ${payload.eligible_candidate_count}`
+      : "Допустимость ещё не рассчитана";
+    balancingPolicyVersions.textContent = payload.profile_version && payload.policy_version
+      ? `v${payload.profile_version} · v${payload.policy_version}`
+      : "—";
+
+    if (payload.status !== "observed") {
+      const reason = balancingReason(payload.reason || payload.status);
+      appendEmptyState(balancingScenarios, reason);
+      appendEmptyState(
+        balancingScreening,
+        "Screening начнётся после выполнения обязательных условий.",
+      );
+      setStateBadge(balancingStatus, reason, "state-next");
+      return;
+    }
+
+    const scenarioEntries = [];
+    if (payload.scenarios?.hold) {
+      scenarioEntries.push(["Hold", payload.scenarios.hold]);
+    }
+    if (payload.scenarios?.deploy_cash) {
+      scenarioEntries.push(["Новые деньги", payload.scenarios.deploy_cash]);
+    }
+    (payload.scenarios?.replacements || []).forEach((scenario, index) => {
+      scenarioEntries.push([`Замена ${index + 1}`, scenario]);
+    });
+    scenarioEntries.forEach(([label, scenario]) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = `${label} · ${scenario.status === "feasible" ? "допустим" : "заблокирован"}`;
+      const details = document.createElement("small");
+      const tradeCount = Array.isArray(scenario.trades) ? scenario.trades.length : 0;
+      details.textContent = [
+        balancingReason(scenario.reason),
+        `сделок: ${tradeCount}`,
+        scenario.turnover_rub !== undefined
+          ? `оборот: ${formatMoney({currency: "RUB", value: scenario.turnover_rub})}`
+          : "",
+        scenario.residual_cash_rub !== undefined
+          ? `остаток: ${formatMoney({currency: "RUB", value: scenario.residual_cash_rub})}`
+          : "",
+      ].filter(Boolean).join(" · ");
+      row.append(title, details);
+      balancingScenarios.append(row);
+    });
+    if (!balancingScenarios.childElementCount) {
+      appendEmptyState(balancingScenarios, "Сценарии ещё не рассчитаны.");
+    }
+
+    (payload.screening || []).slice(0, 30).forEach((item) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = [
+        item.ticker || item.instrument_uid || "Инструмент",
+        item.eligible ? "допустим" : "не допущен",
+      ].join(" · ");
+      const details = document.createElement("small");
+      details.textContent = (item.reasons || []).length
+        ? item.reasons.map(balancingReason).join(" · ")
+        : "Все текущие R4 screening-гейты пройдены";
+      row.append(title, details);
+      balancingScreening.append(row);
+    });
+    if (!balancingScreening.childElementCount) {
+      appendEmptyState(
+        balancingScreening,
+        "Каталог кандидатов пуст или ещё не прошёл доказательный screening.",
+      );
+    }
+
+    if (Number(payload.eligible_candidate_count) > 0) {
+      setStateBadge(
+        balancingStatus,
+        `Read-only · допустимых: ${payload.eligible_candidate_count}`,
+        "state-ok",
+      );
+    } else {
+      setStateBadge(balancingStatus, "Read-only · все кандидаты заблокированы", "state-next");
+    }
+  };
+
+  const loadBalancing = async () => {
+    try {
+      const payload = await api("/api/portfolio/balancing", {method: "GET"});
+      renderBalancing(payload);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      balancingScenarios.replaceChildren();
+      balancingScreening.replaceChildren();
+      appendEmptyState(balancingScenarios, "R4 preview временно недоступен.");
+      setStateBadge(balancingStatus, "Ошибка preview", "state-error");
+    }
+  };
+
   const loadIntelligence = async () => {
     try {
       const snapshot = await api("/api/portfolio/intelligence", {method: "GET"});
@@ -1539,9 +1713,11 @@
       resetAnalysis();
       analysisStatus.textContent = "Подключите счёт T-Invest для живого анализа.";
       void loadIntelligence();
+      void loadBalancing();
       return;
     }
     void loadIntelligence();
+    void loadBalancing();
     if (analysisInFlight) {
       return;
     }
