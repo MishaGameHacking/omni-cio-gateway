@@ -675,6 +675,189 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 expires_at=created_at + timedelta(days=30),
                 now=created_at,
             )
+
+            def insert_r8_operation(
+                *,
+                marker_byte: int,
+                operation_date: datetime,
+                operation_type: str,
+                operation_state: str,
+                payment_value: Decimal,
+                payment_currency: str,
+            ) -> int:
+                return int(
+                    runtime.execute(
+                        """
+                        INSERT INTO operation_observations (
+                            user_id,
+                            account_id,
+                            observation_hash,
+                            semantic_hash,
+                            provider_operation_id,
+                            operation_date,
+                            operation_type,
+                            operation_state,
+                            payment_value,
+                            payment_currency,
+                            normalized,
+                            observed_at
+                        )
+                        VALUES (
+                            %s,
+                            'account-1',
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            '{}'::jsonb,
+                            %s
+                        )
+                        RETURNING id
+                        """,
+                        (
+                            USER_ONE,
+                            bytes([marker_byte]) * 32,
+                            bytes([marker_byte + 64]) * 32,
+                            f"r8-{marker_byte}",
+                            operation_date,
+                            operation_type,
+                            operation_state,
+                            payment_value,
+                            payment_currency,
+                            operation_date + timedelta(seconds=1),
+                        ),
+                    ).fetchone()[0]
+                )
+
+            insert_r8_operation(
+                marker_byte=1,
+                operation_date=created_at - timedelta(minutes=1),
+                operation_type="OPERATION_TYPE_DIVIDEND",
+                operation_state="OPERATION_STATE_EXECUTED",
+                payment_value=Decimal("9.00"),
+                payment_currency="RUB",
+            )
+            dividend_observation_id = insert_r8_operation(
+                marker_byte=2,
+                operation_date=created_at + timedelta(minutes=1),
+                operation_type="OPERATION_TYPE_DIVIDEND",
+                operation_state="OPERATION_STATE_EXECUTED",
+                payment_value=Decimal("50.00"),
+                payment_currency="RUB",
+            )
+            insert_r8_operation(
+                marker_byte=3,
+                operation_date=created_at + timedelta(minutes=2),
+                operation_type="OPERATION_TYPE_COUPON",
+                operation_state="OPERATION_STATE_EXECUTED",
+                payment_value=Decimal("25.50"),
+                payment_currency="RUB",
+            )
+            insert_r8_operation(
+                marker_byte=4,
+                operation_date=created_at + timedelta(minutes=3),
+                operation_type="OPERATION_TYPE_INPUT",
+                operation_state="OPERATION_STATE_EXECUTED",
+                payment_value=Decimal("1000.00"),
+                payment_currency="RUB",
+            )
+            insert_r8_operation(
+                marker_byte=5,
+                operation_date=created_at + timedelta(minutes=4),
+                operation_type="OPERATION_TYPE_DIVIDEND",
+                operation_state="OPERATION_STATE_PROGRESS",
+                payment_value=Decimal("10.00"),
+                payment_currency="RUB",
+            )
+            insert_r8_operation(
+                marker_byte=6,
+                operation_date=created_at + timedelta(minutes=5),
+                operation_type="OPERATION_TYPE_COUPON",
+                operation_state="OPERATION_STATE_EXECUTED",
+                payment_value=Decimal("5.00"),
+                payment_currency="USD",
+            )
+            insert_r8_operation(
+                marker_byte=7,
+                operation_date=created_at + timedelta(minutes=6),
+                operation_type="OPERATION_TYPE_DIVIDEND",
+                operation_state="OPERATION_STATE_EXECUTED",
+                payment_value=Decimal("-1.00"),
+                payment_currency="RUB",
+            )
+
+            assert store.sync_reinvestment_income_credits(
+                USER_ONE,
+                account_id="account-1",
+                observed_at=created_at + timedelta(minutes=10),
+            ) == 2
+            assert store.sync_reinvestment_income_credits(
+                USER_ONE,
+                account_id="account-1",
+                observed_at=created_at + timedelta(minutes=10),
+            ) == 0
+            reinvestment_summary = store.reinvestment_income_summary(
+                USER_ONE,
+                reinvestment.id,
+            )
+            assert reinvestment_summary.observed_count == 2
+            assert reinvestment_summary.observed_rub == Decimal("75.500000000")
+            assert reinvestment_summary.dividends_rub == Decimal("50.000000000")
+            assert reinvestment_summary.coupons_rub == Decimal("25.500000000")
+            assert reinvestment_summary.verified_rub == Decimal("0")
+
+            with pytest.raises(
+                psycopg.errors.RaiseException,
+                match="reinvestment income credits are immutable",
+            ):
+                runtime.execute(
+                    """
+                    UPDATE portfolio_reinvestment_income_credits
+                    SET amount_rub = 999
+                    WHERE source_operation_observation_id = %s
+                    """,
+                    (dividend_observation_id,),
+                )
+
+            runtime.execute(
+                "SELECT set_config('omnicio.user_id', %s, false)",
+                (str(USER_TWO),),
+            )
+            assert runtime.execute(
+                "SELECT count(*) FROM portfolio_reinvestment_mandates"
+            ).fetchone()[0] == 0
+            assert runtime.execute(
+                "SELECT count(*) FROM portfolio_reinvestment_income_credits"
+            ).fetchone()[0] == 0
+            runtime.execute(
+                "SELECT set_config('omnicio.user_id', %s, false)",
+                (str(USER_ONE),),
+            )
+
+            revoked_reinvestment = store.revoke_reinvestment_mandate(
+                USER_ONE,
+                now=created_at + timedelta(hours=1),
+            )
+            assert revoked_reinvestment is not None
+            assert revoked_reinvestment.revoked_at is not None
+            insert_r8_operation(
+                marker_byte=8,
+                operation_date=created_at + timedelta(hours=2),
+                operation_type="OPERATION_TYPE_DIVIDEND",
+                operation_state="OPERATION_STATE_EXECUTED",
+                payment_value=Decimal("100.00"),
+                payment_currency="RUB",
+            )
+            assert store.sync_reinvestment_income_credits(
+                USER_ONE,
+                account_id="account-1",
+                observed_at=created_at + timedelta(hours=3),
+            ) == 0
+
             first_proposal = store.create_proposal(
                 USER_ONE,
                 source_snapshot_id=snapshot_id,
