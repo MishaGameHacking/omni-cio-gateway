@@ -568,7 +568,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("не подставляет скрытые проценты", page)
         self.assertIn("не получает", page)
         self.assertIn("торговых полномочий", page)
-        self.assertIn("moex_runtime_transport_security_gate", script)
+        self.assertIn("ytw_from_tinvest_fixed_cashflows", script)
+        self.assertIn("liquidity_from_tinvest_exchange_candles", script)
+        self.assertNotIn("moex_runtime_transport_security_gate", script)
 
     def test_personal_dashboard_uses_real_portfolio_data_without_fake_values(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -806,7 +808,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.11.4"', project)
+        self.assertIn('version = "0.11.5"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

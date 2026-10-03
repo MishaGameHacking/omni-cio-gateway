@@ -13,6 +13,7 @@ from .balancing import (
     BalancingPolicy,
     Candidate,
     Holding,
+    RatingBucket,
     RiskState,
     build_balancing_preview,
     screen_candidates,
@@ -22,21 +23,26 @@ from .intelligence import (
     EVIDENCE_RETRIEVAL_MAX_AGE,
     assess_candidate_fundamental_risk,
 )
-from .moex import MoexError, MoexIssClient
 from .portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
 from .tbank import (
     TBankAssetFundamental,
+    TBankBondCoupon,
+    TBankHistoricCandle,
     TBankInstrumentMetadata,
     TBankLastPrice,
     TBankMoney,
+    TBankRating,
     TBankUnavailable,
 )
 
 LIVE_CANDIDATE_LIMIT = 4
-LIVE_REPLACEMENT_LIMIT = 4
 MARKET_QUOTE_MAX_AGE = timedelta(minutes=15)
-MOEX_LIQUIDITY_WINDOW_DAYS = 45
-MOEX_LIQUIDITY_MIN_OBSERVED_DAYS = 10
+TBANK_LIQUIDITY_WINDOW_DAYS = 45
+TBANK_LIQUIDITY_MIN_COMPLETED_DAYS = 10
+_YIELD_YEAR_SECONDS = Decimal("31557600")
+_YIELD_RATE_FLOOR = Decimal("-0.95")
+_YIELD_RATE_INITIAL_CEILING = Decimal("1")
+_YIELD_RATE_MAX_CEILING = Decimal("100")
 
 _RISK_STATES: set[str] = {
     "data_missing",
@@ -206,10 +212,9 @@ def build_live_balancing_payload(
     policy_record: BalancingPolicyRecord | None,
     context: dict[str, object] | None,
     broker: BrokerService,
-    moex: MoexIssClient,
     now: datetime | None = None,
 ) -> dict[str, object]:
-    """Enrich a bounded candidate set with read-only broker and MOEX evidence."""
+    """Enrich a bounded bond shortlist with read-only T-Invest evidence."""
     observed_at = (now or datetime.now(UTC)).astimezone(UTC)
     durable = build_balancing_payload(
         profile=profile,
@@ -310,25 +315,29 @@ def build_live_balancing_payload(
         item.instrument_uid: item
         for item in prices
     }
+    selected_uids = {
+        str(item.get("instrument_uid") or "")
+        for item in selected
+    }
     enriched: list[Candidate] = []
     live_sources: list[dict[str, object]] = []
+    policy = _policy(
+        profile,
+        policy_record,
+        _decimal(context.get("nav_rub")) or Decimal("0"),
+    )
 
     for row in rows:
         uid = str(row.get("instrument_uid") or "")
-        if not any(str(item.get("instrument_uid") or "") == uid for item in selected):
-            candidate = _candidate(
-                row,
-                context=context,
-                policy=_policy(
-                    profile,
-                    policy_record,
-                    _decimal(context.get("nav_rub")) or Decimal("0"),
-                ),
-                observed_at=observed_at,
-            )
+        if uid not in selected_uids:
             enriched.append(
                 _with_candidate_blocker(
-                    candidate,
+                    _candidate(
+                        row,
+                        context=context,
+                        policy=policy,
+                        observed_at=observed_at,
+                    ),
                     "live_enrichment_not_selected",
                 )
             )
@@ -341,81 +350,24 @@ def build_live_balancing_payload(
                 profile=profile,
                 policy_record=policy_record,
                 broker=broker,
-                moex=moex,
                 fundamental=fundamental_by_asset.get(
                     str(row.get("asset_uid") or "")
                 ),
                 last_price=price_by_uid.get(uid),
                 observed_at=observed_at,
             )
-        except MoexError:
-            candidate = _candidate(
-                row,
-                context=context,
-                policy=_policy(
-                    profile,
-                    policy_record,
-                    _decimal(context.get("nav_rub")) or Decimal("0"),
-                ),
-                observed_at=observed_at,
-            )
-            candidate = _with_candidate_blocker(
-                candidate,
-                "moex_runtime_transport_security_gate",
-            )
-            sources = ()
         except (BrokerConnectionError, TBankUnavailable, ValueError):
-            candidate = _candidate(
-                row,
-                context=context,
-                policy=_policy(
-                    profile,
-                    policy_record,
-                    _decimal(context.get("nav_rub")) or Decimal("0"),
-                ),
-                observed_at=observed_at,
-            )
             candidate = _with_candidate_blocker(
-                candidate,
+                _candidate(
+                    row,
+                    context=context,
+                    policy=policy,
+                    observed_at=observed_at,
+                ),
                 "live_candidate_evidence_unavailable",
             )
             sources = ()
         enriched.append(candidate)
-        live_sources.extend(sources)
-
-    holding_rows = _dict_rows(context.get("holdings"))
-    replacement_rows = tuple(
-        row
-        for row in holding_rows
-        if str(row.get("risk_state") or "") in {
-            "elevated",
-            "critical",
-            "confirmed_default",
-        }
-    )[:LIVE_REPLACEMENT_LIMIT]
-    replacement_uids = {
-        str(row.get("instrument_uid") or "")
-        for row in replacement_rows
-    }
-    enriched_holdings: list[Holding] = []
-    for row in holding_rows:
-        uid = str(row.get("instrument_uid") or "")
-        if uid not in replacement_uids:
-            enriched_holdings.append(_holding(row))
-            continue
-        try:
-            holding, sources = _enrich_replacement_holding(
-                user_id=user_id,
-                row=row,
-                policy_record=policy_record,
-                broker=broker,
-                moex=moex,
-                observed_at=observed_at,
-            )
-        except (BrokerConnectionError, MoexError, TBankUnavailable, ValueError):
-            holding = _holding(row)
-            sources = ()
-        enriched_holdings.append(holding)
         live_sources.extend(sources)
 
     payload = build_balancing_payload(
@@ -423,7 +375,6 @@ def build_live_balancing_payload(
         policy_record=policy_record,
         context=context,
         now=observed_at,
-        holdings_override=tuple(enriched_holdings),
         candidates_override=tuple(enriched),
     )
     payload["live_status"] = "received"
@@ -433,12 +384,13 @@ def build_live_balancing_payload(
         "candidate_limit": LIVE_CANDIDATE_LIMIT,
         "shortlist_universe_limit": 100,
         "shortlist_signal": "tbank_market_yield_not_decision_metric",
-        "replacement_limit": LIVE_REPLACEMENT_LIMIT,
+        "decision_yield": "cashflow_ytm_equals_ytw_only_without_future_options",
         "market_quote_max_age_seconds": int(
             MARKET_QUOTE_MAX_AGE.total_seconds()
         ),
-        "liquidity_window_days": MOEX_LIQUIDITY_WINDOW_DAYS,
-        "liquidity_min_observed_days": MOEX_LIQUIDITY_MIN_OBSERVED_DAYS,
+        "liquidity_window_days": TBANK_LIQUIDITY_WINDOW_DAYS,
+        "liquidity_min_completed_days": TBANK_LIQUIDITY_MIN_COMPLETED_DAYS,
+        "liquidity_source": "tbank_exchange_daily_candles",
         "tax_rate_percent": str(policy_record.securities_tax_rate_percent),
         "max_daily_turnover_participation_percent": str(
             policy_record.max_daily_turnover_participation_percent
@@ -466,7 +418,11 @@ def _eligible_for_live_enrichment(
         return False
     if not str(row.get("instrument_uid") or ""):
         return False
-    if not str(row.get("isin") or "") or not str(row.get("class_code") or ""):
+    if (
+        not str(row.get("issuer_id") or "")
+        or str(row.get("issuer_country_code") or "").upper() != "RU"
+        or not str(row.get("group_id") or "")
+    ):
         return False
     nominal = _decimal(row.get("nominal_value"))
     if nominal is None or nominal <= 0:
@@ -477,7 +433,11 @@ def _eligible_for_live_enrichment(
     if isinstance(required_tests, list) and required_tests:
         return False
     broker_user = context.get("broker_user")
-    qualified = broker_user.get("qualified") if isinstance(broker_user, dict) else None
+    qualified = (
+        broker_user.get("qualified")
+        if isinstance(broker_user, dict)
+        else None
+    )
     if row.get("for_qual_investor") is True and qualified is not True:
         return False
     account = context.get("account")
@@ -518,7 +478,6 @@ def _enrich_bond_candidate(
     profile: InvestmentProfileRecord,
     policy_record: BalancingPolicyRecord,
     broker: BrokerService,
-    moex: MoexIssClient,
     fundamental: TBankAssetFundamental | None,
     last_price: TBankLastPrice | None,
     observed_at: datetime,
@@ -526,43 +485,66 @@ def _enrich_bond_candidate(
     nav_rub = _decimal(context.get("nav_rub"))
     if nav_rub is None or nav_rub <= 0:
         raise ValueError("candidate NAV is unavailable")
-    policy = _policy(profile, policy_record, nav_rub)
     base = _candidate(
         row,
         context=context,
-        policy=policy,
+        policy=_policy(profile, policy_record, nav_rub),
         observed_at=observed_at,
     )
     if base.asset_class != "bond":
-        return _with_candidate_blocker(base, "live_asset_class_not_supported"), ()
+        return _with_candidate_blocker(
+            base,
+            "live_asset_class_not_supported",
+        ), ()
 
     info = _metadata_from_row(row)
+    if (
+        not str(row.get("issuer_id") or "")
+        or str(row.get("issuer_country_code") or "").upper() != "RU"
+    ):
+        return _with_candidate_blocker(
+            base,
+            "issuer_identity_not_verified",
+        ), ()
+    if not str(row.get("group_id") or ""):
+        return _with_candidate_blocker(
+            base,
+            "issuer_group_not_verified",
+        ), ()
+
+    maturity = info.maturity_date
+    nominal = info.nominal
+    if (
+        maturity is None
+        or maturity <= observed_at
+        or nominal is None
+        or nominal.currency.upper() != "RUB"
+        or base.lot_size <= 0
+    ):
+        return _with_candidate_blocker(base, "bond_term_missing"), ()
+    nominal_per_bond = _money_rub(nominal)
+    if nominal_per_bond <= 0:
+        raise ValueError("bond nominal must be positive")
+
     assessment = assess_candidate_fundamental_risk(
         info,
         fundamental,
         assessed_at=observed_at,
     )
-
-    isin = info.isin.strip().upper()
-    identity = moex.security_identity(isin, expected_isin=isin)
-    if identity is None or not identity.is_traded:
-        return _with_candidate_blocker(base, "issuer_identity_not_verified"), ()
-    if info.country_of_risk.upper() != "RU" or not identity.issuer_inn:
-        return _with_candidate_blocker(base, "issuer_identity_not_verified"), ()
-
-    bond = moex.bond_snapshot(identity.secid, identity.primary_board_id)
-    if bond is None or bond.ytw_percent is None or bond.ytw_percent <= 0:
-        return _with_candidate_blocker(base, "bond_ytw_missing"), ()
-    duration_days = tuple(
-        value
-        for value in (bond.duration_days, bond.call_option_duration_days)
-        if value is not None and value > 0
+    ratings = broker.candidate_bond_ratings(
+        user_id,
+        base.instrument_uid,
     )
-    if not duration_days:
-        return _with_candidate_blocker(base, "bond_duration_missing"), ()
-    duration_years = min(duration_days) / Decimal("365.25")
-
-    if last_price is None or not _fresh_market_time(last_price.time, observed_at):
+    rating_bucket, rating_notes, rating_under_watch = (
+        _rating_bucket_from_tbank(
+            ratings,
+            observed_at=observed_at,
+        )
+    )
+    if last_price is None or not _fresh_market_time(
+        last_price.time,
+        observed_at,
+    ):
         return _with_candidate_blocker(base, "quote_missing"), ()
 
     order_book = broker.candidate_order_book(
@@ -582,10 +564,14 @@ def _enrich_bond_candidate(
     if best_bid <= 0 or best_ask <= best_bid:
         return _with_candidate_blocker(base, "order_book_unusable"), ()
 
+    ask_currency_per_bond = _bond_points_to_currency(
+        best_ask,
+        nominal_per_bond,
+    )
     order_price = broker.candidate_order_price(
         user_id,
         base.instrument_uid,
-        price=str(best_ask),
+        price=str(ask_currency_per_bond),
         direction="buy",
         quantity_lots=1,
     )
@@ -597,31 +583,110 @@ def _enrich_bond_candidate(
         if order_price.bond_aci_value
         else Decimal("0")
     )
-    if initial <= 0 or total <= 0 or fee < 0 or aci < 0:
+    expected_total = initial + aci + fee
+    tolerance = max(Decimal("0.05"), total * Decimal("0.0001"))
+    if (
+        initial <= 0
+        or total <= 0
+        or fee < 0
+        or aci < 0
+        or abs(total - expected_total) > tolerance
+    ):
         raise ValueError("invalid T-Invest order price evidence")
 
-    till = observed_at.date() - timedelta(days=1)
-    from_date = till - timedelta(days=MOEX_LIQUIDITY_WINDOW_DAYS - 1)
-    liquidity = moex.bond_liquidity(
-        identity.secid,
-        identity.primary_board_id,
-        from_date=from_date,
-        till_date=till,
+    cashflow_to = maturity + timedelta(days=1)
+    coupons = broker.candidate_bond_coupons(
+        user_id,
+        base.instrument_uid,
+        from_at=observed_at,
+        to_at=cashflow_to,
     )
-    if liquidity is None or liquidity.observed_days < MOEX_LIQUIDITY_MIN_OBSERVED_DAYS:
-        return _with_candidate_blocker(base, "liquidity_evidence_missing"), ()
+    events = broker.candidate_bond_events(
+        user_id,
+        base.instrument_uid,
+        from_at=observed_at,
+        to_at=cashflow_to,
+    )
+    defaulted = any(
+        event.default_date is not None
+        and event.default_date <= observed_at
+        for event in events
+    )
+    if defaulted:
+        return _with_candidate_blocker(
+            base,
+            "candidate_confirmed_default",
+        ), ()
+    if any(
+        event.event_type in {"EVENT_TYPE_CALL", "EVENT_TYPE_CONV"}
+        and (event.event_date is None or event.event_date > observed_at)
+        for event in events
+    ):
+        return _with_candidate_blocker(
+            base,
+            "bond_option_events_unsupported",
+        ), ()
+
+    cashflows = _fixed_bond_cashflows(
+        coupons=coupons,
+        maturity=maturity,
+        nominal_per_bond=nominal_per_bond,
+        lot_size=base.lot_size,
+        observed_at=observed_at,
+    )
+    dirty_purchase = initial + aci
+    ytw_percent = _yield_to_maturity_percent(
+        dirty_purchase,
+        cashflows,
+        observed_at,
+    )
+    if ytw_percent is None or ytw_percent <= 0:
+        return _with_candidate_blocker(base, "bond_ytw_missing"), ()
+    duration_years = _macaulay_duration_years(
+        dirty_purchase,
+        cashflows,
+        observed_at,
+        ytw_percent,
+    )
+    if duration_years is None or duration_years <= 0:
+        return _with_candidate_blocker(base, "bond_duration_missing"), ()
+
+    candles_from = observed_at - timedelta(
+        days=TBANK_LIQUIDITY_WINDOW_DAYS
+    )
+    candles = broker.candidate_daily_exchange_candles(
+        user_id,
+        base.instrument_uid,
+        from_at=candles_from,
+        to_at=observed_at,
+    )
+    average_daily_turnover = _average_bond_daily_turnover_rub(
+        candles=candles,
+        nominal_per_bond=nominal_per_bond,
+        lot_size=base.lot_size,
+        observed_at=observed_at,
+    )
+    if average_daily_turnover is None:
+        return _with_candidate_blocker(
+            base,
+            "liquidity_evidence_missing",
+        ), ()
 
     daily_capacity = (
-        liquidity.average_daily_value_rub
+        average_daily_turnover
         * policy_record.max_daily_turnover_participation_percent
         / Decimal("100")
     )
     if daily_capacity <= 0:
         return _with_candidate_blocker(base, "liquidity_limit"), ()
-    liquidity_days = int(
-        (total / daily_capacity).to_integral_value(rounding=ROUND_CEILING)
+    liquidity_days = max(
+        1,
+        int(
+            (total / daily_capacity).to_integral_value(
+                rounding=ROUND_CEILING
+            )
+        ),
     )
-    liquidity_days = max(1, liquidity_days)
     max_liquid_lots = int(
         (
             daily_capacity
@@ -630,12 +695,12 @@ def _enrich_bond_candidate(
         ).to_integral_value(rounding=ROUND_FLOOR)
     )
 
-    term_months = _months_until(observed_at, info.maturity_date)
+    term_months = _months_until(observed_at, maturity)
     if term_months is None or term_months <= 0:
         return _with_candidate_blocker(base, "bond_term_missing"), ()
 
-    holding_years = Decimal(term_months) / Decimal("12")
-    gross_gain = total * bond.ytw_percent / Decimal("100") * holding_years
+    future_cash = sum((amount for _, amount in cashflows), Decimal("0"))
+    gross_gain = future_cash - dirty_purchase
     uncertainty = (
         total * policy_record.uncertainty_haircut_percent / Decimal("100")
     )
@@ -644,8 +709,6 @@ def _enrich_bond_candidate(
     )
 
     removable = {
-        "issuer_identity_not_verified",
-        "issuer_group_not_verified",
         "candidate_risk_assessment_missing",
         "quote_missing",
         "bond_ytw_missing",
@@ -657,20 +720,19 @@ def _enrich_bond_candidate(
     )
     notes = (
         "shortlisted_by_tbank_market_yield_signal",
-        "issuer_identity_verified_by_moex",
-        (
-            "issuer_group_unverified_conservative_bucket"
-            if not str(row.get("group_id") or "")
-            else "issuer_group_from_verified_mapping"
-        ),
+        "issuer_identity_from_verified_mapping",
+        *rating_notes,
+        "issuer_group_from_verified_mapping",
         "buy_cost_from_tinvest_get_order_price",
-        "ytw_from_moex_iss",
-        "liquidity_from_moex_history_value",
-        "expected_gain_simple_ytw_horizon_estimate",
+        "ytw_from_tinvest_fixed_cashflows",
+        "liquidity_from_tinvest_exchange_candles",
+        "no_future_call_or_conversion_events",
+        "expected_gain_from_contractual_cashflows",
         "tax_not_applied_to_new_buy",
     )
-    group_id = str(row.get("group_id") or "") or "unverified_group"
     risk_state: RiskState = assessment.state
+    if rating_under_watch and risk_state == "normal":
+        risk_state = "watch"
     evidence_complete = (
         assessment.fundamental_status == "received"
         and risk_state in {"normal", "watch", "elevated"}
@@ -678,9 +740,7 @@ def _enrich_bond_candidate(
     )
     candidate = replace(
         base,
-        issuer_id=f"moex:{identity.issuer_id}",
-        group_id=group_id,
-        rating_bucket="unknown",
+        rating_bucket=rating_bucket,
         risk_state=risk_state,
         market_lot_cost_rub=initial,
         accrued_coupon_rub_per_lot=aci,
@@ -693,7 +753,7 @@ def _enrich_bond_candidate(
         liquidity_days=liquidity_days,
         max_liquid_lots=max_liquid_lots,
         term_months=term_months,
-        ytw_percent=bond.ytw_percent,
+        ytw_percent=ytw_percent,
         duration_years=duration_years,
         evidence_complete=evidence_complete,
         access_reasons=access_reasons,
@@ -719,161 +779,260 @@ def _enrich_bond_candidate(
             "retrieved_at": observed_at,
         },
         {
-            "id": f"moex-identity:{identity.secid}",
-            "provider": "moex",
-            "kind": "issuer_identity",
-            "url": identity.source_url,
+            "id": f"tbank-bond-ratings:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "issuer_ratings",
             "retrieved_at": observed_at,
         },
         {
-            "id": f"moex-bond:{identity.secid}:{identity.primary_board_id}",
-            "provider": "moex",
-            "kind": "bond_yield_duration",
-            "url": bond.source_url,
+            "id": f"tbank-bond-cashflows:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "bond_coupons_and_events",
             "retrieved_at": observed_at,
         },
         {
-            "id": f"moex-liquidity:{identity.secid}:{identity.primary_board_id}",
-            "provider": "moex",
-            "kind": "historical_turnover",
-            "url": liquidity.source_url,
+            "id": f"tbank-daily-candles:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "exchange_daily_candles",
             "retrieved_at": observed_at,
         },
     )
     return candidate, sources
 
 
-def _enrich_replacement_holding(
+def _rating_bucket_from_tbank(
+    ratings: tuple[TBankRating, ...],
     *,
-    user_id: UUID,
-    row: dict[str, object],
-    policy_record: BalancingPolicyRecord,
-    broker: BrokerService,
-    moex: MoexIssClient,
     observed_at: datetime,
-) -> tuple[Holding, tuple[dict[str, object], ...]]:
-    base = _holding(row)
-    if (
-        base.asset_class != "bond"
-        or base.blocked
-        or base.lots <= 0
-        or base.risk_state not in {"elevated", "critical", "confirmed_default"}
-    ):
-        return base, ()
+) -> tuple[RatingBucket, tuple[str, ...], bool]:
+    if not ratings:
+        return "unknown", ("issuer_rating_missing",), False
 
-    info = _metadata_from_row(row)
-    if (
-        not info.isin
-        or not info.class_code
-        or info.maturity_date is None
-        or info.currency.upper() != "RUB"
-    ):
-        return base, ()
+    buckets: list[RatingBucket] = []
+    notes: list[str] = ["issuer_ratings_from_tinvest_bond_by"]
+    under_watch = False
+    for rating in ratings:
+        rating_date = rating.rating_date.astimezone(UTC)
+        if rating_date > observed_at:
+            return (
+                "unknown",
+                tuple((*notes, "issuer_rating_time_invalid")),
+                False,
+            )
+        bucket = _rating_level_bucket(rating.rating_level)
+        if bucket is None:
+            return (
+                "unknown",
+                tuple((*notes, "issuer_rating_level_unrecognized")),
+                under_watch,
+            )
+        buckets.append(bucket)
+        notes.append(
+            "issuer_rating:"
+            + rating.agency_name
+            + ":"
+            + rating.rating_level
+            + ":"
+            + rating_date.date().isoformat()
+        )
+        under_watch = under_watch or rating.is_under_watch
 
-    identity = moex.security_identity(info.isin, expected_isin=info.isin)
-    if identity is None or not identity.is_traded:
-        return base, ()
-    bond = moex.bond_snapshot(identity.secid, identity.primary_board_id)
-    if bond is None or bond.ytw_percent is None or bond.ytw_percent <= 0:
-        return base, ()
+    order: dict[RatingBucket, int] = {
+        "below_grade": 0,
+        "bbb": 1,
+        "a": 2,
+        "aa": 3,
+        "aaa": 4,
+        "unknown": -1,
+        "not_applicable": 5,
+    }
+    worst = min(buckets, key=lambda item: order[item])
+    if under_watch:
+        notes.append("issuer_rating_under_watch")
+    return worst, tuple(notes), under_watch
 
-    order_book = broker.candidate_order_book(
-        user_id,
-        base.instrument_uid,
-        depth=10,
-    )
-    if (
-        not order_book.is_consistent
-        or not order_book.bids
-        or not order_book.asks
-        or not _fresh_market_time(order_book.time, observed_at)
-    ):
-        return base, ()
-    best_bid = max(Decimal(level.price) for level in order_book.bids)
-    best_ask = min(Decimal(level.price) for level in order_book.asks)
-    if best_bid <= 0 or best_ask <= best_bid:
-        return base, ()
 
-    sale = broker.candidate_order_price(
-        user_id,
-        base.instrument_uid,
-        price=str(best_bid),
-        direction="sell",
-        quantity_lots=base.lots,
-    )
-    initial = _money_rub(sale.initial_order_amount)
-    fee = _money_rub(sale.executed_commission_rub)
-    aci = (
-        _money_rub(sale.bond_aci_value)
-        if sale.bond_aci_value is not None
-        else Decimal("0")
-    )
-    gross_sale = initial + aci
-    fifo = _decimal(row.get("average_price_fifo_value"))
-    fifo_currency = str(row.get("average_price_fifo_currency") or "").upper()
-    quantity = _decimal(row.get("quantity"))
-    if (
-        gross_sale <= 0
-        or fee < 0
-        or fifo is None
-        or fifo <= 0
-        or fifo_currency != "RUB"
-        or quantity is None
-        or quantity <= 0
-    ):
-        return base, ()
+def _rating_level_bucket(value: str) -> RatingBucket | None:
+    letters = "".join(char for char in value.upper() if char.isalpha())
+    if letters.startswith("RU"):
+        letters = letters[2:]
+    if letters.endswith("RU"):
+        letters = letters[:-2]
+    mapping: dict[str, RatingBucket] = {
+        "AAA": "aaa",
+        "AA": "aa",
+        "A": "a",
+        "BBB": "bbb",
+        "BB": "below_grade",
+        "B": "below_grade",
+        "CCC": "below_grade",
+        "CC": "below_grade",
+        "C": "below_grade",
+        "D": "below_grade",
+    }
+    return mapping.get(letters)
 
-    cost_basis = fifo * quantity
-    taxable_gain = max(Decimal("0"), gross_sale - fee - cost_basis)
-    tax = (
-        taxable_gain
-        * policy_record.securities_tax_rate_percent
-        / Decimal("100")
-    )
-    term_months = _months_until(observed_at, info.maturity_date)
-    if term_months is None or term_months <= 0:
-        return base, ()
-    holding_years = Decimal(term_months) / Decimal("12")
-    gross_hold_gain = (
-        gross_sale * bond.ytw_percent / Decimal("100") * holding_years
-    )
-    stress = gross_sale * (
-        policy_record.uncertainty_haircut_percent
-        + policy_record.credit_loss_haircut_percent
-    ) / Decimal("100")
-    expected_hold_gain = gross_hold_gain - stress
 
-    enriched = replace(
-        base,
-        value_rub=gross_sale,
-        expected_horizon_gain_rub=expected_hold_gain,
-        sell_fee_rub=fee,
-        exit_spread_cost_rub=Decimal("0"),
-        tax_if_sold_rub=tax,
-        replacement_costs_complete=True,
+def _fixed_bond_cashflows(
+    *,
+    coupons: tuple[TBankBondCoupon, ...],
+    maturity: datetime,
+    nominal_per_bond: Decimal,
+    lot_size: int,
+    observed_at: datetime,
+) -> tuple[tuple[datetime, Decimal], ...]:
+    by_date: dict[datetime, Decimal] = {}
+    for coupon in coupons:
+        when = coupon.coupon_date.astimezone(UTC)
+        if when <= observed_at or when > maturity:
+            continue
+        amount = _money_rub(coupon.pay_one_bond) * Decimal(lot_size)
+        if amount < 0:
+            raise ValueError("bond coupon must not be negative")
+        by_date[when] = by_date.get(when, Decimal("0")) + amount
+    maturity_utc = maturity.astimezone(UTC)
+    redemption = nominal_per_bond * Decimal(lot_size)
+    by_date[maturity_utc] = (
+        by_date.get(maturity_utc, Decimal("0")) + redemption
     )
-    sources: tuple[dict[str, object], ...] = (
-        {
-            "id": f"tbank-sell-order-book:{base.instrument_uid}",
-            "provider": "tbank",
-            "kind": "sell_order_book",
-            "retrieved_at": order_book.time,
-        },
-        {
-            "id": f"tbank-sell-order-price:{base.instrument_uid}",
-            "provider": "tbank",
-            "kind": "sell_order_price",
-            "retrieved_at": observed_at,
-        },
-        {
-            "id": f"moex-held-bond:{identity.secid}:{identity.primary_board_id}",
-            "provider": "moex",
-            "kind": "held_bond_yield",
-            "url": bond.source_url,
-            "retrieved_at": observed_at,
-        },
+    result = tuple(
+        (when, amount)
+        for when, amount in sorted(by_date.items())
+        if amount > 0
     )
-    return enriched, sources
+    if not result:
+        raise ValueError("bond cashflows are empty")
+    return result
+
+
+def _yield_to_maturity_percent(
+    dirty_price: Decimal,
+    cashflows: tuple[tuple[datetime, Decimal], ...],
+    observed_at: datetime,
+) -> Decimal | None:
+    if dirty_price <= 0 or not cashflows:
+        return None
+
+    low = _YIELD_RATE_FLOOR
+    high = _YIELD_RATE_INITIAL_CEILING
+    low_value = _cashflow_npv(
+        dirty_price,
+        cashflows,
+        observed_at,
+        low,
+    )
+    high_value = _cashflow_npv(
+        dirty_price,
+        cashflows,
+        observed_at,
+        high,
+    )
+    while high_value > 0 and high < _YIELD_RATE_MAX_CEILING:
+        high *= Decimal("2")
+        high_value = _cashflow_npv(
+            dirty_price,
+            cashflows,
+            observed_at,
+            high,
+        )
+    if low_value < 0 or high_value > 0:
+        return None
+
+    for _ in range(96):
+        middle = (low + high) / Decimal("2")
+        value = _cashflow_npv(
+            dirty_price,
+            cashflows,
+            observed_at,
+            middle,
+        )
+        if abs(value) <= Decimal("0.0000001"):
+            low = middle
+            high = middle
+            break
+        if value > 0:
+            low = middle
+        else:
+            high = middle
+    rate = (low + high) / Decimal("2")
+    return (rate * Decimal("100")).quantize(Decimal("0.0001"))
+
+
+def _cashflow_npv(
+    dirty_price: Decimal,
+    cashflows: tuple[tuple[datetime, Decimal], ...],
+    observed_at: datetime,
+    annual_rate: Decimal,
+) -> Decimal:
+    base = Decimal("1") + annual_rate
+    if base <= 0:
+        raise ValueError("annual yield must be greater than -100%")
+    total = -dirty_price
+    for when, amount in cashflows:
+        seconds = Decimal(str((when - observed_at).total_seconds()))
+        if seconds <= 0:
+            continue
+        years = seconds / _YIELD_YEAR_SECONDS
+        discount = (base.ln() * years).exp()
+        total += amount / discount
+    return total
+
+
+def _macaulay_duration_years(
+    dirty_price: Decimal,
+    cashflows: tuple[tuple[datetime, Decimal], ...],
+    observed_at: datetime,
+    ytm_percent: Decimal,
+) -> Decimal | None:
+    rate = ytm_percent / Decimal("100")
+    base = Decimal("1") + rate
+    if dirty_price <= 0 or base <= 0:
+        return None
+    weighted = Decimal("0")
+    present = Decimal("0")
+    for when, amount in cashflows:
+        seconds = Decimal(str((when - observed_at).total_seconds()))
+        if seconds <= 0:
+            continue
+        years = seconds / _YIELD_YEAR_SECONDS
+        value = amount / ((base.ln() * years).exp())
+        present += value
+        weighted += years * value
+    if present <= 0:
+        return None
+    return (weighted / present).quantize(Decimal("0.0001"))
+
+
+def _average_bond_daily_turnover_rub(
+    *,
+    candles: tuple[TBankHistoricCandle, ...],
+    nominal_per_bond: Decimal,
+    lot_size: int,
+    observed_at: datetime,
+) -> Decimal | None:
+    completed = tuple(
+        candle
+        for candle in candles
+        if candle.is_complete
+        and candle.source == "CANDLE_SOURCE_EXCHANGE"
+        and candle.time <= observed_at
+    )
+    if len(completed) < TBANK_LIQUIDITY_MIN_COMPLETED_DAYS:
+        return None
+    values = [
+        (
+            Decimal(candle.close)
+            / Decimal("100")
+            * nominal_per_bond
+            * Decimal(lot_size)
+            * Decimal(candle.volume_lots)
+        )
+        for candle in completed
+    ]
+    total = sum(values, Decimal("0"))
+    if total <= 0:
+        return None
+    return total / Decimal(len(values))
 
 
 def _metadata_from_row(row: dict[str, object]) -> TBankInstrumentMetadata:
@@ -925,6 +1084,20 @@ def _fresh_market_time(value: datetime | None, now: datetime) -> bool:
         return False
     normalized = value.astimezone(UTC)
     return normalized <= now and now - normalized <= MARKET_QUOTE_MAX_AGE
+
+
+def _bond_points_to_currency(
+    price_points: Decimal,
+    nominal_per_bond: Decimal,
+) -> Decimal:
+    if (
+        not price_points.is_finite()
+        or price_points <= 0
+        or not nominal_per_bond.is_finite()
+        or nominal_per_bond <= 0
+    ):
+        raise ValueError("bond price conversion requires positive finite values")
+    return price_points / Decimal("100") * nominal_per_bond
 
 
 def _money_rub(value: TBankMoney) -> Decimal:

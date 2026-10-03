@@ -5,7 +5,7 @@ import json
 import ssl
 import urllib.error
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import UUID
 
@@ -19,6 +19,7 @@ from omnicio.tbank import (
     TBankAccruedInterest,
     TBankAssetTotal,
     TBankFxQuote,
+    TBankHistoricCandle,
     TBankInstrument,
     TBankInstrumentMetadata,
     TBankInvestClient,
@@ -31,6 +32,7 @@ from omnicio.tbank import (
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
+    TBankRating,
     TBankTokenRejected,
     TBankUnavailable,
     TBankUserInfo,
@@ -117,6 +119,63 @@ def test_tbank_get_user_info_parses_qualification_context() -> None:
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {}
     assert "provider-user-id" not in repr(info)
+
+
+def test_tbank_bond_ratings_are_read_only_and_keep_agency_metadata() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instrument": {
+                "uid": "bond-uid",
+                "ratings": [
+                    {
+                        "agencyName": "Эксперт РА",
+                        "ratingLevel": "ruAA+",
+                        "ratingDate": "2026-09-15T00:00:00Z",
+                        "forecast": "Стабильный",
+                        "isUnderWatch": False,
+                    },
+                    {
+                        "agencyName": "АКРА",
+                        "ratingLevel": "A+(RU)",
+                        "ratingDate": "2026-09-20T00:00:00Z",
+                        "forecast": "Позитивный",
+                        "isUnderWatch": True,
+                    },
+                ],
+            }
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_bond_ratings(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+        )
+
+    assert result == (
+        TBankRating(
+            agency_name="Эксперт РА",
+            rating_level="ruAA+",
+            rating_date=datetime(2026, 9, 15, tzinfo=UTC),
+            forecast="Стабильный",
+            is_under_watch=False,
+        ),
+        TBankRating(
+            agency_name="АКРА",
+            rating_level="A+(RU)",
+            rating_date=datetime(2026, 9, 20, tzinfo=UTC),
+            forecast="Позитивный",
+            is_under_watch=True,
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/BondBy")
+    assert json.loads(request.data.decode()) == {
+        "idType": "INSTRUMENT_ID_TYPE_UID",
+        "id": "bond-uid",
+    }
 
 
 def test_tbank_market_yields_are_batched_read_only_shortlist_signals() -> None:
@@ -760,6 +819,82 @@ def test_bond_metadata_preserves_structure_required_for_r4_screening() -> None:
     assert item.subordinated is True
     assert item.liquidity is True
     assert item.required_tests == ("test_bonds_risk",)
+
+
+def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> None:
+    client = TBankInvestClient()
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    response = FakeResponse(
+        {
+            "candles": [
+                {
+                    "close": {"units": "99", "nano": 500000000},
+                    "volume": "42",
+                    "time": "2026-10-02T00:00:00Z",
+                    "isComplete": True,
+                    "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_daily_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            from_at=now - timedelta(days=30),
+            to_at=now,
+        )
+
+    assert result == (
+        TBankHistoricCandle(
+            instrument_uid="bond-uid",
+            close="99.5",
+            volume_lots=42,
+            time=datetime(2026, 10, 2, 0, 0, tzinfo=UTC),
+            is_complete=True,
+            source="CANDLE_SOURCE_EXCHANGE",
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("MarketDataService/GetCandles")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": "bond-uid",
+        "from": "2026-09-03T05:00:00Z",
+        "to": "2026-10-03T05:00:00Z",
+        "interval": "CANDLE_INTERVAL_DAY",
+        "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+    }
+
+
+def test_tbank_daily_candles_reject_non_exchange_response() -> None:
+    client = TBankInvestClient()
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    response = FakeResponse(
+        {
+            "candles": [
+                {
+                    "close": {"units": "100", "nano": 0},
+                    "volume": "1",
+                    "time": "2026-10-02T00:00:00Z",
+                    "isComplete": True,
+                    "candleSourceType": "CANDLE_SOURCE_DEALER_WEEKEND",
+                }
+            ]
+        }
+    )
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(TBankUnavailable, match="exchange-sourced"),
+    ):
+        client.get_daily_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            from_at=now - timedelta(days=30),
+            to_at=now,
+        )
 
 
 def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
