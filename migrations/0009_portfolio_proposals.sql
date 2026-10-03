@@ -5,6 +5,9 @@ CREATE TABLE IF NOT EXISTS portfolio_proposals (
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     version integer NOT NULL CHECK (version > 0),
     source_snapshot_id uuid NOT NULL,
+    account_id text NOT NULL CHECK (
+        char_length(account_id) BETWEEN 1 AND 128
+    ),
     profile_version integer NOT NULL CHECK (profile_version > 0),
     policy_version integer NOT NULL CHECK (policy_version > 0),
     scenario_kind text NOT NULL CHECK (
@@ -13,11 +16,15 @@ CREATE TABLE IF NOT EXISTS portfolio_proposals (
     target_instrument_uid text,
     replaced_instrument_uid text,
     proposal_hash bytea NOT NULL,
+    created_session_digest bytea NOT NULL,
     payload jsonb NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     expires_at timestamptz NOT NULL,
     CONSTRAINT portfolio_proposals_hash_size CHECK (
         octet_length(proposal_hash) = 32
+    ),
+    CONSTRAINT portfolio_proposals_session_digest_size CHECK (
+        octet_length(created_session_digest) = 32
     ),
     CONSTRAINT portfolio_proposals_expiry_after_create CHECK (
         expires_at > created_at
@@ -55,14 +62,44 @@ CREATE TABLE IF NOT EXISTS portfolio_proposal_actions (
     proposal_id uuid NOT NULL,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     action text NOT NULL CHECK (
-        action IN ('confirmed', 'rejected', 'deferred', 'revoked', 'expired')
+        action IN (
+            'confirmed',
+            'rejected',
+            'deferred',
+            'superseded',
+            'revoked',
+            'expired'
+        )
     ),
     proposal_version integer NOT NULL CHECK (proposal_version > 0),
     proposal_hash bytea NOT NULL,
+    session_digest bytea NOT NULL,
     reason text NOT NULL DEFAULT '',
+    user_reason text NOT NULL DEFAULT '',
+    deferred_until timestamptz,
     acted_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT portfolio_proposal_actions_hash_size CHECK (
         octet_length(proposal_hash) = 32
+    ),
+    CONSTRAINT portfolio_proposal_actions_session_digest_size CHECK (
+        octet_length(session_digest) = 32
+    ),
+    CONSTRAINT portfolio_proposal_actions_user_reason_size CHECK (
+        char_length(user_reason) <= 500
+    ),
+    CONSTRAINT portfolio_proposal_actions_reject_reason CHECK (
+        action <> 'rejected'
+        OR char_length(btrim(user_reason)) BETWEEN 1 AND 500
+    ),
+    CONSTRAINT portfolio_proposal_actions_deferred_shape CHECK (
+        (
+            action = 'deferred'
+            AND deferred_until IS NOT NULL
+        )
+        OR (
+            action <> 'deferred'
+            AND deferred_until IS NULL
+        )
     ),
     UNIQUE (proposal_id),
     FOREIGN KEY (proposal_id, user_id)
