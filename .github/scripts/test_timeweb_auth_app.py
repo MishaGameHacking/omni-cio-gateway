@@ -582,8 +582,8 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', page)
 
         self.assertIn('"/api/portfolio/executions"', script)
-        self.assertIn('data.executionStart = "shadow"', script)
-        self.assertIn('data.executionStart = "sandbox"', script)
+        self.assertIn('shadow.dataset.executionStart = "shadow"', script)
+        self.assertIn('sandbox.dataset.executionStart = "sandbox"', script)
         self.assertIn("Live execution остаётся выключен", script)
         self.assertIn('@app.get("/api/portfolio/executions")', backend)
         self.assertIn('@app.post("/api/portfolio/executions"', backend)
