@@ -13,7 +13,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
-from omnicio.execution_store import ExecutionStore
+from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
 from omnicio.portfolio_store import PortfolioStore, ProposalStateError
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -755,6 +755,90 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 mode="sandbox",
                 session_digest=b"e" * 32,
             )
+
+            stale_execution_ready = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="provider-bond-uid",
+                replaced_instrument_uid=None,
+                proposal_hash=b"z" * 32,
+                session_digest=b"s" * 32,
+                payload={
+                    "schema": "omnicio.portfolio.proposal.v1",
+                    "execution_enabled": False,
+                    "source": {
+                        "snapshot_id": str(snapshot_id),
+                        "account_id": "account-1",
+                        "profile_version": 1,
+                        "policy_version": 2,
+                    },
+                    "scenario": {
+                        "status": "feasible",
+                        "trades": [
+                            {
+                                "action": "buy",
+                                "instrument_uid": "provider-bond-uid",
+                                "ticker": "BOND",
+                                "lots": 1,
+                                "limit_price": "101.25",
+                                "limit_price_type": "point",
+                                "max_spend_rub": "1300",
+                                "min_proceeds_rub": None,
+                            }
+                        ],
+                    },
+                },
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            stale_execution_proposal, _ = store.decide_proposal(
+                USER_ONE,
+                proposal_id=stale_execution_ready.id,
+                expected_version=stale_execution_ready.version,
+                expected_hash=stale_execution_ready.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=4),
+            )
+            policy_after_confirmation = store.save_balancing_policy(
+                USER_ONE,
+                max_instrument_percent=Decimal("14"),
+                max_sector_percent=Decimal("30"),
+                max_issuer_percent=Decimal("20"),
+                max_group_percent=Decimal("25"),
+                max_share_percent=Decimal("70"),
+                max_bond_percent=Decimal("80"),
+                max_etf_percent=Decimal("70"),
+                max_below_grade_percent=Decimal("5"),
+                max_unknown_percent=Decimal("0"),
+                max_term_months=120,
+                turnover_budget_percent=Decimal("25"),
+                max_daily_turnover_participation_percent=Decimal("5"),
+                securities_tax_rate_percent=Decimal("15"),
+                uncertainty_haircut_percent=Decimal("3"),
+                credit_loss_haircut_percent=Decimal("2"),
+                no_trade_band_percent=Decimal("1"),
+                min_replace_benefit_rub=Decimal("500"),
+            )
+            with pytest.raises(
+                ExecutionLedgerError,
+                match="proposal_policy_stale",
+            ):
+                execution_store.create_run(
+                    USER_ONE,
+                    proposal_id=stale_execution_proposal.id,
+                    expected_version=stale_execution_proposal.version,
+                    expected_hash=stale_execution_proposal.proposal_hash,
+                    mode="shadow",
+                    session_digest=b"e" * 32,
+                )
+
             intelligence = store.latest_intelligence(USER_ONE)
         finally:
             database.close()
@@ -794,6 +878,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert sandbox_run.id != shadow_run.id
         assert sandbox_run.provider_environment == "sandbox"
         assert sandbox_legs[0].request_id != shadow_legs[0].request_id
+        assert policy_after_confirmation.version == 3
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
