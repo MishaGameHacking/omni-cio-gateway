@@ -120,13 +120,7 @@ class ExecutionStore:
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
         with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             self._tenant(cur, user_id)
-            params: list[object] = [user_id, observed_at]
-            account_clause = ""
-            if account_id is not None:
-                account_clause = " AND account_id = %s"
-                params.append(account_id)
-            cur.execute(
-                f"""
+            select_sql = """
                 SELECT
                     id,
                     user_id,
@@ -141,12 +135,18 @@ class ExecutionStore:
                 WHERE user_id = %s
                   AND revoked_at IS NULL
                   AND expires_at > %s
-                  {account_clause}
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                tuple(params),
-            )
+            """
+            if account_id is None:
+                cur.execute(
+                    select_sql + " ORDER BY created_at DESC LIMIT 1",
+                    (user_id, observed_at),
+                )
+            else:
+                cur.execute(
+                    select_sql
+                    + " AND account_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (user_id, observed_at, account_id),
+                )
             row = cur.fetchone()
             return (
                 _mandate_record(cast(dict[str, Any], row))
