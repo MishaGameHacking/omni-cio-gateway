@@ -178,6 +178,8 @@
   const instrumentDetailPriceTime = requiredElement("#instrument-detail-price-time");
   const instrumentDetailQuantity = requiredElement("#instrument-detail-quantity");
   const instrumentDetailBlocked = requiredElement("#instrument-detail-blocked");
+  const instrumentDetailPnl = requiredElement("#instrument-detail-pnl");
+  const instrumentDetailPnlTime = requiredElement("#instrument-detail-pnl-time");
   const instrumentDetailRisk = requiredElement("#instrument-detail-risk");
   const instrumentDetailRiskTime = requiredElement("#instrument-detail-risk-time");
   const instrumentHistoryChart = requiredElement("#instrument-history-chart");
@@ -1356,6 +1358,14 @@
         `${index === 0 ? "M" : "L"} ${x(item.time).toFixed(2)} ${y(item.value).toFixed(2)}`
       ))
       .join(" ");
+    if (!zeroLine) {
+      const firstPoint = clean[0];
+      const lastPoint = clean[clean.length - 1];
+      svg.append(chartNode("path", {
+        d: `${path} L ${x(lastPoint.time).toFixed(2)} ${(height - padY).toFixed(2)} L ${x(firstPoint.time).toFixed(2)} ${(height - padY).toFixed(2)} Z`,
+        class: "portfolio-chart-area",
+      }));
+    }
     svg.append(chartNode("path", {
       d: path,
       class: "portfolio-chart-line",
@@ -1873,8 +1883,15 @@
     }
   };
 
-  const renderInstrumentDetail = (payload) => {
+  const livePositionForIdentity = (identity) => (
+    (lastPortfolioSnapshot?.portfolio?.positions || []).find((position) => (
+      position?.instrument_uid === identity || position?.figi === identity
+    )) || null
+  );
+
+  const renderInstrumentDetail = (payload, requestedIdentity) => {
     const latest = payload?.latest || {};
+    const livePosition = livePositionForIdentity(requestedIdentity);
     instrumentDetailTitle.textContent = latest.ticker || latest.name || latest.instrument_uid || "Инструмент";
     instrumentDetailSubtitle.textContent = [
       latest.name && latest.name !== latest.ticker ? latest.name : "",
@@ -1887,15 +1904,40 @@
     instrumentDetailWeight.textContent = Number.isFinite(Number(latest.nav_percent))
       ? `Доля NAV: ${formatPercent(latest.nav_percent)}`
       : "Доля NAV не подтверждена";
-    instrumentDetailPrice.textContent = storedMoney(
-      latest.current_price_value,
-      latest.current_price_currency || latest.currency || "RUB",
-    );
-    instrumentDetailPriceTime.textContent = `snapshot: ${formatDateTime(latest.captured_at)}`;
-    instrumentDetailQuantity.textContent = formatQuantity(latest.quantity);
+    const livePrice = livePosition?.current_price;
+    instrumentDetailPrice.textContent = livePrice
+      ? formatMoney(livePrice)
+      : storedMoney(
+          latest.current_price_value,
+          latest.current_price_currency || latest.currency || "RUB",
+        );
+    instrumentDetailPriceTime.textContent = livePosition && lastPortfolioSnapshot?.refreshed_at
+      ? `T-Invest: ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
+      : `snapshot: ${formatDateTime(latest.captured_at)}`;
+    instrumentDetailQuantity.textContent = livePosition
+      ? formatQuantity(livePosition.quantity)
+      : formatQuantity(latest.quantity);
     instrumentDetailBlocked.textContent = latest.blocked || Number(latest.blocked_lots) > 0
       ? `Есть блокировка · лотов: ${formatQuantity(latest.blocked_lots)}`
       : "Блокировок не зафиксировано";
+    if (livePosition) {
+      instrumentDetailPnl.textContent = formatPercent(
+        livePosition.expected_yield_percent,
+        {sign: true},
+      );
+      applySignedClass(instrumentDetailPnl, livePosition.expected_yield_percent);
+      const dailyYield = formatMoney(livePosition.daily_yield, {sign: true});
+      instrumentDetailPnlTime.textContent = [
+        dailyYield !== "—" ? `сегодня ${dailyYield}` : "",
+        lastPortfolioSnapshot?.refreshed_at
+          ? `T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
+          : "",
+      ].filter(Boolean).join(" · ") || "Текущий ответ T-Invest";
+    } else {
+      instrumentDetailPnl.textContent = "—";
+      instrumentDetailPnl.classList.remove("value-positive", "value-negative");
+      instrumentDetailPnlTime.textContent = "Live P&L не подтверждён";
+    }
     instrumentDetailRisk.textContent = riskStateLabel(latest.risk_state);
     instrumentDetailRisk.classList.remove("value-positive", "value-negative");
     if (["critical", "confirmed_default"].includes(latest.risk_state)) {
@@ -2014,7 +2056,7 @@
       if (generation !== instrumentDetailGeneration) {
         return;
       }
-      renderInstrumentDetail(payload);
+      renderInstrumentDetail(payload, instrumentUid);
       instrumentDetailLoading.classList.add("hidden");
       instrumentDetailContent.classList.remove("hidden");
     } catch (error) {
