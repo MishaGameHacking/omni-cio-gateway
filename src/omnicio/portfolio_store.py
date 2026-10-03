@@ -1202,6 +1202,8 @@ class PortfolioStore:
                     COALESCE(c.currency, '') AS currency,
                     COALESCE(i.id::text, '') AS issuer_id,
                     COALESCE(i.group_id::text, '') AS group_id,
+                    COALESCE(i.country_code, '') AS issuer_country_code,
+                    COALESCE(i.source_url, '') AS issuer_source_url,
                     COALESCE(r.state, 'data_missing') AS risk_state,
                     COALESCE(r.rating_status, 'data_missing') AS rating_status
                 FROM portfolio_snapshot_positions AS p
@@ -1260,7 +1262,9 @@ class PortfolioStore:
                     a.required_tests,
                     a.observed_at AS access_observed_at,
                     COALESCE(i.id::text, '') AS issuer_id,
-                    COALESCE(i.group_id::text, '') AS group_id
+                    COALESCE(i.group_id::text, '') AS group_id,
+                    COALESCE(i.country_code, '') AS issuer_country_code,
+                    COALESCE(i.source_url, '') AS issuer_source_url
                 FROM instrument_catalog AS c
                 JOIN account_instrument_access AS a
                   ON a.user_id = %s
