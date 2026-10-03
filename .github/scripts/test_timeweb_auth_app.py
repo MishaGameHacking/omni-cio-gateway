@@ -568,7 +568,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("не подставляет скрытые проценты", page)
         self.assertIn("не получает", page)
         self.assertIn("торговых полномочий", page)
-        self.assertIn("moex_runtime_transport_security_gate", script)
+        self.assertIn("ytw_from_tinvest_fixed_cashflows", script)
+        self.assertIn("liquidity_from_tinvest_exchange_candles", script)
+        self.assertNotIn("moex_runtime_transport_security_gate", script)
 
     def test_personal_dashboard_uses_real_portfolio_data_without_fake_values(self) -> None:
         root = SCRIPT_DIR.parent.parent
