@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -85,12 +84,12 @@ class InstrumentLiveState:
     market_order_available: bool
 
 
-_MARKET_PERIODS: dict[str, tuple[timedelta, str, int]] = {
-    "1d": (timedelta(days=1), "CANDLE_INTERVAL_5_MIN", 300),
-    "1w": (timedelta(days=7), "CANDLE_INTERVAL_HOUR", 200),
-    "1m": (timedelta(days=31), "CANDLE_INTERVAL_4_HOUR", 250),
-    "3m": (timedelta(days=93), "CANDLE_INTERVAL_DAY", 150),
-    "1y": (timedelta(days=366), "CANDLE_INTERVAL_DAY", 400),
+_MARKET_PERIODS: dict[str, tuple[timedelta, str]] = {
+    "1d": (timedelta(days=1), "CANDLE_INTERVAL_5_MIN"),
+    "1w": (timedelta(days=7), "CANDLE_INTERVAL_HOUR"),
+    "1m": (timedelta(days=31), "CANDLE_INTERVAL_4_HOUR"),
+    "3m": (timedelta(days=93), "CANDLE_INTERVAL_DAY"),
+    "1y": (timedelta(days=366), "CANDLE_INTERVAL_DAY"),
 }
 
 
@@ -159,33 +158,18 @@ class MarketService:
         config = _MARKET_PERIODS.get(period)
         if config is None:
             raise ValueError("unsupported market period")
-        window, interval, limit = config
+        window, interval = config
+        requested_at = datetime.now(UTC)
+        candles = self.broker.market_exchange_candles(
+            user_id,
+            instrument_uid,
+            from_at=requested_at - window,
+            to_at=requested_at,
+            interval=interval,
+        )
+        price = self.broker.market_last_price(user_id, instrument_uid)
+        trading = self.broker.market_trading_status(user_id, instrument_uid)
         observed = datetime.now(UTC)
-        from_at = observed - window
-
-        with ThreadPoolExecutor(max_workers=3) as reads:
-            candles_read = reads.submit(
-                self.broker.market_exchange_candles,
-                user_id,
-                instrument_uid,
-                from_at=from_at,
-                to_at=observed,
-                interval=interval,
-                limit=limit,
-            )
-            price_read = reads.submit(
-                self.broker.market_last_price,
-                user_id,
-                instrument_uid,
-            )
-            status_read = reads.submit(
-                self.broker.market_trading_status,
-                user_id,
-                instrument_uid,
-            )
-            candles = candles_read.result()
-            price = price_read.result()
-            trading = status_read.result()
 
         live = _instrument_live_state(
             instrument_uid,
@@ -228,20 +212,9 @@ class MarketService:
         user_id: UUID,
         instrument_uid: str,
     ) -> InstrumentLiveState:
+        price = self.broker.market_last_price(user_id, instrument_uid)
+        trading = self.broker.market_trading_status(user_id, instrument_uid)
         observed = datetime.now(UTC)
-        with ThreadPoolExecutor(max_workers=2) as reads:
-            price_read = reads.submit(
-                self.broker.market_last_price,
-                user_id,
-                instrument_uid,
-            )
-            status_read = reads.submit(
-                self.broker.market_trading_status,
-                user_id,
-                instrument_uid,
-            )
-            price = price_read.result()
-            trading = status_read.result()
         return _instrument_live_state(
             instrument_uid,
             observed=observed,
