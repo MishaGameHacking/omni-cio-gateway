@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "pyproject.toml"
       - "uv.lock"
       - "requirements-runtime.txt"
@@ -28,6 +29,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "pyproject.toml"
       - "uv.lock"
       - "requirements-runtime.txt"
@@ -57,7 +59,7 @@ concurrency:
 jobs:
   tests:
     name: Test PostgreSQL reconciler
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
 
     steps:
@@ -65,14 +67,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Compile reconciler
-        run: python3 -m py_compile .github/scripts/timeweb_auth_postgres.py
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" -m py_compile .github\scripts\timeweb_auth_postgres.py'
 
       - name: Run reconciler tests
+        shell: cmd
         run: |
-          python3 .github/scripts/test_timeweb_ssh_trust.py
-          python3 .github/scripts/test_timeweb_auth_postgres.py
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_ssh_trust.py
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_auth_postgres.py
 
   reconcile:
     permissions:
@@ -86,7 +96,7 @@ jobs:
       queue: max
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: tests
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
@@ -111,64 +121,72 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Verify current main release checks
+        shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/verify_main_release.py
+        run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate verified SSH server key
-        run: python3 .github/scripts/timeweb_ssh_trust.py
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_ssh_trust.py'
 
       - name: Validate Timeweb secret
+        shell: cmd
         run: |
-          set -euo pipefail
-          test -n "${TIMEWEB_CLOUD_TOKEN:-}" || {
-            echo "::error::TIMEWEB_CLOUD_TOKEN is missing"
-            exit 1
-          }
+          @echo off
+          if not defined TIMEWEB_CLOUD_TOKEN (
+            echo ::error::TIMEWEB_CLOUD_TOKEN is missing
+            exit /b 1
+          )
 
       - name: Reconcile PostgreSQL and schema
         id: postgres
+        shell: cmd
         run: |
-          set -euo pipefail
-          python3 .github/scripts/timeweb_auth_postgres.py \
-            --server-name "${SERVER_NAME}" \
-            --server-comment "${SERVER_COMMENT}" \
-            --vpc-name "${VPC_NAME}" \
-            --cluster-name "${DB_CLUSTER_NAME}" \
-            --instance-name "${DB_INSTANCE_NAME}" \
-            --admin-login "${DB_ADMIN_LOGIN}" \
-            --postgres-version "${POSTGRES_VERSION}" \
-            --location "${TARGET_LOCATION}" \
-            --availability-zone "${TARGET_ZONE}" \
-            --max-price-rub "${MAX_DB_PRICE_RUB}" \
-            --min-cpu "${MIN_DB_CPU}" \
-            --min-ram-mb "${MIN_DB_RAM_MB}" \
-            --min-disk-mb "${MIN_DB_DISK_MB}" \
-            --migration migrations/0001_phone_auth.sql \
-            --migration migrations/0002_tbank_connection.sql \
-            --migration migrations/0003_vkid_owner_identity.sql \
-            --migration migrations/0004_user_role.sql \
-            --migration migrations/0005_drop_phone_auth.sql \
-            --migration migrations/0006_portfolio_observer.sql \
-            --migration migrations/0007_portfolio_evidence.sql \
-            --migration migrations/0008_balancing_policy.sql \
-            --migration migrations/0009_portfolio_proposals.sql \
-            --migration migrations/0010_portfolio_execution.sql \
+          "%OMNICIO_PYTHON%" .github\scripts\timeweb_auth_postgres.py ^
+            --server-name "%SERVER_NAME%" ^
+            --server-comment "%SERVER_COMMENT%" ^
+            --vpc-name "%VPC_NAME%" ^
+            --cluster-name "%DB_CLUSTER_NAME%" ^
+            --instance-name "%DB_INSTANCE_NAME%" ^
+            --admin-login "%DB_ADMIN_LOGIN%" ^
+            --postgres-version "%POSTGRES_VERSION%" ^
+            --location "%TARGET_LOCATION%" ^
+            --availability-zone "%TARGET_ZONE%" ^
+            --max-price-rub "%MAX_DB_PRICE_RUB%" ^
+            --min-cpu "%MIN_DB_CPU%" ^
+            --min-ram-mb "%MIN_DB_RAM_MB%" ^
+            --min-disk-mb "%MIN_DB_DISK_MB%" ^
+            --migration migrations/0001_phone_auth.sql ^
+            --migration migrations/0002_tbank_connection.sql ^
+            --migration migrations/0003_vkid_owner_identity.sql ^
+            --migration migrations/0004_user_role.sql ^
+            --migration migrations/0005_drop_phone_auth.sql ^
+            --migration migrations/0006_portfolio_observer.sql ^
+            --migration migrations/0007_portfolio_evidence.sql ^
+            --migration migrations/0008_balancing_policy.sql ^
+            --migration migrations/0009_portfolio_proposals.sql ^
+            --migration migrations/0010_portfolio_execution.sql ^
             --migration migrations/0011_portfolio_live_execution.sql
 
       - name: Surface private network gate
         if: steps.postgres.outputs.status == 'pending_server_network'
-        run: |
-          echo "::warning title=VDS private network required::PostgreSQL was not created. Attach omni-cio-white-site to omni-cio-private, then rerun this accepted-main workflow."
+        shell: cmd
+        run: echo ::warning title=VDS private network required::PostgreSQL was not created. Attach omni-cio-white-site to omni-cio-private, then rerun this accepted-main workflow.
 
       - name: Surface DBaaS token permission gate
         if: steps.postgres.outputs.status == 'pending_token_permission'
-        run: |
-          echo "::warning title=Timeweb DBaaS permission required::The existing TIMEWEB_CLOUD_TOKEN needs management access to cloud databases before PostgreSQL can be created."
+        shell: cmd
+        run: echo ::warning title=Timeweb DBaaS permission required::The existing TIMEWEB_CLOUD_TOKEN needs management access to cloud databases before PostgreSQL can be created.
 
       - name: Confirm database readiness
         if: steps.postgres.outputs.status == 'database_ready'
-        run: |
-          echo "Private PostgreSQL cluster ${{ steps.postgres.outputs.cluster_id }} is ready and schema migration completed."
+        shell: cmd
+        run: echo Private PostgreSQL cluster ${{ steps.postgres.outputs.cluster_id }} is ready and schema migration completed.
