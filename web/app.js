@@ -3905,6 +3905,7 @@
       renderTbankStatus(status);
       portfolioLoaded = false;
       void loadPortfolioData({force: true});
+      void loadLiveMandate();
       showMessage(tbankMessage, "T-Invest подключён. Токен сохранён в зашифрованном виде.");
     } catch (error) {
       resetTbankPreview();
@@ -3935,9 +3936,16 @@
       renderTbankStatus({connected: false});
       portfolioLoaded = false;
       tbankTermsAck.checked = false;
+      void loadLiveMandate();
       showMessage(tbankMessage, "T-Invest отключён.");
-    } catch {
-      showMessage(tbankMessage, "Не удалось удалить подключение.", true);
+    } catch (error) {
+      showMessage(
+        tbankMessage,
+        error.status === 409
+          ? "T-Invest нельзя отключить, пока Live-run не завершён: сначала сверите или отмените реальную заявку."
+          : "Не удалось удалить подключение.",
+        true,
+      );
     } finally {
       tbankDisconnect.disabled = false;
     }
@@ -4026,7 +4034,9 @@
       }
       showMessage(
         deleteAccountMessage,
-        "Аккаунт не удалён. Обновите страницу и повторите попытку.",
+        error.status === 409
+          ? "Аккаунт нельзя удалить, пока Live-run не завершён. Сначала сверите или отмените реальную заявку."
+          : "Аккаунт не удалён. Обновите страницу и повторите попытку.",
         true,
       );
     }
