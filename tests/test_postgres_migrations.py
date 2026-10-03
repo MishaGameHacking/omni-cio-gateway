@@ -458,6 +458,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 turnover_budget_percent=Decimal("25"),
                 max_daily_turnover_participation_percent=Decimal("5"),
                 securities_tax_rate_percent=Decimal("15"),
+                uncertainty_haircut_percent=Decimal("3"),
+                credit_loss_haircut_percent=Decimal("2"),
                 no_trade_band_percent=Decimal("1"),
                 min_replace_benefit_rub=Decimal("500"),
             )
@@ -476,6 +478,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 turnover_budget_percent=Decimal("25"),
                 max_daily_turnover_participation_percent=Decimal("5"),
                 securities_tax_rate_percent=Decimal("15"),
+                uncertainty_haircut_percent=Decimal("3"),
+                credit_loss_haircut_percent=Decimal("2"),
                 no_trade_band_percent=Decimal("1"),
                 min_replace_benefit_rub=Decimal("500"),
             )
@@ -494,6 +498,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 turnover_budget_percent=Decimal("25"),
                 max_daily_turnover_participation_percent=Decimal("5"),
                 securities_tax_rate_percent=Decimal("15"),
+                uncertainty_haircut_percent=Decimal("3"),
+                credit_loss_haircut_percent=Decimal("2"),
                 no_trade_band_percent=Decimal("1"),
                 min_replace_benefit_rub=Decimal("500"),
             )
@@ -510,6 +516,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert current_policy.max_instrument_percent == Decimal("15")
         assert current_policy.max_daily_turnover_participation_percent == Decimal("5")
         assert current_policy.securities_tax_rate_percent == Decimal("15")
+        assert current_policy.uncertainty_haircut_percent == Decimal("3")
+        assert current_policy.credit_loss_haircut_percent == Decimal("2")
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
@@ -551,12 +559,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                     turnover_budget_percent,
                     max_daily_turnover_participation_percent,
                     securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
                     no_trade_band_percent,
                     min_replace_benefit_rub
                 )
                 VALUES (
                     %s, 3, 10, 20, 10, 15, 60, 80, 60, 0, 0, 120,
-                    20, 5, 15, 1, 500
+                    20, 5, 15, 3, 2, 1, 500
                 )
                 """,
                 (USER_ONE,),
