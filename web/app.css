@@ -2956,6 +2956,11 @@ textarea:disabled {
   vector-effect: non-scaling-stroke;
 }
 
+.portfolio-chart-area {
+  fill: color-mix(in srgb, currentColor 11%, transparent);
+  stroke: none;
+}
+
 .portfolio-chart-line {
   stroke: currentColor;
   stroke-width: 2.5;
@@ -3133,7 +3138,7 @@ textarea:disabled {
 }
 
 .instrument-detail-metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .instrument-evidence-summary {
