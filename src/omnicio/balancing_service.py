@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from typing import Any, cast
@@ -27,6 +27,7 @@ from .portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
 from .tbank import (
     TBankAssetFundamental,
     TBankInstrumentMetadata,
+    TBankLastPrice,
     TBankMoney,
     TBankUnavailable,
 )
@@ -201,7 +202,7 @@ def build_live_balancing_payload(
     selected = tuple(
         row
         for row in rows
-        if _eligible_for_live_enrichment(row, context)
+        if _eligible_for_live_enrichment(row, context, observed_at)
     )[:LIVE_CANDIDATE_LIMIT]
     if not selected:
         return {
@@ -319,6 +320,362 @@ def build_live_balancing_payload(
         "execution_enabled": False,
     }
     return payload
+
+
+def _eligible_for_live_enrichment(
+    row: dict[str, object],
+    context: dict[str, object],
+    observed_at: datetime,
+) -> bool:
+    if str(row.get("instrument_type") or "") != "bond":
+        return False
+    if str(row.get("currency") or "").upper() != "RUB":
+        return False
+    if row.get("api_trade_available") is not True or row.get("buy_available") is not True:
+        return False
+    if _integer(row.get("lot")) <= 0:
+        return False
+    if not str(row.get("instrument_uid") or ""):
+        return False
+    if not str(row.get("isin") or "") or not str(row.get("class_code") or ""):
+        return False
+    nominal = _decimal(row.get("nominal_value"))
+    if nominal is None or nominal <= 0:
+        return False
+    if str(row.get("nominal_currency") or "").upper() != "RUB":
+        return False
+    required_tests = row.get("required_tests")
+    if isinstance(required_tests, list) and required_tests:
+        return False
+    broker_user = context.get("broker_user")
+    qualified = broker_user.get("qualified") if isinstance(broker_user, dict) else None
+    if row.get("for_qual_investor") is True and qualified is not True:
+        return False
+    account = context.get("account")
+    account_type = str(account.get("type") or "").upper() if isinstance(account, dict) else ""
+    if "IIS" in account_type and row.get("for_iis") is not True:
+        return False
+    if not _fresh(_datetime(row.get("provider_retrieved_at")), observed_at):
+        return False
+    if not _fresh(_datetime(row.get("access_observed_at")), observed_at):
+        return False
+    structure = (
+        row.get("floating_coupon"),
+        row.get("perpetual"),
+        row.get("amortization"),
+        row.get("subordinated"),
+    )
+    return all(value is False for value in structure)
+
+
+def _with_candidate_blocker(candidate: Candidate, reason: str) -> Candidate:
+    return replace(
+        candidate,
+        access_reasons=tuple(
+            dict.fromkeys((*candidate.access_reasons, reason))
+        ),
+    )
+
+
+def _enrich_bond_candidate(
+    *,
+    row: dict[str, object],
+    context: dict[str, object],
+    profile: InvestmentProfileRecord,
+    policy_record: BalancingPolicyRecord,
+    broker: BrokerService,
+    moex: MoexIssClient,
+    fundamental: TBankAssetFundamental | None,
+    last_price: TBankLastPrice | None,
+    observed_at: datetime,
+) -> tuple[Candidate, tuple[dict[str, object], ...]]:
+    nav_rub = _decimal(context.get("nav_rub"))
+    if nav_rub is None or nav_rub <= 0:
+        raise ValueError("candidate NAV is unavailable")
+    policy = _policy(profile, policy_record, nav_rub)
+    base = _candidate(
+        row,
+        context=context,
+        policy=policy,
+        observed_at=observed_at,
+    )
+    if base.asset_class != "bond":
+        return _with_candidate_blocker(base, "live_asset_class_not_supported"), ()
+
+    info = _metadata_from_row(row)
+    assessment = assess_candidate_fundamental_risk(
+        info,
+        fundamental,
+        assessed_at=observed_at,
+    )
+
+    isin = info.isin.strip().upper()
+    identity = moex.security_identity(isin, expected_isin=isin)
+    if identity is None or not identity.is_traded:
+        return _with_candidate_blocker(base, "issuer_identity_not_verified"), ()
+    if info.country_of_risk.upper() != "RU" or not identity.issuer_inn:
+        return _with_candidate_blocker(base, "issuer_identity_not_verified"), ()
+
+    bond = moex.bond_snapshot(identity.secid, identity.primary_board_id)
+    if bond is None or bond.ytw_percent is None or bond.ytw_percent <= 0:
+        return _with_candidate_blocker(base, "bond_ytw_missing"), ()
+    duration_days = tuple(
+        value
+        for value in (bond.duration_days, bond.call_option_duration_days)
+        if value is not None and value > 0
+    )
+    if not duration_days:
+        return _with_candidate_blocker(base, "bond_duration_missing"), ()
+    duration_years = min(duration_days) / Decimal("365.25")
+
+    if last_price is None or not _fresh_market_time(last_price.time, observed_at):
+        return _with_candidate_blocker(base, "quote_missing"), ()
+
+    order_book = broker.candidate_order_book(
+        UUID(str(context.get("user_id"))) if context.get("user_id") else UUID(int=0),
+        base.instrument_uid,
+        depth=10,
+    )
+    if (
+        not order_book.is_consistent
+        or not order_book.asks
+        or not order_book.bids
+        or not _fresh_market_time(order_book.time, observed_at)
+    ):
+        return _with_candidate_blocker(base, "order_book_unusable"), ()
+    best_ask = min(Decimal(level.price) for level in order_book.asks)
+    best_bid = max(Decimal(level.price) for level in order_book.bids)
+    if best_bid <= 0 or best_ask <= best_bid:
+        return _with_candidate_blocker(base, "order_book_unusable"), ()
+
+    order_price = broker.candidate_order_price(
+        UUID(str(context.get("user_id"))) if context.get("user_id") else UUID(int=0),
+        base.instrument_uid,
+        price=str(best_ask),
+        direction="buy",
+        quantity_lots=1,
+    )
+    initial = _money_rub(order_price.initial_order_amount)
+    total = _money_rub(order_price.total_order_amount)
+    fee = _money_rub(order_price.executed_commission_rub)
+    aci = _money_rub(order_price.bond_aci_value) if order_price.bond_aci_value else Decimal("0")
+    if initial <= 0 or total <= 0 or fee < 0 or aci < 0:
+        raise ValueError("invalid T-Invest order price evidence")
+
+    till = observed_at.date() - timedelta(days=1)
+    from_date = till - timedelta(days=MOEX_LIQUIDITY_WINDOW_DAYS - 1)
+    liquidity = moex.bond_liquidity(
+        identity.secid,
+        identity.primary_board_id,
+        from_date=from_date,
+        till_date=till,
+    )
+    if liquidity is None or liquidity.observed_days < MOEX_LIQUIDITY_MIN_OBSERVED_DAYS:
+        return _with_candidate_blocker(base, "liquidity_evidence_missing"), ()
+
+    daily_capacity = (
+        liquidity.average_daily_value_rub
+        * policy_record.max_daily_turnover_participation_percent
+        / Decimal("100")
+    )
+    if daily_capacity <= 0:
+        return _with_candidate_blocker(base, "liquidity_limit"), ()
+    liquidity_days = int(
+        (total / daily_capacity).to_integral_value(rounding=ROUND_CEILING)
+    )
+    liquidity_days = max(1, liquidity_days)
+    max_liquid_lots = int(
+        (
+            daily_capacity
+            * Decimal(profile.liquidity_horizon_days)
+            / total
+        ).to_integral_value(rounding=ROUND_FLOOR)
+    )
+
+    term_months = _months_until(observed_at, info.maturity_date)
+    if term_months is None or term_months <= 0:
+        return _with_candidate_blocker(base, "bond_term_missing"), ()
+
+    holding_years = Decimal(term_months) / Decimal("12")
+    gross_gain = total * bond.ytw_percent / Decimal("100") * holding_years
+    uncertainty = (
+        total * policy_record.uncertainty_haircut_percent / Decimal("100")
+    )
+    credit_loss = (
+        total * policy_record.credit_loss_haircut_percent / Decimal("100")
+    )
+
+    removable = {
+        "issuer_identity_not_verified",
+        "issuer_group_not_verified",
+        "candidate_risk_assessment_missing",
+        "quote_missing",
+        "bond_ytw_missing",
+        "bond_duration_missing",
+        "provider_liquidity_flag_missing",
+    }
+    access_reasons = tuple(
+        reason for reason in base.access_reasons if reason not in removable
+    )
+    notes = (
+        "issuer_identity_verified_by_moex",
+        (
+            "issuer_group_unverified_conservative_bucket"
+            if not str(row.get("group_id") or "")
+            else "issuer_group_from_verified_mapping"
+        ),
+        "buy_cost_from_tinvest_get_order_price",
+        "ytw_from_moex_iss",
+        "liquidity_from_moex_history_value",
+        "expected_gain_simple_ytw_horizon_estimate",
+        "tax_not_applied_to_new_buy",
+    )
+    group_id = str(row.get("group_id") or "") or "unverified_group"
+    risk_state: RiskState = cast(RiskState, assessment.state)
+    evidence_complete = (
+        assessment.fundamental_status == "received"
+        and risk_state in {"normal", "watch", "elevated"}
+        and not access_reasons
+    )
+    candidate = replace(
+        base,
+        issuer_id=f"moex:{identity.issuer_id}",
+        group_id=group_id,
+        rating_bucket="unknown",
+        risk_state=risk_state,
+        market_lot_cost_rub=initial,
+        accrued_coupon_rub_per_lot=aci,
+        buy_fee_rub_per_lot=fee,
+        spread_cost_rub_per_lot=Decimal("0"),
+        expected_horizon_gain_rub_per_lot=gross_gain,
+        uncertainty_haircut_rub_per_lot=uncertainty,
+        credit_loss_rub_per_lot=credit_loss,
+        liquidity_penalty_rub_per_lot=Decimal("0"),
+        liquidity_days=liquidity_days,
+        max_liquid_lots=max_liquid_lots,
+        term_months=term_months,
+        ytw_percent=bond.ytw_percent,
+        duration_years=duration_years,
+        evidence_complete=evidence_complete,
+        access_reasons=access_reasons,
+        notes=notes,
+    )
+    sources = (
+        {
+            "id": f"tbank-last-price:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "last_price",
+            "retrieved_at": last_price.time,
+        },
+        {
+            "id": f"tbank-order-book:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "order_book",
+            "retrieved_at": order_book.time,
+        },
+        {
+            "id": f"tbank-order-price:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "order_price",
+            "retrieved_at": observed_at,
+        },
+        {
+            "id": f"moex-identity:{identity.secid}",
+            "provider": "moex",
+            "kind": "issuer_identity",
+            "url": identity.source_url,
+            "retrieved_at": observed_at,
+        },
+        {
+            "id": f"moex-bond:{identity.secid}:{identity.primary_board_id}",
+            "provider": "moex",
+            "kind": "bond_yield_duration",
+            "url": bond.source_url,
+            "retrieved_at": observed_at,
+        },
+        {
+            "id": f"moex-liquidity:{identity.secid}:{identity.primary_board_id}",
+            "provider": "moex",
+            "kind": "historical_turnover",
+            "url": liquidity.source_url,
+            "retrieved_at": observed_at,
+        },
+    )
+    return candidate, sources
+
+
+def _metadata_from_row(row: dict[str, object]) -> TBankInstrumentMetadata:
+    nominal_value = _decimal(row.get("nominal_value"))
+    nominal_currency = str(row.get("nominal_currency") or "").upper()
+    nominal = (
+        TBankMoney(nominal_currency, str(nominal_value))
+        if nominal_value is not None and nominal_currency
+        else None
+    )
+    required_raw = row.get("required_tests")
+    required_tests = (
+        tuple(str(item) for item in required_raw)
+        if isinstance(required_raw, list)
+        else ()
+    )
+    return TBankInstrumentMetadata(
+        uid=str(row.get("instrument_uid") or ""),
+        figi=str(row.get("figi") or ""),
+        asset_uid=str(row.get("asset_uid") or ""),
+        position_uid="",
+        name=str(row.get("name") or ""),
+        ticker=str(row.get("ticker") or ""),
+        isin=str(row.get("isin") or ""),
+        instrument_type=str(row.get("instrument_type") or ""),
+        currency=str(row.get("currency") or "").upper(),
+        class_code=str(row.get("class_code") or ""),
+        lot=_integer(row.get("lot")),
+        sector=str(row.get("sector") or ""),
+        country_of_risk=str(row.get("country_of_risk") or ""),
+        for_qual_investor=cast(bool | None, row.get("for_qual_investor")),
+        for_iis=cast(bool | None, row.get("for_iis")),
+        api_trade_available=cast(bool | None, row.get("api_trade_available")),
+        buy_available=cast(bool | None, row.get("buy_available")),
+        sell_available=cast(bool | None, row.get("sell_available")),
+        required_tests=required_tests,
+        nominal=nominal,
+        maturity_date=_datetime(row.get("maturity_date")),
+        floating_coupon=cast(bool | None, row.get("floating_coupon")),
+        perpetual=cast(bool | None, row.get("perpetual")),
+        amortization=cast(bool | None, row.get("amortization")),
+        subordinated=cast(bool | None, row.get("subordinated")),
+        liquidity=cast(bool | None, row.get("liquidity")),
+    )
+
+
+def _fresh_market_time(value: datetime | None, now: datetime) -> bool:
+    if value is None or value.tzinfo is None:
+        return False
+    normalized = value.astimezone(UTC)
+    return normalized <= now and now - normalized <= MARKET_QUOTE_MAX_AGE
+
+
+def _money_rub(value: TBankMoney) -> Decimal:
+    if value.currency.upper() != "RUB":
+        raise ValueError("R4 money evidence must be RUB")
+    parsed = Decimal(value.value)
+    if not parsed.is_finite():
+        raise ValueError("R4 money evidence must be finite")
+    return parsed
+
+
+def _dedupe_sources(
+    sources: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for source in sources:
+        key = str(source.get("id") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(source)
+    return result
 
 
 def _blocked(
