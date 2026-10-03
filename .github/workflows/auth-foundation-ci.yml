@@ -100,7 +100,7 @@ jobs:
                   "componentKeys": "MishaGameHacking_omni-cio-gateway",
                   "pullRequest": os.environ["SONAR_PR"],
                   "issueStatuses": "OPEN,CONFIRMED",
-                  "types": "BUG",
+                  "impactSoftwareQualities": "RELIABILITY",
                   "ps": "100",
               }
           )
@@ -116,6 +116,10 @@ jobs:
                           "component": issue.get("component"),
                           "line": issue.get("line"),
                           "message": issue.get("message"),
+                          "impacts": issue.get("impacts"),
+                          "clean_code_attribute": issue.get(
+                              "cleanCodeAttribute"
+                          ),
                       },
                       ensure_ascii=True,
                       sort_keys=True,
