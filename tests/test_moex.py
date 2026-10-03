@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -95,6 +96,47 @@ def test_bond_snapshot_uses_official_iss_fields_and_conservative_ytw() -> None:
     )
     assert "YIELDTOOFFER" in request.full_url
     assert "CALLOPTIONDURATION" in request.full_url
+
+
+def test_bond_liquidity_averages_history_value_without_hidden_participation() -> None:
+    response = FakeResponse(
+        {
+            "history": {
+                "columns": ["TRADEDATE", "SECID", "BOARDID", "VALUE"],
+                "data": [
+                    ["2026-10-01", "RU000A000001", "TQCB", 1_000_000],
+                    ["2026-10-02", "RU000A000001", "TQCB", 3_000_000],
+                ],
+            }
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        snapshot = MoexIssClient().bond_liquidity(
+            "RU000A000001",
+            "TQCB",
+            from_date=date(2026, 9, 1),
+            till_date=date(2026, 10, 2),
+        )
+
+    assert snapshot is not None
+    assert snapshot.observed_days == 2
+    assert snapshot.total_value_rub == Decimal("4000000")
+    assert snapshot.average_daily_value_rub == Decimal("2000000")
+    request = urlopen.call_args.args[0]
+    assert "/history/engines/stock/markets/bonds/boards/" in request.full_url
+    assert "VALUE" in request.full_url
+
+
+def test_bond_liquidity_requires_ordered_window() -> None:
+    with patch("urllib.request.urlopen") as urlopen:
+        with pytest.raises(ValueError, match="window"):
+            MoexIssClient().bond_liquidity(
+                "RU000A000001",
+                "TQCB",
+                from_date=date(2026, 10, 3),
+                till_date=date(2026, 10, 2),
+            )
+    urlopen.assert_not_called()
 
 
 def test_bond_snapshot_returns_none_when_iss_has_no_security() -> None:
