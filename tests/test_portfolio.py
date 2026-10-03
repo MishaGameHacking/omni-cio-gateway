@@ -255,7 +255,11 @@ def test_instrument_market_http_is_private_and_uses_session_tenant() -> None:
     assert response.headers["cache-control"] == "private, no-store"
     body = response.json()
     assert body["instrument_uid"] == "uid-1"
-    assert body["candles"][0]["close"] == "101"
+    candles = body["candles"]
+    assert isinstance(candles, list)
+    candle = next(iter(candles), None)
+    assert isinstance(candle, dict)
+    assert candle["close"] == "101"
     market.return_value.instrument_snapshot.assert_called_once_with(
         "server-user",
         "uid-1",
