@@ -79,6 +79,12 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     assert "live execution requires an active exact-account mandate" in migration
     assert "portfolio_execution_runs_one_active_live_idx" in migration
     assert "portfolio_live_execution_mandates_active_idx" in migration
+    assert "portfolio_live_execution_mandates_expiry_window" in migration
+    assert "expires_at <= created_at + interval '24 hours'" in migration
+    assert "omnicio_validate_live_submission_authority" in migration
+    assert "portfolio_execution_legs_live_submission_guard" in migration
+    assert "FOR SHARE OF m" in migration
+    assert "live execution mandate is inactive before submission" in migration
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
