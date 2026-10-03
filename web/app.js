@@ -192,6 +192,21 @@
   const instrumentPayouts = requiredElement("#instrument-payouts");
   const instrumentSources = requiredElement("#instrument-sources");
   const instrumentDetailMessage = requiredElement("#instrument-detail-message");
+  const instrumentMarketState = requiredElement("#instrument-market-state");
+  const instrumentMarketRetry = requiredElement("#instrument-market-retry");
+  const instrumentMarketModeButtons = [
+    ...requiredElement("#instrument-market-modes").querySelectorAll("[data-market-mode]"),
+  ];
+  const instrumentMarketPeriodButtons = [
+    ...requiredElement("#instrument-market-periods").querySelectorAll("[data-market-period]"),
+  ];
+  const instrumentMarketChart = requiredElement("#instrument-market-chart");
+  const instrumentMarketTooltip = requiredElement("#instrument-market-tooltip");
+  const instrumentMarketLastPrice = requiredElement("#instrument-market-last-price");
+  const instrumentMarketQuoteTime = requiredElement("#instrument-market-quote-time");
+  const instrumentMarketTradingStatus = requiredElement("#instrument-market-trading-status");
+  const instrumentMarketSource = requiredElement("#instrument-market-source");
+  const instrumentMarketNote = requiredElement("#instrument-market-note");
 
   const analysisRefresh = document.querySelector("#analysis-refresh");
   const analysisStatus = document.querySelector("#analysis-status");
@@ -290,6 +305,15 @@
   let selectedPortfolioHistoryDays = 90;
   let instrumentDetailRequestInFlight = false;
   let instrumentDetailGeneration = 0;
+  let instrumentMarketGeneration = 0;
+  let instrumentMarketMode = "line";
+  let instrumentMarketPeriod = "1m";
+  let instrumentMarketPayload = null;
+  let instrumentMarketUid = "";
+  let instrumentMarketCurrency = "";
+  let instrumentMarketEventSource = null;
+  let instrumentMarketRetryTimer = null;
+  let instrumentMarketRetryCount = 0;
   let analysisInFlight = false;
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
@@ -313,6 +337,8 @@
   };
 
   const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  const INSTRUMENT_MARKET_MAX_RETRIES = 6;
 
   const apiPath = (path) => {
     if (typeof path !== "string" || !path.startsWith("/api/")) {
@@ -547,6 +573,10 @@
 
     appBack.classList.toggle("hidden", view === "home" && navigationDepth === 0);
 
+    if (view !== "portfolio" && instrumentMarketEventSource) {
+      instrumentMarketEventSource.close();
+      instrumentMarketEventSource = null;
+    }
     if (scroll) {
       window.scrollTo({top: 0, behavior: "auto"});
     }
@@ -1390,6 +1420,467 @@
     return true;
   };
 
+  const marketPriceText = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return "—";
+    }
+    if (instrumentMarketCurrency) {
+      return formatMoney({
+        currency: instrumentMarketCurrency,
+        value: String(value),
+      });
+    }
+    return new Intl.NumberFormat("ru-RU", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 9,
+    }).format(numeric);
+  };
+
+  const cleanMarketCandles = (candles) => (candles || [])
+    .map((candle) => ({
+      ...candle,
+      timestamp: new Date(candle?.time).getTime(),
+      openValue: Number(candle?.open),
+      highValue: Number(candle?.high),
+      lowValue: Number(candle?.low),
+      closeValue: Number(candle?.close),
+    }))
+    .filter((candle) => (
+      Number.isFinite(candle.timestamp)
+      && Number.isFinite(candle.openValue)
+      && Number.isFinite(candle.highValue)
+      && Number.isFinite(candle.lowValue)
+      && Number.isFinite(candle.closeValue)
+      && candle.highValue >= candle.lowValue
+      && candle.openValue >= candle.lowValue
+      && candle.openValue <= candle.highValue
+      && candle.closeValue >= candle.lowValue
+      && candle.closeValue <= candle.highValue
+    ))
+    .sort((left, right) => left.timestamp - right.timestamp);
+
+  const renderMarketCandles = (svg, candles) => {
+    svg.replaceChildren();
+    const clean = cleanMarketCandles(candles);
+    if (!clean.length) {
+      return false;
+    }
+
+    const viewBox = String(svg.getAttribute("viewBox") || "0 0 900 320")
+      .split(/\s+/u)
+      .map(Number);
+    const width = Number.isFinite(viewBox[2]) ? viewBox[2] : 900;
+    const height = Number.isFinite(viewBox[3]) ? viewBox[3] : 320;
+    const padX = 30;
+    const padY = 22;
+    const plotWidth = width - padX * 2;
+    const plotHeight = height - padY * 2;
+    let minValue = Math.min(...clean.map((item) => item.lowValue));
+    let maxValue = Math.max(...clean.map((item) => item.highValue));
+    if (minValue === maxValue) {
+      const padding = Math.max(Math.abs(minValue) * 0.01, 1);
+      minValue -= padding;
+      maxValue += padding;
+    }
+    const valueSpan = maxValue - minValue;
+    const y = (value) => padY + ((maxValue - value) / valueSpan) * plotHeight;
+    const step = plotWidth / clean.length;
+    const bodyWidth = Math.max(1.5, Math.min(12, step * 0.62));
+
+    for (let index = 0; index < 4; index += 1) {
+      const lineY = padY + (plotHeight * index) / 3;
+      svg.append(chartNode("line", {
+        x1: padX,
+        y1: lineY,
+        x2: width - padX,
+        y2: lineY,
+        class: "portfolio-chart-grid",
+      }));
+    }
+
+    clean.forEach((candle, index) => {
+      const x = padX + step * (index + 0.5);
+      const direction = candle.closeValue > candle.openValue
+        ? "market-candle-up"
+        : candle.closeValue < candle.openValue
+          ? "market-candle-down"
+          : "market-candle-flat";
+      const incomplete = candle.is_complete === false ? " market-candle-incomplete" : "";
+      svg.append(chartNode("line", {
+        x1: x,
+        y1: y(candle.highValue),
+        x2: x,
+        y2: y(candle.lowValue),
+        class: `market-candle-wick ${direction}${incomplete}`,
+      }));
+      const bodyTop = Math.min(y(candle.openValue), y(candle.closeValue));
+      const bodyHeight = Math.max(1.5, Math.abs(y(candle.openValue) - y(candle.closeValue)));
+      svg.append(chartNode("rect", {
+        x: x - bodyWidth / 2,
+        y: bodyTop,
+        width: bodyWidth,
+        height: bodyHeight,
+        rx: Math.min(1.5, bodyWidth / 4),
+        class: `market-candle-body ${direction}${incomplete}`,
+      }));
+    });
+    return true;
+  };
+
+  const marketTradingStatusLabel = (value) => ({
+    SECURITY_TRADING_STATUS_NORMAL_TRADING: "Основные торги",
+    SECURITY_TRADING_STATUS_OPENING_PERIOD: "Открытие",
+    SECURITY_TRADING_STATUS_CLOSING_PERIOD: "Закрытие",
+    SECURITY_TRADING_STATUS_BREAK_IN_TRADING: "Перерыв",
+    SECURITY_TRADING_STATUS_NOT_AVAILABLE_FOR_TRADING: "Торги недоступны",
+    SECURITY_TRADING_STATUS_SESSION_ASSIGNED: "Сессия назначена",
+    SECURITY_TRADING_STATUS_SESSION_OPEN: "Сессия открыта",
+    SECURITY_TRADING_STATUS_SESSION_CLOSE: "Сессия закрыта",
+    SECURITY_TRADING_STATUS_DEALER_NORMAL_TRADING: "Дилерские торги",
+    SECURITY_TRADING_STATUS_DEALER_BREAK_IN_TRADING: "Дилерский перерыв",
+    SECURITY_TRADING_STATUS_DEALER_NOT_AVAILABLE_FOR_TRADING: "Дилерские торги недоступны",
+  }[value] || String(value || "Статус не подтверждён"));
+
+  const syncInstrumentMarketControls = () => {
+    instrumentMarketModeButtons.forEach((button) => {
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.marketMode === instrumentMarketMode),
+      );
+    });
+    instrumentMarketPeriodButtons.forEach((button) => {
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.marketPeriod === instrumentMarketPeriod),
+      );
+    });
+  };
+
+  const resetInstrumentMarket = (message = "Выберите инструмент для рыночного графика.") => {
+    instrumentMarketGeneration += 1;
+    instrumentMarketPayload = null;
+    instrumentMarketChart.replaceChildren();
+    instrumentMarketTooltip.classList.add("hidden");
+    instrumentMarketTooltip.textContent = "";
+    instrumentMarketLastPrice.textContent = "—";
+    instrumentMarketQuoteTime.textContent = "—";
+    instrumentMarketTradingStatus.textContent = "—";
+    instrumentMarketSource.textContent = "—";
+    instrumentMarketNote.textContent = message;
+    setStateBadge(instrumentMarketState, "Нет данных", "state-next");
+    instrumentMarketRetry.classList.add("hidden");
+  };
+
+  const renderInstrumentMarketLive = (payload) => {
+    const quoteStatus = String(payload?.quote_status || "missing");
+    instrumentMarketLastPrice.textContent = marketPriceText(payload?.last_price);
+    instrumentMarketQuoteTime.textContent = payload?.quote_time
+      ? [
+          formatDateTime(payload.quote_time),
+          Number.isFinite(Number(payload.quote_age_seconds))
+            ? `возраст ${Math.max(0, Number(payload.quote_age_seconds))} с`
+            : "",
+        ].filter(Boolean).join(" · ")
+      : "Последняя цена недоступна";
+    instrumentMarketTradingStatus.textContent = [
+      marketTradingStatusLabel(payload?.trading_status),
+      payload?.api_trade_available === true
+        ? "API: доступно"
+        : "API: недоступно",
+    ].join(" · ");
+
+    if (quoteStatus === "live") {
+      setStateBadge(instrumentMarketState, "Оперативно", "state-ok");
+    } else if (quoteStatus === "stale") {
+      setStateBadge(instrumentMarketState, "Котировка устарела", "state-next");
+    } else {
+      setStateBadge(instrumentMarketState, "Цена недоступна", "state-next");
+    }
+
+    if (payload?.last_price !== null && payload?.last_price !== undefined) {
+      instrumentDetailPrice.textContent = marketPriceText(payload.last_price);
+      instrumentDetailPriceTime.textContent = payload.quote_time
+        ? `T-Invest quote: ${formatDateTime(payload.quote_time)}`
+        : "T-Invest: время котировки не подтверждено";
+    }
+  };
+
+  const renderInstrumentMarketChart = (payload) => {
+    instrumentMarketPayload = payload;
+    syncInstrumentMarketControls();
+    renderInstrumentMarketLive(payload);
+    const candles = cleanMarketCandles(payload?.candles);
+    const rendered = instrumentMarketMode === "candles"
+      ? renderMarketCandles(instrumentMarketChart, candles)
+      : renderSeriesChart(
+          instrumentMarketChart,
+          candles.map((item) => ({
+            time: item.time,
+            value: item.closeValue,
+          })),
+          {
+            timeKey: "time",
+            valueKey: "value",
+            minimumPoints: 2,
+          },
+        );
+    if (!rendered) {
+      instrumentMarketChart.replaceChildren();
+    }
+    const incompleteCount = candles.filter((candle) => candle.is_complete === false).length;
+    instrumentMarketSource.textContent = [
+      payload?.source || "T-Invest",
+      payload?.observed_at ? `загружено ${formatDateTime(payload.observed_at)}` : "",
+    ].filter(Boolean).join(" · ");
+    instrumentMarketNote.textContent = candles.length
+      ? [
+          `Свечей: ${candles.length}.`,
+          incompleteCount
+            ? `Незавершённых: ${incompleteCount}; они отмечены пунктиром.`
+            : "Все показанные свечи завершены.",
+          "Время свечи и время загрузки — разные значения.",
+        ].join(" ")
+      : "T-Invest не вернул свечи для выбранного периода. Последняя цена показана отдельно.";
+    instrumentMarketRetry.classList.add("hidden");
+  };
+
+  const removeInstrumentMarketCrosshair = () => {
+    instrumentMarketChart.querySelectorAll(".market-chart-crosshair").forEach((node) => {
+      node.remove();
+    });
+    instrumentMarketTooltip.classList.add("hidden");
+    instrumentMarketTooltip.textContent = "";
+  };
+
+  const inspectInstrumentMarketChart = (event) => {
+    const candles = cleanMarketCandles(instrumentMarketPayload?.candles);
+    if (!candles.length) {
+      removeInstrumentMarketCrosshair();
+      return;
+    }
+    const bounds = instrumentMarketChart.getBoundingClientRect();
+    if (!(bounds.width > 0)) {
+      return;
+    }
+    const ratio = Math.max(0, Math.min(0.999999, (event.clientX - bounds.left) / bounds.width));
+    const index = Math.min(candles.length - 1, Math.floor(ratio * candles.length));
+    const candle = candles[index];
+    const viewBox = String(instrumentMarketChart.getAttribute("viewBox") || "0 0 900 320")
+      .split(/\s+/u)
+      .map(Number);
+    const width = Number.isFinite(viewBox[2]) ? viewBox[2] : 900;
+    const height = Number.isFinite(viewBox[3]) ? viewBox[3] : 320;
+    const x = ratio * width;
+    removeInstrumentMarketCrosshair();
+    instrumentMarketChart.append(chartNode("line", {
+      x1: x,
+      y1: 0,
+      x2: x,
+      y2: height,
+      class: "market-chart-crosshair",
+    }));
+    instrumentMarketTooltip.textContent = [
+      formatDateTime(candle.time),
+      `O ${marketPriceText(candle.open)}`,
+      `H ${marketPriceText(candle.high)}`,
+      `L ${marketPriceText(candle.low)}`,
+      `C ${marketPriceText(candle.close)}`,
+      `объём ${new Intl.NumberFormat("ru-RU").format(Number(candle.volume_lots) || 0)} лот.`,
+      candle.is_complete === false ? "свеча не завершена" : "свеча завершена",
+    ].join(" · ");
+    instrumentMarketTooltip.classList.remove("hidden");
+  };
+
+  const stopInstrumentMarketStream = ({resetRetry = false} = {}) => {
+    if (instrumentMarketEventSource) {
+      instrumentMarketEventSource.close();
+      instrumentMarketEventSource = null;
+    }
+    if (instrumentMarketRetryTimer !== null) {
+      window.clearTimeout(instrumentMarketRetryTimer);
+      instrumentMarketRetryTimer = null;
+    }
+    if (resetRetry) {
+      instrumentMarketRetryCount = 0;
+    }
+  };
+
+  const scheduleInstrumentMarketReconnect = () => {
+    if (
+      !instrumentMarketUid
+      || currentView !== "portfolio"
+      || document.visibilityState !== "visible"
+    ) {
+      return;
+    }
+    if (instrumentMarketRetryCount >= INSTRUMENT_MARKET_MAX_RETRIES) {
+      setStateBadge(instrumentMarketState, "Поток остановлен", "state-next");
+      instrumentMarketNote.textContent = (
+        "Автоматическое переподключение остановлено после нескольких ошибок. "
+        + "Последние подтверждённые данные сохранены на экране."
+      );
+      instrumentMarketRetry.classList.remove("hidden");
+      return;
+    }
+    const delay = Math.min(1000 * (2 ** instrumentMarketRetryCount), 30000);
+    instrumentMarketRetryCount += 1;
+    instrumentMarketRetryTimer = window.setTimeout(() => {
+      instrumentMarketRetryTimer = null;
+      startInstrumentMarketStream();
+    }, delay);
+  };
+
+  const renderInstrumentMarketStreamStatus = (state) => {
+    const messages = {
+      disconnected: "T-Invest не подключён.",
+      reconnect: "Сохранённый T-Invest токен нужно переподключить.",
+      unavailable: "Поток T-Invest временно недоступен; последняя подтверждённая цена остаётся на экране.",
+      invalid: "Идентификатор инструмента не принят поставщиком.",
+    };
+    setStateBadge(
+      instrumentMarketState,
+      state === "reconnect" ? "Нужен токен" : state === "disconnected" ? "Нет подключения" : "Degraded",
+      "state-next",
+    );
+    instrumentMarketNote.textContent = messages[state] || messages.unavailable;
+    if (state !== "unavailable") {
+      instrumentMarketRetry.classList.remove("hidden");
+    }
+  };
+
+  const startInstrumentMarketStream = () => {
+    if (
+      !instrumentMarketUid
+      || instrumentMarketEventSource
+      || instrumentMarketRetryTimer !== null
+      || currentView !== "portfolio"
+      || document.visibilityState !== "visible"
+    ) {
+      return;
+    }
+    if (!("EventSource" in window)) {
+      setStateBadge(instrumentMarketState, "Без live-потока", "state-next");
+      instrumentMarketNote.textContent = (
+        "Браузер не поддерживает EventSource. Историю и последнюю цену можно обновлять вручную."
+      );
+      instrumentMarketRetry.classList.remove("hidden");
+      return;
+    }
+    let segment;
+    try {
+      segment = instrumentPathSegment(instrumentMarketUid);
+    } catch {
+      renderInstrumentMarketStreamStatus("invalid");
+      return;
+    }
+
+    const streamUid = instrumentMarketUid;
+    const stream = new EventSource(`/api/market/instruments/${segment}/stream`);
+    instrumentMarketEventSource = stream;
+
+    stream.addEventListener("market", (event) => {
+      if (streamUid !== instrumentMarketUid) {
+        return;
+      }
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.instrument_uid !== instrumentMarketUid) {
+          throw new TypeError("Market stream instrument does not match");
+        }
+        instrumentMarketRetryCount = 0;
+        renderInstrumentMarketLive(payload);
+        instrumentMarketSource.textContent = [
+          "T-Invest live",
+          payload.observed_at ? `получено ${formatDateTime(payload.observed_at)}` : "",
+        ].filter(Boolean).join(" · ");
+      } catch {
+        renderInstrumentMarketStreamStatus("unavailable");
+      }
+    });
+
+    stream.addEventListener("status", (event) => {
+      if (streamUid !== instrumentMarketUid) {
+        return;
+      }
+      try {
+        const payload = JSON.parse(event.data);
+        const state = String(payload.state || "unavailable");
+        renderInstrumentMarketStreamStatus(state);
+        if (["disconnected", "reconnect", "invalid"].includes(state)) {
+          stopInstrumentMarketStream();
+        }
+      } catch {
+        renderInstrumentMarketStreamStatus("unavailable");
+      }
+    });
+
+    stream.onerror = () => {
+      if (streamUid !== instrumentMarketUid) {
+        return;
+      }
+      stopInstrumentMarketStream();
+      renderInstrumentMarketStreamStatus("unavailable");
+      scheduleInstrumentMarketReconnect();
+    };
+  };
+
+  const loadInstrumentMarket = async (instrumentUid, {force = false} = {}) => {
+    let segment;
+    try {
+      segment = instrumentPathSegment(instrumentUid);
+    } catch {
+      renderInstrumentMarketStreamStatus("invalid");
+      return;
+    }
+    if (
+      !force
+      && instrumentMarketPayload
+      && instrumentMarketUid === instrumentUid
+      && instrumentMarketPayload.period === instrumentMarketPeriod
+    ) {
+      startInstrumentMarketStream();
+      return;
+    }
+
+    const generation = ++instrumentMarketGeneration;
+    instrumentMarketUid = instrumentUid;
+    instrumentMarketRetry.classList.add("hidden");
+    setStateBadge(instrumentMarketState, "Загружаем", "");
+    instrumentMarketNote.textContent = "Получаем биржевые свечи, последнюю цену и торговый статус T-Invest.";
+    try {
+      const payload = await api(
+        `/api/market/instruments/${segment}?period=${encodeURIComponent(instrumentMarketPeriod)}`,
+        {method: "GET"},
+      );
+      if (generation !== instrumentMarketGeneration || instrumentUid !== instrumentMarketUid) {
+        return;
+      }
+      if (payload.instrument_uid !== instrumentUid) {
+        throw new TypeError("Instrument market response does not match request");
+      }
+      renderInstrumentMarketChart(payload);
+      instrumentMarketRetryCount = 0;
+      startInstrumentMarketStream();
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (generation !== instrumentMarketGeneration || instrumentUid !== instrumentMarketUid) {
+        return;
+      }
+      if (error.status === 409) {
+        renderInstrumentMarketStreamStatus("reconnect");
+      } else if (error.status === 422) {
+        renderInstrumentMarketStreamStatus("invalid");
+      } else {
+        renderInstrumentMarketStreamStatus("unavailable");
+        instrumentMarketRetry.classList.remove("hidden");
+      }
+    }
+  };
+
   const historyTimestamp = (item) => {
     const timestamp = new Date(item?.captured_at).getTime();
     return Number.isFinite(timestamp) ? timestamp : null;
@@ -1971,6 +2462,12 @@
   const renderInstrumentDetail = (payload, requestedIdentity) => {
     const latest = payload?.latest || {};
     const livePosition = livePositionForIdentity(requestedIdentity);
+    instrumentMarketCurrency = String(
+      livePosition?.current_price?.currency
+      || latest.current_price_currency
+      || latest.currency
+      || "",
+    ).toUpperCase();
     instrumentDetailTitle.textContent = latest.ticker || latest.name || latest.instrument_uid || "Инструмент";
     instrumentDetailSubtitle.textContent = [
       latest.name && latest.name !== latest.ticker ? latest.name : "",
@@ -2122,6 +2619,10 @@
     }
     const generation = ++instrumentDetailGeneration;
     instrumentDetailRequestInFlight = true;
+    stopInstrumentMarketStream({resetRetry: true});
+    instrumentMarketUid = instrumentUid;
+    instrumentMarketCurrency = "";
+    resetInstrumentMarket("Загружаем рыночные данные выбранного инструмента.");
     instrumentDetail.classList.remove("hidden");
     instrumentDetailLoading.classList.remove("hidden");
     instrumentDetailContent.classList.add("hidden");
@@ -2138,6 +2639,7 @@
       renderInstrumentDetail(payload, instrumentUid);
       instrumentDetailLoading.classList.add("hidden");
       instrumentDetailContent.classList.remove("hidden");
+      void loadInstrumentMarket(instrumentUid, {force: true});
     } catch (error) {
       if (error.status === 401) {
         location.reload();
@@ -2163,7 +2665,12 @@
 
   const closeInstrumentDetail = () => {
     instrumentDetailGeneration += 1;
+    instrumentMarketGeneration += 1;
     instrumentDetailRequestInFlight = false;
+    stopInstrumentMarketStream({resetRetry: true});
+    instrumentMarketUid = "";
+    instrumentMarketCurrency = "";
+    resetInstrumentMarket();
     instrumentDetail.classList.add("hidden");
     instrumentDetailLoading.classList.add("hidden");
     instrumentDetailContent.classList.add("hidden");
@@ -4852,6 +5359,45 @@
 
   instrumentDetailClose.addEventListener("click", closeInstrumentDetail);
 
+  instrumentMarketModeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const mode = button.dataset.marketMode;
+      if (!["line", "candles"].includes(mode)) {
+        return;
+      }
+      instrumentMarketMode = mode;
+      syncInstrumentMarketControls();
+      if (instrumentMarketPayload) {
+        renderInstrumentMarketChart(instrumentMarketPayload);
+      }
+    });
+  });
+
+  instrumentMarketPeriodButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const period = button.dataset.marketPeriod;
+      if (!["1d", "1w", "1m", "3m", "1y"].includes(period)) {
+        return;
+      }
+      instrumentMarketPeriod = period;
+      syncInstrumentMarketControls();
+      if (instrumentMarketUid) {
+        void loadInstrumentMarket(instrumentMarketUid, {force: true});
+      }
+    });
+  });
+
+  instrumentMarketRetry.addEventListener("click", () => {
+    if (!instrumentMarketUid) {
+      return;
+    }
+    stopInstrumentMarketStream({resetRetry: true});
+    void loadInstrumentMarket(instrumentMarketUid, {force: true});
+  });
+
+  instrumentMarketChart.addEventListener("pointermove", inspectInstrumentMarketChart);
+  instrumentMarketChart.addEventListener("pointerleave", removeInstrumentMarketCrosshair);
+
   homeAttentionList.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-home-attention-view]");
     const view = button?.dataset.homeAttentionView;
@@ -4927,6 +5473,20 @@
   window.addEventListener("resize", () => {
     if (!mobileDrawerMode()) {
       closeDrawer();
+    }
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") {
+      stopInstrumentMarketStream();
+      return;
+    }
+    if (
+      currentView === "portfolio"
+      && instrumentMarketUid
+      && !instrumentDetail.classList.contains("hidden")
+    ) {
+      startInstrumentMarketStream();
     }
   });
 
