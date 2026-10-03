@@ -27,7 +27,11 @@ from .tbank import (
     TBankInstrument,
     TBankInstrumentMetadata,
     TBankInvestClient,
+    TBankLastPrice,
+    TBankMarketYield,
     TBankOperationsPage,
+    TBankOrderBook,
+    TBankOrderPrice,
     TBankPortfolio,
     TBankPositions,
     TBankUnavailable,
@@ -209,6 +213,86 @@ class BrokerService:
             portfolio=portfolio,
             positions=positions,
             refreshed_at=datetime.now(UTC),
+        )
+
+    def candidate_market_yields(
+        self,
+        user_id: UUID,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankMarketYield, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_market_yields(
+            credential,
+            environment,
+            instrument_uids,
+        )
+
+    def candidate_last_prices(
+        self,
+        user_id: UUID,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankLastPrice, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_last_prices(
+            credential,
+            environment,
+            instrument_uids,
+        )
+
+    def candidate_fundamentals(
+        self,
+        user_id: UUID,
+        asset_uids: tuple[str, ...],
+    ) -> tuple[TBankAssetFundamental, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        unique = tuple(dict.fromkeys(value for value in asset_uids if value))
+        result: list[TBankAssetFundamental] = []
+        for start in range(0, len(unique), 100):
+            result.extend(
+                self._paced_evidence_read(
+                    self.tbank.get_asset_fundamentals,
+                    credential,
+                    environment,
+                    unique[start : start + 100],
+                )
+            )
+        return tuple(result)
+
+    def candidate_order_book(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        depth: int = 10,
+    ) -> TBankOrderBook:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_order_book(
+            credential,
+            environment,
+            instrument_uid,
+            depth=depth,
+        )
+
+    def candidate_order_price(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        price: str,
+        direction: str,
+        quantity_lots: int,
+    ) -> TBankOrderPrice:
+        record, credential, environment = self._connected_credential(user_id)
+        if direction not in {"buy", "sell"}:
+            raise ValueError("candidate order price direction is invalid")
+        return self.tbank.get_order_price(
+            credential,
+            environment,
+            record.account_id,
+            instrument_uid,
+            price=price,
+            direction=cast(Any, direction),
+            quantity_lots=quantity_lots,
         )
 
     def analysis(self, user_id: UUID) -> BrokerAnalysisSnapshot:

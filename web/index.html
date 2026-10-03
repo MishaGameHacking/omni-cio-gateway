@@ -750,6 +750,49 @@
                 </p>
               </article>
 
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Portfolio Balancing R4</p>
+                    <h3>Целые лоты и сценарии без исполнения</h3>
+                  </div>
+                  <span class="state-badge state-next" id="balancing-status">Проверяем готовность</span>
+                </header>
+                <section class="portfolio-metrics analysis-metrics" aria-label="Показатели балансировки">
+                  <article class="portfolio-metric">
+                    <span>Свободные рубли</span>
+                    <strong id="balancing-free-cash">—</strong>
+                    <small>До резерва и плановых снятий</small>
+                  </article>
+                  <article class="portfolio-metric">
+                    <span>Кандидатов</span>
+                    <strong id="balancing-candidate-count">—</strong>
+                    <small id="balancing-eligible-note">Допустимость ещё не проверена</small>
+                  </article>
+                  <article class="portfolio-metric">
+                    <span>Версии ограничений</span>
+                    <strong id="balancing-policy-versions">—</strong>
+                    <small>Профиль капитала · policy балансировки</small>
+                  </article>
+                </section>
+                <section class="portfolio-two-column">
+                  <div>
+                    <p class="card-label">Сценарии</p>
+                    <div id="balancing-scenarios" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Candidate screening</p>
+                    <div id="balancing-screening" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <p class="field-hint">
+                  R4 только рассчитывает и объясняет сценарии. Он не создаёт immutable
+                  предложение, не подтверждает сделки и не вызывает broker OrdersService.
+                  Неполные quote/YTW/liquidity/issuer/tax/cost данные блокируют действие,
+                  а не заменяются догадкой.
+                </p>
+              </article>
+
               <section class="portfolio-two-column">
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">
@@ -963,6 +1006,110 @@
                     Сохранить новую версию профиля
                   </button>
                   <p id="investment-profile-message" class="message" role="status" aria-live="polite"></p>
+                </form>
+              </article>
+
+              <article class="settings-card profile-constraints-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Балансировка · R4</p>
+                    <h3>Лимиты распределения</h3>
+                  </div>
+                  <span class="state-badge" id="balancing-policy-version">Не заполнена</span>
+                </header>
+                <p class="card-description">
+                  Эти значения задают явные ограничения для сценариев балансировки.
+                  OmniCIO не подставляет скрытые проценты концентрации и не получает
+                  торговых полномочий. Если policy не заполнена, сценарии сделок не строятся.
+                </p>
+                <form id="balancing-policy-form" class="form-stack" novalidate>
+                  <div class="constraint-form-grid">
+                    <div class="field">
+                      <label for="balance-max-instrument">Макс. один инструмент, %</label>
+                      <input id="balance-max-instrument" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-sector">Макс. сектор, %</label>
+                      <input id="balance-max-sector" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-issuer">Макс. эмитент, %</label>
+                      <input id="balance-max-issuer" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-group">Макс. группа, %</label>
+                      <input id="balance-max-group" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-share">Макс. акции, %</label>
+                      <input id="balance-max-share" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-bond">Макс. облигации, %</label>
+                      <input id="balance-max-bond" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-etf">Макс. фонды, %</label>
+                      <input id="balance-max-etf" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-below-grade">Макс. ниже инвест. уровня, %</label>
+                      <input id="balance-max-below-grade" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-unknown">Макс. неизвестный рейтинг, %</label>
+                      <input id="balance-max-unknown" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-term">Макс. срок облигаций, месяцев</label>
+                      <input id="balance-max-term" type="number" min="0" max="1200" step="1" inputmode="numeric" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-turnover-budget">Бюджет оборота, % NAV</label>
+                      <input id="balance-turnover-budget" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-daily-participation">Макс. участие в среднедневном обороте, %</label>
+                      <input id="balance-daily-participation" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-tax-rate">Ставка налога для сценария, %</label>
+                      <input id="balance-tax-rate" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-uncertainty-haircut">Haircut неопределённости, %</label>
+                      <input id="balance-uncertainty-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-credit-haircut">Кредитный stress-haircut, %</label>
+                      <input id="balance-credit-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-no-trade-band">No-trade band, % позиции</label>
+                      <input id="balance-no-trade-band" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-min-replace-benefit">Мин. выгода замены, ₽</label>
+                      <input id="balance-min-replace-benefit" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                    </div>
+                  </div>
+                  <p class="field-hint">
+                    Ставка налога и оба haircut — явные сценарные допущения пользователя.
+                    Кредитный haircut не является вероятностью дефолта и не выдаётся за
+                    откалиброванный прогноз. Налоговый процент не определяется автоматически. Лимит участия ограничивает долю подтверждённого
+                    среднедневного оборота, которую optimizer вправе считать доступной для выхода.
+                    Системные границы текущего R4: новые покупки только RUB-инструментов
+                    классов акции/облигации/фонды со статусом риска <code>normal</code>.
+                    Резерв, снятия, горизонт ликвидности и разрешение below-grade берутся
+                    из версии «Профиль капитала».
+                  </p>
+                  <div class="profile-constraint-meta">
+                    <span id="balancing-policy-created">Версия ещё не сохранена</span>
+                  </div>
+                  <button id="balancing-policy-save" class="button button-primary" type="submit">
+                    Сохранить новую версию лимитов
+                  </button>
+                  <p id="balancing-policy-message" class="message" role="status" aria-live="polite"></p>
                 </form>
               </article>
             </section>

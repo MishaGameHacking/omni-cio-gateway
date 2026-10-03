@@ -45,6 +45,31 @@ class InvestmentProfileRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class BalancingPolicyRecord:
+    id: int
+    user_id: UUID
+    version: int
+    max_instrument_percent: Decimal
+    max_sector_percent: Decimal
+    max_issuer_percent: Decimal
+    max_group_percent: Decimal
+    max_share_percent: Decimal
+    max_bond_percent: Decimal
+    max_etf_percent: Decimal
+    max_below_grade_percent: Decimal
+    max_unknown_percent: Decimal
+    max_term_months: int
+    turnover_budget_percent: Decimal
+    max_daily_turnover_participation_percent: Decimal
+    securities_tax_rate_percent: Decimal
+    uncertainty_haircut_percent: Decimal
+    credit_loss_haircut_percent: Decimal
+    no_trade_band_percent: Decimal
+    min_replace_benefit_rub: Decimal
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class JobRunRecord:
     id: UUID
     user_id: UUID
@@ -253,6 +278,220 @@ class PortfolioStore:
             if fetched is None:
                 raise RuntimeError("investment profile insert returned no row")
             return _profile(cast(dict[str, Any], fetched))
+
+    def current_balancing_policy(
+        self,
+        user_id: UUID,
+    ) -> BalancingPolicyRecord | None:
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    max_daily_turnover_participation_percent,
+                    securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub,
+                    created_at
+                FROM balancing_policy_versions
+                WHERE user_id = %s
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            return _balancing_policy(cast(dict[str, Any], fetched))
+
+    def save_balancing_policy(
+        self,
+        user_id: UUID,
+        *,
+        max_instrument_percent: Decimal,
+        max_sector_percent: Decimal,
+        max_issuer_percent: Decimal,
+        max_group_percent: Decimal,
+        max_share_percent: Decimal,
+        max_bond_percent: Decimal,
+        max_etf_percent: Decimal,
+        max_below_grade_percent: Decimal,
+        max_unknown_percent: Decimal,
+        max_term_months: int,
+        turnover_budget_percent: Decimal,
+        max_daily_turnover_participation_percent: Decimal,
+        securities_tax_rate_percent: Decimal,
+        uncertainty_haircut_percent: Decimal,
+        credit_loss_haircut_percent: Decimal,
+        no_trade_band_percent: Decimal,
+        min_replace_benefit_rub: Decimal,
+    ) -> BalancingPolicyRecord:
+        desired = (
+            max_instrument_percent,
+            max_sector_percent,
+            max_issuer_percent,
+            max_group_percent,
+            max_share_percent,
+            max_bond_percent,
+            max_etf_percent,
+            max_below_grade_percent,
+            max_unknown_percent,
+            max_term_months,
+            turnover_budget_percent,
+            max_daily_turnover_participation_percent,
+            securities_tax_rate_percent,
+            uncertainty_haircut_percent,
+            credit_loss_haircut_percent,
+            no_trade_band_percent,
+            min_replace_benefit_rub,
+        )
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"balancing-policy:{user_id}",),
+            )
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    max_daily_turnover_participation_percent,
+                    securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub,
+                    created_at
+                FROM balancing_policy_versions
+                WHERE user_id = %s
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            latest_row = cur.fetchone()
+            if latest_row is None:
+                version = 1
+            else:
+                latest = _balancing_policy(cast(dict[str, Any], latest_row))
+                current = (
+                    latest.max_instrument_percent,
+                    latest.max_sector_percent,
+                    latest.max_issuer_percent,
+                    latest.max_group_percent,
+                    latest.max_share_percent,
+                    latest.max_bond_percent,
+                    latest.max_etf_percent,
+                    latest.max_below_grade_percent,
+                    latest.max_unknown_percent,
+                    latest.max_term_months,
+                    latest.turnover_budget_percent,
+                    latest.max_daily_turnover_participation_percent,
+                    latest.securities_tax_rate_percent,
+                    latest.uncertainty_haircut_percent,
+                    latest.credit_loss_haircut_percent,
+                    latest.no_trade_band_percent,
+                    latest.min_replace_benefit_rub,
+                )
+                if current == desired:
+                    return latest
+                version = latest.version + 1
+
+            cur.execute(
+                """
+                INSERT INTO balancing_policy_versions (
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    max_daily_turnover_participation_percent,
+                    securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s
+                )
+                RETURNING
+                    id,
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    max_daily_turnover_participation_percent,
+                    securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub,
+                    created_at
+                """,
+                (user_id, version, *desired),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                raise RuntimeError("balancing policy insert returned no row")
+            return _balancing_policy(cast(dict[str, Any], fetched))
 
     def claim_daily_job(
         self,
@@ -466,6 +705,14 @@ class PortfolioStore:
                         item.api_trade_available,
                         item.buy_available,
                         item.sell_available,
+                        _money_decimal(item.nominal),
+                        item.nominal.currency if item.nominal else None,
+                        item.maturity_date,
+                        item.floating_coupon,
+                        item.perpetual,
+                        item.amortization,
+                        item.subordinated,
+                        item.liquidity,
                         catalog_retrieved_at,
                     )
                     for item in bundle.metadata
@@ -492,11 +739,20 @@ class PortfolioStore:
                         api_trade_available,
                         buy_available,
                         sell_available,
+                        nominal_value,
+                        nominal_currency,
+                        maturity_date,
+                        floating_coupon,
+                        perpetual,
+                        amortization,
+                        subordinated,
+                        liquidity,
                         provider_retrieved_at
                     )
                     VALUES (
                         'tbank', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (provider, instrument_uid) DO UPDATE SET
                         figi = EXCLUDED.figi,
@@ -516,6 +772,14 @@ class PortfolioStore:
                         api_trade_available = EXCLUDED.api_trade_available,
                         buy_available = EXCLUDED.buy_available,
                         sell_available = EXCLUDED.sell_available,
+                        nominal_value = EXCLUDED.nominal_value,
+                        nominal_currency = EXCLUDED.nominal_currency,
+                        maturity_date = EXCLUDED.maturity_date,
+                        floating_coupon = EXCLUDED.floating_coupon,
+                        perpetual = EXCLUDED.perpetual,
+                        amortization = EXCLUDED.amortization,
+                        subordinated = EXCLUDED.subordinated,
+                        liquidity = EXCLUDED.liquidity,
                         last_seen_at = now(),
                         provider_retrieved_at = EXCLUDED.provider_retrieved_at
                     """,
@@ -623,10 +887,13 @@ class PortfolioStore:
                         ticker,
                         instrument_type,
                         quantity,
+                        quantity_lots,
                         current_price_value,
                         current_price_currency,
                         current_nkd_value,
                         current_nkd_currency,
+                        average_price_fifo_value,
+                        average_price_fifo_currency,
                         blocked,
                         blocked_lots,
                         value_rub,
@@ -637,7 +904,8 @@ class PortfolioStore:
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s
                     )
                     """,
                     (
@@ -648,10 +916,17 @@ class PortfolioStore:
                         position.ticker,
                         position.instrument_type,
                         Decimal(position.quantity),
+                        Decimal(position.quantity_lots),
                         _money_decimal(position.current_price),
                         position.current_price.currency if position.current_price else None,
                         _money_decimal(position.current_nkd),
                         position.current_nkd.currency if position.current_nkd else None,
+                        _money_decimal(position.average_price_fifo),
+                        (
+                            position.average_price_fifo.currency
+                            if position.average_price_fifo
+                            else None
+                        ),
                         position.blocked,
                         Decimal(position.blocked_lots),
                         (
@@ -915,6 +1190,193 @@ class PortfolioStore:
                 if cur.fetchone() is not None:
                     assessments_written += 1
         return documents_written, assessments_written
+
+    def latest_balancing_context(
+        self,
+        user_id: UUID,
+        *,
+        candidate_limit: int = 100,
+    ) -> dict[str, object] | None:
+        if not 1 <= candidate_limit <= 500:
+            raise ValueError("candidate_limit must be between 1 and 500")
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    account_id,
+                    captured_at,
+                    analysis_status,
+                    nav_rub,
+                    rub_cash_unblocked,
+                    limits_loading_in_progress,
+                    evidence
+                FROM portfolio_snapshots
+                WHERE user_id = %s
+                ORDER BY captured_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            snapshot = dict(cast(dict[str, Any], fetched))
+            snapshot_id = cast(UUID, snapshot["id"])
+            account_id = str(snapshot["account_id"])
+
+            cur.execute(
+                """
+                SELECT
+                    p.instrument_uid,
+                    p.figi,
+                    p.ticker,
+                    p.instrument_type,
+                    p.quantity,
+                    p.quantity_lots,
+                    p.average_price_fifo_value,
+                    p.average_price_fifo_currency,
+                    p.blocked,
+                    p.blocked_lots,
+                    p.value_rub,
+                    p.sector,
+                    COALESCE(c.asset_uid, '') AS asset_uid,
+                    COALESCE(c.name, '') AS name,
+                    COALESCE(c.isin, '') AS isin,
+                    COALESCE(c.class_code, '') AS class_code,
+                    COALESCE(c.lot, 0) AS lot,
+                    COALESCE(c.currency, '') AS currency,
+                    c.nominal_value,
+                    COALESCE(c.nominal_currency, '') AS nominal_currency,
+                    c.maturity_date,
+                    c.floating_coupon,
+                    c.perpetual,
+                    c.amortization,
+                    c.subordinated,
+                    c.liquidity,
+                    c.provider_retrieved_at,
+                    COALESCE(i.id::text, '') AS issuer_id,
+                    COALESCE(i.group_id::text, '') AS group_id,
+                    COALESCE(i.country_code, '') AS issuer_country_code,
+                    COALESCE(i.source_url, '') AS issuer_source_url,
+                    COALESCE(r.state, 'data_missing') AS risk_state,
+                    COALESCE(r.rating_status, 'data_missing') AS rating_status
+                FROM portfolio_snapshot_positions AS p
+                LEFT JOIN instrument_catalog AS c
+                  ON c.provider = 'tbank'
+                 AND (
+                     c.instrument_uid = p.instrument_uid
+                     OR (p.figi <> '' AND c.figi = p.figi)
+                 )
+                LEFT JOIN instrument_issuer_map AS m
+                  ON m.provider = 'tbank'
+                 AND m.instrument_uid = c.instrument_uid
+                LEFT JOIN issuers AS i
+                  ON i.id = m.issuer_id
+                LEFT JOIN portfolio_risk_assessments AS r
+                  ON r.snapshot_id = p.snapshot_id
+                 AND r.user_id = p.user_id
+                 AND r.instrument_uid = p.instrument_uid
+                WHERE p.snapshot_id = %s
+                  AND p.user_id = %s
+                ORDER BY p.value_rub DESC NULLS LAST, p.ticker
+                """,
+                (snapshot_id, user_id),
+            )
+            holdings = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT
+                    c.instrument_uid,
+                    c.figi,
+                    c.asset_uid,
+                    c.ticker,
+                    c.name,
+                    c.isin,
+                    c.instrument_type,
+                    c.currency,
+                    c.class_code,
+                    c.lot,
+                    c.sector,
+                    c.country_of_risk,
+                    c.for_qual_investor,
+                    c.for_iis,
+                    c.api_trade_available,
+                    c.buy_available,
+                    c.sell_available,
+                    c.nominal_value,
+                    c.nominal_currency,
+                    c.maturity_date,
+                    c.floating_coupon,
+                    c.perpetual,
+                    c.amortization,
+                    c.subordinated,
+                    c.liquidity,
+                    c.provider_retrieved_at,
+                    a.required_tests,
+                    a.observed_at AS access_observed_at,
+                    COALESCE(i.id::text, '') AS issuer_id,
+                    COALESCE(i.group_id::text, '') AS group_id,
+                    COALESCE(i.country_code, '') AS issuer_country_code,
+                    COALESCE(i.source_url, '') AS issuer_source_url
+                FROM instrument_catalog AS c
+                JOIN account_instrument_access AS a
+                  ON a.user_id = %s
+                 AND a.account_id = %s
+                 AND a.provider = c.provider
+                 AND a.instrument_uid = c.instrument_uid
+                LEFT JOIN instrument_issuer_map AS m
+                  ON m.provider = c.provider
+                 AND m.instrument_uid = c.instrument_uid
+                LEFT JOIN issuers AS i
+                  ON i.id = m.issuer_id
+                WHERE c.provider = 'tbank'
+                  AND c.instrument_type = ANY (ARRAY['share', 'bond', 'etf'])
+                  AND c.currency = 'RUB'
+                ORDER BY
+                    CASE c.instrument_type
+                        WHEN 'bond' THEN 0
+                        WHEN 'share' THEN 1
+                        ELSE 2
+                    END,
+                    c.ticker,
+                    c.instrument_uid
+                LIMIT %s
+                """,
+                (user_id, account_id, candidate_limit),
+            )
+            candidates = [dict(row) for row in cur.fetchall()]
+
+        evidence = snapshot.get("evidence")
+        broker_user: dict[str, object] = {}
+        account: dict[str, object] = {}
+        if isinstance(evidence, dict):
+            broker_raw = evidence.get("broker_user")
+            account_raw = evidence.get("account")
+            if isinstance(broker_raw, dict):
+                broker_user = dict(cast(dict[str, object], broker_raw))
+            if isinstance(account_raw, dict):
+                account = dict(cast(dict[str, object], account_raw))
+
+        return {
+            "snapshot_id": str(snapshot_id),
+            "account_id": account_id,
+            "captured_at": snapshot["captured_at"],
+            "analysis_status": snapshot["analysis_status"],
+            "nav_rub": snapshot["nav_rub"],
+            "rub_cash_unblocked": snapshot["rub_cash_unblocked"],
+            "limits_loading_in_progress": snapshot["limits_loading_in_progress"],
+            "broker_user": broker_user,
+            "account": account,
+            "holdings": holdings,
+            "candidates": candidates,
+        }
 
     def latest_intelligence(
         self,
@@ -1316,6 +1778,34 @@ def _profile(row: dict[str, Any]) -> InvestmentProfileRecord:
         max_drawdown_percent=Decimal(row["max_drawdown_percent"]),
         liquidity_horizon_days=int(row["liquidity_horizon_days"]),
         allow_below_investment_grade=bool(row["allow_below_investment_grade"]),
+        created_at=cast(datetime, row["created_at"]),
+    )
+
+
+def _balancing_policy(row: dict[str, Any]) -> BalancingPolicyRecord:
+    return BalancingPolicyRecord(
+        id=int(row["id"]),
+        user_id=cast(UUID, row["user_id"]),
+        version=int(row["version"]),
+        max_instrument_percent=Decimal(row["max_instrument_percent"]),
+        max_sector_percent=Decimal(row["max_sector_percent"]),
+        max_issuer_percent=Decimal(row["max_issuer_percent"]),
+        max_group_percent=Decimal(row["max_group_percent"]),
+        max_share_percent=Decimal(row["max_share_percent"]),
+        max_bond_percent=Decimal(row["max_bond_percent"]),
+        max_etf_percent=Decimal(row["max_etf_percent"]),
+        max_below_grade_percent=Decimal(row["max_below_grade_percent"]),
+        max_unknown_percent=Decimal(row["max_unknown_percent"]),
+        max_term_months=int(row["max_term_months"]),
+        turnover_budget_percent=Decimal(row["turnover_budget_percent"]),
+        max_daily_turnover_participation_percent=Decimal(
+            row["max_daily_turnover_participation_percent"]
+        ),
+        securities_tax_rate_percent=Decimal(row["securities_tax_rate_percent"]),
+        uncertainty_haircut_percent=Decimal(row["uncertainty_haircut_percent"]),
+        credit_loss_haircut_percent=Decimal(row["credit_loss_haircut_percent"]),
+        no_trade_band_percent=Decimal(row["no_trade_band_percent"]),
+        min_replace_benefit_rub=Decimal(row["min_replace_benefit_rub"]),
         created_at=cast(datetime, row["created_at"]),
     )
 

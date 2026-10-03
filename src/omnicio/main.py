@@ -15,6 +15,7 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, st
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .balancing_service import build_live_balancing_payload
 from .broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
@@ -26,8 +27,13 @@ from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .intelligence import rating_source_references
 from .market import MarketService
+from .moex import MoexIssClient
 from .portfolio import PortfolioAnalysisError
-from .portfolio_store import InvestmentProfileRecord, PortfolioStore
+from .portfolio_store import (
+    BalancingPolicyRecord,
+    InvestmentProfileRecord,
+    PortfolioStore,
+)
 from .security import (
     SecurityValueError,
     format_public_id,
@@ -87,6 +93,34 @@ class InvestmentProfileBody(BaseModel):
     max_drawdown_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     liquidity_horizon_days: int = Field(ge=0, le=36500)
     allow_below_investment_grade: bool = False
+
+
+class BalancingPolicyBody(BaseModel):
+    max_instrument_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_sector_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_issuer_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_group_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_share_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_bond_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_etf_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_below_grade_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_unknown_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_term_months: int = Field(ge=0, le=1200)
+    turnover_budget_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    max_daily_turnover_participation_percent: Decimal = Field(
+        ge=0,
+        le=100,
+        allow_inf_nan=False,
+    )
+    securities_tax_rate_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    uncertainty_haircut_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    credit_loss_haircut_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    no_trade_band_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
+    min_replace_benefit_rub: Decimal = Field(
+        ge=0,
+        le=1_000_000_000_000,
+        allow_inf_nan=False,
+    )
 
 
 def client_ip(request: Request) -> str:
@@ -475,6 +509,39 @@ def _profile_payload(profile: InvestmentProfileRecord) -> dict[str, object]:
     }
 
 
+def _balancing_policy_payload(
+    policy: BalancingPolicyRecord,
+) -> dict[str, object]:
+    return {
+        "version": policy.version,
+        "max_instrument_percent": str(policy.max_instrument_percent),
+        "max_sector_percent": str(policy.max_sector_percent),
+        "max_issuer_percent": str(policy.max_issuer_percent),
+        "max_group_percent": str(policy.max_group_percent),
+        "max_share_percent": str(policy.max_share_percent),
+        "max_bond_percent": str(policy.max_bond_percent),
+        "max_etf_percent": str(policy.max_etf_percent),
+        "max_below_grade_percent": str(policy.max_below_grade_percent),
+        "max_unknown_percent": str(policy.max_unknown_percent),
+        "max_term_months": policy.max_term_months,
+        "turnover_budget_percent": str(policy.turnover_budget_percent),
+        "max_daily_turnover_participation_percent": str(
+            policy.max_daily_turnover_participation_percent
+        ),
+        "securities_tax_rate_percent": str(policy.securities_tax_rate_percent),
+        "uncertainty_haircut_percent": str(policy.uncertainty_haircut_percent),
+        "credit_loss_haircut_percent": str(policy.credit_loss_haircut_percent),
+        "no_trade_band_percent": str(policy.no_trade_band_percent),
+        "min_replace_benefit_rub": str(policy.min_replace_benefit_rub),
+        "created_at": policy.created_at,
+        "system_constraints": {
+            "allowed_asset_classes": ["share", "bond", "etf"],
+            "allowed_currencies": ["RUB"],
+            "new_buy_risk_states": ["normal"],
+        },
+    }
+
+
 @app.get("/api/profile/investment")
 def investment_profile(
     request: Request,
@@ -513,6 +580,61 @@ def save_investment_profile(
     )
     response.headers["Cache-Control"] = "private, no-store"
     return {"profile": _profile_payload(profile)}
+
+
+@app.get("/api/profile/balancing")
+def balancing_policy(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    policy = portfolio_store(request).current_balancing_policy(user.id)
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "policy": _balancing_policy_payload(policy) if policy is not None else None
+    }
+
+
+@app.put("/api/profile/balancing")
+def save_balancing_policy(
+    body: BalancingPolicyBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    database: Database = request.app.state.database
+    if not database.has_legal_versions(user.id, service(request).legal_versions()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="updated legal consent required",
+        )
+    policy = portfolio_store(request).save_balancing_policy(
+        user.id,
+        max_instrument_percent=body.max_instrument_percent,
+        max_sector_percent=body.max_sector_percent,
+        max_issuer_percent=body.max_issuer_percent,
+        max_group_percent=body.max_group_percent,
+        max_share_percent=body.max_share_percent,
+        max_bond_percent=body.max_bond_percent,
+        max_etf_percent=body.max_etf_percent,
+        max_below_grade_percent=body.max_below_grade_percent,
+        max_unknown_percent=body.max_unknown_percent,
+        max_term_months=body.max_term_months,
+        turnover_budget_percent=body.turnover_budget_percent,
+        max_daily_turnover_participation_percent=(
+            body.max_daily_turnover_participation_percent
+        ),
+        securities_tax_rate_percent=body.securities_tax_rate_percent,
+        uncertainty_haircut_percent=body.uncertainty_haircut_percent,
+        credit_loss_haircut_percent=body.credit_loss_haircut_percent,
+        no_trade_band_percent=body.no_trade_band_percent,
+        min_replace_benefit_rub=body.min_replace_benefit_rub,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"policy": _balancing_policy_payload(policy)}
 
 
 @app.get("/api/broker/tbank")
@@ -599,6 +721,29 @@ def tbank_analysis(
 
     response.headers["Cache-Control"] = "private, no-store"
     return asdict(snapshot)
+
+
+@app.get(
+    "/api/portfolio/balancing",
+    responses={401: {"description": "Authenticated session required"}},
+)
+def portfolio_balancing(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    store = portfolio_store(request)
+    payload = build_live_balancing_payload(
+        user_id=user.id,
+        profile=store.current_profile(user.id),
+        policy_record=store.current_balancing_policy(user.id),
+        context=store.latest_balancing_context(user.id),
+        broker=broker_service(request),
+        moex=MoexIssClient(),
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return payload
 
 
 @app.get(

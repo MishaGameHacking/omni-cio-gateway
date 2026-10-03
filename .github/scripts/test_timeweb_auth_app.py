@@ -490,11 +490,52 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank/portfolio",
             "/api/broker/tbank/analysis",
             "/api/portfolio/intelligence",
+            "/api/portfolio/balancing",
+            "/api/profile/balancing",
             "/api/broker/tbank/instruments/search",
             "/api/market/usd-rub",
             "/api/market/usd-rub/stream",
         ):
             self.assertIn(endpoint, script)
+
+    def test_versioned_balancing_policy_has_explicit_limits_and_no_trade_authority(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+        backend = (root / "src" / "omnicio" / "main.py").read_text()
+
+        for element_id in (
+            "balancing-policy-form",
+            "balancing-policy-version",
+            "balance-max-instrument",
+            "balance-max-sector",
+            "balance-max-issuer",
+            "balance-max-group",
+            "balance-max-share",
+            "balance-max-bond",
+            "balance-max-etf",
+            "balance-max-below-grade",
+            "balance-max-unknown",
+            "balance-max-term",
+            "balance-turnover-budget",
+            "balance-daily-participation",
+            "balance-tax-rate",
+            "balance-uncertainty-haircut",
+            "balance-credit-haircut",
+            "balance-no-trade-band",
+            "balance-min-replace-benefit",
+            "balancing-policy-save",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn('"/api/profile/balancing"', script)
+        self.assertIn('@app.get("/api/profile/balancing")', backend)
+        self.assertIn('@app.put("/api/profile/balancing")', backend)
+        self.assertIn("require_same_origin(request)", backend)
+        self.assertNotIn("OrdersService", backend)
+        self.assertIn("не подставляет скрытые проценты", page)
+        self.assertIn("не получает", page)
+        self.assertIn("торговых полномочий", page)
 
     def test_personal_dashboard_uses_real_portfolio_data_without_fake_values(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -523,6 +564,9 @@ class AuthAppDeployTests(unittest.TestCase):
         for element_id in (
             "investment-profile-form",
             "investment-profile-version",
+            "balancing-status",
+            "balancing-scenarios",
+            "balancing-screening",
             "profile-reserve-rub",
             "profile-withdrawal-rub",
             "profile-horizon-months",
@@ -729,7 +773,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.10.0"', project)
+        self.assertIn('version = "0.11.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

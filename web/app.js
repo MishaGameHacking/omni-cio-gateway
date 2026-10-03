@@ -23,6 +23,28 @@
   const profileMaxDrawdown = document.querySelector("#profile-max-drawdown");
   const profileLiquidityDays = document.querySelector("#profile-liquidity-days");
   const profileAllowBelowGrade = document.querySelector("#profile-allow-below-grade");
+  const balancingPolicyForm = document.querySelector("#balancing-policy-form");
+  const balancingPolicyVersion = document.querySelector("#balancing-policy-version");
+  const balancingPolicyCreated = document.querySelector("#balancing-policy-created");
+  const balancingPolicyMessage = document.querySelector("#balancing-policy-message");
+  const balancingPolicySave = document.querySelector("#balancing-policy-save");
+  const balanceMaxInstrument = document.querySelector("#balance-max-instrument");
+  const balanceMaxSector = document.querySelector("#balance-max-sector");
+  const balanceMaxIssuer = document.querySelector("#balance-max-issuer");
+  const balanceMaxGroup = document.querySelector("#balance-max-group");
+  const balanceMaxShare = document.querySelector("#balance-max-share");
+  const balanceMaxBond = document.querySelector("#balance-max-bond");
+  const balanceMaxEtf = document.querySelector("#balance-max-etf");
+  const balanceMaxBelowGrade = document.querySelector("#balance-max-below-grade");
+  const balanceMaxUnknown = document.querySelector("#balance-max-unknown");
+  const balanceMaxTerm = document.querySelector("#balance-max-term");
+  const balanceTurnoverBudget = document.querySelector("#balance-turnover-budget");
+  const balanceDailyParticipation = document.querySelector("#balance-daily-participation");
+  const balanceTaxRate = document.querySelector("#balance-tax-rate");
+  const balanceUncertaintyHaircut = document.querySelector("#balance-uncertainty-haircut");
+  const balanceCreditHaircut = document.querySelector("#balance-credit-haircut");
+  const balanceNoTradeBand = document.querySelector("#balance-no-trade-band");
+  const balanceMinReplaceBenefit = document.querySelector("#balance-min-replace-benefit");
 
   const profileId = document.querySelector("#profile-id");
   const drawerProfileId = document.querySelector("#drawer-profile-id");
@@ -120,6 +142,13 @@
   const intelligenceRisks = document.querySelector("#intelligence-risks");
   const intelligencePayouts = document.querySelector("#intelligence-payouts");
   const intelligenceSources = document.querySelector("#intelligence-sources");
+  const balancingStatus = document.querySelector("#balancing-status");
+  const balancingFreeCash = document.querySelector("#balancing-free-cash");
+  const balancingCandidateCount = document.querySelector("#balancing-candidate-count");
+  const balancingEligibleNote = document.querySelector("#balancing-eligible-note");
+  const balancingPolicyVersions = document.querySelector("#balancing-policy-versions");
+  const balancingScenarios = document.querySelector("#balancing-scenarios");
+  const balancingScreening = document.querySelector("#balancing-screening");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
@@ -1500,6 +1529,241 @@
     }
   };
 
+  const BALANCING_REASON_LABELS = {
+    profile_required: "Сначала заполните профиль капитала",
+    balancing_policy_required: "Сохраните явные лимиты балансировки",
+    snapshot_required: "Нет сохранённого снимка портфеля",
+    snapshot_time_missing: "Время снимка не подтверждено",
+    snapshot_time_in_future: "Время снимка некорректно",
+    snapshot_stale: "Снимок портфеля устарел",
+    snapshot_not_observed: "Снимок требует сверки",
+    broker_limits_loading: "T-Invest ещё обновляет лимиты",
+    nav_unavailable: "NAV портфеля не подтверждён",
+    free_cash_unavailable: "Свободные рубли не подтверждены",
+    critical_evidence_missing: "Критичные доказательства неполны",
+    instrument_structure_not_supported: "Структура инструмента пока не поддерживается",
+    api_trade_unavailable: "Инструмент недоступен через API",
+    buy_unavailable: "Покупка инструмента недоступна",
+    required_tests_missing: "Есть непройденные тесты брокера",
+    qualification_required: "Требуется статус квалифицированного инвестора",
+    iis_not_allowed: "Инструмент недоступен для этого типа ИИС",
+    issuer_identity_not_verified: "Юридический эмитент не подтверждён",
+    issuer_group_not_verified: "Группа связанных компаний не подтверждена",
+    fund_look_through_missing: "Состав фонда не подтверждён",
+    catalog_stale: "Каталог инструмента устарел",
+    account_access_stale: "Права счёта нужно обновить",
+    candidate_risk_assessment_missing: "Risk assessment кандидата ещё не получен",
+    quote_missing: "Свежая котировка отсутствует",
+    missing_lot_cost: "Стоимость целого лота не рассчитана",
+    liquidity_evidence_missing: "Ликвидность не подтверждена",
+    provider_liquidity_flag_false: "Provider пометил ликвидность как недоступную",
+    provider_liquidity_flag_missing: "Provider не подтвердил ликвидность",
+    expected_return_model_missing: "Сценарная доходность ещё не рассчитана",
+    bond_ytw_missing: "Yield-to-worst не подтверждён",
+    bond_duration_missing: "Дюрация не подтверждена",
+    bond_term_missing: "Срок облигации не подтверждён",
+    bond_structure_missing: "Структура облигации неполна",
+    rating_state_not_allowed: "Риск-состояние не допускается",
+    risk_state_not_allowed: "Risk state не допускает новую позицию",
+    below_grade_not_allowed: "Policy запрещает новый below-grade риск",
+    unknown_rating_not_allowed: "Policy запрещает новый актив с неподтверждённым рейтингом",
+    order_book_unusable: "Свежий согласованный стакан недоступен",
+    live_asset_class_not_supported: "Live-enrichment этого класса актива ещё не поддерживается",
+    live_enrichment_not_selected: "Инструмент не вошёл в ограниченный live-screening этого цикла",
+    live_candidate_evidence_unavailable: "Live evidence кандидата временно недоступен",
+    tbank_shortlist_signal_unavailable: "Broker yield signal для shortlist временно недоступен",
+    issuer_group_unverified: "Корпоративная группа не подтверждена",
+    asset_class_not_allowed: "Класс актива запрещён policy",
+    currency_not_allowed: "Валюта запрещена policy",
+    liquidity_limit: "Не проходит лимит ликвидности",
+    term_limit: "Не проходит лимит срока",
+    asset_class_cap_missing: "Нет лимита класса актива",
+    currency_cap_missing: "Нет лимита валюты",
+    invalid_lot_size: "Некорректная лотность",
+    replacement_cost_model_missing: "Налоги и издержки продажи ещё не подтверждены",
+    no_eligible_positive_candidate: "Нет допустимого кандидата с положительным net-сценарием",
+    integer_lot_or_policy_limits_block_all_buys: "Целые лоты или лимиты блокируют покупку",
+    reserve_or_withdrawal_consumes_free_cash: "Резерв и снятия используют свободные деньги",
+    no_replacement_clears_costs_and_no_trade_band: "Замена не перекрывает издержки и no-trade band",
+    no_eligible_replacement: "Нет допустимой замены",
+    holding_blocked: "Позиция заблокирована",
+    hold_baseline: "Ничего не менять",
+    integer_lot_allocation: "Распределение целыми лотами",
+    net_improvement_after_costs: "Улучшение после издержек",
+  };
+
+  const BALANCING_NOTE_LABELS = {
+    shortlisted_by_tbank_market_yield_signal: "Shortlist: broker yield signal; решение проверяется по MOEX YTW",
+    issuer_identity_verified_by_moex: "Эмитент подтверждён справочником MOEX ISS",
+    issuer_group_unverified_conservative_bucket: "Группа не подтверждена · используется общий консервативный bucket",
+    issuer_group_from_verified_mapping: "Группа взята из проверенной связи инструмента с эмитентом",
+    buy_cost_from_tinvest_get_order_price: "Покупка: комиссия и НКД из T-Invest GetOrderPrice",
+    ytw_from_moex_iss: "YTW/дюрация: MOEX ISS",
+    liquidity_from_moex_history_value: "Ликвидность: исторический биржевой оборот MOEX",
+    expected_gain_simple_ytw_horizon_estimate: "Доход: консервативная простая YTW-оценка до горизонта",
+    tax_not_applied_to_new_buy: "Налог к новой покупке не начисляется в сценарии",
+  };
+
+  const balancingReason = (value) => (
+    BALANCING_REASON_LABELS[value] || String(value || "—")
+  );
+
+  const balancingNote = (value) => (
+    BALANCING_NOTE_LABELS[value] || String(value || "—")
+  );
+
+  const renderBalancing = (payload) => {
+    balancingScenarios.replaceChildren();
+    balancingScreening.replaceChildren();
+    balancingFreeCash.textContent = payload.free_cash_rub
+      ? formatMoney({currency: "RUB", value: payload.free_cash_rub})
+      : "—";
+    balancingCandidateCount.textContent = Number.isFinite(Number(payload.candidate_count))
+      ? String(payload.candidate_count)
+      : "—";
+    balancingEligibleNote.textContent = Number.isFinite(Number(payload.eligible_candidate_count))
+      ? `Допустимых сейчас: ${payload.eligible_candidate_count}`
+      : "Допустимость ещё не рассчитана";
+    balancingPolicyVersions.textContent = payload.profile_version && payload.policy_version
+      ? `v${payload.profile_version} · v${payload.policy_version}`
+      : "—";
+
+    if (payload.status !== "observed") {
+      const reason = balancingReason(payload.reason || payload.status);
+      appendEmptyState(balancingScenarios, reason);
+      appendEmptyState(
+        balancingScreening,
+        "Screening начнётся после выполнения обязательных условий.",
+      );
+      setStateBadge(balancingStatus, reason, "state-next");
+      return;
+    }
+
+    const scenarioEntries = [];
+    if (payload.scenarios?.hold) {
+      scenarioEntries.push(["Hold", payload.scenarios.hold]);
+    }
+    if (payload.scenarios?.deploy_cash) {
+      scenarioEntries.push(["Новые деньги", payload.scenarios.deploy_cash]);
+    }
+    (payload.scenarios?.replacements || []).forEach((scenario, index) => {
+      scenarioEntries.push([`Замена ${index + 1}`, scenario]);
+    });
+    scenarioEntries.forEach(([label, scenario]) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = `${label} · ${scenario.status === "feasible" ? "допустим" : "заблокирован"}`;
+      const details = document.createElement("small");
+      const tradeCount = Array.isArray(scenario.trades) ? scenario.trades.length : 0;
+      const tradeSummary = (scenario.trades || []).map((trade) => {
+        const direction = trade.action === "sell" ? "продать" : "купить";
+        const ytw = trade.ytw_percent === null || trade.ytw_percent === undefined
+          ? ""
+          : `YTW ${trade.ytw_percent}%`;
+        const tax = Number(trade.tax_rub) > 0
+          ? `налог-сценарий ${formatMoney({currency: "RUB", value: trade.tax_rub})}`
+          : "";
+        const cost = Number(trade.estimated_cost_rub) > 0
+          ? `издержки ${formatMoney({currency: "RUB", value: trade.estimated_cost_rub})}`
+          : "";
+        return [
+          `${direction} ${trade.ticker || trade.instrument_uid}: ${trade.lots} лот.`,
+          ytw,
+          cost,
+          tax,
+        ].filter(Boolean).join(", ");
+      }).join(" · ");
+      details.textContent = [
+        balancingReason(scenario.reason),
+        `сделок: ${tradeCount}`,
+        tradeSummary,
+        scenario.turnover_rub !== undefined
+          ? `оборот: ${formatMoney({currency: "RUB", value: scenario.turnover_rub})}`
+          : "",
+        scenario.residual_cash_rub !== undefined
+          ? `остаток: ${formatMoney({currency: "RUB", value: scenario.residual_cash_rub})}`
+          : "",
+      ].filter(Boolean).join(" · ");
+      row.append(title, details);
+      balancingScenarios.append(row);
+    });
+    if (!balancingScenarios.childElementCount) {
+      appendEmptyState(balancingScenarios, "Сценарии ещё не рассчитаны.");
+    }
+
+    (payload.screening || []).slice(0, 30).forEach((item) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = [
+        item.ticker || item.instrument_uid || "Инструмент",
+        item.eligible ? "допустим" : "не допущен",
+      ].join(" · ");
+      const details = document.createElement("small");
+      const blockers = (item.reasons || []).map(balancingReason);
+      const evidenceNotes = (item.notes || []).map(balancingNote);
+      const metrics = [
+        item.ytw_percent !== null && item.ytw_percent !== undefined
+          ? `YTW: ${item.ytw_percent}%`
+          : "",
+        item.duration_years !== null && item.duration_years !== undefined
+          ? `дюрация: ${Number(item.duration_years).toFixed(2)} г.`
+          : "",
+        Number.isFinite(Number(item.liquidity_days))
+          ? `ликвидность: ~${item.liquidity_days} дн.`
+          : "",
+        Number.isFinite(Number(item.max_liquid_lots))
+          ? `лимит ликвидности: ${item.max_liquid_lots} лот.`
+          : "",
+        Number(item.transaction_cost_rub_per_lot) > 0
+          ? `вход за лот: ${formatMoney({currency: "RUB", value: item.transaction_cost_rub_per_lot})}`
+          : "",
+        Number(item.expected_net_gain_rub_per_lot) !== 0
+          ? `net-сценарий/лот: ${formatMoney({currency: "RUB", value: item.expected_net_gain_rub_per_lot})}`
+          : "",
+      ].filter(Boolean);
+      const explanation = [...blockers, ...metrics, ...evidenceNotes];
+      details.textContent = explanation.length
+        ? explanation.join(" · ")
+        : "Все текущие R4 screening-гейты пройдены";
+      row.append(title, details);
+      balancingScreening.append(row);
+    });
+    if (!balancingScreening.childElementCount) {
+      appendEmptyState(
+        balancingScreening,
+        "Каталог кандидатов пуст или ещё не прошёл доказательный screening.",
+      );
+    }
+
+    if (payload.live_status === "degraded") {
+      setStateBadge(balancingStatus, "Live evidence временно недоступен", "state-error");
+    } else if (Number(payload.eligible_candidate_count) > 0) {
+      setStateBadge(
+        balancingStatus,
+        `Read-only · допустимых: ${payload.eligible_candidate_count}`,
+        "state-ok",
+      );
+    } else {
+      setStateBadge(balancingStatus, "Read-only · все кандидаты заблокированы", "state-next");
+    }
+  };
+
+  const loadBalancing = async () => {
+    try {
+      const payload = await api("/api/portfolio/balancing", {method: "GET"});
+      renderBalancing(payload);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      balancingScenarios.replaceChildren();
+      balancingScreening.replaceChildren();
+      appendEmptyState(balancingScenarios, "R4 preview временно недоступен.");
+      setStateBadge(balancingStatus, "Ошибка preview", "state-error");
+    }
+  };
+
   const loadIntelligence = async () => {
     try {
       const snapshot = await api("/api/portfolio/intelligence", {method: "GET"});
@@ -1521,9 +1785,11 @@
       resetAnalysis();
       analysisStatus.textContent = "Подключите счёт T-Invest для живого анализа.";
       void loadIntelligence();
+      void loadBalancing();
       return;
     }
     void loadIntelligence();
+    void loadBalancing();
     if (analysisInFlight) {
       return;
     }
@@ -1701,6 +1967,54 @@
     }
   };
 
+  const renderBalancingPolicy = (policy) => {
+    showMessage(balancingPolicyMessage, "");
+    if (!policy) {
+      balancingPolicyVersion.textContent = "Не заполнена";
+      balancingPolicyCreated.textContent = "Версия ещё не сохранена";
+      return;
+    }
+
+    balancingPolicyVersion.textContent = `v${policy.version}`;
+    balancingPolicyCreated.textContent = `Сохранено: ${formatDateTime(policy.created_at)}`;
+    balanceMaxInstrument.value = String(policy.max_instrument_percent);
+    balanceMaxSector.value = String(policy.max_sector_percent);
+    balanceMaxIssuer.value = String(policy.max_issuer_percent);
+    balanceMaxGroup.value = String(policy.max_group_percent);
+    balanceMaxShare.value = String(policy.max_share_percent);
+    balanceMaxBond.value = String(policy.max_bond_percent);
+    balanceMaxEtf.value = String(policy.max_etf_percent);
+    balanceMaxBelowGrade.value = String(policy.max_below_grade_percent);
+    balanceMaxUnknown.value = String(policy.max_unknown_percent);
+    balanceMaxTerm.value = String(policy.max_term_months);
+    balanceTurnoverBudget.value = String(policy.turnover_budget_percent);
+    balanceDailyParticipation.value = String(
+      policy.max_daily_turnover_participation_percent
+    );
+    balanceTaxRate.value = String(policy.securities_tax_rate_percent);
+    balanceUncertaintyHaircut.value = String(policy.uncertainty_haircut_percent);
+    balanceCreditHaircut.value = String(policy.credit_loss_haircut_percent);
+    balanceNoTradeBand.value = String(policy.no_trade_band_percent);
+    balanceMinReplaceBenefit.value = String(policy.min_replace_benefit_rub);
+  };
+
+  const loadBalancingPolicy = async () => {
+    try {
+      const result = await api("/api/profile/balancing", {method: "GET"});
+      renderBalancingPolicy(result.policy || null);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        balancingPolicyMessage,
+        "Не удалось загрузить лимиты балансировки.",
+        true,
+      );
+    }
+  };
+
   const showProfile = (profile) => {
     currentProfileId = profile.public_id;
     profileId.textContent = profile.public_id;
@@ -1715,6 +2029,7 @@
     initializeNavigation();
     void loadTbankStatus();
     void loadInvestmentProfile();
+    void loadBalancingPolicy();
   };
 
   const showAuth = () => {
@@ -2074,14 +2389,6 @@
         );
         return;
       }
-      if (error.status === 409) {
-        showMessage(
-          investmentProfileMessage,
-          "Требуется обновить согласие с правилами. Выйдите из аккаунта и снова войдите через VK ID.",
-          true,
-        );
-        return;
-      }
       if (error.status === 422) {
         showMessage(
           investmentProfileMessage,
@@ -2097,6 +2404,74 @@
       );
     } finally {
       investmentProfileSave.disabled = false;
+    }
+  });
+
+  balancingPolicyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    showMessage(balancingPolicyMessage, "");
+
+    if (!balancingPolicyForm.reportValidity()) {
+      return;
+    }
+
+    balancingPolicySave.disabled = true;
+    try {
+      const result = await api("/api/profile/balancing", {
+        method: "PUT",
+        body: JSON.stringify({
+          max_instrument_percent: balanceMaxInstrument.value,
+          max_sector_percent: balanceMaxSector.value,
+          max_issuer_percent: balanceMaxIssuer.value,
+          max_group_percent: balanceMaxGroup.value,
+          max_share_percent: balanceMaxShare.value,
+          max_bond_percent: balanceMaxBond.value,
+          max_etf_percent: balanceMaxEtf.value,
+          max_below_grade_percent: balanceMaxBelowGrade.value,
+          max_unknown_percent: balanceMaxUnknown.value,
+          max_term_months: Number(balanceMaxTerm.value),
+          turnover_budget_percent: balanceTurnoverBudget.value,
+          max_daily_turnover_participation_percent: balanceDailyParticipation.value,
+          securities_tax_rate_percent: balanceTaxRate.value,
+          uncertainty_haircut_percent: balanceUncertaintyHaircut.value,
+          credit_loss_haircut_percent: balanceCreditHaircut.value,
+          no_trade_band_percent: balanceNoTradeBand.value,
+          min_replace_benefit_rub: balanceMinReplaceBenefit.value,
+        }),
+      });
+      renderBalancingPolicy(result.policy);
+      showMessage(
+        balancingPolicyMessage,
+        "Новая версия лимитов сохранена. Предыдущая версия не перезаписывается.",
+      );
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (error.status === 409) {
+        showMessage(
+          balancingPolicyMessage,
+          "Для новых финансовых ограничений нужны актуальные согласия. Войдите через VK ID снова и примите текущие версии документов.",
+          true,
+        );
+        return;
+      }
+      if (error.status === 422) {
+        showMessage(
+          balancingPolicyMessage,
+          "Проверьте проценты, срок, бюджет оборота и минимальную выгоду замены.",
+          true,
+        );
+        return;
+      }
+      showMessage(
+        balancingPolicyMessage,
+        "Не удалось сохранить лимиты. Действующая версия не изменена.",
+        true,
+      );
+    } finally {
+      balancingPolicySave.disabled = false;
     }
   });
 

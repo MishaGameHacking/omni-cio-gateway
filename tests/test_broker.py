@@ -16,12 +16,18 @@ from omnicio.broker import BrokerAccountNotAccessible, BrokerNotConnected, Broke
 from omnicio.db import TBankConnectionRecord
 from omnicio.tbank import (
     TBankAccount,
+    TBankAccruedInterest,
     TBankAssetTotal,
     TBankFxQuote,
     TBankInstrument,
     TBankInstrumentMetadata,
     TBankInvestClient,
+    TBankLastPrice,
+    TBankMarketYield,
     TBankMoney,
+    TBankOrderBook,
+    TBankOrderLevel,
+    TBankOrderPrice,
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
@@ -111,6 +117,190 @@ def test_tbank_get_user_info_parses_qualification_context() -> None:
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {}
     assert "provider-user-id" not in repr(info)
+
+
+def test_tbank_market_yields_are_batched_read_only_shortlist_signals() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instruments": [
+                {
+                    "instrumentUid": "uid-1",
+                    "values": [
+                        {
+                            "type": "INSTRUMENT_VALUE_YIELD",
+                            "value": {"units": "12", "nano": 500000000},
+                            "time": "2026-10-03T05:00:00Z",
+                        }
+                    ],
+                },
+                {
+                    "instrumentUid": "uid-2",
+                    "values": [
+                        {
+                            "type": "INSTRUMENT_VALUE_LAST_PRICE",
+                            "value": {"units": "99", "nano": 0},
+                            "time": "2026-10-03T05:00:00Z",
+                        }
+                    ],
+                },
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_market_yields(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            ("uid-1", "uid-2", "uid-1"),
+        )
+
+    assert result == (
+        TBankMarketYield(
+            instrument_uid="uid-1",
+            yield_percent="12.5",
+            time=datetime(2026, 10, 3, 5, 0, tzinfo=UTC),
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("MarketDataService/GetMarketValues")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": ["uid-1", "uid-2"],
+        "values": ["INSTRUMENT_VALUE_YIELD"],
+    }
+
+
+def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instrumentUid": "bond-uid",
+            "isConsistent": True,
+            "time": "2026-10-03T05:00:00Z",
+            "bids": [
+                {"price": {"units": "99", "nano": 900000000}, "quantity": "12"}
+            ],
+            "asks": [
+                {"price": {"units": "100", "nano": 100000000}, "quantity": "8"}
+            ],
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_order_book(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            depth=10,
+        )
+
+    assert result == TBankOrderBook(
+        instrument_uid="bond-uid",
+        bids=(TBankOrderLevel("99.9", 12),),
+        asks=(TBankOrderLevel("100.1", 8),),
+        time=datetime(2026, 10, 3, 5, 0, tzinfo=UTC),
+        is_consistent=True,
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("MarketDataService/GetOrderBook")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": "bond-uid",
+        "depth": 10,
+    }
+
+
+def test_tbank_order_price_is_read_only_cost_estimate() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "totalOrderAmount": {
+                "currency": "rub",
+                "units": "1012",
+                "nano": 500000000,
+            },
+            "initialOrderAmount": {
+                "currency": "rub",
+                "units": "1000",
+                "nano": 0,
+            },
+            "executedCommissionRub": {
+                "currency": "rub",
+                "units": "2",
+                "nano": 500000000,
+            },
+            "serviceCommission": {
+                "currency": "rub",
+                "units": "0",
+                "nano": 0,
+            },
+            "dealCommission": {
+                "currency": "rub",
+                "units": "2",
+                "nano": 500000000,
+            },
+            "extraBond": {
+                "aciValue": {
+                    "currency": "rub",
+                    "units": "10",
+                    "nano": 0,
+                }
+            },
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_order_price(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "account-1",
+            "bond-uid",
+            price="1000.25",
+            direction="buy",
+            quantity_lots=1,
+        )
+
+    assert result == TBankOrderPrice(
+        total_order_amount=TBankMoney("RUB", "1012.5"),
+        initial_order_amount=TBankMoney("RUB", "1000"),
+        executed_commission_rub=TBankMoney("RUB", "2.5"),
+        service_commission=TBankMoney("RUB", "0"),
+        deal_commission=TBankMoney("RUB", "2.5"),
+        bond_aci_value=TBankMoney("RUB", "10"),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("OrdersService/GetOrderPrice")
+    assert json.loads(request.data.decode()) == {
+        "accountId": "account-1",
+        "instrumentId": "bond-uid",
+        "price": {"units": "1000", "nano": 250000000},
+        "direction": "ORDER_DIRECTION_BUY",
+        "quantity": "1",
+    }
+
+
+def test_sandbox_order_price_uses_read_only_sandbox_method() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "totalOrderAmount": {"currency": "rub", "units": "100", "nano": 0},
+            "initialOrderAmount": {"currency": "rub", "units": "99", "nano": 0},
+            "executedCommissionRub": {"currency": "rub", "units": "1", "nano": 0},
+            "serviceCommission": {"currency": "rub", "units": "0", "nano": 0},
+            "dealCommission": {"currency": "rub", "units": "1", "nano": 0},
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        client.get_order_price(
+            "t.fake-owner-credential-1234567890",
+            "sandbox",
+            "account-1",
+            "share-uid",
+            price="99",
+            direction="sell",
+            quantity_lots=2,
+        )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("SandboxService/GetSandboxOrderPrice")
+    assert json.loads(request.data.decode())["direction"] == "ORDER_DIRECTION_SELL"
 
 
 @pytest.mark.parametrize(
@@ -432,6 +622,8 @@ def test_tbank_reads_portfolio_and_positions() -> None:
                     "quantity": {"units": "10", "nano": 0},
                     "currentPrice": {"currency": "rub", "units": "10000", "nano": 0},
                     "averagePositionPrice": {"currency": "rub", "units": "9000", "nano": 0},
+                    "averagePositionPriceFifo": {"currency": "rub", "units": "8900", "nano": 0},
+                    "quantityLots": {"units": "1", "nano": 0},
                     "expectedYield": {"units": "11", "nano": 110000000},
                     "dailyYield": {"currency": "rub", "units": "100", "nano": 0},
                     "currentNkd": {"currency": "rub", "units": "12", "nano": 500000000},
@@ -519,6 +711,143 @@ def test_metadata_adapter_preserves_unknown_qualification_and_all_status_records
     assert request.full_url.endswith("InstrumentsService/Shares")
     assert json.loads(request.data.decode()) == {
         "instrumentStatus": "INSTRUMENT_STATUS_ALL",
+    }
+
+
+def test_bond_metadata_preserves_structure_required_for_r4_screening() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instruments": [
+                {
+                    "uid": "bond-uid",
+                    "name": "Test bond",
+                    "ticker": "BOND",
+                    "sector": "finance",
+                    "isin": "RU000BOND",
+                    "countryOfRisk": "ru",
+                    "currency": "rub",
+                    "lot": 1,
+                    "nominal": {"currency": "rub", "units": "1000", "nano": 0},
+                    "maturityDate": "2028-10-03T00:00:00Z",
+                    "floatingCouponFlag": False,
+                    "perpetualFlag": False,
+                    "amortizationFlag": False,
+                    "subordinatedFlag": True,
+                    "liquidityFlag": True,
+                    "requiredTests": ["test_bonds_risk"],
+                    "apiTradeAvailableFlag": True,
+                    "buyAvailableFlag": True,
+                    "sellAvailableFlag": True,
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response):
+        result = client.get_instrument_metadata(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond",
+        )
+
+    item = result[0]
+    assert item.nominal == TBankMoney("RUB", "1000")
+    assert item.maturity_date == datetime(2028, 10, 3, tzinfo=UTC)
+    assert item.floating_coupon is False
+    assert item.perpetual is False
+    assert item.amortization is False
+    assert item.subordinated is True
+    assert item.liquidity is True
+    assert item.required_tests == ("test_bonds_risk",)
+
+
+def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "lastPrices": [
+                {
+                    "instrumentUid": "uid-1",
+                    "price": {"units": "123", "nano": 450000000},
+                    "time": "2026-10-03T04:00:00Z",
+                },
+                {
+                    "instrumentUid": "uid-2",
+                    "price": {"units": "98", "nano": 500000000},
+                    "time": "2026-10-03T04:00:01Z",
+                },
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        prices = client.get_last_prices(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            ("uid-1", "uid-2", "uid-1"),
+        )
+
+    assert prices == (
+        TBankLastPrice(
+            instrument_uid="uid-1",
+            price="123.45",
+            time=datetime(2026, 10, 3, 4, 0, tzinfo=UTC),
+        ),
+        TBankLastPrice(
+            instrument_uid="uid-2",
+            price="98.5",
+            time=datetime(2026, 10, 3, 4, 0, 1, tzinfo=UTC),
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("MarketDataService/GetLastPrices")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": ["uid-1", "uid-2"],
+        "lastPriceType": "LAST_PRICE_EXCHANGE",
+        "instrumentStatus": "INSTRUMENT_STATUS_BASE",
+    }
+
+
+def test_tbank_accrued_interest_preserves_value_and_timestamp() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "accruedInterests": [
+                {
+                    "date": "2026-10-03T00:00:00Z",
+                    "value": {"units": "17", "nano": 250000000},
+                    "valuePercent": {"units": "1", "nano": 725000000},
+                    "nominal": {"units": "1000", "nano": 0},
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_accrued_interests(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            from_at=datetime(2026, 10, 2, tzinfo=UTC),
+            to_at=datetime(2026, 10, 3, tzinfo=UTC),
+        )
+
+    assert result == (
+        TBankAccruedInterest(
+            instrument_uid="bond-uid",
+            date=datetime(2026, 10, 3, tzinfo=UTC),
+            value="17.25",
+            value_percent="1.725",
+            nominal="1000",
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/GetAccruedInterests")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": "bond-uid",
+        "from": "2026-10-02T00:00:00Z",
+        "to": "2026-10-03T00:00:00Z",
     }
 
 

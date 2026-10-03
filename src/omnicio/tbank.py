@@ -89,6 +89,54 @@ class TBankMoney:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankLastPrice:
+    instrument_uid: str
+    price: str
+    time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TBankAccruedInterest:
+    instrument_uid: str
+    date: datetime
+    value: str
+    value_percent: str
+    nominal: str
+
+
+@dataclass(frozen=True, slots=True)
+class TBankMarketYield:
+    instrument_uid: str
+    yield_percent: str
+    time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOrderLevel:
+    price: str
+    quantity_lots: int
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOrderBook:
+    instrument_uid: str
+    bids: tuple[TBankOrderLevel, ...]
+    asks: tuple[TBankOrderLevel, ...]
+    time: datetime | None
+    is_consistent: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOrderPrice:
+    total_order_amount: TBankMoney
+    initial_order_amount: TBankMoney
+    executed_commission_rub: TBankMoney
+    service_commission: TBankMoney
+    deal_commission: TBankMoney
+    bond_aci_value: TBankMoney | None
+
+
+@dataclass(frozen=True, slots=True)
 class TBankAssetTotal:
     kind: str
     money: TBankMoney
@@ -108,6 +156,8 @@ class TBankPortfolioPosition:
     blocked: bool
     current_nkd: TBankMoney | None = None
     blocked_lots: str = "0"
+    average_price_fifo: TBankMoney | None = None
+    quantity_lots: str = "0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +181,13 @@ class TBankInstrumentMetadata:
     buy_available: bool | None = None
     sell_available: bool | None = None
     required_tests: tuple[str, ...] = ()
+    nominal: TBankMoney | None = None
+    maturity_date: datetime | None = None
+    floating_coupon: bool | None = None
+    perpetual: bool | None = None
+    amortization: bool | None = None
+    subordinated: bool | None = None
+    liquidity: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,9 +392,267 @@ class TBankInvestClient:
                     buy_available=_optional_bool(item, "buyAvailableFlag"),
                     sell_available=_optional_bool(item, "sellAvailableFlag"),
                     required_tests=required_tests,
+                    nominal=_money(item.get("nominal")),
+                    maturity_date=_optional_provider_timestamp(item.get("maturityDate")),
+                    floating_coupon=_optional_bool(item, "floatingCouponFlag"),
+                    perpetual=_optional_bool(item, "perpetualFlag"),
+                    amortization=_optional_bool(item, "amortizationFlag"),
+                    subordinated=_optional_bool(item, "subordinatedFlag"),
+                    liquidity=_optional_bool(item, "liquidityFlag"),
                 )
             )
         return tuple(result)
+
+    def get_last_prices(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankLastPrice, ...]:
+        clean = tuple(
+            dict.fromkeys(
+                _validate_provider_id(value, "instrument uid")
+                for value in instrument_uids
+            )
+        )
+        if not clean:
+            return ()
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetLastPrices",
+            body={
+                "instrumentId": list(clean),
+                "lastPriceType": "LAST_PRICE_EXCHANGE",
+                "instrumentStatus": "INSTRUMENT_STATUS_BASE",
+            },
+        )
+        requested = set(clean)
+        seen: set[str] = set()
+        result: list[TBankLastPrice] = []
+        for raw in _required_list(payload, "lastPrices"):
+            item = _required_object(raw, "last price")
+            uid = _text(item.get("instrumentUid")).strip()
+            if not uid or uid not in requested or uid in seen:
+                raise TBankUnavailable("T-Invest last prices returned invalid instrument uid")
+            seen.add(uid)
+            price = _quotation(item.get("price"))
+            quote_time = _optional_provider_timestamp(item.get("time"))
+            if price is None or Decimal(price) <= 0 or quote_time is None:
+                raise TBankUnavailable("T-Invest last price is missing required fields")
+            result.append(
+                TBankLastPrice(
+                    instrument_uid=uid,
+                    price=price,
+                    time=quote_time,
+                )
+            )
+        return tuple(result)
+
+    def get_accrued_interests(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankAccruedInterest, ...]:
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="GetAccruedInterests",
+            body=_instrument_window_body(instrument_uid, from_at, to_at),
+        )
+        result: list[TBankAccruedInterest] = []
+        for raw in _required_list(payload, "accruedInterests"):
+            item = _required_object(raw, "accrued interest")
+            date = _optional_provider_timestamp(item.get("date"))
+            value = _quotation(item.get("value"))
+            value_percent = _quotation(item.get("valuePercent"))
+            nominal = _quotation(item.get("nominal"))
+            if (
+                date is None
+                or value is None
+                or value_percent is None
+                or nominal is None
+            ):
+                raise TBankUnavailable("T-Invest accrued interest is missing required fields")
+            result.append(
+                TBankAccruedInterest(
+                    instrument_uid=instrument_uid,
+                    date=date,
+                    value=value,
+                    value_percent=value_percent,
+                    nominal=nominal,
+                )
+            )
+        return tuple(result)
+
+    def get_market_yields(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankMarketYield, ...]:
+        clean = tuple(
+            dict.fromkeys(
+                _validate_provider_id(value, "instrument uid")
+                for value in instrument_uids
+            )
+        )
+        if not clean:
+            return ()
+        if len(clean) > 100:
+            raise ValueError("market yield batch must contain at most 100 instruments")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetMarketValues",
+            body={
+                "instrumentId": list(clean),
+                "values": ["INSTRUMENT_VALUE_YIELD"],
+            },
+        )
+        requested = set(clean)
+        result: list[TBankMarketYield] = []
+        seen: set[str] = set()
+        for raw in _required_list(payload, "instruments"):
+            item = _required_object(raw, "market value instrument")
+            uid = _text(item.get("instrumentUid")).strip()
+            if not uid or uid not in requested or uid in seen:
+                raise TBankUnavailable(
+                    "T-Invest market values returned invalid instrument uid"
+                )
+            seen.add(uid)
+            yield_value: str | None = None
+            yield_time: datetime | None = None
+            for value_raw in _optional_list(item, "values"):
+                value = _required_object(value_raw, "market value")
+                if _text(value.get("type")).strip() != "INSTRUMENT_VALUE_YIELD":
+                    continue
+                numeric = _quotation(value.get("value"))
+                observed = _optional_provider_timestamp(value.get("time"))
+                if numeric is None or observed is None:
+                    raise TBankUnavailable(
+                        "T-Invest market yield is missing required fields"
+                    )
+                yield_value = numeric
+                yield_time = observed
+                break
+            if yield_value is None or yield_time is None:
+                continue
+            result.append(
+                TBankMarketYield(
+                    instrument_uid=uid,
+                    yield_percent=yield_value,
+                    time=yield_time,
+                )
+            )
+        return tuple(result)
+
+    def get_order_book(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        depth: int = 10,
+    ) -> TBankOrderBook:
+        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        if not 1 <= depth <= 50:
+            raise ValueError("order book depth must be between 1 and 50")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetOrderBook",
+            body={"instrumentId": instrument, "depth": depth},
+        )
+        bids = _order_levels(payload, "bids")
+        asks = _order_levels(payload, "asks")
+        consistent = payload.get("isConsistent", False)
+        if not isinstance(consistent, bool):
+            raise TBankUnavailable("T-Invest order book has invalid consistency flag")
+        returned_uid = _text(payload.get("instrumentUid")).strip() or instrument
+        if returned_uid != instrument:
+            raise TBankUnavailable("T-Invest order book returned a different instrument")
+        return TBankOrderBook(
+            instrument_uid=instrument,
+            bids=bids,
+            asks=asks,
+            time=_optional_provider_timestamp(payload.get("time")),
+            is_consistent=consistent,
+        )
+
+    def get_order_price(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        instrument_uid: str,
+        *,
+        price: str,
+        direction: Literal["buy", "sell"],
+        quantity_lots: int,
+    ) -> TBankOrderPrice:
+        account = _validate_provider_id(account_id, "account id")
+        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        try:
+            price_value = Decimal(price)
+        except InvalidOperation as exc:
+            raise ValueError("order price is invalid") from exc
+        if not price_value.is_finite() or price_value <= 0:
+            raise ValueError("order price must be positive")
+        if quantity_lots <= 0:
+            raise ValueError("order quantity must be positive")
+        direction_value = {
+            "buy": "ORDER_DIRECTION_BUY",
+            "sell": "ORDER_DIRECTION_SELL",
+        }[direction]
+        service = "OrdersService" if environment == "prod" else "SandboxService"
+        method = "GetOrderPrice" if environment == "prod" else "GetSandboxOrderPrice"
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service=service,
+            method=method,
+            body={
+                "accountId": account,
+                "instrumentId": instrument,
+                "price": _quotation_payload(price_value),
+                "direction": direction_value,
+                "quantity": str(quantity_lots),
+            },
+        )
+        total = _money(payload.get("totalOrderAmount"))
+        initial = _money(payload.get("initialOrderAmount"))
+        commission = _money(payload.get("executedCommissionRub"))
+        service_commission = _money(payload.get("serviceCommission"))
+        deal_commission = _money(payload.get("dealCommission"))
+        if (
+            total is None
+            or initial is None
+            or commission is None
+            or service_commission is None
+            or deal_commission is None
+        ):
+            raise TBankUnavailable("T-Invest order price is missing cost fields")
+        extra_bond = payload.get("extraBond")
+        bond_aci = None
+        if extra_bond is not None:
+            bond_aci = _money(_required_object(extra_bond, "bond order price").get("aciValue"))
+        return TBankOrderPrice(
+            total_order_amount=total,
+            initial_order_amount=initial,
+            executed_commission_rub=commission,
+            service_commission=service_commission,
+            deal_commission=deal_commission,
+            bond_aci_value=bond_aci,
+        )
 
     def get_accounts(
         self,
@@ -640,6 +955,8 @@ class TBankInvestClient:
                     blocked=blocked_raw,
                     current_nkd=_money(position.get("currentNkd")),
                     blocked_lots=_quotation(position.get("blockedLots")) or "0",
+                    average_price_fifo=_money(position.get("averagePositionPriceFifo")),
+                    quantity_lots=_quotation(position.get("quantityLots")) or "0",
                 )
             )
 
@@ -1244,6 +1561,35 @@ def _quotation(value: object) -> str | None:
     if not amount.is_finite():
         raise TBankUnavailable("T-Invest API returned non-finite numeric value")
     return format(amount.normalize(), "f")
+
+
+def _order_levels(
+    payload: dict[str, object],
+    key: str,
+) -> tuple[TBankOrderLevel, ...]:
+    result: list[TBankOrderLevel] = []
+    for raw in _optional_list(payload, key):
+        item = _required_object(raw, f"order book {key} level")
+        price = _quotation(item.get("price"))
+        quantity_raw = item.get("quantity")
+        if price is None or isinstance(quantity_raw, bool):
+            raise TBankUnavailable("T-Invest order book has invalid level")
+        try:
+            quantity = int(str(quantity_raw))
+        except ValueError as exc:
+            raise TBankUnavailable("T-Invest order book has invalid quantity") from exc
+        if Decimal(price) <= 0 or quantity <= 0:
+            raise TBankUnavailable("T-Invest order book has non-positive level")
+        result.append(TBankOrderLevel(price=price, quantity_lots=quantity))
+    return tuple(result)
+
+
+def _quotation_payload(value: Decimal) -> dict[str, object]:
+    if not value.is_finite():
+        raise ValueError("quotation must be finite")
+    units = int(value)
+    nano = int((value - Decimal(units)) * Decimal(1_000_000_000))
+    return {"units": str(units), "nano": nano}
 
 
 def _money(value: object) -> TBankMoney | None:
