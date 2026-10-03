@@ -965,6 +965,90 @@
                   <p id="investment-profile-message" class="message" role="status" aria-live="polite"></p>
                 </form>
               </article>
+
+              <article class="settings-card profile-constraints-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Балансировка · R4</p>
+                    <h3>Лимиты распределения</h3>
+                  </div>
+                  <span class="state-badge" id="balancing-policy-version">Не заполнена</span>
+                </header>
+                <p class="card-description">
+                  Эти значения задают явные ограничения для сценариев балансировки.
+                  OmniCIO не подставляет скрытые проценты концентрации и не получает
+                  торговых полномочий. Если policy не заполнена, сценарии сделок не строятся.
+                </p>
+                <form id="balancing-policy-form" class="form-stack" novalidate>
+                  <div class="constraint-form-grid">
+                    <div class="field">
+                      <label for="balance-max-instrument">Макс. один инструмент, %</label>
+                      <input id="balance-max-instrument" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-sector">Макс. сектор, %</label>
+                      <input id="balance-max-sector" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-issuer">Макс. эмитент, %</label>
+                      <input id="balance-max-issuer" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-group">Макс. группа, %</label>
+                      <input id="balance-max-group" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-share">Макс. акции, %</label>
+                      <input id="balance-max-share" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-bond">Макс. облигации, %</label>
+                      <input id="balance-max-bond" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-etf">Макс. фонды, %</label>
+                      <input id="balance-max-etf" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-below-grade">Макс. ниже инвест. уровня, %</label>
+                      <input id="balance-max-below-grade" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-unknown">Макс. неизвестный рейтинг, %</label>
+                      <input id="balance-max-unknown" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-term">Макс. срок облигаций, месяцев</label>
+                      <input id="balance-max-term" type="number" min="0" max="1200" step="1" inputmode="numeric" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-turnover-budget">Бюджет оборота, % NAV</label>
+                      <input id="balance-turnover-budget" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-no-trade-band">No-trade band, % позиции</label>
+                      <input id="balance-no-trade-band" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-min-replace-benefit">Мин. выгода замены, ₽</label>
+                      <input id="balance-min-replace-benefit" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                    </div>
+                  </div>
+                  <p class="field-hint">
+                    Системные границы текущего R4: новые покупки только RUB-инструментов
+                    классов акции/облигации/фонды со статусом риска <code>normal</code>.
+                    Резерв, снятия, горизонт ликвидности и разрешение below-grade берутся
+                    из версии «Профиль капитала».
+                  </p>
+                  <div class="profile-constraint-meta">
+                    <span id="balancing-policy-created">Версия ещё не сохранена</span>
+                  </div>
+                  <button id="balancing-policy-save" class="button button-primary" type="submit">
+                    Сохранить новую версию лимитов
+                  </button>
+                  <p id="balancing-policy-message" class="message" role="status" aria-live="polite"></p>
+                </form>
+              </article>
             </section>
           </section>
 
