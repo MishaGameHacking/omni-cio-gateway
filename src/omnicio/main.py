@@ -15,7 +15,7 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, st
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .balancing_service import build_balancing_payload
+from .balancing_service import build_live_balancing_payload
 from .broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
@@ -27,6 +27,7 @@ from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .intelligence import rating_source_references
 from .market import MarketService
+from .moex import MoexIssClient
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
     BalancingPolicyRecord,
@@ -733,10 +734,13 @@ def portfolio_balancing(
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     store = portfolio_store(request)
-    payload = build_balancing_payload(
+    payload = build_live_balancing_payload(
+        user_id=user.id,
         profile=store.current_profile(user.id),
         policy_record=store.current_balancing_policy(user.id),
         context=store.latest_balancing_context(user.id),
+        broker=broker_service(request),
+        moex=MoexIssClient(),
     )
     response.headers["Cache-Control"] = "private, no-store"
     return payload
