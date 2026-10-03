@@ -8,7 +8,12 @@ import pytest
 
 from omnicio.cbr import CBRClient, CBRRate, CBRUnavailable
 from omnicio.market import MarketService
-from omnicio.tbank import TBankFxQuote
+from omnicio.tbank import (
+    TBankFxQuote,
+    TBankHistoricCandle,
+    TBankLastPrice,
+    TBankTradingStatus,
+)
 
 
 class FakeXmlResponse:
@@ -98,6 +103,65 @@ class FakeBroker:
             previous_close="83.10",
         )
 
+    def market_exchange_candles(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        interval: str,
+        limit: int | None = None,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
+        assert instrument_uid == "uid-1"
+        assert interval == "CANDLE_INTERVAL_4_HOUR"
+        assert limit == 250
+        assert to_at - from_at == __import__("datetime").timedelta(days=31)
+        return (
+            TBankHistoricCandle(
+                instrument_uid="uid-1",
+                open="100",
+                high="103",
+                low="99",
+                close="102",
+                volume_lots=42,
+                time=to_at - __import__("datetime").timedelta(hours=4),
+                is_complete=True,
+                source="CANDLE_SOURCE_EXCHANGE",
+            ),
+        )
+
+    def market_last_price(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> TBankLastPrice:
+        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
+        assert instrument_uid == "uid-1"
+        return TBankLastPrice(
+            instrument_uid="uid-1",
+            price="102.5",
+            time=datetime.now(UTC),
+        )
+
+    def market_trading_status(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> TBankTradingStatus:
+        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
+        assert instrument_uid == "uid-1"
+        return TBankTradingStatus(
+            instrument_uid="uid-1",
+            trading_status="SECURITY_TRADING_STATUS_NORMAL_TRADING",
+            limit_order_available=True,
+            market_order_available=False,
+            api_trade_available=True,
+            best_price_order_available=True,
+            only_best_price=False,
+        )
+
 
 class FakeCBR:
     def usd_rub_rate(self, effective_on: date | None = None) -> CBRRate:
@@ -155,3 +219,48 @@ def test_market_service_marks_old_provider_timestamp_stale() -> None:
 
     assert snapshot.status == "stale"
     assert snapshot.age_seconds > 30
+
+
+def test_market_service_instrument_snapshot_preserves_quote_time_ohlc_and_status() -> None:
+    service = MarketService(
+        broker=FakeBroker(datetime.now(UTC).isoformat()),  # type: ignore[arg-type]
+        cbr=FakeCBR(),  # type: ignore[arg-type]
+        live_after_seconds=30,
+    )
+
+    snapshot = service.instrument_snapshot(
+        UUID("00000000-0000-0000-0000-000000000001"),
+        "uid-1",
+        period="1m",
+    )
+
+    assert snapshot.instrument_uid == "uid-1"
+    assert snapshot.period == "1m"
+    assert snapshot.interval == "CANDLE_INTERVAL_4_HOUR"
+    assert snapshot.source == "T-Invest exchange candles"
+    assert snapshot.last_price == "102.5"
+    assert snapshot.quote_status == "live"
+    assert snapshot.trading_status == "SECURITY_TRADING_STATUS_NORMAL_TRADING"
+    assert snapshot.api_trade_available is True
+    assert snapshot.limit_order_available is True
+    assert snapshot.market_order_available is False
+    assert len(snapshot.candles) == 1
+    assert snapshot.candles[0].open == "100"
+    assert snapshot.candles[0].high == "103"
+    assert snapshot.candles[0].low == "99"
+    assert snapshot.candles[0].close == "102"
+    assert snapshot.candles[0].is_complete is True
+
+
+def test_market_service_rejects_unknown_instrument_period_before_provider_read() -> None:
+    service = MarketService(
+        broker=FakeBroker(datetime.now(UTC).isoformat()),  # type: ignore[arg-type]
+        cbr=FakeCBR(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ValueError, match="unsupported market period"):
+        service.instrument_snapshot(
+            UUID("00000000-0000-0000-0000-000000000001"),
+            "uid-1",
+            period="all",
+        )
