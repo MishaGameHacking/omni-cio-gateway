@@ -1,6 +1,14 @@
 (() => {
   "use strict";
 
+  const requiredElement = (selector) => {
+    const element = document.querySelector(selector);
+    if (!element) {
+      throw new Error(`Required UI element is missing: ${selector}`);
+    }
+    return element;
+  };
+
   const authCard = document.querySelector("#auth-card");
   const profilePanel = document.querySelector("#profile-panel");
   const vkidForm = document.querySelector("#vkid-form");
@@ -151,13 +159,13 @@
   const balancingScreening = document.querySelector("#balancing-screening");
   const proposalStatus = document.querySelector("#proposal-status");
   const proposalCreateOptions = document.querySelector("#proposal-create-options");
-  const proposalHistory = document.querySelector("#proposal-history");
+  const proposalHistory = requiredElement("#proposal-history");
   const proposalMessage = document.querySelector("#proposal-message");
-  const executionStatus = document.querySelector("#execution-status");
-  const executionRefresh = document.querySelector("#execution-refresh");
-  const executionHistory = document.querySelector("#execution-history");
-  const executionDetails = document.querySelector("#execution-details");
-  const executionMessage = document.querySelector("#execution-message");
+  const executionStatus = requiredElement("#execution-status");
+  const executionRefresh = requiredElement("#execution-refresh");
+  const executionHistory = requiredElement("#execution-history");
+  const executionDetails = requiredElement("#execution-details");
+  const executionMessage = requiredElement("#execution-message");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
