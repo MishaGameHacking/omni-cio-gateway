@@ -89,6 +89,15 @@ class TBankMoney:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankRating:
+    agency_name: str
+    rating_level: str
+    rating_date: datetime
+    forecast: str
+    is_under_watch: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TBankHistoricCandle:
     instrument_uid: str
     close: str
@@ -409,6 +418,57 @@ class TBankInvestClient:
                     amortization=_optional_bool(item, "amortizationFlag"),
                     subordinated=_optional_bool(item, "subordinatedFlag"),
                     liquidity=_optional_bool(item, "liquidityFlag"),
+                )
+            )
+        return tuple(result)
+
+    def get_bond_ratings(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+    ) -> tuple[TBankRating, ...]:
+        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="BondBy",
+            body={
+                "idType": "INSTRUMENT_ID_TYPE_UID",
+                "id": instrument,
+            },
+        )
+        raw_instrument = _required_object(payload.get("instrument"), "bond")
+        returned_uid = _text(raw_instrument.get("uid")).strip()
+        if returned_uid != instrument:
+            raise TBankUnavailable(
+                "T-Invest bond rating lookup returned a different instrument"
+            )
+
+        result: list[TBankRating] = []
+        for raw in _optional_list(raw_instrument, "ratings"):
+            item = _required_object(raw, "bond rating")
+            agency = _text(item.get("agencyName")).strip()
+            level = _text(item.get("ratingLevel")).strip()
+            rating_date = _optional_provider_timestamp(item.get("ratingDate"))
+            under_watch = _optional_bool(item, "isUnderWatch")
+            if (
+                not agency
+                or not level
+                or rating_date is None
+                or under_watch is None
+            ):
+                raise TBankUnavailable(
+                    "T-Invest bond rating is missing required fields"
+                )
+            result.append(
+                TBankRating(
+                    agency_name=agency,
+                    rating_level=level,
+                    rating_date=rating_date,
+                    forecast=_text(item.get("forecast")).strip(),
+                    is_under_watch=under_watch,
                 )
             )
         return tuple(result)
