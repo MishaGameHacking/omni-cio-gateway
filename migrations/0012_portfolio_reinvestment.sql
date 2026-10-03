@@ -1,8 +1,19 @@
 BEGIN;
 
-ALTER TABLE operation_observations
-    ADD CONSTRAINT operation_observations_id_user_account_key
-    UNIQUE (id, user_id, account_id);
+DO $omnicio$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'operation_observations_id_user_account_key'
+          AND conrelid = 'operation_observations'::regclass
+    ) THEN
+        ALTER TABLE operation_observations
+            ADD CONSTRAINT operation_observations_id_user_account_key
+            UNIQUE (id, user_id, account_id);
+    END IF;
+END;
+$omnicio$;
 
 CREATE TABLE IF NOT EXISTS portfolio_reinvestment_mandates (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
