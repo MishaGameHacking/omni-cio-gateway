@@ -27,6 +27,13 @@ from .broker import (
 from .cbr import CBRClient
 from .config import Settings, load_settings
 from .db import Database, UserRecord
+from .execution_service import ExecutionServiceError, PortfolioExecutionService
+from .execution_store import (
+    ExecutionLedgerError,
+    ExecutionLegRecord,
+    ExecutionRunRecord,
+    ExecutionStore,
+)
 from .intelligence import rating_source_references
 from .market import MarketService
 from .portfolio import PortfolioAnalysisError
@@ -144,6 +151,13 @@ class PortfolioProposalBody(BaseModel):
     )
 
 
+class PortfolioExecutionBody(BaseModel):
+    proposal_id: UUID
+    proposal_version: int = Field(ge=1)
+    proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    mode: Literal["shadow", "sandbox"]
+
+
 class PortfolioProposalDecisionBody(BaseModel):
     action: Literal["confirm", "reject", "defer"]
     proposal_version: int = Field(ge=1)
@@ -190,6 +204,17 @@ def market_service(request: Request) -> MarketService:
 
 def portfolio_store(request: Request) -> PortfolioStore:
     return cast(PortfolioStore, request.app.state.portfolio_store)
+
+
+def execution_store(request: Request) -> ExecutionStore:
+    return cast(ExecutionStore, request.app.state.execution_store)
+
+
+def execution_service(request: Request) -> PortfolioExecutionService:
+    return cast(
+        PortfolioExecutionService,
+        request.app.state.execution_service,
+    )
 
 
 def vkid_client(request: Request) -> VKIDClient:
@@ -281,6 +306,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.database = database
     app.state.auth_service = AuthService(cfg, database)
     app.state.portfolio_store = PortfolioStore(database)
+    execution_ledger = ExecutionStore(database)
+    app.state.execution_store = execution_ledger
     app.state.vkid_client = VKIDClient(
         app_id=cfg.vkid_app_id,
         redirect_uri=VKID_CALLBACK,
@@ -291,6 +318,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         tbank=TBankInvestClient(),
     )
     app.state.broker_service = broker
+    app.state.execution_service = PortfolioExecutionService(
+        store=execution_ledger,
+        broker=broker,
+    )
     app.state.market_service = MarketService(
         broker=broker,
         cbr=CBRClient(),
@@ -951,6 +982,220 @@ def decide_portfolio_proposal(
         response.status_code = status.HTTP_409_CONFLICT
     response.headers["Cache-Control"] = "private, no-store"
     return result
+
+
+def _execution_run_payload(
+    run: ExecutionRunRecord,
+    legs: tuple[ExecutionLegRecord, ...] = (),
+) -> dict[str, object]:
+    return {
+        "id": str(run.id),
+        "proposal_id": str(run.proposal_id),
+        "proposal_version": run.proposal_version,
+        "proposal_hash": run.proposal_hash.hex(),
+        "account_id": run.account_id,
+        "mode": run.mode,
+        "provider_environment": run.provider_environment,
+        "status": run.status,
+        "error_code": run.error_code,
+        "created_at": run.created_at,
+        "updated_at": run.updated_at,
+        "finished_at": run.finished_at,
+        "live_execution_enabled": False,
+        "legs": [
+            {
+                "id": str(leg.id),
+                "leg_index": leg.leg_index,
+                "action": leg.action,
+                "instrument_uid": leg.instrument_uid,
+                "lots_requested": leg.lots_requested,
+                "lots_executed": leg.lots_executed,
+                "limit_price": str(leg.limit_price),
+                "limit_price_type": leg.limit_price_type,
+                "max_spend_rub": (
+                    str(leg.max_spend_rub)
+                    if leg.max_spend_rub is not None
+                    else None
+                ),
+                "min_proceeds_rub": (
+                    str(leg.min_proceeds_rub)
+                    if leg.min_proceeds_rub is not None
+                    else None
+                ),
+                "request_id": str(leg.request_id),
+                "provider_order_id": leg.provider_order_id,
+                "provider_status": leg.provider_status,
+                "status": leg.status,
+                "executed_amount_rub": str(leg.executed_amount_rub),
+                "executed_commission_rub": str(
+                    leg.executed_commission_rub
+                ),
+                "submitted_at": leg.submitted_at,
+                "last_checked_at": leg.last_checked_at,
+                "terminal_at": leg.terminal_at,
+            }
+            for leg in legs
+        ],
+    }
+
+
+def _require_current_legal_consent(request: Request, user: UserRecord) -> None:
+    database: Database = request.app.state.database
+    if not database.has_legal_versions(
+        user.id,
+        service(request).legal_versions(),
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="updated legal consent required",
+        )
+
+
+def _execution_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ExecutionLedgerError):
+        code = exc.code
+    elif isinstance(exc, ExecutionServiceError):
+        code = exc.code
+    else:
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    if code in {"proposal_not_found", "execution_not_found"}:
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=code,
+        )
+    if code in {
+        "sandbox_connection_changed",
+        "sandbox_reconcile_unavailable",
+    }:
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=code,
+        )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=code,
+    )
+
+
+@app.get("/api/portfolio/executions")
+def portfolio_executions(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    runs = execution_store(request).executions(user.id)
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "executions": [_execution_run_payload(item) for item in runs],
+        "live_execution_enabled": False,
+        "modes": ["shadow", "sandbox"],
+    }
+
+
+@app.get("/api/portfolio/executions/{run_id}")
+def portfolio_execution(
+    run_id: UUID,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    snapshot = execution_store(request).execution(user.id, run_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="execution_not_found",
+        )
+    run, legs, events = snapshot
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "execution": _execution_run_payload(run, legs),
+        "events": [
+            {
+                "id": event.id,
+                "leg_id": str(event.leg_id) if event.leg_id else None,
+                "event_type": event.event_type,
+                "details": event.details,
+                "created_at": event.created_at,
+            }
+            for event in events
+        ],
+        "live_execution_enabled": False,
+    }
+
+
+@app.post("/api/portfolio/executions", status_code=status.HTTP_201_CREATED)
+def create_portfolio_execution(
+    body: PortfolioExecutionBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    _require_current_legal_consent(request, user)
+    try:
+        run, legs = execution_service(request).start(
+            user.id,
+            proposal_id=body.proposal_id,
+            proposal_version=body.proposal_version,
+            proposal_hash=parse_proposal_hash(body.proposal_hash),
+            mode=body.mode,
+            session_digest=authenticated_session_digest(session_token),
+        )
+    except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
+        raise _execution_error(exc) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "execution": _execution_run_payload(run, legs),
+        "live_execution_enabled": False,
+    }
+
+
+@app.post("/api/portfolio/executions/{run_id}/advance")
+def advance_portfolio_execution(
+    run_id: UUID,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    _require_current_legal_consent(request, user)
+    try:
+        run, legs = execution_service(request).advance(user.id, run_id)
+    except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
+        raise _execution_error(exc) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "execution": _execution_run_payload(run, legs),
+        "live_execution_enabled": False,
+    }
+
+
+@app.post("/api/portfolio/executions/{run_id}/cancel")
+def cancel_portfolio_execution(
+    run_id: UUID,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    _require_current_legal_consent(request, user)
+    try:
+        run, legs = execution_service(request).cancel(user.id, run_id)
+    except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
+        raise _execution_error(exc) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "execution": _execution_run_payload(run, legs),
+        "live_execution_enabled": False,
+    }
 
 
 @app.get(
