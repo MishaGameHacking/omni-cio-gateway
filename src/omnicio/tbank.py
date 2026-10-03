@@ -555,8 +555,8 @@ class TBankInvestClient:
         if from_at > to_at:
             raise ValueError("candle start must not be after end")
         requested_window = to_at - from_at
-        if requested_window <= min_window:
-            raise ValueError("candle window must exceed candle interval")
+        if requested_window < min_window:
+            raise ValueError("candle window must cover at least one candle interval")
         if requested_window > max_window:
             raise ValueError("candle window exceeds interval limit")
 
