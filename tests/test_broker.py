@@ -826,15 +826,17 @@ def test_tbank_daily_candles_reject_non_exchange_response() -> None:
             ]
         }
     )
-    with patch("urllib.request.urlopen", return_value=response):
-        with pytest.raises(TBankUnavailable, match="exchange-sourced"):
-            client.get_daily_exchange_candles(
-                "t.fake-owner-credential-1234567890",
-                "prod",
-                "bond-uid",
-                from_at=now - timedelta(days=30),
-                to_at=now,
-            )
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(TBankUnavailable, match="exchange-sourced"),
+    ):
+        client.get_daily_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            from_at=now - timedelta(days=30),
+            to_at=now,
+        )
 
 
 def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
