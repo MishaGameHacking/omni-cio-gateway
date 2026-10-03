@@ -15,6 +15,7 @@ from omnicio.proposals import (
     build_proposal_draft,
     parse_proposal_hash,
     proposal_action_payload,
+    proposal_material_hash,
     proposal_payload,
 )
 
@@ -388,3 +389,39 @@ def test_proposal_hash_changes_when_constraints_or_limit_price_change() -> None:
 
     assert first.proposal_hash != second.proposal_hash
     assert first.proposal_hash != third.proposal_hash
+
+
+
+def test_material_hash_ignores_retrieval_clock_but_tracks_decision_inputs() -> None:
+    now = datetime(2026, 10, 3, 8, 5, tzinfo=UTC)
+    first = build_proposal_draft(
+        _balancing(),
+        scenario_kind="deploy_cash",
+        replaced_instrument_uid=None,
+        now=now,
+    )
+    retrieval_only = dict(first.payload)
+    retrieval_sources = [
+        dict(item)
+        for item in first.payload["evidence_sources"]
+    ]
+    retrieval_sources[0]["retrieved_at"] = "2026-10-03T08:04:00+00:00"
+    retrieval_only["evidence_sources"] = retrieval_sources
+    retrieval_only["generated_at"] = "2026-10-03T08:06:00+00:00"
+    retrieval_only["expires_at"] = "2026-10-03T08:16:00+00:00"
+
+    assert proposal_material_hash(first.payload) == proposal_material_hash(
+        retrieval_only
+    )
+
+    changed = dict(first.payload)
+    changed_scenario = dict(first.payload["scenario"])
+    changed_trades = [
+        dict(item)
+        for item in changed_scenario["trades"]
+    ]
+    changed_trades[0]["limit_price"] = "99.6"
+    changed_scenario["trades"] = changed_trades
+    changed["scenario"] = changed_scenario
+
+    assert proposal_material_hash(first.payload) != proposal_material_hash(changed)
