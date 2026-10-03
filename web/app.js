@@ -573,9 +573,14 @@
 
     appBack.classList.toggle("hidden", view === "home" && navigationDepth === 0);
 
-    if (view !== "portfolio" && instrumentMarketEventSource) {
-      instrumentMarketEventSource.close();
-      instrumentMarketEventSource = null;
+    if (view !== "portfolio") {
+      stopInstrumentMarketStream();
+    } else if (
+      instrumentMarketUid
+      && !instrumentDetail.classList.contains("hidden")
+      && document.visibilityState === "visible"
+    ) {
+      startInstrumentMarketStream();
     }
     if (scroll) {
       window.scrollTo({top: 0, behavior: "auto"});
