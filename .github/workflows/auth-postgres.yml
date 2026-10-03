@@ -57,7 +57,7 @@ concurrency:
 jobs:
   tests:
     name: Test PostgreSQL reconciler
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 5
 
     steps:
@@ -86,7 +86,7 @@ jobs:
       queue: max
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
