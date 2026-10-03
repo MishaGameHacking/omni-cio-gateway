@@ -30,6 +30,7 @@ RatingBucket = Literal[
 ]
 ScenarioStatus = Literal["feasible", "infeasible"]
 ScenarioKind = Literal["hold", "deploy_cash", "replace", "fallback_cash"]
+LimitPriceType = Literal["point", "currency"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,7 @@ class Holding:
     blocked: bool = False
     replacement_costs_complete: bool = True
     limit_price: Decimal | None = None
+    limit_price_type: LimitPriceType | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +115,7 @@ class Candidate:
     required_tests_passed: bool
     evidence_complete: bool
     limit_price: Decimal | None = None
+    limit_price_type: LimitPriceType | None = None
     structure_supported: bool = True
     access_reasons: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
@@ -136,6 +139,7 @@ class PlannedTrade:
     tax_rub: Decimal
     ytw_percent: Decimal | None
     limit_price: Decimal | None = None
+    limit_price_type: LimitPriceType | None = None
     max_spend_rub: Decimal | None = None
     min_proceeds_rub: Decimal | None = None
 
@@ -249,6 +253,8 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("missing_lot_cost")
     if candidate.limit_price is None or candidate.limit_price <= 0:
         reasons.append("limit_price_missing")
+    if candidate.limit_price_type is None:
+        reasons.append("limit_price_type_missing")
     if candidate.asset_class not in policy.allowed_asset_classes:
         reasons.append("asset_class_not_allowed")
     if candidate.currency.upper() not in policy.allowed_currencies:
@@ -394,6 +400,7 @@ def _optimize_cash(
                 tax_rub=Decimal("0"),
                 ytw_percent=candidate.ytw_percent,
                 limit_price=candidate.limit_price,
+                limit_price_type=candidate.limit_price_type,
                 max_spend_rub=spend,
             )
         )
@@ -433,6 +440,8 @@ def _replacement_scenario(
         return _fallback_cash(holding, "replacement_cost_model_missing")
     if holding.limit_price is None or holding.limit_price <= 0:
         return _fallback_cash(holding, "replacement_limit_price_missing")
+    if holding.limit_price_type is None:
+        return _fallback_cash(holding, "replacement_limit_price_type_missing")
     if holding.lots <= 0 or holding.value_rub <= 0:
         return _fallback_cash(holding, "holding_not_sellable")
 
@@ -506,6 +515,7 @@ def _replacement_scenario(
                     tax_rub=holding.tax_if_sold_rub,
                     ytw_percent=None,
                     limit_price=holding.limit_price,
+                    limit_price_type=holding.limit_price_type,
                     min_proceeds_rub=sale_proceeds,
                 ),
                 PlannedTrade(
@@ -518,6 +528,7 @@ def _replacement_scenario(
                     tax_rub=Decimal("0"),
                     ytw_percent=candidate.ytw_percent,
                     limit_price=candidate.limit_price,
+                    limit_price_type=candidate.limit_price_type,
                     max_spend_rub=spend,
                 ),
             ),
