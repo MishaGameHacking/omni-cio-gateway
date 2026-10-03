@@ -546,6 +546,8 @@
 
     if (view === "portfolio" && tbankIsConnected && !portfolioLoaded) {
       void loadPortfolioData();
+    } else if (view === "portfolio" && !portfolioVisualizationLoaded) {
+      void loadPortfolioVisualization();
     }
     if (
       view === "decisions"
@@ -2250,6 +2252,7 @@
 
   const renderPortfolio = (snapshot) => {
     const portfolio = snapshot.portfolio;
+    lastPortfolioSnapshot = snapshot;
     portfolioTotal.textContent = formatMoney(portfolio.total);
     portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
     applySignedClass(portfolioYield, portfolio.expected_yield_percent);
@@ -2258,13 +2261,16 @@
     portfolioDailyRelative.textContent = formatPercent(portfolio.daily_yield_percent, {sign: true});
     portfolioPositionCount.textContent = String(portfolio.positions?.length || 0);
     portfolioRefreshed.textContent = `Обновлено ${formatDateTime(snapshot.refreshed_at)}`;
+    const unblockedRub = homeUnblockedRub(snapshot);
+    portfolioFreeCash.textContent = unblockedRub === null
+      ? "Не подтверждены"
+      : storedMoney(unblockedRub);
 
-    renderAllocation(portfolio.asset_totals);
+    renderPortfolioAllocationView();
     renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
     renderPositions(portfolio.positions);
     renderHomePortfolioSummary(snapshot);
 
-    lastPortfolioSnapshot = snapshot;
     lastPortfolioRefreshAt = Date.now();
     portfolioLoaded = true;
     updateOwlState(snapshot.refreshed_at);
@@ -2279,6 +2285,8 @@
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
       lastPortfolioRefreshAt = 0;
+      resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
+      portfolioFreeCash.textContent = "—";
       updateOwlState(null);
       updateGuard(null);
       resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
@@ -2308,6 +2316,7 @@
     try {
       const snapshot = await api("/api/broker/tbank/portfolio", {method: "GET"});
       renderPortfolio(snapshot);
+      void loadPortfolioVisualization({force});
     } catch (error) {
       if (error.status === 401) {
         location.reload();
@@ -2328,6 +2337,7 @@
         setStateBadge(owlState, "Ошибка обновления", "state-next");
       } else {
         portfolioLoaded = false;
+        portfolioFreeCash.textContent = "—";
         showPortfolioMode("error");
         portfolioErrorText.textContent = needsReconnect
           ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
@@ -4292,6 +4302,8 @@
       resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
+      resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
+      portfolioFreeCash.textContent = "—";
       lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
       overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Интеграции».";
@@ -4363,6 +4375,8 @@
     }]);
     setHomeAttentionBucket("portfolio", []);
     resetHomePortfolioSummary("Состояние T-Invest не подтверждено.");
+    resetPortfolioVisualization("Состояние T-Invest не подтверждено; история не обновлялась.");
+    portfolioFreeCash.textContent = "—";
     overviewAccount.textContent = "Не удалось проверить подключение";
     overviewConnectionText.textContent = "Обновите страницу или попробуйте позже.";
     homeConnectionCard.classList.add("is-error");
