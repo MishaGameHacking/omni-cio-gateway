@@ -394,6 +394,7 @@ class ExecutionStore:
                 mode,
                 provider_environment,
                 live_mandate_id,
+                created_session_digest,
                 status,
                 error_code,
                 created_at,
