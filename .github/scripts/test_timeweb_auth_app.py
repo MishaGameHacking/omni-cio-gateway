@@ -1023,6 +1023,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("document.visibilityState", script)
         self.assertIn("scheduleInstrumentMarketReconnect", script)
         self.assertIn("Math.min(1000 * (2 ** instrumentMarketRetryCount), 30000)", script)
+        self.assertIn("finiteMarketNumber", script)
+        self.assertIn('instrumentMarketQuoteUnit === "point"', script)
+        self.assertIn("payload === null", script)
         self.assertNotIn("broker token", script.lower())
         self.assertNotIn("innerHTML", script)
 
