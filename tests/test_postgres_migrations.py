@@ -66,14 +66,39 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
     assert "set_config('omnicio.financial_cleanup', 'broker_disconnect', true)" in database_source
 
 
+def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode() -> None:
+    migration = (ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text()
+
+    assert "portfolio_live_execution_mandates" in migration
+    assert "ENABLE ROW LEVEL SECURITY" in migration
+    assert "FORCE ROW LEVEL SECURITY" in migration
+    assert "live_mandate_id" in migration
+    assert "mode IN ('shadow', 'sandbox', 'live')" in migration
+    assert "mode = 'live'" in migration
+    assert "provider_environment = 'prod'" in migration
+    assert "live execution requires an active exact-account mandate" in migration
+    assert "portfolio_execution_runs_one_active_live_idx" in migration
+    assert "portfolio_live_execution_mandates_active_idx" in migration
+    assert "portfolio_live_execution_mandates_expiry_window" in migration
+    assert "expires_at <= created_at + interval '24 hours'" in migration
+    assert "omnicio_validate_live_submission_authority" in migration
+    assert "portfolio_execution_legs_live_submission_guard" in migration
+    assert "FOR SHARE OF m" in migration
+    assert "live execution mandate is inactive before submission" in migration
+    execution_store_source = (ROOT / "src" / "omnicio" / "execution_store.py").read_text()
+    assert 'run.mode == "live" and new_status == "submitting"' in execution_store_source
+    assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
+    assert "FOR SHARE" in execution_store_source
+
+
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0010_portfolio_execution.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0011_portfolio_live_execution.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        # The additive R6 migration is safe to retry before release. Once
+        # The additive latest migration is safe to retry before release. Once
         # accepted on main it becomes immutable migration history.
-        admin.execute((ROOT / "migrations" / "0010_portfolio_execution.sql").read_text())
+        admin.execute((ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text())
 
         table_names = {
             row[0]
@@ -105,6 +130,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "portfolio_execution_runs",
             "portfolio_execution_legs",
             "portfolio_execution_events",
+            "portfolio_live_execution_mandates",
         } <= table_names
 
         protected = {
@@ -130,13 +156,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_proposal_actions',
                           'portfolio_execution_runs',
                           'portfolio_execution_legs',
-                          'portfolio_execution_events'
+                          'portfolio_execution_events',
+                          'portfolio_live_execution_mandates'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 14
+        assert len(protected) == 15
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
@@ -765,6 +792,66 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 mode="sandbox",
                 session_digest=b"e" * 32,
             )
+            invalid_mandate_expiry = created_at + timedelta(minutes=30)
+            invalid_mandate_now = created_at + timedelta(minutes=5)
+            invalid_order_cap = Decimal("3000.001")
+            invalid_daily_cap = Decimal("5000")
+            with pytest.raises(ValueError, match="kopeck precision"):
+                execution_store.create_live_mandate(
+                    USER_ONE,
+                    account_id="account-1",
+                    max_order_notional_rub=invalid_order_cap,
+                    max_daily_notional_rub=invalid_daily_cap,
+                    session_digest=b"l" * 32,
+                    expires_at=invalid_mandate_expiry,
+                    now=invalid_mandate_now,
+                )
+            live_mandate = execution_store.create_live_mandate(
+                USER_ONE,
+                account_id="account-1",
+                max_order_notional_rub=Decimal("3000"),
+                max_daily_notional_rub=Decimal("5000"),
+                session_digest=b"l" * 32,
+                expires_at=created_at + timedelta(minutes=30),
+                now=created_at + timedelta(minutes=5),
+            )
+            live_run, live_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="live",
+                session_digest=b"e" * 32,
+            )
+            revoked_mandate = execution_store.revoke_live_mandate(
+                USER_ONE,
+                now=created_at + timedelta(minutes=6),
+            )
+            live_run_id = live_run.id
+            live_leg_id = live_legs[0].id
+            live_submit_details = {"request_id": str(live_legs[0].request_id)}
+            live_submit_now = created_at + timedelta(minutes=6)
+            with pytest.raises(ExecutionLedgerError, match="live_mandate_inactive"):
+                execution_store.transition_leg(
+                    USER_ONE,
+                    run_id=live_run_id,
+                    leg_id=live_leg_id,
+                    expected_statuses=("pending",),
+                    new_status="submitting",
+                    event_type="live_preflight_passed",
+                    details=live_submit_details,
+                    now=live_submit_now,
+                )
+            cancelled_live_run, cancelled_live_leg = execution_store.transition_leg(
+                USER_ONE,
+                run_id=live_run.id,
+                leg_id=live_legs[0].id,
+                expected_statuses=("pending",),
+                new_status="cancelled",
+                event_type="cancelled_before_submission",
+                details={"reason": "kill_switch_regression"},
+                now=created_at + timedelta(minutes=7),
+            )
 
             stale_execution_ready = store.create_proposal(
                 USER_ONE,
@@ -888,6 +975,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert sandbox_run.id != shadow_run.id
         assert sandbox_run.provider_environment == "sandbox"
         assert sandbox_legs[0].request_id != shadow_legs[0].request_id
+        assert live_run.mode == "live"
+        assert live_run.provider_environment == "prod"
+        assert live_run.live_mandate_id == live_mandate.id
+        assert revoked_mandate is not None
+        assert revoked_mandate.id == live_mandate.id
+        assert revoked_mandate.revoked_at is not None
+        assert cancelled_live_run.status == "cancelled"
+        assert cancelled_live_leg.status == "cancelled"
         assert policy_after_confirmation.version == 3
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"

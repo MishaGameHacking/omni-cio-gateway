@@ -161,7 +161,7 @@ class TBankOrderPrice:
 
 
 @dataclass(frozen=True, slots=True)
-class TBankSandboxOrderState:
+class TBankOrderState:
     order_id: str
     order_request_id: str
     instrument_uid: str
@@ -174,17 +174,26 @@ class TBankSandboxOrderState:
     order_type: str
 
 
+TBankSandboxOrderState = TBankOrderState
+
+
 @dataclass(frozen=True, slots=True)
-class TBankSandboxMaxLots:
+class TBankMaxLots:
     buy_max_lots: int
     sell_max_lots: int
     buy_money_amount: TBankMoney | None
     currency: str
 
 
+TBankSandboxMaxLots = TBankMaxLots
+
+
 @dataclass(frozen=True, slots=True)
-class TBankSandboxCancelResult:
+class TBankCancelResult:
     cancelled_at: datetime
+
+
+TBankSandboxCancelResult = TBankCancelResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -835,6 +844,35 @@ class TBankInvestClient:
             bond_aci_value=bond_aci,
         )
 
+    def post_order(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        instrument_uid: str,
+        *,
+        quantity_lots: int,
+        price: str,
+        direction: Literal["buy", "sell"],
+        request_id: str,
+        price_type: Literal["point", "currency"],
+    ) -> TBankOrderState:
+        _require_prod(environment)
+        return self._post_limit_order(
+            token,
+            environment,
+            service="OrdersService",
+            method="PostOrder",
+            account_id=account_id,
+            instrument_uid=instrument_uid,
+            quantity_lots=quantity_lots,
+            price=price,
+            direction=direction,
+            request_id=request_id,
+            price_type=price_type,
+            time_in_force="TIME_IN_FORCE_FILL_AND_KILL",
+        )
+
     def post_sandbox_order(
         self,
         token: str,
@@ -847,22 +885,53 @@ class TBankInvestClient:
         direction: Literal["buy", "sell"],
         request_id: str,
         price_type: Literal["point", "currency"],
-    ) -> TBankSandboxOrderState:
+    ) -> TBankOrderState:
         _require_sandbox(environment)
+        return self._post_limit_order(
+            token,
+            environment,
+            service="SandboxService",
+            method="PostSandboxOrder",
+            account_id=account_id,
+            instrument_uid=instrument_uid,
+            quantity_lots=quantity_lots,
+            price=price,
+            direction=direction,
+            request_id=request_id,
+            price_type=price_type,
+            time_in_force="TIME_IN_FORCE_DAY",
+        )
+
+    def _post_limit_order(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        *,
+        service: str,
+        method: str,
+        account_id: str,
+        instrument_uid: str,
+        quantity_lots: int,
+        price: str,
+        direction: Literal["buy", "sell"],
+        request_id: str,
+        price_type: Literal["point", "currency"],
+        time_in_force: str,
+    ) -> TBankOrderState:
         if quantity_lots <= 0:
-            raise ValueError("sandbox order quantity must be positive")
+            raise ValueError("order quantity must be positive")
         request_uuid = _validate_request_uuid(request_id)
         try:
             price_value = Decimal(price)
         except InvalidOperation as exc:
-            raise ValueError("sandbox order price is invalid") from exc
+            raise ValueError("order price is invalid") from exc
         if not price_value.is_finite() or price_value <= 0:
-            raise ValueError("sandbox order price must be positive")
+            raise ValueError("order price must be positive")
         payload = self._post(
             token=token,
             environment=environment,
-            service="SandboxService",
-            method="PostSandboxOrder",
+            service=service,
+            method=method,
             body={
                 "quantity": str(quantity_lots),
                 "price": _quotation_payload(price_value),
@@ -877,12 +946,32 @@ class TBankInvestClient:
                     instrument_uid,
                     "instrument uid",
                 ),
-                "timeInForce": "TIME_IN_FORCE_DAY",
+                "timeInForce": time_in_force,
                 "priceType": _provider_price_type(price_type),
                 "confirmMarginTrade": False,
             },
         )
-        return _sandbox_order_state(payload, expected_request_id=request_uuid)
+        return _order_state(payload, expected_request_id=request_uuid)
+
+    def get_order_state(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        *,
+        request_id: str,
+        price_type: Literal["point", "currency"],
+    ) -> TBankOrderState:
+        _require_prod(environment)
+        return self._get_order_state(
+            token,
+            environment,
+            service="OrdersService",
+            method="GetOrderState",
+            account_id=account_id,
+            request_id=request_id,
+            price_type=price_type,
+        )
 
     def get_sandbox_order_state(
         self,
@@ -892,14 +981,35 @@ class TBankInvestClient:
         *,
         request_id: str,
         price_type: Literal["point", "currency"],
-    ) -> TBankSandboxOrderState:
+    ) -> TBankOrderState:
         _require_sandbox(environment)
+        return self._get_order_state(
+            token,
+            environment,
+            service="SandboxService",
+            method="GetSandboxOrderState",
+            account_id=account_id,
+            request_id=request_id,
+            price_type=price_type,
+        )
+
+    def _get_order_state(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        *,
+        service: str,
+        method: str,
+        account_id: str,
+        request_id: str,
+        price_type: Literal["point", "currency"],
+    ) -> TBankOrderState:
         request_uuid = _validate_request_uuid(request_id)
         payload = self._post(
             token=token,
             environment=environment,
-            service="SandboxService",
-            method="GetSandboxOrderState",
+            service=service,
+            method=method,
             body={
                 "accountId": _validate_account_id(account_id),
                 "orderId": request_uuid,
@@ -907,7 +1017,25 @@ class TBankInvestClient:
                 "orderIdType": "ORDER_ID_TYPE_REQUEST",
             },
         )
-        return _sandbox_order_state(payload, expected_request_id=request_uuid)
+        return _order_state(payload, expected_request_id=request_uuid)
+
+    def cancel_order(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        *,
+        request_id: str,
+    ) -> TBankCancelResult:
+        _require_prod(environment)
+        return self._cancel_order(
+            token,
+            environment,
+            service="OrdersService",
+            method="CancelOrder",
+            account_id=account_id,
+            request_id=request_id,
+        )
 
     def cancel_sandbox_order(
         self,
@@ -916,14 +1044,33 @@ class TBankInvestClient:
         account_id: str,
         *,
         request_id: str,
-    ) -> TBankSandboxCancelResult:
+    ) -> TBankCancelResult:
         _require_sandbox(environment)
+        return self._cancel_order(
+            token,
+            environment,
+            service="SandboxService",
+            method="CancelSandboxOrder",
+            account_id=account_id,
+            request_id=request_id,
+        )
+
+    def _cancel_order(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        *,
+        service: str,
+        method: str,
+        account_id: str,
+        request_id: str,
+    ) -> TBankCancelResult:
         request_uuid = _validate_request_uuid(request_id)
         payload = self._post(
             token=token,
             environment=environment,
-            service="SandboxService",
-            method="CancelSandboxOrder",
+            service=service,
+            method=method,
             body={
                 "accountId": _validate_account_id(account_id),
                 "orderId": request_uuid,
@@ -932,10 +1079,28 @@ class TBankInvestClient:
         )
         cancelled_at = _optional_provider_timestamp(payload.get("time"))
         if cancelled_at is None:
-            raise TBankUnavailable(
-                "T-Invest sandbox cancellation has no timestamp"
-            )
-        return TBankSandboxCancelResult(cancelled_at=cancelled_at)
+            raise TBankUnavailable("T-Invest cancellation has no timestamp")
+        return TBankCancelResult(cancelled_at=cancelled_at)
+
+    def get_max_lots(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        instrument_uid: str,
+        *,
+        price: str,
+    ) -> TBankMaxLots:
+        _require_prod(environment)
+        return self._get_max_lots(
+            token,
+            environment,
+            service="OrdersService",
+            method="GetMaxLots",
+            account_id=account_id,
+            instrument_uid=instrument_uid,
+            price=price,
+        )
 
     def get_sandbox_max_lots(
         self,
@@ -945,19 +1110,40 @@ class TBankInvestClient:
         instrument_uid: str,
         *,
         price: str,
-    ) -> TBankSandboxMaxLots:
+    ) -> TBankMaxLots:
         _require_sandbox(environment)
+        return self._get_max_lots(
+            token,
+            environment,
+            service="SandboxService",
+            method="GetSandboxMaxLots",
+            account_id=account_id,
+            instrument_uid=instrument_uid,
+            price=price,
+        )
+
+    def _get_max_lots(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        *,
+        service: str,
+        method: str,
+        account_id: str,
+        instrument_uid: str,
+        price: str,
+    ) -> TBankMaxLots:
         try:
             price_value = Decimal(price)
         except InvalidOperation as exc:
-            raise ValueError("sandbox max-lots price is invalid") from exc
+            raise ValueError("max-lots price is invalid") from exc
         if not price_value.is_finite() or price_value <= 0:
-            raise ValueError("sandbox max-lots price must be positive")
+            raise ValueError("max-lots price must be positive")
         payload = self._post(
             token=token,
             environment=environment,
-            service="SandboxService",
-            method="GetSandboxMaxLots",
+            service=service,
+            method=method,
             body={
                 "accountId": _validate_account_id(account_id),
                 "instrumentId": _validate_provider_id(
@@ -967,13 +1153,13 @@ class TBankInvestClient:
                 "price": _quotation_payload(price_value),
             },
         )
-        buy = _required_object(payload.get("buyLimits"), "sandbox buy limits")
-        sell = _required_object(payload.get("sellLimits"), "sandbox sell limits")
-        buy_max = _int_value(buy.get("buyMaxLots"), "sandbox buyMaxLots")
-        sell_max = _int_value(sell.get("sellMaxLots"), "sandbox sellMaxLots")
+        buy = _required_object(payload.get("buyLimits"), "buy limits")
+        sell = _required_object(payload.get("sellLimits"), "sell limits")
+        buy_max = _int_value(buy.get("buyMaxLots"), "buyMaxLots")
+        sell_max = _int_value(sell.get("sellMaxLots"), "sellMaxLots")
         if buy_max < 0 or sell_max < 0:
-            raise TBankUnavailable("T-Invest sandbox max lots is negative")
-        return TBankSandboxMaxLots(
+            raise TBankUnavailable("T-Invest max lots is negative")
+        return TBankMaxLots(
             buy_max_lots=buy_max,
             sell_max_lots=sell_max,
             buy_money_amount=_money(buy.get("buyMoneyAmount")),
@@ -1735,6 +1921,11 @@ class TBankInvestClient:
         return cast(dict[str, object], payload_raw)
 
 
+def _require_prod(environment: TBankEnvironment) -> None:
+    if environment != "prod":
+        raise ValueError("production order requires production environment")
+
+
 def _require_sandbox(environment: TBankEnvironment) -> None:
     if environment != "sandbox":
         raise ValueError("sandbox mutation requires sandbox environment")
@@ -1745,10 +1936,10 @@ def _validate_request_uuid(value: str) -> str:
     try:
         parsed = UUID(clean)
     except ValueError as exc:
-        raise ValueError("sandbox request id must be a UUID") from exc
+        raise ValueError("order request id must be a UUID") from exc
     canonical = str(parsed)
     if clean.lower() != canonical:
-        raise ValueError("sandbox request id must use canonical UUID form")
+        raise ValueError("order request id must use canonical UUID form")
     return canonical
 
 
@@ -1759,30 +1950,30 @@ def _provider_price_type(value: Literal["point", "currency"]) -> str:
     }[value]
 
 
-def _sandbox_order_state(
+def _order_state(
     payload: dict[str, object],
     *,
     expected_request_id: str,
-) -> TBankSandboxOrderState:
+) -> TBankOrderState:
     request_id = _text(payload.get("orderRequestId")).strip()
     order_id = _text(payload.get("orderId")).strip()
     instrument_uid = _text(payload.get("instrumentUid")).strip()
     execution_status = _text(payload.get("executionReportStatus")).strip()
     lots_requested = _int_value(
         payload.get("lotsRequested"),
-        "sandbox lotsRequested",
+        "lotsRequested",
     )
     lots_executed = _int_value(
         payload.get("lotsExecuted"),
-        "sandbox lotsExecuted",
+        "lotsExecuted",
     )
     if request_id != expected_request_id:
         raise TBankUnavailable(
-            "T-Invest sandbox order returned a different request id"
+            "T-Invest order returned a different request id"
         )
     if not order_id or not instrument_uid or not execution_status:
         raise TBankUnavailable(
-            "T-Invest sandbox order state is missing identity fields"
+            "T-Invest order state is missing identity fields"
         )
     if (
         lots_requested <= 0
@@ -1790,9 +1981,9 @@ def _sandbox_order_state(
         or lots_executed > lots_requested
     ):
         raise TBankUnavailable(
-            "T-Invest sandbox order state has invalid lot counts"
+            "T-Invest order state has invalid lot counts"
         )
-    return TBankSandboxOrderState(
+    return TBankOrderState(
         order_id=order_id,
         order_request_id=request_id,
         instrument_uid=instrument_uid,

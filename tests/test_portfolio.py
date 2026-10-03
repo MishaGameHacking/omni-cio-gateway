@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
+from omnicio.execution_service import ExecutionServiceError
 from omnicio.main import app
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
 from omnicio.portfolio_store import (
@@ -972,7 +973,24 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
             app.state.database = previous_database
 
 
-def test_execution_http_uses_session_tenant_and_exposes_no_live_mode() -> None:
+def test_live_mandate_http_rejects_sub_kopeck_caps_before_authority_checks() -> None:
+    response = TestClient(app).put(
+        "/api/portfolio/live-execution/mandate",
+        json={
+            "account_id": "production-account",
+            "max_order_notional_rub": "100.001",
+            "max_daily_notional_rub": "200.00",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "confirm_public_id": "000000001",
+            "confirm_live_execution": True,
+        },
+        headers={"Origin": "https://omnicio.ru"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_execution_http_uses_session_tenant_and_keeps_live_dormant_by_config() -> None:
     run = type(
         "Run",
         (),
@@ -984,6 +1002,7 @@ def test_execution_http_uses_session_tenant_and_exposes_no_live_mode() -> None:
             "account_id": "sandbox-account",
             "mode": "shadow",
             "provider_environment": None,
+            "live_mandate_id": None,
             "status": "succeeded",
             "error_code": "",
             "created_at": datetime.now(UTC),
@@ -995,9 +1014,12 @@ def test_execution_http_uses_session_tenant_and_exposes_no_live_mode() -> None:
     with (
         patch("omnicio.main.authenticated_user") as user,
         patch("omnicio.main.execution_store") as store,
+        patch("omnicio.main.settings") as cfg,
     ):
         user.return_value.id = "server-user"
         store.return_value.executions.return_value = (run,)
+        store.return_value.live_mandate.return_value = None
+        cfg.return_value.portfolio_live_execution_enabled = False
         response = TestClient(app).get(
             "/api/portfolio/executions?user_id=attacker"
         )
@@ -1027,12 +1049,23 @@ def test_execution_create_accepts_only_proposal_identity_and_safe_mode() -> None
     )
     assert extra_trade.status_code == 422
 
-    live_mode = TestClient(app).post(
-        "/api/portfolio/executions",
-        json={**base, "mode": "live"},
-        headers={"Origin": "https://omnicio.ru"},
-    )
-    assert live_mode.status_code == 422
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main._require_current_legal_consent"),
+        patch("omnicio.main.execution_service") as executor,
+    ):
+        user.return_value.id = "server-user"
+        executor.return_value.start.side_effect = ExecutionServiceError(
+            "live_execution_disabled"
+        )
+        live_mode = TestClient(app).post(
+            "/api/portfolio/executions",
+            json={**base, "mode": "live"},
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "live-session"},
+        )
+    assert live_mode.status_code == 409
+    assert live_mode.json()["detail"] == "live_execution_disabled"
 
 
 def test_execution_create_requires_origin_before_execution_service() -> None:

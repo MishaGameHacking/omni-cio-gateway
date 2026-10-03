@@ -21,6 +21,7 @@ from .tbank import (
     TBankAssetReport,
     TBankBondCoupon,
     TBankBondEvent,
+    TBankCancelResult,
     TBankDividend,
     TBankEnvironment,
     TBankFxQuote,
@@ -30,9 +31,11 @@ from .tbank import (
     TBankInvestClient,
     TBankLastPrice,
     TBankMarketYield,
+    TBankMaxLots,
     TBankOperationsPage,
     TBankOrderBook,
     TBankOrderPrice,
+    TBankOrderState,
     TBankPortfolio,
     TBankPositions,
     TBankRating,
@@ -62,6 +65,10 @@ class BrokerNotConnected(BrokerConnectionError):
 
 class BrokerSandboxRequired(BrokerConnectionError):
     """A mutable R6 operation was requested for a non-sandbox connection."""
+
+
+class BrokerLiveRequired(BrokerConnectionError):
+    """An R7 live mutation requires the exact production account with write access."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,6 +384,107 @@ class BrokerService:
             price=price,
             direction=cast(Any, direction),
             quantity_lots=quantity_lots,
+        )
+
+    def live_order_price(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        price: str,
+        direction: str,
+        quantity_lots: int,
+    ) -> TBankOrderPrice:
+        record, credential, environment = self._live_credential(user_id)
+        if direction not in {"buy", "sell"}:
+            raise ValueError("live order price direction is invalid")
+        return self.tbank.get_order_price(
+            credential,
+            environment,
+            record.account_id,
+            instrument_uid,
+            price=price,
+            direction=cast(Any, direction),
+            quantity_lots=quantity_lots,
+        )
+
+    def live_max_lots(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        price: str,
+    ) -> TBankMaxLots:
+        record, credential, environment = self._live_credential(user_id)
+        return self.tbank.get_max_lots(
+            credential,
+            environment,
+            record.account_id,
+            instrument_uid,
+            price=price,
+        )
+
+    def post_live_order(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        quantity_lots: int,
+        price: str,
+        direction: str,
+        request_id: str,
+        price_type: str,
+    ) -> TBankOrderState:
+        record, credential, environment = self._live_credential(user_id)
+        if direction not in {"buy", "sell"}:
+            raise ValueError("live order direction is invalid")
+        if price_type not in {"point", "currency"}:
+            raise ValueError("live order price type is invalid")
+        return self.tbank.post_order(
+            credential,
+            environment,
+            record.account_id,
+            instrument_uid,
+            quantity_lots=quantity_lots,
+            price=price,
+            direction=cast(Any, direction),
+            request_id=request_id,
+            price_type=cast(Any, price_type),
+        )
+
+    def live_order_state(
+        self,
+        user_id: UUID,
+        *,
+        request_id: str,
+        price_type: str,
+    ) -> TBankOrderState:
+        record, credential, environment = self._prod_credential(
+            user_id,
+            require_full_access=False,
+        )
+        if price_type not in {"point", "currency"}:
+            raise ValueError("live order price type is invalid")
+        return self.tbank.get_order_state(
+            credential,
+            environment,
+            record.account_id,
+            request_id=request_id,
+            price_type=cast(Any, price_type),
+        )
+
+    def cancel_live_order(
+        self,
+        user_id: UUID,
+        *,
+        request_id: str,
+    ) -> TBankCancelResult:
+        record, credential, environment = self._live_credential(user_id)
+        return self.tbank.cancel_order(
+            credential,
+            environment,
+            record.account_id,
+            request_id=request_id,
         )
 
     def sandbox_order_price(
@@ -829,6 +937,52 @@ class BrokerService:
 
     def disconnect(self, user_id: UUID) -> bool:
         return self.database.delete_tbank_connection(user_id)
+
+    def live_account(self, user_id: UUID) -> TBankAccount:
+        record, _credential, _environment = self._prod_credential(
+            user_id,
+            require_full_access=True,
+        )
+        account = self.revalidate_account(user_id)
+        if (
+            account.id != record.account_id
+            or account.access_level != "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"
+        ):
+            raise BrokerLiveRequired(
+                "R7 live execution requires an open account with full access"
+            )
+        return account
+
+    def _live_credential(
+        self,
+        user_id: UUID,
+    ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
+        return self._prod_credential(user_id, require_full_access=True)
+
+    def _prod_credential(
+        self,
+        user_id: UUID,
+        *,
+        require_full_access: bool,
+    ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
+        record, credential, environment = self._connected_credential(user_id)
+        if environment != "prod":
+            raise BrokerLiveRequired(
+                "R7 live execution requires the exact production broker connection"
+            )
+        accounts = self.tbank.get_accounts(credential, environment)
+        selected = next(
+            (account for account in accounts if account.id == record.account_id),
+            None,
+        )
+        if selected is None or selected.status != "ACCOUNT_STATUS_OPEN":
+            raise BrokerLiveRequired("R7 production account is no longer open")
+        allowed = {"ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"}
+        if not require_full_access:
+            allowed.add("ACCOUNT_ACCESS_LEVEL_READ_ONLY")
+        if selected.access_level not in allowed:
+            raise BrokerLiveRequired("R7 production account access is not sufficient")
+        return record, credential, environment
 
     def _sandbox_credential(
         self,

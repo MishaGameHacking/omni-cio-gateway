@@ -134,6 +134,9 @@ jobs:
       LEGAL_CONSENT_VERSION: "2026-10-02-v6"
       LEGAL_TERMS_VERSION: "2026-10-02-v6"
       SESSION_TTL_SECONDS: "34560000"
+      PORTFOLIO_LIVE_EXECUTION_ENABLED: "false"
+      PORTFOLIO_LIVE_MAX_ORDER_RUB: "10000"
+      PORTFOLIO_LIVE_MAX_DAILY_RUB: "20000"
 
     steps:
       - name: Checkout accepted main state

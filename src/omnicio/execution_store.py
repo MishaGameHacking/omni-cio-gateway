@@ -1,10 +1,10 @@
-"""PostgreSQL persistence for the R6 shadow/sandbox execution ledger."""
+"""PostgreSQL persistence for R6/R7 execution and live-mandate ledgers."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -13,15 +13,22 @@ from .db import Database
 from .execution import (
     ExecutionLegStatus,
     ExecutionMode,
+    ExecutionPlan,
     ExecutionRunStatus,
     ExecutionStateError,
     build_execution_plan,
     run_status_for_legs,
 )
-from .portfolio_store import PortfolioStore
+from .portfolio_store import PortfolioProposalRecord, PortfolioStore
 
 _TERMINAL_RUNS = {"succeeded", "cancelled", "failed"}
 _TERMINAL_LEGS = {"filled", "cancelled", "rejected", "failed", "shadow_filled"}
+_ADVISORY_XACT_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+_PROVIDER_ENVIRONMENT: dict[ExecutionMode, str | None] = {
+    "shadow": None,
+    "sandbox": "sandbox",
+    "live": "prod",
+}
 
 
 class ExecutionLedgerError(RuntimeError):
@@ -41,11 +48,25 @@ class ExecutionRunRecord:
     account_id: str
     mode: ExecutionMode
     provider_environment: str | None
+    live_mandate_id: UUID | None
     status: ExecutionRunStatus
     error_code: str
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class LiveExecutionMandateRecord:
+    id: UUID
+    user_id: UUID
+    account_id: str
+    max_order_notional_rub: Decimal
+    max_daily_notional_rub: Decimal
+    created_session_digest: bytes
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +117,358 @@ class ExecutionStore:
             (str(user_id),),
         )
 
+    def live_mandate(
+        self,
+        user_id: UUID,
+        *,
+        account_id: str | None = None,
+        now: datetime | None = None,
+    ) -> LiveExecutionMandateRecord | None:
+        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            select_sql = """
+                SELECT
+                    id,
+                    user_id,
+                    account_id,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    created_session_digest,
+                    created_at,
+                    expires_at,
+                    revoked_at
+                FROM portfolio_live_execution_mandates
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                  AND expires_at > %s
+            """
+            if account_id is None:
+                cur.execute(
+                    select_sql + " ORDER BY created_at DESC LIMIT 1",
+                    (user_id, observed_at),
+                )
+            else:
+                cur.execute(
+                    select_sql
+                    + " AND account_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (user_id, observed_at, account_id),
+                )
+            row = cur.fetchone()
+            return (
+                _mandate_record(cast(dict[str, Any], row))
+                if row is not None
+                else None
+            )
+
+    def create_live_mandate(
+        self,
+        user_id: UUID,
+        *,
+        account_id: str,
+        max_order_notional_rub: Decimal,
+        max_daily_notional_rub: Decimal,
+        session_digest: bytes,
+        expires_at: datetime,
+        now: datetime | None = None,
+    ) -> LiveExecutionMandateRecord:
+        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        if len(session_digest) != 32:
+            raise ValueError("live mandate session digest must be SHA-256")
+        if not account_id or len(account_id) > 128:
+            raise ValueError("live mandate account id is invalid")
+        if (
+            not max_order_notional_rub.is_finite()
+            or max_order_notional_rub <= 0
+            or not max_daily_notional_rub.is_finite()
+            or max_daily_notional_rub < max_order_notional_rub
+        ):
+            raise ValueError("live mandate notional caps are invalid")
+        kopeck = Decimal("0.01")
+        if (
+            max_order_notional_rub.quantize(kopeck) != max_order_notional_rub
+            or max_daily_notional_rub.quantize(kopeck) != max_daily_notional_rub
+        ):
+            raise ValueError("live mandate caps require kopeck precision")
+        if expires_at.tzinfo is None:
+            raise ValueError("live mandate expiry must be timezone-aware")
+        expiry = expires_at.astimezone(UTC)
+        if expiry <= observed_at or expiry > observed_at + timedelta(hours=24):
+            raise ValueError("live mandate expiry must be within the next 24 hours")
+
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(
+                _ADVISORY_XACT_LOCK_SQL,
+                (f"portfolio-live-mandate:{user_id}",),
+            )
+            cur.execute(
+                """
+                UPDATE portfolio_live_execution_mandates
+                SET revoked_at = %s
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                  AND expires_at <= %s
+                """,
+                (observed_at, user_id, observed_at),
+            )
+            cur.execute(
+                """
+                SELECT id
+                FROM portfolio_live_execution_mandates
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                  AND expires_at > %s
+                LIMIT 1
+                """,
+                (user_id, observed_at),
+            )
+            if cur.fetchone() is not None:
+                raise ExecutionLedgerError("live_mandate_already_active")
+            cur.execute(
+                """
+                INSERT INTO portfolio_live_execution_mandates (
+                    user_id,
+                    account_id,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    created_session_digest,
+                    created_at,
+                    expires_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING
+                    id,
+                    user_id,
+                    account_id,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    created_session_digest,
+                    created_at,
+                    expires_at,
+                    revoked_at
+                """,
+                (
+                    user_id,
+                    account_id,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    session_digest,
+                    observed_at,
+                    expiry,
+                ),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError("live mandate insert returned no row")
+            return _mandate_record(cast(dict[str, Any], row))
+
+    def revoke_live_mandate(
+        self,
+        user_id: UUID,
+        *,
+        now: datetime | None = None,
+    ) -> LiveExecutionMandateRecord | None:
+        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                UPDATE portfolio_live_execution_mandates
+                SET revoked_at = %s
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                RETURNING
+                    id,
+                    user_id,
+                    account_id,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    created_session_digest,
+                    created_at,
+                    expires_at,
+                    revoked_at
+                """,
+                (observed_at, user_id),
+            )
+            row = cur.fetchone()
+            return (
+                _mandate_record(cast(dict[str, Any], row))
+                if row is not None
+                else None
+            )
+
+    def live_daily_notional(
+        self,
+        user_id: UUID,
+        *,
+        account_id: str,
+        day_start: datetime,
+    ) -> Decimal:
+        if day_start.tzinfo is None:
+            raise ValueError("live notional day boundary must be timezone-aware")
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(l.executed_amount_rub), 0) AS total
+                FROM portfolio_execution_runs AS r
+                JOIN portfolio_execution_legs AS l
+                  ON l.run_id = r.id
+                 AND l.user_id = r.user_id
+                WHERE r.user_id = %s
+                  AND r.account_id = %s
+                  AND r.mode = 'live'
+                  AND COALESCE(l.last_checked_at, l.submitted_at, r.created_at) >= %s
+                """,
+                (user_id, account_id, day_start.astimezone(UTC)),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return Decimal("0")
+            return Decimal(cast(dict[str, Any], row)["total"])
+
+    def has_active_live_execution(self, user_id: UUID) -> bool:
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT 1
+                FROM portfolio_execution_runs
+                WHERE user_id = %s
+                  AND mode = 'live'
+                  AND status IN ('created', 'running', 'reconciling')
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            return cur.fetchone() is not None
+
+    @staticmethod
+    def _execution_plan(
+        proposal: PortfolioProposalRecord,
+        *,
+        expected_version: int,
+        expected_hash: bytes,
+        mode: ExecutionMode,
+    ) -> ExecutionPlan:
+        if proposal.version != expected_version:
+            raise ExecutionLedgerError("proposal_version_mismatch")
+        if proposal.proposal_hash != expected_hash:
+            raise ExecutionLedgerError("proposal_hash_mismatch")
+        try:
+            plan = build_execution_plan(proposal)
+        except ExecutionStateError as exc:
+            raise ExecutionLedgerError(exc.code) from exc
+        if mode != "live":
+            return plan
+        if proposal.scenario_kind != "deploy_cash":
+            raise ExecutionLedgerError("live_canary_deploy_cash_only")
+        if any(trade.action != "buy" for trade in plan.trades):
+            raise ExecutionLedgerError("live_canary_buy_only")
+        return plan
+
+    @staticmethod
+    def _existing_run(
+        cur: Any,
+        *,
+        user_id: UUID,
+        proposal_id: UUID,
+        mode: ExecutionMode,
+        expected_version: int,
+        expected_hash: bytes,
+    ) -> ExecutionRunRecord | None:
+        cur.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                proposal_id,
+                confirmed_action_id,
+                proposal_version,
+                proposal_hash,
+                account_id,
+                mode,
+                provider_environment,
+                live_mandate_id,
+                status,
+                error_code,
+                created_at,
+                updated_at,
+                finished_at
+            FROM portfolio_execution_runs
+            WHERE user_id = %s
+              AND proposal_id = %s
+              AND mode = %s
+            """,
+            (user_id, proposal_id, mode),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        run = _run_record(cast(dict[str, Any], row))
+        if (
+            run.proposal_version != expected_version
+            or run.proposal_hash != expected_hash
+        ):
+            raise ExecutionLedgerError("execution_run_source_mismatch")
+        return run
+
+    @staticmethod
+    def _confirmed_action_id(
+        cur: Any,
+        *,
+        proposal_id: UUID,
+        user_id: UUID,
+        expected_version: int,
+        expected_hash: bytes,
+    ) -> int:
+        cur.execute(
+            """
+            SELECT id
+            FROM portfolio_proposal_actions
+            WHERE proposal_id = %s
+              AND user_id = %s
+              AND action = 'confirmed'
+              AND proposal_version = %s
+              AND proposal_hash = %s
+            """,
+            (
+                proposal_id,
+                user_id,
+                expected_version,
+                expected_hash,
+            ),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ExecutionLedgerError("proposal_not_confirmed")
+        return int(cast(dict[str, Any], row)["id"])
+
+    @staticmethod
+    def _active_live_mandate_id(
+        cur: Any,
+        *,
+        user_id: UUID,
+        account_id: str,
+    ) -> UUID:
+        cur.execute(
+            """
+            SELECT id
+            FROM portfolio_live_execution_mandates
+            WHERE user_id = %s
+              AND account_id = %s
+              AND revoked_at IS NULL
+              AND expires_at > now()
+            FOR SHARE
+            """,
+            (user_id, account_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ExecutionLedgerError("live_mandate_required")
+        return cast(UUID, cast(dict[str, Any], row)["id"])
+
     def create_run(
         self,
         user_id: UUID,
@@ -110,20 +483,18 @@ class ExecutionStore:
             raise ValueError("execution proposal hash must be SHA-256")
         if len(session_digest) != 32:
             raise ValueError("execution session digest must be SHA-256")
-        if mode not in {"shadow", "sandbox"}:
+        if mode not in _PROVIDER_ENVIRONMENT:
             raise ValueError("execution mode is invalid")
 
         proposal = self.proposals.proposal(user_id, proposal_id)
         if proposal is None:
             raise ExecutionLedgerError("proposal_not_found")
-        if proposal.version != expected_version:
-            raise ExecutionLedgerError("proposal_version_mismatch")
-        if proposal.proposal_hash != expected_hash:
-            raise ExecutionLedgerError("proposal_hash_mismatch")
-        try:
-            plan = build_execution_plan(proposal)
-        except ExecutionStateError as exc:
-            raise ExecutionLedgerError(exc.code) from exc
+        plan = self._execution_plan(
+            proposal,
+            expected_version=expected_version,
+            expected_hash=expected_hash,
+            mode=mode,
+        )
 
         with (
             self.database.pool.connection() as conn,
@@ -132,42 +503,25 @@ class ExecutionStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_XACT_LOCK_SQL,
                 (f"portfolio-execution:{user_id}:{proposal_id}:{mode}",),
             )
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    user_id,
-                    proposal_id,
-                    confirmed_action_id,
-                    proposal_version,
-                    proposal_hash,
-                    account_id,
-                    mode,
-                    provider_environment,
-                    status,
-                    error_code,
-                    created_at,
-                    updated_at,
-                    finished_at
-                FROM portfolio_execution_runs
-                WHERE user_id = %s
-                  AND proposal_id = %s
-                  AND mode = %s
-                """,
-                (user_id, proposal_id, mode),
+            if mode == "live":
+                cur.execute(
+                    _ADVISORY_XACT_LOCK_SQL,
+                    (f"portfolio-live-execution:{user_id}:{plan.account_id}",),
+                )
+
+            existing = self._existing_run(
+                cur,
+                user_id=user_id,
+                proposal_id=proposal_id,
+                mode=mode,
+                expected_version=expected_version,
+                expected_hash=expected_hash,
             )
-            existing = cur.fetchone()
             if existing is not None:
-                run = _run_record(cast(dict[str, Any], existing))
-                if (
-                    run.proposal_version != expected_version
-                    or run.proposal_hash != expected_hash
-                ):
-                    raise ExecutionLedgerError("execution_run_source_mismatch")
-                return run, self._legs(cur, user_id, run.id)
+                return existing, self._legs(cur, user_id, existing.id)
 
             _require_current_execution_source(
                 cur,
@@ -178,32 +532,21 @@ class ExecutionStore:
                 profile_version=proposal.profile_version,
                 policy_version=proposal.policy_version,
             )
-
-            cur.execute(
-                """
-                SELECT id
-                FROM portfolio_proposal_actions
-                WHERE proposal_id = %s
-                  AND user_id = %s
-                  AND action = 'confirmed'
-                  AND proposal_version = %s
-                  AND proposal_hash = %s
-                """,
-                (
-                    proposal_id,
-                    user_id,
-                    expected_version,
-                    expected_hash,
-                ),
+            confirmed_action_id = self._confirmed_action_id(
+                cur,
+                proposal_id=proposal_id,
+                user_id=user_id,
+                expected_version=expected_version,
+                expected_hash=expected_hash,
             )
-            action_row = cur.fetchone()
-            if action_row is None:
-                raise ExecutionLedgerError("proposal_not_confirmed")
-            confirmed_action_id = int(
-                cast(dict[str, Any], action_row)["id"]
-            )
+            live_mandate_id = None
+            if mode == "live":
+                live_mandate_id = self._active_live_mandate_id(
+                    cur,
+                    user_id=user_id,
+                    account_id=plan.account_id,
+                )
 
-            provider_environment = "sandbox" if mode == "sandbox" else None
             cur.execute(
                 """
                 INSERT INTO portfolio_execution_runs (
@@ -215,9 +558,10 @@ class ExecutionStore:
                     account_id,
                     mode,
                     provider_environment,
+                    live_mandate_id,
                     created_session_digest
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING
                     id,
                     user_id,
@@ -228,6 +572,7 @@ class ExecutionStore:
                     account_id,
                     mode,
                     provider_environment,
+                    live_mandate_id,
                     status,
                     error_code,
                     created_at,
@@ -242,7 +587,8 @@ class ExecutionStore:
                     expected_hash,
                     plan.account_id,
                     mode,
-                    provider_environment,
+                    _PROVIDER_ENVIRONMENT[mode],
+                    live_mandate_id,
                     session_digest,
                 ),
             )
@@ -325,6 +671,7 @@ class ExecutionStore:
                     account_id,
                     mode,
                     provider_environment,
+                    live_mandate_id,
                     status,
                     error_code,
                     created_at,
@@ -390,6 +737,7 @@ class ExecutionStore:
                     account_id,
                     mode,
                     provider_environment,
+                    live_mandate_id,
                     status,
                     error_code,
                     created_at,
@@ -448,6 +796,7 @@ class ExecutionStore:
                     account_id,
                     mode,
                     provider_environment,
+                    live_mandate_id,
                     status,
                     error_code,
                     created_at,
@@ -466,6 +815,30 @@ class ExecutionStore:
             run = _run_record(cast(dict[str, Any], run_row))
             if run.status in _TERMINAL_RUNS:
                 raise ExecutionLedgerError("execution_already_terminal")
+
+            if run.mode == "live" and new_status == "submitting":
+                if run.live_mandate_id is None:
+                    raise ExecutionLedgerError("live_mandate_inactive")
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM portfolio_live_execution_mandates
+                    WHERE id = %s
+                      AND user_id = %s
+                      AND account_id = %s
+                      AND revoked_at IS NULL
+                      AND expires_at > %s
+                    FOR SHARE
+                    """,
+                    (
+                        run.live_mandate_id,
+                        user_id,
+                        run.account_id,
+                        observed_at,
+                    ),
+                )
+                if cur.fetchone() is None:
+                    raise ExecutionLedgerError("live_mandate_inactive")
 
             cur.execute(
                 """
@@ -549,7 +922,7 @@ class ExecutionStore:
                         ELSE submitted_at
                     END,
                     last_checked_at = CASE
-                        WHEN %s IS NOT NULL THEN %s
+                        WHEN %s::text IS NOT NULL THEN %s
                         ELSE last_checked_at
                     END,
                     terminal_at = COALESCE(%s, terminal_at)
@@ -641,6 +1014,7 @@ class ExecutionStore:
                     account_id,
                     mode,
                     provider_environment,
+                    live_mandate_id,
                     status,
                     error_code,
                     created_at,
@@ -714,6 +1088,7 @@ class ExecutionStore:
                     account_id,
                     mode,
                     provider_environment,
+                    live_mandate_id,
                     status,
                     error_code,
                     created_at,
@@ -883,11 +1258,26 @@ def _run_record(row: dict[str, Any]) -> ExecutionRunRecord:
         account_id=str(row["account_id"]),
         mode=cast(ExecutionMode, row["mode"]),
         provider_environment=cast(str | None, row["provider_environment"]),
+        live_mandate_id=cast(UUID | None, row["live_mandate_id"]),
         status=cast(ExecutionRunStatus, row["status"]),
         error_code=str(row["error_code"]),
         created_at=cast(datetime, row["created_at"]),
         updated_at=cast(datetime, row["updated_at"]),
         finished_at=cast(datetime | None, row["finished_at"]),
+    )
+
+
+def _mandate_record(row: dict[str, Any]) -> LiveExecutionMandateRecord:
+    return LiveExecutionMandateRecord(
+        id=cast(UUID, row["id"]),
+        user_id=cast(UUID, row["user_id"]),
+        account_id=str(row["account_id"]),
+        max_order_notional_rub=Decimal(row["max_order_notional_rub"]),
+        max_daily_notional_rub=Decimal(row["max_daily_notional_rub"]),
+        created_session_digest=bytes(row["created_session_digest"]),
+        created_at=cast(datetime, row["created_at"]),
+        expires_at=cast(datetime, row["expires_at"]),
+        revoked_at=cast(datetime | None, row["revoked_at"]),
     )
 
 
