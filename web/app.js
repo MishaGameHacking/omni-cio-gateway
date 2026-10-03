@@ -311,6 +311,7 @@
   let instrumentMarketPayload = null;
   let instrumentMarketUid = "";
   let instrumentMarketCurrency = "";
+  let instrumentMarketQuoteUnit = "money";
   let instrumentMarketEventSource = null;
   let instrumentMarketRetryTimer = null;
   let instrumentMarketRetryCount = 0;
@@ -1443,10 +1444,29 @@
     return true;
   };
 
-  const marketPriceText = (value) => {
+  const finiteMarketNumber = (value) => {
+    if (
+      value === null
+      || value === undefined
+      || (typeof value === "string" && !value.trim())
+    ) {
+      return null;
+    }
     const numeric = Number(value);
-    if (!Number.isFinite(numeric)) {
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+
+  const marketPriceText = (value) => {
+    const numeric = finiteMarketNumber(value);
+    if (numeric === null) {
       return "—";
+    }
+    const formatted = new Intl.NumberFormat("ru-RU", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 9,
+    }).format(numeric);
+    if (instrumentMarketQuoteUnit === "point") {
+      return `${formatted} п.`;
     }
     if (instrumentMarketCurrency) {
       return formatMoney({
@@ -1454,27 +1474,24 @@
         value: String(value),
       });
     }
-    return new Intl.NumberFormat("ru-RU", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 9,
-    }).format(numeric);
+    return formatted;
   };
 
-  const cleanMarketCandles = (candles) => (candles || [])
+  const cleanMarketCandles = (candles) => (Array.isArray(candles) ? candles : [])
     .map((candle) => ({
       ...candle,
       timestamp: new Date(candle?.time).getTime(),
-      openValue: Number(candle?.open),
-      highValue: Number(candle?.high),
-      lowValue: Number(candle?.low),
-      closeValue: Number(candle?.close),
+      openValue: finiteMarketNumber(candle?.open),
+      highValue: finiteMarketNumber(candle?.high),
+      lowValue: finiteMarketNumber(candle?.low),
+      closeValue: finiteMarketNumber(candle?.close),
     }))
     .filter((candle) => (
       Number.isFinite(candle.timestamp)
-      && Number.isFinite(candle.openValue)
-      && Number.isFinite(candle.highValue)
-      && Number.isFinite(candle.lowValue)
-      && Number.isFinite(candle.closeValue)
+      && candle.openValue !== null
+      && candle.highValue !== null
+      && candle.lowValue !== null
+      && candle.closeValue !== null
       && candle.highValue >= candle.lowValue
       && candle.openValue >= candle.lowValue
       && candle.openValue <= candle.highValue
@@ -1597,21 +1614,26 @@
   };
 
   const renderInstrumentMarketLive = (payload) => {
-    const quoteStatus = String(payload?.quote_status || "missing");
-    instrumentMarketLastPrice.textContent = marketPriceText(payload?.last_price);
-    instrumentMarketQuoteTime.textContent = payload?.quote_time
+    const source = payload !== null && typeof payload === "object" ? payload : {};
+    const quoteStatus = String(source.quote_status || "missing");
+    const quoteAge = finiteMarketNumber(source.quote_age_seconds);
+    instrumentMarketLastPrice.textContent = marketPriceText(source.last_price);
+    instrumentMarketQuoteTime.textContent = source.quote_time
       ? [
-          formatExactDateTime(payload.quote_time),
-          Number.isFinite(Number(payload.quote_age_seconds))
-            ? `возраст ${Math.max(0, Number(payload.quote_age_seconds))} с`
+          formatExactDateTime(source.quote_time),
+          quoteAge !== null
+            ? `возраст ${Math.max(0, Math.trunc(quoteAge))} с`
             : "",
         ].filter(Boolean).join(" · ")
       : "Последняя цена недоступна";
+    const apiAvailability = source.api_trade_available === true
+      ? "API: доступно"
+      : source.api_trade_available === false
+        ? "API: недоступно"
+        : "API: не подтверждено";
     instrumentMarketTradingStatus.textContent = [
-      marketTradingStatusLabel(payload?.trading_status),
-      payload?.api_trade_available === true
-        ? "API: доступно"
-        : "API: недоступно",
+      marketTradingStatusLabel(source.trading_status),
+      apiAvailability,
     ].join(" · ");
 
     if (quoteStatus === "live") {
@@ -1622,19 +1644,20 @@
       setStateBadge(instrumentMarketState, "Цена недоступна", "state-next");
     }
 
-    if (payload?.last_price !== null && payload?.last_price !== undefined) {
-      instrumentDetailPrice.textContent = marketPriceText(payload.last_price);
-      instrumentDetailPriceTime.textContent = payload.quote_time
-        ? `T-Invest quote: ${formatExactDateTime(payload.quote_time)}`
+    if (finiteMarketNumber(source.last_price) !== null) {
+      instrumentDetailPrice.textContent = marketPriceText(source.last_price);
+      instrumentDetailPriceTime.textContent = source.quote_time
+        ? `T-Invest quote: ${formatExactDateTime(source.quote_time)}`
         : "T-Invest: время котировки не подтверждено";
     }
   };
 
   const renderInstrumentMarketChart = (payload) => {
-    instrumentMarketPayload = payload;
+    const source = payload !== null && typeof payload === "object" ? payload : {};
+    instrumentMarketPayload = source;
     syncInstrumentMarketControls();
-    renderInstrumentMarketLive(payload);
-    const candles = cleanMarketCandles(payload?.candles);
+    renderInstrumentMarketLive(source);
+    const candles = cleanMarketCandles(source.candles);
     const rendered = instrumentMarketMode === "candles"
       ? renderMarketCandles(instrumentMarketChart, candles)
       : renderSeriesChart(
@@ -1654,8 +1677,8 @@
     }
     const incompleteCount = candles.filter((candle) => candle.is_complete === false).length;
     instrumentMarketSource.textContent = [
-      payload?.source || "T-Invest",
-      payload?.observed_at ? `загружено ${formatExactDateTime(payload.observed_at)}` : "",
+      source.source || "T-Invest",
+      source.observed_at ? `загружено ${formatExactDateTime(source.observed_at)}` : "",
     ].filter(Boolean).join(" · ");
     instrumentMarketNote.textContent = candles.length
       ? [
@@ -1679,7 +1702,8 @@
 
   const inspectInstrumentMarketChart = (event) => {
     const candles = cleanMarketCandles(instrumentMarketPayload?.candles);
-    if (!candles.length) {
+    const minimumCandles = instrumentMarketMode === "line" ? 2 : 1;
+    if (candles.length < minimumCandles) {
       removeInstrumentMarketCrosshair();
       return;
     }
@@ -1730,13 +1754,16 @@
       y2: height,
       class: "market-chart-crosshair",
     }));
+    const volumeLots = finiteMarketNumber(candle.volume_lots);
     instrumentMarketTooltip.textContent = [
       formatExactDateTime(candle.time),
       `O ${marketPriceText(candle.open)}`,
       `H ${marketPriceText(candle.high)}`,
       `L ${marketPriceText(candle.low)}`,
       `C ${marketPriceText(candle.close)}`,
-      `объём ${new Intl.NumberFormat("ru-RU").format(Number(candle.volume_lots) || 0)} лот.`,
+      volumeLots === null
+        ? "объём не подтверждён"
+        : `объём ${new Intl.NumberFormat("ru-RU").format(volumeLots)} лот.`,
       candle.is_complete === false ? "свеча не завершена" : "свеча завершена",
     ].join(" · ");
     instrumentMarketTooltip.classList.remove("hidden");
@@ -1837,7 +1864,11 @@
       }
       try {
         const payload = JSON.parse(event.data);
-        if (payload.instrument_uid !== instrumentMarketUid) {
+        if (
+          payload === null
+          || typeof payload !== "object"
+          || payload.instrument_uid !== instrumentMarketUid
+        ) {
           throw new TypeError("Market stream instrument does not match");
         }
         instrumentMarketRetryCount = 0;
@@ -1857,7 +1888,9 @@
       }
       try {
         const payload = JSON.parse(event.data);
-        const state = String(payload.state || "unavailable");
+        const state = payload !== null && typeof payload === "object"
+          ? String(payload.state || "unavailable")
+          : "unavailable";
         renderInstrumentMarketStreamStatus(state);
         if (["disconnected", "reconnect", "invalid", "offline"].includes(state)) {
           stopInstrumentMarketStream();
@@ -1908,7 +1941,11 @@
       if (generation !== instrumentMarketGeneration || instrumentUid !== instrumentMarketUid) {
         return;
       }
-      if (payload.instrument_uid !== instrumentUid) {
+      if (
+        payload === null
+        || typeof payload !== "object"
+        || payload.instrument_uid !== instrumentUid
+      ) {
         throw new TypeError("Instrument market response does not match request");
       }
       renderInstrumentMarketChart(payload);
@@ -2524,6 +2561,7 @@
       || latest.currency
       || "",
     ).toUpperCase();
+    instrumentMarketQuoteUnit = latest.instrument_type === "bond" ? "point" : "money";
     instrumentDetailTitle.textContent = latest.ticker || latest.name || latest.instrument_uid || "Инструмент";
     instrumentDetailSubtitle.textContent = [
       latest.name && latest.name !== latest.ticker ? latest.name : "",
@@ -2678,6 +2716,7 @@
     stopInstrumentMarketStream({resetRetry: true});
     instrumentMarketUid = instrumentUid;
     instrumentMarketCurrency = "";
+    instrumentMarketQuoteUnit = "money";
     resetInstrumentMarket("Загружаем рыночные данные выбранного инструмента.");
     instrumentDetail.classList.remove("hidden");
     instrumentDetailLoading.classList.remove("hidden");
@@ -2726,6 +2765,7 @@
     stopInstrumentMarketStream({resetRetry: true});
     instrumentMarketUid = "";
     instrumentMarketCurrency = "";
+    instrumentMarketQuoteUnit = "money";
     resetInstrumentMarket();
     instrumentDetail.classList.add("hidden");
     instrumentDetailLoading.classList.add("hidden");
