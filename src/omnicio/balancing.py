@@ -113,6 +113,7 @@ class Candidate:
     evidence_complete: bool
     structure_supported: bool = True
     access_reasons: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
