@@ -82,7 +82,7 @@
 
   const tbankForm = document.querySelector("#tbank-form");
   const tbankAccountForm = document.querySelector("#tbank-account-form");
-  const tbankEnvironment = document.querySelector("#tbank-environment");
+  const tbankEnvironmentSelect = requiredElement("#tbank-environment");
   const tbankToken = document.querySelector("#tbank-token");
   const tbankAccount = document.querySelector("#tbank-account");
   const tbankTermsAck = document.querySelector("#tbank-terms-ack");
@@ -219,7 +219,7 @@
   let lastAnalysisAt = 0;
   let proposalRequestInFlight = false;
   let executionRequestInFlight = false;
-  let tbankEnvironment = null;
+  let connectedTbankEnvironment = null;
   let tbankAccountId = null;
   let owlTimer = null;
   let usdRubEventSource = null;
@@ -2015,7 +2015,7 @@
   );
 
   const syncSandboxStartControls = () => {
-    const sandboxConnected = tbankIsConnected && tbankEnvironment === "sandbox";
+    const sandboxConnected = tbankIsConnected && connectedTbankEnvironment === "sandbox";
     const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
 
     proposalHistory.querySelectorAll('button[data-execution-start="sandbox"]').forEach((element) => {
@@ -2510,7 +2510,7 @@
     if (
       mode === "sandbox"
       && (
-        tbankEnvironment !== "sandbox"
+        connectedTbankEnvironment !== "sandbox"
         || !connectedAccountId
         || proposalAccountId !== connectedAccountId
       )
@@ -2710,7 +2710,7 @@
     homeConnectionCard.classList.remove("is-offline", "is-error");
     topConnectionIndicator.classList.remove("is-offline", "is-error");
     tbankIsConnected = Boolean(status.connected);
-    tbankEnvironment = status.connected ? status.environment : null;
+    connectedTbankEnvironment = status.connected ? status.environment : null;
     tbankAccountId = status.connected ? String(status.account_id || "") : null;
     syncSandboxStartControls();
 
@@ -2784,7 +2784,7 @@
     topConnectionIndicator.classList.add("is-error");
     topConnectionText.textContent = "Ошибка T-Invest";
     tbankIsConnected = false;
-    tbankEnvironment = null;
+    connectedTbankEnvironment = null;
     tbankAccountId = null;
     syncSandboxStartControls();
     portfolioLoaded = false;
@@ -3425,7 +3425,7 @@
     resetTbankPreview();
 
     const credential = tbankToken.value.trim();
-    const environment = tbankEnvironment.value;
+    const environment = tbankEnvironmentSelect.value;
 
     if (credential.length < 20) {
       showMessage(tbankMessage, "Вставьте полный API-токен T-Invest.", true);
