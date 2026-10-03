@@ -143,6 +143,32 @@ def build_balancing_payload(
             "notes": list(item.candidate.notes),
             "rating_bucket": item.candidate.rating_bucket,
             "risk_state": item.candidate.risk_state,
+            "ytw_percent": (
+                str(item.candidate.ytw_percent)
+                if item.candidate.ytw_percent is not None
+                else None
+            ),
+            "duration_years": (
+                str(item.candidate.duration_years)
+                if item.candidate.duration_years is not None
+                else None
+            ),
+            "liquidity_days": item.candidate.liquidity_days,
+            "max_liquid_lots": item.candidate.max_liquid_lots,
+            "transaction_cost_rub_per_lot": str(
+                item.candidate.market_lot_cost_rub
+                + item.candidate.accrued_coupon_rub_per_lot
+                + item.candidate.buy_fee_rub_per_lot
+                + item.candidate.spread_cost_rub_per_lot
+            ),
+            "expected_net_gain_rub_per_lot": str(
+                item.candidate.expected_horizon_gain_rub_per_lot
+                - item.candidate.buy_fee_rub_per_lot
+                - item.candidate.spread_cost_rub_per_lot
+                - item.candidate.uncertainty_haircut_rub_per_lot
+                - item.candidate.credit_loss_rub_per_lot
+                - item.candidate.liquidity_penalty_rub_per_lot
+            ),
         }
         for item in screened
     ]
