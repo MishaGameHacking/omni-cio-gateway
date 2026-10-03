@@ -28,6 +28,7 @@ from .tbank import (
 )
 
 JobStatus = Literal["running", "succeeded", "degraded", "failed"]
+ProposalAction = Literal["confirmed", "rejected", "deferred", "revoked", "expired"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +68,44 @@ class BalancingPolicyRecord:
     no_trade_band_percent: Decimal
     min_replace_benefit_rub: Decimal
     created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioProposalRecord:
+    id: UUID
+    user_id: UUID
+    version: int
+    source_snapshot_id: UUID
+    profile_version: int
+    policy_version: int
+    scenario_kind: str
+    target_instrument_uid: str | None
+    replaced_instrument_uid: str | None
+    proposal_hash: bytes
+    payload: dict[str, Any]
+    created_at: datetime
+    expires_at: datetime
+    status: str = "pending"
+    decision_reason: str = ""
+    decided_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioProposalActionRecord:
+    id: int
+    proposal_id: UUID
+    user_id: UUID
+    action: ProposalAction
+    proposal_version: int
+    proposal_hash: bytes
+    reason: str
+    acted_at: datetime
+
+
+class ProposalStateError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,6 +531,316 @@ class PortfolioStore:
             if fetched is None:
                 raise RuntimeError("balancing policy insert returned no row")
             return _balancing_policy(cast(dict[str, Any], fetched))
+
+    def create_proposal(
+        self,
+        user_id: UUID,
+        *,
+        source_snapshot_id: UUID,
+        profile_version: int,
+        policy_version: int,
+        scenario_kind: str,
+        target_instrument_uid: str | None,
+        replaced_instrument_uid: str | None,
+        proposal_hash: bytes,
+        payload: dict[str, object],
+        expires_at: datetime,
+    ) -> PortfolioProposalRecord:
+        if len(proposal_hash) != 32:
+            raise ValueError("proposal hash must be SHA-256")
+        if expires_at.tzinfo is None:
+            raise ValueError("proposal expiry must be timezone-aware")
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"portfolio-proposal:{user_id}",),
+            )
+            _require_current_proposal_sources(
+                cur,
+                user_id=user_id,
+                snapshot_id=source_snapshot_id,
+                profile_version=profile_version,
+                policy_version=policy_version,
+            )
+            cur.execute(
+                """
+                INSERT INTO portfolio_proposal_actions (
+                    proposal_id,
+                    user_id,
+                    action,
+                    proposal_version,
+                    proposal_hash,
+                    reason
+                )
+                SELECT
+                    p.id,
+                    p.user_id,
+                    'revoked',
+                    p.version,
+                    p.proposal_hash,
+                    'superseded_by_new_proposal'
+                FROM portfolio_proposals AS p
+                LEFT JOIN portfolio_proposal_actions AS a
+                  ON a.proposal_id = p.id
+                WHERE p.user_id = %s
+                  AND a.id IS NULL
+                  AND p.expires_at > now()
+                ON CONFLICT (proposal_id) DO NOTHING
+                """,
+                (user_id,),
+            )
+            cur.execute(
+                """
+                SELECT COALESCE(max(version), 0) + 1 AS next_version
+                FROM portfolio_proposals
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            next_row = cur.fetchone()
+            version = int(next_row["next_version"]) if next_row else 1
+            cur.execute(
+                """
+                INSERT INTO portfolio_proposals (
+                    user_id,
+                    version,
+                    source_snapshot_id,
+                    profile_version,
+                    policy_version,
+                    scenario_kind,
+                    target_instrument_uid,
+                    replaced_instrument_uid,
+                    proposal_hash,
+                    payload,
+                    expires_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                )
+                RETURNING
+                    id,
+                    user_id,
+                    version,
+                    source_snapshot_id,
+                    profile_version,
+                    policy_version,
+                    scenario_kind,
+                    target_instrument_uid,
+                    replaced_instrument_uid,
+                    proposal_hash,
+                    payload,
+                    created_at,
+                    expires_at
+                """,
+                (
+                    user_id,
+                    version,
+                    source_snapshot_id,
+                    profile_version,
+                    policy_version,
+                    scenario_kind,
+                    target_instrument_uid,
+                    replaced_instrument_uid,
+                    proposal_hash,
+                    _json(payload),
+                    expires_at.astimezone(UTC),
+                ),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError("proposal insert returned no row")
+            return _proposal_record(cast(dict[str, Any], row))
+
+    def proposals(
+        self,
+        user_id: UUID,
+        *,
+        limit: int = 20,
+    ) -> tuple[PortfolioProposalRecord, ...]:
+        if not 1 <= limit <= 100:
+            raise ValueError("proposal limit must be between 1 and 100")
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    p.id,
+                    p.user_id,
+                    p.version,
+                    p.source_snapshot_id,
+                    p.profile_version,
+                    p.policy_version,
+                    p.scenario_kind,
+                    p.target_instrument_uid,
+                    p.replaced_instrument_uid,
+                    p.proposal_hash,
+                    p.payload,
+                    p.created_at,
+                    p.expires_at,
+                    COALESCE(
+                        a.action,
+                        CASE
+                            WHEN p.expires_at <= now() THEN 'expired'
+                            ELSE 'pending'
+                        END
+                    ) AS status,
+                    COALESCE(a.reason, '') AS decision_reason,
+                    a.acted_at AS decided_at
+                FROM portfolio_proposals AS p
+                LEFT JOIN portfolio_proposal_actions AS a
+                  ON a.proposal_id = p.id
+                WHERE p.user_id = %s
+                ORDER BY p.created_at DESC, p.version DESC
+                LIMIT %s
+                """,
+                (user_id, limit),
+            )
+            return tuple(
+                _proposal_record(dict(cast(dict[str, Any], row)))
+                for row in cur.fetchall()
+            )
+
+    def decide_proposal(
+        self,
+        user_id: UUID,
+        *,
+        proposal_id: UUID,
+        expected_version: int,
+        expected_hash: bytes,
+        action: Literal["confirmed", "rejected", "deferred"],
+        now: datetime,
+    ) -> tuple[PortfolioProposalRecord, PortfolioProposalActionRecord]:
+        if now.tzinfo is None:
+            raise ValueError("proposal decision time must be timezone-aware")
+        if len(expected_hash) != 32:
+            raise ValueError("proposal hash must be SHA-256")
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    version,
+                    source_snapshot_id,
+                    profile_version,
+                    policy_version,
+                    scenario_kind,
+                    target_instrument_uid,
+                    replaced_instrument_uid,
+                    proposal_hash,
+                    payload,
+                    created_at,
+                    expires_at
+                FROM portfolio_proposals
+                WHERE id = %s
+                  AND user_id = %s
+                FOR UPDATE
+                """,
+                (proposal_id, user_id),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                raise ProposalStateError("proposal_not_found")
+            proposal = _proposal_record(cast(dict[str, Any], fetched))
+            if proposal.version != expected_version:
+                raise ProposalStateError("proposal_version_mismatch")
+            if proposal.proposal_hash != expected_hash:
+                raise ProposalStateError("proposal_hash_mismatch")
+
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    proposal_id,
+                    user_id,
+                    action,
+                    proposal_version,
+                    proposal_hash,
+                    reason,
+                    acted_at
+                FROM portfolio_proposal_actions
+                WHERE proposal_id = %s
+                """,
+                (proposal_id,),
+            )
+            existing = cur.fetchone()
+            if existing is not None:
+                raise ProposalStateError("proposal_already_decided")
+
+            decided_action: ProposalAction
+            reason: str
+            if proposal.expires_at <= now.astimezone(UTC):
+                decided_action = "expired"
+                reason = "proposal_expired"
+            else:
+                try:
+                    _require_current_proposal_sources(
+                        cur,
+                        user_id=user_id,
+                        snapshot_id=proposal.source_snapshot_id,
+                        profile_version=proposal.profile_version,
+                        policy_version=proposal.policy_version,
+                    )
+                except ProposalStateError:
+                    decided_action = "revoked"
+                    reason = "proposal_sources_changed"
+                else:
+                    decided_action = action
+                    reason = "user_decision"
+
+            cur.execute(
+                """
+                INSERT INTO portfolio_proposal_actions (
+                    proposal_id,
+                    user_id,
+                    action,
+                    proposal_version,
+                    proposal_hash,
+                    reason,
+                    acted_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING
+                    id,
+                    proposal_id,
+                    user_id,
+                    action,
+                    proposal_version,
+                    proposal_hash,
+                    reason,
+                    acted_at
+                """,
+                (
+                    proposal.id,
+                    user_id,
+                    decided_action,
+                    proposal.version,
+                    proposal.proposal_hash,
+                    reason,
+                    now.astimezone(UTC),
+                ),
+            )
+            action_row = cur.fetchone()
+            if action_row is None:
+                raise RuntimeError("proposal action insert returned no row")
+            return (
+                proposal,
+                _proposal_action_record(cast(dict[str, Any], action_row)),
+            )
 
     def claim_daily_job(
         self,
@@ -1808,6 +2157,96 @@ def _balancing_policy(row: dict[str, Any]) -> BalancingPolicyRecord:
         min_replace_benefit_rub=Decimal(row["min_replace_benefit_rub"]),
         created_at=cast(datetime, row["created_at"]),
     )
+
+
+def _proposal_record(row: dict[str, Any]) -> PortfolioProposalRecord:
+    return PortfolioProposalRecord(
+        id=cast(UUID, row["id"]),
+        user_id=cast(UUID, row["user_id"]),
+        version=int(row["version"]),
+        source_snapshot_id=cast(UUID, row["source_snapshot_id"]),
+        profile_version=int(row["profile_version"]),
+        policy_version=int(row["policy_version"]),
+        scenario_kind=str(row["scenario_kind"]),
+        target_instrument_uid=cast(str | None, row.get("target_instrument_uid")),
+        replaced_instrument_uid=cast(
+            str | None,
+            row.get("replaced_instrument_uid"),
+        ),
+        proposal_hash=bytes(row["proposal_hash"]),
+        payload=dict(cast(dict[str, Any], row["payload"])),
+        created_at=cast(datetime, row["created_at"]),
+        expires_at=cast(datetime, row["expires_at"]),
+        status=str(row.get("status") or "pending"),
+        decision_reason=str(row.get("decision_reason") or ""),
+        decided_at=cast(datetime | None, row.get("decided_at")),
+    )
+
+
+def _proposal_action_record(
+    row: dict[str, Any],
+) -> PortfolioProposalActionRecord:
+    return PortfolioProposalActionRecord(
+        id=int(row["id"]),
+        proposal_id=cast(UUID, row["proposal_id"]),
+        user_id=cast(UUID, row["user_id"]),
+        action=cast(ProposalAction, row["action"]),
+        proposal_version=int(row["proposal_version"]),
+        proposal_hash=bytes(row["proposal_hash"]),
+        reason=str(row["reason"]),
+        acted_at=cast(datetime, row["acted_at"]),
+    )
+
+
+def _require_current_proposal_sources(
+    cur: Any,
+    *,
+    user_id: UUID,
+    snapshot_id: UUID,
+    profile_version: int,
+    policy_version: int,
+) -> None:
+    cur.execute(
+        """
+        SELECT id
+        FROM portfolio_snapshots
+        WHERE user_id = %s
+        ORDER BY captured_at DESC, created_at DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    snapshot_row = cur.fetchone()
+    if snapshot_row is None or snapshot_row["id"] != snapshot_id:
+        raise ProposalStateError("proposal_snapshot_stale")
+
+    cur.execute(
+        """
+        SELECT version
+        FROM investment_profile_versions
+        WHERE user_id = %s
+        ORDER BY version DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    profile_row = cur.fetchone()
+    if profile_row is None or int(profile_row["version"]) != profile_version:
+        raise ProposalStateError("proposal_profile_stale")
+
+    cur.execute(
+        """
+        SELECT version
+        FROM balancing_policy_versions
+        WHERE user_id = %s
+        ORDER BY version DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    policy_row = cur.fetchone()
+    if policy_row is None or int(policy_row["version"]) != policy_version:
+        raise ProposalStateError("proposal_policy_stale")
 
 
 def _job_run(row: dict[str, Any]) -> JobRunRecord:
