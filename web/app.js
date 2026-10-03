@@ -41,6 +41,8 @@
   const balanceTurnoverBudget = document.querySelector("#balance-turnover-budget");
   const balanceDailyParticipation = document.querySelector("#balance-daily-participation");
   const balanceTaxRate = document.querySelector("#balance-tax-rate");
+  const balanceUncertaintyHaircut = document.querySelector("#balance-uncertainty-haircut");
+  const balanceCreditHaircut = document.querySelector("#balance-credit-haircut");
   const balanceNoTradeBand = document.querySelector("#balance-no-trade-band");
   const balanceMinReplaceBenefit = document.querySelector("#balance-min-replace-benefit");
 
@@ -1922,6 +1924,8 @@
       policy.max_daily_turnover_participation_percent
     );
     balanceTaxRate.value = String(policy.securities_tax_rate_percent);
+    balanceUncertaintyHaircut.value = String(policy.uncertainty_haircut_percent);
+    balanceCreditHaircut.value = String(policy.credit_loss_haircut_percent);
     balanceNoTradeBand.value = String(policy.no_trade_band_percent);
     balanceMinReplaceBenefit.value = String(policy.min_replace_benefit_rub);
   };
@@ -2361,6 +2365,8 @@
           turnover_budget_percent: balanceTurnoverBudget.value,
           max_daily_turnover_participation_percent: balanceDailyParticipation.value,
           securities_tax_rate_percent: balanceTaxRate.value,
+          uncertainty_haircut_percent: balanceUncertaintyHaircut.value,
+          credit_loss_haircut_percent: balanceCreditHaircut.value,
           no_trade_band_percent: balanceNoTradeBand.value,
           min_replace_benefit_rub: balanceMinReplaceBenefit.value,
         }),
