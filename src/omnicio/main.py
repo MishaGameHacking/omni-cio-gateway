@@ -43,6 +43,9 @@ from .portfolio_store import (
     InvestmentProfileRecord,
     PortfolioStore,
     ProposalStateError,
+    ReinvestmentIncomeSummary,
+    ReinvestmentMandateError,
+    ReinvestmentMandateRecord,
 )
 from .proposals import (
     ProposalBuildError,
@@ -182,6 +185,39 @@ class PortfolioLiveMandateBody(StrictRequestBody):
     expires_at: datetime
     confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
     confirm_live_execution: bool
+
+
+class PortfolioReinvestmentMandateBody(StrictRequestBody):
+    allow_dividends: bool
+    allow_coupons: bool
+    cash_reserve_rub: Decimal = Field(
+        ge=0,
+        le=1_000_000_000_000,
+        decimal_places=2,
+        allow_inf_nan=False,
+    )
+    max_order_notional_rub: Decimal = Field(
+        gt=0,
+        le=1_000_000_000_000,
+        decimal_places=2,
+        allow_inf_nan=False,
+    )
+    max_daily_notional_rub: Decimal = Field(
+        gt=0,
+        le=1_000_000_000_000,
+        decimal_places=2,
+        allow_inf_nan=False,
+    )
+    max_monthly_notional_rub: Decimal = Field(
+        gt=0,
+        le=1_000_000_000_000,
+        decimal_places=2,
+        allow_inf_nan=False,
+    )
+    max_slippage_bps: int = Field(ge=0, le=500)
+    expires_at: datetime
+    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_reinvestment: bool
 
 
 class PortfolioProposalDecisionBody(StrictRequestBody):
@@ -1089,6 +1125,56 @@ def _live_mandate_payload(
     }
 
 
+def _reinvestment_mandate_payload(
+    mandate: ReinvestmentMandateRecord | None,
+) -> dict[str, object] | None:
+    if mandate is None:
+        return None
+    return {
+        "id": str(mandate.id),
+        "account_id": mandate.account_id,
+        "version": mandate.version,
+        "profile_version": mandate.profile_version,
+        "policy_version": mandate.policy_version,
+        "allow_dividends": mandate.allow_dividends,
+        "allow_coupons": mandate.allow_coupons,
+        "cash_reserve_rub": str(mandate.cash_reserve_rub),
+        "max_order_notional_rub": str(mandate.max_order_notional_rub),
+        "max_daily_notional_rub": str(mandate.max_daily_notional_rub),
+        "max_monthly_notional_rub": str(mandate.max_monthly_notional_rub),
+        "max_slippage_bps": mandate.max_slippage_bps,
+        "created_at": mandate.created_at,
+        "expires_at": mandate.expires_at,
+        "revoked_at": mandate.revoked_at,
+    }
+
+
+def _reinvestment_income_payload(
+    summary: ReinvestmentIncomeSummary | None,
+) -> dict[str, object]:
+    if summary is None:
+        return {
+            "observed_count": 0,
+            "observed_rub": "0",
+            "dividends_rub": "0",
+            "coupons_rub": "0",
+            "verified_rub": "0",
+            "spendable_rub": "0",
+            "last_credit_at": None,
+            "status": "no_active_mandate",
+        }
+    return {
+        "observed_count": summary.observed_count,
+        "observed_rub": str(summary.observed_rub),
+        "dividends_rub": str(summary.dividends_rub),
+        "coupons_rub": str(summary.coupons_rub),
+        "verified_rub": str(summary.verified_rub),
+        "spendable_rub": "0",
+        "last_credit_at": summary.last_credit_at,
+        "status": "provider_executed_unverified",
+    }
+
+
 def _require_current_legal_consent(request: Request, user: UserRecord) -> None:
     database: Database = request.app.state.database
     if not database.has_legal_versions(
@@ -1128,6 +1214,136 @@ def _execution_error(exc: Exception) -> HTTPException:
         status_code=status.HTTP_409_CONFLICT,
         detail=code,
     )
+
+
+@app.get("/api/portfolio/reinvestment")
+def portfolio_reinvestment(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    now = datetime.now(UTC)
+    store = portfolio_store(request)
+    mandate = store.current_reinvestment_mandate(user.id, now=now)
+    summary = (
+        store.reinvestment_income_summary(user.id, mandate.id)
+        if mandate is not None
+        else None
+    )
+    broker_status = broker_service(request).status(user.id)
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "stage": "r8_foundation",
+        "execution_enabled": False,
+        "connected_environment": broker_status.environment,
+        "connected_account_id": broker_status.account_id,
+        "mandate": _reinvestment_mandate_payload(mandate),
+        "income": _reinvestment_income_payload(summary),
+        "spendable_reason": "verification_and_execution_not_enabled",
+    }
+
+
+@app.put("/api/portfolio/reinvestment")
+def save_portfolio_reinvestment_mandate(
+    body: PortfolioReinvestmentMandateBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    _require_current_legal_consent(request, user)
+    if not body.confirm_reinvestment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reinvestment_confirmation_required",
+        )
+    if body.confirm_public_id != format_public_id(user.public_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="profile_id_confirmation_mismatch",
+        )
+
+    broker_status = broker_service(request).status(user.id)
+    if (
+        not broker_status.connected
+        or broker_status.environment != "prod"
+        or not broker_status.account_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="reinvestment_prod_account_required",
+        )
+
+    store = portfolio_store(request)
+    profile = store.current_profile(user.id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="investment_profile_required",
+        )
+    policy = store.current_balancing_policy(user.id)
+    if policy is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="balancing_policy_required",
+        )
+
+    try:
+        mandate = store.create_reinvestment_mandate(
+            user.id,
+            account_id=broker_status.account_id,
+            profile_version=profile.version,
+            policy_version=policy.version,
+            allow_dividends=body.allow_dividends,
+            allow_coupons=body.allow_coupons,
+            cash_reserve_rub=body.cash_reserve_rub,
+            max_order_notional_rub=body.max_order_notional_rub,
+            max_daily_notional_rub=body.max_daily_notional_rub,
+            max_monthly_notional_rub=body.max_monthly_notional_rub,
+            max_slippage_bps=body.max_slippage_bps,
+            session_digest=authenticated_session_digest(session_token),
+            expires_at=body.expires_at,
+            now=datetime.now(UTC),
+        )
+    except ReinvestmentMandateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.code,
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "stage": "r8_foundation",
+        "execution_enabled": False,
+        "mandate": _reinvestment_mandate_payload(mandate),
+        "income": _reinvestment_income_payload(
+            store.reinvestment_income_summary(user.id, mandate.id)
+        ),
+        "spendable_reason": "verification_and_execution_not_enabled",
+    }
+
+
+@app.delete("/api/portfolio/reinvestment", status_code=204)
+def revoke_portfolio_reinvestment_mandate(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> Response:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    portfolio_store(request).revoke_reinvestment_mandate(
+        user.id,
+        now=datetime.now(UTC),
+    )
+    response.status_code = 204
+    return response
 
 
 @app.get("/api/portfolio/live-execution/mandate")
