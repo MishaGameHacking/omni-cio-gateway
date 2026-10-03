@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from typing import Any, cast
+from uuid import UUID
 
 from .balancing import (
     AllocationCap,
@@ -16,8 +17,24 @@ from .balancing import (
     build_balancing_preview,
     screen_candidates,
 )
-from .intelligence import EVIDENCE_RETRIEVAL_MAX_AGE
+from .broker import BrokerConnectionError, BrokerService
+from .intelligence import (
+    EVIDENCE_RETRIEVAL_MAX_AGE,
+    assess_candidate_fundamental_risk,
+)
+from .moex import MoexError, MoexIssClient
 from .portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
+from .tbank import (
+    TBankAssetFundamental,
+    TBankInstrumentMetadata,
+    TBankMoney,
+    TBankUnavailable,
+)
+
+LIVE_CANDIDATE_LIMIT = 8
+MARKET_QUOTE_MAX_AGE = timedelta(minutes=15)
+MOEX_LIQUIDITY_WINDOW_DAYS = 45
+MOEX_LIQUIDITY_MIN_OBSERVED_DAYS = 10
 
 _RISK_STATES: set[str] = {
     "data_missing",
@@ -152,6 +169,156 @@ def build_balancing_payload(
         "screening": screening,
         "scenarios": _serialize(asdict(preview)),
     }
+
+
+def build_live_balancing_payload(
+    *,
+    user_id: UUID,
+    profile: InvestmentProfileRecord | None,
+    policy_record: BalancingPolicyRecord | None,
+    context: dict[str, object] | None,
+    broker: BrokerService,
+    moex: MoexIssClient,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    """Enrich a bounded candidate set with read-only broker and MOEX evidence."""
+    observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+    durable = build_balancing_payload(
+        profile=profile,
+        policy_record=policy_record,
+        context=context,
+        now=observed_at,
+    )
+    if (
+        durable.get("status") != "observed"
+        or profile is None
+        or policy_record is None
+        or context is None
+    ):
+        return {**durable, "live_status": "not_applicable"}
+
+    rows = _dict_rows(context.get("candidates"))
+    selected = tuple(
+        row
+        for row in rows
+        if _eligible_for_live_enrichment(row, context)
+    )[:LIVE_CANDIDATE_LIMIT]
+    if not selected:
+        return {
+            **durable,
+            "live_status": "no_prefilter_candidates",
+            "live_candidate_count": 0,
+        }
+
+    try:
+        fundamentals = broker.candidate_fundamentals(
+            user_id,
+            tuple(
+                str(row.get("asset_uid") or "")
+                for row in selected
+                if row.get("asset_uid")
+            ),
+        )
+        prices = broker.candidate_last_prices(
+            user_id,
+            tuple(str(row["instrument_uid"]) for row in selected),
+        )
+    except (BrokerConnectionError, TBankUnavailable, ValueError):
+        return {
+            **durable,
+            "live_status": "degraded",
+            "live_reason": "tbank_live_evidence_unavailable",
+            "live_candidate_count": len(selected),
+        }
+
+    fundamental_by_asset = {
+        item.asset_uid: item
+        for item in fundamentals
+    }
+    price_by_uid = {
+        item.instrument_uid: item
+        for item in prices
+    }
+    enriched: list[Candidate] = []
+    live_sources: list[dict[str, object]] = []
+
+    for row in rows:
+        uid = str(row.get("instrument_uid") or "")
+        if not any(str(item.get("instrument_uid") or "") == uid for item in selected):
+            candidate = _candidate(
+                row,
+                context=context,
+                policy=_policy(
+                    profile,
+                    policy_record,
+                    _decimal(context.get("nav_rub")) or Decimal("0"),
+                ),
+                observed_at=observed_at,
+            )
+            enriched.append(
+                _with_candidate_blocker(
+                    candidate,
+                    "live_enrichment_not_selected",
+                )
+            )
+            continue
+        try:
+            candidate, sources = _enrich_bond_candidate(
+                row=row,
+                context=context,
+                profile=profile,
+                policy_record=policy_record,
+                broker=broker,
+                moex=moex,
+                fundamental=fundamental_by_asset.get(
+                    str(row.get("asset_uid") or "")
+                ),
+                last_price=price_by_uid.get(uid),
+                observed_at=observed_at,
+            )
+        except (BrokerConnectionError, MoexError, TBankUnavailable, ValueError):
+            candidate = _candidate(
+                row,
+                context=context,
+                policy=_policy(
+                    profile,
+                    policy_record,
+                    _decimal(context.get("nav_rub")) or Decimal("0"),
+                ),
+                observed_at=observed_at,
+            )
+            candidate = _with_candidate_blocker(
+                candidate,
+                "live_candidate_evidence_unavailable",
+            )
+            sources = ()
+        enriched.append(candidate)
+        live_sources.extend(sources)
+
+    payload = build_balancing_payload(
+        profile=profile,
+        policy_record=policy_record,
+        context=context,
+        now=observed_at,
+        candidates_override=tuple(enriched),
+    )
+    payload["live_status"] = "received"
+    payload["live_candidate_count"] = len(selected)
+    payload["live_sources"] = _dedupe_sources(live_sources)
+    payload["methodology"] = {
+        "candidate_limit": LIVE_CANDIDATE_LIMIT,
+        "market_quote_max_age_seconds": int(
+            MARKET_QUOTE_MAX_AGE.total_seconds()
+        ),
+        "liquidity_window_days": MOEX_LIQUIDITY_WINDOW_DAYS,
+        "liquidity_min_observed_days": MOEX_LIQUIDITY_MIN_OBSERVED_DAYS,
+        "tax_rate_percent": str(policy_record.securities_tax_rate_percent),
+        "max_daily_turnover_participation_percent": str(
+            policy_record.max_daily_turnover_participation_percent
+        ),
+        "execution_enabled": False,
+    }
+    return payload
 
 
 def _blocked(
