@@ -2699,10 +2699,29 @@ def _validate_reinvestment_mandate_spec(
     session_digest: bytes,
     now: datetime,
 ) -> tuple[datetime, datetime]:
+    now_utc, expires_utc = _validate_reinvestment_mandate_times(spec, now)
+    _validate_reinvestment_mandate_identity(spec, session_digest)
+    _validate_reinvestment_mandate_money(spec)
+    return now_utc, expires_utc
+
+
+def _validate_reinvestment_mandate_times(
+    spec: ReinvestmentMandateSpec,
+    now: datetime,
+) -> tuple[datetime, datetime]:
     if now.tzinfo is None or spec.expires_at.tzinfo is None:
         raise ValueError("reinvestment mandate times must be timezone-aware")
     now_utc = now.astimezone(UTC)
     expires_utc = spec.expires_at.astimezone(UTC)
+    if expires_utc <= now_utc or expires_utc > now_utc + timedelta(days=90):
+        raise ValueError("reinvestment mandate expiry must be within 90 days")
+    return now_utc, expires_utc
+
+
+def _validate_reinvestment_mandate_identity(
+    spec: ReinvestmentMandateSpec,
+    session_digest: bytes,
+) -> None:
     if not 1 <= len(spec.account_id) <= 128:
         raise ValueError("reinvestment mandate account is invalid")
     if spec.profile_version <= 0 or spec.policy_version <= 0:
@@ -2711,11 +2730,11 @@ def _validate_reinvestment_mandate_spec(
         raise ValueError("reinvestment mandate requires an eligible income type")
     if len(session_digest) != 32:
         raise ValueError("reinvestment mandate session digest must be SHA-256")
-    if expires_utc <= now_utc or expires_utc > now_utc + timedelta(days=90):
-        raise ValueError("reinvestment mandate expiry must be within 90 days")
     if not 0 <= spec.max_slippage_bps <= 500:
         raise ValueError("reinvestment mandate slippage is invalid")
 
+
+def _validate_reinvestment_mandate_money(spec: ReinvestmentMandateSpec) -> None:
     money_values = (
         spec.cash_reserve_rub,
         spec.max_order_notional_rub,
@@ -2734,7 +2753,6 @@ def _validate_reinvestment_mandate_spec(
     kopeck = Decimal("0.01")
     if any(value.quantize(kopeck) != value for value in money_values):
         raise ValueError("reinvestment mandate money values require kopeck precision")
-    return now_utc, expires_utc
 
 
 def _profile(row: dict[str, Any]) -> InvestmentProfileRecord:
