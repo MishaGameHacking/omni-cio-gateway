@@ -345,6 +345,34 @@
               </article>
             </section>
 
+            <article class="command-card portfolio-history-card" aria-labelledby="home-history-title">
+              <header class="command-card-header">
+                <div>
+                  <p class="card-label">Динамика капитала</p>
+                  <h3 id="home-history-title">Стоимость портфеля во времени</h3>
+                </div>
+                <span class="state-badge" id="home-history-state">Проверяем историю</span>
+              </header>
+              <div class="history-summary">
+                <div>
+                  <span>Изменение за доступный период</span>
+                  <strong id="home-history-change">—</strong>
+                </div>
+                <p id="home-history-period">Используются только сохранённые снимки OmniCIO.</p>
+              </div>
+              <div class="history-chart history-chart-home" id="home-history-chart" aria-live="polite">
+                <div class="portfolio-empty-inline">История появится после сохранённых снимков портфеля.</div>
+              </div>
+              <footer class="command-card-footer">
+                <span id="home-history-source">
+                  Источник: сохранённые tenant-scoped снимки портфеля. Рыночная цена отдельного инструмента не подменяет стоимость капитала.
+                </span>
+                <button class="button button-secondary" type="button" data-go-view="portfolio">
+                  Открыть историю
+                </button>
+              </footer>
+            </article>
+
             <section class="command-grid">
               <article class="command-card" aria-labelledby="home-allocation-title">
                 <header class="command-card-header">
@@ -635,6 +663,33 @@
                 </article>
               </section>
 
+              <article class="portfolio-card portfolio-history-panel" aria-labelledby="portfolio-history-title">
+                <header class="portfolio-card-header portfolio-history-header">
+                  <div>
+                    <p class="card-label">История</p>
+                    <h3 id="portfolio-history-title">Стоимость портфеля</h3>
+                  </div>
+                  <div class="segmented-control history-periods" id="portfolio-history-periods" aria-label="Период графика стоимости портфеля">
+                    <button type="button" data-history-days="30">1М</button>
+                    <button type="button" data-history-days="90">3М</button>
+                    <button type="button" data-history-days="180">6М</button>
+                    <button type="button" data-history-days="365">1Г</button>
+                  </div>
+                </header>
+                <section class="history-metrics" aria-label="Показатели выбранного периода">
+                  <div><span>Начало</span><strong id="portfolio-history-start">—</strong></div>
+                  <div><span>Сейчас</span><strong id="portfolio-history-end">—</strong></div>
+                  <div><span>Изменение</span><strong id="portfolio-history-change">—</strong></div>
+                  <div><span>Макс. просадка</span><strong id="portfolio-history-drawdown">—</strong></div>
+                </section>
+                <div class="history-chart" id="portfolio-history-chart" aria-live="polite">
+                  <div class="portfolio-empty-inline">Проверяем сохранённую историю портфеля.</div>
+                </div>
+                <p class="field-hint" id="portfolio-history-note">
+                  График строится из сохранённых доказательных снимков OmniCIO. Время снимка и рыночное время котировки — разные времена.
+                </p>
+              </article>
+
               <section class="portfolio-two-column">
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">
@@ -660,14 +715,86 @@
                 </article>
               </section>
 
+              <section class="portfolio-visualization-grid">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Экспозиция</p>
+                      <h3>Крупнейшие позиции</h3>
+                    </div>
+                    <span class="state-badge" id="portfolio-concentration-state">Ожидает снимок</span>
+                  </header>
+                  <div class="exposure-list" id="portfolio-concentration"></div>
+                </article>
+
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Сектора</p>
+                      <h3>Подтверждённое покрытие</h3>
+                    </div>
+                    <span class="state-badge" id="portfolio-sector-state">Ожидает снимок</span>
+                  </header>
+                  <div class="allocation-list" id="portfolio-sectors"></div>
+                </article>
+
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Валюта данных</p>
+                      <h3>Валюты котировок позиций</h3>
+                    </div>
+                  </header>
+                  <div class="currency-coverage" id="portfolio-currencies"></div>
+                  <p class="field-hint">
+                    Это покрытие по валюте котировки, а не валютная доля NAV. Неоценённые в RUB позиции не превращаются в выдуманную рублёвую экспозицию.
+                  </p>
+                </article>
+              </section>
+
               <article class="portfolio-card">
                 <header class="portfolio-card-header">
                   <div>
                     <p class="card-label">Позиции</p>
                     <h3>Активы в портфеле</h3>
                   </div>
+                  <span class="section-note">Подробнее — по сохранённому доказательному снимку</span>
                 </header>
                 <div class="positions-list" id="positions-list"></div>
+              </article>
+
+              <article class="portfolio-card instrument-detail-card hidden" id="portfolio-instrument-detail">
+                <header class="portfolio-card-header instrument-detail-header">
+                  <div>
+                    <p class="card-label">Инструмент</p>
+                    <h3 id="instrument-detail-title">Детали позиции</h3>
+                    <p id="instrument-detail-subtitle">—</p>
+                  </div>
+                  <button class="icon-button" id="instrument-detail-close" type="button" aria-label="Закрыть детали инструмента">×</button>
+                </header>
+                <section class="history-metrics instrument-detail-metrics" aria-label="Показатели позиции">
+                  <div><span>Оценка позиции</span><strong id="instrument-detail-value">—</strong></div>
+                  <div><span>Доля портфеля</span><strong id="instrument-detail-weight">—</strong></div>
+                  <div><span>Количество</span><strong id="instrument-detail-quantity">—</strong></div>
+                  <div><span>Текущая цена</span><strong id="instrument-detail-price">—</strong></div>
+                </section>
+                <div class="history-chart instrument-history-chart" id="instrument-history-chart">
+                  <div class="portfolio-empty-inline">Выберите позицию для просмотра истории.</div>
+                </div>
+                <section class="instrument-detail-grid">
+                  <div>
+                    <p class="card-label">Риск и доказательства</p>
+                    <dl class="instrument-facts" id="instrument-detail-facts"></dl>
+                  </div>
+                  <div>
+                    <p class="card-label">События</p>
+                    <div class="analysis-sources" id="instrument-detail-payouts"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Источники</p>
+                    <div class="analysis-sources" id="instrument-detail-sources"></div>
+                  </div>
+                </section>
               </article>
 
             </div>
