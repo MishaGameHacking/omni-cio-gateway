@@ -191,7 +191,7 @@ def release_context() -> tuple[str, str]:
 def git_executable() -> str:
     """Return a trusted OS Git binary without relying on a mutable PATH."""
     if os.name == "nt":
-        program_files = pathlib.Path(os.environ.get("ProgramFiles", r"C:\\Program Files"))
+        program_files = pathlib.Path(os.environ.get("PROGRAMFILES", r"C:\\Program Files"))
         candidates = (
             program_files / "Git" / "cmd" / "git.exe",
             program_files / "Git" / "bin" / "git.exe",
