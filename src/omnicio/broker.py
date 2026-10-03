@@ -29,6 +29,7 @@ from .tbank import (
     TBankInvestClient,
     TBankLastPrice,
     TBankOperationsPage,
+    TBankOrderBook,
     TBankOrderPrice,
     TBankPortfolio,
     TBankPositions,
@@ -243,6 +244,21 @@ class BrokerService:
                 )
             )
         return tuple(result)
+
+    def candidate_order_book(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        depth: int = 10,
+    ) -> TBankOrderBook:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_order_book(
+            credential,
+            environment,
+            instrument_uid,
+            depth=depth,
+        )
 
     def candidate_order_price(
         self,
