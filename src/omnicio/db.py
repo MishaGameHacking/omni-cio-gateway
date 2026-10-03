@@ -84,6 +84,8 @@ class Database:
                     AND to_regclass('public.payout_events') IS NOT NULL
                     AND to_regclass('public.portfolio_risk_assessments') IS NOT NULL
                     AND to_regclass('public.balancing_policy_versions') IS NOT NULL
+                    AND to_regclass('public.portfolio_proposals') IS NOT NULL
+                    AND to_regclass('public.portfolio_proposal_actions') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
@@ -110,7 +112,33 @@ class Database:
                           )
                     )
                     AND (
-                        SELECT count(*) = 9
+                        SELECT count(*) = 3
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'portfolio_proposals'
+                          AND column_name = ANY (
+                              ARRAY[
+                                  'account_id',
+                                  'created_session_digest',
+                                  'proposal_hash'
+                              ]
+                          )
+                    )
+                    AND (
+                        SELECT count(*) = 3
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'portfolio_proposal_actions'
+                          AND column_name = ANY (
+                              ARRAY[
+                                  'session_digest',
+                                  'user_reason',
+                                  'deferred_until'
+                              ]
+                          )
+                    )
+                    AND (
+                        SELECT count(*) = 11
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -124,7 +152,9 @@ class Database:
                                   'operation_observations',
                                   'broker_sync_state',
                                   'portfolio_risk_assessments',
-                                  'balancing_policy_versions'
+                                  'balancing_policy_versions',
+                                  'portfolio_proposals',
+                                  'portfolio_proposal_actions'
                               ]
                           )
                           AND c.relrowsecurity

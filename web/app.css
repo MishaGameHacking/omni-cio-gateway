@@ -1150,6 +1150,7 @@ body[data-theme="dark"] .nav-icon-gray { background: #242c37; color: #bec7d4; }
 input[type="password"],
 input[type="text"],
 input[type="tel"],
+input[type="datetime-local"],
 select {
   width: 100%;
   min-height: 50px;
@@ -1163,6 +1164,7 @@ select {
 input[type="password"]:hover,
 input[type="text"]:hover,
 input[type="tel"]:hover,
+input[type="datetime-local"]:hover,
 select:hover {
   border-color: var(--accent);
 }
@@ -1567,6 +1569,29 @@ select:hover {
 .analysis-sources > div:first-child {
   border-top: 0;
 }
+
+.analysis-sources > div > .button {
+  width: fit-content;
+  margin-top: 6px;
+}
+
+.proposal-decision-controls {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.proposal-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.proposal-decision-actions .button {
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
 
 .analysis-sources small,
 .analysis-table small {

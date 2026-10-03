@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import ANY, patch
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +12,14 @@ from fastapi.testclient import TestClient
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
 from omnicio.main import app
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
-from omnicio.portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
+from omnicio.portfolio_store import (
+    BalancingPolicyRecord,
+    InvestmentProfileRecord,
+    PortfolioProposalActionRecord,
+    PortfolioProposalRecord,
+    ProposalStateError,
+)
+from omnicio.proposals import ProposalDraft
 from omnicio.tbank import (
     TBankAssetTotal,
     TBankInstrumentMetadata,
@@ -204,7 +212,7 @@ def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
     now = datetime.now(UTC)
     profile = InvestmentProfileRecord(
         id=1,
-        user_id="server-user",
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=3,
         reserve_rub=Decimal("100000"),
         planned_withdrawal_rub=Decimal("25000"),
@@ -302,7 +310,7 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
     now = datetime.now(UTC)
     policy = BalancingPolicyRecord(
         id=1,
-        user_id="server-user",
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=2,
         max_instrument_percent=Decimal("20"),
         max_sector_percent=Decimal("30"),
@@ -574,6 +582,394 @@ def test_balancing_preview_requires_session_before_touching_store() -> None:
 
     assert response.status_code == 401
     store.assert_not_called()
+
+
+def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing() -> None:
+    now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
+    proposal_id = UUID("22222222-2222-2222-2222-222222222222")
+    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
+    draft = ProposalDraft(
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-1",
+        replaced_instrument_uid=None,
+        payload={"schema": "omnicio.portfolio.proposal.v1"},
+        proposal_hash=b"x" * 32,
+        expires_at=now + timedelta(minutes=10),
+    )
+    proposal = PortfolioProposalRecord(
+        id=proposal_id,
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
+        version=1,
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-1",
+        replaced_instrument_uid=None,
+        proposal_hash=b"x" * 32,
+        payload=draft.payload,
+        created_at=now,
+        expires_at=draft.expires_at,
+    )
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: True},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+            patch("omnicio.main._live_balancing_for_user") as balancing,
+            patch("omnicio.main.build_proposal_draft") as builder,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {"terms": "current"}
+            balancing.return_value = {"status": "observed"}
+            builder.return_value = draft
+            store.return_value.create_proposal.return_value = proposal
+
+            rejected = TestClient(app).post(
+                "/api/portfolio/proposals",
+                json={"scenario_kind": "deploy_cash"},
+                headers={"Origin": "https://evil.example"},
+            )
+            assert rejected.status_code == 403
+
+            response = TestClient(app).post(
+                "/api/portfolio/proposals",
+                json={"scenario_kind": "deploy_cash"},
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "proposal-session-token"},
+            )
+
+        assert response.status_code == 201
+        assert response.headers["cache-control"] == "private, no-store"
+        assert response.json()["proposal"]["id"] == str(proposal_id)
+        assert response.json()["proposal"]["hash"] == (b"x" * 32).hex()
+        assert response.json()["execution_enabled"] is False
+        balancing.assert_called_once_with(
+            ANY,
+            "server-user",
+        )
+        store.return_value.create_proposal.assert_called_once()
+        call = store.return_value.create_proposal.call_args
+        assert call.args[0] == "server-user"
+        assert call.kwargs["account_id"] == "account-1"
+        assert len(call.kwargs["session_digest"]) == 32
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution() -> None:
+    now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
+    proposal_id = UUID("22222222-2222-2222-2222-222222222222")
+    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
+    proposal = PortfolioProposalRecord(
+        id=proposal_id,
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
+        version=4,
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-1",
+        replaced_instrument_uid=None,
+        proposal_hash=b"y" * 32,
+        payload={"schema": "omnicio.portfolio.proposal.v1"},
+        created_at=now,
+        expires_at=now + timedelta(minutes=10),
+    )
+    action = PortfolioProposalActionRecord(
+        id=1,
+        proposal_id=proposal_id,
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
+        action="confirmed",
+        proposal_version=4,
+        proposal_hash=b"y" * 32,
+        reason="user_decision",
+        user_reason="",
+        deferred_until=None,
+        acted_at=now + timedelta(minutes=1),
+    )
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: True},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+    try:
+        refreshed = ProposalDraft(
+            source_snapshot_id=snapshot_id,
+            account_id="account-1",
+            profile_version=3,
+            policy_version=2,
+            scenario_kind="deploy_cash",
+            target_instrument_uid="candidate-1",
+            replaced_instrument_uid=None,
+            payload={"schema": "omnicio.portfolio.proposal.v1"},
+            proposal_hash=b"z" * 32,
+            expires_at=now + timedelta(minutes=10),
+        )
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+            patch("omnicio.main.broker_service") as broker,
+            patch("omnicio.main._live_balancing_for_user") as balancing,
+            patch("omnicio.main.build_proposal_draft") as builder,
+            patch("omnicio.main.proposal_generated_at") as generated_at,
+            patch("omnicio.main.proposal_material_hash") as material_hash,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {"terms": "current"}
+            store.return_value.proposal.return_value = proposal
+            store.return_value.decide_proposal.return_value = (proposal, action)
+            balancing.return_value = {"status": "observed"}
+            builder.return_value = refreshed
+            generated_at.return_value = now
+            material_hash.side_effect = [b"m" * 32, b"m" * 32]
+
+            response = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "confirm",
+                    "proposal_version": 4,
+                    "proposal_hash": (b"y" * 32).hex(),
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "decision-session-token"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["proposal"]["status"] == "confirmed"
+        assert response.json()["execution_enabled"] is False
+        store.return_value.decide_proposal.assert_called_once()
+        call = store.return_value.decide_proposal.call_args
+        assert call.args[0] == "server-user"
+        assert call.kwargs["expected_version"] == 4
+        assert call.kwargs["expected_hash"] == b"y" * 32
+        assert call.kwargs["action"] == "confirmed"
+        assert len(call.kwargs["session_digest"]) == 32
+        assert call.kwargs["user_reason"] == ""
+        assert call.kwargs["deferred_until"] is None
+        assert call.kwargs["material_current"] is True
+        balancing.assert_called_once_with(ANY, "server-user")
+        builder.assert_called_once()
+        broker.assert_not_called()
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_proposal_confirmation_marks_materially_changed_live_package_stale() -> None:
+    now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
+    proposal_id = UUID("22222222-2222-2222-2222-222222222223")
+    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
+    proposal = PortfolioProposalRecord(
+        id=proposal_id,
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
+        version=5,
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-1",
+        replaced_instrument_uid=None,
+        proposal_hash=b"a" * 32,
+        payload={"schema": "omnicio.portfolio.proposal.v1"},
+        created_at=now,
+        expires_at=now + timedelta(minutes=10),
+    )
+    revoked = replace(
+        proposal,
+        status="revoked",
+        decision_reason="proposal_material_changed",
+        decided_at=now + timedelta(minutes=1),
+    )
+    action = PortfolioProposalActionRecord(
+        id=2,
+        proposal_id=proposal_id,
+        user_id=proposal.user_id,
+        action="revoked",
+        proposal_version=5,
+        proposal_hash=b"a" * 32,
+        reason="proposal_material_changed",
+        user_reason="",
+        deferred_until=None,
+        acted_at=now + timedelta(minutes=1),
+    )
+    refreshed = ProposalDraft(
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-2",
+        replaced_instrument_uid=None,
+        payload={"schema": "omnicio.portfolio.proposal.v1", "changed": True},
+        proposal_hash=b"b" * 32,
+        expires_at=now + timedelta(minutes=10),
+    )
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: True},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+            patch("omnicio.main._live_balancing_for_user") as balancing,
+            patch("omnicio.main.build_proposal_draft") as builder,
+            patch("omnicio.main.proposal_generated_at", return_value=now),
+            patch("omnicio.main.proposal_material_hash") as material_hash,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {"terms": "current"}
+            store.return_value.proposal.return_value = proposal
+            store.return_value.decide_proposal.return_value = (revoked, action)
+            balancing.return_value = {"status": "observed"}
+            builder.return_value = refreshed
+            material_hash.side_effect = [b"old" * 10 + b"xx", b"new" * 10 + b"xx"]
+
+            response = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "confirm",
+                    "proposal_version": 5,
+                    "proposal_hash": (b"a" * 32).hex(),
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "stale-session-token"},
+            )
+
+        assert response.status_code == 409
+        assert response.json()["proposal"]["status"] == "revoked"
+        assert response.json()["decision"]["reason"] == "proposal_material_changed"
+        call = store.return_value.decide_proposal.call_args
+        assert call.kwargs["material_current"] is False
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_proposal_reject_requires_reason_and_defer_requires_future_date() -> None:
+    proposal_id = "22222222-2222-2222-2222-222222222222"
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: True},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {"terms": "current"}
+            store.return_value.decide_proposal.side_effect = ValueError(
+                "proposal rejection reason is required"
+            )
+
+            rejected = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "reject",
+                    "proposal_version": 4,
+                    "proposal_hash": (b"y" * 32).hex(),
+                    "reason": "",
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "reject-session-token"},
+            )
+            assert rejected.status_code == 422
+
+            store.return_value.decide_proposal.side_effect = ValueError(
+                "proposal defer time must be in the future"
+            )
+            deferred = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "defer",
+                    "proposal_version": 4,
+                    "proposal_hash": (b"y" * 32).hex(),
+                    "deferred_until": "2020-01-01T00:00:00Z",
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "defer-session-token"},
+            )
+            assert deferred.status_code == 422
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
+    proposal_id = "22222222-2222-2222-2222-222222222222"
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: True},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {"terms": "current"}
+            store.return_value.decide_proposal.side_effect = ProposalStateError(
+                "proposal_already_decided"
+            )
+
+            response = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "confirm",
+                    "proposal_version": 4,
+                    "proposal_hash": (b"y" * 32).hex(),
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "replay-session-token"},
+            )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "proposal_already_decided"
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
 
 
 def test_intelligence_http_requires_session_before_touching_store() -> None:

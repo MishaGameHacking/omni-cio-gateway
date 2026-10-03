@@ -793,6 +793,39 @@
                 </p>
               </article>
 
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Portfolio Proposals R5</p>
+                    <h3>Неизменяемое предложение и решение владельца</h3>
+                  </div>
+                  <span class="state-badge state-next" id="proposal-status">Нет активного предложения</span>
+                </header>
+                <p class="card-description">
+                  Сначала OmniCIO повторно проверяет live evidence и фиксирует конкретную
+                  версию сценария: счёт, snapshot, ограничения, before/after, целые лоты,
+                  limit price, max spend/min proceeds, комиссии, налоги и срок действия.
+                  Только после этого доступно решение по этой exact версии.
+                </p>
+                <section class="portfolio-two-column">
+                  <div>
+                    <p class="card-label">Доступно к фиксации</p>
+                    <div id="proposal-create-options" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Версии и решения</p>
+                    <div id="proposal-history" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <p id="proposal-message" class="message" role="status" aria-live="polite"></p>
+                <p class="field-hint">
+                  «Подтвердить план» в R5 только записывает решение владельца и hash версии.
+                  Оно не вызывает <code>PostOrder</code>, не выставляет заявку и не включает
+                  торговые полномочия. Отклонение требует причины; «отложить» сохраняет дату.
+                  При новом snapshot/profile/policy старая версия не считается актуальной.
+                </p>
+              </article>
+
               <section class="portfolio-two-column">
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">

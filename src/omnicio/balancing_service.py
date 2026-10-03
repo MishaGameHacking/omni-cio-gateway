@@ -11,8 +11,11 @@ from uuid import UUID
 from .balancing import (
     AllocationCap,
     BalancingPolicy,
+    BalancingPreview,
+    BalancingScenario,
     Candidate,
     Holding,
+    PlannedTrade,
     RatingBucket,
     RiskState,
     build_balancing_preview,
@@ -193,15 +196,29 @@ def build_balancing_payload(
         "profile_version": profile.version,
         "policy_version": policy_record.version,
         "snapshot_id": str(context.get("snapshot_id") or ""),
+        "account_id": str(context.get("account_id") or ""),
         "captured_at": captured_at,
         "snapshot_age_seconds": snapshot_age_seconds,
         "nav_rub": str(nav_rub),
         "free_cash_rub": str(cash_rub),
+        "constraints": _serialize(
+            _proposal_constraints(
+                profile,
+                policy_record,
+                policy,
+            )
+        ),
         "candidate_count": len(screened),
         "eligible_candidate_count": eligible_count,
         "screening_blockers": blockers,
         "screening": screening,
-        "scenarios": _serialize(asdict(preview)),
+        "scenarios": _scenario_payloads(
+            preview,
+            nav_rub=nav_rub,
+            cash_rub=cash_rub,
+            holdings=holdings,
+            candidates=candidates,
+        ),
     }
 
 
@@ -756,6 +773,8 @@ def _enrich_bond_candidate(
         ytw_percent=ytw_percent,
         duration_years=duration_years,
         evidence_complete=evidence_complete,
+        limit_price=best_ask,
+        limit_price_type="point",
         access_reasons=access_reasons,
         notes=notes,
     )
@@ -1136,6 +1155,287 @@ def _blocked(
         "profile_version": profile.version,
         "policy_version": policy.version,
     }
+
+
+def _proposal_constraints(
+    profile: InvestmentProfileRecord,
+    record: BalancingPolicyRecord,
+    policy: BalancingPolicy,
+) -> dict[str, object]:
+    return {
+        "reserve_rub": profile.reserve_rub,
+        "planned_withdrawal_rub": profile.planned_withdrawal_rub,
+        "horizon_months": profile.horizon_months,
+        "max_drawdown_percent": profile.max_drawdown_percent,
+        "liquidity_horizon_days": profile.liquidity_horizon_days,
+        "allow_below_investment_grade": profile.allow_below_investment_grade,
+        "max_instrument_percent": record.max_instrument_percent,
+        "max_sector_percent": record.max_sector_percent,
+        "max_issuer_percent": record.max_issuer_percent,
+        "max_group_percent": record.max_group_percent,
+        "max_share_percent": record.max_share_percent,
+        "max_bond_percent": record.max_bond_percent,
+        "max_etf_percent": record.max_etf_percent,
+        "max_below_grade_percent": policy.max_below_grade_percent,
+        "max_unknown_percent": record.max_unknown_percent,
+        "max_term_months": policy.max_term_months,
+        "turnover_budget_rub": policy.turnover_budget_rub,
+        "turnover_budget_percent": record.turnover_budget_percent,
+        "max_daily_turnover_participation_percent": (
+            record.max_daily_turnover_participation_percent
+        ),
+        "securities_tax_rate_percent": record.securities_tax_rate_percent,
+        "uncertainty_haircut_percent": record.uncertainty_haircut_percent,
+        "credit_loss_haircut_percent": record.credit_loss_haircut_percent,
+        "no_trade_band_percent": record.no_trade_band_percent,
+        "min_replace_benefit_rub": record.min_replace_benefit_rub,
+        "allowed_asset_classes": list(policy.allowed_asset_classes),
+        "allowed_currencies": list(policy.allowed_currencies),
+        "allowed_risk_states": list(policy.allowed_risk_states),
+    }
+
+
+def _scenario_payloads(
+    preview: BalancingPreview,
+    *,
+    nav_rub: Decimal,
+    cash_rub: Decimal,
+    holdings: tuple[Holding, ...],
+    candidates: tuple[Candidate, ...],
+) -> dict[str, object]:
+    return cast(
+        dict[str, object],
+        _serialize(
+            {
+                "hold": _scenario_payload(
+                    preview.hold,
+                    nav_rub=nav_rub,
+                    cash_rub=cash_rub,
+                    holdings=holdings,
+                    candidates=candidates,
+                ),
+                "deploy_cash": _scenario_payload(
+                    preview.deploy_cash,
+                    nav_rub=nav_rub,
+                    cash_rub=cash_rub,
+                    holdings=holdings,
+                    candidates=candidates,
+                ),
+                "replacements": [
+                    _scenario_payload(
+                        scenario,
+                        nav_rub=nav_rub,
+                        cash_rub=cash_rub,
+                        holdings=holdings,
+                        candidates=candidates,
+                    )
+                    for scenario in preview.replacements
+                ],
+            }
+        ),
+    )
+
+
+def _scenario_payload(
+    scenario: BalancingScenario,
+    *,
+    nav_rub: Decimal,
+    cash_rub: Decimal,
+    holdings: tuple[Holding, ...],
+    candidates: tuple[Candidate, ...],
+) -> dict[str, object]:
+    payload = cast(dict[str, object], asdict(scenario))
+    payload["before_after"] = _scenario_before_after(
+        scenario,
+        nav_rub=nav_rub,
+        cash_rub=cash_rub,
+        holdings=holdings,
+        candidates=candidates,
+    )
+    return payload
+
+
+def _scenario_before_after(
+    scenario: BalancingScenario,
+    *,
+    nav_rub: Decimal,
+    cash_rub: Decimal,
+    holdings: tuple[Holding, ...],
+    candidates: tuple[Candidate, ...],
+) -> dict[str, object]:
+    before = _position_state(holdings)
+    after = {
+        uid: dict(position)
+        for uid, position in before.items()
+    }
+    holding_by_uid = {
+        item.instrument_uid: item
+        for item in holdings
+    }
+    candidate_by_uid = {
+        item.instrument_uid: item
+        for item in candidates
+    }
+
+    for trade in scenario.trades:
+        _apply_trade_to_position_state(
+            after,
+            trade,
+            holding=holding_by_uid.get(trade.instrument_uid),
+            candidate=candidate_by_uid.get(trade.instrument_uid),
+        )
+
+    total_cost = sum(
+        (
+            trade.estimated_cost_rub + trade.tax_rub
+            for trade in scenario.trades
+        ),
+        Decimal("0"),
+    )
+    after_nav = max(Decimal("0"), nav_rub - total_cost)
+    after_cash = (
+        cash_rub + scenario.residual_cash_rub
+        if scenario.kind == "replace"
+        else scenario.residual_cash_rub
+    )
+    return {
+        "before": _portfolio_state_payload(
+            before,
+            nav_rub=nav_rub,
+            cash_rub=cash_rub,
+        ),
+        "after": _portfolio_state_payload(
+            after,
+            nav_rub=after_nav,
+            cash_rub=after_cash,
+        ),
+    }
+
+
+def _position_state(
+    holdings: tuple[Holding, ...],
+) -> dict[str, dict[str, object]]:
+    return {
+        item.instrument_uid: {
+            "instrument_uid": item.instrument_uid,
+            "ticker": item.ticker,
+            "asset_class": item.asset_class,
+            "sector": item.sector,
+            "issuer_id": item.issuer_id,
+            "group_id": item.group_id,
+            "risk_state": item.risk_state,
+            "lots": item.lots,
+            "value_rub": item.value_rub,
+        }
+        for item in holdings
+        if item.instrument_uid and item.lots > 0 and item.value_rub > 0
+    }
+
+
+def _apply_trade_to_position_state(
+    positions: dict[str, dict[str, object]],
+    trade: PlannedTrade,
+    *,
+    holding: Holding | None,
+    candidate: Candidate | None,
+) -> None:
+    existing = positions.get(trade.instrument_uid)
+    if trade.action == "sell":
+        if existing is None:
+            return
+        lots = max(0, _integer(existing["lots"]) - trade.lots)
+        value = max(
+            Decimal("0"),
+            cast(Decimal, existing["value_rub"]) - trade.notional_rub,
+        )
+        if lots == 0 or value == 0:
+            positions.pop(trade.instrument_uid, None)
+            return
+        existing["lots"] = lots
+        existing["value_rub"] = value
+        return
+
+    source = candidate
+    if source is None:
+        return
+    if existing is None:
+        positions[trade.instrument_uid] = {
+            "instrument_uid": source.instrument_uid,
+            "ticker": source.ticker,
+            "asset_class": source.asset_class,
+            "sector": source.sector,
+            "issuer_id": source.issuer_id,
+            "group_id": source.group_id,
+            "risk_state": source.risk_state,
+            "lots": trade.lots,
+            "value_rub": trade.notional_rub,
+        }
+        return
+    existing["lots"] = _integer(existing["lots"]) + trade.lots
+    existing["value_rub"] = (
+        cast(Decimal, existing["value_rub"]) + trade.notional_rub
+    )
+
+
+def _portfolio_state_payload(
+    positions: dict[str, dict[str, object]],
+    *,
+    nav_rub: Decimal,
+    cash_rub: Decimal,
+) -> dict[str, object]:
+    ordered = sorted(
+        positions.values(),
+        key=lambda item: (
+            -cast(Decimal, item["value_rub"]),
+            str(item["instrument_uid"]),
+        ),
+    )
+    return {
+        "nav_rub": nav_rub,
+        "cash_rub": cash_rub,
+        "positions": ordered,
+        "exposures": {
+            dimension: _exposure_dimension(
+                ordered,
+                dimension=dimension,
+                nav_rub=nav_rub,
+            )
+            for dimension in (
+                "asset_class",
+                "sector",
+                "issuer_id",
+                "group_id",
+            )
+        },
+    }
+
+
+def _exposure_dimension(
+    positions: list[dict[str, object]],
+    *,
+    dimension: str,
+    nav_rub: Decimal,
+) -> list[dict[str, object]]:
+    totals: dict[str, Decimal] = {}
+    for position in positions:
+        key = str(position.get(dimension) or "unknown")
+        value = cast(Decimal, position["value_rub"])
+        totals[key] = totals.get(key, Decimal("0")) + value
+    return [
+        {
+            "key": key,
+            "value_rub": value,
+            "nav_percent": (
+                value / nav_rub * Decimal("100")
+                if nav_rub > 0
+                else Decimal("0")
+            ),
+        }
+        for key, value in sorted(
+            totals.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
 
 
 def _policy(

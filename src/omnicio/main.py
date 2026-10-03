@@ -8,8 +8,10 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, cast
+from uuid import UUID
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -32,6 +34,16 @@ from .portfolio_store import (
     BalancingPolicyRecord,
     InvestmentProfileRecord,
     PortfolioStore,
+    ProposalStateError,
+)
+from .proposals import (
+    ProposalBuildError,
+    build_proposal_draft,
+    parse_proposal_hash,
+    proposal_action_payload,
+    proposal_generated_at,
+    proposal_material_hash,
+    proposal_payload,
 )
 from .security import (
     SecurityValueError,
@@ -41,6 +53,7 @@ from .security import (
     open_vkid_flow,
     pkce_challenge,
     seal_vkid_flow,
+    session_digest,
 )
 from .service import (
     AccountDeletionRejected,
@@ -122,6 +135,23 @@ class BalancingPolicyBody(BaseModel):
     )
 
 
+class PortfolioProposalBody(BaseModel):
+    scenario_kind: Literal["deploy_cash", "replace"]
+    replaced_instrument_uid: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+
+
+class PortfolioProposalDecisionBody(BaseModel):
+    action: Literal["confirm", "reject", "defer"]
+    proposal_version: int = Field(ge=1)
+    proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    reason: str | None = Field(default=None, max_length=500)
+    deferred_until: datetime | None = None
+
+
 def client_ip(request: Request) -> str:
     direct = request.client.host if request.client else ""
     candidate = direct
@@ -177,6 +207,15 @@ def authenticated_user(
             detail="authentication required",
         )
     return user
+
+
+def authenticated_session_digest(session_token: str | None) -> bytes:
+    if not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="authentication required",
+        )
+    return session_digest(session_token)
 
 
 def callback_values(request: Request) -> dict[str, str]:
@@ -722,6 +761,20 @@ def tbank_analysis(
     return asdict(snapshot)
 
 
+def _live_balancing_for_user(
+    request: Request,
+    user_id: UUID,
+) -> dict[str, object]:
+    store = portfolio_store(request)
+    return build_live_balancing_payload(
+        user_id=user_id,
+        profile=store.current_profile(user_id),
+        policy_record=store.current_balancing_policy(user_id),
+        context=store.latest_balancing_context(user_id),
+        broker=broker_service(request),
+    )
+
+
 @app.get(
     "/api/portfolio/balancing",
     responses={401: {"description": "Authenticated session required"}},
@@ -732,16 +785,172 @@ def portfolio_balancing(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
-    store = portfolio_store(request)
-    payload = build_live_balancing_payload(
-        user_id=user.id,
-        profile=store.current_profile(user.id),
-        policy_record=store.current_balancing_policy(user.id),
-        context=store.latest_balancing_context(user.id),
-        broker=broker_service(request),
-    )
+    payload = _live_balancing_for_user(request, user.id)
     response.headers["Cache-Control"] = "private, no-store"
     return payload
+
+
+@app.get("/api/portfolio/proposals")
+def portfolio_proposals(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    proposals = portfolio_store(request).proposals(user.id)
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "proposals": [proposal_payload(item) for item in proposals],
+        "execution_enabled": False,
+    }
+
+
+@app.post("/api/portfolio/proposals", status_code=status.HTTP_201_CREATED)
+def create_portfolio_proposal(
+    body: PortfolioProposalBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    database: Database = request.app.state.database
+    if not database.has_legal_versions(user.id, service(request).legal_versions()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="updated legal consent required",
+        )
+
+    balancing = _live_balancing_for_user(request, user.id)
+    try:
+        draft = build_proposal_draft(
+            balancing,
+            scenario_kind=body.scenario_kind,
+            replaced_instrument_uid=body.replaced_instrument_uid,
+        )
+        proposal = portfolio_store(request).create_proposal(
+            user.id,
+            source_snapshot_id=draft.source_snapshot_id,
+            account_id=draft.account_id,
+            profile_version=draft.profile_version,
+            policy_version=draft.policy_version,
+            scenario_kind=draft.scenario_kind,
+            target_instrument_uid=draft.target_instrument_uid,
+            replaced_instrument_uid=draft.replaced_instrument_uid,
+            proposal_hash=draft.proposal_hash,
+            session_digest=authenticated_session_digest(session_token),
+            payload=draft.payload,
+            expires_at=draft.expires_at,
+        )
+    except (ProposalBuildError, ProposalStateError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.code,
+        ) from exc
+
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "proposal": proposal_payload(proposal),
+        "execution_enabled": False,
+    }
+
+
+@app.post("/api/portfolio/proposals/{proposal_id}/decision")
+def decide_portfolio_proposal(
+    proposal_id: UUID,
+    body: PortfolioProposalDecisionBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    database: Database = request.app.state.database
+    if not database.has_legal_versions(user.id, service(request).legal_versions()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="updated legal consent required",
+        )
+    try:
+        expected_hash = parse_proposal_hash(body.proposal_hash)
+        decision_action: Literal["confirmed", "rejected", "deferred"]
+        if body.action == "confirm":
+            decision_action = "confirmed"
+        elif body.action == "reject":
+            decision_action = "rejected"
+        else:
+            decision_action = "deferred"
+        store = portfolio_store(request)
+        material_current = True
+        if body.action == "confirm":
+            current = store.proposal(user.id, proposal_id)
+            if current is None:
+                raise ProposalStateError("proposal_not_found")
+            if (
+                current.status == "pending"
+                and current.version == body.proposal_version
+                and current.proposal_hash == expected_hash
+            ):
+                try:
+                    scenario_kind: Literal["deploy_cash", "replace"]
+                    if current.scenario_kind == "deploy_cash":
+                        scenario_kind = "deploy_cash"
+                    elif current.scenario_kind == "replace":
+                        scenario_kind = "replace"
+                    else:
+                        raise ProposalBuildError("scenario_kind_invalid")
+                    refreshed = build_proposal_draft(
+                        _live_balancing_for_user(request, user.id),
+                        scenario_kind=scenario_kind,
+                        replaced_instrument_uid=current.replaced_instrument_uid,
+                        now=proposal_generated_at(current),
+                    )
+                except ProposalBuildError as exc:
+                    if exc.code in {
+                        "balancing_not_observed",
+                        "live_evidence_not_received",
+                    }:
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="proposal_revalidation_unavailable",
+                        ) from exc
+                    material_current = False
+                else:
+                    material_current = (
+                        proposal_material_hash(current.payload)
+                        == proposal_material_hash(refreshed.payload)
+                    )
+
+        proposal, decision = store.decide_proposal(
+            user.id,
+            proposal_id=proposal_id,
+            expected_version=body.proposal_version,
+            expected_hash=expected_hash,
+            action=decision_action,
+            session_digest=authenticated_session_digest(session_token),
+            user_reason=body.reason or "",
+            deferred_until=body.deferred_until,
+            material_current=material_current,
+            now=datetime.now(UTC),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except ProposalStateError as exc:
+        http_status = (
+            status.HTTP_404_NOT_FOUND
+            if exc.code == "proposal_not_found"
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=http_status, detail=exc.code) from exc
+
+    result = proposal_action_payload(proposal, decision)
+    if decision.action in {"expired", "revoked"}:
+        response.status_code = status.HTTP_409_CONFLICT
+    response.headers["Cache-Control"] = "private, no-store"
+    return result
 
 
 @app.get(
