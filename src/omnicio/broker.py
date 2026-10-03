@@ -25,6 +25,7 @@ from .tbank import (
     TBankEnvironment,
     TBankFxQuote,
     TBankInstrument,
+    TBankHistoricCandle,
     TBankInstrumentMetadata,
     TBankInvestClient,
     TBankLastPrice,
@@ -213,6 +214,65 @@ class BrokerService:
             portfolio=portfolio,
             positions=positions,
             refreshed_at=datetime.now(UTC),
+        )
+
+    def candidate_daily_exchange_candles(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_daily_exchange_candles(
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+        )
+
+    def candidate_bond_coupons(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankBondCoupon, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return cast(
+            tuple[TBankBondCoupon, ...],
+            self._paced_evidence_read(
+                self.tbank.get_bond_coupons,
+                credential,
+                environment,
+                instrument_uid,
+                from_at=from_at,
+                to_at=to_at,
+            ),
+        )
+
+    def candidate_bond_events(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankBondEvent, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return cast(
+            tuple[TBankBondEvent, ...],
+            self._paced_evidence_read(
+                self.tbank.get_bond_events,
+                credential,
+                environment,
+                instrument_uid,
+                from_at=from_at,
+                to_at=to_at,
+            ),
         )
 
     def candidate_market_yields(
