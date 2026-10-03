@@ -1571,7 +1571,8 @@
     live_asset_class_not_supported: "Live-enrichment этого класса актива ещё не поддерживается",
     live_enrichment_not_selected: "Инструмент не вошёл в ограниченный live-screening этого цикла",
     live_candidate_evidence_unavailable: "Live evidence кандидата временно недоступен",
-    moex_runtime_transport_security_gate: "Прямой MOEX runtime-канал временно отключён security gate · R4 работает fail-closed",
+    bond_option_events_unsupported: "Есть будущая оферта/call/конвертация · YTW для этой структуры пока fail-closed",
+    candidate_confirmed_default: "Provider evidence подтверждает дефолт · новая покупка запрещена",
     tbank_shortlist_signal_unavailable: "Broker yield signal для shortlist временно недоступен",
     issuer_group_unverified: "Корпоративная группа не подтверждена",
     asset_class_not_allowed: "Класс актива запрещён policy",
@@ -1594,14 +1595,14 @@
   };
 
   const BALANCING_NOTE_LABELS = {
-    shortlisted_by_tbank_market_yield_signal: "Shortlist: broker yield signal; решение проверяется по MOEX YTW",
-    issuer_identity_verified_by_moex: "Эмитент подтверждён справочником MOEX ISS",
-    issuer_group_unverified_conservative_bucket: "Группа не подтверждена · используется общий консервативный bucket",
+    shortlisted_by_tbank_market_yield_signal: "Shortlist: broker yield signal; решение пересчитывается по contractual cash-flow",
+    issuer_identity_from_verified_mapping: "Эмитент подтверждён сохранённой verified mapping",
     issuer_group_from_verified_mapping: "Группа взята из проверенной связи инструмента с эмитентом",
     buy_cost_from_tinvest_get_order_price: "Покупка: комиссия и НКД из T-Invest GetOrderPrice",
-    ytw_from_moex_iss: "YTW/дюрация: MOEX ISS",
-    liquidity_from_moex_history_value: "Ликвидность: исторический биржевой оборот MOEX",
-    expected_gain_simple_ytw_horizon_estimate: "Доход: консервативная простая YTW-оценка до горизонта",
+    ytw_from_tinvest_fixed_cashflows: "YTW: T-Invest купоны + погашение; будущих call/convert событий нет",
+    liquidity_from_tinvest_exchange_candles: "Ликвидность: завершённые биржевые дневные свечи T-Invest",
+    no_future_call_or_conversion_events: "BondEvents: будущие call/convert события отсутствуют",
+    expected_gain_from_contractual_cashflows: "Доход: договорные купоны + номинал минус стоимость входа",
     tax_not_applied_to_new_buy: "Налог к новой покупке не начисляется в сценарии",
   };
 
