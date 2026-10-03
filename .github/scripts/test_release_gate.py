@@ -181,6 +181,22 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
             workflow,
         )
 
+    def test_pull_request_workflows_do_not_expose_self_hosted_runners_to_untrusted_prs(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        for workflow_path in workflow_dir.glob("*.yml"):
+            content = workflow_path.read_text(encoding="utf-8")
+            if "pull_request:" not in content:
+                continue
+            with self.subTest(workflow=workflow_path.name):
+                self.assertIn(
+                    "github.event.pull_request.head.repo.full_name == github.repository",
+                    content,
+                )
+                self.assertIn(
+                    "github.event.pull_request.author_association == 'OWNER'",
+                    content,
+                )
+
     def test_repository_workflows_do_not_depend_on_billed_hosted_runners(self) -> None:
         workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
         forbidden = ("runs-on: ubuntu-", "runs-on: windows-", "runs-on: macos-")
