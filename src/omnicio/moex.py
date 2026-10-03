@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import ssl
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
-MOEX_ISS_ROOT = "https://iss.moex.com/iss"
+MOEX_ISS_HOST = "iss.moex.com"
+MOEX_ISS_ROOT = f"https://{MOEX_ISS_HOST}/iss"
 
 
 class MoexError(RuntimeError):
@@ -273,27 +273,55 @@ class MoexIssClient:
 
 
     def _get_payload(self, url: str) -> dict[str, object]:
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": "omnicio-r4-evidence/1.0"},
-        )
+        target = _moex_request_target(url)
         try:
-            with urllib.request.urlopen(
-                request,
+            with http.client.HTTPSConnection(
+                MOEX_ISS_HOST,
+                443,
                 timeout=self.timeout_seconds,
                 context=ssl.create_default_context(),
-            ) as response:
+            ) as connection:
+                connection.request(
+                    "GET",
+                    target,
+                    headers={
+                        "User-Agent": "omnicio-r4-evidence/1.0",
+                        "Accept": "application/json",
+                    },
+                )
+                response = connection.getresponse()
+                if response.status != 200:
+                    raise MoexError(
+                        f"MOEX ISS returned HTTP {response.status}"
+                    )
                 payload_raw = json.loads(response.read().decode("utf-8"))
+        except MoexError:
+            raise
         except (
             OSError,
             UnicodeError,
             json.JSONDecodeError,
-            urllib.error.URLError,
+            http.client.HTTPException,
         ) as exc:
             raise MoexError("MOEX ISS is unavailable") from exc
         if not isinstance(payload_raw, dict):
             raise MoexError("MOEX ISS returned malformed payload")
         return cast(dict[str, object], payload_raw)
+
+
+def _moex_request_target(url: str) -> str:
+    parts = urllib.parse.urlsplit(url)
+    if (
+        parts.scheme != "https"
+        or parts.hostname != MOEX_ISS_HOST
+        or parts.port not in (None, 443)
+        or parts.username is not None
+        or parts.password is not None
+        or parts.fragment
+        or not parts.path.startswith("/iss/")
+    ):
+        raise MoexError("MOEX ISS URL escaped the fixed provider origin")
+    return parts.path + (f"?{parts.query}" if parts.query else "")
 
 
 def _rows(
