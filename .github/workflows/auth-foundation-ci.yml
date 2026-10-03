@@ -83,6 +83,51 @@ jobs:
           pytest
           python .github/scripts/test_release_gate.py
 
+      # Temporary read-only diagnostic. Remove before merge.
+      - name: Diagnose current main Sonar reliability issues
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          query = urllib.parse.urlencode(
+              {
+                  "componentKeys": "MishaGameHacking_omni-cio-gateway",
+                  "branch": "main",
+                  "issueStatuses": "OPEN,CONFIRMED",
+                  "impactSoftwareQualities": "RELIABILITY",
+                  "ps": "100",
+              }
+          )
+          request = urllib.request.Request(
+              "https://sonarcloud.io/api/issues/search?" + query,
+              headers={"Authorization": "Bearer " + os.environ["SONAR_TOKEN"]},
+          )
+          with urllib.request.urlopen(request, timeout=15) as response:
+              payload = json.load(response)
+          print(json.dumps({"total": payload.get("total")}, sort_keys=True))
+          for issue in payload.get("issues", []):
+              print(
+                  json.dumps(
+                      {
+                          "rule": issue.get("rule"),
+                          "severity": issue.get("severity"),
+                          "component": issue.get("component"),
+                          "line": issue.get("line"),
+                          "message": issue.get("message"),
+                          "impacts": issue.get("impacts"),
+                      },
+                      ensure_ascii=True,
+                      sort_keys=True,
+                  )
+              )
+          PY
+
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
     # Persistent self-hosted machines must not execute untrusted fork PR code.
