@@ -2897,32 +2897,37 @@
     void loadAnalysis();
   });
 
+  const closestActionTarget = (event, selector) => {
+    const target = event.target;
+    return target instanceof Element ? target.closest(selector) : null;
+  };
+
   proposalCreateOptions.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-proposal-create]");
+    const button = closestActionTarget(event, "[data-proposal-create]");
     if (button) {
       void createProposal(button);
     }
   });
 
   proposalHistory.addEventListener("click", (event) => {
-    const decisionButton = event.target.closest("[data-proposal-decision]");
+    const decisionButton = closestActionTarget(event, "[data-proposal-decision]");
     if (decisionButton) {
       void decideProposal(decisionButton);
       return;
     }
-    const executionButton = event.target.closest("[data-execution-start]");
+    const executionButton = closestActionTarget(event, "[data-execution-start]");
     if (executionButton) {
       void startExecution(executionButton);
     }
   });
 
   executionHistory.addEventListener("click", (event) => {
-    const inspect = event.target.closest("[data-execution-inspect]");
+    const inspect = closestActionTarget(event, "[data-execution-inspect]");
     if (inspect) {
       void loadExecutionDetails(inspect.dataset.executionInspect);
       return;
     }
-    const action = event.target.closest("[data-execution-action]");
+    const action = closestActionTarget(event, "[data-execution-action]");
     if (action) {
       void mutateExecution(action);
     }
