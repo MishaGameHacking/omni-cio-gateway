@@ -2057,6 +2057,117 @@
     ["succeeded", "cancelled", "failed"].includes(value)
   );
 
+  const renderLiveMandate = (payload) => {
+    const source = (
+      payload !== null
+      && typeof payload === "object"
+    ) ? payload : {};
+    liveOperatorEnabled = source.operator_enabled === true;
+    liveOperatorMaxOrder = Number(source.operator_max_order_notional_rub) || 0;
+    liveOperatorMaxDaily = Number(source.operator_max_daily_notional_rub) || 0;
+    liveMandate = (
+      source.mandate !== null
+      && typeof source.mandate === "object"
+    ) ? source.mandate : null;
+
+    if (
+      !(liveMaxOrder instanceof HTMLInputElement)
+      || !(liveMaxDaily instanceof HTMLInputElement)
+      || !(liveExpiresAt instanceof HTMLInputElement)
+      || !(liveProfileId instanceof HTMLInputElement)
+      || !(liveConfirm instanceof HTMLInputElement)
+    ) {
+      throw new Error("R7 live mandate form has invalid controls");
+    }
+
+    liveMaxOrder.max = String(liveOperatorMaxOrder || 1);
+    liveMaxDaily.max = String(liveOperatorMaxDaily || 1);
+    const now = Date.now();
+    liveExpiresAt.min = localDateTimeInputValue(new Date(now + 5 * 60 * 1000));
+    liveExpiresAt.max = localDateTimeInputValue(new Date(now + 24 * 60 * 60 * 1000));
+    liveProfileId.placeholder = currentProfileId || "000000001";
+
+    if (!liveOperatorEnabled) {
+      liveMandateForm.classList.add("hidden");
+      liveMandateRevoke.classList.add("hidden");
+      setStateBadge(liveMandateStatus, "Выключен server-side", "state-next");
+      liveMandateSummary.textContent = (
+        "R7 технически подготовлен, но production live не активирован: "
+        + "опубликованные legal-документы v6 описывают режим без реальных поручений. "
+        + "Shadow и Sandbox продолжают работать."
+      );
+      syncExecutionControls();
+      return;
+    }
+
+    const connectedProduction = (
+      source.connected_environment === "prod"
+      && typeof source.connected_account_id === "string"
+      && source.connected_account_id !== ""
+    );
+    liveMandateForm.classList.toggle("hidden", !connectedProduction);
+    if (!connectedProduction) {
+      setStateBadge(liveMandateStatus, "Нужен production-счёт", "state-next");
+      liveMandateSummary.textContent = (
+        "Live gate включён, но сначала подключите exact production T-Invest счёт. "
+        + "Sandbox-счёт не может получить production authority."
+      );
+      syncExecutionControls();
+      return;
+    }
+
+    if (liveMandate) {
+      setStateBadge(liveMandateStatus, "Mandate активен", "state-ok");
+      liveMandateSummary.textContent = [
+        "Разрешение действует до " + formatDateTime(liveMandate.expires_at),
+        "лимит одной заявки " + formatRub(liveMandate.max_order_notional_rub),
+        "дневной лимит " + formatRub(liveMandate.max_daily_notional_rub),
+      ].join(" · ");
+      liveMaxOrder.disabled = true;
+      liveMaxDaily.disabled = true;
+      liveExpiresAt.disabled = true;
+      liveProfileId.disabled = true;
+      liveConfirm.disabled = true;
+      liveMandateSave.classList.add("hidden");
+      liveMandateRevoke.classList.remove("hidden");
+    } else {
+      setStateBadge(liveMandateStatus, "Разрешение не создано", "state-next");
+      liveMandateSummary.textContent = (
+        "Production live остаётся без authority, пока вы явно не зададите caps, "
+        + "срок и ID профиля. Создание mandate само по себе не отправляет заявку."
+      );
+      liveMaxOrder.disabled = false;
+      liveMaxDaily.disabled = false;
+      liveExpiresAt.disabled = false;
+      liveProfileId.disabled = false;
+      liveConfirm.disabled = false;
+      liveMandateSave.classList.remove("hidden");
+      liveMandateRevoke.classList.add("hidden");
+    }
+    syncExecutionControls();
+  };
+
+  const loadLiveMandate = async () => {
+    try {
+      const payload = await api("/api/portfolio/live-execution/mandate", {
+        method: "GET",
+      });
+      renderLiveMandate(payload);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      liveOperatorEnabled = false;
+      liveMandate = null;
+      liveMandateForm.classList.add("hidden");
+      setStateBadge(liveMandateStatus, "Не удалось проверить gate", "state-error");
+      liveMandateSummary.textContent = (
+        "Live authority не считается активной без успешной server-side проверки."
+      );
+    }
+  };
+
   const syncExecutionControls = () => {
     const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
     const sandboxConnected = tbankIsConnected && connectedTbankEnvironment === "sandbox";
