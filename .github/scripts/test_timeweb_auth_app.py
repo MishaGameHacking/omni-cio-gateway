@@ -520,6 +520,8 @@ class AuthAppDeployTests(unittest.TestCase):
             "balance-turnover-budget",
             "balance-daily-participation",
             "balance-tax-rate",
+            "balance-uncertainty-haircut",
+            "balance-credit-haircut",
             "balance-no-trade-band",
             "balance-min-replace-benefit",
             "balancing-policy-save",
