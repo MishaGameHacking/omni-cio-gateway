@@ -55,6 +55,13 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
     assert "TG_OP = 'INSERT' AND NOT EXISTS" in migration
     assert "p.expires_at > now()" in migration
     assert "p.source_snapshot_id, p.account_id" in migration
+    assert "omnicio.financial_cleanup" in migration
+    assert "'account_delete'" in migration
+    assert "'broker_disconnect'" in migration
+    assert "portfolio_proposals_source_snapshot_tenant_fkey" in migration
+    database_source = (ROOT / "src" / "omnicio" / "db.py").read_text()
+    assert "set_config('omnicio.financial_cleanup', 'account_delete', true)" in database_source
+    assert "set_config('omnicio.financial_cleanup', 'broker_disconnect', true)" in database_source
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
@@ -985,3 +992,39 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 """,
                 (USER_ONE,),
             )
+
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        admin.execute(
+            """
+            INSERT INTO vkid_identities (user_id, vk_user_id, verified_at)
+            VALUES (%s, 'r6-delete-regression', now())
+            """,
+            (USER_ONE,),
+        )
+
+    database = Database(DATABASE_URL)
+    database.open()
+    try:
+        assert database.delete_user_account(USER_ONE) is True
+    finally:
+        database.close()
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        assert admin.execute(
+            "SELECT count(*) FROM users WHERE id = %s",
+            (USER_ONE,),
+        ).fetchone()[0] == 0
+        for table in (
+            "portfolio_proposals",
+            "portfolio_proposal_actions",
+            "portfolio_execution_runs",
+            "portfolio_execution_legs",
+            "portfolio_execution_events",
+        ):
+            assert admin.execute(
+                sql.SQL("SELECT count(*) FROM {} WHERE user_id = %s").format(
+                    sql.Identifier(table)
+                ),
+                (USER_ONE,),
+            ).fetchone()[0] == 0
