@@ -19,6 +19,7 @@ from omnicio.portfolio_store import BalancingPolicyRecord, InvestmentProfileReco
 from omnicio.tbank import (
     TBankAssetFundamental,
     TBankLastPrice,
+    TBankMarketYield,
     TBankMoney,
     TBankOrderBook,
     TBankOrderLevel,
@@ -297,6 +298,9 @@ def test_live_r4_bond_enrichment_can_produce_integer_lot_scenario() -> None:
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     context = _context(now)
     broker = SimpleNamespace(
+        candidate_market_yields=lambda user_id, uids: (
+            TBankMarketYield("candidate-1", "12.5", now),
+        ),
         candidate_fundamentals=lambda user_id, asset_uids: (_fundamental(now),),
         candidate_last_prices=lambda user_id, uids: (
             TBankLastPrice("candidate-1", "100", now),
@@ -382,7 +386,7 @@ def test_live_r4_degrades_to_durable_preview_when_broker_evidence_fails() -> Non
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
 
     class BrokenBroker:
-        def candidate_fundamentals(self, user_id: object, asset_uids: object) -> object:
+        def candidate_market_yields(self, user_id: object, uids: object) -> object:
             raise ValueError("provider failure")
 
     payload = build_live_balancing_payload(
@@ -472,6 +476,9 @@ def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
         )
 
     broker = SimpleNamespace(
+        candidate_market_yields=lambda user_id, uids: (
+            TBankMarketYield("candidate-1", "12.5", now),
+        ),
         candidate_fundamentals=lambda user_id, asset_uids: (_fundamental(now),),
         candidate_last_prices=lambda user_id, uids: (
             TBankLastPrice("candidate-1", "100", now),
