@@ -524,7 +524,6 @@ def test_balancing_preview_http_is_private_tenant_scoped_and_read_only() -> None
         patch("omnicio.main.authenticated_user") as user,
         patch("omnicio.main.portfolio_store") as store,
         patch("omnicio.main.broker_service") as broker,
-        patch("omnicio.main.MoexIssClient") as moex_cls,
         patch("omnicio.main.build_live_balancing_payload") as builder,
     ):
         user.return_value.id = "server-resolved-user"
@@ -556,7 +555,6 @@ def test_balancing_preview_http_is_private_tenant_scoped_and_read_only() -> None
         policy_record=policy,
         context=context,
         broker=broker.return_value,
-        moex=moex_cls.return_value,
     )
 
     write_response = TestClient(app).post(
