@@ -998,6 +998,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "instrument-market-modes",
             "instrument-market-periods",
             "instrument-market-chart",
+            "instrument-market-scrubber",
             "instrument-market-tooltip",
             "instrument-market-last-price",
             "instrument-market-quote-time",
@@ -1011,8 +1012,8 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'data-market-period="{period}"', page)
         self.assertIn('data-market-mode="line"', page)
         self.assertIn('data-market-mode="candles"', page)
-        self.assertIn('tabindex="0"', page)
-        self.assertIn('aria-describedby="instrument-market-note"', page)
+        self.assertIn('type="range"', page)
+        self.assertIn('aria-describedby="instrument-market-note instrument-market-tooltip"', page)
         self.assertIn("Время котировки", page)
         self.assertIn("время загрузки", page)
 
@@ -1027,9 +1028,10 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Math.min(1000 * (2 ** instrumentMarketRetryCount), 30000)", script)
         self.assertIn("finiteMarketNumber", script)
         self.assertIn('instrumentMarketQuoteUnit === "point"', script)
-        self.assertIn("inspectInstrumentMarketChartByKeyboard", script)
-        self.assertIn('event.key === "ArrowLeft"', script)
-        self.assertIn('event.key === "ArrowRight"', script)
+        self.assertIn('instrumentMarketScrubber.addEventListener("input"', script)
+        self.assertIn("Number.parseInt(instrumentMarketScrubber.value, 10)", script)
+        self.assertNotIn('instrumentMarketChart.addEventListener("pointermove"', script)
+        self.assertNotIn('instrumentMarketChart.addEventListener("keydown"', script)
         self.assertIn("payload === null", script)
         self.assertNotIn("broker token", script.lower())
         self.assertNotIn("innerHTML", script)
@@ -1038,7 +1040,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn(".market-candle-body", stylesheet)
         self.assertIn(".market-chart-tooltip", stylesheet)
         self.assertIn(".market-chart-crosshair", stylesheet)
-        self.assertIn(".instrument-market-chart:focus-visible", stylesheet)
+        self.assertIn(".instrument-market-scrubber", stylesheet)
+        self.assertIn(".instrument-market-chart-shell:focus-within", stylesheet)
         self.assertIn("@media (max-width: 620px)", stylesheet)
 
     def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
