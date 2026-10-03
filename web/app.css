@@ -2903,6 +2903,31 @@ textarea:disabled {
   overflow: hidden;
 }
 
+.portfolio-history-header {
+  align-items: center;
+}
+
+.portfolio-history-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.portfolio-history-periods {
+  flex-wrap: wrap;
+}
+
+.portfolio-history-periods button {
+  min-width: 54px;
+}
+
+.portfolio-history-periods button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .portfolio-chart-shell {
   min-height: 220px;
   padding: 8px 0 4px;
@@ -3172,6 +3197,24 @@ textarea:disabled {
 }
 
 @media (max-width: 820px) {
+  .portfolio-history-header,
+  .portfolio-history-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portfolio-history-controls {
+    width: 100%;
+  }
+
+  .portfolio-history-periods {
+    width: 100%;
+  }
+
+  .portfolio-history-periods button {
+    flex: 1 1 54px;
+  }
+
   .portfolio-chart-facts {
     grid-template-columns: 1fr 1fr;
   }
