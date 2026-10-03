@@ -10,6 +10,11 @@ ALTER TABLE instrument_catalog
     ADD COLUMN IF NOT EXISTS subordinated boolean,
     ADD COLUMN IF NOT EXISTS liquidity boolean;
 
+ALTER TABLE portfolio_snapshot_positions
+    ADD COLUMN IF NOT EXISTS quantity_lots numeric(38, 9),
+    ADD COLUMN IF NOT EXISTS average_price_fifo_value numeric(24, 9),
+    ADD COLUMN IF NOT EXISTS average_price_fifo_currency text;
+
 CREATE TABLE IF NOT EXISTS balancing_policy_versions (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -44,6 +49,13 @@ CREATE TABLE IF NOT EXISTS balancing_policy_versions (
     max_term_months integer NOT NULL CHECK (max_term_months BETWEEN 0 AND 1200),
     turnover_budget_percent numeric(7, 4) NOT NULL CHECK (
         turnover_budget_percent >= 0 AND turnover_budget_percent <= 100
+    ),
+    max_daily_turnover_participation_percent numeric(7, 4) NOT NULL CHECK (
+        max_daily_turnover_participation_percent >= 0
+        AND max_daily_turnover_participation_percent <= 100
+    ),
+    securities_tax_rate_percent numeric(7, 4) NOT NULL CHECK (
+        securities_tax_rate_percent >= 0 AND securities_tax_rate_percent <= 100
     ),
     no_trade_band_percent numeric(7, 4) NOT NULL CHECK (
         no_trade_band_percent >= 0 AND no_trade_band_percent <= 100
