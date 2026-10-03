@@ -168,11 +168,13 @@ class PortfolioLiveMandateBody(BaseModel):
     max_order_notional_rub: Decimal = Field(
         gt=0,
         le=1_000_000_000_000,
+        decimal_places=2,
         allow_inf_nan=False,
     )
     max_daily_notional_rub: Decimal = Field(
         gt=0,
         le=1_000_000_000_000,
+        decimal_places=2,
         allow_inf_nan=False,
     )
     expires_at: datetime
