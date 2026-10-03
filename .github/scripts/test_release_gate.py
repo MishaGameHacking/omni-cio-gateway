@@ -258,6 +258,11 @@ class GitHubTransportTests(unittest.TestCase):
 
 
 class ReleaseContextTests(unittest.TestCase):
+    def test_release_gate_uses_a_trusted_git_executable(self) -> None:
+        executable = pathlib.Path(gate.git_executable())
+        self.assertTrue(executable.is_file())
+        self.assertEqual(executable.name.casefold(), "git.exe" if os.name == "nt" else "git")
+
     def test_checkout_must_match_release_identity(self) -> None:
         for actual in (SHA, "b" * 40):
             result = Mock(stdout=actual + "\n")
