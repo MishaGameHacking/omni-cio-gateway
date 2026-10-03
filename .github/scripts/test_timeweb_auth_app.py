@@ -565,7 +565,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("CancelOrder", backend)
         self.assertNotIn("ReplaceOrder", backend)
 
-    def test_r6_ui_exposes_only_shadow_and_sandbox_execution_controls(self) -> None:
+    def test_r7_ui_exposes_dormant_mandate_gated_live_canary(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text()
         script = (root / "web" / "app.js").read_text()
@@ -593,18 +593,27 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Отправить следующую Sandbox limit-заявку", script)
         self.assertEqual(script.count('executionRefresh.addEventListener("click"'), 1)
         self.assertEqual(script.count('executionHistory.addEventListener("click"'), 1)
-        self.assertIn("Live execution остаётся выключен", script)
-        self.assertIn("R6 Sandbox токен должен разрешать тестовые методы песочницы", page)
+        self.assertIn('id="live-mandate-form"', page)
+        self.assertIn('id="live-mandate-revoke"', page)
+        self.assertIn("loadLiveMandate", script)
+        self.assertIn("revokeLiveMandate", script)
+        self.assertIn("Kill switch", script)
+        self.assertIn("R7 production-live", page)
         self.assertIn('@app.get("/api/portfolio/executions")', backend)
         self.assertIn('@app.post("/api/portfolio/executions"', backend)
         self.assertIn('"/api/portfolio/executions/{run_id}/advance"', backend)
         self.assertIn('"/api/portfolio/executions/{run_id}/cancel"', backend)
-        self.assertIn('"live_execution_enabled": False', backend)
+        self.assertIn("portfolio_live_execution_enabled", backend)
+        self.assertIn('"/api/portfolio/live-execution/mandate"', backend)
         self.assertIn('service="SandboxService"', tbank)
         self.assertIn('method="PostSandboxOrder"', tbank)
+        self.assertIn('service="OrdersService"', tbank)
+        self.assertIn('method="PostOrder"', tbank)
+        self.assertIn('"TIME_IN_FORCE_FILL_AND_KILL"', tbank)
         self.assertIn('"confirmMarginTrade": False', tbank)
-        self.assertNotIn('method="PostOrder"', tbank)
+        self.assertNotIn('method="PostOrderAsync"', tbank)
         self.assertNotIn('method="ReplaceOrder"', tbank)
+        self.assertNotIn('"ORDER_TYPE_MARKET"', tbank)
 
     def test_versioned_balancing_policy_has_explicit_limits_and_no_trade_authority(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -955,7 +964,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.13.4"', project)
+        self.assertIn('version = "0.14.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
