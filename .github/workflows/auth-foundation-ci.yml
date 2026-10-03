@@ -83,6 +83,46 @@ jobs:
           pytest
           python .github/scripts/test_release_gate.py
 
+      # Temporary PR diagnostic. Remove before merge.
+      - name: Diagnose Sonar reliability issues
+        continue-on-error: true
+        env:
+          SONAR_PR: ${{ github.event.pull_request.number }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          query = urllib.parse.urlencode(
+              {
+                  "componentKeys": "MishaGameHacking_omni-cio-gateway",
+                  "pullRequest": os.environ["SONAR_PR"],
+                  "issueStatuses": "OPEN,CONFIRMED",
+                  "types": "BUG",
+                  "ps": "100",
+              }
+          )
+          url = "https://sonarcloud.io/api/issues/search?" + query
+          with urllib.request.urlopen(url, timeout=15) as response:
+              payload = json.load(response)
+          for issue in payload.get("issues", []):
+              print(
+                  json.dumps(
+                      {
+                          "rule": issue.get("rule"),
+                          "severity": issue.get("severity"),
+                          "component": issue.get("component"),
+                          "line": issue.get("line"),
+                          "message": issue.get("message"),
+                      },
+                      ensure_ascii=True,
+                      sort_keys=True,
+                  )
+              )
+          PY
+
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
     # Persistent self-hosted machines must not execute untrusted fork PR code.
