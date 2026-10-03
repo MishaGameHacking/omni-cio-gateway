@@ -523,12 +523,46 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/broker/tbank/analysis",
             "/api/portfolio/intelligence",
             "/api/portfolio/balancing",
+            "/api/portfolio/proposals",
             "/api/profile/balancing",
             "/api/broker/tbank/instruments/search",
             "/api/market/usd-rub",
             "/api/market/usd-rub/stream",
         ):
             self.assertIn(endpoint, script)
+
+    def test_r5_proposal_ui_has_human_decisions_without_execution_authority(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+        backend = (root / "src" / "omnicio" / "main.py").read_text()
+        proposal_backend = (root / "src" / "omnicio" / "proposals.py").read_text()
+
+        for element_id in (
+            "proposal-status",
+            "proposal-create-options",
+            "proposal-history",
+            "proposal-message",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn('"/api/portfolio/proposals"', script)
+        self.assertIn("/decision", script)
+        self.assertIn("Подтвердить план", script)
+        self.assertIn("Причина отклонения", script)
+        self.assertIn("Отложить до даты", script)
+        self.assertIn('@app.get("/api/portfolio/proposals")', backend)
+        self.assertIn('@app.post("/api/portfolio/proposals"', backend)
+        self.assertIn('"/api/portfolio/proposals/{proposal_id}/decision"', backend)
+        self.assertIn("require_same_origin(request)", backend)
+        self.assertIn("authenticated_session_digest", backend)
+        self.assertIn("scenario_before_after_missing", proposal_backend)
+        self.assertIn("scenario_limit_price_missing", proposal_backend)
+        self.assertIn("proposal_constraints_missing", proposal_backend)
+        self.assertIn("Broker execution выключен", script)
+        self.assertNotIn("PostOrder", backend)
+        self.assertNotIn("CancelOrder", backend)
+        self.assertNotIn("ReplaceOrder", backend)
 
     def test_versioned_balancing_policy_has_explicit_limits_and_no_trade_authority(self) -> None:
         root = SCRIPT_DIR.parent.parent
