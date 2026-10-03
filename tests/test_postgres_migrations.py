@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -14,7 +15,12 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
 from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
-from omnicio.portfolio_store import PortfolioStore, ProposalStateError
+from omnicio.portfolio_store import (
+    PortfolioStore,
+    ProposalStateError,
+    ReinvestmentMandateError,
+    ReinvestmentMandateSpec,
+)
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
 
@@ -592,6 +598,26 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             (payout_source_id,),
         )
 
+        with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+            admin.execute(
+                """
+                INSERT INTO tbank_connection (
+                    user_id,
+                    environment,
+                    account_id,
+                    account_name,
+                    token_ciphertext
+                )
+                VALUES (%s, 'prod', 'account-1', 'R8 test account', %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    environment = EXCLUDED.environment,
+                    account_id = EXCLUDED.account_id,
+                    account_name = EXCLUDED.account_name,
+                    token_ciphertext = EXCLUDED.token_ciphertext
+                """,
+                (USER_ONE, b"r8-test-ciphertext"),
+            )
+
         database = Database(_runtime_url())
         database.open()
         try:
@@ -659,8 +685,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             current_policy = store.current_balancing_policy(USER_ONE)
             created_at = datetime.now(UTC)
 
-            reinvestment = store.create_reinvestment_mandate(
-                USER_ONE,
+            reinvestment_spec = ReinvestmentMandateSpec(
                 account_id="account-1",
                 profile_version=1,
                 policy_version=2,
@@ -671,8 +696,25 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 max_daily_notional_rub=Decimal("500.00"),
                 max_monthly_notional_rub=Decimal("2000.00"),
                 max_slippage_bps=50,
-                session_digest=b"i" * 32,
                 expires_at=created_at + timedelta(days=30),
+            )
+            with pytest.raises(
+                ReinvestmentMandateError,
+                match="reinvestment_account_changed",
+            ):
+                store.create_reinvestment_mandate(
+                    USER_ONE,
+                    spec=replace(
+                        reinvestment_spec,
+                        account_id="stale-account",
+                    ),
+                    session_digest=b"i" * 32,
+                    now=created_at,
+                )
+            reinvestment = store.create_reinvestment_mandate(
+                USER_ONE,
+                spec=reinvestment_spec,
+                session_digest=b"i" * 32,
                 now=created_at,
             )
 
