@@ -232,8 +232,6 @@ class PortfolioExecutionService:
             if current is None:
                 return
             if current.status != "pending":
-                if current.status == "shadow_filled":
-                    continue
                 raise ExecutionServiceError("shadow_leg_state_invalid")
             self.store.transition_leg(
                 user_id,
