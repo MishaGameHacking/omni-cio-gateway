@@ -670,12 +670,25 @@
               </section>
 
               <article class="portfolio-card portfolio-history-card">
-                <header class="portfolio-card-header">
+                <header class="portfolio-card-header portfolio-history-header">
                   <div>
                     <p class="card-label">История</p>
                     <h3>Стоимость портфеля во времени</h3>
                   </div>
-                  <span class="state-badge" id="portfolio-history-state">Ожидает снимки</span>
+                  <div class="portfolio-history-controls">
+                    <div
+                      class="segmented-control portfolio-history-periods hidden"
+                      id="portfolio-history-periods"
+                      role="group"
+                      aria-label="Период истории портфеля"
+                    >
+                      <button type="button" data-portfolio-history-days="30" aria-pressed="false">1М</button>
+                      <button type="button" data-portfolio-history-days="90" aria-pressed="false">3М</button>
+                      <button type="button" data-portfolio-history-days="180" aria-pressed="false">6М</button>
+                      <button type="button" data-portfolio-history-days="365" aria-pressed="false">1Г</button>
+                    </div>
+                    <span class="state-badge" id="portfolio-history-state">Ожидает снимки</span>
+                  </div>
                 </header>
                 <div class="portfolio-chart-shell">
                   <svg
