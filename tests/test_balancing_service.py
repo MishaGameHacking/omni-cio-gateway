@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from omnicio.balancing_service import build_balancing_payload
@@ -51,7 +52,7 @@ def _policy(**overrides) -> BalancingPolicyRecord:
     return BalancingPolicyRecord(**values)
 
 
-def _context(now: datetime) -> dict[str, object]:
+def _context(now: datetime) -> dict[str, Any]:
     return {
         "snapshot_id": "11111111-1111-1111-1111-111111111111",
         "account_id": "account-1",
