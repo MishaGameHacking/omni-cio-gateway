@@ -17,10 +17,6 @@ from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
 from omnicio.portfolio_store import PortfolioStore, ProposalStateError
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
-pytestmark = pytest.mark.skipif(
-    not DATABASE_URL,
-    reason="ephemeral PostgreSQL is only available in the hosted migration gate",
-)
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = tuple(sorted((ROOT / "migrations").glob("*.sql")))
@@ -91,6 +87,10 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     assert "FOR SHARE" in execution_store_source
 
 
+@pytest.mark.skipif(
+    not DATABASE_URL,
+    reason="ephemeral PostgreSQL is required for migration integration coverage",
+)
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
     assert [item.name for item in MIGRATIONS][-1] == "0011_portfolio_live_execution.sql"
     _apply_all_migrations()
