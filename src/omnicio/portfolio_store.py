@@ -2144,22 +2144,22 @@ class PortfolioStore:
             cur.execute(
                 """
                 SELECT
-                    id,
-                    user_id,
-                    account_id,
-                    version,
-                    profile_version,
-                    policy_version,
-                    allow_dividends,
-                    allow_coupons,
-                    cash_reserve_rub,
-                    max_order_notional_rub,
-                    max_daily_notional_rub,
-                    max_monthly_notional_rub,
-                    max_slippage_bps,
-                    created_at,
-                    expires_at,
-                    revoked_at
+                    m.id,
+                    m.user_id,
+                    m.account_id,
+                    m.version,
+                    m.profile_version,
+                    m.policy_version,
+                    m.allow_dividends,
+                    m.allow_coupons,
+                    m.cash_reserve_rub,
+                    m.max_order_notional_rub,
+                    m.max_daily_notional_rub,
+                    m.max_monthly_notional_rub,
+                    m.max_slippage_bps,
+                    m.created_at,
+                    m.expires_at,
+                    m.revoked_at
                 FROM portfolio_reinvestment_mandates AS m
                 JOIN tbank_connection AS t
                   ON t.user_id = m.user_id
