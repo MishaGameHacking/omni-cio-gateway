@@ -88,6 +88,8 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     ).read_text(encoding="utf-8")
     assert 'run.mode == "live" and new_status == "submitting"' in execution_store_source
     assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
+    assert "portfolio_execution_runs_one_active_live_idx" in execution_store_source
+    assert "live_execution_already_active" in execution_store_source
     assert "FOR SHARE" in execution_store_source
 
 
