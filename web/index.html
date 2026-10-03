@@ -826,6 +826,45 @@
                 </p>
               </article>
 
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Execution rehearsal R6</p>
+                    <h3>Shadow и T-Invest Sandbox</h3>
+                  </div>
+                  <span class="state-badge state-next" id="execution-status">Live выключен</span>
+                </header>
+                <p class="card-description">
+                  R6 исполняет только подтверждённую exact-версию R5-предложения.
+                  Shadow не обращается к broker order API. Sandbox использует только
+                  <code>SandboxService</code>, limit-заявки и заранее сохранённый request ID.
+                  Production OrdersService на этом этапе отсутствует.
+                </p>
+                <section class="portfolio-two-column">
+                  <div>
+                    <div class="portfolio-card-header">
+                      <p class="card-label">Журнал запусков</p>
+                      <button id="execution-refresh" class="button button-secondary" type="button">
+                        Обновить
+                      </button>
+                    </div>
+                    <div id="execution-history" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Состояние запуска</p>
+                    <div id="execution-details" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <p id="execution-message" class="message" role="status" aria-live="polite"></p>
+                <p class="field-hint">
+                  Запуск доступен только у предложения со статусом «подтверждено».
+                  Для sandbox подключите именно песочницу T-Invest. Кнопка «Сверить»
+                  продолжает state machine по сохранённому request ID; повторная
+                  отправка неоднозначной заявки запрещена. Live-торговля появится
+                  только на отдельном этапе R7 после новых release gates.
+                </p>
+              </article>
+
               <section class="portfolio-two-column">
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">
