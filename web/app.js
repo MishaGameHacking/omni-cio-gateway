@@ -1571,6 +1571,7 @@
     live_asset_class_not_supported: "Live-enrichment этого класса актива ещё не поддерживается",
     live_enrichment_not_selected: "Инструмент не вошёл в ограниченный live-screening этого цикла",
     live_candidate_evidence_unavailable: "Live evidence кандидата временно недоступен",
+    tbank_shortlist_signal_unavailable: "Broker yield signal для shortlist временно недоступен",
     issuer_group_unverified: "Корпоративная группа не подтверждена",
     asset_class_not_allowed: "Класс актива запрещён policy",
     currency_not_allowed: "Валюта запрещена policy",
@@ -1592,6 +1593,7 @@
   };
 
   const BALANCING_NOTE_LABELS = {
+    shortlisted_by_tbank_market_yield_signal: "Shortlist: broker yield signal; решение проверяется по MOEX YTW",
     issuer_identity_verified_by_moex: "Эмитент подтверждён справочником MOEX ISS",
     issuer_group_unverified_conservative_bucket: "Группа не подтверждена · используется общий консервативный bucket",
     issuer_group_from_verified_mapping: "Группа взята из проверенной связи инструмента с эмитентом",
