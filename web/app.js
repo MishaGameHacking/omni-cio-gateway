@@ -2061,6 +2061,7 @@
     sandbox_provider_min_proceeds_breach: "Provider сообщил сумму ниже min proceeds. Следующие действия остановлены.",
     live_execution_disabled: "Production live сейчас выключен server-side. Реальная заявка не отправлена.",
     live_mandate_required: "Для live-run требуется активное разрешение на exact production-счёт.",
+    live_execution_already_active: "На этом production-счёте уже есть незавершённый Live-run. Сначала сверьте или отмените его; новая реальная заявка не создана.",
     live_mandate_inactive: "Live-разрешение отозвано или истекло. Новая заявка запрещена; уже отправленную можно только сверить или отменить.",
     live_account_mismatch: "Подключите exact production-счёт, для которого создано предложение и live-разрешение.",
     live_write_access_required: "T-Invest не подтвердил полный доступ к выбранному production-счёту.",

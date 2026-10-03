@@ -9,6 +9,8 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+from psycopg.errors import UniqueViolation
+
 from .db import Database
 from .execution import (
     ExecutionLegStatus,
@@ -547,51 +549,62 @@ class ExecutionStore:
                     account_id=plan.account_id,
                 )
 
-            cur.execute(
-                """
-                INSERT INTO portfolio_execution_runs (
-                    user_id,
-                    proposal_id,
-                    confirmed_action_id,
-                    proposal_version,
-                    proposal_hash,
-                    account_id,
-                    mode,
-                    provider_environment,
-                    live_mandate_id,
-                    created_session_digest
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO portfolio_execution_runs (
+                        user_id,
+                        proposal_id,
+                        confirmed_action_id,
+                        proposal_version,
+                        proposal_hash,
+                        account_id,
+                        mode,
+                        provider_environment,
+                        live_mandate_id,
+                        created_session_digest
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING
+                        id,
+                        user_id,
+                        proposal_id,
+                        confirmed_action_id,
+                        proposal_version,
+                        proposal_hash,
+                        account_id,
+                        mode,
+                        provider_environment,
+                        live_mandate_id,
+                        status,
+                        error_code,
+                        created_at,
+                        updated_at,
+                        finished_at
+                    """,
+                    (
+                        user_id,
+                        proposal_id,
+                        confirmed_action_id,
+                        expected_version,
+                        expected_hash,
+                        plan.account_id,
+                        mode,
+                        _PROVIDER_ENVIRONMENT[mode],
+                        live_mandate_id,
+                        session_digest,
+                    ),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING
-                    id,
-                    user_id,
-                    proposal_id,
-                    confirmed_action_id,
-                    proposal_version,
-                    proposal_hash,
-                    account_id,
-                    mode,
-                    provider_environment,
-                    live_mandate_id,
-                    status,
-                    error_code,
-                    created_at,
-                    updated_at,
-                    finished_at
-                """,
-                (
-                    user_id,
-                    proposal_id,
-                    confirmed_action_id,
-                    expected_version,
-                    expected_hash,
-                    plan.account_id,
-                    mode,
-                    _PROVIDER_ENVIRONMENT[mode],
-                    live_mandate_id,
-                    session_digest,
-                ),
-            )
+            except UniqueViolation as exc:
+                if (
+                    mode == "live"
+                    and exc.diag.constraint_name
+                    == "portfolio_execution_runs_one_active_live_idx"
+                ):
+                    raise ExecutionLedgerError(
+                        "live_execution_already_active"
+                    ) from exc
+                raise
             run_row = cur.fetchone()
             if run_row is None:
                 raise RuntimeError("execution run insert returned no row")

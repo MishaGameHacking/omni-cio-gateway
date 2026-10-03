@@ -88,6 +88,8 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     ).read_text(encoding="utf-8")
     assert 'run.mode == "live" and new_status == "submitting"' in execution_store_source
     assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
+    assert "portfolio_execution_runs_one_active_live_idx" in execution_store_source
+    assert "live_execution_already_active" in execution_store_source
     assert "FOR SHARE" in execution_store_source
 
 
@@ -831,6 +833,44 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 mode="live",
                 session_digest=b"e" * 32,
             )
+            competing_live_proposal = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=execution_proposal.source_snapshot_id,
+                account_id=execution_proposal.account_id,
+                profile_version=execution_proposal.profile_version,
+                policy_version=execution_proposal.policy_version,
+                scenario_kind=execution_proposal.scenario_kind,
+                target_instrument_uid=execution_proposal.target_instrument_uid,
+                replaced_instrument_uid=execution_proposal.replaced_instrument_uid,
+                proposal_hash=b"w" * 32,
+                session_digest=b"w" * 32,
+                payload=execution_proposal.payload,
+                expires_at=created_at + timedelta(minutes=12),
+            )
+            competing_live_proposal, _ = store.decide_proposal(
+                USER_ONE,
+                proposal_id=competing_live_proposal.id,
+                expected_version=competing_live_proposal.version,
+                expected_hash=competing_live_proposal.proposal_hash,
+                action="confirmed",
+                session_digest=b"w" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=5, seconds=30),
+            )
+            with pytest.raises(
+                ExecutionLedgerError,
+                match="live_execution_already_active",
+            ):
+                execution_store.create_run(
+                    USER_ONE,
+                    proposal_id=competing_live_proposal.id,
+                    expected_version=competing_live_proposal.version,
+                    expected_hash=competing_live_proposal.proposal_hash,
+                    mode="live",
+                    session_digest=b"w" * 32,
+                )
             revoked_mandate = execution_store.revoke_live_mandate(
                 USER_ONE,
                 now=created_at + timedelta(minutes=6),
