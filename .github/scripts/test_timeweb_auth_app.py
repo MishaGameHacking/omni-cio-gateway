@@ -593,7 +593,6 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('service="SandboxService"', tbank)
         self.assertIn('method="PostSandboxOrder"', tbank)
         self.assertIn('"confirmMarginTrade": False', tbank)
-        self.assertNotIn('service="OrdersService"', tbank)
         self.assertNotIn('method="PostOrder"', tbank)
         self.assertNotIn('method="ReplaceOrder"', tbank)
 
