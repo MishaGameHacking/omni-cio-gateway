@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
-from omnicio.intelligence import build_tbank_evidence
+from omnicio.intelligence import assess_candidate_fundamental_risk, build_tbank_evidence
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.tbank import (
     TBankAssetFundamental,
@@ -547,3 +547,54 @@ def test_future_default_date_is_not_reported_as_confirmed_default() -> None:
     assert event.payout.actual_at is None
     assert assessments[0].state == "data_missing"
     assert assessments[0].evidence["default_date"] is None
+
+
+
+def test_candidate_fundamental_risk_can_be_normal_without_inventing_rating() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    info = _bundle().metadata[0]
+    fundamental = TBankAssetFundamental(
+        asset_uid="issuer-asset",
+        currency="RUB",
+        revenue_ttm="100",
+        ebitda_ttm="20",
+        net_income_ttm="10",
+        free_cash_flow_ttm="5",
+        total_debt_mrq="30",
+        total_debt_to_equity_mrq="0.3",
+        total_debt_to_ebitda_mrq="1.5",
+        net_debt_to_ebitda="1.2",
+        current_ratio_mrq="1.5",
+        fixed_charge_coverage_ratio_fy="4",
+        net_interest_margin_mrq=None,
+        roe="0.15",
+        roa="0.08",
+        fiscal_period_start_date=datetime(2025, 1, 1, tzinfo=UTC),
+        fiscal_period_end_date=datetime(2025, 12, 31, tzinfo=UTC),
+    )
+
+    assessment = assess_candidate_fundamental_risk(
+        info,
+        fundamental,
+        assessed_at=now,
+    )
+
+    assert assessment.state == "normal"
+    assert assessment.fundamental_status == "received"
+    assert assessment.rating_status == "data_missing"
+    assert "credit_rating_feed_not_verified" in assessment.reasons
+    assert assessment.evidence["rating_policy"] == "unknown_bucket_until_verified_feed"
+
+
+def test_candidate_fundamental_risk_fails_closed_when_metrics_are_missing() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    assessment = assess_candidate_fundamental_risk(
+        _bundle().metadata[0],
+        None,
+        assessed_at=now,
+    )
+
+    assert assessment.state == "data_missing"
+    assert assessment.fundamental_status == "data_missing"
+    assert assessment.rating_status == "data_missing"
+    assert "fundamental_data_missing" in assessment.reasons
