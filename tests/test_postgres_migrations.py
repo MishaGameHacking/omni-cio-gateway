@@ -85,6 +85,10 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     assert "portfolio_execution_legs_live_submission_guard" in migration
     assert "FOR SHARE OF m" in migration
     assert "live execution mandate is inactive before submission" in migration
+    execution_store_source = (ROOT / "src" / "omnicio" / "execution_store.py").read_text()
+    assert 'run.mode == "live" and new_status == "submitting"' in execution_store_source
+    assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
+    assert "FOR SHARE" in execution_store_source
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
