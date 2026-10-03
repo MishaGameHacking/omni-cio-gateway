@@ -1741,11 +1741,18 @@
       disconnected: "T-Invest не подключён.",
       reconnect: "Сохранённый T-Invest токен нужно переподключить.",
       unavailable: "Поток T-Invest временно недоступен; последняя подтверждённая цена остаётся на экране.",
+      offline: "Автоматические запросы к T-Invest остановлены после нескольких ошибок. Нажмите «Повторить» для новой попытки.",
       invalid: "Идентификатор инструмента не принят поставщиком.",
     };
     setStateBadge(
       instrumentMarketState,
-      state === "reconnect" ? "Нужен токен" : state === "disconnected" ? "Нет подключения" : "Degraded",
+      state === "reconnect"
+        ? "Нужен токен"
+        : state === "disconnected"
+          ? "Нет подключения"
+          : state === "offline"
+            ? "Поток остановлен"
+            : "Degraded",
       "state-next",
     );
     instrumentMarketNote.textContent = messages[state] || messages.unavailable;
@@ -1812,7 +1819,7 @@
         const payload = JSON.parse(event.data);
         const state = String(payload.state || "unavailable");
         renderInstrumentMarketStreamStatus(state);
-        if (["disconnected", "reconnect", "invalid"].includes(state)) {
+        if (["disconnected", "reconnect", "invalid", "offline"].includes(state)) {
           stopInstrumentMarketStream();
         }
       } catch {
