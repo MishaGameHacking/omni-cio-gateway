@@ -226,7 +226,7 @@ class SshTrustTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
             if kwargs.get("input") is None:
                 return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-            return subprocess.CompletedProcess(args, 0, stdout=b"\\xff", stderr=b"")
+            return subprocess.CompletedProcess(args, 0, stdout=bytes([0xFF]), stderr=b"")
 
         with patch.dict(
             os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY},
