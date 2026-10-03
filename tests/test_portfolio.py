@@ -21,6 +21,8 @@ from omnicio.portfolio_store import (
     PortfolioProposalActionRecord,
     PortfolioProposalRecord,
     ProposalStateError,
+    ReinvestmentIncomeSummary,
+    ReinvestmentMandateRecord,
 )
 from omnicio.proposals import ProposalDraft
 from omnicio.tbank import (
@@ -996,6 +998,146 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
             delattr(app.state, "database")
         else:
             app.state.database = previous_database
+
+
+def test_reinvestment_body_rejects_browser_account_authority_and_sub_kopeck_caps() -> None:
+    base = {
+        "allow_dividends": True,
+        "allow_coupons": True,
+        "cash_reserve_rub": "1000.00",
+        "max_order_notional_rub": "100.00",
+        "max_daily_notional_rub": "500.00",
+        "max_monthly_notional_rub": "2000.00",
+        "max_slippage_bps": 50,
+        "expires_at": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
+        "confirm_public_id": "000000001",
+        "confirm_reinvestment": True,
+    }
+
+    browser_account = TestClient(app).put(
+        "/api/portfolio/reinvestment",
+        json={**base, "account_id": "attacker-account"},
+        headers={"Origin": "https://omnicio.ru"},
+    )
+    assert browser_account.status_code == 422
+    assert any(
+        item.get("loc") == ["body", "account_id"]
+        and item.get("type") == "extra_forbidden"
+        for item in browser_account.json()["detail"]
+    )
+
+    sub_kopeck = TestClient(app).put(
+        "/api/portfolio/reinvestment",
+        json={**base, "max_order_notional_rub": "100.001"},
+        headers={"Origin": "https://omnicio.ru"},
+    )
+    assert sub_kopeck.status_code == 422
+
+
+def test_reinvestment_http_binds_server_account_and_keeps_execution_disabled() -> None:
+    now = datetime.now(UTC)
+    mandate = ReinvestmentMandateRecord(
+        id=UUID("00000000-0000-0000-0000-000000000951"),
+        user_id=UUID("00000000-0000-0000-0000-000000000001"),
+        account_id="server-account",
+        version=2,
+        profile_version=3,
+        policy_version=4,
+        allow_dividends=True,
+        allow_coupons=True,
+        cash_reserve_rub=Decimal("1000.00"),
+        max_order_notional_rub=Decimal("100.00"),
+        max_daily_notional_rub=Decimal("500.00"),
+        max_monthly_notional_rub=Decimal("2000.00"),
+        max_slippage_bps=50,
+        created_at=now,
+        expires_at=now + timedelta(days=30),
+        revoked_at=None,
+    )
+    summary = ReinvestmentIncomeSummary(
+        mandate_id=mandate.id,
+        observed_count=2,
+        observed_rub=Decimal("75.50"),
+        dividends_rub=Decimal("50.00"),
+        coupons_rub=Decimal("25.50"),
+        verified_rub=Decimal("0"),
+        last_credit_at=now,
+    )
+    body = {
+        "allow_dividends": True,
+        "allow_coupons": True,
+        "cash_reserve_rub": "1000.00",
+        "max_order_notional_rub": "100.00",
+        "max_daily_notional_rub": "500.00",
+        "max_monthly_notional_rub": "2000.00",
+        "max_slippage_bps": 50,
+        "expires_at": (now + timedelta(days=30)).isoformat(),
+        "confirm_public_id": "000000001",
+        "confirm_reinvestment": True,
+    }
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main._require_current_legal_consent"),
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = mandate.user_id
+        user.return_value.public_id = 1
+        broker.return_value.status.return_value.connected = True
+        broker.return_value.status.return_value.environment = "prod"
+        broker.return_value.status.return_value.account_id = "server-account"
+        store.return_value.current_profile.return_value = type(
+            "Profile", (), {"version": 3}
+        )()
+        store.return_value.current_balancing_policy.return_value = type(
+            "Policy", (), {"version": 4}
+        )()
+        store.return_value.create_reinvestment_mandate.return_value = mandate
+        store.return_value.reinvestment_income_summary.return_value = summary
+
+        response = TestClient(app).put(
+            "/api/portfolio/reinvestment",
+            json=body,
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "reinvestment-session"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["stage"] == "r8_foundation"
+    assert payload["execution_enabled"] is False
+    assert payload["income"]["spendable_rub"] == "0"
+    assert payload["income"]["observed_count"] == 2
+    store.return_value.create_reinvestment_mandate.assert_called_once()
+    call = store.return_value.create_reinvestment_mandate.call_args
+    assert call.kwargs["account_id"] == "server-account"
+    assert call.kwargs["profile_version"] == 3
+    assert call.kwargs["policy_version"] == 4
+
+
+def test_reinvestment_get_never_exposes_operation_history_or_spendable_income() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-user"
+        broker.return_value.status.return_value.environment = "prod"
+        broker.return_value.status.return_value.account_id = "server-account"
+        store.return_value.current_reinvestment_mandate.return_value = None
+
+        response = TestClient(app).get("/api/portfolio/reinvestment?user_id=attacker")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["execution_enabled"] is False
+    assert payload["income"]["spendable_rub"] == "0"
+    assert "operations" not in payload
+    store.return_value.current_reinvestment_mandate.assert_called_once_with(
+        "server-user",
+        now=ANY,
+    )
 
 
 def test_live_mandate_http_rejects_sub_kopeck_caps_before_authority_checks() -> None:
