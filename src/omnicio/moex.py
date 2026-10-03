@@ -15,11 +15,11 @@ from typing import Any, cast
 MOEX_ISS_HOST = "iss.moex.com"
 MOEX_ISS_ROOT = f"https://{MOEX_ISS_HOST}/iss"
 _MOEX_REQUEST_TARGET = re.compile(
-    r"/iss/[A-Za-z0-9._~/%-]+(?:\\?[A-Za-z0-9._~%=&,+:-]*)?\\Z",
+    r"/iss/[A-Za-z0-9._~/%-]+(?:\?[A-Za-z0-9._~%=&,+:-]*)?\Z",
     flags=re.ASCII,
 )
-_MOEX_IDENTIFIER = re.compile(r"[A-Z0-9._-]{1,32}\\Z", flags=re.ASCII)
-_MOEX_SECURITY_QUERY = re.compile(r"[A-Z0-9._-]{1,64}\\Z", flags=re.ASCII)
+_MOEX_IDENTIFIER = re.compile(r"[A-Z0-9._-]{1,32}\Z", flags=re.ASCII)
+_MOEX_SECURITY_QUERY = re.compile(r"[A-Z0-9._-]{1,64}\Z", flags=re.ASCII)
 
 
 class MoexError(RuntimeError):
