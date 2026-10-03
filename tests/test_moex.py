@@ -24,10 +24,7 @@ class FakeConnection:
         self.response = response
         self.requests: list[tuple[str, str, dict[str, str]]] = []
 
-    def __enter__(self) -> FakeConnection:
-        return self
-
-    def __exit__(self, *args: object) -> None:
+    def close(self) -> None:
         return None
 
     def request(
