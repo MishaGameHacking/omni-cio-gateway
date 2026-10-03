@@ -973,7 +973,7 @@ class TBankInvestClient:
             price_type=price_type,
         )
 
-    def get_order_state(
+    def get_sandbox_order_state(
         self,
         token: str,
         environment: TBankEnvironment,
