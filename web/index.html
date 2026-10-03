@@ -303,73 +303,143 @@
 
         <div class="workspace-scroll">
           <section class="view-panel" data-view-panel="home">
-            <div class="page-heading">
-              <p class="section-label">Сейчас</p>
-              <h2>Главное состояние системы</h2>
-              <p>
-                Здесь показано только то, что действительно работает сейчас.
-                Планы развития вынесены отдельно и не выглядят как активные функции.
-              </p>
-            </div>
-
-            <article class="market-card" id="usd-rub-card" aria-labelledby="usd-rub-title">
-              <div class="market-primary">
-                <div class="market-heading">
-                  <div>
-                    <span class="card-label">Валютный рынок</span>
-                    <h3 id="usd-rub-title">USD / RUB</h3>
-                  </div>
-                  <span class="state-badge" id="usd-rub-state">Подключаем</span>
-                </div>
-                <div class="market-price-row">
-                  <strong id="usd-rub-price">—</strong>
-                  <span id="usd-rub-change">—</span>
-                </div>
-                <p id="usd-rub-note">
-                  Получаем оперативную котировку T-Invest.
+            <div class="page-heading command-heading">
+              <div>
+                <p class="section-label">Командный центр</p>
+                <h2>Портфель — главное сейчас</h2>
+                <p>
+                  Сначала капитал и события, которые требуют внимания. Подробные расчёты,
+                  источники и технические поля остаются в профильных разделах.
                 </p>
               </div>
-
-              <dl class="market-meta">
-                <div>
-                  <dt>Источник</dt>
-                  <dd id="usd-rub-source">T-Invest</dd>
-                </div>
-                <div>
-                  <dt>Время котировки</dt>
-                  <dd id="usd-rub-time">—</dd>
-                </div>
-                <div>
-                  <dt>ЦБ РФ — действует сегодня</dt>
-                  <dd id="usd-rub-cbr">—</dd>
-                  <small id="usd-rub-cbr-date">—</small>
-                </div>
-                <div class="hidden" id="usd-rub-cbr-next-row">
-                  <dt>Следующий курс ЦБ РФ</dt>
-                  <dd id="usd-rub-cbr-next">—</dd>
-                  <small id="usd-rub-cbr-next-date">—</small>
-                </div>
-              </dl>
-            </article>
-
-            <article class="connection-card" id="home-connection-card">
-              <div class="connection-summary">
-                <span class="connection-icon" aria-hidden="true">
-                  <span class="status-dot"></span>
-                </span>
-                <div>
-                  <span class="card-label">T-Invest</span>
-                  <h3 id="overview-account">Проверяем подключение…</h3>
-                  <p id="overview-connection-text">Получаем состояние брокерского подключения.</p>
-                </div>
-              </div>
-              <button class="button button-secondary" type="button" data-go-view="connections">
-                Управлять подключением
+              <button class="button button-secondary" type="button" data-go-view="portfolio">
+                Открыть портфель
               </button>
-            </article>
+            </div>
 
+            <section class="command-kpis" aria-label="Ключевые показатели портфеля">
+              <article class="command-kpi command-kpi-primary">
+                <span>Стоимость портфеля</span>
+                <strong id="home-portfolio-total">—</strong>
+                <small id="home-snapshot-time">Ожидаем данные T-Invest</small>
+              </article>
+              <article class="command-kpi">
+                <span>Сегодня</span>
+                <strong id="home-daily-change">—</strong>
+                <small id="home-daily-relative">—</small>
+              </article>
+              <article class="command-kpi">
+                <span>Незаблокированные RUB</span>
+                <strong id="home-free-cash">—</strong>
+                <small>Не равно торговому бюджету до резервов и издержек</small>
+              </article>
+              <article class="command-kpi">
+                <span>Позиций</span>
+                <strong id="home-position-count">—</strong>
+                <small>В текущем снимке портфеля</small>
+              </article>
+              <article class="command-kpi command-kpi-attention">
+                <span>Требует внимания</span>
+                <strong id="home-attention-count">—</strong>
+                <small>Только подтверждённые состояния системы</small>
+              </article>
+            </section>
 
+            <section class="command-grid">
+              <article class="command-card" aria-labelledby="home-allocation-title">
+                <header class="command-card-header">
+                  <div>
+                    <p class="card-label">Структура</p>
+                    <h3 id="home-allocation-title">Классы активов</h3>
+                  </div>
+                  <span class="state-badge" id="home-portfolio-summary-state">Загружаем</span>
+                </header>
+                <div class="allocation-list command-allocation-list" id="home-allocation">
+                  <div class="portfolio-empty-inline">Ожидаем подтверждённый снимок портфеля.</div>
+                </div>
+                <footer class="command-card-footer">
+                  <span>Доли рассчитываются только по данным текущего снимка T-Invest.</span>
+                  <button class="button button-secondary" type="button" data-go-view="portfolio">
+                    Подробнее
+                  </button>
+                </footer>
+              </article>
 
+              <article class="command-card command-attention" aria-labelledby="home-attention-title">
+                <header class="command-card-header">
+                  <div>
+                    <p class="card-label">Контроль</p>
+                    <h3 id="home-attention-title">Требует внимания</h3>
+                  </div>
+                  <span class="state-badge" id="home-attention-state">Проверяем</span>
+                </header>
+                <div class="attention-list" id="home-attention-list" aria-live="polite">
+                  <div class="portfolio-empty-inline">Проверяем состояние системы.</div>
+                </div>
+                <footer class="command-card-footer">
+                  <span>Нет события — нет тревоги. Неизвестные данные не считаются нормой.</span>
+                  <button class="button button-secondary" type="button" data-go-view="decisions">
+                    Открыть решения
+                  </button>
+                </footer>
+              </article>
+            </section>
+
+            <section class="command-lower-grid">
+              <article class="market-card market-card-compact" id="usd-rub-card" aria-labelledby="usd-rub-title">
+                <div class="market-primary">
+                  <div class="market-heading">
+                    <div>
+                      <span class="card-label">Валютный рынок</span>
+                      <h3 id="usd-rub-title">USD / RUB</h3>
+                    </div>
+                    <span class="state-badge" id="usd-rub-state">Подключаем</span>
+                  </div>
+                  <div class="market-price-row">
+                    <strong id="usd-rub-price">—</strong>
+                    <span id="usd-rub-change">—</span>
+                  </div>
+                  <p id="usd-rub-note">Получаем оперативную котировку T-Invest.</p>
+                </div>
+
+                <dl class="market-meta">
+                  <div>
+                    <dt>Источник</dt>
+                    <dd id="usd-rub-source">T-Invest</dd>
+                  </div>
+                  <div>
+                    <dt>Время котировки</dt>
+                    <dd id="usd-rub-time">—</dd>
+                  </div>
+                  <div>
+                    <dt>Курс ЦБ РФ</dt>
+                    <dd id="usd-rub-cbr">—</dd>
+                    <small id="usd-rub-cbr-date">—</small>
+                  </div>
+                  <div class="hidden" id="usd-rub-cbr-next-row">
+                    <dt>Следующий курс ЦБ РФ</dt>
+                    <dd id="usd-rub-cbr-next">—</dd>
+                    <small id="usd-rub-cbr-next-date">—</small>
+                  </div>
+                </dl>
+              </article>
+
+              <article class="connection-card command-connection-card" id="home-connection-card">
+                <div class="connection-summary">
+                  <span class="connection-icon" aria-hidden="true">
+                    <span class="status-dot"></span>
+                  </span>
+                  <div>
+                    <span class="card-label">T-Invest</span>
+                    <h3 id="overview-account">Проверяем подключение…</h3>
+                    <p id="overview-connection-text">Получаем состояние брокерского подключения.</p>
+                  </div>
+                </div>
+                <button class="button button-secondary" type="button" data-go-view="connections">
+                  Управлять подключением
+                </button>
+              </article>
+            </section>
           </section>
 
           <section class="view-panel hidden" data-view-panel="system">
