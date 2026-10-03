@@ -691,20 +691,22 @@ class TBankInvestClient:
                 "T-Invest trading status returned a different instrument"
             )
 
-        limit_order_available = payload.get("limitOrderAvailableFlag")
-        market_order_available = payload.get("marketOrderAvailableFlag")
-        api_trade_available = payload.get("apiTradeAvailableFlag")
-        best_price_order_available = payload.get("bestpriceOrderAvailableFlag")
-        only_best_price = payload.get("onlyBestPrice")
-        flags = (
-            limit_order_available,
-            market_order_available,
-            api_trade_available,
-            best_price_order_available,
-            only_best_price,
+        limit_order_available = _optional_bool(payload, "limitOrderAvailableFlag")
+        market_order_available = _optional_bool(payload, "marketOrderAvailableFlag")
+        api_trade_available = _optional_bool(payload, "apiTradeAvailableFlag")
+        best_price_order_available = _optional_bool(
+            payload,
+            "bestpriceOrderAvailableFlag",
         )
-        if not all(isinstance(value, bool) for value in flags):
-            raise TBankUnavailable("T-Invest trading status has invalid availability flags")
+        only_best_price = _optional_bool(payload, "onlyBestPrice")
+        if (
+            limit_order_available is None
+            or market_order_available is None
+            or api_trade_available is None
+            or best_price_order_available is None
+            or only_best_price is None
+        ):
+            raise TBankUnavailable("T-Invest trading status is missing availability flags")
 
         trading_status = _text(payload.get("tradingStatus")).strip()
         if not trading_status:
@@ -712,11 +714,11 @@ class TBankInvestClient:
         return TBankTradingStatus(
             instrument_uid=instrument,
             trading_status=trading_status,
-            limit_order_available=bool(limit_order_available),
-            market_order_available=bool(market_order_available),
-            api_trade_available=bool(api_trade_available),
-            best_price_order_available=bool(best_price_order_available),
-            only_best_price=bool(only_best_price),
+            limit_order_available=limit_order_available,
+            market_order_available=market_order_available,
+            api_trade_available=api_trade_available,
+            best_price_order_available=best_price_order_available,
+            only_best_price=only_best_price,
         )
 
     def get_last_prices(
