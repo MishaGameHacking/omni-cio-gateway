@@ -1,8 +1,8 @@
-"""R6 execution planning and state-machine rules.
+"""R6/R7 execution planning and state-machine rules.
 
-R6 may rehearse a confirmed R5 proposal in shadow mode or send the exact immutable
-limit orders to T-Invest Sandbox.  Production broker order methods are deliberately
-outside this module.
+A confirmed immutable R5 proposal remains the plan authority. R6 supports shadow and
+sandbox rehearsal; R7 may additionally execute it in production only when separate
+server-side live authority is present.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from uuid import UUID
 if TYPE_CHECKING:
     from .portfolio_store import PortfolioProposalRecord
 
-ExecutionMode = Literal["shadow", "sandbox"]
+ExecutionMode = Literal["shadow", "sandbox", "live"]
 ExecutionRunStatus = Literal[
     "created",
     "running",
