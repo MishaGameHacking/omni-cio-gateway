@@ -399,6 +399,9 @@ class Database:
                 (user.id,),
             )
             cur.execute(
+                "SELECT set_config('omnicio.financial_cleanup', 'account_delete', true)"
+            )
+            cur.execute(
                 """
                 DELETE FROM users
                 WHERE id = %s
@@ -543,6 +546,9 @@ class Database:
             cur.execute(
                 "SELECT set_config('omnicio.user_id', %s, true)",
                 (str(user_id),),
+            )
+            cur.execute(
+                "SELECT set_config('omnicio.financial_cleanup', 'broker_disconnect', true)"
             )
             cur.execute("DELETE FROM broker_sync_state WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM account_instrument_access WHERE user_id = %s", (user_id,))
