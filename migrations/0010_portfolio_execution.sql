@@ -1,0 +1,245 @@
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS portfolio_execution_runs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    proposal_id uuid NOT NULL,
+    confirmed_action_id bigint NOT NULL,
+    proposal_version integer NOT NULL CHECK (proposal_version > 0),
+    proposal_hash bytea NOT NULL,
+    account_id text NOT NULL CHECK (
+        char_length(account_id) BETWEEN 1 AND 128
+    ),
+    mode text NOT NULL CHECK (mode IN ('shadow', 'sandbox')),
+    provider_environment text CHECK (
+        provider_environment IS NULL OR provider_environment = 'sandbox'
+    ),
+    status text NOT NULL DEFAULT 'created' CHECK (
+        status IN (
+            'created',
+            'running',
+            'reconciling',
+            'succeeded',
+            'cancelled',
+            'failed'
+        )
+    ),
+    created_session_digest bytea NOT NULL,
+    error_code text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    finished_at timestamptz,
+    CONSTRAINT portfolio_execution_runs_hash_size CHECK (
+        octet_length(proposal_hash) = 32
+    ),
+    CONSTRAINT portfolio_execution_runs_session_digest_size CHECK (
+        octet_length(created_session_digest) = 32
+    ),
+    CONSTRAINT portfolio_execution_runs_mode_environment CHECK (
+        (
+            mode = 'shadow'
+            AND provider_environment IS NULL
+        )
+        OR (
+            mode = 'sandbox'
+            AND provider_environment = 'sandbox'
+        )
+    ),
+    CONSTRAINT portfolio_execution_runs_finished_shape CHECK (
+        (
+            status IN ('succeeded', 'cancelled', 'failed')
+            AND finished_at IS NOT NULL
+        )
+        OR (
+            status IN ('created', 'running', 'reconciling')
+            AND finished_at IS NULL
+        )
+    ),
+    UNIQUE (id, user_id),
+    UNIQUE (proposal_id, mode),
+    FOREIGN KEY (proposal_id, user_id)
+        REFERENCES portfolio_proposals(id, user_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (confirmed_action_id)
+        REFERENCES portfolio_proposal_actions(id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS portfolio_execution_runs_user_created_idx
+    ON portfolio_execution_runs (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS portfolio_execution_legs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id uuid NOT NULL,
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    leg_index integer NOT NULL CHECK (leg_index >= 0),
+    action text NOT NULL CHECK (action IN ('buy', 'sell')),
+    instrument_uid text NOT NULL CHECK (
+        char_length(instrument_uid) BETWEEN 1 AND 128
+    ),
+    lots_requested bigint NOT NULL CHECK (lots_requested > 0),
+    lots_executed bigint NOT NULL DEFAULT 0 CHECK (
+        lots_executed >= 0 AND lots_executed <= lots_requested
+    ),
+    limit_price numeric(24, 9) NOT NULL CHECK (limit_price > 0),
+    limit_price_type text NOT NULL CHECK (
+        limit_price_type IN ('point', 'currency')
+    ),
+    max_spend_rub numeric(24, 9),
+    min_proceeds_rub numeric(24, 9),
+    request_id uuid NOT NULL,
+    provider_order_id text,
+    provider_status text NOT NULL DEFAULT '',
+    status text NOT NULL DEFAULT 'pending' CHECK (
+        status IN (
+            'pending',
+            'submitting',
+            'submitted',
+            'partially_filled',
+            'filled',
+            'cancel_requested',
+            'cancelled',
+            'rejected',
+            'reconciling',
+            'failed',
+            'shadow_filled'
+        )
+    ),
+    executed_amount_rub numeric(24, 9) NOT NULL DEFAULT 0 CHECK (
+        executed_amount_rub >= 0
+    ),
+    executed_commission_rub numeric(24, 9) NOT NULL DEFAULT 0 CHECK (
+        executed_commission_rub >= 0
+    ),
+    submitted_at timestamptz,
+    last_checked_at timestamptz,
+    terminal_at timestamptz,
+    CONSTRAINT portfolio_execution_legs_trade_bounds CHECK (
+        (
+            action = 'buy'
+            AND max_spend_rub IS NOT NULL
+            AND max_spend_rub > 0
+            AND min_proceeds_rub IS NULL
+        )
+        OR (
+            action = 'sell'
+            AND min_proceeds_rub IS NOT NULL
+            AND min_proceeds_rub > 0
+            AND max_spend_rub IS NULL
+        )
+    ),
+    CONSTRAINT portfolio_execution_legs_provider_order_id CHECK (
+        provider_order_id IS NULL
+        OR char_length(provider_order_id) BETWEEN 1 AND 128
+    ),
+    UNIQUE (id, user_id),
+    UNIQUE (run_id, leg_index),
+    UNIQUE (request_id),
+    FOREIGN KEY (run_id, user_id)
+        REFERENCES portfolio_execution_runs(id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS portfolio_execution_legs_run_idx
+    ON portfolio_execution_legs (run_id, leg_index);
+
+CREATE TABLE IF NOT EXISTS portfolio_execution_events (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    run_id uuid NOT NULL,
+    leg_id uuid,
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_type text NOT NULL CHECK (
+        char_length(event_type) BETWEEN 1 AND 128
+    ),
+    details jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (run_id, user_id)
+        REFERENCES portfolio_execution_runs(id, user_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (leg_id, user_id)
+        REFERENCES portfolio_execution_legs(id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS portfolio_execution_events_run_idx
+    ON portfolio_execution_events (run_id, id);
+
+ALTER TABLE portfolio_execution_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_execution_runs FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS portfolio_execution_runs_tenant
+    ON portfolio_execution_runs;
+CREATE POLICY portfolio_execution_runs_tenant
+    ON portfolio_execution_runs
+    USING (
+        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+    )
+    WITH CHECK (
+        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+    );
+
+ALTER TABLE portfolio_execution_legs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_execution_legs FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS portfolio_execution_legs_tenant
+    ON portfolio_execution_legs;
+CREATE POLICY portfolio_execution_legs_tenant
+    ON portfolio_execution_legs
+    USING (
+        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+    )
+    WITH CHECK (
+        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+    );
+
+ALTER TABLE portfolio_execution_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_execution_events FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS portfolio_execution_events_tenant
+    ON portfolio_execution_events;
+CREATE POLICY portfolio_execution_events_tenant
+    ON portfolio_execution_events
+    USING (
+        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+    )
+    WITH CHECK (
+        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+    );
+
+CREATE OR REPLACE FUNCTION omnicio_reject_execution_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'execution ledger rows cannot be deleted';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS portfolio_execution_runs_no_delete
+    ON portfolio_execution_runs;
+CREATE TRIGGER portfolio_execution_runs_no_delete
+BEFORE DELETE ON portfolio_execution_runs
+FOR EACH ROW
+EXECUTE FUNCTION omnicio_reject_execution_delete();
+
+DROP TRIGGER IF EXISTS portfolio_execution_legs_no_delete
+    ON portfolio_execution_legs;
+CREATE TRIGGER portfolio_execution_legs_no_delete
+BEFORE DELETE ON portfolio_execution_legs
+FOR EACH ROW
+EXECUTE FUNCTION omnicio_reject_execution_delete();
+
+CREATE OR REPLACE FUNCTION omnicio_reject_execution_event_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'execution events are immutable';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS portfolio_execution_events_immutable
+    ON portfolio_execution_events;
+CREATE TRIGGER portfolio_execution_events_immutable
+BEFORE UPDATE OR DELETE ON portfolio_execution_events
+FOR EACH ROW
+EXECUTE FUNCTION omnicio_reject_execution_event_mutation();
+
+COMMIT;
