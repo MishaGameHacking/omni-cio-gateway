@@ -2168,6 +2168,134 @@
     }
   };
 
+  const saveLiveMandate = async () => {
+    if (liveMandateRequestInFlight) {
+      return;
+    }
+    if (!liveOperatorEnabled) {
+      showMessage(
+        liveMandateMessage,
+        "Production live выключен server-side. Разрешение не создано.",
+        true,
+      );
+      return;
+    }
+    if (!validateFormWithMessage(
+      liveMandateForm,
+      liveMandateMessage,
+      "Проверьте параметры live-разрешения.",
+    )) {
+      return;
+    }
+    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
+    const maxOrder = Number(liveMaxOrder.value);
+    const maxDaily = Number(liveMaxDaily.value);
+    const expires = new Date(liveExpiresAt.value);
+    const now = Date.now();
+    if (
+      !connectedAccountId
+      || connectedTbankEnvironment !== "prod"
+      || !Number.isFinite(maxOrder)
+      || !Number.isFinite(maxDaily)
+      || maxOrder <= 0
+      || maxDaily < maxOrder
+      || maxOrder > liveOperatorMaxOrder
+      || maxDaily > liveOperatorMaxDaily
+      || Number.isNaN(expires.getTime())
+      || expires.getTime() <= now
+      || expires.getTime() > now + 24 * 60 * 60 * 1000
+      || liveProfileId.value.trim() !== currentProfileId
+      || !liveConfirm.checked
+    ) {
+      showMessage(
+        liveMandateMessage,
+        "Проверьте exact production-счёт, caps, срок до 24 часов, ID профиля и явное подтверждение.",
+        true,
+      );
+      return;
+    }
+    if (!window.confirm(
+      "Создать краткоживущее разрешение на реальные заявки? Это не отправляет поручение само по себе, но позволит отдельно запустить подтверждённый Live-canary пакет.",
+    )) {
+      return;
+    }
+
+    liveMandateRequestInFlight = true;
+    liveMandateSave.disabled = true;
+    try {
+      await api("/api/portfolio/live-execution/mandate", {
+        method: "PUT",
+        body: JSON.stringify({
+          account_id: connectedAccountId,
+          max_order_notional_rub: String(maxOrder),
+          max_daily_notional_rub: String(maxDaily),
+          expires_at: expires.toISOString(),
+          confirm_public_id: liveProfileId.value.trim(),
+          confirm_live_execution: true,
+        }),
+      });
+      showMessage(
+        liveMandateMessage,
+        "Live-разрешение создано. Реальная заявка не отправлялась.",
+      );
+      await loadLiveMandate();
+      await loadProposals();
+      await loadExecutions();
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        liveMandateMessage,
+        executionErrorMessage(
+          error,
+          "Live-разрешение не создано. Production authority не изменилась.",
+        ),
+        true,
+      );
+    } finally {
+      liveMandateSave.disabled = false;
+      liveMandateRequestInFlight = false;
+    }
+  };
+
+  const revokeLiveMandate = async () => {
+    if (liveMandateRequestInFlight || !liveMandate) {
+      return;
+    }
+    if (!window.confirm(
+      "Включить kill switch? Новые production-заявки будут запрещены. Уже отправленные заявки останутся в журнале для сверки/отмены.",
+    )) {
+      return;
+    }
+    liveMandateRequestInFlight = true;
+    liveMandateRevoke.disabled = true;
+    try {
+      await api("/api/portfolio/live-execution/mandate", {method: "DELETE"});
+      showMessage(
+        liveMandateMessage,
+        "Kill switch включён: новые live-заявки запрещены.",
+      );
+      await loadLiveMandate();
+      await loadProposals();
+      await loadExecutions({inspectLatest: true});
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        liveMandateMessage,
+        "Не удалось подтвердить отзыв разрешения. До успешной проверки не считайте kill switch применённым.",
+        true,
+      );
+    } finally {
+      liveMandateRevoke.disabled = false;
+      liveMandateRequestInFlight = false;
+    }
+  };
+
   const syncExecutionControls = () => {
     const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
     const sandboxConnected = tbankIsConnected && connectedTbankEnvironment === "sandbox";
@@ -3386,6 +3514,15 @@
 
   executionRefresh.addEventListener("click", () => {
     void loadExecutions({inspectLatest: true});
+  });
+
+  liveMandateForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveLiveMandate();
+  });
+
+  liveMandateRevoke.addEventListener("click", () => {
+    void revokeLiveMandate();
   });
 
   desktopNavItems.forEach((item) => {
