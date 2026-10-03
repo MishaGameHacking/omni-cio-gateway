@@ -2277,7 +2277,7 @@
         const advance = document.createElement("button");
         advance.type = "button";
         advance.className = "button button-primary";
-        const firstPending = Number(run.pending_leg_count || 0) > 0;
+        const firstPending = run.status === "created";
         advance.textContent = firstPending
           ? "Отправить следующую Sandbox limit-заявку"
           : "Сверить Sandbox";
