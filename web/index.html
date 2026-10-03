@@ -859,6 +859,74 @@
                     </article>
                   </section>
 
+                  <section class="instrument-market-section" aria-labelledby="instrument-market-title">
+                    <header class="portfolio-card-header instrument-market-header">
+                      <div>
+                        <p class="card-label">Рынок</p>
+                        <h4 id="instrument-market-title">Биржевая цена и свечи</h4>
+                        <p>
+                          T-Invest market data. Время котировки — время биржевой цены; время загрузки показывается отдельно.
+                        </p>
+                      </div>
+                      <div class="instrument-market-state">
+                        <span class="state-badge" id="instrument-market-state">Ожидает инструмент</span>
+                        <button
+                          class="button button-secondary hidden"
+                          id="instrument-market-retry"
+                          type="button"
+                        >
+                          Повторить
+                        </button>
+                      </div>
+                    </header>
+
+                    <div class="instrument-market-toolbar">
+                      <div
+                        class="segmented-control"
+                        id="instrument-market-modes"
+                        role="group"
+                        aria-label="Тип графика"
+                      >
+                        <button type="button" data-market-mode="line" aria-pressed="true">Линия</button>
+                        <button type="button" data-market-mode="candles" aria-pressed="false">Свечи</button>
+                      </div>
+                      <div
+                        class="segmented-control instrument-market-periods"
+                        id="instrument-market-periods"
+                        role="group"
+                        aria-label="Период рыночного графика"
+                      >
+                        <button type="button" data-market-period="1d" aria-pressed="false">1Д</button>
+                        <button type="button" data-market-period="1w" aria-pressed="false">1Н</button>
+                        <button type="button" data-market-period="1m" aria-pressed="true">1М</button>
+                        <button type="button" data-market-period="3m" aria-pressed="false">3М</button>
+                        <button type="button" data-market-period="1y" aria-pressed="false">1Г</button>
+                      </div>
+                    </div>
+
+                    <div class="portfolio-chart-shell instrument-market-chart-shell">
+                      <svg
+                        id="instrument-market-chart"
+                        class="portfolio-line-chart instrument-market-chart"
+                        viewBox="0 0 900 320"
+                        role="img"
+                        aria-label="Рыночный график инструмента"
+                        preserveAspectRatio="none"
+                      ></svg>
+                      <div class="market-chart-tooltip hidden" id="instrument-market-tooltip" role="status"></div>
+                    </div>
+
+                    <dl class="portfolio-chart-facts instrument-market-facts">
+                      <div><dt>Последняя цена</dt><dd id="instrument-market-last-price">—</dd></div>
+                      <div><dt>Время котировки</dt><dd id="instrument-market-quote-time">—</dd></div>
+                      <div><dt>Торговый статус</dt><dd id="instrument-market-trading-status">—</dd></div>
+                      <div><dt>Источник / загрузка</dt><dd id="instrument-market-source">—</dd></div>
+                    </dl>
+                    <p class="field-hint" id="instrument-market-note">
+                      Поток включается только для открытого инструмента и останавливается при закрытии деталей или уходе вкладки в фон.
+                    </p>
+                  </section>
+
                   <section class="portfolio-two-column">
                     <div>
                       <p class="card-label">История позиции</p>
