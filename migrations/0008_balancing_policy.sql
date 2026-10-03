@@ -1,5 +1,15 @@
 BEGIN;
 
+ALTER TABLE instrument_catalog
+    ADD COLUMN IF NOT EXISTS nominal_value numeric(24, 9),
+    ADD COLUMN IF NOT EXISTS nominal_currency text,
+    ADD COLUMN IF NOT EXISTS maturity_date timestamptz,
+    ADD COLUMN IF NOT EXISTS floating_coupon boolean,
+    ADD COLUMN IF NOT EXISTS perpetual boolean,
+    ADD COLUMN IF NOT EXISTS amortization boolean,
+    ADD COLUMN IF NOT EXISTS subordinated boolean,
+    ADD COLUMN IF NOT EXISTS liquidity boolean;
+
 CREATE TABLE IF NOT EXISTS balancing_policy_versions (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
