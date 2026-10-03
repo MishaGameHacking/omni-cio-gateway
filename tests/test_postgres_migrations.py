@@ -13,6 +13,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
+from omnicio.execution_store import ExecutionStore
 from omnicio.portfolio_store import PortfolioStore, ProposalStateError
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -665,6 +666,81 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 material_current=True,
                 now=created_at + timedelta(hours=1),
             )
+            execution_ready = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="provider-bond-uid",
+                replaced_instrument_uid=None,
+                proposal_hash=b"x" * 32,
+                session_digest=b"s" * 32,
+                payload={
+                    "schema": "omnicio.portfolio.proposal.v1",
+                    "execution_enabled": False,
+                    "source": {
+                        "snapshot_id": str(snapshot_id),
+                        "account_id": "account-1",
+                        "profile_version": 1,
+                        "policy_version": 2,
+                    },
+                    "scenario": {
+                        "status": "feasible",
+                        "trades": [
+                            {
+                                "action": "buy",
+                                "instrument_uid": "provider-bond-uid",
+                                "ticker": "BOND",
+                                "lots": 2,
+                                "limit_price": "101.25",
+                                "limit_price_type": "point",
+                                "max_spend_rub": "2500",
+                                "min_proceeds_rub": None,
+                            }
+                        ],
+                    },
+                },
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            execution_proposal, execution_confirmation = store.decide_proposal(
+                USER_ONE,
+                proposal_id=execution_ready.id,
+                expected_version=execution_ready.version,
+                expected_hash=execution_ready.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=3),
+            )
+            execution_store = ExecutionStore(database)
+            shadow_run, shadow_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="shadow",
+                session_digest=b"e" * 32,
+            )
+            duplicate_run, duplicate_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="shadow",
+                session_digest=b"e" * 32,
+            )
+            sandbox_run, sandbox_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="sandbox",
+                session_digest=b"e" * 32,
+            )
             intelligence = store.latest_intelligence(USER_ONE)
         finally:
             database.close()
@@ -696,6 +772,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert expired_proposal.id == newest.id
         assert expired_action.action == "expired"
         assert expired_action.deferred_until is None
+        assert execution_confirmation.action == "confirmed"
+        assert shadow_run.mode == "shadow"
+        assert shadow_run.provider_environment is None
+        assert shadow_legs[0].request_id == duplicate_legs[0].request_id
+        assert duplicate_run.id == shadow_run.id
+        assert sandbox_run.id != shadow_run.id
+        assert sandbox_run.provider_environment == "sandbox"
+        assert sandbox_legs[0].request_id != shadow_legs[0].request_id
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
@@ -741,6 +825,15 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         ).fetchone()[0] == 0
         assert runtime.execute(
             "SELECT count(*) FROM portfolio_proposal_actions"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_runs"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_legs"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_events"
         ).fetchone()[0] == 0
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
