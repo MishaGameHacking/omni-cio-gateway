@@ -111,27 +111,19 @@ ALTER TABLE portfolio_execution_runs
 ALTER TABLE portfolio_execution_runs
     ADD CONSTRAINT portfolio_execution_runs_mode_check
         CHECK (mode IN ('shadow', 'sandbox', 'live')),
-    ADD CONSTRAINT portfolio_execution_runs_provider_environment_check
-        CHECK (
-            provider_environment IS NULL
-            OR provider_environment IN ('sandbox', 'prod')
-        ),
     ADD CONSTRAINT portfolio_execution_runs_mode_environment CHECK (
-        (
-            mode = 'shadow'
-            AND provider_environment IS NULL
-            AND live_mandate_id IS NULL
-        )
-        OR (
-            mode = 'sandbox'
-            AND provider_environment = 'sandbox'
-            AND live_mandate_id IS NULL
-        )
-        OR (
-            mode = 'live'
-            AND provider_environment = 'prod'
-            AND live_mandate_id IS NOT NULL
-        )
+        CASE mode
+            WHEN 'shadow' THEN
+                provider_environment IS NULL
+                AND live_mandate_id IS NULL
+            WHEN 'sandbox' THEN
+                provider_environment = mode
+                AND live_mandate_id IS NULL
+            WHEN 'live' THEN
+                provider_environment = 'prod'
+                AND live_mandate_id IS NOT NULL
+            ELSE false
+        END
     );
 
 CREATE UNIQUE INDEX IF NOT EXISTS portfolio_execution_runs_one_active_live_idx
