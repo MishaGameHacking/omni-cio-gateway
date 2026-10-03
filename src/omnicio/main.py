@@ -80,14 +80,20 @@ VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
 INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
 
 
-class StartVKIDBody(BaseModel):
+class StrictRequestBody(BaseModel):
+    """Reject ambiguous client payloads instead of silently ignoring typos."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class StartVKIDBody(StrictRequestBody):
     accept_privacy: bool
     accept_personal_data: bool
     accept_terms: bool
     confirm_age_18: bool
 
 
-class TBankCredentialBody(BaseModel):
+class TBankCredentialBody(StrictRequestBody):
     credential: str = Field(min_length=20, max_length=4096)
     environment: Literal["prod", "sandbox"] = "prod"
     accept_personal_terms: bool
@@ -97,12 +103,12 @@ class TBankConnectBody(TBankCredentialBody):
     account_id: str = Field(min_length=1, max_length=128)
 
 
-class DeleteAccountBody(BaseModel):
+class DeleteAccountBody(StrictRequestBody):
     confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
     confirm_irreversible: bool
 
 
-class InvestmentProfileBody(BaseModel):
+class InvestmentProfileBody(StrictRequestBody):
     reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000, allow_inf_nan=False)
     planned_withdrawal_rub: Decimal = Field(
         ge=0,
@@ -115,7 +121,7 @@ class InvestmentProfileBody(BaseModel):
     allow_below_investment_grade: bool = False
 
 
-class BalancingPolicyBody(BaseModel):
+class BalancingPolicyBody(StrictRequestBody):
     max_instrument_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_sector_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_issuer_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
@@ -143,7 +149,7 @@ class BalancingPolicyBody(BaseModel):
     )
 
 
-class PortfolioProposalBody(BaseModel):
+class PortfolioProposalBody(StrictRequestBody):
     scenario_kind: Literal["deploy_cash", "replace"]
     replaced_instrument_uid: str | None = Field(
         default=None,
@@ -152,18 +158,14 @@ class PortfolioProposalBody(BaseModel):
     )
 
 
-class PortfolioExecutionBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class PortfolioExecutionBody(StrictRequestBody):
     proposal_id: UUID
     proposal_version: int = Field(ge=1)
     proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
     mode: Literal["shadow", "sandbox", "live"]
 
 
-class PortfolioLiveMandateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class PortfolioLiveMandateBody(StrictRequestBody):
     account_id: str = Field(min_length=1, max_length=128)
     max_order_notional_rub: Decimal = Field(
         gt=0,
@@ -182,7 +184,7 @@ class PortfolioLiveMandateBody(BaseModel):
     confirm_live_execution: bool
 
 
-class PortfolioProposalDecisionBody(BaseModel):
+class PortfolioProposalDecisionBody(StrictRequestBody):
     action: Literal["confirm", "reject", "defer"]
     proposal_version: int = Field(ge=1)
     proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
