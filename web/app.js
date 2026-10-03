@@ -201,6 +201,7 @@
     ...requiredElement("#instrument-market-periods").querySelectorAll("[data-market-period]"),
   ];
   const instrumentMarketChart = requiredElement("#instrument-market-chart");
+  const instrumentMarketScrubber = requiredElement("#instrument-market-scrubber");
   const instrumentMarketTooltip = requiredElement("#instrument-market-tooltip");
   const instrumentMarketLastPrice = requiredElement("#instrument-market-last-price");
   const instrumentMarketQuoteTime = requiredElement("#instrument-market-quote-time");
@@ -315,7 +316,6 @@
   let instrumentMarketEventSource = null;
   let instrumentMarketRetryTimer = null;
   let instrumentMarketRetryCount = 0;
-  let instrumentMarketInspectionIndex = null;
   let analysisInFlight = false;
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
@@ -1602,8 +1602,11 @@
   const resetInstrumentMarket = (message = "Выберите инструмент для рыночного графика.") => {
     instrumentMarketGeneration += 1;
     instrumentMarketPayload = null;
-    instrumentMarketInspectionIndex = null;
     instrumentMarketChart.replaceChildren();
+    instrumentMarketScrubber.min = "0";
+    instrumentMarketScrubber.max = "0";
+    instrumentMarketScrubber.value = "0";
+    instrumentMarketScrubber.disabled = true;
     instrumentMarketTooltip.classList.add("hidden");
     instrumentMarketTooltip.textContent = "";
     instrumentMarketLastPrice.textContent = "—";
@@ -1657,10 +1660,16 @@
   const renderInstrumentMarketChart = (payload) => {
     const source = payload !== null && typeof payload === "object" ? payload : {};
     instrumentMarketPayload = source;
-    instrumentMarketInspectionIndex = null;
     syncInstrumentMarketControls();
     renderInstrumentMarketLive(source);
     const candles = cleanMarketCandles(source.candles);
+    const inspectable = instrumentMarketMode === "candles"
+      ? candles.length > 0
+      : candles.length > 1;
+    instrumentMarketScrubber.min = "0";
+    instrumentMarketScrubber.max = String(Math.max(0, candles.length - 1));
+    instrumentMarketScrubber.value = String(Math.max(0, candles.length - 1));
+    instrumentMarketScrubber.disabled = !inspectable;
     const rendered = instrumentMarketMode === "candles"
       ? renderMarketCandles(instrumentMarketChart, candles)
       : renderSeriesChart(
@@ -1695,15 +1704,12 @@
     instrumentMarketRetry.classList.add("hidden");
   };
 
-  const removeInstrumentMarketCrosshair = ({resetIndex = false} = {}) => {
+  const removeInstrumentMarketCrosshair = () => {
     instrumentMarketChart.querySelectorAll(".market-chart-crosshair").forEach((node) => {
       node.remove();
     });
     instrumentMarketTooltip.classList.add("hidden");
     instrumentMarketTooltip.textContent = "";
-    if (resetIndex) {
-      instrumentMarketInspectionIndex = null;
-    }
   };
 
   const instrumentMarketInspectionCandles = () => {
@@ -1746,17 +1752,16 @@
   const showInstrumentMarketInspection = (candles, index) => {
     const candle = candles.at(index);
     if (!candle) {
-      removeInstrumentMarketCrosshair({resetIndex: true});
+      removeInstrumentMarketCrosshair();
       return;
     }
     const {width, height} = instrumentMarketChartSize();
     const x = instrumentMarketInspectionX(candles, index, width);
     if (x === null) {
-      removeInstrumentMarketCrosshair({resetIndex: true});
+      removeInstrumentMarketCrosshair();
       return;
     }
 
-    instrumentMarketInspectionIndex = index;
     removeInstrumentMarketCrosshair();
     instrumentMarketChart.append(chartNode("line", {
       x1: x,
@@ -1780,81 +1785,19 @@
     instrumentMarketTooltip.classList.remove("hidden");
   };
 
-  const inspectInstrumentMarketChart = (event) => {
+  const inspectInstrumentMarketChart = () => {
     const candles = instrumentMarketInspectionCandles();
     if (!candles.length) {
-      removeInstrumentMarketCrosshair({resetIndex: true});
+      removeInstrumentMarketCrosshair();
       return;
     }
-    const bounds = instrumentMarketChart.getBoundingClientRect();
-    if (!(bounds.width > 0)) {
-      return;
-    }
-
-    const {width} = instrumentMarketChartSize();
-    const pointerRatio = Math.max(
+    const index = Math.max(
       0,
-      Math.min(1, (event.clientX - bounds.left) / bounds.width),
+      Math.min(
+        candles.length - 1,
+        Number.parseInt(instrumentMarketScrubber.value, 10) || 0,
+      ),
     );
-    let index = candles.length - 1;
-    if (instrumentMarketMode === "candles") {
-      const padX = 30;
-      const plotWidth = width - padX * 2;
-      const pointerX = pointerRatio * width;
-      const plotRatio = Math.max(
-        0,
-        Math.min(0.999999, (pointerX - padX) / plotWidth),
-      );
-      index = Math.min(candles.length - 1, Math.floor(plotRatio * candles.length));
-    } else {
-      const first = candles.at(0);
-      const last = candles.at(-1);
-      if (!first || !last) {
-        removeInstrumentMarketCrosshair({resetIndex: true});
-        return;
-      }
-      const padX = 24;
-      const plotWidth = width - padX * 2;
-      const pointerX = pointerRatio * width;
-      const plotRatio = Math.max(0, Math.min(1, (pointerX - padX) / plotWidth));
-      const targetTime = first.timestamp + plotRatio * Math.max(last.timestamp - first.timestamp, 1);
-      let nearestDistance = Number.POSITIVE_INFINITY;
-      candles.forEach((candidate, candidateIndex) => {
-        const distance = Math.abs(candidate.timestamp - targetTime);
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          index = candidateIndex;
-        }
-      });
-    }
-    showInstrumentMarketInspection(candles, index);
-  };
-
-  const inspectInstrumentMarketChartByKeyboard = (event) => {
-    const candles = instrumentMarketInspectionCandles();
-    if (!candles.length) {
-      removeInstrumentMarketCrosshair({resetIndex: true});
-      return;
-    }
-
-    const lastIndex = candles.length - 1;
-    let index = Number.isInteger(instrumentMarketInspectionIndex)
-      ? Math.max(0, Math.min(lastIndex, instrumentMarketInspectionIndex))
-      : lastIndex;
-
-    if (event.key === "ArrowLeft") {
-      index = Math.max(0, index - 1);
-    } else if (event.key === "ArrowRight") {
-      index = Math.min(lastIndex, index + 1);
-    } else if (event.key === "Home") {
-      index = 0;
-    } else if (event.key === "End") {
-      index = lastIndex;
-    } else {
-      return;
-    }
-
-    event.preventDefault();
     showInstrumentMarketInspection(candles, index);
   };
 
@@ -5580,14 +5523,8 @@
     void loadInstrumentMarket(instrumentMarketUid, {force: true});
   });
 
-  instrumentMarketChart.addEventListener("pointermove", inspectInstrumentMarketChart);
-  instrumentMarketChart.addEventListener("pointerleave", () => {
-    removeInstrumentMarketCrosshair({resetIndex: true});
-  });
-  instrumentMarketChart.addEventListener("keydown", inspectInstrumentMarketChartByKeyboard);
-  instrumentMarketChart.addEventListener("blur", () => {
-    removeInstrumentMarketCrosshair({resetIndex: true});
-  });
+  instrumentMarketScrubber.addEventListener("input", inspectInstrumentMarketChart);
+  instrumentMarketScrubber.addEventListener("blur", removeInstrumentMarketCrosshair);
 
   homeAttentionList.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-home-attention-view]");
