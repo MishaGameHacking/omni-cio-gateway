@@ -89,6 +89,7 @@ class Database:
                     AND to_regclass('public.portfolio_execution_runs') IS NOT NULL
                     AND to_regclass('public.portfolio_execution_legs') IS NOT NULL
                     AND to_regclass('public.portfolio_execution_events') IS NOT NULL
+                    AND to_regclass('public.portfolio_live_execution_mandates') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
@@ -141,7 +142,7 @@ class Database:
                           )
                     )
                     AND (
-                        SELECT count(*) = 14
+                        SELECT count(*) = 15
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -160,7 +161,8 @@ class Database:
                                   'portfolio_proposal_actions',
                                   'portfolio_execution_runs',
                                   'portfolio_execution_legs',
-                                  'portfolio_execution_events'
+                                  'portfolio_execution_events',
+                                  'portfolio_live_execution_mandates'
                               ]
                           )
                           AND c.relrowsecurity
@@ -392,6 +394,27 @@ class Database:
                 raise PermissionError("account is not active")
 
             cur.execute(
+                "SELECT set_config('omnicio.user_id', %s, true)",
+                (str(user.id),),
+            )
+            cur.execute(
+                """
+                SELECT 1
+                FROM portfolio_execution_runs
+                WHERE user_id = %s
+                  AND mode = 'live'
+                  AND status IN ('created', 'running', 'reconciling')
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (user.id,),
+            )
+            if cur.fetchone() is not None:
+                raise PermissionError(
+                    "active live execution must be reconciled before account deletion"
+                )
+
+            cur.execute(
                 """
                 INSERT INTO audit_events (user_id, event_type, metadata)
                 VALUES (%s, 'self_account_deleted', '{"source":"settings"}'::jsonb)
@@ -549,6 +572,31 @@ class Database:
             )
             cur.execute(
                 "SELECT set_config('omnicio.financial_cleanup', 'broker_disconnect', true)"
+            )
+            cur.execute(
+                """
+                SELECT 1
+                FROM portfolio_execution_runs
+                WHERE user_id = %s
+                  AND mode = 'live'
+                  AND status IN ('created', 'running', 'reconciling')
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (user_id,),
+            )
+            if cur.fetchone() is not None:
+                raise PermissionError(
+                    "active live execution must be reconciled before broker disconnect"
+                )
+            cur.execute(
+                """
+                UPDATE portfolio_live_execution_mandates
+                SET revoked_at = COALESCE(revoked_at, now())
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                """,
+                (user_id,),
             )
             cur.execute("DELETE FROM broker_sync_state WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM account_instrument_access WHERE user_id = %s", (user_id,))
