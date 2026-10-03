@@ -181,7 +181,7 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
             workflow,
         )
 
-    def test_pull_request_workflows_do_not_expose_self_hosted_runners_to_untrusted_prs(self) -> None:
+    def test_pull_request_workflows_are_owner_only_on_self_hosted(self) -> None:
         workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
         for workflow_path in workflow_dir.glob("*.yml"):
             content = workflow_path.read_text(encoding="utf-8")
