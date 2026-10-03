@@ -712,15 +712,36 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
     previous_database = getattr(app.state, "database", None)
     app.state.database = database
     try:
+        refreshed = ProposalDraft(
+            source_snapshot_id=snapshot_id,
+            account_id="account-1",
+            profile_version=3,
+            policy_version=2,
+            scenario_kind="deploy_cash",
+            target_instrument_uid="candidate-1",
+            replaced_instrument_uid=None,
+            payload={"schema": "omnicio.portfolio.proposal.v1"},
+            proposal_hash=b"z" * 32,
+            expires_at=now + timedelta(minutes=10),
+        )
         with (
             patch("omnicio.main.authenticated_user") as user,
             patch("omnicio.main.portfolio_store") as store,
             patch("omnicio.main.service") as auth,
             patch("omnicio.main.broker_service") as broker,
+            patch("omnicio.main._live_balancing_for_user") as balancing,
+            patch("omnicio.main.build_proposal_draft") as builder,
+            patch("omnicio.main.proposal_generated_at") as generated_at,
+            patch("omnicio.main.proposal_material_hash") as material_hash,
         ):
             user.return_value.id = "server-user"
             auth.return_value.legal_versions.return_value = {"terms": "current"}
+            store.return_value.proposal.return_value = proposal
             store.return_value.decide_proposal.return_value = (proposal, action)
+            balancing.return_value = {"status": "observed"}
+            builder.return_value = refreshed
+            generated_at.return_value = now
+            material_hash.side_effect = [b"m" * 32, b"m" * 32]
 
             response = TestClient(app).post(
                 f"/api/portfolio/proposals/{proposal_id}/decision",
@@ -736,7 +757,6 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
         assert response.status_code == 200
         assert response.json()["proposal"]["status"] == "confirmed"
         assert response.json()["execution_enabled"] is False
-        broker.assert_not_called()
         store.return_value.decide_proposal.assert_called_once()
         call = store.return_value.decide_proposal.call_args
         assert call.args[0] == "server-user"
@@ -746,6 +766,108 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
         assert len(call.kwargs["session_digest"]) == 32
         assert call.kwargs["user_reason"] == ""
         assert call.kwargs["deferred_until"] is None
+        assert call.kwargs["material_current"] is True
+        balancing.assert_called_once_with(ANY, "server-user")
+        builder.assert_called_once()
+        broker.assert_not_called()
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_proposal_confirmation_marks_materially_changed_live_package_stale() -> None:
+    now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
+    proposal_id = UUID("22222222-2222-2222-2222-222222222223")
+    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
+    proposal = PortfolioProposalRecord(
+        id=proposal_id,
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
+        version=5,
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-1",
+        replaced_instrument_uid=None,
+        proposal_hash=b"a" * 32,
+        payload={"schema": "omnicio.portfolio.proposal.v1"},
+        created_at=now,
+        expires_at=now + timedelta(minutes=10),
+    )
+    revoked = replace(
+        proposal,
+        status="revoked",
+        decision_reason="proposal_material_changed",
+        decided_at=now + timedelta(minutes=1),
+    )
+    action = PortfolioProposalActionRecord(
+        id=2,
+        proposal_id=proposal_id,
+        user_id=proposal.user_id,
+        action="revoked",
+        proposal_version=5,
+        proposal_hash=b"a" * 32,
+        reason="proposal_material_changed",
+        user_reason="",
+        deferred_until=None,
+        acted_at=now + timedelta(minutes=1),
+    )
+    refreshed = ProposalDraft(
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-2",
+        replaced_instrument_uid=None,
+        payload={"schema": "omnicio.portfolio.proposal.v1", "changed": True},
+        proposal_hash=b"b" * 32,
+        expires_at=now + timedelta(minutes=10),
+    )
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: True},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+            patch("omnicio.main._live_balancing_for_user") as balancing,
+            patch("omnicio.main.build_proposal_draft") as builder,
+            patch("omnicio.main.proposal_generated_at", return_value=now),
+            patch("omnicio.main.proposal_material_hash") as material_hash,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {"terms": "current"}
+            store.return_value.proposal.return_value = proposal
+            store.return_value.decide_proposal.return_value = (revoked, action)
+            balancing.return_value = {"status": "observed"}
+            builder.return_value = refreshed
+            material_hash.side_effect = [b"old" * 10 + b"xx", b"new" * 10 + b"xx"]
+
+            response = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "confirm",
+                    "proposal_version": 5,
+                    "proposal_hash": (b"a" * 32).hex(),
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "stale-session-token"},
+            )
+
+        assert response.status_code == 409
+        assert response.json()["proposal"]["status"] == "revoked"
+        assert response.json()["decision"]["reason"] == "proposal_material_changed"
+        call = store.return_value.decide_proposal.call_args
+        assert call.kwargs["material_current"] is False
     finally:
         if previous_database is None:
             delattr(app.state, "database")
