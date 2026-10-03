@@ -794,12 +794,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             )
             invalid_mandate_expiry = created_at + timedelta(minutes=30)
             invalid_mandate_now = created_at + timedelta(minutes=5)
+            invalid_order_cap = Decimal("3000.001")
+            invalid_daily_cap = Decimal("5000")
             with pytest.raises(ValueError, match="kopeck precision"):
                 execution_store.create_live_mandate(
                     USER_ONE,
                     account_id="account-1",
-                    max_order_notional_rub=Decimal("3000.001"),
-                    max_daily_notional_rub=Decimal("5000"),
+                    max_order_notional_rub=invalid_order_cap,
+                    max_daily_notional_rub=invalid_daily_cap,
                     session_digest=b"l" * 32,
                     expires_at=invalid_mandate_expiry,
                     now=invalid_mandate_now,
