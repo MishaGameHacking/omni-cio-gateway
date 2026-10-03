@@ -22,6 +22,7 @@ from omnicio.tbank import (
     TBankOrderBook,
     TBankOrderLevel,
     TBankOrderPrice,
+    TBankRating,
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -384,7 +385,15 @@ def _live_broker(now: datetime) -> SimpleNamespace:
             is_consistent=True,
         ),
         candidate_order_price=_candidate_order_price,
-
+        candidate_bond_ratings=lambda user_id, uid: (
+            TBankRating(
+                agency_name="Эксперт РА",
+                rating_level="ruAA+",
+                rating_date=now - timedelta(days=7),
+                forecast="Стабильный",
+                is_under_watch=False,
+            ),
+        ),
         candidate_bond_coupons=lambda user_id, uid, **kwargs: _coupons(now),
         candidate_bond_events=lambda user_id, uid, **kwargs: (
             _maturity_event(now),
@@ -412,6 +421,8 @@ def test_live_r4_tbank_cashflows_can_produce_integer_lot_scenario() -> None:
     screening = payload["screening"][0]
     assert screening["eligible"] is True
     assert screening["risk_state"] == "normal"
+    assert screening["rating_bucket"] == "aa"
+    assert "issuer_ratings_from_tinvest_bond_by" in screening["notes"]
     assert Decimal(screening["ytw_percent"]) > Decimal("0")
     assert Decimal(screening["duration_years"]) > Decimal("0")
     assert screening["liquidity_days"] == 1
@@ -426,6 +437,36 @@ def test_live_r4_tbank_cashflows_can_produce_integer_lot_scenario() -> None:
     assert payload["methodology"]["liquidity_source"] == (
         "tbank_exchange_daily_candles"
     )
+
+
+def test_live_r4_rating_under_watch_blocks_new_buy() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    broker = _live_broker(now)
+    broker.candidate_bond_ratings = lambda user_id, uid: (
+        TBankRating(
+            agency_name="АКРА",
+            rating_level="A+(RU)",
+            rating_date=now - timedelta(days=5),
+            forecast="Стабильный",
+            is_under_watch=True,
+        ),
+    )
+
+    payload = build_live_balancing_payload(
+        user_id=USER_ID,
+        profile=_profile(),
+        policy_record=_policy(max_unknown_percent=Decimal("20")),
+        context=_context(now),
+        broker=broker,  # type: ignore[arg-type]
+        now=now,
+    )
+
+    screening = payload["screening"][0]
+    assert screening["rating_bucket"] == "a"
+    assert screening["risk_state"] == "watch"
+    assert screening["eligible"] is False
+    assert "risk_state_not_allowed" in screening["reasons"]
+    assert "issuer_rating_under_watch" in screening["notes"]
 
 
 def test_live_r4_future_call_event_fails_closed() -> None:
