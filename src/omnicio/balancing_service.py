@@ -352,6 +352,7 @@ def _candidate(
         credit_loss_rub_per_lot=Decimal("0"),
         liquidity_penalty_rub_per_lot=Decimal("0"),
         liquidity_days=liquidity_days,
+        max_liquid_lots=None,
         term_months=term_months,
         ytw_percent=None,
         duration_years=None,
