@@ -672,7 +672,6 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 max_monthly_notional_rub=Decimal("2000.00"),
                 max_slippage_bps=50,
                 session_digest=b"i" * 32,
-                created_at=created_at if False else None,
                 expires_at=created_at + timedelta(days=30),
                 now=created_at,
             )
