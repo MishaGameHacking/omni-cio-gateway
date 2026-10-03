@@ -236,7 +236,7 @@ def proposal_material_hash(payload: dict[str, object]) -> bytes:
 
 
 def proposal_generated_at(record: PortfolioProposalRecord) -> datetime:
-    raw = record.payload.get("generated_at")
+    raw = record.payload.get("created_at")
     if not isinstance(raw, str):
         raise ProposalBuildError("proposal_generated_at_invalid")
     try:
