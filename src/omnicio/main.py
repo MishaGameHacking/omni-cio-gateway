@@ -1052,9 +1052,7 @@ def _require_current_legal_consent(request: Request, user: UserRecord) -> None:
 
 
 def _execution_error(exc: Exception) -> HTTPException:
-    if isinstance(exc, ExecutionLedgerError):
-        code = exc.code
-    elif isinstance(exc, ExecutionServiceError):
+    if isinstance(exc, (ExecutionLedgerError, ExecutionServiceError)):
         code = exc.code
     else:
         return HTTPException(
