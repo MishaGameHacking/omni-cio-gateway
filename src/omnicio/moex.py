@@ -274,27 +274,27 @@ class MoexIssClient:
 
     def _get_payload(self, url: str) -> dict[str, object]:
         target = _moex_request_target(url)
+        connection = http.client.HTTPSConnection(
+            MOEX_ISS_HOST,
+            443,
+            timeout=self.timeout_seconds,
+            context=ssl.create_default_context(),
+        )
         try:
-            with http.client.HTTPSConnection(
-                MOEX_ISS_HOST,
-                443,
-                timeout=self.timeout_seconds,
-                context=ssl.create_default_context(),
-            ) as connection:
-                connection.request(
-                    "GET",
-                    target,
-                    headers={
-                        "User-Agent": "omnicio-r4-evidence/1.0",
-                        "Accept": "application/json",
-                    },
+            connection.request(
+                "GET",
+                target,
+                headers={
+                    "User-Agent": "omnicio-r4-evidence/1.0",
+                    "Accept": "application/json",
+                },
+            )
+            response = connection.getresponse()
+            if response.status != 200:
+                raise MoexError(
+                    f"MOEX ISS returned HTTP {response.status}"
                 )
-                response = connection.getresponse()
-                if response.status != 200:
-                    raise MoexError(
-                        f"MOEX ISS returned HTTP {response.status}"
-                    )
-                payload_raw = json.loads(response.read().decode("utf-8"))
+            payload_raw = json.loads(response.read().decode("utf-8"))
         except MoexError:
             raise
         except (
@@ -304,6 +304,8 @@ class MoexIssClient:
             http.client.HTTPException,
         ) as exc:
             raise MoexError("MOEX ISS is unavailable") from exc
+        finally:
+            connection.close()
         if not isinstance(payload_raw, dict):
             raise MoexError("MOEX ISS returned malformed payload")
         return cast(dict[str, object], payload_raw)
