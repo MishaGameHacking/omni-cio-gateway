@@ -2210,7 +2210,7 @@
       setStateBadge(liveMandateStatus, "Выключен server-side", "state-next");
       liveMandateSummary.textContent = (
         "R7 технически подготовлен, но production live не активирован: "
-        + "опубликованные legal-документы v6 описывают режим без реальных поручений. "
+        + "legal-документы v7 не дают автоматическое торговое authority. "
         + "Shadow и Sandbox продолжают работать."
       );
       syncExecutionControls();
