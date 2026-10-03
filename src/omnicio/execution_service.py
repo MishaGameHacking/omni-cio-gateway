@@ -350,6 +350,8 @@ class PortfolioExecutionService:
             leg.instrument_uid,
             price=str(leg.limit_price),
         )
+        if max_lots.currency not in {"", "RUB"}:
+            raise ExecutionServiceError("sandbox_max_lots_currency_invalid")
         if leg.action == "buy":
             if max_lots.buy_max_lots < leg.lots_requested:
                 raise ExecutionServiceError("sandbox_buy_lots_exceed_available")
@@ -509,7 +511,21 @@ class PortfolioExecutionService:
         expected_statuses: tuple[ExecutionLegStatus, ...],
         event_type: str,
     ) -> ExecutionLegStatus:
-        _validate_state_matches_leg(leg, state)
+        try:
+            _validate_state_matches_leg(leg, state)
+        except ExecutionServiceError as exc:
+            self.store.mark_run_reconciling(
+                user_id,
+                run_id=run.id,
+                leg_id=leg.id,
+                error_code=exc.code,
+                details={
+                    "request_id": str(leg.request_id),
+                    "provider_order_id": state.order_id,
+                },
+                now=observed_at,
+            )
+            return "reconciling"
         try:
             local_status = provider_leg_status(
                 state.execution_report_status
@@ -545,6 +561,25 @@ class PortfolioExecutionService:
                     now=observed_at,
                 )
                 return "reconciling"
+        if (
+            leg.action == "sell"
+            and local_status == "filled"
+            and leg.min_proceeds_rub is not None
+            and amount < leg.min_proceeds_rub
+        ):
+            self.store.mark_run_reconciling(
+                user_id,
+                run_id=run.id,
+                leg_id=leg.id,
+                error_code="sandbox_provider_min_proceeds_breach",
+                details={
+                    "request_id": str(leg.request_id),
+                    "amount_rub": str(amount),
+                    "min_proceeds_rub": str(leg.min_proceeds_rub),
+                },
+                now=observed_at,
+            )
+            return "reconciling"
 
         self.store.transition_leg(
             user_id,
