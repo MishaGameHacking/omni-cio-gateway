@@ -2062,54 +2062,6 @@ class PortfolioStore:
             "sources": sources,
         }
 
-    def portfolio_history(
-        self,
-        user_id: UUID,
-        *,
-        days: int = 365,
-    ) -> tuple[dict[str, object], ...]:
-        """Return tenant-scoped persisted portfolio NAV history in chronological order."""
-        if not 7 <= days <= 730:
-            raise ValueError("portfolio history days must be between 7 and 730")
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                """
-                SELECT
-                    captured_at,
-                    analysis_status,
-                    nav_rub,
-                    rub_cash_unblocked,
-                    limits_loading_in_progress
-                FROM portfolio_snapshots
-                WHERE user_id = %s
-                  AND captured_at >= now() - (%s * interval '1 day')
-                ORDER BY captured_at ASC, created_at ASC
-                LIMIT 800
-                """,
-                (user_id, days),
-            )
-            return tuple(
-                {
-                    "captured_at": cast(datetime, row["captured_at"]).astimezone(UTC),
-                    "analysis_status": str(row["analysis_status"]),
-                    "nav_rub": format(cast(Decimal, row["nav_rub"]), "f"),
-                    "rub_cash_unblocked": (
-                        format(cast(Decimal, row["rub_cash_unblocked"]), "f")
-                        if row["rub_cash_unblocked"] is not None
-                        else None
-                    ),
-                    "limits_loading_in_progress": bool(
-                        row["limits_loading_in_progress"]
-                    ),
-                }
-                for row in cast(list[dict[str, Any]], cur.fetchall())
-            )
-
     def latest_balancing_context(
         self,
         user_id: UUID,
