@@ -100,6 +100,8 @@ class Database:
                     AND to_regclass('public.portfolio_execution_legs') IS NOT NULL
                     AND to_regclass('public.portfolio_execution_events') IS NOT NULL
                     AND to_regclass('public.portfolio_live_execution_mandates') IS NOT NULL
+                    AND to_regclass('public.portfolio_reinvestment_mandates') IS NOT NULL
+                    AND to_regclass('public.portfolio_reinvestment_income_credits') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
@@ -152,7 +154,7 @@ class Database:
                           )
                     )
                     AND (
-                        SELECT count(*) = 15
+                        SELECT count(*) = 17
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -172,7 +174,9 @@ class Database:
                                   'portfolio_execution_runs',
                                   'portfolio_execution_legs',
                                   'portfolio_execution_events',
-                                  'portfolio_live_execution_mandates'
+                                  'portfolio_live_execution_mandates',
+                                  'portfolio_reinvestment_mandates',
+                                  'portfolio_reinvestment_income_credits'
                               ]
                           )
                           AND c.relrowsecurity
@@ -610,6 +614,15 @@ class Database:
             cur.execute(
                 """
                 UPDATE portfolio_live_execution_mandates
+                SET revoked_at = COALESCE(revoked_at, now())
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                """,
+                (user_id,),
+            )
+            cur.execute(
+                """
+                UPDATE portfolio_reinvestment_mandates
                 SET revoked_at = COALESCE(revoked_at, now())
                 WHERE user_id = %s
                   AND revoked_at IS NULL
