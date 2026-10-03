@@ -930,6 +930,121 @@
                   <output id="live-mandate-message" class="message" aria-live="polite"></output>
                 </section>
 
+                <section class="portfolio-card" aria-labelledby="reinvestment-title">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">R8.1 · Reinvestment evidence</p>
+                      <h4 id="reinvestment-title">Мандат и учёт выплат без автопокупки</h4>
+                    </div>
+                    <span class="state-badge state-next" id="reinvestment-status">
+                      Автоисполнение выключено
+                    </span>
+                  </header>
+                  <p id="reinvestment-summary" class="field-hint">
+                    Здесь можно заранее зафиксировать отзывные ограничения будущего
+                    реинвестирования. R8.1 только учитывает фактически наблюдаемые
+                    дивиденды и купоны T-Invest; брокерские заявки не отправляются.
+                  </p>
+
+                  <section class="portfolio-two-column" aria-label="Учтённые выплаты">
+                    <div>
+                      <p class="card-label">Наблюдается по мандату</p>
+                      <strong id="reinvestment-observed">0 ₽</strong>
+                      <p class="field-hint">
+                        Сумма provider-executed выплат внутри срока мандата. Она ещё не
+                        считается доступным бюджетом.
+                      </p>
+                    </div>
+                    <div>
+                      <p class="card-label">Доступно автопокупке</p>
+                      <strong id="reinvestment-spendable">0 ₽</strong>
+                      <p class="field-hint">
+                        На R8.1 всегда 0 ₽: требуется отдельная верификация cash и
+                        отдельный shadow/sandbox этап исполнения.
+                      </p>
+                    </div>
+                  </section>
+                  <p id="reinvestment-breakdown" class="field-hint">
+                    Дивиденды: 0 ₽ · Купоны: 0 ₽ · подтверждённых к расходованию: 0 ₽
+                  </p>
+
+                  <form
+                    id="reinvestment-form"
+                    class="form-stack hidden"
+                    aria-describedby="reinvestment-help"
+                    novalidate
+                  >
+                    <div id="reinvestment-help" class="field-hint">
+                      Мандат привязывается сервером к текущему production-счёту,
+                      текущей версии инвестиционного профиля и политики. Исторические
+                      выплаты до создания мандата не включаются. Срок — не более 90 дней.
+                    </div>
+
+                    <div class="constraint-form-grid">
+                      <div class="field">
+                        <label for="reinvestment-reserve">Не трогать минимум, ₽</label>
+                        <input id="reinvestment-reserve" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                        <p class="field-hint">Дополнительный денежный резерв мандата; это не скрытый процент.</p>
+                      </div>
+                      <div class="field">
+                        <label for="reinvestment-max-order">Максимум одной будущей покупки, ₽</label>
+                        <input id="reinvestment-max-order" type="number" min="0.01" max="1000000000000" step="0.01" inputmode="decimal" required>
+                      </div>
+                      <div class="field">
+                        <label for="reinvestment-max-daily">Максимум за день, ₽</label>
+                        <input id="reinvestment-max-daily" type="number" min="0.01" max="1000000000000" step="0.01" inputmode="decimal" required>
+                      </div>
+                      <div class="field">
+                        <label for="reinvestment-max-monthly">Максимум за месяц, ₽</label>
+                        <input id="reinvestment-max-monthly" type="number" min="0.01" max="1000000000000" step="0.01" inputmode="decimal" required>
+                      </div>
+                      <div class="field">
+                        <label for="reinvestment-slippage">Предельное отклонение цены, bps</label>
+                        <input id="reinvestment-slippage" type="number" min="0" max="500" step="1" inputmode="numeric" required>
+                        <p class="field-hint">100 bps = 1%. На R8.1 параметр только фиксируется, не используется для заявки.</p>
+                      </div>
+                      <div class="field">
+                        <label for="reinvestment-expires-at">Мандат действует до</label>
+                        <input id="reinvestment-expires-at" type="datetime-local" required>
+                      </div>
+                      <div class="field">
+                        <label for="reinvestment-profile-id">ID профиля для подтверждения</label>
+                        <input id="reinvestment-profile-id" type="text" inputmode="numeric" autocomplete="off" pattern="[0-9]{9}" maxlength="9" placeholder="000000001" required>
+                      </div>
+                    </div>
+
+                    <div class="proposal-decision-actions">
+                      <label class="check">
+                        <input id="reinvestment-dividends" type="checkbox" checked>
+                        <span>Учитывать фактически наблюдаемые дивиденды.</span>
+                      </label>
+                      <label class="check">
+                        <input id="reinvestment-coupons" type="checkbox" checked>
+                        <span>Учитывать фактически наблюдаемые купоны.</span>
+                      </label>
+                    </div>
+
+                    <label class="check">
+                      <input id="reinvestment-confirm" type="checkbox" required>
+                      <span>
+                        Я подтверждаю этот мандат и понимаю: R8.1 не отправляет
+                        брокерские поручения, а учтённые выплаты пока не считаются
+                        автоматически расходуемыми средствами.
+                      </span>
+                    </label>
+
+                    <div class="proposal-decision-actions">
+                      <button id="reinvestment-save" class="button button-primary" type="submit">
+                        Сохранить мандат R8.1
+                      </button>
+                      <button id="reinvestment-revoke" class="button button-secondary hidden" type="button">
+                        Отозвать мандат
+                      </button>
+                    </div>
+                  </form>
+                  <output id="reinvestment-message" class="message" aria-live="polite"></output>
+                </section>
+
                 <section class="portfolio-two-column">
                   <div>
                     <div class="portfolio-card-header">
