@@ -773,6 +773,24 @@
     }).format(date);
   };
 
+  const formatExactDateTime = (value) => {
+    if (!value) {
+      return "—";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(date);
+  };
+
   const formatCalendarDate = (value) => {
     if (!value) {
       return "—";
@@ -1583,7 +1601,7 @@
     instrumentMarketLastPrice.textContent = marketPriceText(payload?.last_price);
     instrumentMarketQuoteTime.textContent = payload?.quote_time
       ? [
-          formatDateTime(payload.quote_time),
+          formatExactDateTime(payload.quote_time),
           Number.isFinite(Number(payload.quote_age_seconds))
             ? `возраст ${Math.max(0, Number(payload.quote_age_seconds))} с`
             : "",
@@ -1607,7 +1625,7 @@
     if (payload?.last_price !== null && payload?.last_price !== undefined) {
       instrumentDetailPrice.textContent = marketPriceText(payload.last_price);
       instrumentDetailPriceTime.textContent = payload.quote_time
-        ? `T-Invest quote: ${formatDateTime(payload.quote_time)}`
+        ? `T-Invest quote: ${formatExactDateTime(payload.quote_time)}`
         : "T-Invest: время котировки не подтверждено";
     }
   };
@@ -1637,7 +1655,7 @@
     const incompleteCount = candles.filter((candle) => candle.is_complete === false).length;
     instrumentMarketSource.textContent = [
       payload?.source || "T-Invest",
-      payload?.observed_at ? `загружено ${formatDateTime(payload.observed_at)}` : "",
+      payload?.observed_at ? `загружено ${formatExactDateTime(payload.observed_at)}` : "",
     ].filter(Boolean).join(" · ");
     instrumentMarketNote.textContent = candles.length
       ? [
@@ -1713,7 +1731,7 @@
       class: "market-chart-crosshair",
     }));
     instrumentMarketTooltip.textContent = [
-      formatDateTime(candle.time),
+      formatExactDateTime(candle.time),
       `O ${marketPriceText(candle.open)}`,
       `H ${marketPriceText(candle.high)}`,
       `L ${marketPriceText(candle.low)}`,
@@ -1826,7 +1844,7 @@
         renderInstrumentMarketLive(payload);
         instrumentMarketSource.textContent = [
           "T-Invest · серверное обновление",
-          payload.observed_at ? `получено ${formatDateTime(payload.observed_at)}` : "",
+          payload.observed_at ? `получено ${formatExactDateTime(payload.observed_at)}` : "",
         ].filter(Boolean).join(" · ");
       } catch {
         renderInstrumentMarketStreamStatus("unavailable");
