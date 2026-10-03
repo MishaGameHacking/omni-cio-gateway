@@ -212,6 +212,7 @@
   let proposalRequestInFlight = false;
   let executionRequestInFlight = false;
   let tbankEnvironment = null;
+  let tbankAccountId = null;
   let owlTimer = null;
   let usdRubEventSource = null;
   let usdRubFallbackTimer = null;
@@ -342,29 +343,6 @@
 
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
-
-    proposalHistory.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-execution-start]");
-    if (button) {
-      void startExecution(button);
-    }
-  });
-
-  executionHistory.addEventListener("click", (event) => {
-    const inspect = event.target.closest("[data-execution-inspect]");
-    if (inspect) {
-      void loadExecutionDetails(inspect.dataset.executionInspect);
-      return;
-    }
-    const action = event.target.closest("[data-execution-action]");
-    if (action) {
-      void mutateExecution(action);
-    }
-  });
-
-  executionRefresh.addEventListener("click", () => {
-    void loadExecutions({inspectLatest: true});
-  });
 
   desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
@@ -1962,18 +1940,28 @@
   );
 
   const syncSandboxStartControls = () => {
-    const available = tbankIsConnected && tbankEnvironment === "sandbox";
+    const sandboxConnected = tbankIsConnected && tbankEnvironment === "sandbox";
     proposalHistory.querySelectorAll('[data-execution-start="sandbox"]').forEach((button) => {
-      button.disabled = !available;
-      button.title = available
-        ? "Запустить exact-пакет в T-Invest Sandbox"
-        : "Для sandbox подключите T-Invest в контуре «Песочница»";
+      const accountMatches = (
+        sandboxConnected
+        && tbankAccountId
+        && button.dataset.proposalAccountId === tbankAccountId
+      );
+      button.disabled = !accountMatches;
+      button.title = accountMatches
+        ? "Создать run для exact-пакета этого Sandbox-счёта"
+        : "Sandbox требует тот же exact account_id, из которого построен R5 proposal.";
     });
     executionHistory.querySelectorAll("[data-execution-action]").forEach((button) => {
-      button.disabled = !available;
-      button.title = available
+      const accountMatches = (
+        sandboxConnected
+        && tbankAccountId
+        && button.dataset.executionAccountId === tbankAccountId
+      );
+      button.disabled = !accountMatches;
+      button.title = accountMatches
         ? ""
-        : "Для управления run снова подключите тот же Sandbox-счёт.";
+        : "Для управления run подключите тот же exact Sandbox-счёт.";
     });
   };
 
@@ -1990,13 +1978,14 @@
     const sandbox = document.createElement("button");
     sandbox.type = "button";
     sandbox.className = "button button-secondary";
-    sandbox.textContent = "Запустить в Sandbox";
+    sandbox.textContent = "Создать Sandbox-run";
     sandbox.dataset.executionStart = "sandbox";
 
     for (const button of [shadow, sandbox]) {
       button.dataset.proposalId = proposal.id;
       button.dataset.proposalVersion = String(proposal.version);
       button.dataset.proposalHash = proposal.hash;
+      button.dataset.proposalAccountId = proposal.account_id || "";
       controls.append(button);
     }
     return controls;
@@ -2288,9 +2277,13 @@
         const advance = document.createElement("button");
         advance.type = "button";
         advance.className = "button button-primary";
-        advance.textContent = "Сверить";
+        const firstPending = Number(run.pending_leg_count || 0) > 0;
+        advance.textContent = firstPending
+          ? "Отправить следующую Sandbox limit-заявку"
+          : "Сверить Sandbox";
         advance.dataset.executionAction = "advance";
         advance.dataset.executionId = run.id;
+        advance.dataset.executionAccountId = run.account_id || "";
 
         const cancel = document.createElement("button");
         cancel.type = "button";
@@ -2298,15 +2291,8 @@
         cancel.textContent = "Отменить Sandbox";
         cancel.dataset.executionAction = "cancel";
         cancel.dataset.executionId = run.id;
+        cancel.dataset.executionAccountId = run.account_id || "";
 
-        const sandboxAvailable = tbankIsConnected && tbankEnvironment === "sandbox";
-        advance.disabled = !sandboxAvailable;
-        cancel.disabled = !sandboxAvailable;
-        if (!sandboxAvailable) {
-          const hint = "Для управления run снова подключите тот же Sandbox-счёт.";
-          advance.title = hint;
-          cancel.title = hint;
-        }
         actions.append(advance, cancel);
       }
 
@@ -2361,10 +2347,17 @@
       return;
     }
     const mode = button.dataset.executionStart;
-    if (mode === "sandbox" && tbankEnvironment !== "sandbox") {
+    if (
+      mode === "sandbox"
+      && (
+        tbankEnvironment !== "sandbox"
+        || !tbankAccountId
+        || button.dataset.proposalAccountId !== tbankAccountId
+      )
+    ) {
       showMessage(
         executionMessage,
-        "Sandbox-запуск требует подключённый T-Invest счёт в контуре «Песочница».",
+        "Sandbox-run требует тот же exact Sandbox account_id, из которого построено подтверждённое предложение.",
         true,
       );
       return;
@@ -2535,6 +2528,7 @@
     topConnectionIndicator.classList.remove("is-offline", "is-error");
     tbankIsConnected = Boolean(status.connected);
     tbankEnvironment = status.connected ? status.environment : null;
+    tbankAccountId = status.connected ? String(status.account_id || "") : null;
     syncSandboxStartControls();
 
     if (!status.connected) {
@@ -2608,6 +2602,7 @@
     topConnectionText.textContent = "Ошибка T-Invest";
     tbankIsConnected = false;
     tbankEnvironment = null;
+    tbankAccountId = null;
     syncSandboxStartControls();
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
@@ -2910,10 +2905,31 @@
   });
 
   proposalHistory.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-proposal-decision]");
-    if (button) {
-      void decideProposal(button);
+    const decisionButton = event.target.closest("[data-proposal-decision]");
+    if (decisionButton) {
+      void decideProposal(decisionButton);
+      return;
     }
+    const executionButton = event.target.closest("[data-execution-start]");
+    if (executionButton) {
+      void startExecution(executionButton);
+    }
+  });
+
+  executionHistory.addEventListener("click", (event) => {
+    const inspect = event.target.closest("[data-execution-inspect]");
+    if (inspect) {
+      void loadExecutionDetails(inspect.dataset.executionInspect);
+      return;
+    }
+    const action = event.target.closest("[data-execution-action]");
+    if (action) {
+      void mutateExecution(action);
+    }
+  });
+
+  executionRefresh.addEventListener("click", () => {
+    void loadExecutions({inspectLatest: true});
   });
 
   desktopNavItems.forEach((item) => {
