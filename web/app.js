@@ -79,6 +79,8 @@
   const fullscreenStatus = document.querySelector("#fullscreen-status");
   const copySupportDiagnostics = document.querySelector("#copy-support-diagnostics");
   const supportCopyMessage = document.querySelector("#support-copy-message");
+  const legalUpdateCard = requiredElement("#legal-update-card");
+  const legalUpdateRelogin = requiredElement("#legal-update-relogin");
 
   const tbankForm = document.querySelector("#tbank-form");
   const tbankAccountForm = document.querySelector("#tbank-account-form");
@@ -3657,6 +3659,7 @@
     settingsProfileId.textContent = profile.public_id;
     deleteAccountProfileId.textContent = profile.public_id;
     settingsProfileRole.textContent = profile.role === "user" ? "Пользователь" : profile.role;
+    legalUpdateCard.classList.toggle("hidden", profile.legal_current !== false);
     authCard.classList.add("hidden");
     profilePanel.classList.remove("hidden");
     initializeNavigation();
@@ -3679,7 +3682,12 @@
     const params = new URLSearchParams(location.search);
     const authError = params.get("auth_error");
 
-    if (authError === "registration") {
+    if (params.get("legal_update") === "1") {
+      showMessage(
+        authMessage,
+        "Документы обновлены. Ознакомьтесь с ними, отметьте все четыре пункта и подтвердите согласие через VK ID.",
+      );
+    } else if (authError === "registration") {
       showMessage(authMessage, "Регистрация новых аккаунтов сейчас закрыта. Уже зарегистрированный пользователь может войти через свой VK ID.", true);
     } else if (authError === "capacity") {
       showMessage(authMessage, "Свободных пользовательских аккаунтов сейчас нет: текущий лимит регистрации уже заполнен.", true);
@@ -3691,7 +3699,7 @@
       showMessage(authMessage, "Авторизация VK ID не завершена. Попробуйте ещё раз.", true);
     }
 
-    if (params.has("auth") || params.has("auth_error")) {
+    if (params.has("auth") || params.has("auth_error") || params.has("legal_update")) {
       history.replaceState(null, "", location.pathname);
     }
   };
@@ -4404,6 +4412,17 @@
           : "Аккаунт не удалён. Обновите страницу и повторите попытку.",
         true,
       );
+    }
+  });
+
+  legalUpdateRelogin.addEventListener("click", async () => {
+    legalUpdateRelogin.disabled = true;
+    stopUsdRubStream();
+    try {
+      await api("/api/auth/logout", {method: "POST"});
+    } finally {
+      pendingTbankCredential = null;
+      location.replace("/?legal_update=1");
     }
   });
 
