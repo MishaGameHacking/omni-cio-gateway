@@ -550,6 +550,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                     session_digest=b"d" * 32,
                     user_reason="",
                     deferred_until=None,
+                    material_current=True,
                     now=created_at + timedelta(minutes=2),
                 )
 
