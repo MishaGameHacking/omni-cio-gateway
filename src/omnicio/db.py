@@ -86,6 +86,9 @@ class Database:
                     AND to_regclass('public.balancing_policy_versions') IS NOT NULL
                     AND to_regclass('public.portfolio_proposals') IS NOT NULL
                     AND to_regclass('public.portfolio_proposal_actions') IS NOT NULL
+                    AND to_regclass('public.portfolio_execution_runs') IS NOT NULL
+                    AND to_regclass('public.portfolio_execution_legs') IS NOT NULL
+                    AND to_regclass('public.portfolio_execution_events') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
@@ -138,7 +141,7 @@ class Database:
                           )
                     )
                     AND (
-                        SELECT count(*) = 11
+                        SELECT count(*) = 14
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -154,7 +157,10 @@ class Database:
                                   'portfolio_risk_assessments',
                                   'balancing_policy_versions',
                                   'portfolio_proposals',
-                                  'portfolio_proposal_actions'
+                                  'portfolio_proposal_actions',
+                                  'portfolio_execution_runs',
+                                  'portfolio_execution_legs',
+                                  'portfolio_execution_events'
                               ]
                           )
                           AND c.relrowsecurity
