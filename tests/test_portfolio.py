@@ -9,7 +9,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
+from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot, BrokerNotConnected
 from omnicio.db import ActiveLiveExecutionError
 from omnicio.execution_service import ExecutionServiceError
 from omnicio.execution_store import ExecutionLedgerError
@@ -271,6 +271,28 @@ def test_instrument_market_http_rejects_unsupported_period() -> None:
         )
 
     assert response.status_code == 422
+
+
+def test_instrument_market_stream_stops_after_terminal_connection_state() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.market_service") as market,
+    ):
+        user.return_value.id = "server-user"
+        market.return_value.instrument_live_state.side_effect = BrokerNotConnected(
+            "not connected"
+        )
+        response = TestClient(app).get(
+            "/api/market/instruments/uid-1/stream",
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert 'event: status\ndata: {"state":"disconnected"}' in response.text
+    market.return_value.instrument_live_state.assert_called_once_with(
+        "server-user",
+        "uid-1",
+    )
 
 
 def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
