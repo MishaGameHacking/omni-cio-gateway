@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_legs (
         OR char_length(provider_order_id) BETWEEN 1 AND 128
     ),
     UNIQUE (id, user_id),
+    UNIQUE (id, run_id, user_id),
     UNIQUE (run_id, leg_index),
     UNIQUE (request_id),
     FOREIGN KEY (run_id, user_id)
@@ -200,6 +201,49 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_legs (
 
 CREATE INDEX IF NOT EXISTS portfolio_execution_legs_run_idx
     ON portfolio_execution_legs (run_id, leg_index);
+
+CREATE OR REPLACE FUNCTION omnicio_validate_execution_leg_source()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+    IF (
+        NEW.run_id,
+        NEW.user_id,
+        NEW.leg_index,
+        NEW.action,
+        NEW.instrument_uid,
+        NEW.lots_requested,
+        NEW.limit_price,
+        NEW.limit_price_type,
+        NEW.max_spend_rub,
+        NEW.min_proceeds_rub,
+        NEW.request_id
+    ) IS DISTINCT FROM (
+        OLD.run_id,
+        OLD.user_id,
+        OLD.leg_index,
+        OLD.action,
+        OLD.instrument_uid,
+        OLD.lots_requested,
+        OLD.limit_price,
+        OLD.limit_price_type,
+        OLD.max_spend_rub,
+        OLD.min_proceeds_rub,
+        OLD.request_id
+    ) THEN
+        RAISE EXCEPTION 'execution leg source fields are immutable';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS portfolio_execution_legs_source_guard
+    ON portfolio_execution_legs;
+CREATE TRIGGER portfolio_execution_legs_source_guard
+BEFORE UPDATE ON portfolio_execution_legs
+FOR EACH ROW
+EXECUTE FUNCTION omnicio_validate_execution_leg_source();
 
 CREATE TABLE IF NOT EXISTS portfolio_execution_events (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -214,8 +258,8 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_events (
     FOREIGN KEY (run_id, user_id)
         REFERENCES portfolio_execution_runs(id, user_id)
         ON DELETE RESTRICT,
-    FOREIGN KEY (leg_id, user_id)
-        REFERENCES portfolio_execution_legs(id, user_id)
+    FOREIGN KEY (leg_id, run_id, user_id)
+        REFERENCES portfolio_execution_legs(id, run_id, user_id)
         ON DELETE RESTRICT
 );
 
