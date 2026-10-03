@@ -146,17 +146,6 @@ def run_status_for_legs(
         return "cancelled"
     if any(status == "reconciling" for status in statuses):
         return "reconciling"
-    if any(
-        status in {
-            "submitting",
-            "pending",
-            "submitted",
-            "partially_filled",
-            "cancel_requested",
-        }
-        for status in statuses
-    ):
-        return "running"
     return "running"
 
 
