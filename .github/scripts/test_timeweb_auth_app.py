@@ -381,6 +381,22 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("location = /api/auth/vkid/callback", script)
         self.assertIn("limit_req_status 429", script)
 
+    def test_public_api_has_bounded_request_and_connection_cost(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+
+        self.assertIn("map $request_method $omnicio_write_limit_key", script)
+        self.assertIn("zone=omnicio_api_per_ip:10m rate=120r/m", script)
+        self.assertIn("zone=omnicio_api_write:10m rate=30r/m", script)
+        self.assertIn("zone=omnicio_health:1m rate=120r/m", script)
+        self.assertIn("limit_conn_zone $binary_remote_addr zone=omnicio_api_connections:10m", script)
+        self.assertIn("client_max_body_size 64k", script)
+        self.assertIn("client_body_timeout 10s", script)
+        self.assertIn("limit_req zone=omnicio_api_per_ip burst=60 nodelay", script)
+        self.assertIn("limit_req zone=omnicio_api_write burst=15 nodelay", script)
+        self.assertIn("limit_req zone=omnicio_health burst=30 nodelay", script)
+        self.assertIn("limit_conn omnicio_api_connections 20", script)
+        self.assertIn("limit_conn_status 429", script)
+
     def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
