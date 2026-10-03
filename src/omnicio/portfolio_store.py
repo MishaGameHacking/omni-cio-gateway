@@ -28,7 +28,14 @@ from .tbank import (
 )
 
 JobStatus = Literal["running", "succeeded", "degraded", "failed"]
-ProposalAction = Literal["confirmed", "rejected", "deferred", "revoked", "expired"]
+ProposalAction = Literal[
+    "confirmed",
+    "rejected",
+    "deferred",
+    "superseded",
+    "revoked",
+    "expired",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +83,7 @@ class PortfolioProposalRecord:
     user_id: UUID
     version: int
     source_snapshot_id: UUID
+    account_id: str
     profile_version: int
     policy_version: int
     scenario_kind: str
@@ -87,6 +95,8 @@ class PortfolioProposalRecord:
     expires_at: datetime
     status: str = "pending"
     decision_reason: str = ""
+    decision_user_reason: str = ""
+    deferred_until: datetime | None = None
     decided_at: datetime | None = None
 
 
@@ -99,6 +109,8 @@ class PortfolioProposalActionRecord:
     proposal_version: int
     proposal_hash: bytes
     reason: str
+    user_reason: str
+    deferred_until: datetime | None
     acted_at: datetime
 
 
@@ -537,17 +549,23 @@ class PortfolioStore:
         user_id: UUID,
         *,
         source_snapshot_id: UUID,
+        account_id: str,
         profile_version: int,
         policy_version: int,
         scenario_kind: str,
         target_instrument_uid: str | None,
         replaced_instrument_uid: str | None,
         proposal_hash: bytes,
+        session_digest: bytes,
         payload: dict[str, object],
         expires_at: datetime,
     ) -> PortfolioProposalRecord:
         if len(proposal_hash) != 32:
             raise ValueError("proposal hash must be SHA-256")
+        if len(session_digest) != 32:
+            raise ValueError("proposal session digest must be SHA-256")
+        if not account_id or len(account_id) > 128:
+            raise ValueError("proposal account id is invalid")
         if expires_at.tzinfo is None:
             raise ValueError("proposal expiry must be timezone-aware")
         with (
@@ -564,6 +582,7 @@ class PortfolioStore:
                 cur,
                 user_id=user_id,
                 snapshot_id=source_snapshot_id,
+                account_id=account_id,
                 profile_version=profile_version,
                 policy_version=policy_version,
             )
@@ -575,14 +594,16 @@ class PortfolioStore:
                     action,
                     proposal_version,
                     proposal_hash,
+                    session_digest,
                     reason
                 )
                 SELECT
                     p.id,
                     p.user_id,
-                    'revoked',
+                    'superseded',
                     p.version,
                     p.proposal_hash,
+                    %s,
                     'superseded_by_new_proposal'
                 FROM portfolio_proposals AS p
                 LEFT JOIN portfolio_proposal_actions AS a
@@ -592,7 +613,7 @@ class PortfolioStore:
                   AND p.expires_at > now()
                 ON CONFLICT (proposal_id) DO NOTHING
                 """,
-                (user_id,),
+                (session_digest, user_id),
             )
             cur.execute(
                 """
@@ -614,23 +635,26 @@ class PortfolioStore:
                     user_id,
                     version,
                     source_snapshot_id,
+                    account_id,
                     profile_version,
                     policy_version,
                     scenario_kind,
                     target_instrument_uid,
                     replaced_instrument_uid,
                     proposal_hash,
+                    created_session_digest,
                     payload,
                     expires_at
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
                 )
                 RETURNING
                     id,
                     user_id,
                     version,
                     source_snapshot_id,
+                    account_id,
                     profile_version,
                     policy_version,
                     scenario_kind,
@@ -645,12 +669,14 @@ class PortfolioStore:
                     user_id,
                     version,
                     source_snapshot_id,
+                    account_id,
                     profile_version,
                     policy_version,
                     scenario_kind,
                     target_instrument_uid,
                     replaced_instrument_uid,
                     proposal_hash,
+                    session_digest,
                     _json(payload),
                     expires_at.astimezone(UTC),
                 ),
@@ -681,6 +707,7 @@ class PortfolioStore:
                     p.user_id,
                     p.version,
                     p.source_snapshot_id,
+                    p.account_id,
                     p.profile_version,
                     p.policy_version,
                     p.scenario_kind,
@@ -698,6 +725,8 @@ class PortfolioStore:
                         END
                     ) AS status,
                     COALESCE(a.reason, '') AS decision_reason,
+                    COALESCE(a.user_reason, '') AS decision_user_reason,
+                    a.deferred_until,
                     a.acted_at AS decided_at
                 FROM portfolio_proposals AS p
                 LEFT JOIN portfolio_proposal_actions AS a
@@ -721,12 +750,29 @@ class PortfolioStore:
         expected_version: int,
         expected_hash: bytes,
         action: Literal["confirmed", "rejected", "deferred"],
+        session_digest: bytes,
+        user_reason: str,
+        deferred_until: datetime | None,
         now: datetime,
     ) -> tuple[PortfolioProposalRecord, PortfolioProposalActionRecord]:
         if now.tzinfo is None:
             raise ValueError("proposal decision time must be timezone-aware")
         if len(expected_hash) != 32:
             raise ValueError("proposal hash must be SHA-256")
+        if len(session_digest) != 32:
+            raise ValueError("proposal session digest must be SHA-256")
+        clean_reason = user_reason.strip()
+        if len(clean_reason) > 500:
+            raise ValueError("proposal decision reason is too long")
+        if action == "rejected" and not clean_reason:
+            raise ValueError("proposal rejection reason is required")
+        if action == "deferred":
+            if deferred_until is None or deferred_until.tzinfo is None:
+                raise ValueError("proposal defer time must be timezone-aware")
+            if deferred_until.astimezone(UTC) <= now.astimezone(UTC):
+                raise ValueError("proposal defer time must be in the future")
+        elif deferred_until is not None:
+            raise ValueError("proposal defer time is only valid for defer")
         with (
             self.database.pool.connection() as conn,
             conn.transaction(),
@@ -740,6 +786,7 @@ class PortfolioStore:
                     user_id,
                     version,
                     source_snapshot_id,
+                    account_id,
                     profile_version,
                     policy_version,
                     scenario_kind,
@@ -796,6 +843,7 @@ class PortfolioStore:
                         cur,
                         user_id=user_id,
                         snapshot_id=proposal.source_snapshot_id,
+                        account_id=proposal.account_id,
                         profile_version=proposal.profile_version,
                         policy_version=proposal.policy_version,
                     )
@@ -814,10 +862,13 @@ class PortfolioStore:
                     action,
                     proposal_version,
                     proposal_hash,
+                    session_digest,
                     reason,
+                    user_reason,
+                    deferred_until,
                     acted_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING
                     id,
                     proposal_id,
@@ -826,6 +877,8 @@ class PortfolioStore:
                     proposal_version,
                     proposal_hash,
                     reason,
+                    user_reason,
+                    deferred_until,
                     acted_at
                 """,
                 (
@@ -834,7 +887,14 @@ class PortfolioStore:
                     decided_action,
                     proposal.version,
                     proposal.proposal_hash,
+                    session_digest,
                     reason,
+                    clean_reason,
+                    (
+                        deferred_until.astimezone(UTC)
+                        if deferred_until is not None
+                        else None
+                    ),
                     now.astimezone(UTC),
                 ),
             )
@@ -2169,6 +2229,7 @@ def _proposal_record(row: dict[str, Any]) -> PortfolioProposalRecord:
         user_id=cast(UUID, row["user_id"]),
         version=int(row["version"]),
         source_snapshot_id=cast(UUID, row["source_snapshot_id"]),
+        account_id=str(row["account_id"]),
         profile_version=int(row["profile_version"]),
         policy_version=int(row["policy_version"]),
         scenario_kind=str(row["scenario_kind"]),
@@ -2183,6 +2244,8 @@ def _proposal_record(row: dict[str, Any]) -> PortfolioProposalRecord:
         expires_at=cast(datetime, row["expires_at"]),
         status=str(row.get("status") or "pending"),
         decision_reason=str(row.get("decision_reason") or ""),
+        decision_user_reason=str(row.get("decision_user_reason") or ""),
+        deferred_until=cast(datetime | None, row.get("deferred_until")),
         decided_at=cast(datetime | None, row.get("decided_at")),
     )
 
@@ -2198,6 +2261,8 @@ def _proposal_action_record(
         proposal_version=int(row["proposal_version"]),
         proposal_hash=bytes(row["proposal_hash"]),
         reason=str(row["reason"]),
+        user_reason=str(row.get("user_reason") or ""),
+        deferred_until=cast(datetime | None, row.get("deferred_until")),
         acted_at=cast(datetime, row["acted_at"]),
     )
 
@@ -2207,12 +2272,13 @@ def _require_current_proposal_sources(
     *,
     user_id: UUID,
     snapshot_id: UUID,
+    account_id: str,
     profile_version: int,
     policy_version: int,
 ) -> None:
     cur.execute(
         """
-        SELECT id
+        SELECT id, account_id
         FROM portfolio_snapshots
         WHERE user_id = %s
         ORDER BY captured_at DESC, created_at DESC
@@ -2221,7 +2287,11 @@ def _require_current_proposal_sources(
         (user_id,),
     )
     snapshot_row = cur.fetchone()
-    if snapshot_row is None or snapshot_row["id"] != snapshot_id:
+    if (
+        snapshot_row is None
+        or snapshot_row["id"] != snapshot_id
+        or str(snapshot_row["account_id"]) != account_id
+    ):
         raise ProposalStateError("proposal_snapshot_stale")
 
     cur.execute(
