@@ -8,7 +8,7 @@ critical candidate evidence makes a candidate ineligible instead of being guesse
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_FLOOR
+from decimal import ROUND_FLOOR, Decimal
 from typing import Literal
 
 RiskState = Literal[
@@ -408,7 +408,11 @@ def _replacement_scenario(
     if sale_proceeds <= 0:
         return _fallback_cash(holding, "sale_costs_consume_proceeds")
 
-    base_holdings = tuple(item for item in holdings if item.instrument_uid != holding.instrument_uid)
+    base_holdings = tuple(
+        item
+        for item in holdings
+        if item.instrument_uid != holding.instrument_uid
+    )
     base_exposure = _build_exposure(base_holdings)
     candidates = [
         item.candidate
