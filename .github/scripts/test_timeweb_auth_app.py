@@ -585,6 +585,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('shadow.dataset.executionStart = "shadow"', script)
         self.assertIn('sandbox.dataset.executionStart = "sandbox"', script)
         self.assertIn("Live execution остаётся выключен", script)
+        self.assertIn("R6 Sandbox токен должен разрешать тестовые методы песочницы", page)
         self.assertIn('@app.get("/api/portfolio/executions")', backend)
         self.assertIn('@app.post("/api/portfolio/executions"', backend)
         self.assertIn('"/api/portfolio/executions/{run_id}/advance"', backend)
