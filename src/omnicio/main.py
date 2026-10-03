@@ -51,6 +51,7 @@ from .security import (
     open_vkid_flow,
     pkce_challenge,
     seal_vkid_flow,
+    session_digest,
 )
 from .service import (
     AccountDeletionRejected,
@@ -145,6 +146,8 @@ class PortfolioProposalDecisionBody(BaseModel):
     action: Literal["confirm", "reject", "defer"]
     proposal_version: int = Field(ge=1)
     proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    reason: str | None = Field(default=None, max_length=500)
+    deferred_until: datetime | None = None
 
 
 def client_ip(request: Request) -> str:
@@ -202,6 +205,15 @@ def authenticated_user(
             detail="authentication required",
         )
     return user
+
+
+def authenticated_session_digest(session_token: str | None) -> bytes:
+    if not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="authentication required",
+        )
+    return session_digest(session_token)
 
 
 def callback_values(request: Request) -> dict[str, str]:
@@ -817,12 +829,14 @@ def create_portfolio_proposal(
         proposal = portfolio_store(request).create_proposal(
             user.id,
             source_snapshot_id=draft.source_snapshot_id,
+            account_id=draft.account_id,
             profile_version=draft.profile_version,
             policy_version=draft.policy_version,
             scenario_kind=draft.scenario_kind,
             target_instrument_uid=draft.target_instrument_uid,
             replaced_instrument_uid=draft.replaced_instrument_uid,
             proposal_hash=draft.proposal_hash,
+            session_digest=authenticated_session_digest(session_token),
             payload=draft.payload,
             expires_at=draft.expires_at,
         )
@@ -870,6 +884,9 @@ def decide_portfolio_proposal(
             expected_version=body.proposal_version,
             expected_hash=expected_hash,
             action=decision_action,
+            session_digest=authenticated_session_digest(session_token),
+            user_reason=body.reason or "",
+            deferred_until=body.deferred_until,
             now=datetime.now(UTC),
         )
     except ValueError as exc:
