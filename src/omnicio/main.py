@@ -664,21 +664,24 @@ async def instrument_market_stream(
             except BrokerNotConnected:
                 payload = {"state": "disconnected"}
                 event = "status"
-                delay = 15
+                delay = 0
                 retry_delay = 3
                 consecutive_failures = 0
+                stop_after_event = True
             except TBankTokenRejected:
                 payload = {"state": "reconnect"}
                 event = "status"
-                delay = 30
+                delay = 0
                 retry_delay = 3
                 consecutive_failures = 0
+                stop_after_event = True
             except ValueError:
                 payload = {"state": "invalid"}
                 event = "status"
-                delay = 30
+                delay = 0
                 retry_delay = 3
                 consecutive_failures = 0
+                stop_after_event = True
             except (TBankUnavailable, BrokerConnectionError, SecurityValueError):
                 consecutive_failures += 1
                 if consecutive_failures >= 6:
