@@ -18,6 +18,7 @@ on:
   push:
     branches:
       - main
+      - diagnostic/main-sonar-reliability-r6
 
 permissions:
   contents: read
@@ -29,7 +30,9 @@ concurrency:
 jobs:
   test:
     name: Hosted PR gate
-    if: github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.ref == 'refs/heads/diagnostic/main-sonar-reliability-r6'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
