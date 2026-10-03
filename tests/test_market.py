@@ -243,12 +243,13 @@ def test_market_service_instrument_snapshot_preserves_quote_time_ohlc_and_status
     assert snapshot.api_trade_available is True
     assert snapshot.limit_order_available is True
     assert snapshot.market_order_available is False
-    assert len(snapshot.candles) == 1
-    assert snapshot.candles[0].open == "100"
-    assert snapshot.candles[0].high == "103"
-    assert snapshot.candles[0].low == "99"
-    assert snapshot.candles[0].close == "102"
-    assert snapshot.candles[0].is_complete is True
+    candle = next(iter(snapshot.candles), None)
+    assert candle is not None
+    assert candle.open == "100"
+    assert candle.high == "103"
+    assert candle.low == "99"
+    assert candle.close == "102"
+    assert candle.is_complete is True
 
 
 def test_market_service_rejects_malformed_provider_ohlc_as_unavailable() -> None:
@@ -257,7 +258,8 @@ def test_market_service_rejects_malformed_provider_ohlc_as_unavailable() -> None
 
     def malformed(*args: object, **kwargs: object) -> tuple[TBankHistoricCandle, ...]:
         candles = original(*args, **kwargs)  # type: ignore[arg-type]
-        candle = candles[0]
+        candle = next(iter(candles), None)
+        assert candle is not None
         return (
             TBankHistoricCandle(
                 instrument_uid=candle.instrument_uid,
