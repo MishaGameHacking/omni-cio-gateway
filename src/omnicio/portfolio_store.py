@@ -147,6 +147,21 @@ class ReinvestmentMandateRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ReinvestmentMandateSpec:
+    account_id: str
+    profile_version: int
+    policy_version: int
+    allow_dividends: bool
+    allow_coupons: bool
+    cash_reserve_rub: Decimal
+    max_order_notional_rub: Decimal
+    max_daily_notional_rub: Decimal
+    max_monthly_notional_rub: Decimal
+    max_slippage_bps: int
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ReinvestmentIncomeSummary:
     mandate_id: UUID
     observed_count: int
@@ -2163,55 +2178,15 @@ class PortfolioStore:
         self,
         user_id: UUID,
         *,
-        account_id: str,
-        profile_version: int,
-        policy_version: int,
-        allow_dividends: bool,
-        allow_coupons: bool,
-        cash_reserve_rub: Decimal,
-        max_order_notional_rub: Decimal,
-        max_daily_notional_rub: Decimal,
-        max_monthly_notional_rub: Decimal,
-        max_slippage_bps: int,
+        spec: ReinvestmentMandateSpec,
         session_digest: bytes,
-        expires_at: datetime,
         now: datetime,
     ) -> ReinvestmentMandateRecord:
-        if now.tzinfo is None or expires_at.tzinfo is None:
-            raise ValueError("reinvestment mandate times must be timezone-aware")
-        now_utc = now.astimezone(UTC)
-        expires_utc = expires_at.astimezone(UTC)
-        if not 1 <= len(account_id) <= 128:
-            raise ValueError("reinvestment mandate account is invalid")
-        if profile_version <= 0 or policy_version <= 0:
-            raise ValueError("reinvestment mandate policy versions are invalid")
-        if not allow_dividends and not allow_coupons:
-            raise ValueError("reinvestment mandate requires an eligible income type")
-        if len(session_digest) != 32:
-            raise ValueError("reinvestment mandate session digest must be SHA-256")
-        if expires_utc <= now_utc or expires_utc > now_utc + timedelta(days=90):
-            raise ValueError("reinvestment mandate expiry must be within 90 days")
-        if not 0 <= max_slippage_bps <= 500:
-            raise ValueError("reinvestment mandate slippage is invalid")
-
-        money_values = (
-            cash_reserve_rub,
-            max_order_notional_rub,
-            max_daily_notional_rub,
-            max_monthly_notional_rub,
+        now_utc, expires_utc = _validate_reinvestment_mandate_spec(
+            spec,
+            session_digest=session_digest,
+            now=now,
         )
-        kopeck = Decimal("0.01")
-        if any(not value.is_finite() for value in money_values):
-            raise ValueError("reinvestment mandate money values must be finite")
-        if cash_reserve_rub < 0 or max_order_notional_rub <= 0:
-            raise ValueError("reinvestment mandate money caps are invalid")
-        if (
-            max_daily_notional_rub < max_order_notional_rub
-            or max_monthly_notional_rub < max_daily_notional_rub
-        ):
-            raise ValueError("reinvestment mandate cap hierarchy is invalid")
-        if any(value.quantize(kopeck) != value for value in money_values):
-            raise ValueError("reinvestment mandate money values require kopeck precision")
 
         with (
             self.database.pool.connection() as conn,
@@ -2223,39 +2198,7 @@ class PortfolioStore:
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
                 (f"portfolio-reinvestment-mandate:{user_id}",),
             )
-            cur.execute(
-                """
-                SELECT version
-                FROM investment_profile_versions
-                WHERE user_id = %s
-                ORDER BY version DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            )
-            profile_row = cur.fetchone()
-            if (
-                profile_row is None
-                or int(cast(dict[str, Any], profile_row)["version"]) != profile_version
-            ):
-                raise ReinvestmentMandateError("reinvestment_profile_stale")
-
-            cur.execute(
-                """
-                SELECT version
-                FROM balancing_policy_versions
-                WHERE user_id = %s
-                ORDER BY version DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            )
-            policy_row = cur.fetchone()
-            if (
-                policy_row is None
-                or int(cast(dict[str, Any], policy_row)["version"]) != policy_version
-            ):
-                raise ReinvestmentMandateError("reinvestment_policy_stale")
+            self._require_reinvestment_authority(cur, user_id, spec)
 
             cur.execute(
                 """
@@ -2323,17 +2266,17 @@ class PortfolioStore:
                 """,
                 (
                     user_id,
-                    account_id,
+                    spec.account_id,
                     version,
-                    profile_version,
-                    policy_version,
-                    allow_dividends,
-                    allow_coupons,
-                    cash_reserve_rub,
-                    max_order_notional_rub,
-                    max_daily_notional_rub,
-                    max_monthly_notional_rub,
-                    max_slippage_bps,
+                    spec.profile_version,
+                    spec.policy_version,
+                    spec.allow_dividends,
+                    spec.allow_coupons,
+                    spec.cash_reserve_rub,
+                    spec.max_order_notional_rub,
+                    spec.max_daily_notional_rub,
+                    spec.max_monthly_notional_rub,
+                    spec.max_slippage_bps,
                     session_digest,
                     now_utc,
                     expires_utc,
@@ -2343,6 +2286,65 @@ class PortfolioStore:
             if row is None:
                 raise RuntimeError("reinvestment mandate insert returned no row")
             return _reinvestment_mandate(cast(dict[str, Any], row))
+
+    @staticmethod
+    def _require_reinvestment_authority(
+        cur: Any,
+        user_id: UUID,
+        spec: ReinvestmentMandateSpec,
+    ) -> None:
+        cur.execute(
+            """
+            SELECT environment, account_id
+            FROM tbank_connection
+            WHERE user_id = %s
+            FOR SHARE
+            """,
+            (user_id,),
+        )
+        connection_row = cur.fetchone()
+        if connection_row is None:
+            raise ReinvestmentMandateError("reinvestment_account_changed")
+        connection = cast(dict[str, Any], connection_row)
+        if (
+            str(connection["environment"]) != "prod"
+            or str(connection["account_id"]) != spec.account_id
+        ):
+            raise ReinvestmentMandateError("reinvestment_account_changed")
+
+        cur.execute(
+            """
+            SELECT version
+            FROM investment_profile_versions
+            WHERE user_id = %s
+            ORDER BY version DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        profile_row = cur.fetchone()
+        if (
+            profile_row is None
+            or int(cast(dict[str, Any], profile_row)["version"]) != spec.profile_version
+        ):
+            raise ReinvestmentMandateError("reinvestment_profile_stale")
+
+        cur.execute(
+            """
+            SELECT version
+            FROM balancing_policy_versions
+            WHERE user_id = %s
+            ORDER BY version DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        policy_row = cur.fetchone()
+        if (
+            policy_row is None
+            or int(cast(dict[str, Any], policy_row)["version"]) != spec.policy_version
+        ):
+            raise ReinvestmentMandateError("reinvestment_policy_stale")
 
     def revoke_reinvestment_mandate(
         self,
@@ -2689,6 +2691,50 @@ def _freshness_status(
         if age > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds())
         else "fresh"
     )
+
+
+def _validate_reinvestment_mandate_spec(
+    spec: ReinvestmentMandateSpec,
+    *,
+    session_digest: bytes,
+    now: datetime,
+) -> tuple[datetime, datetime]:
+    if now.tzinfo is None or spec.expires_at.tzinfo is None:
+        raise ValueError("reinvestment mandate times must be timezone-aware")
+    now_utc = now.astimezone(UTC)
+    expires_utc = spec.expires_at.astimezone(UTC)
+    if not 1 <= len(spec.account_id) <= 128:
+        raise ValueError("reinvestment mandate account is invalid")
+    if spec.profile_version <= 0 or spec.policy_version <= 0:
+        raise ValueError("reinvestment mandate policy versions are invalid")
+    if not spec.allow_dividends and not spec.allow_coupons:
+        raise ValueError("reinvestment mandate requires an eligible income type")
+    if len(session_digest) != 32:
+        raise ValueError("reinvestment mandate session digest must be SHA-256")
+    if expires_utc <= now_utc or expires_utc > now_utc + timedelta(days=90):
+        raise ValueError("reinvestment mandate expiry must be within 90 days")
+    if not 0 <= spec.max_slippage_bps <= 500:
+        raise ValueError("reinvestment mandate slippage is invalid")
+
+    money_values = (
+        spec.cash_reserve_rub,
+        spec.max_order_notional_rub,
+        spec.max_daily_notional_rub,
+        spec.max_monthly_notional_rub,
+    )
+    if any(not value.is_finite() for value in money_values):
+        raise ValueError("reinvestment mandate money values must be finite")
+    if spec.cash_reserve_rub < 0 or spec.max_order_notional_rub <= 0:
+        raise ValueError("reinvestment mandate money caps are invalid")
+    if (
+        spec.max_daily_notional_rub < spec.max_order_notional_rub
+        or spec.max_monthly_notional_rub < spec.max_daily_notional_rub
+    ):
+        raise ValueError("reinvestment mandate cap hierarchy is invalid")
+    kopeck = Decimal("0.01")
+    if any(value.quantize(kopeck) != value for value in money_values):
+        raise ValueError("reinvestment mandate money values require kopeck precision")
+    return now_utc, expires_utc
 
 
 def _profile(row: dict[str, Any]) -> InvestmentProfileRecord:
