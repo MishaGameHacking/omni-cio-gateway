@@ -61,6 +61,9 @@ class Settings:
     terms_version: str
     vkid_flow_ttl_seconds: int
     session_ttl_seconds: int
+    portfolio_live_execution_enabled: bool
+    portfolio_live_max_order_rub: int
+    portfolio_live_max_daily_rub: int
 
     @property
     def vkid_ready(self) -> bool:
@@ -72,6 +75,12 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    live_max_order = positive_int("PORTFOLIO_LIVE_MAX_ORDER_RUB", 10_000)
+    live_max_daily = positive_int("PORTFOLIO_LIVE_MAX_DAILY_RUB", 20_000)
+    if live_max_daily < live_max_order:
+        raise ConfigurationError(
+            "PORTFOLIO_LIVE_MAX_DAILY_RUB must be >= PORTFOLIO_LIVE_MAX_ORDER_RUB"
+        )
     return Settings(
         database_url=required("DATABASE_URL"),
         ip_key=required("CLIENT_IP_KEY"),
@@ -86,4 +95,10 @@ def load_settings() -> Settings:
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
         vkid_flow_ttl_seconds=positive_int("VKID_FLOW_TTL_SECONDS", 600),
         session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", 34_560_000),
+        portfolio_live_execution_enabled=boolean(
+            "PORTFOLIO_LIVE_EXECUTION_ENABLED",
+            False,
+        ),
+        portfolio_live_max_order_rub=live_max_order,
+        portfolio_live_max_daily_rub=live_max_daily,
     )
