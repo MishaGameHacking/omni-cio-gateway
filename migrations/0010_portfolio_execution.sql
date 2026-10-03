@@ -369,7 +369,7 @@ CREATE POLICY portfolio_execution_events_tenant
 CREATE OR REPLACE FUNCTION omnicio_reject_execution_delete()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $omnicio_cleanup$
 BEGIN
     IF current_setting('omnicio.financial_cleanup', true) IN (
         'account_delete',
@@ -379,7 +379,7 @@ BEGIN
     END IF;
     RAISE EXCEPTION 'execution ledger rows cannot be deleted';
 END;
-$;
+$omnicio_cleanup$;
 
 DROP TRIGGER IF EXISTS portfolio_execution_runs_no_delete
     ON portfolio_execution_runs;
@@ -398,7 +398,7 @@ EXECUTE FUNCTION omnicio_reject_execution_delete();
 CREATE OR REPLACE FUNCTION omnicio_reject_execution_event_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $omnicio_cleanup$
 BEGIN
     IF TG_OP = 'DELETE'
        AND current_setting('omnicio.financial_cleanup', true) IN (
@@ -409,7 +409,7 @@ BEGIN
     END IF;
     RAISE EXCEPTION 'execution events are immutable';
 END;
-$;
+$omnicio_cleanup$;
 
 DROP TRIGGER IF EXISTS portfolio_execution_events_immutable
     ON portfolio_execution_events;
