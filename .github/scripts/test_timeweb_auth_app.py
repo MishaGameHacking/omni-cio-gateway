@@ -131,9 +131,39 @@ class AuthAppDeployTests(unittest.TestCase):
         os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
         os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
         os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
-        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v6"
-        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v6"
-        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v6"
+        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-03-v7"
+        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-03-v7"
+        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-03-v7"
+
+    def test_legal_documents_must_match_configured_versions(self) -> None:
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
+            with tempfile.TemporaryDirectory() as temp:
+                root = pathlib.Path(temp)
+                legal = root / "web" / "legal"
+                legal.mkdir(parents=True)
+                for filename, version in (
+                    ("privacy.html", "2026-10-03-v7"),
+                    ("consent.html", "2026-10-03-v7"),
+                    ("terms.html", "2026-10-03-v7"),
+                ):
+                    (legal / filename).write_text(
+                        " ".join(MODULE.LEGAL_OPERATOR_MARKERS)
+                        + f" версия {version}",
+                        encoding="utf-8",
+                    )
+                MODULE.validate_legal_documents(root)
+                (legal / "terms.html").write_text(
+                    " ".join(MODULE.LEGAL_OPERATOR_MARKERS)
+                    + " версия stale",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(MODULE.InfraError, "does not match"):
+                    MODULE.validate_legal_documents(root)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
 
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
@@ -992,7 +1022,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.14.4"', project)
+        self.assertIn('version = "0.15.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
