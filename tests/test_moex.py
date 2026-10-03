@@ -209,9 +209,11 @@ def test_bond_liquidity_averages_history_value_without_hidden_participation() ->
 
 
 def test_bond_liquidity_requires_ordered_window() -> None:
-    with patch("urllib.request.urlopen") as urlopen:
-        with pytest.raises(ValueError, match="window"):
-            MoexIssClient().bond_liquidity(
+    with (
+        patch("urllib.request.urlopen") as urlopen,
+        pytest.raises(ValueError, match="window"),
+    ):
+        MoexIssClient().bond_liquidity(
                 "RU000A000001",
                 "TQCB",
                 from_date=date(2026, 10, 3),
@@ -241,14 +243,18 @@ def test_bond_snapshot_rejects_mismatched_security() -> None:
             "marketdata": {"columns": ["SECID"], "data": []},
         }
     )
-    with patch("urllib.request.urlopen", return_value=response):
-        with pytest.raises(MoexError, match="different security"):
-            MoexIssClient().bond_snapshot("RU000A000001", "TQCB")
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(MoexError, match="different security"),
+    ):
+        MoexIssClient().bond_snapshot("RU000A000001", "TQCB")
 
 
 @pytest.mark.parametrize("value", ["", "bad/value", " "])
 def test_iss_identifiers_are_validated_before_network(value: str) -> None:
-    with patch("urllib.request.urlopen") as urlopen:
-        with pytest.raises(ValueError):
-            MoexIssClient().bond_snapshot(value, "TQCB")
+    with (
+        patch("urllib.request.urlopen") as urlopen,
+        pytest.raises(ValueError),
+    ):
+        MoexIssClient().bond_snapshot(value, "TQCB")
     urlopen.assert_not_called()
