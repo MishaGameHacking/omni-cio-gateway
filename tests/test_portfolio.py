@@ -497,6 +497,70 @@ def test_analysis_endpoint_has_no_write_method() -> None:
 
 
 
+def test_balancing_preview_http_is_private_tenant_scoped_and_read_only() -> None:
+    expected = {
+        "status": "observed",
+        "stage": "r4_preview",
+        "execution_enabled": False,
+        "proposal_enabled": False,
+    }
+    profile = object()
+    policy = object()
+    context = {"snapshot_id": "snapshot"}
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.build_balancing_payload") as builder,
+    ):
+        user.return_value.id = "server-resolved-user"
+        store.return_value.current_profile.return_value = profile
+        store.return_value.current_balancing_policy.return_value = policy
+        store.return_value.latest_balancing_context.return_value = context
+        builder.return_value = expected
+
+        response = TestClient(app).get(
+            "/api/portfolio/balancing?user_id=attacker"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["execution_enabled"] is False
+    assert response.json()["proposal_enabled"] is False
+    store.return_value.current_profile.assert_called_once_with(
+        "server-resolved-user"
+    )
+    store.return_value.current_balancing_policy.assert_called_once_with(
+        "server-resolved-user"
+    )
+    store.return_value.latest_balancing_context.assert_called_once_with(
+        "server-resolved-user"
+    )
+    builder.assert_called_once_with(
+        profile=profile,
+        policy_record=policy,
+        context=context,
+    )
+
+    write_response = TestClient(app).post(
+        "/api/portfolio/balancing",
+        json={"confirm": True},
+    )
+    assert write_response.status_code == 405
+
+
+def test_balancing_preview_requires_session_before_touching_store() -> None:
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        auth.return_value.refresh_session.return_value = None
+        response = TestClient(app).get("/api/portfolio/balancing")
+
+    assert response.status_code == 401
+    store.assert_not_called()
+
+
 def test_intelligence_http_requires_session_before_touching_store() -> None:
     with (
         patch("omnicio.main.service") as auth,
