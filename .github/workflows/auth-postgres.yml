@@ -153,7 +153,8 @@ jobs:
             --migration migrations/0005_drop_phone_auth.sql \
             --migration migrations/0006_portfolio_observer.sql \
             --migration migrations/0007_portfolio_evidence.sql \
-            --migration migrations/0008_balancing_policy.sql
+            --migration migrations/0008_balancing_policy.sql \
+            --migration migrations/0009_portfolio_proposals.sql
 
       - name: Surface private network gate
         if: steps.postgres.outputs.status == 'pending_server_network'
