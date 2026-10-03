@@ -972,6 +972,99 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
             app.state.database = previous_database
 
 
+def test_execution_http_uses_session_tenant_and_exposes_no_live_mode() -> None:
+    run = type(
+        "Run",
+        (),
+        {
+            "id": UUID("00000000-0000-0000-0000-000000000901"),
+            "proposal_id": UUID("00000000-0000-0000-0000-000000000902"),
+            "proposal_version": 3,
+            "proposal_hash": b"h" * 32,
+            "account_id": "sandbox-account",
+            "mode": "shadow",
+            "provider_environment": None,
+            "status": "succeeded",
+            "error_code": "",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+            "finished_at": datetime.now(UTC),
+        },
+    )()
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.execution_store") as store,
+    ):
+        user.return_value.id = "server-user"
+        store.return_value.executions.return_value = (run,)
+        response = TestClient(app).get(
+            "/api/portfolio/executions?user_id=attacker"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    payload = response.json()
+    assert payload["modes"] == ["shadow", "sandbox"]
+    assert payload["live_execution_enabled"] is False
+    assert payload["executions"][0]["account_id"] == "sandbox-account"
+    store.return_value.executions.assert_called_once_with("server-user")
+
+
+def test_execution_create_accepts_only_proposal_identity_and_safe_mode() -> None:
+    proposal_id = "00000000-0000-0000-0000-000000000903"
+    base = {
+        "proposal_id": proposal_id,
+        "proposal_version": 4,
+        "proposal_hash": "ab" * 32,
+        "mode": "shadow",
+    }
+
+    extra_trade = TestClient(app).post(
+        "/api/portfolio/executions",
+        json={**base, "instrument_uid": "attacker", "lots": 999},
+        headers={"Origin": "https://omnicio.ru"},
+    )
+    assert extra_trade.status_code == 422
+
+    live_mode = TestClient(app).post(
+        "/api/portfolio/executions",
+        json={**base, "mode": "live"},
+        headers={"Origin": "https://omnicio.ru"},
+    )
+    assert live_mode.status_code == 422
+
+
+def test_execution_create_requires_origin_before_execution_service() -> None:
+    body = {
+        "proposal_id": "00000000-0000-0000-0000-000000000904",
+        "proposal_version": 1,
+        "proposal_hash": "cd" * 32,
+        "mode": "sandbox",
+    }
+    with patch("omnicio.main.execution_service") as executor:
+        response = TestClient(app).post(
+            "/api/portfolio/executions",
+            json=body,
+            headers={"Origin": "https://evil.example"},
+        )
+
+    assert response.status_code == 403
+    executor.assert_not_called()
+
+
+def test_execution_get_requires_session_before_touching_ledger() -> None:
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.execution_store") as store,
+    ):
+        auth.return_value.refresh_session.return_value = None
+        response = TestClient(app).get("/api/portfolio/executions")
+
+    assert response.status_code == 401
+    store.assert_not_called()
+
+
 def test_intelligence_http_requires_session_before_touching_store() -> None:
     with (
         patch("omnicio.main.service") as auth,
