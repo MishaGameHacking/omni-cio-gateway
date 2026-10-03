@@ -110,6 +110,9 @@ class TBankHistoricCandle:
     time: datetime
     is_complete: bool
     source: str
+    open: str | None = None
+    high: str | None = None
+    low: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +120,17 @@ class TBankLastPrice:
     instrument_uid: str
     price: str
     time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TBankTradingStatus:
+    instrument_uid: str
+    trading_status: str
+    limit_order_available: bool
+    market_order_available: bool
+    api_trade_available: bool
+    best_price_order_available: bool
+    only_best_price: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,7 +528,7 @@ class TBankInvestClient:
             )
         return tuple(result)
 
-    def get_daily_exchange_candles(
+    def get_exchange_candles(
         self,
         token: str,
         environment: TBankEnvironment,
@@ -522,39 +536,61 @@ class TBankInvestClient:
         *,
         from_at: datetime,
         to_at: datetime,
+        interval: str,
+        limit: int | None = None,
     ) -> tuple[TBankHistoricCandle, ...]:
         instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        allowed_intervals = {
+            "CANDLE_INTERVAL_5_MIN": timedelta(days=1),
+            "CANDLE_INTERVAL_30_MIN": timedelta(hours=20),
+            "CANDLE_INTERVAL_HOUR": timedelta(days=93),
+            "CANDLE_INTERVAL_4_HOUR": timedelta(days=93),
+            "CANDLE_INTERVAL_DAY": timedelta(days=366 * 6),
+        }
+        max_window = allowed_intervals.get(interval)
+        if max_window is None:
+            raise ValueError("unsupported candle interval")
         if from_at.tzinfo is None or to_at.tzinfo is None:
             raise ValueError("candle boundaries must be timezone-aware")
         if from_at > to_at:
             raise ValueError("candle start must not be after end")
-        if to_at - from_at > timedelta(days=366):
-            raise ValueError("candle window must not exceed one calendar year")
+        if to_at - from_at > max_window:
+            raise ValueError("candle window exceeds interval limit")
+        if limit is not None and not 1 <= limit <= 2400:
+            raise ValueError("candle limit must be between 1 and 2400")
+
+        body: dict[str, object] = {
+            "instrumentId": instrument,
+            "from": _utc_timestamp(from_at),
+            "to": _utc_timestamp(to_at),
+            "interval": interval,
+            "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+        }
+        if limit is not None:
+            body["limit"] = limit
+
         payload = self._post(
             token=token,
             environment=environment,
             service="MarketDataService",
             method="GetCandles",
-            body={
-                "instrumentId": instrument,
-                "from": _utc_timestamp(from_at),
-                "to": _utc_timestamp(to_at),
-                "interval": "CANDLE_INTERVAL_DAY",
-                "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
-            },
+            body=body,
         )
         result: list[TBankHistoricCandle] = []
         seen_times: set[datetime] = set()
         for raw in _required_list(payload, "candles"):
             item = _required_object(raw, "historic candle")
+            open_value = _quotation(item.get("open"))
+            high = _quotation(item.get("high"))
+            low = _quotation(item.get("low"))
             close = _quotation(item.get("close"))
             candle_time = _optional_provider_timestamp(item.get("time"))
             volume_raw = item.get("volume")
             complete = item.get("isComplete")
-            source = _text(item.get("candleSourceType")).strip()
+            source_name = _text(item.get("candleSourceType")).strip()
+            prices = (open_value, high, low, close)
             if (
-                close is None
-                or Decimal(close) <= 0
+                any(value is None or Decimal(value) <= 0 for value in prices)
                 or candle_time is None
                 or isinstance(volume_raw, bool)
                 or not isinstance(complete, bool)
@@ -572,7 +608,7 @@ class TBankInvestClient:
                 raise TBankUnavailable(
                     "T-Invest historic candle has negative volume"
                 )
-            if source and source != "CANDLE_SOURCE_EXCHANGE":
+            if source_name and source_name != "CANDLE_SOURCE_EXCHANGE":
                 raise TBankUnavailable(
                     "T-Invest historic candle is not exchange-sourced"
                 )
@@ -580,18 +616,96 @@ class TBankInvestClient:
                 raise TBankUnavailable(
                     "T-Invest historic candles contain duplicate timestamps"
                 )
+            if Decimal(cast(str, high)) < Decimal(cast(str, low)):
+                raise TBankUnavailable("T-Invest historic candle has invalid high/low")
+            if (
+                Decimal(cast(str, open_value)) < Decimal(cast(str, low))
+                or Decimal(cast(str, open_value)) > Decimal(cast(str, high))
+                or Decimal(cast(str, close)) < Decimal(cast(str, low))
+                or Decimal(cast(str, close)) > Decimal(cast(str, high))
+            ):
+                raise TBankUnavailable("T-Invest historic candle OHLC is inconsistent")
             seen_times.add(candle_time)
             result.append(
                 TBankHistoricCandle(
                     instrument_uid=instrument,
-                    close=close,
+                    close=cast(str, close),
                     volume_lots=volume,
                     time=candle_time,
                     is_complete=complete,
-                    source=source or "CANDLE_SOURCE_EXCHANGE",
+                    source=source_name or "CANDLE_SOURCE_EXCHANGE",
+                    open=cast(str, open_value),
+                    high=cast(str, high),
+                    low=cast(str, low),
                 )
             )
         return tuple(result)
+
+    def get_daily_exchange_candles(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        return self.get_exchange_candles(
+            token,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+            interval="CANDLE_INTERVAL_DAY",
+        )
+
+    def get_trading_status(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+    ) -> TBankTradingStatus:
+        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetTradingStatus",
+            body={"instrumentId": instrument},
+        )
+        returned_uid = _text(payload.get("instrumentUid")).strip()
+        if returned_uid != instrument:
+            raise TBankUnavailable(
+                "T-Invest trading status returned a different instrument"
+            )
+
+        flags: dict[str, bool] = {}
+        for field in (
+            "limitOrderAvailableFlag",
+            "marketOrderAvailableFlag",
+            "apiTradeAvailableFlag",
+            "bestpriceOrderAvailableFlag",
+            "onlyBestPrice",
+        ):
+            value = payload.get(field)
+            if not isinstance(value, bool):
+                raise TBankUnavailable(
+                    f"T-Invest trading status has invalid {field}"
+                )
+            flags[field] = value
+
+        trading_status = _text(payload.get("tradingStatus")).strip()
+        if not trading_status:
+            raise TBankUnavailable("T-Invest trading status is missing")
+        return TBankTradingStatus(
+            instrument_uid=instrument,
+            trading_status=trading_status,
+            limit_order_available=flags["limitOrderAvailableFlag"],
+            market_order_available=flags["marketOrderAvailableFlag"],
+            api_trade_available=flags["apiTradeAvailableFlag"],
+            best_price_order_available=flags["bestpriceOrderAvailableFlag"],
+            only_best_price=flags["onlyBestPrice"],
+        )
 
     def get_last_prices(
         self,
