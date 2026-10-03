@@ -177,6 +177,25 @@
   const liveMandateSave = requiredElement("#live-mandate-save");
   const liveMandateRevoke = requiredElement("#live-mandate-revoke");
   const liveMandateMessage = requiredElement("#live-mandate-message");
+  const reinvestmentStatus = requiredElement("#reinvestment-status");
+  const reinvestmentSummary = requiredElement("#reinvestment-summary");
+  const reinvestmentObserved = requiredElement("#reinvestment-observed");
+  const reinvestmentSpendable = requiredElement("#reinvestment-spendable");
+  const reinvestmentBreakdown = requiredElement("#reinvestment-breakdown");
+  const reinvestmentForm = requiredElement("#reinvestment-form");
+  const reinvestmentReserve = requiredElement("#reinvestment-reserve");
+  const reinvestmentMaxOrder = requiredElement("#reinvestment-max-order");
+  const reinvestmentMaxDaily = requiredElement("#reinvestment-max-daily");
+  const reinvestmentMaxMonthly = requiredElement("#reinvestment-max-monthly");
+  const reinvestmentSlippage = requiredElement("#reinvestment-slippage");
+  const reinvestmentExpiresAt = requiredElement("#reinvestment-expires-at");
+  const reinvestmentProfileId = requiredElement("#reinvestment-profile-id");
+  const reinvestmentDividends = requiredElement("#reinvestment-dividends");
+  const reinvestmentCoupons = requiredElement("#reinvestment-coupons");
+  const reinvestmentConfirm = requiredElement("#reinvestment-confirm");
+  const reinvestmentSave = requiredElement("#reinvestment-save");
+  const reinvestmentRevoke = requiredElement("#reinvestment-revoke");
+  const reinvestmentMessage = requiredElement("#reinvestment-message");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
@@ -233,6 +252,8 @@
   let liveMandateRequestInFlight = false;
   let liveOperatorEnabled = false;
   let liveMandate = null;
+  let reinvestmentRequestInFlight = false;
+  let reinvestmentMandate = null;
   let liveOperatorMaxOrder = 0;
   let liveOperatorMaxDaily = 0;
   let connectedTbankEnvironment = null;
@@ -606,6 +627,19 @@
       }).format(value);
       return `${sign && value > 0 ? "+" : ""}${formatted} ${money.currency}`;
     }
+  };
+
+  const formatRub = (value) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) {
+      return "—";
+    }
+    return new Intl.NumberFormat("ru-RU", {
+      style: "currency",
+      currency: "RUB",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(amount);
   };
 
   const formatPercent = (value, {sign = false} = {}) => {
