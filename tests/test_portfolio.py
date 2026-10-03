@@ -973,6 +973,23 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
             app.state.database = previous_database
 
 
+def test_live_mandate_http_rejects_sub_kopeck_caps_before_authority_checks() -> None:
+    response = TestClient(app).put(
+        "/api/portfolio/live-execution/mandate",
+        json={
+            "account_id": "production-account",
+            "max_order_notional_rub": "100.001",
+            "max_daily_notional_rub": "200.00",
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "confirm_public_id": "000000001",
+            "confirm_live_execution": True,
+        },
+        headers={"Origin": "https://omnicio.ru"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_execution_http_uses_session_tenant_and_keeps_live_dormant_by_config() -> None:
     run = type(
         "Run",
