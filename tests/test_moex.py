@@ -11,17 +11,36 @@ from omnicio.moex import MoexError, MoexIssClient
 
 
 class FakeResponse:
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(self, payload: dict[str, object], *, status: int = 200) -> None:
         self.payload = payload
+        self.status = status
 
-    def __enter__(self) -> FakeResponse:
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode()
+
+
+class FakeConnection:
+    def __init__(self, response: FakeResponse) -> None:
+        self.response = response
+        self.requests: list[tuple[str, str, dict[str, str]]] = []
+
+    def __enter__(self) -> FakeConnection:
         return self
 
     def __exit__(self, *args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return json.dumps(self.payload).encode()
+    def request(
+        self,
+        method: str,
+        target: str,
+        *,
+        headers: dict[str, str],
+    ) -> None:
+        self.requests.append((method, target, headers))
+
+    def getresponse(self) -> FakeResponse:
+        return self.response
 
 
 def test_bond_snapshot_uses_official_iss_fields_and_conservative_ytw() -> None:
@@ -74,7 +93,8 @@ def test_bond_snapshot_uses_official_iss_fields_and_conservative_ytw() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    connection = FakeConnection(response)
+    with patch("http.client.HTTPSConnection", return_value=connection) as client:
         snapshot = MoexIssClient().bond_snapshot("ru000a000001", "tqcb")
 
     assert snapshot is not None
@@ -89,13 +109,16 @@ def test_bond_snapshot_uses_official_iss_fields_and_conservative_ytw() -> None:
     assert snapshot.accrued_interest_rub == Decimal("17.25")
     assert snapshot.value_today_rub == Decimal("15000000.0")
     assert snapshot.volume_today == Decimal("14500.0")
-    request = urlopen.call_args.args[0]
-    assert request.full_url.startswith(
-        "https://iss.moex.com/iss/engines/stock/markets/bonds/boards/"
+    client.assert_called_once()
+    method, target, headers = connection.requests[0]
+    assert method == "GET"
+    assert target.startswith(
+        "/iss/engines/stock/markets/bonds/boards/"
         "TQCB/securities/RU000A000001.json?"
     )
-    assert "YIELDTOOFFER" in request.full_url
-    assert "CALLOPTIONDURATION" in request.full_url
+    assert "YIELDTOOFFER" in target
+    assert "CALLOPTIONDURATION" in target
+    assert headers["Accept"] == "application/json"
 
 
 def test_security_identity_matches_exact_isin_and_exposes_official_issuer() -> None:
@@ -134,7 +157,8 @@ def test_security_identity_matches_exact_isin_and_exposes_official_issuer() -> N
             }
         }
     )
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    connection = FakeConnection(response)
+    with patch("http.client.HTTPSConnection", return_value=connection):
         identity = MoexIssClient().security_identity(
             "RU000A000001",
             expected_isin="RU000A000001",
@@ -147,7 +171,7 @@ def test_security_identity_matches_exact_isin_and_exposes_official_issuer() -> N
     assert identity.issuer_inn == "7700000000"
     assert identity.primary_board_id == "TQCB"
     assert identity.is_traded is True
-    assert "/iss/securities.json?" in urlopen.call_args.args[0].full_url
+    assert "/iss/securities.json?" in connection.requests[0][1]
 
 
 def test_security_identity_does_not_accept_near_isin_match() -> None:
@@ -169,7 +193,8 @@ def test_security_identity_does_not_accept_near_isin_match() -> None:
             }
         }
     )
-    with patch("urllib.request.urlopen", return_value=response):
+    connection = FakeConnection(response)
+    with patch("http.client.HTTPSConnection", return_value=connection):
         assert (
             MoexIssClient().security_identity(
                 "RU000A000001",
@@ -191,7 +216,8 @@ def test_bond_liquidity_averages_history_value_without_hidden_participation() ->
             }
         }
     )
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    connection = FakeConnection(response)
+    with patch("http.client.HTTPSConnection", return_value=connection):
         snapshot = MoexIssClient().bond_liquidity(
             "RU000A000001",
             "TQCB",
@@ -203,14 +229,14 @@ def test_bond_liquidity_averages_history_value_without_hidden_participation() ->
     assert snapshot.observed_days == 2
     assert snapshot.total_value_rub == Decimal("4000000")
     assert snapshot.average_daily_value_rub == Decimal("2000000")
-    request = urlopen.call_args.args[0]
-    assert "/history/engines/stock/markets/bonds/boards/" in request.full_url
-    assert "VALUE" in request.full_url
+    target = connection.requests[0][1]
+    assert "/history/engines/stock/markets/bonds/boards/" in target
+    assert "VALUE" in target
 
 
 def test_bond_liquidity_requires_ordered_window() -> None:
     with (
-        patch("urllib.request.urlopen") as urlopen,
+        patch("http.client.HTTPSConnection") as client,
         pytest.raises(ValueError, match="window"),
     ):
         MoexIssClient().bond_liquidity(
@@ -219,7 +245,7 @@ def test_bond_liquidity_requires_ordered_window() -> None:
                 from_date=date(2026, 10, 3),
                 till_date=date(2026, 10, 2),
             )
-    urlopen.assert_not_called()
+    client.assert_not_called()
 
 
 def test_bond_snapshot_returns_none_when_iss_has_no_security() -> None:
@@ -229,7 +255,8 @@ def test_bond_snapshot_returns_none_when_iss_has_no_security() -> None:
             "marketdata": {"columns": ["SECID"], "data": []},
         }
     )
-    with patch("urllib.request.urlopen", return_value=response):
+    connection = FakeConnection(response)
+    with patch("http.client.HTTPSConnection", return_value=connection):
         assert MoexIssClient().bond_snapshot("RU000A000001", "TQCB") is None
 
 
@@ -244,7 +271,10 @@ def test_bond_snapshot_rejects_mismatched_security() -> None:
         }
     )
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch(
+            "http.client.HTTPSConnection",
+            return_value=FakeConnection(response),
+        ),
         pytest.raises(MoexError, match="different security"),
     ):
         MoexIssClient().bond_snapshot("RU000A000001", "TQCB")
@@ -253,8 +283,32 @@ def test_bond_snapshot_rejects_mismatched_security() -> None:
 @pytest.mark.parametrize("value", ["", "bad/value", " "])
 def test_iss_identifiers_are_validated_before_network(value: str) -> None:
     with (
-        patch("urllib.request.urlopen") as urlopen,
+        patch("http.client.HTTPSConnection") as client,
         pytest.raises(ValueError),
     ):
         MoexIssClient().bond_snapshot(value, "TQCB")
-    urlopen.assert_not_called()
+    client.assert_not_called()
+
+
+
+def test_moex_fetch_rejects_off_origin_url_before_network() -> None:
+    with (
+        patch("http.client.HTTPSConnection") as client,
+        pytest.raises(MoexError, match="fixed provider origin"),
+    ):
+        MoexIssClient()._get_payload(
+            "https://evil.example/iss/securities.json?q=RU000A000001"
+        )
+    client.assert_not_called()
+
+
+def test_moex_fetch_rejects_non_success_http_status() -> None:
+    connection = FakeConnection(FakeResponse({}, status=302))
+    with (
+        patch("http.client.HTTPSConnection", return_value=connection),
+        pytest.raises(MoexError, match="HTTP 302"),
+    ):
+        MoexIssClient().security_identity(
+            "RU000A000001",
+            expected_isin="RU000A000001",
+        )
