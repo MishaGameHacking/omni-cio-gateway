@@ -594,6 +594,111 @@ async def usd_rub_market_stream(
     )
 
 
+@app.get(
+    "/api/market/instruments/{instrument_uid}",
+    responses={401: {"description": "Authenticated session required"}},
+)
+def instrument_market_snapshot(
+    instrument_uid: str,
+    request: Request,
+    response: Response,
+    period: Literal["1d", "1w", "1m", "3m", "1y"] = Query(default="1m"),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        snapshot = market_service(request).instrument_snapshot(
+            user.id,
+            instrument_uid,
+            period=period,
+        )
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="instrument market data unavailable",
+        ) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    return asdict(snapshot)
+
+
+@app.get(
+    "/api/market/instruments/{instrument_uid}/stream",
+    responses={401: {"description": "Authenticated session required"}},
+)
+async def instrument_market_stream(
+    instrument_uid: str,
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> StreamingResponse:
+    user = authenticated_user(request, session_token)
+    market = market_service(request)
+
+    async def events() -> AsyncIterator[str]:
+        retry_delay = 3
+        yield "retry: 5000\n\n"
+        while True:
+            if await request.is_disconnected():
+                break
+
+            payload: dict[str, object]
+            try:
+                state = await asyncio.to_thread(
+                    market.instrument_live_state,
+                    user.id,
+                    instrument_uid,
+                )
+            except BrokerNotConnected:
+                payload = {"state": "disconnected"}
+                event = "status"
+                delay = 15
+                retry_delay = 3
+            except TBankTokenRejected:
+                payload = {"state": "reconnect"}
+                event = "status"
+                delay = 30
+                retry_delay = 3
+            except ValueError:
+                payload = {"state": "invalid"}
+                event = "status"
+                delay = 30
+                retry_delay = 3
+            except (TBankUnavailable, BrokerConnectionError, SecurityValueError):
+                payload = {"state": "unavailable"}
+                event = "status"
+                delay = retry_delay
+                retry_delay = min(retry_delay * 2, 30)
+            else:
+                payload = asdict(state)
+                event = "market"
+                delay = 5
+                retry_delay = 3
+
+            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            yield f"event: {event}\ndata: {data}\n\n"
+            await asyncio.sleep(delay)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 def _profile_payload(profile: InvestmentProfileRecord) -> dict[str, object]:
     return {
         "version": profile.version,
