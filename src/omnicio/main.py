@@ -1031,7 +1031,7 @@ def _execution_run_payload(
         "created_at": run.created_at,
         "updated_at": run.updated_at,
         "finished_at": run.finished_at,
-        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
+        "live_execution": run.mode == "live",
         "legs": [
             {
                 "id": str(leg.id),
