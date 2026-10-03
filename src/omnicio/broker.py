@@ -35,6 +35,7 @@ from .tbank import (
     TBankOrderPrice,
     TBankPortfolio,
     TBankPositions,
+    TBankRating,
     TBankUnavailable,
     TBankUserInfo,
 )
@@ -214,6 +215,22 @@ class BrokerService:
             portfolio=portfolio,
             positions=positions,
             refreshed_at=datetime.now(UTC),
+        )
+
+    def candidate_bond_ratings(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> tuple[TBankRating, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return cast(
+            tuple[TBankRating, ...],
+            self._paced_evidence_read(
+                self.tbank.get_bond_ratings,
+                credential,
+                environment,
+                instrument_uid,
+            ),
         )
 
     def candidate_daily_exchange_candles(
