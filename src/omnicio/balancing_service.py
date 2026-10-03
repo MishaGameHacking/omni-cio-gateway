@@ -200,15 +200,58 @@ def build_live_balancing_payload(
         return {**durable, "live_status": "not_applicable"}
 
     rows = _dict_rows(context.get("candidates"))
-    selected = tuple(
+    prefiltered = tuple(
         row
         for row in rows
         if _eligible_for_live_enrichment(row, context, observed_at)
-    )[:LIVE_CANDIDATE_LIMIT]
-    if not selected:
+    )
+    if not prefiltered:
         return {
             **durable,
             "live_status": "no_prefilter_candidates",
+            "live_candidate_count": 0,
+        }
+
+    try:
+        shortlist_yields = broker.candidate_market_yields(
+            user_id,
+            tuple(
+                str(row["instrument_uid"])
+                for row in prefiltered[:100]
+            ),
+        )
+    except (BrokerConnectionError, TBankUnavailable, ValueError):
+        return {
+            **durable,
+            "live_status": "degraded",
+            "live_reason": "tbank_shortlist_signal_unavailable",
+            "live_candidate_count": 0,
+        }
+
+    yield_by_uid = {
+        item.instrument_uid: item
+        for item in shortlist_yields
+        if _fresh_market_time(item.time, observed_at)
+        and (_decimal(item.yield_percent) or Decimal("0")) > 0
+    }
+    ranked = sorted(
+        (
+            (
+                _decimal(yield_by_uid[str(row["instrument_uid"])].yield_percent)
+                or Decimal("0"),
+                str(row["instrument_uid"]),
+                row,
+            )
+            for row in prefiltered[:100]
+            if str(row["instrument_uid"]) in yield_by_uid
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+    selected = tuple(item[2] for item in ranked[:LIVE_CANDIDATE_LIMIT])
+    if not selected:
+        return {
+            **durable,
+            "live_status": "no_shortlist_signal",
             "live_candidate_count": 0,
         }
 
@@ -346,6 +389,8 @@ def build_live_balancing_payload(
     payload["live_sources"] = _dedupe_sources(live_sources)
     payload["methodology"] = {
         "candidate_limit": LIVE_CANDIDATE_LIMIT,
+        "shortlist_universe_limit": 100,
+        "shortlist_signal": "tbank_market_yield_not_decision_metric",
         "replacement_limit": LIVE_REPLACEMENT_LIMIT,
         "market_quote_max_age_seconds": int(
             MARKET_QUOTE_MAX_AGE.total_seconds()
@@ -569,6 +614,7 @@ def _enrich_bond_candidate(
         reason for reason in base.access_reasons if reason not in removable
     )
     notes = (
+        "shortlisted_by_tbank_market_yield_signal",
         "issuer_identity_verified_by_moex",
         (
             "issuer_group_unverified_conservative_bucket"
