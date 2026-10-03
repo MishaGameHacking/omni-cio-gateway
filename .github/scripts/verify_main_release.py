@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -187,11 +188,28 @@ def release_context() -> tuple[str, str]:
     return sha, token
 
 
+def git_executable() -> str:
+    """Return a trusted OS Git binary without relying on a mutable PATH."""
+    if os.name == "nt":
+        program_files = pathlib.Path(os.environ.get("ProgramFiles", r"C:\\Program Files"))
+        candidates = (
+            program_files / "Git" / "cmd" / "git.exe",
+            program_files / "Git" / "bin" / "git.exe",
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate)
+        raise ReleaseBlocked("Trusted Git for Windows executable is unavailable")
+    if os.name == "posix":
+        return "/usr/bin/git"
+    raise ReleaseBlocked(f"Unsupported release controller operating system: {os.name}")
+
+
 def require_checkout(sha: str) -> None:
     """The trusted main checkout must contain exactly the requested release."""
     try:
         result = subprocess.run(
-            ["/usr/bin/git", "rev-parse", "--verify", "HEAD"],
+            [git_executable(), "rev-parse", "--verify", "HEAD"],
             check=True, capture_output=True, text=True, timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
