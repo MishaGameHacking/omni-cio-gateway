@@ -254,6 +254,17 @@ class PortfolioObserver:
             details["history_status"] = history_result[2]
             details["history_pages"] = history_pages
             details["history_new_observations"] = history_items_inserted
+            if history_result[2] == "complete":
+                details["reinvestment_income_credits_new"] = (
+                    self.store.sync_reinvestment_income_credits(
+                        user_id,
+                        account_id=bundle.account_id,
+                        observed_at=now,
+                    )
+                )
+            else:
+                details["reinvestment_income_credits_new"] = 0
+                details["reinvestment_income_status"] = "history_incomplete"
 
             degraded = (
                 bundle.analysis.status == "needs_reconciliation"
