@@ -33,6 +33,7 @@ from .tbank import (
 )
 
 LIVE_CANDIDATE_LIMIT = 8
+LIVE_REPLACEMENT_LIMIT = 4
 MARKET_QUOTE_MAX_AGE = timedelta(minutes=15)
 MOEX_LIQUIDITY_WINDOW_DAYS = 45
 MOEX_LIQUIDITY_MIN_OBSERVED_DAYS = 10
@@ -297,11 +298,47 @@ def build_live_balancing_payload(
         enriched.append(candidate)
         live_sources.extend(sources)
 
+    holding_rows = _dict_rows(context.get("holdings"))
+    replacement_rows = tuple(
+        row
+        for row in holding_rows
+        if str(row.get("risk_state") or "") in {
+            "elevated",
+            "critical",
+            "confirmed_default",
+        }
+    )[:LIVE_REPLACEMENT_LIMIT]
+    replacement_uids = {
+        str(row.get("instrument_uid") or "")
+        for row in replacement_rows
+    }
+    enriched_holdings: list[Holding] = []
+    for row in holding_rows:
+        uid = str(row.get("instrument_uid") or "")
+        if uid not in replacement_uids:
+            enriched_holdings.append(_holding(row))
+            continue
+        try:
+            holding, sources = _enrich_replacement_holding(
+                user_id=user_id,
+                row=row,
+                policy_record=policy_record,
+                broker=broker,
+                moex=moex,
+                observed_at=observed_at,
+            )
+        except (BrokerConnectionError, MoexError, TBankUnavailable, ValueError):
+            holding = _holding(row)
+            sources = ()
+        enriched_holdings.append(holding)
+        live_sources.extend(sources)
+
     payload = build_balancing_payload(
         profile=profile,
         policy_record=policy_record,
         context=context,
         now=observed_at,
+        holdings_override=tuple(enriched_holdings),
         candidates_override=tuple(enriched),
     )
     payload["live_status"] = "received"
@@ -309,6 +346,7 @@ def build_live_balancing_payload(
     payload["live_sources"] = _dedupe_sources(live_sources)
     payload["methodology"] = {
         "candidate_limit": LIVE_CANDIDATE_LIMIT,
+        "replacement_limit": LIVE_REPLACEMENT_LIMIT,
         "market_quote_max_age_seconds": int(
             MARKET_QUOTE_MAX_AGE.total_seconds()
         ),
@@ -615,6 +653,139 @@ def _enrich_bond_candidate(
         },
     )
     return candidate, sources
+
+
+def _enrich_replacement_holding(
+    *,
+    user_id: UUID,
+    row: dict[str, object],
+    policy_record: BalancingPolicyRecord,
+    broker: BrokerService,
+    moex: MoexIssClient,
+    observed_at: datetime,
+) -> tuple[Holding, tuple[dict[str, object], ...]]:
+    base = _holding(row)
+    if (
+        base.asset_class != "bond"
+        or base.blocked
+        or base.lots <= 0
+        or base.risk_state not in {"elevated", "critical", "confirmed_default"}
+    ):
+        return base, ()
+
+    info = _metadata_from_row(row)
+    if (
+        not info.isin
+        or not info.class_code
+        or info.maturity_date is None
+        or info.currency.upper() != "RUB"
+    ):
+        return base, ()
+
+    identity = moex.security_identity(info.isin, expected_isin=info.isin)
+    if identity is None or not identity.is_traded:
+        return base, ()
+    bond = moex.bond_snapshot(identity.secid, identity.primary_board_id)
+    if bond is None or bond.ytw_percent is None or bond.ytw_percent <= 0:
+        return base, ()
+
+    order_book = broker.candidate_order_book(
+        user_id,
+        base.instrument_uid,
+        depth=10,
+    )
+    if (
+        not order_book.is_consistent
+        or not order_book.bids
+        or not order_book.asks
+        or not _fresh_market_time(order_book.time, observed_at)
+    ):
+        return base, ()
+    best_bid = max(Decimal(level.price) for level in order_book.bids)
+    best_ask = min(Decimal(level.price) for level in order_book.asks)
+    if best_bid <= 0 or best_ask <= best_bid:
+        return base, ()
+
+    sale = broker.candidate_order_price(
+        user_id,
+        base.instrument_uid,
+        price=str(best_bid),
+        direction="sell",
+        quantity_lots=base.lots,
+    )
+    initial = _money_rub(sale.initial_order_amount)
+    fee = _money_rub(sale.executed_commission_rub)
+    aci = (
+        _money_rub(sale.bond_aci_value)
+        if sale.bond_aci_value is not None
+        else Decimal("0")
+    )
+    gross_sale = initial + aci
+    fifo = _decimal(row.get("average_price_fifo_value"))
+    fifo_currency = str(row.get("average_price_fifo_currency") or "").upper()
+    quantity = _decimal(row.get("quantity"))
+    if (
+        gross_sale <= 0
+        or fee < 0
+        or fifo is None
+        or fifo <= 0
+        or fifo_currency != "RUB"
+        or quantity is None
+        or quantity <= 0
+    ):
+        return base, ()
+
+    cost_basis = fifo * quantity
+    taxable_gain = max(Decimal("0"), gross_sale - fee - cost_basis)
+    tax = (
+        taxable_gain
+        * policy_record.securities_tax_rate_percent
+        / Decimal("100")
+    )
+    term_months = _months_until(observed_at, info.maturity_date)
+    if term_months is None or term_months <= 0:
+        return base, ()
+    holding_years = Decimal(term_months) / Decimal("12")
+    gross_hold_gain = (
+        gross_sale * bond.ytw_percent / Decimal("100") * holding_years
+    )
+    stress = gross_sale * (
+        policy_record.uncertainty_haircut_percent
+        + policy_record.credit_loss_haircut_percent
+    ) / Decimal("100")
+    expected_hold_gain = gross_hold_gain - stress
+
+    enriched = replace(
+        base,
+        value_rub=gross_sale,
+        expected_horizon_gain_rub=expected_hold_gain,
+        sell_fee_rub=fee,
+        exit_spread_cost_rub=Decimal("0"),
+        tax_if_sold_rub=tax,
+        replacement_costs_complete=True,
+    )
+    sources = (
+        {
+            "id": f"tbank-sell-order-book:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "sell_order_book",
+            "retrieved_at": order_book.time,
+        },
+        {
+            "id": f"tbank-sell-order-price:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "sell_order_price",
+            "retrieved_at": observed_at,
+        },
+        {
+            "id": f"moex-held-bond:{identity.secid}:{identity.primary_board_id}",
+            "provider": "moex",
+            "kind": "held_bond_yield",
+            "url": bond.source_url,
+            "retrieved_at": observed_at,
+        },
+    )
+    return enriched, sources
 
 
 def _metadata_from_row(row: dict[str, object]) -> TBankInstrumentMetadata:
