@@ -28,6 +28,7 @@ from .tbank import (
 )
 
 ORDER_TIMEOUT = timedelta(minutes=2)
+SANDBOX_ORDER_TIMEOUT = ORDER_TIMEOUT
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
