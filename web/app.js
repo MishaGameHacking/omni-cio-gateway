@@ -1565,6 +1565,13 @@
     bond_structure_missing: "Структура облигации неполна",
     rating_state_not_allowed: "Риск-состояние не допускается",
     risk_state_not_allowed: "Risk state не допускает новую позицию",
+    below_grade_not_allowed: "Policy запрещает новый below-grade риск",
+    unknown_rating_not_allowed: "Policy запрещает новый актив с неподтверждённым рейтингом",
+    order_book_unusable: "Свежий согласованный стакан недоступен",
+    live_asset_class_not_supported: "Live-enrichment этого класса актива ещё не поддерживается",
+    live_enrichment_not_selected: "Инструмент не вошёл в ограниченный live-screening этого цикла",
+    live_candidate_evidence_unavailable: "Live evidence кандидата временно недоступен",
+    issuer_group_unverified: "Корпоративная группа не подтверждена",
     asset_class_not_allowed: "Класс актива запрещён policy",
     currency_not_allowed: "Валюта запрещена policy",
     liquidity_limit: "Не проходит лимит ликвидности",
@@ -1669,7 +1676,9 @@
       );
     }
 
-    if (Number(payload.eligible_candidate_count) > 0) {
+    if (payload.live_status === "degraded") {
+      setStateBadge(balancingStatus, "Live evidence временно недоступен", "state-error");
+    } else if (Number(payload.eligible_candidate_count) > 0) {
       setStateBadge(
         balancingStatus,
         `Read-only · допустимых: ${payload.eligible_candidate_count}`,
