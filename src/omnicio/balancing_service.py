@@ -32,7 +32,7 @@ from .tbank import (
     TBankUnavailable,
 )
 
-LIVE_CANDIDATE_LIMIT = 8
+LIVE_CANDIDATE_LIMIT = 4
 LIVE_REPLACEMENT_LIMIT = 4
 MARKET_QUOTE_MAX_AGE = timedelta(minutes=15)
 MOEX_LIQUIDITY_WINDOW_DAYS = 45
