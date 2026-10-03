@@ -315,6 +315,8 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
         max_unknown_percent=Decimal("0"),
         max_term_months=120,
         turnover_budget_percent=Decimal("25"),
+        max_daily_turnover_participation_percent=Decimal("5"),
+        securities_tax_rate_percent=Decimal("15"),
         no_trade_band_percent=Decimal("1"),
         min_replace_benefit_rub=Decimal("500"),
         created_at=now,
@@ -335,6 +337,8 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
     payload = response.json()["policy"]
     assert payload["version"] == 2
     assert payload["max_instrument_percent"] == "20"
+    assert payload["max_daily_turnover_participation_percent"] == "5"
+    assert payload["securities_tax_rate_percent"] == "15"
     assert payload["system_constraints"]["allowed_currencies"] == ["RUB"]
     assert payload["system_constraints"]["new_buy_risk_states"] == ["normal"]
     store.return_value.current_balancing_policy.assert_called_once_with("server-user")
@@ -353,6 +357,8 @@ def test_balancing_policy_write_requires_origin_and_current_consent() -> None:
         "max_unknown_percent": "0",
         "max_term_months": 120,
         "turnover_budget_percent": "25",
+        "max_daily_turnover_participation_percent": "5",
+        "securities_tax_rate_percent": "15",
         "no_trade_band_percent": "1",
         "min_replace_benefit_rub": "500",
     }
