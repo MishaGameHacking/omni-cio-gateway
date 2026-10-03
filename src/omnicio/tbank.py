@@ -591,15 +591,28 @@ class TBankInvestClient:
             volume_raw = item.get("volume")
             complete = item.get("isComplete")
             source_name = _text(item.get("candleSourceType")).strip()
-            prices = (open_value, high, low, close)
             if (
-                any(value is None or Decimal(value) <= 0 for value in prices)
+                open_value is None
+                or high is None
+                or low is None
+                or close is None
                 or candle_time is None
                 or isinstance(volume_raw, bool)
                 or not isinstance(complete, bool)
             ):
                 raise TBankUnavailable(
                     "T-Invest historic candle is missing required fields"
+                )
+            open_decimal = Decimal(open_value)
+            high_decimal = Decimal(high)
+            low_decimal = Decimal(low)
+            close_decimal = Decimal(close)
+            if any(
+                value <= 0
+                for value in (open_decimal, high_decimal, low_decimal, close_decimal)
+            ):
+                raise TBankUnavailable(
+                    "T-Invest historic candle has non-positive OHLC"
                 )
             try:
                 volume = int(str(volume_raw))
@@ -619,27 +632,27 @@ class TBankInvestClient:
                 raise TBankUnavailable(
                     "T-Invest historic candles contain duplicate timestamps"
                 )
-            if Decimal(cast(str, high)) < Decimal(cast(str, low)):
+            if high_decimal < low_decimal:
                 raise TBankUnavailable("T-Invest historic candle has invalid high/low")
             if (
-                Decimal(cast(str, open_value)) < Decimal(cast(str, low))
-                or Decimal(cast(str, open_value)) > Decimal(cast(str, high))
-                or Decimal(cast(str, close)) < Decimal(cast(str, low))
-                or Decimal(cast(str, close)) > Decimal(cast(str, high))
+                open_decimal < low_decimal
+                or open_decimal > high_decimal
+                or close_decimal < low_decimal
+                or close_decimal > high_decimal
             ):
                 raise TBankUnavailable("T-Invest historic candle OHLC is inconsistent")
             seen_times.add(candle_time)
             result.append(
                 TBankHistoricCandle(
                     instrument_uid=instrument,
-                    close=cast(str, close),
+                    close=close,
                     volume_lots=volume,
                     time=candle_time,
                     is_complete=complete,
                     source=source_name or "CANDLE_SOURCE_EXCHANGE",
-                    open=cast(str, open_value),
-                    high=cast(str, high),
-                    low=cast(str, low),
+                    open=open_value,
+                    high=high,
+                    low=low,
                 )
             )
         return tuple(result)
