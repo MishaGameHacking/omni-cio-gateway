@@ -11,6 +11,7 @@ from uuid import UUID
 from .balancing import (
     AllocationCap,
     BalancingPolicy,
+    BalancingPreview,
     BalancingScenario,
     Candidate,
     Holding,
@@ -1195,27 +1196,26 @@ def _proposal_constraints(
 
 
 def _scenario_payloads(
-    preview: object,
+    preview: BalancingPreview,
     *,
     nav_rub: Decimal,
     cash_rub: Decimal,
     holdings: tuple[Holding, ...],
     candidates: tuple[Candidate, ...],
 ) -> dict[str, object]:
-    typed = cast(Any, preview)
     return cast(
         dict[str, object],
         _serialize(
             {
                 "hold": _scenario_payload(
-                    typed.hold,
+                    preview.hold,
                     nav_rub=nav_rub,
                     cash_rub=cash_rub,
                     holdings=holdings,
                     candidates=candidates,
                 ),
                 "deploy_cash": _scenario_payload(
-                    typed.deploy_cash,
+                    preview.deploy_cash,
                     nav_rub=nav_rub,
                     cash_rub=cash_rub,
                     holdings=holdings,
@@ -1229,7 +1229,7 @@ def _scenario_payloads(
                         holdings=holdings,
                         candidates=candidates,
                     )
-                    for scenario in typed.replacements
+                    for scenario in preview.replacements
                 ],
             }
         ),
