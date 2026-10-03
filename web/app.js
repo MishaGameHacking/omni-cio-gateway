@@ -2905,6 +2905,48 @@
     }
   };
 
+  const executionStartBlocker = (mode, proposalAccountId) => {
+    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
+    if (
+      mode === "sandbox"
+      && (
+        connectedTbankEnvironment !== "sandbox"
+        || !connectedAccountId
+        || proposalAccountId !== connectedAccountId
+      )
+    ) {
+      return (
+        "Sandbox-run требует тот же exact Sandbox account_id, "
+        + "из которого построено подтверждённое предложение."
+      );
+    }
+    if (
+      mode === "live"
+      && (
+        !liveOperatorEnabled
+        || connectedTbankEnvironment !== "prod"
+        || !connectedAccountId
+        || proposalAccountId !== connectedAccountId
+        || liveMandate?.account_id !== connectedAccountId
+      )
+    ) {
+      return (
+        "Live-run заблокирован: нужен active mandate "
+        + "и тот же exact production account_id."
+      );
+    }
+    return "";
+  };
+
+  const confirmLiveRunCreation = (mode) => (
+    mode !== "live"
+    || window.confirm(
+      "Создать Live-canary run? Это ещё не отправляет заявку. "
+      + "Реальное поручение потребует отдельного нажатия "
+      + "«Отправить реальную limit-заявку».",
+    )
+  );
+
   const startExecution = async (button) => {
     if (!(button instanceof HTMLButtonElement) || executionRequestInFlight) {
       return;
@@ -2930,46 +2972,12 @@
       return;
     }
 
-    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
-    if (
-      mode === "sandbox"
-      && (
-        connectedTbankEnvironment !== "sandbox"
-        || !connectedAccountId
-        || proposalAccountId !== connectedAccountId
-      )
-    ) {
-      showMessage(
-        executionMessage,
-        "Sandbox-run требует тот же exact Sandbox account_id, из которого построено подтверждённое предложение.",
-        true,
-      );
+    const blocker = executionStartBlocker(mode, proposalAccountId);
+    if (blocker) {
+      showMessage(executionMessage, blocker, true);
       return;
     }
-
-    if (
-      mode === "live"
-      && (
-        !liveOperatorEnabled
-        || connectedTbankEnvironment !== "prod"
-        || !connectedAccountId
-        || proposalAccountId !== connectedAccountId
-        || liveMandate?.account_id !== connectedAccountId
-      )
-    ) {
-      showMessage(
-        executionMessage,
-        "Live-run заблокирован: нужен active mandate и тот же exact production account_id.",
-        true,
-      );
-      return;
-    }
-    if (
-      mode === "live"
-      && !window.confirm(
-        "Создать Live-canary run? Это ещё не отправляет заявку. Реальное поручение потребует отдельного нажатия «Отправить реальную limit-заявку».",
-      )
-    ) {
+    if (!confirmLiveRunCreation(mode)) {
       return;
     }
 
