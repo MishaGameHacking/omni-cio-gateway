@@ -46,12 +46,14 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
     migration = (ROOT / "migrations" / "0010_portfolio_execution.sql").read_text()
 
     assert "omnicio_validate_execution_run_source" in migration
-    assert "AS $" in migration
+    assert "AS $omnicio$" in migration
     assert "execution leg source fields are immutable" in migration
     assert "portfolio_execution_legs_source_guard" in migration
     assert "UNIQUE (id, run_id, user_id)" in migration
     assert "FOREIGN KEY (leg_id, run_id, user_id)" in migration
     assert "REFERENCES portfolio_execution_legs(id, run_id, user_id)" in migration
+    assert "p.expires_at > now()" in migration
+    assert "p.source_snapshot_id, p.account_id" in migration
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
