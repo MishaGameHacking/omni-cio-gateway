@@ -15,6 +15,7 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, st
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .balancing_service import build_balancing_payload
 from .broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
@@ -699,6 +700,26 @@ def tbank_analysis(
 
     response.headers["Cache-Control"] = "private, no-store"
     return asdict(snapshot)
+
+
+@app.get(
+    "/api/portfolio/balancing",
+    responses={401: {"description": "Authenticated session required"}},
+)
+def portfolio_balancing(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    store = portfolio_store(request)
+    payload = build_balancing_payload(
+        profile=store.current_profile(user.id),
+        policy_record=store.current_balancing_policy(user.id),
+        context=store.latest_balancing_context(user.id),
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return payload
 
 
 @app.get(
