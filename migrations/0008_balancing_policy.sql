@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS balancing_policy_versions (
     securities_tax_rate_percent numeric(7, 4) NOT NULL CHECK (
         securities_tax_rate_percent >= 0 AND securities_tax_rate_percent <= 100
     ),
+    uncertainty_haircut_percent numeric(7, 4) NOT NULL CHECK (
+        uncertainty_haircut_percent >= 0 AND uncertainty_haircut_percent <= 100
+    ),
+    credit_loss_haircut_percent numeric(7, 4) NOT NULL CHECK (
+        credit_loss_haircut_percent >= 0 AND credit_loss_haircut_percent <= 100
+    ),
     no_trade_band_percent numeric(7, 4) NOT NULL CHECK (
         no_trade_band_percent >= 0 AND no_trade_band_percent <= 100
     ),
