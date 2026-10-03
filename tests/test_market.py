@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 from uuid import UUID
 
@@ -117,7 +117,7 @@ class FakeBroker:
         assert instrument_uid == "uid-1"
         assert interval == "CANDLE_INTERVAL_4_HOUR"
         assert limit == 250
-        assert to_at - from_at == __import__("datetime").timedelta(days=31)
+        assert to_at - from_at == timedelta(days=31)
         return (
             TBankHistoricCandle(
                 instrument_uid="uid-1",
@@ -126,7 +126,7 @@ class FakeBroker:
                 low="99",
                 close="102",
                 volume_lots=42,
-                time=to_at - __import__("datetime").timedelta(hours=4),
+                time=to_at - timedelta(hours=4),
                 is_complete=True,
                 source="CANDLE_SOURCE_EXCHANGE",
             ),
