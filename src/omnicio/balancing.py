@@ -80,6 +80,7 @@ class Holding:
     tax_if_sold_rub: Decimal = Decimal("0")
     blocked: bool = False
     replacement_costs_complete: bool = True
+    limit_price: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +112,7 @@ class Candidate:
     buy_available: bool
     required_tests_passed: bool
     evidence_complete: bool
+    limit_price: Decimal | None = None
     structure_supported: bool = True
     access_reasons: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
@@ -133,6 +135,9 @@ class PlannedTrade:
     estimated_cost_rub: Decimal
     tax_rub: Decimal
     ytw_percent: Decimal | None
+    limit_price: Decimal | None = None
+    max_spend_rub: Decimal | None = None
+    min_proceeds_rub: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +247,8 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("invalid_lot_size")
     if candidate.market_lot_cost_rub <= 0:
         reasons.append("missing_lot_cost")
+    if candidate.limit_price is None or candidate.limit_price <= 0:
+        reasons.append("limit_price_missing")
     if candidate.asset_class not in policy.allowed_asset_classes:
         reasons.append("asset_class_not_allowed")
     if candidate.currency.upper() not in policy.allowed_currencies:
@@ -386,6 +393,8 @@ def _optimize_cash(
                 estimated_cost_rub=trade_cost,
                 tax_rub=Decimal("0"),
                 ytw_percent=candidate.ytw_percent,
+                limit_price=candidate.limit_price,
+                max_spend_rub=spend,
             )
         )
 
@@ -422,6 +431,8 @@ def _replacement_scenario(
         return _fallback_cash(holding, "holding_blocked")
     if not holding.replacement_costs_complete:
         return _fallback_cash(holding, "replacement_cost_model_missing")
+    if holding.limit_price is None or holding.limit_price <= 0:
+        return _fallback_cash(holding, "replacement_limit_price_missing")
     if holding.lots <= 0 or holding.value_rub <= 0:
         return _fallback_cash(holding, "holding_not_sellable")
 
@@ -494,6 +505,8 @@ def _replacement_scenario(
                     estimated_cost_rub=holding.sell_fee_rub + holding.exit_spread_cost_rub,
                     tax_rub=holding.tax_if_sold_rub,
                     ytw_percent=None,
+                    limit_price=holding.limit_price,
+                    min_proceeds_rub=sale_proceeds,
                 ),
                 PlannedTrade(
                     action="buy",
@@ -504,6 +517,8 @@ def _replacement_scenario(
                     estimated_cost_rub=buy_cost,
                     tax_rub=Decimal("0"),
                     ytw_percent=candidate.ytw_percent,
+                    limit_price=candidate.limit_price,
+                    max_spend_rub=spend,
                 ),
             ),
             residual_cash_rub=sale_proceeds - spend,
