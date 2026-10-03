@@ -1147,6 +1147,173 @@ class PortfolioStore:
                     assessments_written += 1
         return documents_written, assessments_written
 
+    def latest_balancing_context(
+        self,
+        user_id: UUID,
+        *,
+        candidate_limit: int = 100,
+    ) -> dict[str, object] | None:
+        if not 1 <= candidate_limit <= 500:
+            raise ValueError("candidate_limit must be between 1 and 500")
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    account_id,
+                    captured_at,
+                    analysis_status,
+                    nav_rub,
+                    rub_cash_unblocked,
+                    limits_loading_in_progress,
+                    evidence
+                FROM portfolio_snapshots
+                WHERE user_id = %s
+                ORDER BY captured_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            fetched = cur.fetchone()
+            if fetched is None:
+                return None
+            snapshot = dict(cast(dict[str, Any], fetched))
+            snapshot_id = cast(UUID, snapshot["id"])
+            account_id = str(snapshot["account_id"])
+
+            cur.execute(
+                """
+                SELECT
+                    p.instrument_uid,
+                    p.figi,
+                    p.ticker,
+                    p.instrument_type,
+                    p.quantity,
+                    p.blocked,
+                    p.blocked_lots,
+                    p.value_rub,
+                    p.sector,
+                    COALESCE(c.lot, 0) AS lot,
+                    COALESCE(c.currency, '') AS currency,
+                    COALESCE(i.id::text, '') AS issuer_id,
+                    COALESCE(i.group_id::text, '') AS group_id,
+                    COALESCE(r.state, 'data_missing') AS risk_state,
+                    COALESCE(r.rating_status, 'data_missing') AS rating_status
+                FROM portfolio_snapshot_positions AS p
+                LEFT JOIN instrument_catalog AS c
+                  ON c.provider = 'tbank'
+                 AND (
+                     c.instrument_uid = p.instrument_uid
+                     OR (p.figi <> '' AND c.figi = p.figi)
+                 )
+                LEFT JOIN instrument_issuer_map AS m
+                  ON m.provider = 'tbank'
+                 AND m.instrument_uid = c.instrument_uid
+                LEFT JOIN issuers AS i
+                  ON i.id = m.issuer_id
+                LEFT JOIN portfolio_risk_assessments AS r
+                  ON r.snapshot_id = p.snapshot_id
+                 AND r.user_id = p.user_id
+                 AND r.instrument_uid = p.instrument_uid
+                WHERE p.snapshot_id = %s
+                  AND p.user_id = %s
+                ORDER BY p.value_rub DESC NULLS LAST, p.ticker
+                """,
+                (snapshot_id, user_id),
+            )
+            holdings = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT
+                    c.instrument_uid,
+                    c.figi,
+                    c.asset_uid,
+                    c.ticker,
+                    c.name,
+                    c.isin,
+                    c.instrument_type,
+                    c.currency,
+                    c.class_code,
+                    c.lot,
+                    c.sector,
+                    c.country_of_risk,
+                    c.for_qual_investor,
+                    c.for_iis,
+                    c.api_trade_available,
+                    c.buy_available,
+                    c.sell_available,
+                    c.nominal_value,
+                    c.nominal_currency,
+                    c.maturity_date,
+                    c.floating_coupon,
+                    c.perpetual,
+                    c.amortization,
+                    c.subordinated,
+                    c.liquidity,
+                    c.provider_retrieved_at,
+                    a.required_tests,
+                    a.observed_at AS access_observed_at,
+                    COALESCE(i.id::text, '') AS issuer_id,
+                    COALESCE(i.group_id::text, '') AS group_id
+                FROM instrument_catalog AS c
+                JOIN account_instrument_access AS a
+                  ON a.user_id = %s
+                 AND a.account_id = %s
+                 AND a.provider = c.provider
+                 AND a.instrument_uid = c.instrument_uid
+                LEFT JOIN instrument_issuer_map AS m
+                  ON m.provider = c.provider
+                 AND m.instrument_uid = c.instrument_uid
+                LEFT JOIN issuers AS i
+                  ON i.id = m.issuer_id
+                WHERE c.provider = 'tbank'
+                  AND c.instrument_type = ANY (ARRAY['share', 'bond', 'etf'])
+                  AND c.currency = 'RUB'
+                ORDER BY
+                    CASE c.instrument_type
+                        WHEN 'bond' THEN 0
+                        WHEN 'share' THEN 1
+                        ELSE 2
+                    END,
+                    c.ticker,
+                    c.instrument_uid
+                LIMIT %s
+                """,
+                (user_id, account_id, candidate_limit),
+            )
+            candidates = [dict(row) for row in cur.fetchall()]
+
+        evidence = snapshot.get("evidence")
+        broker_user: dict[str, object] = {}
+        account: dict[str, object] = {}
+        if isinstance(evidence, dict):
+            broker_raw = evidence.get("broker_user")
+            account_raw = evidence.get("account")
+            if isinstance(broker_raw, dict):
+                broker_user = dict(cast(dict[str, object], broker_raw))
+            if isinstance(account_raw, dict):
+                account = dict(cast(dict[str, object], account_raw))
+
+        return {
+            "snapshot_id": str(snapshot_id),
+            "account_id": account_id,
+            "captured_at": snapshot["captured_at"],
+            "analysis_status": snapshot["analysis_status"],
+            "nav_rub": snapshot["nav_rub"],
+            "rub_cash_unblocked": snapshot["rub_cash_unblocked"],
+            "limits_loading_in_progress": snapshot["limits_loading_in_progress"],
+            "broker_user": broker_user,
+            "account": account,
+            "holdings": holdings,
+            "candidates": candidates,
+        }
+
     def latest_intelligence(
         self,
         user_id: UUID,
