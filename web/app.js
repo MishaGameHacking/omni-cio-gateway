@@ -274,6 +274,21 @@
     return value;
   };
 
+  const apiErrorMessage = (response, body) => {
+    if (body && typeof body.detail === "string" && body.detail.trim()) {
+      return body.detail;
+    }
+    const fallbackByStatus = {
+      413: "Запрос слишком большой. Проверьте введённые данные и попробуйте снова.",
+      422: "Проверьте формат и допустимые значения полей. Изменения не применены.",
+      429: "Слишком много запросов. Подождите немного и повторите действие.",
+      502: "Сервис временно недоступен. Изменения не подтверждены.",
+      503: "Сервис временно перегружен. Изменения не подтверждены.",
+      504: "Сервис не успел ответить. Проверьте состояние перед повтором.",
+    };
+    return fallbackByStatus[response.status] || "Запрос не выполнен. Проверьте состояние и повторите.";
+  };
+
   const api = async (path, options = {}) => {
     const response = await fetch(apiPath(path), {
       credentials: "same-origin",
@@ -282,7 +297,7 @@
     });
     const body = response.status === 204 ? null : await response.json().catch(() => null);
     if (!response.ok) {
-      const error = new Error((body && body.detail) || "request failed");
+      const error = new Error(apiErrorMessage(response, body));
       error.status = response.status;
       throw error;
     }
