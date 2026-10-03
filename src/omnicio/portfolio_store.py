@@ -603,7 +603,11 @@ class PortfolioStore:
                 (user_id,),
             )
             next_row = cur.fetchone()
-            version = int(next_row["next_version"]) if next_row else 1
+            version = (
+                int(cast(dict[str, Any], next_row)["next_version"])
+                if next_row is not None
+                else 1
+            )
             cur.execute(
                 """
                 INSERT INTO portfolio_proposals (
