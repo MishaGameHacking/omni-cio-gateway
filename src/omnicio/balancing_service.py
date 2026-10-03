@@ -332,7 +332,10 @@ def _eligible_for_live_enrichment(
         return False
     if str(row.get("currency") or "").upper() != "RUB":
         return False
-    if row.get("api_trade_available") is not True or row.get("buy_available") is not True:
+    if (
+        row.get("api_trade_available") is not True
+        or row.get("buy_available") is not True
+    ):
         return False
     if _integer(row.get("lot")) <= 0:
         return False
@@ -353,7 +356,11 @@ def _eligible_for_live_enrichment(
     if row.get("for_qual_investor") is True and qualified is not True:
         return False
     account = context.get("account")
-    account_type = str(account.get("type") or "").upper() if isinstance(account, dict) else ""
+    account_type = (
+        str(account.get("type") or "").upper()
+        if isinstance(account, dict)
+        else ""
+    )
     if "IIS" in account_type and row.get("for_iis") is not True:
         return False
     if not _fresh(_datetime(row.get("provider_retrieved_at")), observed_at):
@@ -460,7 +467,11 @@ def _enrich_bond_candidate(
     initial = _money_rub(order_price.initial_order_amount)
     total = _money_rub(order_price.total_order_amount)
     fee = _money_rub(order_price.executed_commission_rub)
-    aci = _money_rub(order_price.bond_aci_value) if order_price.bond_aci_value else Decimal("0")
+    aci = (
+        _money_rub(order_price.bond_aci_value)
+        if order_price.bond_aci_value
+        else Decimal("0")
+    )
     if initial <= 0 or total <= 0 or fee < 0 or aci < 0:
         raise ValueError("invalid T-Invest order price evidence")
 
