@@ -20,6 +20,7 @@ from .execution_store import (
     ExecutionStore,
 )
 from .tbank import (
+    TBankMaxLots,
     TBankMoney,
     TBankNotFound,
     TBankOrderState,
@@ -68,7 +69,10 @@ class PortfolioExecutionService:
         if mode == "live":
             if not self.live_execution_enabled:
                 raise ExecutionServiceError("live_execution_disabled")
-            self.broker.live_account(user_id)
+            try:
+                self.broker.live_account(user_id)
+            except BrokerConnectionError as exc:
+                raise ExecutionServiceError("live_account_mismatch") from exc
         run, legs = self.store.create_run(
             user_id,
             proposal_id=proposal_id,
@@ -494,11 +498,11 @@ class PortfolioExecutionService:
     def _validate_lot_limits(
         prefix: str,
         leg: ExecutionLegRecord,
-        max_lots: object,
+        max_lots: TBankMaxLots,
     ) -> None:
-        currency = getattr(max_lots, "currency", "")
-        buy_max = getattr(max_lots, "buy_max_lots", -1)
-        sell_max = getattr(max_lots, "sell_max_lots", -1)
+        currency = max_lots.currency
+        buy_max = max_lots.buy_max_lots
+        sell_max = max_lots.sell_max_lots
         if currency not in {"", "RUB"}:
             raise ExecutionServiceError(f"{prefix}_max_lots_currency_invalid")
         if leg.action == "buy":
