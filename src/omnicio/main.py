@@ -15,7 +15,7 @@ from uuid import UUID
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .balancing_service import build_live_balancing_payload
 from .broker import (
@@ -152,6 +152,8 @@ class PortfolioProposalBody(BaseModel):
 
 
 class PortfolioExecutionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     proposal_id: UUID
     proposal_version: int = Field(ge=1)
     proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
