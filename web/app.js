@@ -149,6 +149,10 @@
   const balancingPolicyVersions = document.querySelector("#balancing-policy-versions");
   const balancingScenarios = document.querySelector("#balancing-scenarios");
   const balancingScreening = document.querySelector("#balancing-screening");
+  const proposalStatus = document.querySelector("#proposal-status");
+  const proposalCreateOptions = document.querySelector("#proposal-create-options");
+  const proposalHistory = document.querySelector("#proposal-history");
+  const proposalMessage = document.querySelector("#proposal-message");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
@@ -200,6 +204,8 @@
   let analysisInFlight = false;
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
+  let lastBalancingPayload = null;
+  let proposalRequestInFlight = false;
   let owlTimer = null;
   let usdRubEventSource = null;
   let usdRubFallbackTimer = null;
@@ -1763,17 +1769,340 @@
     }
   };
 
-  const loadBalancing = async () => {
+  const PROPOSAL_STATUS_LABELS = {
+    pending: "Ожидает решения",
+    confirmed: "План подтверждён",
+    rejected: "Отклонено",
+    deferred: "Отложено",
+    superseded: "Заменено новой версией",
+    revoked: "Отозвано из-за изменения исходных данных",
+    expired: "Срок действия истёк",
+  };
+
+  const proposalStatusLabel = (value) => (
+    PROPOSAL_STATUS_LABELS[value] || String(value || "—")
+  );
+
+  const proposalScenarioLabel = (value) => (
+    value === "replace" ? "Замена позиции" : "Размещение свободных денег"
+  );
+
+  const proposalTradeSummary = (trade) => {
+    const action = trade.action === "sell" ? "продать" : "купить";
+    const priceType = trade.limit_price_type === "point" ? "пункты" : "₽";
+    const bound = trade.action === "sell"
+      ? (trade.min_proceeds_rub ? `min proceeds ${formatMoney({currency: "RUB", value: trade.min_proceeds_rub})}` : "")
+      : (trade.max_spend_rub ? `max spend ${formatMoney({currency: "RUB", value: trade.max_spend_rub})}` : "");
+    return [
+      `${action} ${trade.ticker || trade.instrument_uid}: ${trade.lots} лот.`,
+      trade.limit_price ? `limit ${trade.limit_price} ${priceType}` : "",
+      bound,
+    ].filter(Boolean).join(" · ");
+  };
+
+  const renderProposalCreateOptions = (payload) => {
+    proposalCreateOptions.replaceChildren();
+    if (!payload || payload.status !== "observed" || payload.live_status !== "received") {
+      appendEmptyState(
+        proposalCreateOptions,
+        "Сначала нужен свежий полностью доказанный R4 preview.",
+      );
+      return;
+    }
+
+    const addOption = (label, scenarioKind, scenario, replacedUid = null) => {
+      if (
+        !scenario
+        || scenario.status !== "feasible"
+        || !Array.isArray(scenario.trades)
+        || !scenario.trades.length
+        || !scenario.before_after
+      ) {
+        return;
+      }
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = label;
+      const details = document.createElement("small");
+      details.textContent = [
+        balancingReason(scenario.reason),
+        ...scenario.trades.map(proposalTradeSummary),
+        `expiry будет 10 мин. после фиксации`,
+      ].filter(Boolean).join(" · ");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button button-primary";
+      button.textContent = "Зафиксировать exact версию";
+      button.dataset.proposalCreate = scenarioKind;
+      if (replacedUid) {
+        button.dataset.replacedInstrumentUid = replacedUid;
+      }
+      row.append(title, details, button);
+      proposalCreateOptions.append(row);
+    };
+
+    addOption(
+      "Новые деньги",
+      "deploy_cash",
+      payload.scenarios?.deploy_cash,
+    );
+    (payload.scenarios?.replacements || []).forEach((scenario) => {
+      addOption(
+        `Замена ${scenario.replaced_instrument_uid || "позиции"}`,
+        "replace",
+        scenario,
+        scenario.replaced_instrument_uid || null,
+      );
+    });
+
+    if (!proposalCreateOptions.childElementCount) {
+      appendEmptyState(
+        proposalCreateOptions,
+        "Нет завершённого feasible-пакета, который можно зафиксировать.",
+      );
+    }
+  };
+
+  const proposalBeforeAfterText = (proposal) => {
+    const before = proposal.payload?.scenario?.before_after?.before;
+    const after = proposal.payload?.scenario?.before_after?.after;
+    if (!before || !after) {
+      return "Before/after отсутствует";
+    }
+    return [
+      `NAV: ${formatMoney({currency: "RUB", value: before.nav_rub})} → ${formatMoney({currency: "RUB", value: after.nav_rub})}`,
+      `cash: ${formatMoney({currency: "RUB", value: before.cash_rub})} → ${formatMoney({currency: "RUB", value: after.cash_rub})}`,
+    ].join(" · ");
+  };
+
+  const proposalDecisionControls = (proposal) => {
+    const controls = document.createElement("div");
+    controls.className = "form-stack";
+
+    const rejectReason = document.createElement("input");
+    rejectReason.type = "text";
+    rejectReason.maxLength = 500;
+    rejectReason.placeholder = "Причина отклонения (обязательно для «Отклонить»)";
+    rejectReason.dataset.proposalRejectReason = proposal.id;
+
+    const deferAt = document.createElement("input");
+    deferAt.type = "datetime-local";
+    deferAt.dataset.proposalDeferAt = proposal.id;
+
+    const actions = document.createElement("div");
+    actions.className = "connected-actions";
+    for (const [action, label, className] of [
+      ["confirm", "Подтвердить план", "button button-primary"],
+      ["reject", "Отклонить", "button button-danger-secondary"],
+      ["defer", "Отложить до даты", "button button-secondary"],
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = className;
+      button.textContent = label;
+      button.dataset.proposalDecision = action;
+      button.dataset.proposalId = proposal.id;
+      button.dataset.proposalVersion = String(proposal.version);
+      button.dataset.proposalHash = proposal.hash;
+      actions.append(button);
+    }
+
+    controls.append(rejectReason, deferAt, actions);
+    return controls;
+  };
+
+  const renderProposals = (items) => {
+    proposalHistory.replaceChildren();
+    const proposals = Array.isArray(items) ? items : [];
+    const pending = proposals.filter((item) => item.status === "pending");
+
+    proposals.slice(0, 12).forEach((proposal) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = [
+        `v${proposal.version}`,
+        proposalScenarioLabel(proposal.scenario_kind),
+        proposalStatusLabel(proposal.status),
+      ].join(" · ");
+
+      const details = document.createElement("small");
+      const trades = proposal.payload?.scenario?.trades || [];
+      details.textContent = [
+        `счёт: ${proposal.account_id || "—"}`,
+        `hash: ${String(proposal.hash || "").slice(0, 16)}…`,
+        `до: ${formatDateTime(proposal.expires_at)}`,
+        proposalBeforeAfterText(proposal),
+        ...trades.map(proposalTradeSummary),
+        proposal.decision_user_reason
+          ? `причина: ${proposal.decision_user_reason}`
+          : "",
+        proposal.deferred_until
+          ? `отложено до: ${formatDateTime(proposal.deferred_until)}`
+          : "",
+      ].filter(Boolean).join(" · ");
+      row.append(title, details);
+
+      if (proposal.status === "pending") {
+        row.append(proposalDecisionControls(proposal));
+      }
+      proposalHistory.append(row);
+    });
+
+    if (!proposalHistory.childElementCount) {
+      appendEmptyState(
+        proposalHistory,
+        "Immutable proposals ещё не создавались.",
+      );
+    }
+
+    if (pending.length) {
+      setStateBadge(
+        proposalStatus,
+        `Ожидает решения: v${pending[0].version}`,
+        "state-next",
+      );
+    } else if (proposals.length) {
+      setStateBadge(
+        proposalStatus,
+        proposalStatusLabel(proposals[0].status),
+        proposals[0].status === "confirmed" ? "state-ok" : "state-next",
+      );
+    } else {
+      setStateBadge(proposalStatus, "Нет активного предложения", "state-next");
+    }
+  };
+
+  const loadProposals = async () => {
     try {
-      const payload = await api("/api/portfolio/balancing", {method: "GET"});
-      renderBalancing(payload);
+      const result = await api("/api/portfolio/proposals", {method: "GET"});
+      renderProposals(result.proposals || []);
     } catch (error) {
       if (error.status === 401) {
         location.reload();
         return;
       }
+      proposalHistory.replaceChildren();
+      appendEmptyState(proposalHistory, "Не удалось загрузить версии предложений.");
+      setStateBadge(proposalStatus, "Ошибка чтения proposals", "state-error");
+    }
+  };
+
+  const createProposal = async (button) => {
+    if (proposalRequestInFlight) {
+      return;
+    }
+    proposalRequestInFlight = true;
+    showMessage(proposalMessage, "");
+    button.disabled = true;
+    try {
+      const body = {
+        scenario_kind: button.dataset.proposalCreate,
+        replaced_instrument_uid: button.dataset.replacedInstrumentUid || null,
+      };
+      const result = await api("/api/portfolio/proposals", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      showMessage(
+        proposalMessage,
+        `Зафиксирована immutable версия v${result.proposal.version}. Подтверждение не отправляет заявки брокеру.`,
+      );
+      await loadProposals();
+    } catch (error) {
+      showMessage(
+        proposalMessage,
+        error.status === 409
+          ? "Сценарий изменился или устарел. Обновите R4 preview и зафиксируйте новую версию."
+          : "Не удалось зафиксировать предложение. Предыдущие версии не изменены.",
+        true,
+      );
+      if (error.status === 401) {
+        location.reload();
+      }
+    } finally {
+      button.disabled = false;
+      proposalRequestInFlight = false;
+    }
+  };
+
+  const decideProposal = async (button) => {
+    if (proposalRequestInFlight) {
+      return;
+    }
+    const proposalId = button.dataset.proposalId;
+    const action = button.dataset.proposalDecision;
+    const reason = proposalHistory.querySelector(
+      `[data-proposal-reject-reason="${proposalId}"]`,
+    );
+    const deferAt = proposalHistory.querySelector(
+      `[data-proposal-defer-at="${proposalId}"]`,
+    );
+
+    if (action === "reject" && !reason.value.trim()) {
+      showMessage(proposalMessage, "Для отклонения укажите причину.", true);
+      reason.focus();
+      return;
+    }
+    if (action === "defer" && !deferAt.value) {
+      showMessage(proposalMessage, "Для отсрочки выберите дату и время.", true);
+      deferAt.focus();
+      return;
+    }
+
+    proposalRequestInFlight = true;
+    showMessage(proposalMessage, "");
+    button.disabled = true;
+    try {
+      const body = {
+        action,
+        proposal_version: Number(button.dataset.proposalVersion),
+        proposal_hash: button.dataset.proposalHash,
+        reason: action === "reject" ? reason.value.trim() : null,
+        deferred_until: action === "defer"
+          ? new Date(deferAt.value).toISOString()
+          : null,
+      };
+      const result = await api(
+        `/api/portfolio/proposals/${proposalId}/decision`,
+        {method: "POST", body: JSON.stringify(body)},
+      );
+      showMessage(
+        proposalMessage,
+        `${proposalStatusLabel(result.proposal.status)}. Broker execution выключен.`,
+      );
+      await loadProposals();
+    } catch (error) {
+      showMessage(
+        proposalMessage,
+        error.status === 409
+          ? "Эта версия уже решена, истекла или её исходные данные изменились."
+          : "Не удалось записать решение. Повторная торговая операция не создавалась.",
+        true,
+      );
+      if (error.status === 401) {
+        location.reload();
+      }
+    } finally {
+      button.disabled = false;
+      proposalRequestInFlight = false;
+    }
+  };
+
+  const loadBalancing = async () => {
+    try {
+      const payload = await api("/api/portfolio/balancing", {method: "GET"});
+      lastBalancingPayload = payload;
+      renderBalancing(payload);
+      renderProposalCreateOptions(payload);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      lastBalancingPayload = null;
       balancingScenarios.replaceChildren();
       balancingScreening.replaceChildren();
+      renderProposalCreateOptions(null);
       appendEmptyState(balancingScenarios, "R4 preview временно недоступен.");
       setStateBadge(balancingStatus, "Ошибка preview", "state-error");
     }
@@ -2045,6 +2374,7 @@
     void loadTbankStatus();
     void loadInvestmentProfile();
     void loadBalancingPolicy();
+    void loadProposals();
   };
 
   const showAuth = () => {
@@ -2201,6 +2531,20 @@
 
   analysisRefresh.addEventListener("click", () => {
     void loadAnalysis();
+  });
+
+  proposalCreateOptions.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-proposal-create]");
+    if (button) {
+      void createProposal(button);
+    }
+  });
+
+  proposalHistory.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-proposal-decision]");
+    if (button) {
+      void decideProposal(button);
+    }
   });
 
   desktopNavItems.forEach((item) => {
