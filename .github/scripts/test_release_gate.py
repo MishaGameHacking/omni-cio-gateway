@@ -225,10 +225,10 @@ class GitHubTransportTests(unittest.TestCase):
         ))
         connection.close.assert_called_once()
 
-    def test_redirect_auth_failure_outage_and_invalid_data_fail_closed(self) -> None:
+    def test_redirect_auth_failure_and_invalid_data_fail_closed(self) -> None:
         for status, body in (
             (302, b"redirect"), (401, b"unauthorized"), (403, b"forbidden"),
-            (429, b"limit"), (500, b"unavailable"), (200, b"invalid json"),
+            (404, b"missing"), (200, b"invalid json"),
             (200, b"[]"), (200, b"x" * (gate.MAX_RESPONSE_BYTES + 1)),
         ):
             response = Mock(status=status)
@@ -241,6 +241,28 @@ class GitHubTransportTests(unittest.TestCase):
                     patch.object(gate.time, "monotonic", return_value=0), \
                     self.assertRaises(gate.ReleaseBlocked):
                 client.get("/branches/main")
+
+    def test_transient_github_failures_are_retryable_but_bounded(self) -> None:
+        for status in (408, 429, 500, 502, 503, 599):
+            response = Mock(status=status)
+            response.read.return_value = b"temporary"
+            connection = Mock()
+            connection.getresponse.return_value = response
+            client = gate.GitHubClient("synthetic-test-token", deadline=100)
+            with self.subTest(status=status), \
+                    patch.object(gate.http.client, "HTTPSConnection", return_value=connection), \
+                    patch.object(gate.time, "monotonic", return_value=0), \
+                    self.assertRaises(gate.PendingChecks):
+                client.get("/branches/main")
+
+        client = gate.GitHubClient("synthetic-test-token", deadline=100)
+        with patch.object(
+            gate.http.client,
+            "HTTPSConnection",
+            side_effect=OSError("temporary network failure"),
+        ), patch.object(gate.time, "monotonic", return_value=0), \
+                self.assertRaises(gate.PendingChecks):
+            client.get("/branches/main")
 
     def test_pagination_reaches_main_failure_after_a_full_first_page(self) -> None:
         client = gate.GitHubClient("synthetic-test-token", deadline=100)
