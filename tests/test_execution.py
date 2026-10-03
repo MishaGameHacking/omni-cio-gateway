@@ -214,3 +214,25 @@ def test_run_status_is_derived_from_leg_state(
     expected: str,
 ) -> None:
     assert run_status_for_legs(statuses) == expected  # type: ignore[arg-type]
+
+
+
+def test_run_status_has_no_unreachable_terminal_fallback() -> None:
+    terminal_sets = (
+        ("filled",),
+        ("shadow_filled",),
+        ("filled", "shadow_filled"),
+        ("rejected",),
+        ("failed",),
+        ("cancelled",),
+        ("filled", "cancelled"),
+    )
+    assert [run_status_for_legs(statuses) for statuses in terminal_sets] == [
+        "succeeded",
+        "succeeded",
+        "succeeded",
+        "failed",
+        "failed",
+        "cancelled",
+        "cancelled",
+    ]
