@@ -910,12 +910,23 @@
                         class="portfolio-line-chart instrument-market-chart"
                         viewBox="0 0 900 320"
                         role="img"
-                        tabindex="0"
-                        aria-label="Рыночный график инструмента. Используйте стрелки влево и вправо для просмотра свечей."
+                        aria-label="Рыночный график инструмента"
                         aria-describedby="instrument-market-note"
                         preserveAspectRatio="none"
                       ></svg>
-                      <div class="market-chart-tooltip hidden" id="instrument-market-tooltip" role="status"></div>
+                      <input
+                        class="instrument-market-scrubber"
+                        id="instrument-market-scrubber"
+                        type="range"
+                        min="0"
+                        max="0"
+                        value="0"
+                        step="1"
+                        disabled
+                        aria-label="Выбор точки рыночного графика"
+                        aria-describedby="instrument-market-note instrument-market-tooltip"
+                      />
+                      <div class="market-chart-tooltip hidden" id="instrument-market-tooltip" role="status" aria-live="polite"></div>
                     </div>
 
                     <dl class="portfolio-chart-facts instrument-market-facts">
