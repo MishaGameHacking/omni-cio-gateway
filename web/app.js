@@ -1876,7 +1876,7 @@
 
   const proposalDecisionControls = (proposal) => {
     const controls = document.createElement("div");
-    controls.className = "form-stack";
+    controls.className = "proposal-decision-controls";
 
     const rejectReason = document.createElement("input");
     rejectReason.type = "text";
@@ -1889,7 +1889,7 @@
     deferAt.dataset.proposalDeferAt = proposal.id;
 
     const actions = document.createElement("div");
-    actions.className = "connected-actions";
+    actions.className = "proposal-decision-actions";
     for (const [action, label, className] of [
       ["confirm", "Подтвердить план", "button button-primary"],
       ["reject", "Отклонить", "button button-danger-secondary"],
