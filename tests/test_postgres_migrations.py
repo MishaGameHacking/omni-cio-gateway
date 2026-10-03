@@ -115,6 +115,16 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             ).fetchall()
         }
         assert "required_tests" not in catalog_columns
+        assert {
+            "nominal_value",
+            "nominal_currency",
+            "maturity_date",
+            "floating_coupon",
+            "perpetual",
+            "amortization",
+            "subordinated",
+            "liquidity",
+        } <= catalog_columns
 
         semantic_indexes = {
             row[0]
