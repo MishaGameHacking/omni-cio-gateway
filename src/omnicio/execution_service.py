@@ -163,7 +163,6 @@ class PortfolioExecutionService:
                 if (
                     next_current is None
                     or next_current.id != current.id
-                    or next_current.status in {"filled", "shadow_filled"}
                 ):
                     continue
                 return next_run, next_legs
@@ -189,7 +188,6 @@ class PortfolioExecutionService:
         self._require_sandbox_account(user_id, run)
         current = _current_leg(legs)
         if current is None or current.status in {
-            "filled",
             "cancelled",
             "rejected",
             "failed",
