@@ -30,6 +30,9 @@ concurrency:
 jobs:
   test:
     name: Hosted PR gate
+    permissions:
+      contents: read
+      checks: read
     if: >-
       github.event_name == 'pull_request' ||
       github.ref == 'refs/heads/diagnostic/main-sonar-reliability-r6'
@@ -87,43 +90,52 @@ jobs:
           python .github/scripts/test_release_gate.py
 
       # Temporary read-only diagnostic. Remove before merge.
-      - name: Diagnose current main Sonar reliability issues
-        continue-on-error: true
+      - name: Diagnose historical R6 Sonar annotations
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
           import json
           import os
-          import urllib.parse
           import urllib.request
 
-          query = urllib.parse.urlencode(
-              {
-                  "componentKeys": "MishaGameHacking_omni-cio-gateway",
-                  "branch": "main",
-                  "issueStatuses": "OPEN,CONFIRMED",
-                  "impactSoftwareQualities": "RELIABILITY",
-                  "ps": "100",
-              }
-          )
-          request = urllib.request.Request(
-              "https://sonarcloud.io/api/issues/search?" + query,
-              headers={"Authorization": "Bearer " + os.environ["SONAR_TOKEN"]},
-          )
-          with urllib.request.urlopen(request, timeout=15) as response:
-              payload = json.load(response)
-          print(json.dumps({"total": payload.get("total")}, sort_keys=True))
-          for issue in payload.get("issues", []):
+          repository = "MishaGameHacking/omni-cio-gateway"
+          r6_head = "f688bdfa8dbbd17252fb65a8759a4d72c1ff3550"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "omnicio-sonar-diagnostic/1.0",
+          }
+
+          def get(url):
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  return json.load(response)
+
+          checks = get(
+              f"https://api.github.com/repos/{repository}/commits/{r6_head}"
+              "/check-runs?filter=all&per_page=100"
+          )["check_runs"]
+          sonar = [
+              check for check in checks
+              if check.get("name") == "SonarCloud Code Analysis"
+              and check.get("details_url", "").endswith("pullRequest=691")
+          ]
+          if len(sonar) != 1:
+              raise SystemExit(f"expected one R6 Sonar check, got {len(sonar)}")
+          annotations = get(sonar[0]["output"]["annotations_url"])
+          print(json.dumps({"annotation_count": len(annotations)}, sort_keys=True))
+          for annotation in annotations:
               print(
                   json.dumps(
                       {
-                          "rule": issue.get("rule"),
-                          "severity": issue.get("severity"),
-                          "component": issue.get("component"),
-                          "line": issue.get("line"),
-                          "message": issue.get("message"),
-                          "impacts": issue.get("impacts"),
+                          "path": annotation.get("path"),
+                          "start_line": annotation.get("start_line"),
+                          "end_line": annotation.get("end_line"),
+                          "annotation_level": annotation.get("annotation_level"),
+                          "title": annotation.get("title"),
+                          "message": annotation.get("message"),
                       },
                       ensure_ascii=True,
                       sort_keys=True,
