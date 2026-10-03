@@ -23,6 +23,7 @@ from omnicio.tbank import (
     TBankInstrumentMetadata,
     TBankInvestClient,
     TBankLastPrice,
+    TBankMarketYield,
     TBankMoney,
     TBankOrderBook,
     TBankOrderLevel,
@@ -116,6 +117,57 @@ def test_tbank_get_user_info_parses_qualification_context() -> None:
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {}
     assert "provider-user-id" not in repr(info)
+
+
+def test_tbank_market_yields_are_batched_read_only_shortlist_signals() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instruments": [
+                {
+                    "instrumentUid": "uid-1",
+                    "values": [
+                        {
+                            "type": "INSTRUMENT_VALUE_YIELD",
+                            "value": {"units": "12", "nano": 500000000},
+                            "time": "2026-10-03T05:00:00Z",
+                        }
+                    ],
+                },
+                {
+                    "instrumentUid": "uid-2",
+                    "values": [
+                        {
+                            "type": "INSTRUMENT_VALUE_LAST_PRICE",
+                            "value": {"units": "99", "nano": 0},
+                            "time": "2026-10-03T05:00:00Z",
+                        }
+                    ],
+                },
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_market_yields(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            ("uid-1", "uid-2", "uid-1"),
+        )
+
+    assert result == (
+        TBankMarketYield(
+            instrument_uid="uid-1",
+            yield_percent="12.5",
+            time=datetime(2026, 10, 3, 5, 0, tzinfo=UTC),
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("MarketDataService/GetMarketValues")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": ["uid-1", "uid-2"],
+        "values": ["INSTRUMENT_VALUE_YIELD"],
+    }
 
 
 def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
