@@ -20,6 +20,18 @@ class MoexError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class MoexSecurityIdentity:
+    secid: str
+    isin: str
+    issuer_id: str
+    issuer_name: str
+    issuer_inn: str
+    primary_board_id: str
+    is_traded: bool
+    source_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class MoexBondSnapshot:
     secid: str
     board_id: str
@@ -50,6 +62,81 @@ class MoexLiquiditySnapshot:
 @dataclass(frozen=True, slots=True)
 class MoexIssClient:
     timeout_seconds: int = 10
+
+    def security_identity(
+        self,
+        query: str,
+        *,
+        expected_isin: str = "",
+    ) -> MoexSecurityIdentity | None:
+        clean_query = query.strip()
+        if not clean_query or len(clean_query) > 64:
+            raise ValueError("MOEX security query is invalid")
+        url = (
+            f"{MOEX_ISS_ROOT}/securities.json?"
+            + urllib.parse.urlencode(
+                {
+                    "iss.meta": "off",
+                    "q": clean_query,
+                    "limit": "20",
+                    "securities.columns": ",".join(
+                        (
+                            "secid",
+                            "isin",
+                            "is_traded",
+                            "emitent_id",
+                            "emitent_title",
+                            "emitent_inn",
+                            "primary_boardid",
+                        )
+                    ),
+                }
+            )
+        )
+        payload = self._get_payload(url)
+        rows = _rows(payload, "securities")
+        normalized_isin = expected_isin.strip().upper()
+        matches = [
+            row
+            for row in rows
+            if (
+                normalized_isin
+                and str(row.get("isin") or "").strip().upper() == normalized_isin
+            )
+            or (
+                not normalized_isin
+                and str(row.get("secid") or "").strip().upper()
+                == clean_query.upper()
+            )
+        ]
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise MoexError("MOEX ISS security identity is ambiguous")
+        row = matches[0]
+        secid = str(row.get("secid") or "").strip().upper()
+        isin = str(row.get("isin") or "").strip().upper()
+        issuer_id = str(row.get("emitent_id") or "").strip()
+        issuer_name = str(row.get("emitent_title") or "").strip()
+        issuer_inn = str(row.get("emitent_inn") or "").strip()
+        board = str(row.get("primary_boardid") or "").strip().upper()
+        traded_raw = row.get("is_traded")
+        try:
+            traded = int(str(traded_raw)) == 1
+        except (TypeError, ValueError) as exc:
+            raise MoexError("MOEX ISS security identity has invalid trade flag") from exc
+        if not secid or not isin or not issuer_id or not issuer_name or not board:
+            raise MoexError("MOEX ISS security identity is incomplete")
+        return MoexSecurityIdentity(
+            secid=secid,
+            isin=isin,
+            issuer_id=issuer_id,
+            issuer_name=issuer_name,
+            issuer_inn=issuer_inn,
+            primary_board_id=board,
+            is_traded=traded,
+            source_url=url,
+        )
 
     def bond_liquidity(
         self,
