@@ -238,6 +238,39 @@
     element.classList.toggle("error", isError);
   };
 
+  const validateFormWithMessage = (form, messageElement, fallback) => {
+    if (form.checkValidity()) {
+      return true;
+    }
+    const invalid = form.querySelector(":invalid");
+    form.reportValidity();
+    const label = invalid?.labels?.[0]?.textContent
+      ?.replace(/\s+/g, " ")
+      .trim();
+    showMessage(
+      messageElement,
+      label ? `${fallback} Поле «${label}».` : fallback,
+      true,
+    );
+    invalid?.focus();
+    return false;
+  };
+
+  const localDateTimeInputValue = (date) => {
+    const pad = (value) => String(value).padStart(2, "0");
+    return [
+      date.getFullYear(),
+      "-",
+      pad(date.getMonth() + 1),
+      "-",
+      pad(date.getDate()),
+      "T",
+      pad(date.getHours()),
+      ":",
+      pad(date.getMinutes()),
+    ].join("");
+  };
+
   const setStateBadge = (element, text, state) => {
     element.textContent = text;
     element.classList.remove("state-ok", "state-next", "state-error");
@@ -1895,6 +1928,9 @@
     const deferAt = document.createElement("input");
     deferAt.type = "datetime-local";
     deferAt.dataset.proposalDeferAt = proposal.id;
+    deferAt.min = localDateTimeInputValue(new Date(Date.now() + 60_000));
+    deferAt.setAttribute("aria-label", "Отложить предложение до даты и времени");
+    deferAt.title = "Выберите будущие дату и время";
 
     const actions = document.createElement("div");
     actions.className = "proposal-decision-actions";
@@ -1926,6 +1962,37 @@
     cancelled: "Отменён",
     failed: "Ошибка",
   };
+
+  const EXECUTION_ERROR_MESSAGES = {
+    proposal_not_found: "Предложение больше недоступно. Обновите список решений.",
+    proposal_not_confirmed: "Сначала подтвердите exact-версию предложения.",
+    proposal_version_mismatch: "Версия предложения изменилась. Обновите список решений.",
+    proposal_hash_mismatch: "Hash предложения не совпадает. Не повторяйте старое действие; обновите данные.",
+    proposal_expired: "Срок действия предложения истёк. Постройте и подтвердите новую версию.",
+    proposal_snapshot_stale: "Портфель изменился после предложения. Нужен новый snapshot и новое решение.",
+    proposal_profile_stale: "Профиль капитала изменился. Пересчитайте предложение.",
+    proposal_policy_stale: "Лимиты балансировки изменились. Пересчитайте предложение.",
+    sandbox_account_mismatch: "Подключите тот же Sandbox-счёт, для которого было создано предложение.",
+    sandbox_buy_lots_exceed_available: "Песочница не разрешает запрошенное количество лотов для покупки.",
+    sandbox_sell_lots_exceed_available: "Песочница не подтверждает нужное количество лотов для продажи.",
+    sandbox_buy_would_overspend: "Предварительная стоимость превышает max spend предложения. Заявка не отправлена.",
+    sandbox_sell_below_min_proceeds: "Предварительная сумма ниже min proceeds предложения. Заявка не отправлена.",
+    sandbox_submit_ambiguous: "Ответ на отправку неоднозначен. Повторная заявка запрещена; используйте «Сверить Sandbox».",
+    sandbox_order_not_found_yet: "Заявка пока не найдена по сохранённому request ID. Повторная отправка запрещена.",
+    sandbox_reconcile_unavailable: "T-Invest временно недоступен. Run сохранён для повторной сверки.",
+    sandbox_cancel_ambiguous: "Отмена не подтверждена однозначно. Run оставлен на сверке.",
+    sandbox_request_id_mismatch: "Provider вернул другой request ID. Run остановлен для безопасной сверки.",
+    sandbox_instrument_mismatch: "Provider вернул другой инструмент. Run остановлен для безопасной сверки.",
+    sandbox_lot_count_mismatch: "Provider вернул другое количество лотов. Run остановлен для безопасной сверки.",
+    sandbox_direction_mismatch: "Provider вернул другое направление сделки. Run остановлен для безопасной сверки.",
+    sandbox_order_type_mismatch: "Provider вернул не limit-заявку. Run остановлен для безопасной сверки.",
+    sandbox_provider_overspend_detected: "Provider сообщил сумму выше max spend. Следующие действия остановлены.",
+    sandbox_provider_min_proceeds_breach: "Provider сообщил сумму ниже min proceeds. Следующие действия остановлены.",
+  };
+
+  const executionErrorMessage = (error, fallback) => (
+    EXECUTION_ERROR_MESSAGES[String(error?.message || "")] || fallback
+  );
 
   const executionStatusLabel = (value) => (
     EXECUTION_STATUS_LABELS[value] || String(value || "—")
@@ -2122,15 +2189,33 @@
       `[data-proposal-defer-at="${proposalId}"]`,
     );
 
-    if (action === "reject" && !reason.value.trim()) {
+    if (action === "reject" && (!reason || !reason.value.trim())) {
       showMessage(proposalMessage, "Для отклонения укажите причину.", true);
-      reason.focus();
+      reason?.focus();
       return;
     }
-    if (action === "defer" && !deferAt.value) {
-      showMessage(proposalMessage, "Для отсрочки выберите дату и время.", true);
-      deferAt.focus();
-      return;
+
+    let deferredUntil = null;
+    if (action === "defer") {
+      if (!deferAt?.value) {
+        showMessage(proposalMessage, "Для отсрочки выберите дату и время.", true);
+        deferAt?.focus();
+        return;
+      }
+      const deferredDate = new Date(deferAt.value);
+      if (
+        Number.isNaN(deferredDate.getTime())
+        || deferredDate.getTime() <= Date.now()
+      ) {
+        showMessage(
+          proposalMessage,
+          "Дата отсрочки должна быть в будущем. Выберите новую дату и время.",
+          true,
+        );
+        deferAt.focus();
+        return;
+      }
+      deferredUntil = deferredDate.toISOString();
     }
 
     proposalRequestInFlight = true;
@@ -2142,9 +2227,7 @@
         proposal_version: Number(button.dataset.proposalVersion),
         proposal_hash: button.dataset.proposalHash,
         reason: action === "reject" ? reason.value.trim() : null,
-        deferred_until: action === "defer"
-          ? new Date(deferAt.value).toISOString()
-          : null,
+        deferred_until: deferredUntil,
       };
       const result = await api(
         `/api/portfolio/proposals/${proposalId}/decision`,
@@ -2391,9 +2474,12 @@
       }
       showMessage(
         executionMessage,
-        error.status === 409
-          ? `Запуск не выполнен: ${error.message}. Проверьте exact proposal и контур счёта.`
-          : "R6 запуск не выполнен. Production-заявка не создавалась.",
+        executionErrorMessage(
+          error,
+          error.status === 409
+            ? "Запуск заблокирован: предложение устарело или контур счёта изменился."
+            : "R6 запуск не выполнен. Production-заявка не создавалась.",
+        ),
         true,
       );
     } finally {
@@ -2436,9 +2522,12 @@
       }
       showMessage(
         executionMessage,
-        error.status === 503
-          ? "Provider недоступен. Run оставлен в безопасном состоянии для последующей сверки."
-          : `R6 действие не выполнено: ${error.message}.`,
+        executionErrorMessage(
+          error,
+          error.status === 503
+            ? "Provider недоступен. Run оставлен в безопасном состоянии для последующей сверки."
+            : "R6 действие не выполнено. Run не продвинут в небезопасное состояние.",
+        ),
         true,
       );
     } finally {
@@ -3103,7 +3192,11 @@
     event.preventDefault();
     showMessage(investmentProfileMessage, "");
 
-    if (!investmentProfileForm.reportValidity()) {
+    if (!validateFormWithMessage(
+      investmentProfileForm,
+      investmentProfileMessage,
+      "Проверьте значение перед сохранением.",
+    )) {
       return;
     }
 
@@ -3160,7 +3253,11 @@
     event.preventDefault();
     showMessage(balancingPolicyMessage, "");
 
-    if (!balancingPolicyForm.reportValidity()) {
+    if (!validateFormWithMessage(
+      balancingPolicyForm,
+      balancingPolicyMessage,
+      "Проверьте значение лимита перед сохранением.",
+    )) {
       return;
     }
 
