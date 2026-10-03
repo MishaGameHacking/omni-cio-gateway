@@ -101,8 +101,8 @@ class Candidate:
     uncertainty_haircut_rub_per_lot: Decimal
     credit_loss_rub_per_lot: Decimal
     liquidity_penalty_rub_per_lot: Decimal
-    liquidity_days: int
-    term_months: int
+    liquidity_days: int | None
+    term_months: int | None
     ytw_percent: Decimal | None
     duration_years: Decimal | None
     api_trade_available: bool
@@ -110,6 +110,7 @@ class Candidate:
     required_tests_passed: bool
     evidence_complete: bool
     structure_supported: bool = True
+    access_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +234,7 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("buy_unavailable")
     if not candidate.required_tests_passed:
         reasons.append("required_tests_missing")
+    reasons.extend(candidate.access_reasons)
     if candidate.lot_size <= 0:
         reasons.append("invalid_lot_size")
     if candidate.market_lot_cost_rub <= 0:
@@ -243,12 +245,16 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("currency_not_allowed")
     if candidate.risk_state not in policy.allowed_risk_states:
         reasons.append("risk_state_not_allowed")
-    if candidate.liquidity_days < 0 or candidate.liquidity_days > policy.max_liquidity_days:
+    if candidate.liquidity_days is None:
+        reasons.append("liquidity_evidence_missing")
+    elif candidate.liquidity_days < 0 or candidate.liquidity_days > policy.max_liquidity_days:
         reasons.append("liquidity_limit")
-    if candidate.term_months < 0:
+    if candidate.term_months is not None and candidate.term_months < 0:
         reasons.append("term_limit")
     if candidate.asset_class == "bond":
-        if candidate.term_months > policy.max_term_months:
+        if candidate.term_months is None:
+            reasons.append("bond_term_missing")
+        elif candidate.term_months > policy.max_term_months:
             reasons.append("term_limit")
         if candidate.ytw_percent is None:
             reasons.append("bond_ytw_missing")
