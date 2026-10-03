@@ -986,6 +986,52 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("@media (max-width: 820px)", stylesheet)
         self.assertIn("@media (max-width: 420px)", stylesheet)
 
+    def test_instrument_market_chart_uses_server_broker_boundary_and_bounded_lifecycle(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
+
+        for element_id in (
+            "instrument-market-state",
+            "instrument-market-retry",
+            "instrument-market-modes",
+            "instrument-market-periods",
+            "instrument-market-chart",
+            "instrument-market-tooltip",
+            "instrument-market-last-price",
+            "instrument-market-quote-time",
+            "instrument-market-trading-status",
+            "instrument-market-source",
+            "instrument-market-note",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        for period in ("1d", "1w", "1m", "3m", "1y"):
+            self.assertIn(f'data-market-period="{period}"', page)
+        self.assertIn('data-market-mode="line"', page)
+        self.assertIn('data-market-mode="candles"', page)
+        self.assertIn("Время котировки", page)
+        self.assertIn("время загрузки", page)
+
+        self.assertIn("/api/market/instruments/", script)
+        self.assertIn("renderMarketCandles", script)
+        self.assertIn("market-chart-crosshair", script)
+        self.assertIn("INSTRUMENT_MARKET_MAX_RETRIES = 6", script)
+        self.assertIn("instrumentMarketEventSource.close()", script)
+        self.assertIn('document.addEventListener("visibilitychange"', script)
+        self.assertIn("document.visibilityState", script)
+        self.assertIn("scheduleInstrumentMarketReconnect", script)
+        self.assertIn("Math.min(1000 * (2 ** instrumentMarketRetryCount), 30000)", script)
+        self.assertNotIn("broker token", script.lower())
+        self.assertNotIn("innerHTML", script)
+
+        self.assertIn(".instrument-market-chart", stylesheet)
+        self.assertIn(".market-candle-body", stylesheet)
+        self.assertIn(".market-chart-tooltip", stylesheet)
+        self.assertIn(".market-chart-crosshair", stylesheet)
+        self.assertIn("@media (max-width: 620px)", stylesheet)
+
     def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
@@ -1131,7 +1177,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.17.0"', project)
+        self.assertIn('version = "0.18.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
