@@ -23,6 +23,7 @@ from omnicio.portfolio_store import (
     ProposalStateError,
     ReinvestmentIncomeSummary,
     ReinvestmentMandateRecord,
+    ReinvestmentMandateSpec,
 )
 from omnicio.proposals import ProposalDraft
 from omnicio.tbank import (
@@ -1111,9 +1112,11 @@ def test_reinvestment_http_binds_server_account_and_keeps_execution_disabled() -
     assert payload["income"]["observed_count"] == 2
     store.return_value.create_reinvestment_mandate.assert_called_once()
     call = store.return_value.create_reinvestment_mandate.call_args
-    assert call.kwargs["account_id"] == "server-account"
-    assert call.kwargs["profile_version"] == 3
-    assert call.kwargs["policy_version"] == 4
+    spec = call.kwargs["spec"]
+    assert isinstance(spec, ReinvestmentMandateSpec)
+    assert spec.account_id == "server-account"
+    assert spec.profile_version == 3
+    assert spec.policy_version == 4
 
 
 def test_reinvestment_get_never_exposes_operation_history_or_spendable_income() -> None:
