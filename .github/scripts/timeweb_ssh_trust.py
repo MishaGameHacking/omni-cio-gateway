@@ -89,7 +89,7 @@ def ssh_host_key_mismatch_message(
 def _openssh_binary(name: str) -> str:
     """Return a trusted OS OpenSSH binary without searching the mutable PATH."""
     if os.name == "nt":
-        system_root = pathlib.Path(os.environ.get("SystemRoot", r"C:\\Windows"))
+        system_root = pathlib.Path(os.environ.get("SYSTEMROOT", r"C:\\Windows"))
         return str(system_root / "System32" / "OpenSSH" / f"{name}.exe")
     if os.name == "posix":
         return f"/usr/bin/{name}"
