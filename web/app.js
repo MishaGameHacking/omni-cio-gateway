@@ -1655,9 +1655,28 @@
       title.textContent = `${label} · ${scenario.status === "feasible" ? "допустим" : "заблокирован"}`;
       const details = document.createElement("small");
       const tradeCount = Array.isArray(scenario.trades) ? scenario.trades.length : 0;
+      const tradeSummary = (scenario.trades || []).map((trade) => {
+        const direction = trade.action === "sell" ? "продать" : "купить";
+        const ytw = trade.ytw_percent === null || trade.ytw_percent === undefined
+          ? ""
+          : `YTW ${trade.ytw_percent}%`;
+        const tax = Number(trade.tax_rub) > 0
+          ? `налог-сценарий ${formatMoney({currency: "RUB", value: trade.tax_rub})}`
+          : "";
+        const cost = Number(trade.estimated_cost_rub) > 0
+          ? `издержки ${formatMoney({currency: "RUB", value: trade.estimated_cost_rub})}`
+          : "";
+        return [
+          `${direction} ${trade.ticker || trade.instrument_uid}: ${trade.lots} лот.`,
+          ytw,
+          cost,
+          tax,
+        ].filter(Boolean).join(", ");
+      }).join(" · ");
       details.textContent = [
         balancingReason(scenario.reason),
         `сделок: ${tradeCount}`,
+        tradeSummary,
         scenario.turnover_rub !== undefined
           ? `оборот: ${formatMoney({currency: "RUB", value: scenario.turnover_rub})}`
           : "",
@@ -1682,8 +1701,29 @@
       const details = document.createElement("small");
       const blockers = (item.reasons || []).map(balancingReason);
       const evidenceNotes = (item.notes || []).map(balancingNote);
-      details.textContent = [...blockers, ...evidenceNotes].length
-        ? [...blockers, ...evidenceNotes].join(" · ")
+      const metrics = [
+        item.ytw_percent !== null && item.ytw_percent !== undefined
+          ? `YTW: ${item.ytw_percent}%`
+          : "",
+        item.duration_years !== null && item.duration_years !== undefined
+          ? `дюрация: ${Number(item.duration_years).toFixed(2)} г.`
+          : "",
+        Number.isFinite(Number(item.liquidity_days))
+          ? `ликвидность: ~${item.liquidity_days} дн.`
+          : "",
+        Number.isFinite(Number(item.max_liquid_lots))
+          ? `лимит ликвидности: ${item.max_liquid_lots} лот.`
+          : "",
+        Number(item.transaction_cost_rub_per_lot) > 0
+          ? `вход за лот: ${formatMoney({currency: "RUB", value: item.transaction_cost_rub_per_lot})}`
+          : "",
+        Number(item.expected_net_gain_rub_per_lot) !== 0
+          ? `net-сценарий/лот: ${formatMoney({currency: "RUB", value: item.expected_net_gain_rub_per_lot})}`
+          : "",
+      ].filter(Boolean);
+      const explanation = [...blockers, ...metrics, ...evidenceNotes];
+      details.textContent = explanation.length
+        ? explanation.join(" · ")
         : "Все текущие R4 screening-гейты пройдены";
       row.append(title, details);
       balancingScreening.append(row);
