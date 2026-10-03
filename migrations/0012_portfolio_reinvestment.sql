@@ -57,6 +57,14 @@ CREATE TABLE IF NOT EXISTS portfolio_reinvestment_mandates (
     )
 );
 
+CREATE OR REPLACE FUNCTION omnicio_current_tenant_user_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+AS $omnicio$
+    SELECT NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+$omnicio$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS portfolio_reinvestment_mandates_active_idx
     ON portfolio_reinvestment_mandates (user_id)
     WHERE revoked_at IS NULL;
@@ -71,10 +79,10 @@ DROP POLICY IF EXISTS portfolio_reinvestment_mandates_tenant
 CREATE POLICY portfolio_reinvestment_mandates_tenant
     ON portfolio_reinvestment_mandates
     USING (
-        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+        user_id = omnicio_current_tenant_user_id()
     )
     WITH CHECK (
-        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+        user_id = omnicio_current_tenant_user_id()
     );
 
 CREATE OR REPLACE FUNCTION omnicio_validate_reinvestment_mandate_mutation()
@@ -184,10 +192,10 @@ DROP POLICY IF EXISTS portfolio_reinvestment_income_credits_tenant
 CREATE POLICY portfolio_reinvestment_income_credits_tenant
     ON portfolio_reinvestment_income_credits
     USING (
-        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+        user_id = omnicio_current_tenant_user_id()
     )
     WITH CHECK (
-        user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid
+        user_id = omnicio_current_tenant_user_id()
     );
 
 CREATE OR REPLACE FUNCTION omnicio_validate_reinvestment_income_credit()
