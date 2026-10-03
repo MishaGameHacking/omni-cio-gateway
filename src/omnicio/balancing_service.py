@@ -763,7 +763,7 @@ def _holding(row: dict[str, object]) -> Holding:
     rating_status = str(row.get("rating_status") or "data_missing")
     rating_bucket = "not_applicable" if rating_status == "not_applicable" else "unknown"
     issuer_id = str(row.get("issuer_id") or "") or "unknown_issuer"
-    group_id = str(row.get("group_id") or "") or "unknown_group"
+    group_id = str(row.get("group_id") or "") or "unverified_group"
     blocked_lots = _decimal(row.get("blocked_lots")) or Decimal("0")
     return Holding(
         instrument_uid=str(row.get("instrument_uid") or ""),
@@ -886,7 +886,7 @@ def _candidate(
         asset_class=asset_class,
         sector=str(row.get("sector") or "") or "unknown_sector",
         issuer_id=issuer_id or "unknown_issuer",
-        group_id=group_id or "unknown_group",
+        group_id=group_id or "unverified_group",
         rating_bucket=cast(Any, rating_bucket),
         currency=str(row.get("currency") or "").upper(),
         risk_state=risk_state,
