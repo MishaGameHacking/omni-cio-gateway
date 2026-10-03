@@ -1356,7 +1356,7 @@
   };
 
   const setHomeAttentionBucket = (name, items) => {
-    if (!Object.hasOwn(homeAttentionBuckets, name)) {
+    if (!(name in homeAttentionBuckets)) {
       return;
     }
     homeAttentionBuckets[name] = items === null ? null : (Array.isArray(items) ? items : []);
@@ -3445,6 +3445,7 @@
         view: "connections",
       }]);
       setHomeAttentionBucket("portfolio", []);
+      resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
       lastPortfolioRefreshAt = 0;
