@@ -295,17 +295,18 @@ def validate_product_environment() -> None:
     portfolio_live_caps()
     if portfolio_live_execution_enabled():
         raise InfraError(
-            "Production live execution requires a newer reviewed legal publication "
-            "than 2026-10-02-v6; keep PORTFOLIO_LIVE_EXECUTION_ENABLED=false"
+            "Production live execution requires a separate reviewed live-trading "
+            "legal and operational gate; keep PORTFOLIO_LIVE_EXECUTION_ENABLED=false"
         )
 
 
 def validate_legal_documents(repository_root: pathlib.Path) -> None:
-    for relative in (
-        "web/legal/privacy.html",
-        "web/legal/consent.html",
-        "web/legal/terms.html",
-    ):
+    documents = (
+        ("web/legal/privacy.html", "LEGAL_PRIVACY_VERSION"),
+        ("web/legal/consent.html", "LEGAL_CONSENT_VERSION"),
+        ("web/legal/terms.html", "LEGAL_TERMS_VERSION"),
+    )
+    for relative, version_name in documents:
         path = repository_root / relative
         try:
             body = path.read_text(encoding="utf-8")
@@ -315,6 +316,11 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
         if missing:
             raise InfraError(
                 f"Legal document {relative} is missing operator placeholders"
+            )
+        expected_version = os.environ.get(version_name, "").strip()
+        if not expected_version or f"версия {expected_version}" not in body:
+            raise InfraError(
+                f"Legal document {relative} does not match {version_name}"
             )
 
 
