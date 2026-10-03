@@ -102,6 +102,17 @@
   const topConnectionText = document.querySelector("#top-connection-text");
   const homePortfolioState = document.querySelector("#home-portfolio-state");
   const homeFxState = document.querySelector("#home-fx-state");
+  const homePortfolioTotal = requiredElement("#home-portfolio-total");
+  const homeDailyChange = requiredElement("#home-daily-change");
+  const homeDailyRelative = requiredElement("#home-daily-relative");
+  const homeFreeCash = requiredElement("#home-free-cash");
+  const homePositionCount = requiredElement("#home-position-count");
+  const homeAttentionCount = requiredElement("#home-attention-count");
+  const homeSnapshotTime = requiredElement("#home-snapshot-time");
+  const homePortfolioSummaryState = requiredElement("#home-portfolio-summary-state");
+  const homeAllocation = requiredElement("#home-allocation");
+  const homeAttentionStateBadge = requiredElement("#home-attention-state");
+  const homeAttentionList = requiredElement("#home-attention-list");
 
   const usdRubCard = document.querySelector("#usd-rub-card");
   const usdRubState = document.querySelector("#usd-rub-state");
@@ -241,6 +252,11 @@
   let usdRubEventSource = null;
   let usdRubFallbackTimer = null;
   let navigationDepth = 0;
+  const homeAttentionBuckets = {
+    connection: null,
+    portfolio: null,
+    proposals: null,
+  };
 
   const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -411,7 +427,7 @@
     const resolved = resolveTheme(preference);
     document.body.dataset.theme = resolved;
     if (themeMeta) {
-      themeMeta.content = resolved === "dark" ? "#10151d" : "#f6f8fb";
+      themeMeta.content = resolved === "dark" ? "#07111f" : "#f4f7fb";
     }
     themeButtons.forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.themeOption === preference));
@@ -1038,46 +1054,61 @@
     }, 5 * 60 * 1000);
   };
 
-  const renderAllocation = (totals) => {
-    assetAllocation.replaceChildren();
+  const renderAllocationRows = (
+    container,
+    totals,
+    {limit = null, emptyMessage = "T-Invest не вернул распределение по классам активов."} = {},
+  ) => {
+    container.replaceChildren();
     const positive = (totals || []).filter((item) => numericValue(item.money?.value) > 0);
     const sum = positive.reduce((total, item) => total + numericValue(item.money.value), 0);
     if (!positive.length || sum <= 0) {
-      appendEmptyState(assetAllocation, "T-Invest не вернул распределение по классам активов.");
+      appendEmptyState(container, emptyMessage);
       return;
     }
 
-    positive
-      .sort((left, right) => numericValue(right.money.value) - numericValue(left.money.value))
-      .forEach((item) => {
-        const value = numericValue(item.money.value);
-        const share = Math.max(0, Math.min(100, (value / sum) * 100));
+    const ordered = positive
+      .sort((left, right) => numericValue(right.money.value) - numericValue(left.money.value));
+    const visible = Number.isInteger(limit) && limit > 0 ? ordered.slice(0, limit) : ordered;
 
-        const row = document.createElement("div");
-        row.className = "allocation-row";
+    visible.forEach((item) => {
+      const value = numericValue(item.money.value);
+      const share = Math.max(0, Math.min(100, (value / sum) * 100));
 
-        const label = document.createElement("div");
-        label.className = "allocation-label";
-        const name = document.createElement("strong");
-        name.textContent = ASSET_LABELS[item.kind] || item.kind;
-        const percent = document.createElement("span");
-        percent.textContent = `${share.toFixed(1)}%`;
-        label.append(name, percent);
+      const row = document.createElement("div");
+      row.className = "allocation-row";
 
-        const track = document.createElement("div");
-        track.className = "allocation-track";
-        const fill = document.createElement("div");
-        fill.className = "allocation-fill";
-        fill.style.width = `${share}%`;
-        track.append(fill);
+      const label = document.createElement("div");
+      label.className = "allocation-label";
+      const name = document.createElement("strong");
+      name.textContent = ASSET_LABELS[item.kind] || item.kind;
+      const percent = document.createElement("span");
+      percent.textContent = `${share.toFixed(1)}%`;
+      label.append(name, percent);
 
-        const amount = document.createElement("div");
-        amount.className = "allocation-value";
-        amount.textContent = formatMoney(item.money);
+      const track = document.createElement("div");
+      track.className = "allocation-track";
+      track.setAttribute("role", "img");
+      track.setAttribute(
+        "aria-label",
+        `${ASSET_LABELS[item.kind] || item.kind}: ${share.toFixed(1)}%`,
+      );
+      const fill = document.createElement("div");
+      fill.className = "allocation-fill";
+      fill.style.width = `${share}%`;
+      track.append(fill);
 
-        row.append(label, track, amount);
-        assetAllocation.append(row);
-      });
+      const amount = document.createElement("div");
+      amount.className = "allocation-value";
+      amount.textContent = formatMoney(item.money);
+
+      row.append(label, track, amount);
+      container.append(row);
+    });
+  };
+
+  const renderAllocation = (totals) => {
+    renderAllocationRows(assetAllocation, totals);
   };
 
   const renderCash = (cash, blockedCash, loadingLimits) => {
@@ -1179,6 +1210,200 @@
     portfolioContent.classList.toggle("hidden", mode !== "content");
   };
 
+  const singleRubAmount = (items) => {
+    const rubItems = (items || []).filter(
+      (item) => String(item?.currency || "").toUpperCase() === "RUB",
+    );
+    if (rubItems.length === 0) {
+      return 0;
+    }
+    if (rubItems.length !== 1) {
+      return null;
+    }
+    const value = Number(rubItems[0].value);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  };
+
+  const homeUnblockedRub = (snapshot) => {
+    if (snapshot?.limits_loading_in_progress === true) {
+      return null;
+    }
+    const cash = singleRubAmount(snapshot?.cash);
+    const blocked = singleRubAmount(snapshot?.blocked_cash);
+    if (cash === null || blocked === null || blocked > cash) {
+      return null;
+    }
+    return cash - blocked;
+  };
+
+  const homePortfolioAttention = (snapshot, {stale = false, failed = false} = {}) => {
+    const items = [];
+    if (failed) {
+      items.push({
+        severity: "error",
+        title: "Портфель не подтверждён",
+        detail: "T-Invest не вернул актуальный снимок. До успешного обновления не полагайтесь на значения портфеля.",
+        view: "portfolio",
+      });
+      return items;
+    }
+    if (!snapshot?.portfolio) {
+      return items;
+    }
+    if (stale) {
+      items.push({
+        severity: "warning",
+        title: "Данные портфеля устарели",
+        detail: "Последний подтверждённый снимок сохранён на экране, но новое чтение T-Invest завершилось ошибкой.",
+        view: "portfolio",
+      });
+    }
+    if (snapshot.limits_loading_in_progress === true) {
+      items.push({
+        severity: "warning",
+        title: "T-Invest обновляет денежные лимиты",
+        detail: "Незаблокированные RUB пока не считаются подтверждёнными.",
+        view: "portfolio",
+      });
+    }
+    const positions = snapshot.portfolio.positions || [];
+    const blockedPositions = positions.filter((position) => position.blocked).length;
+    if (blockedPositions > 0) {
+      items.push({
+        severity: "warning",
+        title: `Заблокированные позиции: ${blockedPositions}`,
+        detail: "Откройте портфель, чтобы увидеть конкретные инструменты и состояние блокировки.",
+        view: "portfolio",
+      });
+    }
+    const blockedCash = (snapshot.blocked_cash || []).filter((money) => {
+      const value = Number(money?.value);
+      return Number.isFinite(value) && value !== 0;
+    });
+    if (blockedCash.length > 0) {
+      items.push({
+        severity: "warning",
+        title: "Есть заблокированные денежные остатки",
+        detail: `Валют с ненулевой блокировкой: ${blockedCash.length}.`,
+        view: "portfolio",
+      });
+    }
+    return items;
+  };
+
+  const renderHomeAttention = () => {
+    const pending = Object.values(homeAttentionBuckets).some((value) => value === null);
+    const items = Object.values(homeAttentionBuckets)
+      .filter(Array.isArray)
+      .flat()
+      .sort((left, right) => {
+        const rank = {error: 0, warning: 1, info: 2};
+        return (rank[left.severity] ?? 3) - (rank[right.severity] ?? 3);
+      });
+
+    homeAttentionList.replaceChildren();
+    homeAttentionCount.textContent = pending && items.length === 0 ? "—" : String(items.length);
+
+    if (!items.length) {
+      appendEmptyState(
+        homeAttentionList,
+        pending
+          ? "Проверяем подключение, портфель и активные планы."
+          : "Подтверждённых событий, требующих действия, сейчас нет.",
+      );
+      setStateBadge(
+        homeAttentionStateBadge,
+        pending ? "Проверяем" : "Спокойно",
+        pending ? "" : "state-ok",
+      );
+      return;
+    }
+
+    items.slice(0, 4).forEach((item) => {
+      const row = document.createElement("article");
+      row.className = `attention-item attention-${item.severity || "info"}`;
+
+      const marker = document.createElement("span");
+      marker.className = "attention-marker";
+      marker.setAttribute("aria-hidden", "true");
+      marker.textContent = item.severity === "error" ? "×" : item.severity === "warning" ? "!" : "i";
+
+      const copy = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = item.title;
+      const detail = document.createElement("span");
+      detail.textContent = item.detail;
+      copy.append(title, detail);
+      row.append(marker, copy);
+
+      if (item.view && VIEW_TITLES[item.view]) {
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "attention-action";
+        action.dataset.homeAttentionView = item.view;
+        action.textContent = "Открыть";
+        row.append(action);
+      }
+      homeAttentionList.append(row);
+    });
+
+    const hasError = items.some((item) => item.severity === "error");
+    setStateBadge(
+      homeAttentionStateBadge,
+      pending ? `${items.length} · проверяем` : String(items.length),
+      hasError ? "state-error" : "state-next",
+    );
+  };
+
+  const setHomeAttentionBucket = (name, items) => {
+    if (!Object.hasOwn(homeAttentionBuckets, name)) {
+      return;
+    }
+    homeAttentionBuckets[name] = items === null ? null : (Array.isArray(items) ? items : []);
+    renderHomeAttention();
+  };
+
+  const resetHomePortfolioSummary = (message = "Ожидаем данные T-Invest") => {
+    homePortfolioTotal.textContent = "—";
+    homeDailyChange.textContent = "—";
+    homeDailyRelative.textContent = "—";
+    homeFreeCash.textContent = "—";
+    homePositionCount.textContent = "—";
+    homeSnapshotTime.textContent = message;
+    homeDailyChange.classList.remove("value-positive", "value-negative");
+    homeDailyRelative.classList.remove("value-positive", "value-negative");
+    homeAllocation.replaceChildren();
+    appendEmptyState(homeAllocation, message);
+    setStateBadge(homePortfolioSummaryState, "Нет данных", "state-next");
+  };
+
+  const renderHomePortfolioSummary = (snapshot) => {
+    const portfolio = snapshot.portfolio;
+    homePortfolioTotal.textContent = formatMoney(portfolio.total);
+    homeDailyChange.textContent = formatMoney(portfolio.daily_yield, {sign: true});
+    applySignedClass(homeDailyChange, portfolio.daily_yield?.value);
+    homeDailyRelative.textContent = formatPercent(portfolio.daily_yield_percent, {sign: true});
+    applySignedClass(homeDailyRelative, portfolio.daily_yield_percent);
+    homePositionCount.textContent = String(portfolio.positions?.length || 0);
+    homeSnapshotTime.textContent = `Проверено ${formatDateTime(snapshot.refreshed_at)}`;
+
+    const unblockedRub = homeUnblockedRub(snapshot);
+    homeFreeCash.textContent = unblockedRub === null
+      ? "Не подтверждены"
+      : formatMoney({currency: "RUB", value: String(unblockedRub)});
+
+    renderAllocationRows(
+      homeAllocation,
+      portfolio.asset_totals,
+      {
+        limit: 4,
+        emptyMessage: "T-Invest не вернул распределение по классам активов.",
+      },
+    );
+    setStateBadge(homePortfolioSummaryState, "Проверено", "state-ok");
+    setHomeAttentionBucket("portfolio", homePortfolioAttention(snapshot));
+  };
+
   const renderPortfolio = (snapshot) => {
     const portfolio = snapshot.portfolio;
     portfolioTotal.textContent = formatMoney(portfolio.total);
@@ -1193,6 +1418,7 @@
     renderAllocation(portfolio.asset_totals);
     renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
     renderPositions(portfolio.positions);
+    renderHomePortfolioSummary(snapshot);
 
     lastPortfolioSnapshot = snapshot;
     lastPortfolioRefreshAt = Date.now();
@@ -1211,6 +1437,8 @@
       lastPortfolioRefreshAt = 0;
       updateOwlState(null);
       updateGuard(null);
+      resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
+      setHomeAttentionBucket("portfolio", []);
       showPortfolioMode("disconnected");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
@@ -1225,6 +1453,10 @@
     portfolioRefresh.disabled = true;
     if (!hadPortfolio) {
       showPortfolioMode("loading");
+      setStateBadge(homePortfolioSummaryState, "Загружаем", "");
+      setHomeAttentionBucket("portfolio", null);
+    } else {
+      setStateBadge(homePortfolioSummaryState, "Обновляем", "");
     }
     setStateBadge(portfolioStateBadge, "Обновляем", "");
     setStateBadge(homePortfolioState, hadPortfolio ? "Обновляем" : "Загружаем", "");
@@ -1244,6 +1476,11 @@
         showPortfolioMode("content");
         setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
         setStateBadge(homePortfolioState, "Данные устарели", "state-next");
+        setStateBadge(homePortfolioSummaryState, "Данные устарели", "state-next");
+        setHomeAttentionBucket(
+          "portfolio",
+          homePortfolioAttention(lastPortfolioSnapshot, {stale: true}),
+        );
         setStateBadge(owlState, "Ошибка обновления", "state-next");
       } else {
         portfolioLoaded = false;
@@ -1253,6 +1490,10 @@
           : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
         setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
         setStateBadge(homePortfolioState, "Ошибка", "state-error");
+        setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
+        resetHomePortfolioSummary("Портфель не подтверждён.");
+        setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
+        setHomeAttentionBucket("portfolio", homePortfolioAttention(null, {failed: true}));
         setStateBadge(owlState, "Ошибка", "state-error");
         updateGuard(null);
       }
@@ -2558,18 +2799,29 @@
     }
 
     if (pending.length) {
+      const firstPending = pending[0];
+      setHomeAttentionBucket("proposals", [{
+        severity: "warning",
+        title: pending.length === 1
+          ? `План v${firstPending.version} ожидает решения`
+          : `Планов ожидает решения: ${pending.length}`,
+        detail: `Текущая версия действует до ${formatDateTime(firstPending.expires_at)}.`,
+        view: "decisions",
+      }]);
       setStateBadge(
         proposalStatus,
         `Ожидает решения: v${pending[0].version}`,
         "state-next",
       );
     } else if (proposals.length) {
+      setHomeAttentionBucket("proposals", []);
       setStateBadge(
         proposalStatus,
         proposalStatusLabel(proposals[0].status),
         proposals[0].status === "confirmed" ? "state-ok" : "state-next",
       );
     } else {
+      setHomeAttentionBucket("proposals", []);
       setStateBadge(proposalStatus, "Нет активного предложения", "state-next");
     }
     syncExecutionControls();
@@ -2586,6 +2838,12 @@
       }
       proposalHistory.replaceChildren();
       appendEmptyState(proposalHistory, "Не удалось загрузить версии предложений.");
+      setHomeAttentionBucket("proposals", [{
+        severity: "warning",
+        title: "Статус планов не подтверждён",
+        detail: "Не удалось прочитать сохранённые версии предложений. Торговое действие не выполнялось.",
+        view: "decisions",
+      }]);
       setStateBadge(proposalStatus, "Ошибка чтения proposals", "state-error");
     }
   };
@@ -3180,6 +3438,13 @@
     syncExecutionControls();
 
     if (!status.connected) {
+      setHomeAttentionBucket("connection", [{
+        severity: "warning",
+        title: "T-Invest не подключён",
+        detail: "Подключите собственный счёт, чтобы командный центр показывал подтверждённые данные.",
+        view: "connections",
+      }]);
+      setHomeAttentionBucket("portfolio", []);
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
       lastPortfolioRefreshAt = 0;
@@ -3201,6 +3466,8 @@
       return;
     }
 
+    setHomeAttentionBucket("connection", []);
+    setHomeAttentionBucket("portfolio", portfolioLoaded ? homeAttentionBuckets.portfolio : null);
     const environment = status.environment === "sandbox" ? "Песочница" : "Биржа";
     const accountName = status.account_name || "Брокерский счёт";
     overviewAccount.textContent = accountName;
@@ -3243,6 +3510,14 @@
 
   const renderTbankFailure = () => {
     resetAnalysis();
+    setHomeAttentionBucket("connection", [{
+      severity: "error",
+      title: "Не удалось проверить T-Invest",
+      detail: "Состояние подключения не подтверждено. Обновите страницу или попробуйте позже.",
+      view: "connections",
+    }]);
+    setHomeAttentionBucket("portfolio", []);
+    resetHomePortfolioSummary("Состояние T-Invest не подтверждено.");
     overviewAccount.textContent = "Не удалось проверить подключение";
     overviewConnectionText.textContent = "Обновите страницу или попробуйте позже.";
     homeConnectionCard.classList.add("is-error");
@@ -3555,6 +3830,14 @@
     const button = target.closest(selector);
     return button instanceof HTMLButtonElement ? button : null;
   };
+
+  homeAttentionList.addEventListener("click", (event) => {
+    const button = closestButtonTarget(event, "[data-home-attention-view]");
+    const view = button?.dataset.homeAttentionView;
+    if (view && VIEW_TITLES[view]) {
+      navigateToView(view);
+    }
+  });
 
   proposalCreateOptions.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-proposal-create]");
