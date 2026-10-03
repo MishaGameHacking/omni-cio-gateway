@@ -325,6 +325,12 @@ class MoexIssClient:
 def _validate_request_target(target: str) -> None:
     if _MOEX_REQUEST_TARGET.fullmatch(target) is None:
         raise MoexError("MOEX ISS request target is invalid")
+    try:
+        decoded = urllib.parse.unquote(target, errors="strict")
+    except UnicodeDecodeError as exc:
+        raise MoexError("MOEX ISS request target is invalid") from exc
+    if any(ord(char) < 32 or ord(char) == 127 for char in decoded):
+        raise MoexError("MOEX ISS request target is invalid")
 
 
 def _source_url(target: str) -> str:
