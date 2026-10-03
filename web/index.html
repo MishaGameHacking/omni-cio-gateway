@@ -373,6 +373,35 @@
               </footer>
             </article>
 
+            <article class="command-card command-history-card" aria-labelledby="home-history-title">
+              <header class="command-card-header">
+                <div>
+                  <p class="card-label">История капитала</p>
+                  <h3 id="home-history-title">Стоимость портфеля</h3>
+                </div>
+                <span class="state-badge" id="home-history-state">Ожидает снимки</span>
+              </header>
+              <div class="portfolio-chart-shell portfolio-chart-home">
+                <svg
+                  id="home-portfolio-history-chart"
+                  class="portfolio-line-chart"
+                  viewBox="0 0 720 220"
+                  role="img"
+                  aria-labelledby="home-history-title home-history-note"
+                  preserveAspectRatio="none"
+                ></svg>
+              </div>
+              <dl class="portfolio-chart-facts" id="home-history-facts">
+                <div><dt>Начало</dt><dd>—</dd></div>
+                <div><dt>Минимум</dt><dd>—</dd></div>
+                <div><dt>Максимум</dt><dd>—</dd></div>
+                <div><dt>Последний снимок</dt><dd>—</dd></div>
+              </dl>
+              <p class="field-hint" id="home-history-note">
+                График появится только после накопления реальных tenant-scoped снимков портфеля.
+              </p>
+            </article>
+
             <section class="command-grid">
               <article class="command-card" aria-labelledby="home-allocation-title">
                 <header class="command-card-header">
@@ -640,7 +669,7 @@
             </article>
 
             <div class="portfolio-content hidden" id="portfolio-content">
-              <section class="portfolio-metrics" aria-label="Основные показатели портфеля">
+              <section class="portfolio-metrics portfolio-metrics-five" aria-label="Основные показатели портфеля">
                 <article class="portfolio-metric">
                   <span>Стоимость портфеля</span>
                   <strong id="portfolio-total">—</strong>
@@ -649,7 +678,7 @@
                 <article class="portfolio-metric">
                   <span>Общая доходность</span>
                   <strong id="portfolio-yield">—</strong>
-                  <small>По данным T-Invest</small>
+                  <small>Текущий ответ T-Invest</small>
                 </article>
                 <article class="portfolio-metric">
                   <span>Сегодня</span>
@@ -657,50 +686,91 @@
                   <small id="portfolio-daily-relative">—</small>
                 </article>
                 <article class="portfolio-metric">
+                  <span>Незаблокированные RUB</span>
+                  <strong id="portfolio-free-cash">—</strong>
+                  <small>Не торговый бюджет до резервов и издержек</small>
+                </article>
+                <article class="portfolio-metric">
                   <span>Позиций</span>
                   <strong id="portfolio-position-count">—</strong>
-                  <small>В текущем портфеле</small>
+                  <small>В текущем ответе брокера</small>
                 </article>
               </section>
 
-              <article class="portfolio-card portfolio-history-panel" aria-labelledby="portfolio-history-title">
-                <header class="portfolio-card-header portfolio-history-header">
+              <article class="portfolio-card portfolio-history-card">
+                <header class="portfolio-card-header">
                   <div>
                     <p class="card-label">История</p>
-                    <h3 id="portfolio-history-title">Стоимость портфеля</h3>
+                    <h3>Стоимость портфеля во времени</h3>
                   </div>
-                  <div class="segmented-control history-periods" id="portfolio-history-periods" aria-label="Период графика стоимости портфеля">
-                    <button type="button" data-history-days="30">1М</button>
-                    <button type="button" data-history-days="90">3М</button>
-                    <button type="button" data-history-days="180">6М</button>
-                    <button type="button" data-history-days="365">1Г</button>
-                  </div>
+                  <span class="state-badge" id="portfolio-history-state">Ожидает снимки</span>
                 </header>
-                <section class="history-metrics" aria-label="Показатели выбранного периода">
-                  <div><span>Начало</span><strong id="portfolio-history-start">—</strong></div>
-                  <div><span>Сейчас</span><strong id="portfolio-history-end">—</strong></div>
-                  <div><span>Изменение</span><strong id="portfolio-history-change">—</strong></div>
-                  <div><span>Макс. просадка</span><strong id="portfolio-history-drawdown">—</strong></div>
-                </section>
-                <div class="history-chart" id="portfolio-history-chart" aria-live="polite">
-                  <div class="portfolio-empty-inline">Проверяем сохранённую историю портфеля.</div>
+                <div class="portfolio-chart-shell">
+                  <svg
+                    id="portfolio-history-chart"
+                    class="portfolio-line-chart"
+                    viewBox="0 0 900 260"
+                    role="img"
+                    aria-label="История стоимости портфеля по сохранённым снимкам"
+                    preserveAspectRatio="none"
+                  ></svg>
                 </div>
+                <dl class="portfolio-chart-facts" id="portfolio-history-facts">
+                  <div><dt>Начало</dt><dd>—</dd></div>
+                  <div><dt>Минимум</dt><dd>—</dd></div>
+                  <div><dt>Максимум</dt><dd>—</dd></div>
+                  <div><dt>Последний снимок</dt><dd>—</dd></div>
+                </dl>
                 <p class="field-hint" id="portfolio-history-note">
-                  График строится из сохранённых доказательных снимков OmniCIO. Время снимка и рыночное время котировки — разные времена.
+                  Время точки — captured_at сохранённого снимка. Это не время биржевой сделки и не market timestamp.
                 </p>
               </article>
 
-              <section class="portfolio-two-column">
+              <section class="portfolio-two-column portfolio-visualization-grid">
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">
                     <div>
-                      <p class="card-label">Аналитика</p>
-                      <h3>Структура активов</h3>
+                      <p class="card-label">Просадка</p>
+                      <h3>Drawdown от предыдущего максимума</h3>
+                    </div>
+                    <span class="state-badge" id="portfolio-drawdown-state">Недостаточно истории</span>
+                  </header>
+                  <div class="portfolio-chart-shell portfolio-chart-small">
+                    <svg
+                      id="portfolio-drawdown-chart"
+                      class="portfolio-line-chart portfolio-drawdown-chart"
+                      viewBox="0 0 600 220"
+                      role="img"
+                      aria-label="Историческая просадка портфеля"
+                      preserveAspectRatio="none"
+                    ></svg>
+                  </div>
+                  <p class="field-hint" id="portfolio-drawdown-note">
+                    Показывается только когда накоплено достаточно подтверждённых снимков.
+                  </p>
+                </article>
+
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header portfolio-allocation-header">
+                    <div>
+                      <p class="card-label">Распределение</p>
+                      <h3>Экспозиции портфеля</h3>
+                    </div>
+                    <div class="segmented-control portfolio-allocation-tabs" role="group" aria-label="Разрез распределения">
+                      <button type="button" data-allocation-view="class" aria-pressed="true">Классы</button>
+                      <button type="button" data-allocation-view="currency" aria-pressed="false">Валюты</button>
+                      <button type="button" data-allocation-view="sector" aria-pressed="false">Сектора</button>
+                      <button type="button" data-allocation-view="position" aria-pressed="false">Позиции</button>
                     </div>
                   </header>
                   <div class="allocation-list" id="asset-allocation"></div>
+                  <p class="field-hint" id="portfolio-allocation-note">
+                    Значения строятся из текущего ответа брокера и последнего сохранённого снимка.
+                  </p>
                 </article>
+              </section>
 
+              <section class="portfolio-two-column">
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">
                     <div>
@@ -713,90 +783,128 @@
                     T-Invest ещё обновляет лимиты по счёту.
                   </p>
                 </article>
-              </section>
 
-              <section class="portfolio-visualization-grid">
-                <article class="portfolio-card">
+                <article class="portfolio-card portfolio-coverage-card">
                   <header class="portfolio-card-header">
                     <div>
-                      <p class="card-label">Экспозиция</p>
-                      <h3>Крупнейшие позиции</h3>
+                      <p class="card-label">Качество данных</p>
+                      <h3>Покрытие снимка</h3>
                     </div>
-                    <span class="state-badge" id="portfolio-concentration-state">Ожидает снимок</span>
+                    <span class="state-badge" id="portfolio-coverage-state">Ожидает снимок</span>
                   </header>
-                  <div class="exposure-list" id="portfolio-concentration"></div>
-                </article>
-
-                <article class="portfolio-card">
-                  <header class="portfolio-card-header">
-                    <div>
-                      <p class="card-label">Сектора</p>
-                      <h3>Подтверждённое покрытие</h3>
-                    </div>
-                    <span class="state-badge" id="portfolio-sector-state">Ожидает снимок</span>
-                  </header>
-                  <div class="allocation-list" id="portfolio-sectors"></div>
-                </article>
-
-                <article class="portfolio-card">
-                  <header class="portfolio-card-header">
-                    <div>
-                      <p class="card-label">Валюта данных</p>
-                      <h3>Валюты котировок позиций</h3>
-                    </div>
-                  </header>
-                  <div class="currency-coverage" id="portfolio-currencies"></div>
-                  <p class="field-hint">
-                    Это покрытие по валюте котировки, а не валютная доля NAV. Неоценённые в RUB позиции не превращаются в выдуманную рублёвую экспозицию.
-                  </p>
+                  <dl class="portfolio-coverage-facts">
+                    <div><dt>Секторное покрытие</dt><dd id="portfolio-sector-coverage">—</dd></div>
+                    <div><dt>Оценено позиций</dt><dd id="portfolio-valued-count">—</dd></div>
+                    <div><dt>Состояние снимка</dt><dd id="portfolio-snapshot-status">—</dd></div>
+                    <div><dt>Получен</dt><dd id="portfolio-snapshot-time">—</dd></div>
+                  </dl>
                 </article>
               </section>
 
-              <article class="portfolio-card">
+              <article class="portfolio-card portfolio-positions-card">
                 <header class="portfolio-card-header">
                   <div>
                     <p class="card-label">Позиции</p>
                     <h3>Активы в портфеле</h3>
                   </div>
-                  <span class="section-note">Подробнее — по сохранённому доказательному снимку</span>
+                  <span class="section-note">Точные значения + источник времени</span>
                 </header>
-                <div class="positions-list" id="positions-list"></div>
+                <div class="portfolio-position-table-scroll" id="positions-table-scroll">
+                  <table class="portfolio-position-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Инструмент</th>
+                        <th scope="col">Оценка</th>
+                        <th scope="col">Доля</th>
+                        <th scope="col">Цена</th>
+                        <th scope="col">Доходность</th>
+                        <th scope="col">Данные / риск</th>
+                        <th scope="col"><span class="visually-hidden">Детали</span></th>
+                      </tr>
+                    </thead>
+                    <tbody id="positions-table-body"></tbody>
+                  </table>
+                </div>
+                <div class="positions-list portfolio-position-cards" id="positions-list"></div>
+                <p class="field-hint" id="positions-freshness-note">
+                  Оценка и доля относятся к последнему сохранённому snapshot; текущая цена и доходность — к последнему чтению T-Invest.
+                </p>
               </article>
 
-              <article class="portfolio-card instrument-detail-card hidden" id="portfolio-instrument-detail">
+              <article class="portfolio-card instrument-detail hidden" id="instrument-detail" aria-labelledby="instrument-detail-title">
                 <header class="portfolio-card-header instrument-detail-header">
                   <div>
-                    <p class="card-label">Инструмент</p>
-                    <h3 id="instrument-detail-title">Детали позиции</h3>
-                    <p id="instrument-detail-subtitle">—</p>
+                    <p class="card-label">Детали инструмента</p>
+                    <h3 id="instrument-detail-title">Инструмент</h3>
+                    <p id="instrument-detail-subtitle">Выберите позицию.</p>
                   </div>
-                  <button class="icon-button" id="instrument-detail-close" type="button" aria-label="Закрыть детали инструмента">×</button>
+                  <button id="instrument-detail-close" class="button button-secondary" type="button">
+                    Закрыть
+                  </button>
                 </header>
-                <section class="history-metrics instrument-detail-metrics" aria-label="Показатели позиции">
-                  <div><span>Оценка позиции</span><strong id="instrument-detail-value">—</strong></div>
-                  <div><span>Доля портфеля</span><strong id="instrument-detail-weight">—</strong></div>
-                  <div><span>Количество</span><strong id="instrument-detail-quantity">—</strong></div>
-                  <div><span>Текущая цена</span><strong id="instrument-detail-price">—</strong></div>
-                </section>
-                <div class="history-chart instrument-history-chart" id="instrument-history-chart">
-                  <div class="portfolio-empty-inline">Выберите позицию для просмотра истории.</div>
+                <div id="instrument-detail-loading" class="portfolio-empty-inline hidden">
+                  Загружаем tenant-scoped историю и доказательства…
                 </div>
-                <section class="instrument-detail-grid">
-                  <div>
-                    <p class="card-label">Риск и доказательства</p>
-                    <dl class="instrument-facts" id="instrument-detail-facts"></dl>
-                  </div>
-                  <div>
-                    <p class="card-label">События</p>
-                    <div class="analysis-sources" id="instrument-detail-payouts"></div>
-                  </div>
-                  <div>
-                    <p class="card-label">Источники</p>
-                    <div class="analysis-sources" id="instrument-detail-sources"></div>
-                  </div>
-                </section>
-              </article>
+                <div id="instrument-detail-content" class="instrument-detail-content hidden">
+                  <section class="portfolio-metrics instrument-detail-metrics">
+                    <article class="portfolio-metric">
+                      <span>Оценка позиции</span>
+                      <strong id="instrument-detail-value">—</strong>
+                      <small id="instrument-detail-weight">—</small>
+                    </article>
+                    <article class="portfolio-metric">
+                      <span>Цена снимка</span>
+                      <strong id="instrument-detail-price">—</strong>
+                      <small id="instrument-detail-price-time">—</small>
+                    </article>
+                    <article class="portfolio-metric">
+                      <span>Количество</span>
+                      <strong id="instrument-detail-quantity">—</strong>
+                      <small id="instrument-detail-blocked">—</small>
+                    </article>
+                    <article class="portfolio-metric">
+                      <span>Risk state</span>
+                      <strong id="instrument-detail-risk">—</strong>
+                      <small id="instrument-detail-risk-time">—</small>
+                    </article>
+                  </section>
 
+                  <section class="portfolio-two-column">
+                    <div>
+                      <p class="card-label">История позиции</p>
+                      <div class="portfolio-chart-shell portfolio-chart-small">
+                        <svg
+                          id="instrument-history-chart"
+                          class="portfolio-line-chart"
+                          viewBox="0 0 600 220"
+                          role="img"
+                          aria-label="История оценки позиции по снимкам портфеля"
+                          preserveAspectRatio="none"
+                        ></svg>
+                      </div>
+                      <p class="field-hint" id="instrument-history-note">
+                        Точки относятся к времени snapshot, а не к биржевой ленте.
+                      </p>
+                    </div>
+                    <div>
+                      <p class="card-label">Доказательства и события</p>
+                      <div class="instrument-evidence-summary" id="instrument-evidence-summary"></div>
+                    </div>
+                  </section>
+
+                  <section class="portfolio-two-column">
+                    <div>
+                      <p class="card-label">Выплаты / события</p>
+                      <div class="analysis-sources" id="instrument-payouts"></div>
+                    </div>
+                    <div>
+                      <p class="card-label">Источники</p>
+                      <div class="analysis-sources" id="instrument-sources"></div>
+                    </div>
+                  </section>
+                </div>
+                <p id="instrument-detail-message" class="message" role="status" aria-live="polite"></p>
+              </article>
             </div>
           </section>
 
