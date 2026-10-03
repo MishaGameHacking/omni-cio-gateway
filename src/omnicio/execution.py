@@ -152,10 +152,11 @@ def run_status_for_legs(
         return "succeeded"
     if any(status == "failed" for status in statuses):
         return "failed"
-    if any(status in {"reconciling", "submitting"} for status in statuses):
+    if any(status == "reconciling" for status in statuses):
         return "reconciling"
     if any(
         status in {
+            "submitting",
             "pending",
             "submitted",
             "partially_filled",
