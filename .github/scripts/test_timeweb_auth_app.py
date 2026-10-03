@@ -931,6 +931,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "home-portfolio-history-chart",
             "portfolio-free-cash",
             "portfolio-history-state",
+            "portfolio-history-periods",
             "portfolio-history-chart",
             "portfolio-drawdown-chart",
             "portfolio-coverage-state",
@@ -948,6 +949,10 @@ class AuthAppDeployTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', page)
 
+        self.assertIn('data-portfolio-history-days="30"', page)
+        self.assertIn('data-portfolio-history-days="90"', page)
+        self.assertIn('data-portfolio-history-days="180"', page)
+        self.assertIn('data-portfolio-history-days="365"', page)
         self.assertIn('data-allocation-view="class"', page)
         self.assertIn('data-allocation-view="currency"', page)
         self.assertIn('data-allocation-view="sector"', page)
@@ -957,12 +962,14 @@ class AuthAppDeployTests(unittest.TestCase):
         ids = re.findall(r'\\bid="([^"]+)"', page)
         self.assertEqual(len(ids), len(set(ids)), "dashboard HTML contains duplicate ids")
 
-        self.assertIn("/api/portfolio/visualization?history_limit=90", script)
+        self.assertIn("/api/portfolio/visualization?history_limit=365", script)
         self.assertIn("/api/portfolio/instruments/", script)
         self.assertIn("instrumentPathSegment", script)
         self.assertIn("createElementNS", script)
         self.assertIn("renderSeriesChart", script)
         self.assertIn("drawdownSeries", script)
+        self.assertIn("historyForDays", script)
+        self.assertIn("syncPortfolioHistoryPeriods", script)
         self.assertIn("livePositionForIdentity", script)
         self.assertIn("instrumentDetailPnl", script)
         self.assertIn("snapshot_freshness", script)
@@ -974,6 +981,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn(".portfolio-position-cards", stylesheet)
         self.assertIn(".portfolio-chart-line", stylesheet)
         self.assertIn(".portfolio-chart-area", stylesheet)
+        self.assertIn(".portfolio-history-periods", stylesheet)
         self.assertIn(".instrument-detail", stylesheet)
         self.assertIn("@media (max-width: 820px)", stylesheet)
         self.assertIn("@media (max-width: 420px)", stylesheet)
