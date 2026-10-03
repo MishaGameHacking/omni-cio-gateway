@@ -401,7 +401,7 @@ def test_live_r4_degrades_to_durable_preview_when_broker_evidence_fails() -> Non
 
     assert payload["status"] == "observed"
     assert payload["live_status"] == "degraded"
-    assert payload["live_reason"] == "tbank_live_evidence_unavailable"
+    assert payload["live_reason"] == "tbank_shortlist_signal_unavailable"
     assert payload["execution_enabled"] is False
 
 
