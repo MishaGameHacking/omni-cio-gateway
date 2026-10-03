@@ -79,6 +79,7 @@ class Holding:
     exit_spread_cost_rub: Decimal = Decimal("0")
     tax_if_sold_rub: Decimal = Decimal("0")
     blocked: bool = False
+    replacement_costs_complete: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +407,8 @@ def _replacement_scenario(
 ) -> BalancingScenario:
     if holding.blocked:
         return _fallback_cash(holding, "holding_blocked")
+    if not holding.replacement_costs_complete:
+        return _fallback_cash(holding, "replacement_cost_model_missing")
     if holding.lots <= 0 or holding.value_rub <= 0:
         return _fallback_cash(holding, "holding_not_sellable")
 
