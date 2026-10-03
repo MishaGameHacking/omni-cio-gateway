@@ -1054,25 +1054,28 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
     }
 
 
-def test_tbank_daily_candles_reject_non_exchange_response() -> None:
+@pytest.mark.parametrize(
+    "source_name",
+    [None, "CANDLE_SOURCE_DEALER_WEEKEND"],
+)
+def test_tbank_daily_candles_require_confirmed_exchange_source(
+    source_name: str | None,
+) -> None:
     client = TBankInvestClient()
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
-    response = FakeResponse(
-        {
-            "candles": [
-                {
-                    "open": {"units": "100", "nano": 0},
-                    "high": {"units": "101", "nano": 0},
-                    "low": {"units": "99", "nano": 0},
-                    "close": {"units": "100", "nano": 0},
-                    "volume": "1",
-                    "time": "2026-10-02T00:00:00Z",
-                    "isComplete": True,
-                    "candleSourceType": "CANDLE_SOURCE_DEALER_WEEKEND",
-                }
-            ]
-        }
-    )
+    candle: dict[str, object] = {
+        "open": {"units": "100", "nano": 0},
+        "high": {"units": "101", "nano": 0},
+        "low": {"units": "99", "nano": 0},
+        "close": {"units": "100", "nano": 0},
+        "volume": "1",
+        "time": "2026-10-02T00:00:00Z",
+        "isComplete": True,
+    }
+    if source_name is not None:
+        candle["candleSourceType"] = source_name
+    response = FakeResponse({"candles": [candle]})
+
     with (
         patch("urllib.request.urlopen", return_value=response),
         pytest.raises(TBankUnavailable, match="exchange-sourced"),
