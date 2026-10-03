@@ -717,6 +717,35 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 session_digest=b"i" * 32,
                 now=created_at,
             )
+            current_reinvestment = store.current_reinvestment_mandate(
+                USER_ONE,
+                now=created_at + timedelta(minutes=1),
+            )
+            assert current_reinvestment is not None
+            assert current_reinvestment.id == reinvestment.id
+
+            with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+                admin.execute(
+                    """
+                    UPDATE tbank_connection
+                    SET account_id = 'different-account'
+                    WHERE user_id = %s
+                    """,
+                    (USER_ONE,),
+                )
+            assert store.current_reinvestment_mandate(
+                USER_ONE,
+                now=created_at + timedelta(minutes=2),
+            ) is None
+            with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+                admin.execute(
+                    """
+                    UPDATE tbank_connection
+                    SET account_id = 'account-1'
+                    WHERE user_id = %s
+                    """,
+                    (USER_ONE,),
+                )
 
             def insert_r8_operation(
                 *,
