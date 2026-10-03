@@ -685,7 +685,7 @@ def _enrich_bond_candidate(
         return _with_candidate_blocker(base, "bond_term_missing"), ()
 
     future_cash = sum((amount for _, amount in cashflows), Decimal("0"))
-    gross_gain = future_cash - total
+    gross_gain = future_cash - dirty_purchase
     uncertainty = (
         total * policy_record.uncertainty_haircut_percent / Decimal("100")
     )
