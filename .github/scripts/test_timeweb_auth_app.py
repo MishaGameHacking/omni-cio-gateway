@@ -867,6 +867,41 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("textContent = observation.detail", script)
         self.assertNotIn("/api/broker/tbank/operations", script)
 
+    def test_profile_forms_explain_inputs_and_guard_bad_client_actions(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+
+        for help_id in (
+            "investment-profile-help",
+            "profile-reserve-help",
+            "profile-withdrawal-help",
+            "profile-horizon-help",
+            "profile-drawdown-help",
+            "profile-liquidity-help",
+            "balancing-policy-help",
+            "tbank-token-help",
+        ):
+            self.assertIn(f'id="{help_id}"', page)
+
+        self.assertIn('aria-describedby="investment-profile-help"', page)
+        self.assertIn('aria-describedby="balancing-policy-help"', page)
+        self.assertIn('aria-describedby="tbank-token-help"', page)
+        self.assertIn("Вместе с планируемыми снятиями", page)
+        self.assertIn("0 не даёт нового объёма по этому лимиту", page)
+        self.assertIn("не определяет их автоматически", page)
+
+        self.assertIn("validateFormWithMessage", script)
+        self.assertIn('form.querySelector(":invalid")', script)
+        self.assertIn("invalid?.focus()", script)
+        self.assertIn("deferAt.min = localDateTimeInputValue", script)
+        self.assertIn("Number.isNaN(deferredDate.getTime())", script)
+        self.assertIn("deferredDate.getTime() <= Date.now()", script)
+        self.assertIn("Дата отсрочки должна быть в будущем", script)
+        self.assertIn("EXECUTION_ERROR_MESSAGES", script)
+        self.assertIn("sandbox_submit_ambiguous", script)
+        self.assertIn("Повторная заявка запрещена", script)
+
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text()
@@ -880,7 +915,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.13.0"', project)
+        self.assertIn('version = "0.13.1"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
