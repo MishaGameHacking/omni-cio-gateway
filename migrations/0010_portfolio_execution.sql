@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_runs (
 CREATE OR REPLACE FUNCTION omnicio_validate_execution_run_source()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $omnicio$
 BEGIN
     IF TG_OP = 'UPDATE' AND (
         NEW.user_id,
@@ -105,6 +105,28 @@ BEGIN
           AND p.version = NEW.proposal_version
           AND p.proposal_hash = NEW.proposal_hash
           AND p.account_id = NEW.account_id
+          AND p.expires_at > now()
+          AND (p.source_snapshot_id, p.account_id) = (
+              SELECT s.id, s.account_id
+              FROM portfolio_snapshots AS s
+              WHERE s.user_id = NEW.user_id
+              ORDER BY s.captured_at DESC, s.created_at DESC
+              LIMIT 1
+          )
+          AND p.profile_version = (
+              SELECT ip.version
+              FROM investment_profile_versions AS ip
+              WHERE ip.user_id = NEW.user_id
+              ORDER BY ip.version DESC
+              LIMIT 1
+          )
+          AND p.policy_version = (
+              SELECT bp.version
+              FROM balancing_policy_versions AS bp
+              WHERE bp.user_id = NEW.user_id
+              ORDER BY bp.version DESC
+              LIMIT 1
+          )
           AND a.id = NEW.confirmed_action_id
           AND a.action = 'confirmed'
           AND a.proposal_version = NEW.proposal_version
@@ -114,7 +136,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$omnicio$;
 
 DROP TRIGGER IF EXISTS portfolio_execution_runs_source_guard
     ON portfolio_execution_runs;
@@ -205,7 +227,7 @@ CREATE INDEX IF NOT EXISTS portfolio_execution_legs_run_idx
 CREATE OR REPLACE FUNCTION omnicio_validate_execution_leg_source()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $omnicio$
 BEGIN
     IF (
         NEW.run_id,
@@ -236,7 +258,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$;
+$omnicio$;
 
 DROP TRIGGER IF EXISTS portfolio_execution_legs_source_guard
     ON portfolio_execution_legs;
