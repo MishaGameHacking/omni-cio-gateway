@@ -1,5 +1,44 @@
 BEGIN;
 
+-- R5 proposals are immutable during normal operation, but broker disconnect and
+-- authenticated account deletion must still be able to purge user-owned financial
+-- data in the same transaction.  Replace the accepted R5 RESTRICT edges with
+-- cleanup-safe cascades and keep DELETE fail-closed unless the server explicitly
+-- enables one of the narrow transaction-local cleanup scopes.
+ALTER TABLE portfolio_proposals
+    DROP CONSTRAINT IF EXISTS portfolio_proposals_source_snapshot_id_user_id_fkey,
+    DROP CONSTRAINT IF EXISTS portfolio_proposals_source_snapshot_tenant_fkey;
+ALTER TABLE portfolio_proposals
+    ADD CONSTRAINT portfolio_proposals_source_snapshot_tenant_fkey
+    FOREIGN KEY (source_snapshot_id, user_id)
+        REFERENCES portfolio_snapshots(id, user_id)
+        ON DELETE CASCADE;
+
+ALTER TABLE portfolio_proposal_actions
+    DROP CONSTRAINT IF EXISTS portfolio_proposal_actions_proposal_id_user_id_fkey,
+    DROP CONSTRAINT IF EXISTS portfolio_proposal_actions_proposal_tenant_fkey;
+ALTER TABLE portfolio_proposal_actions
+    ADD CONSTRAINT portfolio_proposal_actions_proposal_tenant_fkey
+    FOREIGN KEY (proposal_id, user_id)
+        REFERENCES portfolio_proposals(id, user_id)
+        ON DELETE CASCADE;
+
+CREATE OR REPLACE FUNCTION omnicio_reject_immutable_proposal_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE'
+       AND current_setting('omnicio.financial_cleanup', true) IN (
+           'account_delete',
+           'broker_disconnect'
+       ) THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'immutable proposal rows cannot be updated or deleted';
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS portfolio_execution_runs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -59,10 +98,10 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_runs (
     UNIQUE (proposal_id, mode),
     FOREIGN KEY (proposal_id, user_id)
         REFERENCES portfolio_proposals(id, user_id)
-        ON DELETE RESTRICT,
+        ON DELETE CASCADE,
     FOREIGN KEY (confirmed_action_id)
         REFERENCES portfolio_proposal_actions(id)
-        ON DELETE RESTRICT
+        ON DELETE CASCADE
 );
 
 CREATE OR REPLACE FUNCTION omnicio_validate_execution_run_source()
@@ -151,7 +190,7 @@ CREATE INDEX IF NOT EXISTS portfolio_execution_runs_user_created_idx
 CREATE TABLE IF NOT EXISTS portfolio_execution_legs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id uuid NOT NULL,
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id uuid NOT NULL,
     leg_index integer NOT NULL CHECK (leg_index >= 0),
     action text NOT NULL CHECK (action IN ('buy', 'sell')),
     instrument_uid text NOT NULL CHECK (
@@ -218,7 +257,7 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_legs (
     UNIQUE (request_id),
     FOREIGN KEY (run_id, user_id)
         REFERENCES portfolio_execution_runs(id, user_id)
-        ON DELETE RESTRICT
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS portfolio_execution_legs_run_idx
@@ -271,7 +310,7 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_events (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     run_id uuid NOT NULL,
     leg_id uuid,
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id uuid NOT NULL,
     event_type text NOT NULL CHECK (
         char_length(event_type) BETWEEN 1 AND 128
     ),
@@ -279,10 +318,10 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_events (
     created_at timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (run_id, user_id)
         REFERENCES portfolio_execution_runs(id, user_id)
-        ON DELETE RESTRICT,
+        ON DELETE CASCADE,
     FOREIGN KEY (leg_id, run_id, user_id)
         REFERENCES portfolio_execution_legs(id, run_id, user_id)
-        ON DELETE RESTRICT
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS portfolio_execution_events_run_idx
@@ -330,11 +369,17 @@ CREATE POLICY portfolio_execution_events_tenant
 CREATE OR REPLACE FUNCTION omnicio_reject_execution_delete()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $
 BEGIN
+    IF current_setting('omnicio.financial_cleanup', true) IN (
+        'account_delete',
+        'broker_disconnect'
+    ) THEN
+        RETURN OLD;
+    END IF;
     RAISE EXCEPTION 'execution ledger rows cannot be deleted';
 END;
-$$;
+$;
 
 DROP TRIGGER IF EXISTS portfolio_execution_runs_no_delete
     ON portfolio_execution_runs;
@@ -353,11 +398,18 @@ EXECUTE FUNCTION omnicio_reject_execution_delete();
 CREATE OR REPLACE FUNCTION omnicio_reject_execution_event_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $
 BEGIN
+    IF TG_OP = 'DELETE'
+       AND current_setting('omnicio.financial_cleanup', true) IN (
+           'account_delete',
+           'broker_disconnect'
+       ) THEN
+        RETURN OLD;
+    END IF;
     RAISE EXCEPTION 'execution events are immutable';
 END;
-$$;
+$;
 
 DROP TRIGGER IF EXISTS portfolio_execution_events_immutable
     ON portfolio_execution_events;
