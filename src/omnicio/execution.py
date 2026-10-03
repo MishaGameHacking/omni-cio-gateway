@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Literal, cast
+from uuid import UUID
 
 from .portfolio_store import PortfolioProposalRecord
 
@@ -68,7 +69,7 @@ class ExecutionTrade:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionPlan:
-    proposal_id: object
+    proposal_id: UUID
     proposal_version: int
     proposal_hash: bytes
     account_id: str
@@ -152,7 +153,15 @@ def run_status_for_legs(
         return "failed"
     if any(status in {"reconciling", "submitting"} for status in statuses):
         return "reconciling"
-    if any(status in {"pending", "submitted", "partially_filled", "cancel_requested"} for status in statuses):
+    if any(
+        status in {
+            "pending",
+            "submitted",
+            "partially_filled",
+            "cancel_requested",
+        }
+        for status in statuses
+    ):
         return "running"
     if all(status in {"cancelled", "rejected"} for status in statuses):
         return "cancelled"
