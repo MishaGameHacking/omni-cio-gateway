@@ -79,8 +79,8 @@ class MoexIssClient:
         clean_query = query.strip().upper()
         if _MOEX_SECURITY_QUERY.fullmatch(clean_query) is None:
             raise ValueError("MOEX security query is invalid")
-        url = (
-            f"{MOEX_ISS_ROOT}/securities.json?"
+        target = (
+            "/iss/securities.json?"
             + urllib.parse.urlencode(
                 {
                     "iss.meta": "off",
@@ -100,7 +100,7 @@ class MoexIssClient:
                 }
             )
         )
-        payload = self._get_payload(url)
+        payload = self._get_payload(target)
         rows = _rows(payload, "securities")
         normalized_isin = expected_isin.strip().upper()
         matches = [
@@ -142,7 +142,7 @@ class MoexIssClient:
             issuer_inn=issuer_inn,
             primary_board_id=board,
             is_traded=traded,
-            source_url=url,
+            source_url=_source_url(target),
         )
 
     def bond_liquidity(
@@ -158,7 +158,7 @@ class MoexIssClient:
         if from_date > till_date:
             raise ValueError("MOEX liquidity window is invalid")
         path = (
-            f"{MOEX_ISS_ROOT}/history/engines/stock/markets/bonds/boards/"
+            "/iss/history/engines/stock/markets/bonds/boards/"
             f"{urllib.parse.quote(board, safe='')}/securities/"
             f"{urllib.parse.quote(sec, safe='')}.json"
         )
@@ -170,8 +170,8 @@ class MoexIssClient:
                 "till": till_date.isoformat(),
             }
         )
-        url = f"{path}?{query}"
-        payload = self._get_payload(url)
+        target = f"{path}?{query}"
+        payload = self._get_payload(target)
         rows = _rows(payload, "history")
         values: list[Decimal] = []
         for row in rows:
@@ -192,14 +192,14 @@ class MoexIssClient:
             observed_days=len(values),
             average_daily_value_rub=total / Decimal(len(values)),
             total_value_rub=total,
-            source_url=url,
+            source_url=_source_url(target),
         )
 
     def bond_snapshot(self, secid: str, board_id: str) -> MoexBondSnapshot | None:
         sec = _identifier(secid, "security id")
         board = _identifier(board_id, "board id")
         path = (
-            f"{MOEX_ISS_ROOT}/engines/stock/markets/bonds/boards/"
+            "/iss/engines/stock/markets/bonds/boards/"
             f"{urllib.parse.quote(board, safe='')}/securities/"
             f"{urllib.parse.quote(sec, safe='')}.json"
         )
@@ -231,8 +231,8 @@ class MoexIssClient:
                 ),
             }
         )
-        url = f"{path}?{query}"
-        payload = self._get_payload(url)
+        target = f"{path}?{query}"
+        payload = self._get_payload(target)
         securities = _first_row(payload, "securities")
         marketdata = _first_row(payload, "marketdata")
         if securities is None and marketdata is None:
@@ -275,14 +275,12 @@ class MoexIssClient:
             volume_today=_decimal(market.get("VOLTODAY")),
             offer_date=str(market.get("OFFERDATE") or ""),
             maturity_date=str(security.get("MATDATE") or ""),
-            source_url=url,
+            source_url=_source_url(target),
         )
 
 
-    def _get_payload(self, url: str) -> dict[str, object]:
-        target = _moex_request_target(url)
-        if _MOEX_REQUEST_TARGET.fullmatch(target) is None:
-            raise MoexError("MOEX ISS request target is invalid")
+    def _get_payload(self, target: str) -> dict[str, object]:
+        _validate_request_target(target)
         connection = http.client.HTTPSConnection(
             MOEX_ISS_HOST,
             443,
@@ -290,14 +288,18 @@ class MoexIssClient:
             context=ssl.create_default_context(),
         )
         try:
-            connection.request(
+            # The TLS authority and Host header are constants. Only a validated
+            # origin-relative request-target reaches the wire.
+            connection.putrequest(
                 "GET",
                 target,
-                headers={
-                    "User-Agent": "omnicio-r4-evidence/1.0",
-                    "Accept": "application/json",
-                },
+                skip_host=True,
+                skip_accept_encoding=True,
             )
+            connection.putheader("Host", MOEX_ISS_HOST)
+            connection.putheader("User-Agent", "omnicio-r4-evidence/1.0")
+            connection.putheader("Accept", "application/json")
+            connection.endheaders()
             response = connection.getresponse()
             if response.status != 200:
                 raise MoexError(
@@ -320,19 +322,14 @@ class MoexIssClient:
         return cast(dict[str, object], payload_raw)
 
 
-def _moex_request_target(url: str) -> str:
-    parts = urllib.parse.urlsplit(url)
-    if (
-        parts.scheme != "https"
-        or parts.hostname != MOEX_ISS_HOST
-        or parts.port not in (None, 443)
-        or parts.username is not None
-        or parts.password is not None
-        or parts.fragment
-        or not parts.path.startswith("/iss/")
-    ):
-        raise MoexError("MOEX ISS URL escaped the fixed provider origin")
-    return parts.path + (f"?{parts.query}" if parts.query else "")
+def _validate_request_target(target: str) -> None:
+    if _MOEX_REQUEST_TARGET.fullmatch(target) is None:
+        raise MoexError("MOEX ISS request target is invalid")
+
+
+def _source_url(target: str) -> str:
+    _validate_request_target(target)
+    return f"https://{MOEX_ISS_HOST}{target}"
 
 
 def _rows(
