@@ -518,6 +518,8 @@ class AuthAppDeployTests(unittest.TestCase):
             "balance-max-unknown",
             "balance-max-term",
             "balance-turnover-budget",
+            "balance-daily-participation",
+            "balance-tax-rate",
             "balance-no-trade-band",
             "balance-min-replace-benefit",
             "balancing-policy-save",
