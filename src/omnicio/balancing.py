@@ -19,7 +19,15 @@ RiskState = Literal[
     "critical",
     "confirmed_default",
 ]
-RatingBucket = Literal["aaa", "aa", "a", "bbb", "below_grade", "unknown"]
+RatingBucket = Literal[
+    "aaa",
+    "aa",
+    "a",
+    "bbb",
+    "below_grade",
+    "unknown",
+    "not_applicable",
+]
 ScenarioStatus = Literal["feasible", "infeasible"]
 ScenarioKind = Literal["hold", "deploy_cash", "replace", "fallback_cash"]
 
@@ -200,10 +208,17 @@ def screen_candidates(
     policy: BalancingPolicy,
 ) -> tuple[ScreenedCandidate, ...]:
     _validate_policy(policy)
-    return tuple(
-        ScreenedCandidate(candidate=item, eligible=not (reasons := _candidate_reasons(item, policy)), reasons=reasons)
-        for item in candidates
-    )
+    screened: list[ScreenedCandidate] = []
+    for item in candidates:
+        reasons = _candidate_reasons(item, policy)
+        screened.append(
+            ScreenedCandidate(
+                candidate=item,
+                eligible=not reasons,
+                reasons=reasons,
+            )
+        )
+    return tuple(screened)
 
 
 def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[str, ...]:
@@ -230,9 +245,11 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("risk_state_not_allowed")
     if candidate.liquidity_days < 0 or candidate.liquidity_days > policy.max_liquidity_days:
         reasons.append("liquidity_limit")
-    if candidate.term_months < 0 or candidate.term_months > policy.max_term_months:
+    if candidate.term_months < 0:
         reasons.append("term_limit")
     if candidate.asset_class == "bond":
+        if candidate.term_months > policy.max_term_months:
+            reasons.append("term_limit")
         if candidate.ytw_percent is None:
             reasons.append("bond_ytw_missing")
         if candidate.duration_years is None:
