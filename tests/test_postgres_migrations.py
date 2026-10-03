@@ -792,18 +792,17 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 mode="sandbox",
                 session_digest=b"e" * 32,
             )
-            with pytest.raises(
-                ValueError,
-                match="kopeck precision",
-            ):
+            invalid_mandate_expiry = created_at + timedelta(minutes=30)
+            invalid_mandate_now = created_at + timedelta(minutes=5)
+            with pytest.raises(ValueError, match="kopeck precision"):
                 execution_store.create_live_mandate(
                     USER_ONE,
                     account_id="account-1",
                     max_order_notional_rub=Decimal("3000.001"),
                     max_daily_notional_rub=Decimal("5000"),
                     session_digest=b"l" * 32,
-                    expires_at=created_at + timedelta(minutes=30),
-                    now=created_at + timedelta(minutes=5),
+                    expires_at=invalid_mandate_expiry,
+                    now=invalid_mandate_now,
                 )
             live_mandate = execution_store.create_live_mandate(
                 USER_ONE,
@@ -826,19 +825,20 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 USER_ONE,
                 now=created_at + timedelta(minutes=6),
             )
-            with pytest.raises(
-                ExecutionLedgerError,
-                match="live_mandate_inactive",
-            ):
+            live_run_id = live_run.id
+            live_leg_id = live_legs[0].id
+            live_submit_details = {"request_id": str(live_legs[0].request_id)}
+            live_submit_now = created_at + timedelta(minutes=6)
+            with pytest.raises(ExecutionLedgerError, match="live_mandate_inactive"):
                 execution_store.transition_leg(
                     USER_ONE,
-                    run_id=live_run.id,
-                    leg_id=live_legs[0].id,
+                    run_id=live_run_id,
+                    leg_id=live_leg_id,
                     expected_statuses=("pending",),
                     new_status="submitting",
                     event_type="live_preflight_passed",
-                    details={"request_id": str(live_legs[0].request_id)},
-                    now=created_at + timedelta(minutes=6),
+                    details=live_submit_details,
+                    now=live_submit_now,
                 )
             cancelled_live_run, cancelled_live_leg = execution_store.transition_leg(
                 USER_ONE,
