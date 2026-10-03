@@ -40,9 +40,9 @@ from .tbank import (
     TBankPositions,
     TBankRating,
     TBankSandboxCancelResult,
-    TBankTradingStatus,
     TBankSandboxMaxLots,
     TBankSandboxOrderState,
+    TBankTradingStatus,
     TBankUnavailable,
     TBankUserInfo,
 )
