@@ -22,7 +22,6 @@ from .execution import (
     provider_leg_status,
 )
 from .execution_store import (
-    ExecutionLedgerError,
     ExecutionLegRecord,
     ExecutionRunRecord,
     ExecutionStore,
@@ -546,21 +545,24 @@ class PortfolioExecutionService:
 
         amount = _executed_amount(state)
         commission = _executed_commission(state)
-        if leg.action == "buy" and leg.max_spend_rub is not None:
-            if amount > leg.max_spend_rub:
-                self.store.mark_run_reconciling(
-                    user_id,
-                    run_id=run.id,
-                    leg_id=leg.id,
-                    error_code="sandbox_provider_overspend_detected",
-                    details={
-                        "request_id": str(leg.request_id),
-                        "amount_rub": str(amount),
-                        "commission_rub": str(commission),
-                    },
-                    now=observed_at,
-                )
-                return "reconciling"
+        if (
+            leg.action == "buy"
+            and leg.max_spend_rub is not None
+            and amount > leg.max_spend_rub
+        ):
+            self.store.mark_run_reconciling(
+                user_id,
+                run_id=run.id,
+                leg_id=leg.id,
+                error_code="sandbox_provider_overspend_detected",
+                details={
+                    "request_id": str(leg.request_id),
+                    "amount_rub": str(amount),
+                    "commission_rub": str(commission),
+                },
+                now=observed_at,
+            )
+            return "reconciling"
         if (
             leg.action == "sell"
             and local_status == "filled"
