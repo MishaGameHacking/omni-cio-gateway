@@ -541,6 +541,11 @@ def me(
 ) -> dict[str, object]:
     token = session_token or ""
     user = authenticated_user(request, token)
+    auth = service(request)
+    legal_current = auth.database.has_legal_versions(
+        user.id,
+        auth.legal_versions(),
+    )
 
     response.set_cookie(
         SESSION_COOKIE,
@@ -551,10 +556,12 @@ def me(
         samesite="strict",
         path="/",
     )
+    response.headers["Cache-Control"] = "private, no-store"
     return {
         "public_id": format_public_id(user.public_id),
         "status": user.status,
         "role": user.role,
+        "legal_current": legal_current,
     }
 
 
