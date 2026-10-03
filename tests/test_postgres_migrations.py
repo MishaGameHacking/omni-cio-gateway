@@ -66,14 +66,29 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
     assert "set_config('omnicio.financial_cleanup', 'broker_disconnect', true)" in database_source
 
 
+def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode() -> None:
+    migration = (ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text()
+
+    assert "portfolio_live_execution_mandates" in migration
+    assert "ENABLE ROW LEVEL SECURITY" in migration
+    assert "FORCE ROW LEVEL SECURITY" in migration
+    assert "live_mandate_id" in migration
+    assert "mode IN ('shadow', 'sandbox', 'live')" in migration
+    assert "mode = 'live'" in migration
+    assert "provider_environment = 'prod'" in migration
+    assert "live execution requires an active exact-account mandate" in migration
+    assert "portfolio_execution_runs_one_active_live_idx" in migration
+    assert "portfolio_live_execution_mandates_active_idx" in migration
+
+
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0010_portfolio_execution.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0011_portfolio_live_execution.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        # The additive R6 migration is safe to retry before release. Once
+        # The additive latest migration is safe to retry before release. Once
         # accepted on main it becomes immutable migration history.
-        admin.execute((ROOT / "migrations" / "0010_portfolio_execution.sql").read_text())
+        admin.execute((ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text())
 
         table_names = {
             row[0]
@@ -105,6 +120,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "portfolio_execution_runs",
             "portfolio_execution_legs",
             "portfolio_execution_events",
+            "portfolio_live_execution_mandates",
         } <= table_names
 
         protected = {
@@ -130,13 +146,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_proposal_actions',
                           'portfolio_execution_runs',
                           'portfolio_execution_legs',
-                          'portfolio_execution_events'
+                          'portfolio_execution_events',
+                          'portfolio_live_execution_mandates'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 14
+        assert len(protected) == 15
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
