@@ -105,6 +105,16 @@ class TBankAccruedInterest:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankOrderPrice:
+    total_order_amount: TBankMoney
+    initial_order_amount: TBankMoney
+    executed_commission_rub: TBankMoney
+    service_commission: TBankMoney
+    deal_commission: TBankMoney
+    bond_aci_value: TBankMoney | None
+
+
+@dataclass(frozen=True, slots=True)
 class TBankAssetTotal:
     kind: str
     money: TBankMoney
@@ -456,6 +466,72 @@ class TBankInvestClient:
                 )
             )
         return tuple(result)
+
+    def get_order_price(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        instrument_uid: str,
+        *,
+        price: str,
+        direction: Literal["buy", "sell"],
+        quantity_lots: int,
+    ) -> TBankOrderPrice:
+        account = _validate_provider_id(account_id, "account id")
+        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        try:
+            price_value = Decimal(price)
+        except InvalidOperation as exc:
+            raise ValueError("order price is invalid") from exc
+        if not price_value.is_finite() or price_value <= 0:
+            raise ValueError("order price must be positive")
+        if quantity_lots <= 0:
+            raise ValueError("order quantity must be positive")
+        direction_value = {
+            "buy": "ORDER_DIRECTION_BUY",
+            "sell": "ORDER_DIRECTION_SELL",
+        }[direction]
+        service = "OrdersService" if environment == "prod" else "SandboxService"
+        method = "GetOrderPrice" if environment == "prod" else "GetSandboxOrderPrice"
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service=service,
+            method=method,
+            body={
+                "accountId": account,
+                "instrumentId": instrument,
+                "price": _quotation_payload(price_value),
+                "direction": direction_value,
+                "quantity": str(quantity_lots),
+            },
+        )
+        total = _money(payload.get("totalOrderAmount"))
+        initial = _money(payload.get("initialOrderAmount"))
+        commission = _money(payload.get("executedCommissionRub"))
+        service_commission = _money(payload.get("serviceCommission"))
+        deal_commission = _money(payload.get("dealCommission"))
+        if (
+            total is None
+            or initial is None
+            or commission is None
+            or service_commission is None
+            or deal_commission is None
+        ):
+            raise TBankUnavailable("T-Invest order price is missing cost fields")
+        extra_bond = payload.get("extraBond")
+        bond_aci = None
+        if extra_bond is not None:
+            bond_aci = _money(_required_object(extra_bond, "bond order price").get("aciValue"))
+        return TBankOrderPrice(
+            total_order_amount=total,
+            initial_order_amount=initial,
+            executed_commission_rub=commission,
+            service_commission=service_commission,
+            deal_commission=deal_commission,
+            bond_aci_value=bond_aci,
+        )
 
     def get_accounts(
         self,
@@ -1362,6 +1438,14 @@ def _quotation(value: object) -> str | None:
     if not amount.is_finite():
         raise TBankUnavailable("T-Invest API returned non-finite numeric value")
     return format(amount.normalize(), "f")
+
+
+def _quotation_payload(value: Decimal) -> dict[str, object]:
+    if not value.is_finite():
+        raise ValueError("quotation must be finite")
+    units = int(value)
+    nano = int((value - Decimal(units)) * Decimal(1_000_000_000))
+    return {"units": str(units), "nano": nano}
 
 
 def _money(value: object) -> TBankMoney | None:
