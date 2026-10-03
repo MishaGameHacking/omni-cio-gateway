@@ -654,7 +654,7 @@ def _enrich_bond_candidate(
         "tax_not_applied_to_new_buy",
     )
     group_id = str(row.get("group_id") or "") or "unverified_group"
-    risk_state: RiskState = cast(RiskState, assessment.state)
+    risk_state: RiskState = assessment.state
     evidence_complete = (
         assessment.fundamental_status == "received"
         and risk_state in {"normal", "watch", "elevated"}
@@ -683,7 +683,7 @@ def _enrich_bond_candidate(
         access_reasons=access_reasons,
         notes=notes,
     )
-    sources = (
+    sources: tuple[dict[str, object], ...] = (
         {
             "id": f"tbank-last-price:{base.instrument_uid}",
             "provider": "tbank",
@@ -836,7 +836,7 @@ def _enrich_replacement_holding(
         tax_if_sold_rub=tax,
         replacement_costs_complete=True,
     )
-    sources = (
+    sources: tuple[dict[str, object], ...] = (
         {
             "id": f"tbank-sell-order-book:{base.instrument_uid}",
             "provider": "tbank",
