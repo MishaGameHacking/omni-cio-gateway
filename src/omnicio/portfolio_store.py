@@ -2160,11 +2160,25 @@ class PortfolioStore:
                     created_at,
                     expires_at,
                     revoked_at
-                FROM portfolio_reinvestment_mandates
-                WHERE user_id = %s
-                  AND revoked_at IS NULL
-                  AND expires_at > %s
-                ORDER BY version DESC
+                FROM portfolio_reinvestment_mandates AS m
+                JOIN tbank_connection AS t
+                  ON t.user_id = m.user_id
+                 AND t.account_id = m.account_id
+                 AND t.environment = 'prod'
+                WHERE m.user_id = %s
+                  AND m.revoked_at IS NULL
+                  AND m.expires_at > %s
+                  AND m.profile_version = (
+                      SELECT max(p.version)
+                      FROM investment_profile_versions AS p
+                      WHERE p.user_id = m.user_id
+                  )
+                  AND m.policy_version = (
+                      SELECT max(b.version)
+                      FROM balancing_policy_versions AS b
+                      WHERE b.user_id = m.user_id
+                  )
+                ORDER BY m.version DESC
                 LIMIT 1
                 """,
                 (user_id, now.astimezone(UTC)),
