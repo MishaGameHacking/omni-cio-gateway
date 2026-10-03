@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from typing import Any, cast
 from uuid import UUID
@@ -265,6 +265,7 @@ def build_live_balancing_payload(
             continue
         try:
             candidate, sources = _enrich_bond_candidate(
+                user_id=user_id,
                 row=row,
                 context=context,
                 profile=profile,
@@ -379,6 +380,7 @@ def _with_candidate_blocker(candidate: Candidate, reason: str) -> Candidate:
 
 def _enrich_bond_candidate(
     *,
+    user_id: UUID,
     row: dict[str, object],
     context: dict[str, object],
     profile: InvestmentProfileRecord,
@@ -432,7 +434,7 @@ def _enrich_bond_candidate(
         return _with_candidate_blocker(base, "quote_missing"), ()
 
     order_book = broker.candidate_order_book(
-        UUID(str(context.get("user_id"))) if context.get("user_id") else UUID(int=0),
+        user_id,
         base.instrument_uid,
         depth=10,
     )
@@ -449,7 +451,7 @@ def _enrich_bond_candidate(
         return _with_candidate_blocker(base, "order_book_unusable"), ()
 
     order_price = broker.candidate_order_price(
-        UUID(str(context.get("user_id"))) if context.get("user_id") else UUID(int=0),
+        user_id,
         base.instrument_uid,
         price=str(best_ask),
         direction="buy",
