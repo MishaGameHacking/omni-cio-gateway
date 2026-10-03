@@ -1,6 +1,14 @@
 (() => {
   "use strict";
 
+  const requiredElement = (selector) => {
+    const element = document.querySelector(selector);
+    if (!element) {
+      throw new Error(`Required UI element is missing: ${selector}`);
+    }
+    return element;
+  };
+
   const authCard = document.querySelector("#auth-card");
   const profilePanel = document.querySelector("#profile-panel");
   const vkidForm = document.querySelector("#vkid-form");
@@ -151,13 +159,13 @@
   const balancingScreening = document.querySelector("#balancing-screening");
   const proposalStatus = document.querySelector("#proposal-status");
   const proposalCreateOptions = document.querySelector("#proposal-create-options");
-  const proposalHistory = document.querySelector("#proposal-history");
+  const proposalHistory = requiredElement("#proposal-history");
   const proposalMessage = document.querySelector("#proposal-message");
-  const executionStatus = document.querySelector("#execution-status");
-  const executionRefresh = document.querySelector("#execution-refresh");
-  const executionHistory = document.querySelector("#execution-history");
-  const executionDetails = document.querySelector("#execution-details");
-  const executionMessage = document.querySelector("#execution-message");
+  const executionStatus = requiredElement("#execution-status");
+  const executionRefresh = requiredElement("#execution-refresh");
+  const executionHistory = requiredElement("#execution-history");
+  const executionDetails = requiredElement("#execution-details");
+  const executionMessage = requiredElement("#execution-message");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
@@ -2189,7 +2197,8 @@
       `[data-proposal-defer-at="${proposalId}"]`,
     );
 
-    if (action === "reject" && (!reason || !reason.value.trim())) {
+    const rejectReason = reason?.value.trim() || "";
+    if (action === "reject" && !rejectReason) {
       showMessage(proposalMessage, "Для отклонения укажите причину.", true);
       reason?.focus();
       return;
@@ -2197,12 +2206,13 @@
 
     let deferredUntil = null;
     if (action === "defer") {
-      if (!deferAt?.value) {
+      const deferValue = deferAt?.value || "";
+      if (!deferValue) {
         showMessage(proposalMessage, "Для отсрочки выберите дату и время.", true);
         deferAt?.focus();
         return;
       }
-      const deferredDate = new Date(deferAt.value);
+      const deferredDate = new Date(deferValue);
       if (
         Number.isNaN(deferredDate.getTime())
         || deferredDate.getTime() <= Date.now()
@@ -2212,7 +2222,7 @@
           "Дата отсрочки должна быть в будущем. Выберите новую дату и время.",
           true,
         );
-        deferAt.focus();
+        deferAt?.focus();
         return;
       }
       deferredUntil = deferredDate.toISOString();
@@ -2226,7 +2236,7 @@
         action,
         proposal_version: Number(button.dataset.proposalVersion),
         proposal_hash: button.dataset.proposalHash,
-        reason: action === "reject" ? reason.value.trim() : null,
+        reason: action === "reject" ? rejectReason : null,
         deferred_until: deferredUntil,
       };
       const result = await api(
