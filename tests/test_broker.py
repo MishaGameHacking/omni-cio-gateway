@@ -570,6 +570,8 @@ def test_tbank_reads_portfolio_and_positions() -> None:
                     "quantity": {"units": "10", "nano": 0},
                     "currentPrice": {"currency": "rub", "units": "10000", "nano": 0},
                     "averagePositionPrice": {"currency": "rub", "units": "9000", "nano": 0},
+                    "averagePositionPriceFifo": {"currency": "rub", "units": "8900", "nano": 0},
+                    "quantityLots": {"units": "1", "nano": 0},
                     "expectedYield": {"units": "11", "nano": 110000000},
                     "dailyYield": {"currency": "rub", "units": "100", "nano": 0},
                     "currentNkd": {"currency": "rub", "units": "12", "nano": 500000000},
