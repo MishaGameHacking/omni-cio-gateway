@@ -513,12 +513,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             first_proposal = store.create_proposal(
                 USER_ONE,
                 source_snapshot_id=snapshot_id,
+                account_id="account-1",
                 profile_version=1,
                 policy_version=2,
                 scenario_kind="deploy_cash",
                 target_instrument_uid="instrument-1",
                 replaced_instrument_uid=None,
                 proposal_hash=b"p" * 32,
+                session_digest=b"s" * 32,
                 payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
                 expires_at=created_at + timedelta(minutes=10),
             )
@@ -529,6 +531,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 expected_version=first_proposal.version,
                 expected_hash=first_proposal.proposal_hash,
                 action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
                 now=created_at + timedelta(minutes=1),
             )
             with pytest.raises(
@@ -541,30 +546,37 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                     expected_version=first_proposal.version,
                     expected_hash=first_proposal.proposal_hash,
                     action="confirmed",
+                    session_digest=b"d" * 32,
+                    user_reason="",
+                    deferred_until=None,
                     now=created_at + timedelta(minutes=2),
                 )
 
             pending = store.create_proposal(
                 USER_ONE,
                 source_snapshot_id=snapshot_id,
+                account_id="account-1",
                 profile_version=1,
                 policy_version=2,
                 scenario_kind="deploy_cash",
                 target_instrument_uid="instrument-1",
                 replaced_instrument_uid=None,
                 proposal_hash=b"q" * 32,
+                session_digest=b"s" * 32,
                 payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
                 expires_at=created_at + timedelta(minutes=10),
             )
             newest = store.create_proposal(
                 USER_ONE,
                 source_snapshot_id=snapshot_id,
+                account_id="account-1",
                 profile_version=1,
                 policy_version=2,
                 scenario_kind="deploy_cash",
                 target_instrument_uid="instrument-1",
                 replaced_instrument_uid=None,
                 proposal_hash=b"r" * 32,
+                session_digest=b"s" * 32,
                 payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
                 expires_at=created_at + timedelta(minutes=10),
             )
@@ -575,6 +587,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 expected_version=newest.version,
                 expected_hash=newest.proposal_hash,
                 action="deferred",
+                session_digest=b"d" * 32,
+                user_reason="wait",
+                deferred_until=created_at + timedelta(hours=2),
                 now=created_at + timedelta(hours=1),
             )
             intelligence = store.latest_intelligence(USER_ONE)
@@ -600,10 +615,11 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             for item in proposal_after_supersede
             if item.id == pending.id
         )
-        assert superseded.status == "revoked"
+        assert superseded.status == "superseded"
         assert superseded.decision_reason == "superseded_by_new_proposal"
         assert expired_proposal.id == newest.id
         assert expired_action.action == "expired"
+        assert expired_action.deferred_until is None
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
