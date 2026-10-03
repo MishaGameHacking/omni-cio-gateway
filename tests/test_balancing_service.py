@@ -2,11 +2,28 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
-from omnicio.balancing_service import build_balancing_payload
+from omnicio.balancing_service import (
+    build_balancing_payload,
+    build_live_balancing_payload,
+)
+from omnicio.moex import (
+    MoexBondSnapshot,
+    MoexLiquiditySnapshot,
+    MoexSecurityIdentity,
+)
 from omnicio.portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
+from omnicio.tbank import (
+    TBankAssetFundamental,
+    TBankLastPrice,
+    TBankMoney,
+    TBankOrderBook,
+    TBankOrderLevel,
+    TBankOrderPrice,
+)
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -251,3 +268,134 @@ def test_existing_critical_holding_does_not_create_sell_without_cost_model() -> 
     assert replacement["status"] == "infeasible"
     assert replacement["reason"] == "replacement_cost_model_missing"
     assert replacement["trades"] == []
+
+
+
+def _fundamental(now: datetime) -> TBankAssetFundamental:
+    return TBankAssetFundamental(
+        asset_uid="asset-1",
+        currency="RUB",
+        revenue_ttm="1000000",
+        ebitda_ttm="250000",
+        net_income_ttm="100000",
+        free_cash_flow_ttm="80000",
+        total_debt_mrq="200000",
+        total_debt_to_equity_mrq="0.4",
+        total_debt_to_ebitda_mrq="0.8",
+        net_debt_to_ebitda="0.5",
+        current_ratio_mrq="1.5",
+        fixed_charge_coverage_ratio_fy="4",
+        net_interest_margin_mrq=None,
+        roe="0.12",
+        roa="0.06",
+        fiscal_period_start_date=now - timedelta(days=365),
+        fiscal_period_end_date=now - timedelta(days=30),
+    )
+
+
+def test_live_r4_bond_enrichment_can_produce_integer_lot_scenario() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    context = _context(now)
+    broker = SimpleNamespace(
+        candidate_fundamentals=lambda user_id, asset_uids: (_fundamental(now),),
+        candidate_last_prices=lambda user_id, uids: (
+            TBankLastPrice("candidate-1", "100", now),
+        ),
+        candidate_order_book=lambda user_id, uid, depth=10: TBankOrderBook(
+            instrument_uid=uid,
+            bids=(TBankOrderLevel("99.9", 100),),
+            asks=(TBankOrderLevel("100.1", 100),),
+            time=now,
+            is_consistent=True,
+        ),
+        candidate_order_price=lambda user_id, uid, **kwargs: TBankOrderPrice(
+            total_order_amount=TBankMoney("RUB", "1025"),
+            initial_order_amount=TBankMoney("RUB", "1000"),
+            executed_commission_rub=TBankMoney("RUB", "5"),
+            service_commission=TBankMoney("RUB", "0"),
+            deal_commission=TBankMoney("RUB", "5"),
+            bond_aci_value=TBankMoney("RUB", "20"),
+        ),
+    )
+    moex = SimpleNamespace(
+        security_identity=lambda query, expected_isin="": MoexSecurityIdentity(
+            secid="TESTBOND",
+            isin="RU0000000001",
+            issuer_id="1234",
+            issuer_name="Issuer",
+            issuer_inn="7700000000",
+            primary_board_id="TQCB",
+            is_traded=True,
+            source_url="https://iss.moex.com/iss/securities.json",
+        ),
+        bond_snapshot=lambda secid, board: MoexBondSnapshot(
+            secid=secid,
+            board_id=board,
+            yield_percent=Decimal("12.5"),
+            yield_to_offer_percent=Decimal("12"),
+            call_option_yield_percent=None,
+            ytw_percent=Decimal("12"),
+            duration_days=Decimal("700"),
+            call_option_duration_days=None,
+            accrued_interest_rub=Decimal("20"),
+            value_today_rub=Decimal("10000000"),
+            volume_today=Decimal("10000"),
+            offer_date="",
+            maturity_date="2027-10-03",
+            source_url="https://iss.moex.com/iss/bond.json",
+        ),
+        bond_liquidity=lambda secid, board, **kwargs: MoexLiquiditySnapshot(
+            secid=secid,
+            board_id=board,
+            observed_days=20,
+            average_daily_value_rub=Decimal("1000000"),
+            total_value_rub=Decimal("20000000"),
+            source_url="https://iss.moex.com/iss/history.json",
+        ),
+    )
+
+    payload = build_live_balancing_payload(
+        user_id=USER_ID,
+        profile=_profile(),
+        policy_record=_policy(max_unknown_percent=Decimal("20")),
+        context=context,
+        broker=broker,  # type: ignore[arg-type]
+        moex=moex,  # type: ignore[arg-type]
+        now=now,
+    )
+
+    assert payload["live_status"] == "received"
+    assert payload["eligible_candidate_count"] == 1
+    screening = payload["screening"][0]
+    assert screening["eligible"] is True
+    assert screening["risk_state"] == "normal"
+    assert "issuer_identity_verified_by_moex" in screening["notes"]
+    deploy = payload["scenarios"]["deploy_cash"]
+    assert deploy["status"] == "feasible"
+    assert deploy["trades"][0]["lots"] == 14
+    assert deploy["trades"][0]["instrument_uid"] == "candidate-1"
+    assert payload["execution_enabled"] is False
+    assert payload["proposal_enabled"] is False
+
+
+def test_live_r4_degrades_to_durable_preview_when_broker_evidence_fails() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+
+    class BrokenBroker:
+        def candidate_fundamentals(self, user_id: object, asset_uids: object) -> object:
+            raise ValueError("provider failure")
+
+    payload = build_live_balancing_payload(
+        user_id=USER_ID,
+        profile=_profile(),
+        policy_record=_policy(max_unknown_percent=Decimal("20")),
+        context=_context(now),
+        broker=BrokenBroker(),  # type: ignore[arg-type]
+        moex=SimpleNamespace(),  # type: ignore[arg-type]
+        now=now,
+    )
+
+    assert payload["status"] == "observed"
+    assert payload["live_status"] == "degraded"
+    assert payload["live_reason"] == "tbank_live_evidence_unavailable"
+    assert payload["execution_enabled"] is False
