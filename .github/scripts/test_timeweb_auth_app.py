@@ -898,6 +898,13 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Number.isNaN(deferredDate.getTime())", script)
         self.assertIn("deferredDate.getTime() <= Date.now()", script)
         self.assertIn("Дата отсрочки должна быть в будущем", script)
+        self.assertIn('const rejectReason = reason?.value.trim() || "";', script)
+        self.assertIn('const deferValue = deferAt?.value || "";', script)
+        self.assertNotIn(
+            'reason: action === "reject" ? reason.value.trim() : null',
+            script,
+        )
+        self.assertNotIn("const deferredDate = new Date(deferAt.value)", script)
         self.assertIn("EXECUTION_ERROR_MESSAGES", script)
         self.assertIn("sandbox_submit_ambiguous", script)
         self.assertIn("Повторная заявка запрещена", script)
@@ -915,7 +922,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.13.1"', project)
+        self.assertIn('version = "0.13.2"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
