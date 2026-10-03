@@ -131,6 +131,43 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "liquidity",
         } <= catalog_columns
 
+        proposal_columns = {
+            row[0]
+            for row in admin.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'portfolio_proposals'
+                """
+            ).fetchall()
+        }
+        assert {
+            "account_id",
+            "created_session_digest",
+            "proposal_hash",
+            "payload",
+            "expires_at",
+        } <= proposal_columns
+
+        proposal_action_columns = {
+            row[0]
+            for row in admin.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'portfolio_proposal_actions'
+                """
+            ).fetchall()
+        }
+        assert {
+            "session_digest",
+            "user_reason",
+            "deferred_until",
+            "proposal_hash",
+        } <= proposal_action_columns
+
         semantic_indexes = {
             row[0]
             for row in admin.execute(
@@ -554,6 +591,33 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                     now=created_at + timedelta(minutes=2),
                 )
 
+            stale_material = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"m" * 32,
+                session_digest=b"s" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            stale_proposal, stale_action = store.decide_proposal(
+                USER_ONE,
+                proposal_id=stale_material.id,
+                expected_version=stale_material.version,
+                expected_hash=stale_material.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=False,
+                now=created_at + timedelta(minutes=2),
+            )
+
             pending = store.create_proposal(
                 USER_ONE,
                 source_snapshot_id=snapshot_id,
@@ -613,6 +677,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert proposal_before[0].status == "pending"
         assert decided_proposal.id == first_proposal.id
         assert confirmed.action == "confirmed"
+        assert stale_proposal.id == stale_material.id
+        assert stale_action.action == "revoked"
+        assert stale_action.reason == "proposal_material_changed"
         superseded = next(
             item
             for item in proposal_after_supersede
