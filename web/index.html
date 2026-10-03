@@ -750,6 +750,49 @@
                 </p>
               </article>
 
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Portfolio Balancing R4</p>
+                    <h3>Целые лоты и сценарии без исполнения</h3>
+                  </div>
+                  <span class="state-badge state-next" id="balancing-status">Проверяем готовность</span>
+                </header>
+                <section class="portfolio-metrics analysis-metrics" aria-label="Показатели балансировки">
+                  <article class="portfolio-metric">
+                    <span>Свободные рубли</span>
+                    <strong id="balancing-free-cash">—</strong>
+                    <small>До резерва и плановых снятий</small>
+                  </article>
+                  <article class="portfolio-metric">
+                    <span>Кандидатов</span>
+                    <strong id="balancing-candidate-count">—</strong>
+                    <small id="balancing-eligible-note">Допустимость ещё не проверена</small>
+                  </article>
+                  <article class="portfolio-metric">
+                    <span>Версии ограничений</span>
+                    <strong id="balancing-policy-versions">—</strong>
+                    <small>Профиль капитала · policy балансировки</small>
+                  </article>
+                </section>
+                <section class="portfolio-two-column">
+                  <div>
+                    <p class="card-label">Сценарии</p>
+                    <div id="balancing-scenarios" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Candidate screening</p>
+                    <div id="balancing-screening" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <p class="field-hint">
+                  R4 только рассчитывает и объясняет сценарии. Он не создаёт immutable
+                  предложение, не подтверждает сделки и не вызывает broker OrdersService.
+                  Неполные quote/YTW/liquidity/issuer/tax/cost данные блокируют действие,
+                  а не заменяются догадкой.
+                </p>
+              </article>
+
               <section class="portfolio-two-column">
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">
