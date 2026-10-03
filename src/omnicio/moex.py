@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import ssl
 import urllib.parse
 from dataclasses import dataclass
@@ -13,6 +14,12 @@ from typing import Any, cast
 
 MOEX_ISS_HOST = "iss.moex.com"
 MOEX_ISS_ROOT = f"https://{MOEX_ISS_HOST}/iss"
+_MOEX_REQUEST_TARGET = re.compile(
+    r"/iss/[A-Za-z0-9._~/%-]+(?:\?[A-Za-z0-9._~%=&,+:-]*)?\Z",
+    flags=re.ASCII,
+)
+_MOEX_IDENTIFIER = re.compile(r"[A-Z0-9._-]{1,32}\Z", flags=re.ASCII)
+_MOEX_SECURITY_QUERY = re.compile(r"[A-Z0-9._-]{1,64}\Z", flags=re.ASCII)
 
 
 class MoexError(RuntimeError):
@@ -69,8 +76,8 @@ class MoexIssClient:
         *,
         expected_isin: str = "",
     ) -> MoexSecurityIdentity | None:
-        clean_query = query.strip()
-        if not clean_query or len(clean_query) > 64:
+        clean_query = query.strip().upper()
+        if _MOEX_SECURITY_QUERY.fullmatch(clean_query) is None:
             raise ValueError("MOEX security query is invalid")
         url = (
             f"{MOEX_ISS_ROOT}/securities.json?"
@@ -274,6 +281,8 @@ class MoexIssClient:
 
     def _get_payload(self, url: str) -> dict[str, object]:
         target = _moex_request_target(url)
+        if _MOEX_REQUEST_TARGET.fullmatch(target) is None:
+            raise MoexError("MOEX ISS request target is invalid")
         connection = http.client.HTTPSConnection(
             MOEX_ISS_HOST,
             443,
@@ -359,9 +368,7 @@ def _first_row(
 
 def _identifier(value: str, label: str) -> str:
     clean = value.strip().upper()
-    if not clean or len(clean) > 32:
-        raise ValueError(f"{label} is invalid")
-    if not all(char.isalnum() or char in "._-" for char in clean):
+    if _MOEX_IDENTIFIER.fullmatch(clean) is None:
         raise ValueError(f"{label} is invalid")
     return clean
 
