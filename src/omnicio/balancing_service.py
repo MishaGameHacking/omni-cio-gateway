@@ -111,6 +111,7 @@ def build_balancing_payload(
             "asset_class": item.candidate.asset_class,
             "eligible": item.eligible,
             "reasons": list(item.reasons),
+            "notes": list(item.candidate.notes),
             "rating_bucket": item.candidate.rating_bucket,
             "risk_state": item.candidate.risk_state,
         }
