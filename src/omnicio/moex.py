@@ -18,8 +18,14 @@ _MOEX_REQUEST_TARGET = re.compile(
     r"/iss/[A-Za-z0-9._~/%-]+(?:\?[A-Za-z0-9._~%=&,+:-]*)?\Z",
     flags=re.ASCII,
 )
-_MOEX_IDENTIFIER = re.compile(r"[A-Z0-9._-]{1,32}\Z", flags=re.ASCII)
-_MOEX_SECURITY_QUERY = re.compile(r"[A-Z0-9._-]{1,64}\Z", flags=re.ASCII)
+_MOEX_IDENTIFIER = re.compile(
+    r"[A-Z0-9][A-Z0-9_-]{0,31}\Z",
+    flags=re.ASCII,
+)
+_MOEX_SECURITY_QUERY = re.compile(
+    r"[A-Z0-9][A-Z0-9_-]{0,63}\Z",
+    flags=re.ASCII,
+)
 
 
 class MoexError(RuntimeError):
