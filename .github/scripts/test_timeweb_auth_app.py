@@ -908,6 +908,16 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("EXECUTION_ERROR_MESSAGES", script)
         self.assertIn("sandbox_submit_ambiguous", script)
         self.assertIn("Повторная заявка запрещена", script)
+        self.assertIn("const requiredElement = (selector) =>", script)
+        for selector in (
+            "#proposal-history",
+            "#execution-status",
+            "#execution-refresh",
+            "#execution-history",
+            "#execution-details",
+            "#execution-message",
+        ):
+            self.assertIn(f'requiredElement("{selector}")', script)
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
