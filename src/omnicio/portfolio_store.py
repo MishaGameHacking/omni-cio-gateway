@@ -672,6 +672,14 @@ class PortfolioStore:
                         item.api_trade_available,
                         item.buy_available,
                         item.sell_available,
+                        _money_decimal(item.nominal),
+                        item.nominal.currency if item.nominal else None,
+                        item.maturity_date,
+                        item.floating_coupon,
+                        item.perpetual,
+                        item.amortization,
+                        item.subordinated,
+                        item.liquidity,
                         catalog_retrieved_at,
                     )
                     for item in bundle.metadata
@@ -698,11 +706,20 @@ class PortfolioStore:
                         api_trade_available,
                         buy_available,
                         sell_available,
+                        nominal_value,
+                        nominal_currency,
+                        maturity_date,
+                        floating_coupon,
+                        perpetual,
+                        amortization,
+                        subordinated,
+                        liquidity,
                         provider_retrieved_at
                     )
                     VALUES (
                         'tbank', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (provider, instrument_uid) DO UPDATE SET
                         figi = EXCLUDED.figi,
@@ -722,6 +739,14 @@ class PortfolioStore:
                         api_trade_available = EXCLUDED.api_trade_available,
                         buy_available = EXCLUDED.buy_available,
                         sell_available = EXCLUDED.sell_available,
+                        nominal_value = EXCLUDED.nominal_value,
+                        nominal_currency = EXCLUDED.nominal_currency,
+                        maturity_date = EXCLUDED.maturity_date,
+                        floating_coupon = EXCLUDED.floating_coupon,
+                        perpetual = EXCLUDED.perpetual,
+                        amortization = EXCLUDED.amortization,
+                        subordinated = EXCLUDED.subordinated,
+                        liquidity = EXCLUDED.liquidity,
                         last_seen_at = now(),
                         provider_retrieved_at = EXCLUDED.provider_retrieved_at
                     """,
