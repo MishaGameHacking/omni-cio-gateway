@@ -3663,6 +3663,7 @@
     void loadTbankStatus();
     void loadInvestmentProfile();
     void loadBalancingPolicy();
+    void loadReinvestment();
     void loadLiveMandate().then(() => {
       void loadProposals();
       void loadExecutions({inspectLatest: true});
@@ -3876,6 +3877,15 @@
 
   liveMandateRevoke.addEventListener("click", () => {
     void revokeLiveMandate();
+  });
+
+  reinvestmentForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveReinvestmentMandate();
+  });
+
+  reinvestmentRevoke.addEventListener("click", () => {
+    void revokeReinvestmentMandate();
   });
 
   desktopNavItems.forEach((item) => {
@@ -4259,6 +4269,7 @@
       portfolioLoaded = false;
       void loadPortfolioData({force: true});
       void loadLiveMandate();
+      void loadReinvestment();
       showMessage(tbankMessage, "T-Invest подключён. Токен сохранён в зашифрованном виде.");
     } catch (error) {
       resetTbankPreview();
@@ -4290,6 +4301,7 @@
       portfolioLoaded = false;
       tbankTermsAck.checked = false;
       void loadLiveMandate();
+      void loadReinvestment();
       showMessage(tbankMessage, "T-Invest отключён.");
     } catch (error) {
       showMessage(
