@@ -46,6 +46,7 @@ from .portfolio_store import (
     ReinvestmentIncomeSummary,
     ReinvestmentMandateError,
     ReinvestmentMandateRecord,
+    ReinvestmentMandateSpec,
 )
 from .proposals import (
     ProposalBuildError,
@@ -89,6 +90,9 @@ class StrictRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+PUBLIC_ID_PATTERN = r"^[0-9]{9}$"
+
+
 class StartVKIDBody(StrictRequestBody):
     accept_privacy: bool
     accept_personal_data: bool
@@ -107,7 +111,7 @@ class TBankConnectBody(TBankCredentialBody):
 
 
 class DeleteAccountBody(StrictRequestBody):
-    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_public_id: str = Field(pattern=PUBLIC_ID_PATTERN)
     confirm_irreversible: bool
 
 
@@ -183,7 +187,7 @@ class PortfolioLiveMandateBody(StrictRequestBody):
         allow_inf_nan=False,
     )
     expires_at: datetime
-    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_public_id: str = Field(pattern=PUBLIC_ID_PATTERN)
     confirm_live_execution: bool
 
 
@@ -216,7 +220,7 @@ class PortfolioReinvestmentMandateBody(StrictRequestBody):
     )
     max_slippage_bps: int = Field(ge=0, le=500)
     expires_at: datetime
-    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_public_id: str = Field(pattern=PUBLIC_ID_PATTERN)
     confirm_reinvestment: bool
 
 
@@ -1293,18 +1297,20 @@ def save_portfolio_reinvestment_mandate(
     try:
         mandate = store.create_reinvestment_mandate(
             user.id,
-            account_id=broker_status.account_id,
-            profile_version=profile.version,
-            policy_version=policy.version,
-            allow_dividends=body.allow_dividends,
-            allow_coupons=body.allow_coupons,
-            cash_reserve_rub=body.cash_reserve_rub,
-            max_order_notional_rub=body.max_order_notional_rub,
-            max_daily_notional_rub=body.max_daily_notional_rub,
-            max_monthly_notional_rub=body.max_monthly_notional_rub,
-            max_slippage_bps=body.max_slippage_bps,
+            spec=ReinvestmentMandateSpec(
+                account_id=broker_status.account_id,
+                profile_version=profile.version,
+                policy_version=policy.version,
+                allow_dividends=body.allow_dividends,
+                allow_coupons=body.allow_coupons,
+                cash_reserve_rub=body.cash_reserve_rub,
+                max_order_notional_rub=body.max_order_notional_rub,
+                max_daily_notional_rub=body.max_daily_notional_rub,
+                max_monthly_notional_rub=body.max_monthly_notional_rub,
+                max_slippage_bps=body.max_slippage_bps,
+                expires_at=body.expires_at,
+            ),
             session_digest=authenticated_session_digest(session_token),
-            expires_at=body.expires_at,
             now=datetime.now(UTC),
         )
     except ReinvestmentMandateError as exc:
