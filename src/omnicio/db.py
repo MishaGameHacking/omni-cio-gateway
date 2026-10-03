@@ -112,6 +112,32 @@ class Database:
                           )
                     )
                     AND (
+                        SELECT count(*) = 3
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'portfolio_proposals'
+                          AND column_name = ANY (
+                              ARRAY[
+                                  'account_id',
+                                  'created_session_digest',
+                                  'proposal_hash'
+                              ]
+                          )
+                    )
+                    AND (
+                        SELECT count(*) = 3
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'portfolio_proposal_actions'
+                          AND column_name = ANY (
+                              ARRAY[
+                                  'session_digest',
+                                  'user_reason',
+                                  'deferred_until'
+                              ]
+                          )
+                    )
+                    AND (
                         SELECT count(*) = 11
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
