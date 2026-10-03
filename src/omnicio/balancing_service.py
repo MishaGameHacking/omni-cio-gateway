@@ -13,6 +13,7 @@ from .balancing import (
     BalancingPolicy,
     Candidate,
     Holding,
+    RatingBucket,
     RiskState,
     build_balancing_preview,
     screen_candidates,
@@ -30,6 +31,7 @@ from .tbank import (
     TBankInstrumentMetadata,
     TBankLastPrice,
     TBankMoney,
+    TBankRating,
     TBankUnavailable,
 )
 
@@ -529,6 +531,16 @@ def _enrich_bond_candidate(
         fundamental,
         assessed_at=observed_at,
     )
+    ratings = broker.candidate_bond_ratings(
+        user_id,
+        base.instrument_uid,
+    )
+    rating_bucket, rating_notes, rating_under_watch = (
+        _rating_bucket_from_tbank(
+            ratings,
+            observed_at=observed_at,
+        )
+    )
     if last_price is None or not _fresh_market_time(
         last_price.time,
         observed_at,
@@ -709,6 +721,7 @@ def _enrich_bond_candidate(
     notes = (
         "shortlisted_by_tbank_market_yield_signal",
         "issuer_identity_from_verified_mapping",
+        *rating_notes,
         "issuer_group_from_verified_mapping",
         "buy_cost_from_tinvest_get_order_price",
         "ytw_from_tinvest_fixed_cashflows",
@@ -718,6 +731,8 @@ def _enrich_bond_candidate(
         "tax_not_applied_to_new_buy",
     )
     risk_state: RiskState = assessment.state
+    if rating_under_watch and risk_state == "normal":
+        risk_state = "watch"
     evidence_complete = (
         assessment.fundamental_status == "received"
         and risk_state in {"normal", "watch", "elevated"}
@@ -725,7 +740,7 @@ def _enrich_bond_candidate(
     )
     candidate = replace(
         base,
-        rating_bucket="unknown",
+        rating_bucket=rating_bucket,
         risk_state=risk_state,
         market_lot_cost_rub=initial,
         accrued_coupon_rub_per_lot=aci,
@@ -764,6 +779,12 @@ def _enrich_bond_candidate(
             "retrieved_at": observed_at,
         },
         {
+            "id": f"tbank-bond-ratings:{base.instrument_uid}",
+            "provider": "tbank",
+            "kind": "issuer_ratings",
+            "retrieved_at": observed_at,
+        },
+        {
             "id": f"tbank-bond-cashflows:{base.instrument_uid}",
             "provider": "tbank",
             "kind": "bond_coupons_and_events",
@@ -777,6 +798,79 @@ def _enrich_bond_candidate(
         },
     )
     return candidate, sources
+
+
+def _rating_bucket_from_tbank(
+    ratings: tuple[TBankRating, ...],
+    *,
+    observed_at: datetime,
+) -> tuple[RatingBucket, tuple[str, ...], bool]:
+    if not ratings:
+        return "unknown", ("issuer_rating_missing",), False
+
+    buckets: list[RatingBucket] = []
+    notes: list[str] = ["issuer_ratings_from_tinvest_bond_by"]
+    under_watch = False
+    for rating in ratings:
+        rating_date = rating.rating_date.astimezone(UTC)
+        if rating_date > observed_at:
+            return (
+                "unknown",
+                tuple((*notes, "issuer_rating_time_invalid")),
+                False,
+            )
+        bucket = _rating_level_bucket(rating.rating_level)
+        if bucket is None:
+            return (
+                "unknown",
+                tuple((*notes, "issuer_rating_level_unrecognized")),
+                under_watch,
+            )
+        buckets.append(bucket)
+        notes.append(
+            "issuer_rating:"
+            + rating.agency_name
+            + ":"
+            + rating.rating_level
+            + ":"
+            + rating_date.date().isoformat()
+        )
+        under_watch = under_watch or rating.is_under_watch
+
+    order: dict[RatingBucket, int] = {
+        "below_grade": 0,
+        "bbb": 1,
+        "a": 2,
+        "aa": 3,
+        "aaa": 4,
+        "unknown": -1,
+        "not_applicable": 5,
+    }
+    worst = min(buckets, key=lambda item: order[item])
+    if under_watch:
+        notes.append("issuer_rating_under_watch")
+    return worst, tuple(notes), under_watch
+
+
+def _rating_level_bucket(value: str) -> RatingBucket | None:
+    letters = "".join(char for char in value.upper() if char.isalpha())
+    if letters.startswith("RU"):
+        letters = letters[2:]
+    if letters.endswith("RU"):
+        letters = letters[:-2]
+    mapping: dict[str, RatingBucket] = {
+        "AAA": "aaa",
+        "AA": "aa",
+        "A": "a",
+        "BBB": "bbb",
+        "BB": "below_grade",
+        "B": "below_grade",
+        "CCC": "below_grade",
+        "CC": "below_grade",
+        "C": "below_grade",
+        "D": "below_grade",
+    }
+    return mapping.get(letters)
 
 
 def _fixed_bond_cashflows(
