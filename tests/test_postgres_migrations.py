@@ -658,6 +658,24 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             )
             current_policy = store.current_balancing_policy(USER_ONE)
             created_at = datetime.now(UTC)
+
+            reinvestment = store.create_reinvestment_mandate(
+                USER_ONE,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                allow_dividends=True,
+                allow_coupons=True,
+                cash_reserve_rub=Decimal("1000.00"),
+                max_order_notional_rub=Decimal("100.00"),
+                max_daily_notional_rub=Decimal("500.00"),
+                max_monthly_notional_rub=Decimal("2000.00"),
+                max_slippage_bps=50,
+                session_digest=b"i" * 32,
+                created_at=created_at if False else None,
+                expires_at=created_at + timedelta(days=30),
+                now=created_at,
+            )
             first_proposal = store.create_proposal(
                 USER_ONE,
                 source_snapshot_id=snapshot_id,
