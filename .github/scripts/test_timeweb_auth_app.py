@@ -560,6 +560,9 @@ class AuthAppDeployTests(unittest.TestCase):
         for element_id in (
             "investment-profile-form",
             "investment-profile-version",
+            "balancing-status",
+            "balancing-scenarios",
+            "balancing-screening",
             "profile-reserve-rub",
             "profile-withdrawal-rub",
             "profile-horizon-months",
