@@ -273,7 +273,6 @@ class BrokerService:
         from_at: datetime,
         to_at: datetime,
         interval: str,
-        limit: int | None = None,
     ) -> tuple[TBankHistoricCandle, ...]:
         _record, credential, environment = self._connected_credential(user_id)
         return self.tbank.get_exchange_candles(
@@ -283,7 +282,6 @@ class BrokerService:
             from_at=from_at,
             to_at=to_at,
             interval=interval,
-            limit=limit,
         )
 
     def market_trading_status(
