@@ -585,7 +585,11 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('shadow.dataset.executionStart = "shadow"', script)
         self.assertIn('sandbox.dataset.executionStart = "sandbox"', script)
         self.assertIn("button.dataset.proposalAccountId", script)
-        self.assertIn("button.dataset.executionAccountId", script)
+        self.assertIn(
+            'const executionAccountId = element.dataset.executionAccountId || "";',
+            script,
+        )
+        self.assertIn("executionAccountId === connectedAccountId", script)
         self.assertIn("Отправить следующую Sandbox limit-заявку", script)
         self.assertEqual(script.count('executionRefresh.addEventListener("click"'), 1)
         self.assertEqual(script.count('executionHistory.addEventListener("click"'), 1)
@@ -918,6 +922,15 @@ class AuthAppDeployTests(unittest.TestCase):
             "#execution-message",
         ):
             self.assertIn(f'requiredElement("{selector}")', script)
+        self.assertIn("const closestButtonTarget = (event, selector) =>", script)
+        self.assertIn("button instanceof HTMLButtonElement", script)
+        self.assertIn("element instanceof HTMLButtonElement", script)
+        self.assertIn("const connectedAccountId = typeof tbankAccountId", script)
+        self.assertIn("const latestRun = runs[0]", script)
+        self.assertIn("Параметры запуска повреждены", script)
+        self.assertIn("Действие запуска повреждено", script)
+        self.assertNotIn("result.executions?.length", script)
+        self.assertNotIn("closestActionTarget", script)
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -932,7 +945,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.13.2"', project)
+        self.assertIn('version = "0.13.3"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

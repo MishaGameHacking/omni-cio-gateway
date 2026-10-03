@@ -2016,25 +2016,36 @@
 
   const syncSandboxStartControls = () => {
     const sandboxConnected = tbankIsConnected && tbankEnvironment === "sandbox";
-    proposalHistory.querySelectorAll('[data-execution-start="sandbox"]').forEach((button) => {
+    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
+
+    proposalHistory.querySelectorAll('button[data-execution-start="sandbox"]').forEach((element) => {
+      if (!(element instanceof HTMLButtonElement)) {
+        return;
+      }
+      const proposalAccountId = element.dataset.proposalAccountId || "";
       const accountMatches = (
         sandboxConnected
-        && tbankAccountId
-        && button.dataset.proposalAccountId === tbankAccountId
+        && connectedAccountId !== ""
+        && proposalAccountId === connectedAccountId
       );
-      button.disabled = !accountMatches;
-      button.title = accountMatches
+      element.disabled = !accountMatches;
+      element.title = accountMatches
         ? "Создать run для exact-пакета этого Sandbox-счёта"
         : "Sandbox требует тот же exact account_id, из которого построен R5 proposal.";
     });
-    executionHistory.querySelectorAll("[data-execution-action]").forEach((button) => {
+
+    executionHistory.querySelectorAll("button[data-execution-action]").forEach((element) => {
+      if (!(element instanceof HTMLButtonElement)) {
+        return;
+      }
+      const executionAccountId = element.dataset.executionAccountId || "";
       const accountMatches = (
         sandboxConnected
-        && tbankAccountId
-        && button.dataset.executionAccountId === tbankAccountId
+        && connectedAccountId !== ""
+        && executionAccountId === connectedAccountId
       );
-      button.disabled = !accountMatches;
-      button.title = accountMatches
+      element.disabled = !accountMatches;
+      element.title = accountMatches
         ? ""
         : "Для управления run подключите тот же exact Sandbox-счёт.";
     });
@@ -2056,11 +2067,16 @@
     sandbox.textContent = "Создать Sandbox-run";
     sandbox.dataset.executionStart = "sandbox";
 
+    const proposalId = String(proposal?.id || "");
+    const proposalVersion = String(proposal?.version || "");
+    const proposalHash = String(proposal?.hash || "");
+    const proposalAccountId = String(proposal?.account_id || "");
+
     for (const button of [shadow, sandbox]) {
-      button.dataset.proposalId = proposal.id;
-      button.dataset.proposalVersion = String(proposal.version);
-      button.dataset.proposalHash = proposal.hash;
-      button.dataset.proposalAccountId = proposal.account_id || "";
+      button.dataset.proposalId = proposalId;
+      button.dataset.proposalVersion = proposalVersion;
+      button.dataset.proposalHash = proposalHash;
+      button.dataset.proposalAccountId = proposalAccountId;
       controls.append(button);
     }
     return controls;
@@ -2268,7 +2284,12 @@
 
   const renderExecutionDetails = (payload) => {
     executionDetails.replaceChildren();
-    const run = payload?.execution;
+    const run = (
+      payload !== null
+      && typeof payload === "object"
+      && payload.execution !== null
+      && typeof payload.execution === "object"
+    ) ? payload.execution : null;
     if (!run) {
       appendEmptyState(executionDetails, "Выберите запуск из журнала.");
       return;
@@ -2291,7 +2312,11 @@
     summary.append(title, details);
     executionDetails.append(summary);
 
-    (run.legs || []).forEach((leg) => {
+    const legs = Array.isArray(run.legs) ? run.legs : [];
+    legs.forEach((leg) => {
+      if (leg === null || typeof leg !== "object") {
+        return;
+      }
       const row = document.createElement("div");
       const legTitle = document.createElement("strong");
       legTitle.textContent = [
@@ -2312,10 +2337,14 @@
       executionDetails.append(row);
     });
 
-    (payload.events || []).slice(-12).forEach((event) => {
+    const events = Array.isArray(payload.events) ? payload.events : [];
+    events.slice(-12).forEach((event) => {
+      if (event === null || typeof event !== "object") {
+        return;
+      }
       const row = document.createElement("div");
       const eventTitle = document.createElement("strong");
-      eventTitle.textContent = `Событие · ${event.event_type}`;
+      eventTitle.textContent = `Событие · ${event.event_type || "unknown"}`;
       const eventDetails = document.createElement("small");
       eventDetails.textContent = formatDateTime(event.created_at);
       row.append(eventTitle, eventDetails);
@@ -2324,6 +2353,11 @@
   };
 
   const loadExecutionDetails = async (runId) => {
+    if (typeof runId !== "string" || runId.length === 0) {
+      executionDetails.replaceChildren();
+      appendEmptyState(executionDetails, "Не удалось определить запуск для просмотра.");
+      return;
+    }
     try {
       const payload = await api(`/api/portfolio/executions/${runId}`, {method: "GET"});
       renderExecutionDetails(payload);
@@ -2339,7 +2373,9 @@
 
   const renderExecutions = (items) => {
     executionHistory.replaceChildren();
-    const runs = Array.isArray(items) ? items : [];
+    const runs = Array.isArray(items)
+      ? items.filter((item) => item !== null && typeof item === "object")
+      : [];
 
     runs.slice(0, 12).forEach((run) => {
       const row = document.createElement("div");
@@ -2363,28 +2399,27 @@
       inspect.type = "button";
       inspect.className = "button button-secondary";
       inspect.textContent = "Детали";
-      inspect.dataset.executionInspect = run.id;
+      inspect.dataset.executionInspect = String(run.id || "");
       actions.append(inspect);
 
       if (run.mode === "sandbox" && !terminalExecutionStatus(run.status)) {
         const advance = document.createElement("button");
         advance.type = "button";
         advance.className = "button button-primary";
-        const firstPending = run.status === "created";
-        advance.textContent = firstPending
+        advance.textContent = run.status === "created"
           ? "Отправить следующую Sandbox limit-заявку"
           : "Сверить Sandbox";
         advance.dataset.executionAction = "advance";
-        advance.dataset.executionId = run.id;
-        advance.dataset.executionAccountId = run.account_id || "";
+        advance.dataset.executionId = String(run.id || "");
+        advance.dataset.executionAccountId = String(run.account_id || "");
 
         const cancel = document.createElement("button");
         cancel.type = "button";
         cancel.className = "button button-danger-secondary";
         cancel.textContent = "Отменить Sandbox";
         cancel.dataset.executionAction = "cancel";
-        cancel.dataset.executionId = run.id;
-        cancel.dataset.executionAccountId = run.account_id || "";
+        cancel.dataset.executionId = String(run.id || "");
+        cancel.dataset.executionAccountId = String(run.account_id || "");
 
         actions.append(advance, cancel);
       }
@@ -2411,17 +2446,28 @@
         `${executionModeLabel(active.mode)} · ${executionStatusLabel(active.status)}`,
         active.status === "reconciling" ? "state-error" : "state-next",
       );
-    } else {
-      setStateBadge(executionStatus, "Live выключен · журнал готов", "state-ok");
+      return;
     }
+    setStateBadge(executionStatus, "Live выключен · журнал готов", "state-ok");
   };
 
   const loadExecutions = async ({inspectLatest = false} = {}) => {
     try {
       const result = await api("/api/portfolio/executions", {method: "GET"});
-      renderExecutions(result.executions || []);
-      if (inspectLatest && result.executions?.length) {
-        await loadExecutionDetails(result.executions[0].id);
+      const runs = (
+        result !== null
+        && typeof result === "object"
+        && Array.isArray(result.executions)
+      ) ? result.executions : [];
+      renderExecutions(runs);
+      const latestRun = runs[0];
+      const latestRunId = (
+        latestRun !== null
+        && typeof latestRun === "object"
+        && typeof latestRun.id === "string"
+      ) ? latestRun.id : "";
+      if (inspectLatest && latestRunId) {
+        await loadExecutionDetails(latestRunId);
       }
     } catch (error) {
       if (error.status === 401) {
@@ -2436,16 +2482,37 @@
   };
 
   const startExecution = async (button) => {
-    if (executionRequestInFlight) {
+    if (!(button instanceof HTMLButtonElement) || executionRequestInFlight) {
       return;
     }
-    const mode = button.dataset.executionStart;
+
+    const mode = button.dataset.executionStart || "";
+    const proposalId = button.dataset.proposalId || "";
+    const proposalHash = button.dataset.proposalHash || "";
+    const proposalAccountId = button.dataset.proposalAccountId || "";
+    const proposalVersion = Number(button.dataset.proposalVersion);
+    if (
+      !["shadow", "sandbox"].includes(mode)
+      || !proposalId
+      || !/^[0-9a-fA-F]{64}$/.test(proposalHash)
+      || !Number.isInteger(proposalVersion)
+      || proposalVersion < 1
+    ) {
+      showMessage(
+        executionMessage,
+        "Параметры запуска повреждены. Обновите страницу и выберите предложение заново.",
+        true,
+      );
+      return;
+    }
+
+    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
     if (
       mode === "sandbox"
       && (
         tbankEnvironment !== "sandbox"
-        || !tbankAccountId
-        || button.dataset.proposalAccountId !== tbankAccountId
+        || !connectedAccountId
+        || proposalAccountId !== connectedAccountId
       )
     ) {
       showMessage(
@@ -2463,12 +2530,23 @@
       const result = await api("/api/portfolio/executions", {
         method: "POST",
         body: JSON.stringify({
-          proposal_id: button.dataset.proposalId,
-          proposal_version: Number(button.dataset.proposalVersion),
-          proposal_hash: button.dataset.proposalHash,
+          proposal_id: proposalId,
+          proposal_version: proposalVersion,
+          proposal_hash: proposalHash,
           mode,
         }),
       });
+      const runId = (
+        result !== null
+        && typeof result === "object"
+        && result.execution !== null
+        && typeof result.execution === "object"
+        && typeof result.execution.id === "string"
+      ) ? result.execution.id : "";
+      if (!runId) {
+        throw new Error("execution response is missing run id");
+      }
+
       showMessage(
         executionMessage,
         mode === "shadow"
@@ -2476,7 +2554,7 @@
           : "Sandbox state machine запущена. Live execution остаётся выключен.",
       );
       await loadExecutions();
-      await loadExecutionDetails(result.execution.id);
+      await loadExecutionDetails(runId);
     } catch (error) {
       if (error.status === 401) {
         location.reload();
@@ -2500,12 +2578,17 @@
   };
 
   const mutateExecution = async (button) => {
-    if (executionRequestInFlight) {
+    if (!(button instanceof HTMLButtonElement) || executionRequestInFlight) {
       return;
     }
-    const runId = button.dataset.executionId;
-    const action = button.dataset.executionAction;
+    const runId = button.dataset.executionId || "";
+    const action = button.dataset.executionAction || "";
     if (!runId || !["advance", "cancel"].includes(action)) {
+      showMessage(
+        executionMessage,
+        "Действие запуска повреждено. Обновите журнал перед повтором.",
+        true,
+      );
       return;
     }
 
@@ -2543,6 +2626,7 @@
     } finally {
       button.disabled = false;
       executionRequestInFlight = false;
+      syncSandboxStartControls();
     }
   };
 
@@ -2996,37 +3080,41 @@
     void loadAnalysis();
   });
 
-  const closestActionTarget = (event, selector) => {
+  const closestButtonTarget = (event, selector) => {
     const target = event.target;
-    return target instanceof Element ? target.closest(selector) : null;
+    if (!(target instanceof Element)) {
+      return null;
+    }
+    const button = target.closest(selector);
+    return button instanceof HTMLButtonElement ? button : null;
   };
 
   proposalCreateOptions.addEventListener("click", (event) => {
-    const button = closestActionTarget(event, "[data-proposal-create]");
+    const button = closestButtonTarget(event, "[data-proposal-create]");
     if (button) {
       void createProposal(button);
     }
   });
 
   proposalHistory.addEventListener("click", (event) => {
-    const decisionButton = closestActionTarget(event, "[data-proposal-decision]");
+    const decisionButton = closestButtonTarget(event, "[data-proposal-decision]");
     if (decisionButton) {
       void decideProposal(decisionButton);
       return;
     }
-    const executionButton = closestActionTarget(event, "[data-execution-start]");
+    const executionButton = closestButtonTarget(event, "[data-execution-start]");
     if (executionButton) {
       void startExecution(executionButton);
     }
   });
 
   executionHistory.addEventListener("click", (event) => {
-    const inspect = closestActionTarget(event, "[data-execution-inspect]");
+    const inspect = closestButtonTarget(event, "[data-execution-inspect]");
     if (inspect) {
       void loadExecutionDetails(inspect.dataset.executionInspect);
       return;
     }
-    const action = closestActionTarget(event, "[data-execution-action]");
+    const action = closestButtonTarget(event, "[data-execution-action]");
     if (action) {
       void mutateExecution(action);
     }
