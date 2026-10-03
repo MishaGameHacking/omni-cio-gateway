@@ -217,9 +217,32 @@ def proposal_material_hash(payload: dict[str, object]) -> bytes:
                     if key != "retrieved_at"
                 }
             )
+    material_sources.sort(
+        key=lambda item: (
+            str(item.get("id") or ""),
+            str(item.get("provider") or ""),
+            str(item.get("kind") or ""),
+            str(item.get("url") or ""),
+        )
+    )
+    source_raw = payload.get("source")
+    source: dict[str, object] = {}
+    if isinstance(source_raw, dict):
+        source_data = cast(dict[str, object], source_raw)
+        source = {
+            key: source_data.get(key)
+            for key in (
+                "snapshot_id",
+                "account_id",
+                "profile_version",
+                "policy_version",
+                "captured_at",
+                "live_status",
+            )
+        }
     material = {
         "schema": payload.get("schema"),
-        "source": payload.get("source"),
+        "source": source,
         "constraints": payload.get("constraints"),
         "scenario_kind": payload.get("scenario_kind"),
         "scenario": payload.get("scenario"),
