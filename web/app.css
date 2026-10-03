@@ -22,7 +22,6 @@
   --danger-soft: #ffefee;
   --shadow: 0 18px 50px rgb(22 35 58 / 9%);
   --shadow-card: 0 10px 32px rgb(22 35 58 / 6%);
-  --shadow-raised: 0 18px 48px rgb(22 35 58 / 10%);
   --radius-xl: 28px;
   --radius-lg: 20px;
   --radius-md: 16px;
@@ -60,7 +59,6 @@ body[data-theme="dark"] {
   --danger-soft: #3c2025;
   --shadow: 0 22px 60px rgb(0 0 0 / 28%);
   --shadow-card: 0 12px 34px rgb(0 0 0 / 20%);
-  --shadow-raised: 0 20px 52px rgb(0 0 0 / 30%);
   --focus: 0 0 0 2px var(--bg), 0 0 0 5px rgb(112 183 255 / 55%);
   --topbar-bg: rgb(7 17 31 / 88%);
 }
@@ -1316,7 +1314,7 @@ textarea:disabled {
 
 .segmented-control button {
   min-width: 84px;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 10px;
   border-radius: 9px;
   background: transparent;
@@ -1679,7 +1677,7 @@ textarea:disabled {
 }
 
 .proposal-decision-actions .button {
-  min-height: 40px;
+  min-height: 44px;
   padding-inline: 12px;
 }
 
