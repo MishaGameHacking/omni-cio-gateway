@@ -373,17 +373,28 @@ class AuthAppDeployTests(unittest.TestCase):
         with self.assertRaises(MODULE.InfraError):
             MODULE.product_environment_backup_paths("short")
 
-    def test_public_vk_id_endpoints_are_rate_limited(self) -> None:
+    def test_public_http_surface_has_bounded_resource_consumption(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("zone=omnicio_auth_start:10m rate=10r/m", script)
         self.assertIn("zone=omnicio_auth_callback:10m rate=30r/m", script)
+        self.assertIn("zone=omnicio_api:10m rate=120r/m", script)
+        self.assertIn("limit_conn_zone $binary_remote_addr zone=omnicio_conn:10m", script)
         self.assertIn("location = /api/auth/vkid/start", script)
         self.assertIn("location = /api/auth/vkid/callback", script)
+        self.assertIn("limit_req zone=omnicio_api burst=60 nodelay", script)
+        self.assertGreaterEqual(script.count("client_max_body_size 16k;"), 2)
+        self.assertGreaterEqual(script.count("client_body_timeout 10s;"), 2)
+        self.assertGreaterEqual(script.count("client_header_timeout 10s;"), 2)
+        self.assertGreaterEqual(script.count("limit_conn omnicio_conn 32;"), 2)
+        self.assertIn("limit_conn_status 429", script)
         self.assertIn("limit_req_status 429", script)
 
-    def test_remote_service_is_loopback_only_and_registration_is_gated(self) -> None:
+    def test_remote_service_is_loopback_only_bounded_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
+        self.assertIn("--limit-concurrency 64", script)
+        self.assertIn("--backlog 128", script)
+        self.assertIn("--timeout-keep-alive 5", script)
         self.assertIn("EnvironmentFile=/etc/omnicio/runtime.env", script)
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
@@ -954,6 +965,16 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("result.executions?.length", script)
         self.assertNotIn("closestActionTarget", script)
 
+    def test_browser_explains_validation_throttling_and_overload_without_raw_errors(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("Проверьте формат и допустимые значения полей", script)
+        self.assertIn("Слишком много запросов", script)
+        self.assertIn("Сервис временно перегружен", script)
+        self.assertIn("Изменения не подтверждены", script)
+        self.assertIn("apiErrorMessage(response, body)", script)
+
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
@@ -967,7 +988,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.14.0"', project)
+        self.assertIn('version = "0.14.1"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

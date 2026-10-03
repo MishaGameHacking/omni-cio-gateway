@@ -307,6 +307,29 @@ def test_investment_profile_rejects_non_finite_decimal_values() -> None:
     assert response.status_code == 422
 
 
+def test_investment_profile_rejects_unknown_json_fields_before_side_effects() -> None:
+    response = TestClient(app).put(
+        "/api/profile/investment",
+        json={
+            "reserve_rub": "100000",
+            "planned_withdrawal_rub": "0",
+            "horizon_months": 12,
+            "max_drawdown_percent": "10",
+            "liquidity_horizon_days": 7,
+            "allow_below_investment_grade": False,
+            "user_id": "attacker-controlled-tenant",
+        },
+        headers={"Origin": "https://omnicio.ru"},
+    )
+
+    assert response.status_code == 422
+    assert any(
+        item.get("loc") == ["body", "user_id"]
+        and item.get("type") == "extra_forbidden"
+        for item in response.json()["detail"]
+    )
+
+
 def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
     now = datetime.now(UTC)
     policy = BalancingPolicyRecord(

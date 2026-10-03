@@ -554,7 +554,7 @@ EnvironmentFile=/etc/omnicio/runtime.env
 EnvironmentFile=/etc/omnicio/product.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app --host 127.0.0.1 --port 8001 --workers 2 --proxy-headers --forwarded-allow-ips=127.0.0.1
+ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app --host 127.0.0.1 --port 8001 --workers 2 --limit-concurrency 64 --backlog 128 --timeout-keep-alive 5 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=45
@@ -665,11 +665,22 @@ fi
 cat > "$NGINX_SITE.new" <<'EOF'
 limit_req_zone $binary_remote_addr zone=omnicio_auth_start:10m rate=10r/m;
 limit_req_zone $binary_remote_addr zone=omnicio_auth_callback:10m rate=30r/m;
+limit_req_zone $binary_remote_addr zone=omnicio_api:10m rate=120r/m;
+limit_conn_zone $binary_remote_addr zone=omnicio_conn:10m;
 
 server {
     listen 80;
     listen [::]:80;
     server_name omnicio.ru;
+
+    server_tokens off;
+    client_max_body_size 16k;
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+    keepalive_timeout 15s;
+    send_timeout 30s;
+    limit_conn omnicio_conn 32;
+    limit_conn_status 429;
 
     location /.well-known/acme-challenge/ {
         root /var/www/omnicio.ru/current;
@@ -685,6 +696,15 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name omnicio.ru;
+
+    server_tokens off;
+    client_max_body_size 16k;
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+    keepalive_timeout 15s;
+    send_timeout 30s;
+    limit_conn omnicio_conn 32;
+    limit_conn_status 429;
 
     ssl_certificate /etc/letsencrypt/live/omnicio.ru/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/omnicio.ru/privkey.pem;
@@ -729,6 +749,8 @@ server {
     }
 
     location /api/ {
+        limit_req zone=omnicio_api burst=60 nodelay;
+        limit_req_status 429;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
