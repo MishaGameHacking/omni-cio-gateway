@@ -62,6 +62,8 @@ class BalancingPolicyRecord:
     turnover_budget_percent: Decimal
     max_daily_turnover_participation_percent: Decimal
     securities_tax_rate_percent: Decimal
+    uncertainty_haircut_percent: Decimal
+    credit_loss_haircut_percent: Decimal
     no_trade_band_percent: Decimal
     min_replace_benefit_rub: Decimal
     created_at: datetime
@@ -306,6 +308,8 @@ class PortfolioStore:
                     turnover_budget_percent,
                     max_daily_turnover_participation_percent,
                     securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
                     no_trade_band_percent,
                     min_replace_benefit_rub,
                     created_at
@@ -338,6 +342,8 @@ class PortfolioStore:
         turnover_budget_percent: Decimal,
         max_daily_turnover_participation_percent: Decimal,
         securities_tax_rate_percent: Decimal,
+        uncertainty_haircut_percent: Decimal,
+        credit_loss_haircut_percent: Decimal,
         no_trade_band_percent: Decimal,
         min_replace_benefit_rub: Decimal,
     ) -> BalancingPolicyRecord:
@@ -355,6 +361,8 @@ class PortfolioStore:
             turnover_budget_percent,
             max_daily_turnover_participation_percent,
             securities_tax_rate_percent,
+            uncertainty_haircut_percent,
+            credit_loss_haircut_percent,
             no_trade_band_percent,
             min_replace_benefit_rub,
         )
@@ -387,6 +395,8 @@ class PortfolioStore:
                     turnover_budget_percent,
                     max_daily_turnover_participation_percent,
                     securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
                     no_trade_band_percent,
                     min_replace_benefit_rub,
                     created_at
@@ -416,6 +426,8 @@ class PortfolioStore:
                     latest.turnover_budget_percent,
                     latest.max_daily_turnover_participation_percent,
                     latest.securities_tax_rate_percent,
+                    latest.uncertainty_haircut_percent,
+                    latest.credit_loss_haircut_percent,
                     latest.no_trade_band_percent,
                     latest.min_replace_benefit_rub,
                 )
@@ -441,6 +453,8 @@ class PortfolioStore:
                     turnover_budget_percent,
                     max_daily_turnover_participation_percent,
                     securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
                     no_trade_band_percent,
                     min_replace_benefit_rub
                 )
@@ -465,6 +479,8 @@ class PortfolioStore:
                     turnover_budget_percent,
                     max_daily_turnover_participation_percent,
                     securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
                     no_trade_band_percent,
                     min_replace_benefit_rub,
                     created_at
@@ -1772,6 +1788,8 @@ def _balancing_policy(row: dict[str, Any]) -> BalancingPolicyRecord:
             row["max_daily_turnover_participation_percent"]
         ),
         securities_tax_rate_percent=Decimal(row["securities_tax_rate_percent"]),
+        uncertainty_haircut_percent=Decimal(row["uncertainty_haircut_percent"]),
+        credit_loss_haircut_percent=Decimal(row["credit_loss_haircut_percent"]),
         no_trade_band_percent=Decimal(row["no_trade_band_percent"]),
         min_replace_benefit_rub=Decimal(row["min_replace_benefit_rub"]),
         created_at=cast(datetime, row["created_at"]),
