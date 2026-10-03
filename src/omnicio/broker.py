@@ -459,7 +459,10 @@ class BrokerService:
         request_id: str,
         price_type: str,
     ) -> TBankOrderState:
-        record, credential, environment = self._live_credential(user_id)
+        record, credential, environment = self._prod_credential(
+            user_id,
+            require_full_access=False,
+        )
         if price_type not in {"point", "currency"}:
             raise ValueError("live order price type is invalid")
         return self.tbank.get_order_state(
@@ -935,9 +938,32 @@ class BrokerService:
     def disconnect(self, user_id: UUID) -> bool:
         return self.database.delete_tbank_connection(user_id)
 
+    def live_account(self, user_id: UUID) -> TBankAccount:
+        record, _credential, _environment = self._prod_credential(
+            user_id,
+            require_full_access=True,
+        )
+        account = self.revalidate_account(user_id)
+        if (
+            account.id != record.account_id
+            or account.access_level != "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"
+        ):
+            raise BrokerLiveRequired(
+                "R7 live execution requires an open account with full access"
+            )
+        return account
+
     def _live_credential(
         self,
         user_id: UUID,
+    ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
+        return self._prod_credential(user_id, require_full_access=True)
+
+    def _prod_credential(
+        self,
+        user_id: UUID,
+        *,
+        require_full_access: bool,
     ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
         record, credential, environment = self._connected_credential(user_id)
         if environment != "prod":
@@ -949,14 +975,13 @@ class BrokerService:
             (account for account in accounts if account.id == record.account_id),
             None,
         )
-        if (
-            selected is None
-            or selected.status != "ACCOUNT_STATUS_OPEN"
-            or selected.access_level != "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"
-        ):
-            raise BrokerLiveRequired(
-                "R7 live execution requires an open account with full access"
-            )
+        if selected is None or selected.status != "ACCOUNT_STATUS_OPEN":
+            raise BrokerLiveRequired("R7 production account is no longer open")
+        allowed = {"ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"}
+        if not require_full_access:
+            allowed.add("ACCOUNT_ACCESS_LEVEL_READ_ONLY")
+        if selected.access_level not in allowed:
+            raise BrokerLiveRequired("R7 production account access is not sufficient")
         return record, credential, environment
 
     def _sandbox_credential(
