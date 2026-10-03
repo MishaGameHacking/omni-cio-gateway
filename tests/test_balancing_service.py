@@ -350,6 +350,24 @@ def _maturity_event(now: datetime) -> TBankBondEvent:
 
 
 def _live_broker(now: datetime) -> SimpleNamespace:
+    def _candidate_order_price(
+        user_id: object,
+        uid: str,
+        **kwargs: object,
+    ) -> TBankOrderPrice:
+        assert uid == "candidate-1"
+        assert kwargs["price"] == "1000"
+        assert kwargs["direction"] == "buy"
+        assert kwargs["quantity_lots"] == 1
+        return TBankOrderPrice(
+            total_order_amount=TBankMoney("RUB", "1025"),
+            initial_order_amount=TBankMoney("RUB", "1000"),
+            executed_commission_rub=TBankMoney("RUB", "5"),
+            service_commission=TBankMoney("RUB", "0"),
+            deal_commission=TBankMoney("RUB", "5"),
+            bond_aci_value=TBankMoney("RUB", "20"),
+        )
+
     return SimpleNamespace(
         candidate_market_yields=lambda user_id, uids: (
             TBankMarketYield("candidate-1", "12.5", now),
@@ -361,18 +379,12 @@ def _live_broker(now: datetime) -> SimpleNamespace:
         candidate_order_book=lambda user_id, uid, depth=10: TBankOrderBook(
             instrument_uid=uid,
             bids=(TBankOrderLevel("99.9", 100),),
-            asks=(TBankOrderLevel("100.1", 100),),
+            asks=(TBankOrderLevel("100", 100),),
             time=now,
             is_consistent=True,
         ),
-        candidate_order_price=lambda user_id, uid, **kwargs: TBankOrderPrice(
-            total_order_amount=TBankMoney("RUB", "1025"),
-            initial_order_amount=TBankMoney("RUB", "1000"),
-            executed_commission_rub=TBankMoney("RUB", "5"),
-            service_commission=TBankMoney("RUB", "0"),
-            deal_commission=TBankMoney("RUB", "5"),
-            bond_aci_value=TBankMoney("RUB", "20"),
-        ),
+        candidate_order_price=_candidate_order_price,
+
         candidate_bond_coupons=lambda user_id, uid, **kwargs: _coupons(now),
         candidate_bond_events=lambda user_id, uid, **kwargs: (
             _maturity_event(now),
