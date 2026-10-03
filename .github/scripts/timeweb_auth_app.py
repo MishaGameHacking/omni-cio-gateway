@@ -212,6 +212,32 @@ def legacy_profile_reset_enabled() -> bool:
     )
 
 
+def portfolio_live_execution_enabled() -> bool:
+    return _strict_boolean_environment("PORTFOLIO_LIVE_EXECUTION_ENABLED", False)
+
+
+def portfolio_live_caps() -> tuple[int, int]:
+    values: list[int] = []
+    for name, default in (
+        ("PORTFOLIO_LIVE_MAX_ORDER_RUB", "10000"),
+        ("PORTFOLIO_LIVE_MAX_DAILY_RUB", "20000"),
+    ):
+        raw = os.environ.get(name, default).strip()
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise InfraError(f"{name} must be an integer") from exc
+        if value <= 0:
+            raise InfraError(f"{name} must be positive")
+        values.append(value)
+    order_cap, daily_cap = values
+    if daily_cap < order_cap:
+        raise InfraError(
+            "PORTFOLIO_LIVE_MAX_DAILY_RUB must be >= PORTFOLIO_LIVE_MAX_ORDER_RUB"
+        )
+    return order_cap, daily_cap
+
+
 def validate_product_environment() -> None:
     required_names = (
         "LEGAL_PRIVACY_VERSION",
@@ -266,6 +292,13 @@ def validate_product_environment() -> None:
         ):
             raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
 
+    portfolio_live_caps()
+    if portfolio_live_execution_enabled():
+        raise InfraError(
+            "Production live execution requires a newer reviewed legal publication "
+            "than 2026-10-02-v6; keep PORTFOLIO_LIVE_EXECUTION_ENABLED=false"
+        )
+
 
 def validate_legal_documents(repository_root: pathlib.Path) -> None:
     for relative in (
@@ -298,6 +331,11 @@ def build_product_environment() -> str:
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
         "VKID_FLOW_TTL_SECONDS": os.environ.get("VKID_FLOW_TTL_SECONDS", "600").strip(),
         "SESSION_TTL_SECONDS": os.environ.get("SESSION_TTL_SECONDS", "34560000").strip(),
+        "PORTFOLIO_LIVE_EXECUTION_ENABLED": (
+            "true" if portfolio_live_execution_enabled() else "false"
+        ),
+        "PORTFOLIO_LIVE_MAX_ORDER_RUB": str(portfolio_live_caps()[0]),
+        "PORTFOLIO_LIVE_MAX_DAILY_RUB": str(portfolio_live_caps()[1]),
     }
     return "".join(
         f"{name}={_environment_value(value)}\n"
