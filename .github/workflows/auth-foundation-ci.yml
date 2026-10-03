@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: auth-foundation-ci-${{ github.ref }}
@@ -82,6 +83,60 @@ jobs:
         run: |
           pytest
           python .github/scripts/test_release_gate.py
+
+      # Temporary diagnostic for the currently red accepted-main Sonar check.
+      # Remove before merge once the exact reliability annotation is known.
+      - name: Diagnose accepted main Sonar annotation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          repo = "MishaGameHacking/omni-cio-gateway"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "omnicio-sonar-diagnostic/1.0",
+          }
+
+          def get(path):
+              request = urllib.request.Request(
+                  "https://api.github.com/repos/" + repo + path,
+                  headers=headers,
+              )
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  return json.load(response)
+
+          sha = get("/branches/main")["commit"]["sha"]
+          checks = get("/commits/" + sha + "/check-runs?filter=all&per_page=100")
+          sonar = next(
+              item for item in checks["check_runs"]
+              if item["name"] == "SonarCloud Code Analysis"
+              and item["app"]["slug"] == "sonarqubecloud"
+              and "branch=main" in (item.get("details_url") or "")
+          )
+          annotations = get(
+              "/check-runs/" + str(sonar["id"]) + "/annotations?per_page=100"
+          )
+          print(json.dumps({
+              "main_sha": sha,
+              "sonar_conclusion": sonar["conclusion"],
+              "annotations": [
+                  {
+                      "path": item.get("path"),
+                      "start_line": item.get("start_line"),
+                      "annotation_level": item.get("annotation_level"),
+                      "message": item.get("message"),
+                      "title": item.get("title"),
+                  }
+                  for item in annotations
+              ],
+          }, ensure_ascii=True, sort_keys=True))
+          PY
 
   self_hosted:
     name: Self-hosted / ${{ matrix.name }}
