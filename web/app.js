@@ -140,11 +140,52 @@
   const portfolioDailyRelative = document.querySelector("#portfolio-daily-relative");
   const portfolioPositionCount = document.querySelector("#portfolio-position-count");
   const portfolioRefreshed = document.querySelector("#portfolio-refreshed");
+  const portfolioFreeCash = requiredElement("#portfolio-free-cash");
   const assetAllocation = document.querySelector("#asset-allocation");
+  const portfolioAllocationNote = requiredElement("#portfolio-allocation-note");
+  const allocationViewButtons = [...document.querySelectorAll("[data-allocation-view]")];
   const cashList = document.querySelector("#cash-list");
   const cashLoadingNote = document.querySelector("#cash-loading-note");
   const positionsList = document.querySelector("#positions-list");
+  const positionsTableBody = requiredElement("#positions-table-body");
+  const positionsFreshnessNote = requiredElement("#positions-freshness-note");
   const portfolioRetry = document.querySelector("[data-portfolio-retry]");
+  const homeHistoryState = requiredElement("#home-history-state");
+  const homeHistoryChart = requiredElement("#home-portfolio-history-chart");
+  const homeHistoryFacts = requiredElement("#home-history-facts");
+  const homeHistoryNote = requiredElement("#home-history-note");
+  const portfolioHistoryState = requiredElement("#portfolio-history-state");
+  const portfolioHistoryChart = requiredElement("#portfolio-history-chart");
+  const portfolioHistoryFacts = requiredElement("#portfolio-history-facts");
+  const portfolioHistoryNote = requiredElement("#portfolio-history-note");
+  const portfolioDrawdownState = requiredElement("#portfolio-drawdown-state");
+  const portfolioDrawdownChart = requiredElement("#portfolio-drawdown-chart");
+  const portfolioDrawdownNote = requiredElement("#portfolio-drawdown-note");
+  const portfolioCoverageState = requiredElement("#portfolio-coverage-state");
+  const portfolioSectorCoverage = requiredElement("#portfolio-sector-coverage");
+  const portfolioValuedCount = requiredElement("#portfolio-valued-count");
+  const portfolioSnapshotStatus = requiredElement("#portfolio-snapshot-status");
+  const portfolioSnapshotTime = requiredElement("#portfolio-snapshot-time");
+  const instrumentDetail = requiredElement("#instrument-detail");
+  const instrumentDetailTitle = requiredElement("#instrument-detail-title");
+  const instrumentDetailSubtitle = requiredElement("#instrument-detail-subtitle");
+  const instrumentDetailClose = requiredElement("#instrument-detail-close");
+  const instrumentDetailLoading = requiredElement("#instrument-detail-loading");
+  const instrumentDetailContent = requiredElement("#instrument-detail-content");
+  const instrumentDetailValue = requiredElement("#instrument-detail-value");
+  const instrumentDetailWeight = requiredElement("#instrument-detail-weight");
+  const instrumentDetailPrice = requiredElement("#instrument-detail-price");
+  const instrumentDetailPriceTime = requiredElement("#instrument-detail-price-time");
+  const instrumentDetailQuantity = requiredElement("#instrument-detail-quantity");
+  const instrumentDetailBlocked = requiredElement("#instrument-detail-blocked");
+  const instrumentDetailRisk = requiredElement("#instrument-detail-risk");
+  const instrumentDetailRiskTime = requiredElement("#instrument-detail-risk-time");
+  const instrumentHistoryChart = requiredElement("#instrument-history-chart");
+  const instrumentHistoryNote = requiredElement("#instrument-history-note");
+  const instrumentEvidenceSummary = requiredElement("#instrument-evidence-summary");
+  const instrumentPayouts = requiredElement("#instrument-payouts");
+  const instrumentSources = requiredElement("#instrument-sources");
+  const instrumentDetailMessage = requiredElement("#instrument-detail-message");
 
   const analysisRefresh = document.querySelector("#analysis-refresh");
   const analysisStatus = document.querySelector("#analysis-status");
@@ -236,6 +277,12 @@
   let portfolioRequestInFlight = false;
   let lastPortfolioSnapshot = null;
   let lastPortfolioRefreshAt = 0;
+  let portfolioVisualizationLoaded = false;
+  let portfolioVisualizationInFlight = false;
+  let lastPortfolioVisualization = null;
+  let selectedAllocationView = "class";
+  let instrumentDetailRequestInFlight = false;
+  let instrumentDetailGeneration = 0;
   let analysisInFlight = false;
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
@@ -281,6 +328,19 @@
       throw new TypeError("API path UUID is invalid");
     }
     return segment.toLowerCase();
+  };
+
+  const instrumentPathSegment = (value) => {
+    const segment = String(value || "");
+    if (
+      segment.length < 1
+      || segment.length > 128
+      || segment !== segment.trim()
+      || /[\\/?#\u0000-\u001f\u007f]/u.test(segment)
+    ) {
+      throw new TypeError("Instrument path segment is invalid");
+    }
+    return encodeURIComponent(segment);
   };
 
   const executionActionSegment = (value) => {
