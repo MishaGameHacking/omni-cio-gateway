@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -49,6 +50,7 @@ class ExecutionRunRecord:
     mode: ExecutionMode
     provider_environment: str | None
     live_mandate_id: UUID | None
+    created_session_digest: bytes
     status: ExecutionRunStatus
     error_code: str
     created_at: datetime
@@ -377,6 +379,7 @@ class ExecutionStore:
         mode: ExecutionMode,
         expected_version: int,
         expected_hash: bytes,
+        session_digest: bytes,
     ) -> ExecutionRunRecord | None:
         cur.execute(
             """
@@ -412,6 +415,11 @@ class ExecutionStore:
             or run.proposal_hash != expected_hash
         ):
             raise ExecutionLedgerError("execution_run_source_mismatch")
+        if mode == "live" and not hmac.compare_digest(
+            run.created_session_digest,
+            session_digest,
+        ):
+            raise ExecutionLedgerError("live_execution_session_mismatch")
         return run
 
     @staticmethod
@@ -451,10 +459,11 @@ class ExecutionStore:
         *,
         user_id: UUID,
         account_id: str,
+        session_digest: bytes,
     ) -> UUID:
         cur.execute(
             """
-            SELECT id
+            SELECT id, created_session_digest
             FROM portfolio_live_execution_mandates
             WHERE user_id = %s
               AND account_id = %s
@@ -467,7 +476,13 @@ class ExecutionStore:
         row = cur.fetchone()
         if row is None:
             raise ExecutionLedgerError("live_mandate_required")
-        return cast(UUID, cast(dict[str, Any], row)["id"])
+        mandate = cast(dict[str, Any], row)
+        if not hmac.compare_digest(
+            bytes(mandate["created_session_digest"]),
+            session_digest,
+        ):
+            raise ExecutionLedgerError("live_mandate_session_mismatch")
+        return cast(UUID, mandate["id"])
 
     def create_run(
         self,
@@ -519,6 +534,7 @@ class ExecutionStore:
                 mode=mode,
                 expected_version=expected_version,
                 expected_hash=expected_hash,
+                session_digest=session_digest,
             )
             if existing is not None:
                 return existing, self._legs(cur, user_id, existing.id)
@@ -545,6 +561,7 @@ class ExecutionStore:
                     cur,
                     user_id=user_id,
                     account_id=plan.account_id,
+                    session_digest=session_digest,
                 )
 
             cur.execute(
@@ -573,6 +590,7 @@ class ExecutionStore:
                     mode,
                     provider_environment,
                     live_mandate_id,
+                    created_session_digest,
                     status,
                     error_code,
                     created_at,
@@ -672,6 +690,7 @@ class ExecutionStore:
                     mode,
                     provider_environment,
                     live_mandate_id,
+                    created_session_digest,
                     status,
                     error_code,
                     created_at,
@@ -738,6 +757,7 @@ class ExecutionStore:
                     mode,
                     provider_environment,
                     live_mandate_id,
+                    created_session_digest,
                     status,
                     error_code,
                     created_at,
@@ -797,6 +817,7 @@ class ExecutionStore:
                     mode,
                     provider_environment,
                     live_mandate_id,
+                    created_session_digest,
                     status,
                     error_code,
                     created_at,
@@ -826,6 +847,7 @@ class ExecutionStore:
                     WHERE id = %s
                       AND user_id = %s
                       AND account_id = %s
+                      AND created_session_digest = %s
                       AND revoked_at IS NULL
                       AND expires_at > %s
                     FOR SHARE
@@ -834,6 +856,7 @@ class ExecutionStore:
                         run.live_mandate_id,
                         user_id,
                         run.account_id,
+                        run.created_session_digest,
                         observed_at,
                     ),
                 )
@@ -1015,6 +1038,7 @@ class ExecutionStore:
                     mode,
                     provider_environment,
                     live_mandate_id,
+                    created_session_digest,
                     status,
                     error_code,
                     created_at,
@@ -1089,6 +1113,7 @@ class ExecutionStore:
                     mode,
                     provider_environment,
                     live_mandate_id,
+                    created_session_digest,
                     status,
                     error_code,
                     created_at,
@@ -1259,6 +1284,7 @@ def _run_record(row: dict[str, Any]) -> ExecutionRunRecord:
         mode=cast(ExecutionMode, row["mode"]),
         provider_environment=cast(str | None, row["provider_environment"]),
         live_mandate_id=cast(UUID | None, row["live_mandate_id"]),
+        created_session_digest=bytes(row["created_session_digest"]),
         status=cast(ExecutionRunStatus, row["status"]),
         error_code=str(row["error_code"]),
         created_at=cast(datetime, row["created_at"]),
