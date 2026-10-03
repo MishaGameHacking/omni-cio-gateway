@@ -719,7 +719,7 @@ class PortfolioStore:
                     VALUES (
                         'tbank', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (provider, instrument_uid) DO UPDATE SET
                         figi = EXCLUDED.figi,
