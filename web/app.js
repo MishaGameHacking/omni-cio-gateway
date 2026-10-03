@@ -2189,7 +2189,8 @@
       `[data-proposal-defer-at="${proposalId}"]`,
     );
 
-    if (action === "reject" && (!reason || !reason.value.trim())) {
+    const rejectReason = reason?.value.trim() || "";
+    if (action === "reject" && !rejectReason) {
       showMessage(proposalMessage, "Для отклонения укажите причину.", true);
       reason?.focus();
       return;
@@ -2197,12 +2198,13 @@
 
     let deferredUntil = null;
     if (action === "defer") {
-      if (!deferAt?.value) {
+      const deferValue = deferAt?.value || "";
+      if (!deferValue) {
         showMessage(proposalMessage, "Для отсрочки выберите дату и время.", true);
         deferAt?.focus();
         return;
       }
-      const deferredDate = new Date(deferAt.value);
+      const deferredDate = new Date(deferValue);
       if (
         Number.isNaN(deferredDate.getTime())
         || deferredDate.getTime() <= Date.now()
@@ -2212,7 +2214,7 @@
           "Дата отсрочки должна быть в будущем. Выберите новую дату и время.",
           true,
         );
-        deferAt.focus();
+        deferAt?.focus();
         return;
       }
       deferredUntil = deferredDate.toISOString();
@@ -2226,7 +2228,7 @@
         action,
         proposal_version: Number(button.dataset.proposalVersion),
         proposal_hash: button.dataset.proposalHash,
-        reason: action === "reject" ? reason.value.trim() : null,
+        reason: action === "reject" ? rejectReason : null,
         deferred_until: deferredUntil,
       };
       const result = await api(
