@@ -46,6 +46,8 @@ def _policy(**overrides) -> BalancingPolicyRecord:
         "turnover_budget_percent": Decimal("25"),
         "max_daily_turnover_participation_percent": Decimal("5"),
         "securities_tax_rate_percent": Decimal("15"),
+        "uncertainty_haircut_percent": Decimal("3"),
+        "credit_loss_haircut_percent": Decimal("2"),
         "no_trade_band_percent": Decimal("1"),
         "min_replace_benefit_rub": Decimal("500"),
         "created_at": datetime(2026, 10, 3, 3, 0, tzinfo=UTC),
