@@ -319,6 +319,7 @@ def test_iss_identifiers_are_validated_before_network(value: str) -> None:
         "https://evil.example/iss/securities.json?q=RU000A000001",
         "//evil.example/iss/securities.json",
         "/iss/securities.json?q=x%0d%0aHost:evil.example",
+        "/iss/securities.json?q=%ZZ",
         "/other/securities.json?q=RU000A000001",
     ),
 )
