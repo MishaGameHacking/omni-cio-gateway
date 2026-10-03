@@ -315,6 +315,7 @@
   let instrumentMarketEventSource = null;
   let instrumentMarketRetryTimer = null;
   let instrumentMarketRetryCount = 0;
+  let instrumentMarketInspectionIndex = null;
   let analysisInFlight = false;
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
@@ -1601,6 +1602,7 @@
   const resetInstrumentMarket = (message = "Выберите инструмент для рыночного графика.") => {
     instrumentMarketGeneration += 1;
     instrumentMarketPayload = null;
+    instrumentMarketInspectionIndex = null;
     instrumentMarketChart.replaceChildren();
     instrumentMarketTooltip.classList.add("hidden");
     instrumentMarketTooltip.textContent = "";
@@ -1655,6 +1657,7 @@
   const renderInstrumentMarketChart = (payload) => {
     const source = payload !== null && typeof payload === "object" ? payload : {};
     instrumentMarketPayload = source;
+    instrumentMarketInspectionIndex = null;
     syncInstrumentMarketControls();
     renderInstrumentMarketLive(source);
     const candles = cleanMarketCandles(source.candles);
@@ -1692,60 +1695,68 @@
     instrumentMarketRetry.classList.add("hidden");
   };
 
-  const removeInstrumentMarketCrosshair = () => {
+  const removeInstrumentMarketCrosshair = ({resetIndex = false} = {}) => {
     instrumentMarketChart.querySelectorAll(".market-chart-crosshair").forEach((node) => {
       node.remove();
     });
     instrumentMarketTooltip.classList.add("hidden");
     instrumentMarketTooltip.textContent = "";
+    if (resetIndex) {
+      instrumentMarketInspectionIndex = null;
+    }
   };
 
-  const inspectInstrumentMarketChart = (event) => {
+  const instrumentMarketInspectionCandles = () => {
     const candles = cleanMarketCandles(instrumentMarketPayload?.candles);
-    const minimumCandles = instrumentMarketMode === "line" ? 2 : 1;
-    if (candles.length < minimumCandles) {
-      removeInstrumentMarketCrosshair();
-      return;
+    if (!candles.length || (instrumentMarketMode === "line" && candles.length < 2)) {
+      return [];
     }
-    const bounds = instrumentMarketChart.getBoundingClientRect();
-    if (!(bounds.width > 0)) {
-      return;
-    }
-    const pointerRatio = Math.max(
-      0,
-      Math.min(1, (event.clientX - bounds.left) / bounds.width),
-    );
+    return candles;
+  };
+
+  const instrumentMarketChartSize = () => {
     const viewBox = String(instrumentMarketChart.getAttribute("viewBox") || "0 0 900 320")
       .split(/\s+/u)
       .map(Number);
-    const width = Number.isFinite(viewBox[2]) ? viewBox[2] : 900;
-    const height = Number.isFinite(viewBox[3]) ? viewBox[3] : 320;
+    return {
+      width: Number.isFinite(viewBox[2]) && viewBox[2] > 0 ? viewBox[2] : 900,
+      height: Number.isFinite(viewBox[3]) && viewBox[3] > 0 ? viewBox[3] : 320,
+    };
+  };
 
-    let candle = candles[0];
-    let x = pointerRatio * width;
+  const instrumentMarketInspectionX = (candles, index, width) => {
     if (instrumentMarketMode === "candles") {
       const padX = 30;
       const plotWidth = width - padX * 2;
-      const plotRatio = Math.max(0, Math.min(0.999999, (x - padX) / plotWidth));
-      const index = Math.min(candles.length - 1, Math.floor(plotRatio * candles.length));
-      candle = candles[index];
-      x = padX + (plotWidth / candles.length) * (index + 0.5);
-    } else {
-      const padX = 24;
-      const plotWidth = width - padX * 2;
-      const minTime = candles[0].timestamp;
-      const maxTime = candles[candles.length - 1].timestamp;
-      const timeSpan = Math.max(maxTime - minTime, 1);
-      const plotRatio = Math.max(0, Math.min(1, (x - padX) / plotWidth));
-      const targetTime = minTime + plotRatio * timeSpan;
-      candle = candles.reduce((nearest, candidate) => (
-        Math.abs(candidate.timestamp - targetTime) < Math.abs(nearest.timestamp - targetTime)
-          ? candidate
-          : nearest
-      ), candles[0]);
-      x = padX + ((candle.timestamp - minTime) / timeSpan) * plotWidth;
+      return padX + (plotWidth / candles.length) * (index + 0.5);
     }
 
+    const first = candles.at(0);
+    const last = candles.at(-1);
+    const candle = candles.at(index);
+    if (!first || !last || !candle) {
+      return null;
+    }
+    const padX = 24;
+    const plotWidth = width - padX * 2;
+    const timeSpan = Math.max(last.timestamp - first.timestamp, 1);
+    return padX + ((candle.timestamp - first.timestamp) / timeSpan) * plotWidth;
+  };
+
+  const showInstrumentMarketInspection = (candles, index) => {
+    const candle = candles.at(index);
+    if (!candle) {
+      removeInstrumentMarketCrosshair({resetIndex: true});
+      return;
+    }
+    const {width, height} = instrumentMarketChartSize();
+    const x = instrumentMarketInspectionX(candles, index, width);
+    if (x === null) {
+      removeInstrumentMarketCrosshair({resetIndex: true});
+      return;
+    }
+
+    instrumentMarketInspectionIndex = index;
     removeInstrumentMarketCrosshair();
     instrumentMarketChart.append(chartNode("line", {
       x1: x,
@@ -1767,6 +1778,84 @@
       candle.is_complete === false ? "свеча не завершена" : "свеча завершена",
     ].join(" · ");
     instrumentMarketTooltip.classList.remove("hidden");
+  };
+
+  const inspectInstrumentMarketChart = (event) => {
+    const candles = instrumentMarketInspectionCandles();
+    if (!candles.length) {
+      removeInstrumentMarketCrosshair({resetIndex: true});
+      return;
+    }
+    const bounds = instrumentMarketChart.getBoundingClientRect();
+    if (!(bounds.width > 0)) {
+      return;
+    }
+
+    const {width} = instrumentMarketChartSize();
+    const pointerRatio = Math.max(
+      0,
+      Math.min(1, (event.clientX - bounds.left) / bounds.width),
+    );
+    let index = candles.length - 1;
+    if (instrumentMarketMode === "candles") {
+      const padX = 30;
+      const plotWidth = width - padX * 2;
+      const pointerX = pointerRatio * width;
+      const plotRatio = Math.max(
+        0,
+        Math.min(0.999999, (pointerX - padX) / plotWidth),
+      );
+      index = Math.min(candles.length - 1, Math.floor(plotRatio * candles.length));
+    } else {
+      const first = candles.at(0);
+      const last = candles.at(-1);
+      if (!first || !last) {
+        removeInstrumentMarketCrosshair({resetIndex: true});
+        return;
+      }
+      const padX = 24;
+      const plotWidth = width - padX * 2;
+      const pointerX = pointerRatio * width;
+      const plotRatio = Math.max(0, Math.min(1, (pointerX - padX) / plotWidth));
+      const targetTime = first.timestamp + plotRatio * Math.max(last.timestamp - first.timestamp, 1);
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      candles.forEach((candidate, candidateIndex) => {
+        const distance = Math.abs(candidate.timestamp - targetTime);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          index = candidateIndex;
+        }
+      });
+    }
+    showInstrumentMarketInspection(candles, index);
+  };
+
+  const inspectInstrumentMarketChartByKeyboard = (event) => {
+    const candles = instrumentMarketInspectionCandles();
+    if (!candles.length) {
+      removeInstrumentMarketCrosshair({resetIndex: true});
+      return;
+    }
+
+    const lastIndex = candles.length - 1;
+    let index = Number.isInteger(instrumentMarketInspectionIndex)
+      ? Math.max(0, Math.min(lastIndex, instrumentMarketInspectionIndex))
+      : lastIndex;
+
+    if (event.key === "ArrowLeft") {
+      index = Math.max(0, index - 1);
+    } else if (event.key === "ArrowRight") {
+      index = Math.min(lastIndex, index + 1);
+    } else if (event.key === "Home") {
+      index = 0;
+    } else if (event.key === "End") {
+      index = lastIndex;
+    } else {
+      return;
+    }
+
+    event.preventDefault();
+    showInstrumentMarketInspection(candles, index);
   };
 
   const stopInstrumentMarketStream = ({resetRetry = false} = {}) => {
@@ -5492,7 +5581,13 @@
   });
 
   instrumentMarketChart.addEventListener("pointermove", inspectInstrumentMarketChart);
-  instrumentMarketChart.addEventListener("pointerleave", removeInstrumentMarketCrosshair);
+  instrumentMarketChart.addEventListener("pointerleave", () => {
+    removeInstrumentMarketCrosshair({resetIndex: true});
+  });
+  instrumentMarketChart.addEventListener("keydown", inspectInstrumentMarketChartByKeyboard);
+  instrumentMarketChart.addEventListener("blur", () => {
+    removeInstrumentMarketCrosshair({resetIndex: true});
+  });
 
   homeAttentionList.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-home-attention-view]");
