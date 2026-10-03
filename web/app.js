@@ -1591,8 +1591,23 @@
     net_improvement_after_costs: "Улучшение после издержек",
   };
 
+  const BALANCING_NOTE_LABELS = {
+    issuer_identity_verified_by_moex: "Эмитент подтверждён справочником MOEX ISS",
+    issuer_group_unverified_conservative_bucket: "Группа не подтверждена · используется общий консервативный bucket",
+    issuer_group_from_verified_mapping: "Группа взята из проверенной связи инструмента с эмитентом",
+    buy_cost_from_tinvest_get_order_price: "Покупка: комиссия и НКД из T-Invest GetOrderPrice",
+    ytw_from_moex_iss: "YTW/дюрация: MOEX ISS",
+    liquidity_from_moex_history_value: "Ликвидность: исторический биржевой оборот MOEX",
+    expected_gain_simple_ytw_horizon_estimate: "Доход: консервативная простая YTW-оценка до горизонта",
+    tax_not_applied_to_new_buy: "Налог к новой покупке не начисляется в сценарии",
+  };
+
   const balancingReason = (value) => (
     BALANCING_REASON_LABELS[value] || String(value || "—")
+  );
+
+  const balancingNote = (value) => (
+    BALANCING_NOTE_LABELS[value] || String(value || "—")
   );
 
   const renderBalancing = (payload) => {
@@ -1663,8 +1678,10 @@
         item.eligible ? "допустим" : "не допущен",
       ].join(" · ");
       const details = document.createElement("small");
-      details.textContent = (item.reasons || []).length
-        ? item.reasons.map(balancingReason).join(" · ")
+      const blockers = (item.reasons || []).map(balancingReason);
+      const evidenceNotes = (item.notes || []).map(balancingNote);
+      details.textContent = [...blockers, ...evidenceNotes].length
+        ? [...blockers, ...evidenceNotes].join(" · ")
         : "Все текущие R4 screening-гейты пройдены";
       row.append(title, details);
       balancingScreening.append(row);
