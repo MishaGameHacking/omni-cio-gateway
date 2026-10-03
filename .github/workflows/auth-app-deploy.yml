@@ -99,7 +99,6 @@ jobs:
       cancel-in-progress: false
       queue: max
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
@@ -141,33 +140,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Detect schema-first release
-        id: schema
-        if: github.event_name == 'push'
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          RELEASE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if git diff --quiet "${BEFORE_SHA}" "${RELEASE_SHA}" -- migrations/; then
-            echo "defer=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "defer=true" >> "${GITHUB_OUTPUT}"
-            echo "Schema changed in this push; application deployment is deferred until Auth PostgreSQL succeeds."
-          fi
-
       - name: Verify current main release checks
-        if: steps.schema.outputs.defer != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/verify_main_release.py
 
       - name: Validate verified SSH server key
-        if: steps.schema.outputs.defer != 'true'
         run: python3 .github/scripts/timeweb_ssh_trust.py
 
       - name: Validate Timeweb secret
-        if: steps.schema.outputs.defer != 'true'
         run: |
           set -euo pipefail
           test -n "${TIMEWEB_CLOUD_TOKEN:-}" || {
@@ -176,7 +157,6 @@ jobs:
           }
 
       - name: Deploy accepted auth release
-        if: steps.schema.outputs.defer != 'true'
         id: app
         run: |
           set -euo pipefail
@@ -191,11 +171,11 @@ jobs:
             --availability-zone "${TARGET_ZONE}"
 
       - name: Surface database gate
-        if: steps.schema.outputs.defer != 'true' && steps.app.outputs.status == 'pending_database'
+        if: steps.app.outputs.status == 'pending_database'
         run: |
           echo "::warning title=Private PostgreSQL required::Auth application was not changed because the private PostgreSQL/runtime environment is not ready."
 
       - name: Confirm application readiness
-        if: steps.schema.outputs.defer != 'true' && steps.app.outputs.status == 'app_ready'
+        if: steps.app.outputs.status == 'app_ready'
         run: |
           echo "OmniCIO is healthy over HTTPS. VK ID auth is deployed with the reviewed access mode."

@@ -388,16 +388,48 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
-    def test_schema_changes_defer_direct_app_deploy_until_postgres_reconcile(self) -> None:
+    def test_production_app_deploy_waits_for_postgres_reconcile(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        workflow = (root / ".github" / "workflows" / "auth-app-deploy.yml").read_text()
+        app_workflow = (
+            root / ".github" / "workflows" / "auth-app-deploy.yml"
+        ).read_text()
+        postgres_workflow = (
+            root / ".github" / "workflows" / "auth-postgres.yml"
+        ).read_text()
 
-        self.assertIn("Detect schema-first release", workflow)
-        self.assertIn('git diff --quiet "${BEFORE_SHA}" "${RELEASE_SHA}" -- migrations/', workflow)
-        self.assertIn("defer=true", workflow)
-        self.assertIn("steps.schema.outputs.defer != \'true\'", workflow)
-        self.assertIn("workflow_run", workflow)
-        self.assertIn("Auth PostgreSQL", workflow)
+        self.assertIn("workflow_run", app_workflow)
+        self.assertIn("Auth PostgreSQL", app_workflow)
+        deploy_if = app_workflow.split("  deploy:", 1)[1].split(
+            "    needs: tests",
+            1,
+        )[0]
+        self.assertNotIn("github.event_name == 'push'", deploy_if)
+        self.assertIn(
+            "github.event.workflow_run.conclusion == 'success'",
+            deploy_if,
+        )
+        self.assertIn(
+            "github.event.workflow_run.head_sha == github.sha",
+            deploy_if,
+        )
+        self.assertNotIn("Detect schema-first release", app_workflow)
+
+        for release_path in (
+            '"uv.lock"',
+            '"requirements-runtime.txt"',
+            '".github/workflows/auth-app-deploy.yml"',
+            '".github/scripts/timeweb_auth_app.py"',
+            '".github/scripts/test_timeweb_auth_app.py"',
+            '"src/omnicio/**"',
+            '"web/**"',
+            '"assets/brand/**"',
+            '"pyproject.toml"',
+        ):
+            self.assertGreaterEqual(
+                postgres_workflow.count(release_path),
+                2,
+                release_path,
+            )
 
     def test_remote_daily_observer_is_read_only_bounded_and_rollback_safe(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
