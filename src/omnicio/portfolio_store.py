@@ -686,6 +686,58 @@ class PortfolioStore:
                 raise RuntimeError("proposal insert returned no row")
             return _proposal_record(cast(dict[str, Any], row))
 
+    def proposal(
+        self,
+        user_id: UUID,
+        proposal_id: UUID,
+    ) -> PortfolioProposalRecord | None:
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    p.id,
+                    p.user_id,
+                    p.version,
+                    p.source_snapshot_id,
+                    p.account_id,
+                    p.profile_version,
+                    p.policy_version,
+                    p.scenario_kind,
+                    p.target_instrument_uid,
+                    p.replaced_instrument_uid,
+                    p.proposal_hash,
+                    p.payload,
+                    p.created_at,
+                    p.expires_at,
+                    COALESCE(
+                        a.action,
+                        CASE
+                            WHEN p.expires_at <= now() THEN 'expired'
+                            ELSE 'pending'
+                        END
+                    ) AS status,
+                    COALESCE(a.reason, '') AS decision_reason,
+                    COALESCE(a.user_reason, '') AS decision_user_reason,
+                    a.deferred_until,
+                    a.acted_at AS decided_at
+                FROM portfolio_proposals AS p
+                LEFT JOIN portfolio_proposal_actions AS a
+                  ON a.proposal_id = p.id
+                WHERE p.id = %s
+                  AND p.user_id = %s
+                """,
+                (proposal_id, user_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return _proposal_record(cast(dict[str, Any], row))
+
     def proposals(
         self,
         user_id: UUID,
@@ -753,6 +805,7 @@ class PortfolioStore:
         session_digest: bytes,
         user_reason: str,
         deferred_until: datetime | None,
+        material_current: bool,
         now: datetime,
     ) -> tuple[PortfolioProposalRecord, PortfolioProposalActionRecord]:
         if now.tzinfo is None:
@@ -837,6 +890,9 @@ class PortfolioStore:
             if proposal.expires_at <= now.astimezone(UTC):
                 decided_action = "expired"
                 reason = "proposal_expired"
+            elif not material_current:
+                decided_action = "revoked"
+                reason = "proposal_material_changed"
             else:
                 try:
                     _require_current_proposal_sources(
@@ -889,7 +945,11 @@ class PortfolioStore:
                     proposal.proposal_hash,
                     session_digest,
                     reason,
-                    clean_reason,
+                    (
+                        clean_reason
+                        if decided_action == action
+                        else ""
+                    ),
                     (
                         deferred_until.astimezone(UTC)
                         if decided_action == "deferred"
