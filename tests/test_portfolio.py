@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -211,7 +211,7 @@ def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
     now = datetime.now(UTC)
     profile = InvestmentProfileRecord(
         id=1,
-        user_id="server-user",
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=3,
         reserve_rub=Decimal("100000"),
         planned_withdrawal_rub=Decimal("25000"),
@@ -309,7 +309,7 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
     now = datetime.now(UTC)
     policy = BalancingPolicyRecord(
         id=1,
-        user_id="server-user",
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=2,
         max_instrument_percent=Decimal("20"),
         max_sector_percent=Decimal("30"),
@@ -585,8 +585,8 @@ def test_balancing_preview_requires_session_before_touching_store() -> None:
 
 def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing() -> None:
     now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
-    proposal_id = "22222222-2222-2222-2222-222222222222"
-    snapshot_id = "11111111-1111-1111-1111-111111111111"
+    proposal_id = UUID("22222222-2222-2222-2222-222222222222")
+    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
     draft = ProposalDraft(
         source_snapshot_id=snapshot_id,
         profile_version=3,
@@ -600,7 +600,7 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
     )
     proposal = PortfolioProposalRecord(
         id=proposal_id,
-        user_id="server-user",
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=1,
         source_snapshot_id=snapshot_id,
         profile_version=3,
@@ -649,11 +649,11 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
 
         assert response.status_code == 201
         assert response.headers["cache-control"] == "private, no-store"
-        assert response.json()["proposal"]["id"] == proposal_id
+        assert response.json()["proposal"]["id"] == str(proposal_id)
         assert response.json()["proposal"]["hash"] == (b"x" * 32).hex()
         assert response.json()["execution_enabled"] is False
         balancing.assert_called_once_with(
-            pytest.ANY,
+            ANY,
             "server-user",
         )
         store.return_value.create_proposal.assert_called_once()
@@ -670,11 +670,11 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
 
 def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution() -> None:
     now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
-    proposal_id = "22222222-2222-2222-2222-222222222222"
-    snapshot_id = "11111111-1111-1111-1111-111111111111"
+    proposal_id = UUID("22222222-2222-2222-2222-222222222222")
+    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
     proposal = PortfolioProposalRecord(
         id=proposal_id,
-        user_id="server-user",
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=4,
         source_snapshot_id=snapshot_id,
         profile_version=3,
@@ -690,7 +690,7 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
     action = PortfolioProposalActionRecord(
         id=1,
         proposal_id=proposal_id,
-        user_id="server-user",
+        user_id=UUID("00000000-0000-0000-0000-000000000901"),
         action="confirmed",
         proposal_version=4,
         proposal_hash=b"y" * 32,
