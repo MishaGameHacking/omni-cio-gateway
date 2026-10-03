@@ -31,6 +31,7 @@ def _balancing() -> dict[str, object]:
         "proposal_enabled": False,
         "live_status": "received",
         "snapshot_id": str(SNAPSHOT_ID),
+        "account_id": "account-1",
         "profile_version": 3,
         "policy_version": 2,
         "captured_at": "2026-10-03T08:00:00+00:00",
@@ -46,6 +47,18 @@ def _balancing() -> dict[str, object]:
         "methodology": {
             "candidate_limit": 4,
             "execution_enabled": False,
+        },
+        "constraints": {
+            "reserve_rub": "10000",
+            "planned_withdrawal_rub": "0",
+            "max_instrument_percent": "20",
+            "max_sector_percent": "30",
+            "max_issuer_percent": "20",
+            "max_group_percent": "25",
+            "turnover_budget_rub": "25000",
+            "allowed_asset_classes": ["share", "bond", "etf"],
+            "allowed_currencies": ["RUB"],
+            "allowed_risk_states": ["normal"],
         },
         "scenarios": {
             "hold": {
@@ -68,8 +81,60 @@ def _balancing() -> dict[str, object]:
                         "estimated_cost_rub": "20",
                         "tax_rub": "0",
                         "ytw_percent": "12.5",
+                        "limit_price": "99.5",
+                        "limit_price_type": "point",
+                        "max_spend_rub": "4020",
+                        "min_proceeds_rub": None,
                     }
                 ],
+                "before_after": {
+                    "before": {
+                        "nav_rub": "100000",
+                        "cash_rub": "10000",
+                        "positions": [
+                            {
+                                "instrument_uid": "old-1",
+                                "ticker": "OLD",
+                                "asset_class": "bond",
+                                "sector": "finance",
+                                "issuer_id": "issuer-old",
+                                "group_id": "group-old",
+                                "risk_state": "critical",
+                                "lots": 2,
+                                "value_rub": "20000",
+                            }
+                        ],
+                        "exposures": {
+                            "asset_class": [],
+                            "sector": [],
+                            "issuer_id": [],
+                            "group_id": [],
+                        },
+                    },
+                    "after": {
+                        "nav_rub": "99980",
+                        "cash_rub": "6000",
+                        "positions": [
+                            {
+                                "instrument_uid": "candidate-1",
+                                "ticker": "CAND",
+                                "asset_class": "bond",
+                                "sector": "finance",
+                                "issuer_id": "issuer-candidate",
+                                "group_id": "group-candidate",
+                                "risk_state": "normal",
+                                "lots": 4,
+                                "value_rub": "4000",
+                            }
+                        ],
+                        "exposures": {
+                            "asset_class": [],
+                            "sector": [],
+                            "issuer_id": [],
+                            "group_id": [],
+                        },
+                    },
+                },
                 "residual_cash_rub": "6000",
                 "turnover_rub": "4000",
                 "expected_incremental_gain_rub": "500",
@@ -91,6 +156,10 @@ def _balancing() -> dict[str, object]:
                             "estimated_cost_rub": "50",
                             "tax_rub": "100",
                             "ytw_percent": None,
+                            "limit_price": "98.7",
+                            "limit_price_type": "point",
+                            "max_spend_rub": None,
+                            "min_proceeds_rub": "19850",
                         },
                         {
                             "action": "buy",
@@ -101,8 +170,36 @@ def _balancing() -> dict[str, object]:
                             "estimated_cost_rub": "60",
                             "tax_rub": "0",
                             "ytw_percent": "12.5",
+                            "limit_price": "99.5",
+                            "limit_price_type": "point",
+                            "max_spend_rub": "18060",
+                            "min_proceeds_rub": None,
                         },
                     ],
+                "before_after": {
+                    "before": {
+                        "nav_rub": "100000",
+                        "cash_rub": "10000",
+                        "positions": [],
+                        "exposures": {
+                            "asset_class": [],
+                            "sector": [],
+                            "issuer_id": [],
+                            "group_id": [],
+                        },
+                    },
+                    "after": {
+                        "nav_rub": "99790",
+                        "cash_rub": "1790",
+                        "positions": [],
+                        "exposures": {
+                            "asset_class": [],
+                            "sector": [],
+                            "issuer_id": [],
+                            "group_id": [],
+                        },
+                    },
+                },
                     "residual_cash_rub": "1790",
                     "turnover_rub": "38000",
                     "expected_incremental_gain_rub": "900",
@@ -133,13 +230,19 @@ def test_deploy_cash_draft_is_server_scenario_with_hash_and_short_expiry() -> No
     assert first.proposal_hash == second.proposal_hash
     assert len(first.proposal_hash) == 32
     assert first.source_snapshot_id == SNAPSHOT_ID
+    assert first.account_id == "account-1"
     assert first.profile_version == 3
     assert first.policy_version == 2
     assert first.target_instrument_uid == "candidate-1"
     assert first.replaced_instrument_uid is None
     assert first.expires_at == now + PROPOSAL_TTL
     assert first.payload["execution_enabled"] is False
+    assert first.payload["source"]["account_id"] == "account-1"
+    assert first.payload["constraints"]["max_instrument_percent"] == "20"
     assert first.payload["scenario"]["trades"][0]["lots"] == 4
+    assert first.payload["scenario"]["trades"][0]["limit_price_type"] == "point"
+    assert first.payload["scenario"]["before_after"]["before"]["nav_rub"] == "100000"
+    assert first.payload["alternatives"][0]["kind"] == "hold"
 
 
 def test_replace_draft_requires_exact_server_side_replacement_selection() -> None:
@@ -202,6 +305,7 @@ def test_proposal_api_payload_keeps_execution_disabled_after_confirmation() -> N
         user_id=USER_ID,
         version=4,
         source_snapshot_id=SNAPSHOT_ID,
+        account_id="account-1",
         profile_version=3,
         policy_version=2,
         scenario_kind="deploy_cash",
@@ -220,10 +324,67 @@ def test_proposal_api_payload_keeps_execution_disabled_after_confirmation() -> N
         proposal_version=4,
         proposal_hash=b"x" * 32,
         reason="user_decision",
+        user_reason="",
+        deferred_until=None,
         acted_at=created + timedelta(minutes=1),
     )
 
     assert proposal_payload(proposal)["execution_enabled"] is False
     result = proposal_action_payload(proposal, decision)
     assert result["proposal"]["status"] == "confirmed"
+    assert result["decision"]["deferred_until"] is None
     assert result["execution_enabled"] is False
+
+
+
+def test_proposal_creation_rejects_incomplete_before_after_and_order_bounds() -> None:
+    payload = _balancing()
+    payload["scenarios"]["deploy_cash"].pop("before_after")
+
+    with pytest.raises(ProposalBuildError, match="scenario_before_after_missing"):
+        build_proposal_draft(
+            payload,
+            scenario_kind="deploy_cash",
+            replaced_instrument_uid=None,
+        )
+
+    payload = _balancing()
+    payload["scenarios"]["deploy_cash"]["trades"][0]["max_spend_rub"] = None
+    with pytest.raises(ProposalBuildError, match="scenario_max_spend_missing"):
+        build_proposal_draft(
+            payload,
+            scenario_kind="deploy_cash",
+            replaced_instrument_uid=None,
+        )
+
+
+def test_proposal_hash_changes_when_constraints_or_limit_price_change() -> None:
+    now = datetime(2026, 10, 3, 8, 5, tzinfo=UTC)
+    first_payload = _balancing()
+    first = build_proposal_draft(
+        first_payload,
+        scenario_kind="deploy_cash",
+        replaced_instrument_uid=None,
+        now=now,
+    )
+
+    changed_limit = _balancing()
+    changed_limit["scenarios"]["deploy_cash"]["trades"][0]["limit_price"] = "99.6"
+    second = build_proposal_draft(
+        changed_limit,
+        scenario_kind="deploy_cash",
+        replaced_instrument_uid=None,
+        now=now,
+    )
+
+    changed_policy = _balancing()
+    changed_policy["constraints"]["max_instrument_percent"] = "15"
+    third = build_proposal_draft(
+        changed_policy,
+        scenario_kind="deploy_cash",
+        replaced_instrument_uid=None,
+        now=now,
+    )
+
+    assert first.proposal_hash != second.proposal_hash
+    assert first.proposal_hash != third.proposal_hash
