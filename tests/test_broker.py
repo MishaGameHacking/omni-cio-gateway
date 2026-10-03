@@ -32,6 +32,7 @@ from omnicio.tbank import (
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
+    TBankRating,
     TBankTokenRejected,
     TBankUnavailable,
     TBankUserInfo,
@@ -118,6 +119,63 @@ def test_tbank_get_user_info_parses_qualification_context() -> None:
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {}
     assert "provider-user-id" not in repr(info)
+
+
+def test_tbank_bond_ratings_are_read_only_and_keep_agency_metadata() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instrument": {
+                "uid": "bond-uid",
+                "ratings": [
+                    {
+                        "agencyName": "Эксперт РА",
+                        "ratingLevel": "ruAA+",
+                        "ratingDate": "2026-09-15T00:00:00Z",
+                        "forecast": "Стабильный",
+                        "isUnderWatch": False,
+                    },
+                    {
+                        "agencyName": "АКРА",
+                        "ratingLevel": "A+(RU)",
+                        "ratingDate": "2026-09-20T00:00:00Z",
+                        "forecast": "Позитивный",
+                        "isUnderWatch": True,
+                    },
+                ],
+            }
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_bond_ratings(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+        )
+
+    assert result == (
+        TBankRating(
+            agency_name="Эксперт РА",
+            rating_level="ruAA+",
+            rating_date=datetime(2026, 9, 15, tzinfo=UTC),
+            forecast="Стабильный",
+            is_under_watch=False,
+        ),
+        TBankRating(
+            agency_name="АКРА",
+            rating_level="A+(RU)",
+            rating_date=datetime(2026, 9, 20, tzinfo=UTC),
+            forecast="Позитивный",
+            is_under_watch=True,
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("InstrumentsService/BondBy")
+    assert json.loads(request.data.decode()) == {
+        "idType": "INSTRUMENT_ID_TYPE_UID",
+        "id": "bond-uid",
+    }
 
 
 def test_tbank_market_yields_are_batched_read_only_shortlist_signals() -> None:
