@@ -647,7 +647,7 @@ class PortfolioStore:
                     expires_at
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
                 )
                 RETURNING
                     id,
@@ -892,7 +892,8 @@ class PortfolioStore:
                     clean_reason,
                     (
                         deferred_until.astimezone(UTC)
-                        if deferred_until is not None
+                        if decided_action == "deferred"
+                        and deferred_until is not None
                         else None
                     ),
                     now.astimezone(UTC),
