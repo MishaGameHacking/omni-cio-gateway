@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -12,7 +13,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
-from omnicio.portfolio_store import PortfolioStore
+from omnicio.portfolio_store import PortfolioStore, ProposalStateError
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
 pytestmark = pytest.mark.skipif(
@@ -508,6 +509,74 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 min_replace_benefit_rub=Decimal("500"),
             )
             current_policy = store.current_balancing_policy(USER_ONE)
+            created_at = datetime.now(UTC)
+            first_proposal = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"p" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            proposal_before = store.proposals(USER_ONE)
+            decided_proposal, confirmed = store.decide_proposal(
+                USER_ONE,
+                proposal_id=first_proposal.id,
+                expected_version=first_proposal.version,
+                expected_hash=first_proposal.proposal_hash,
+                action="confirmed",
+                now=created_at + timedelta(minutes=1),
+            )
+            with pytest.raises(
+                ProposalStateError,
+                match="proposal_already_decided",
+            ):
+                store.decide_proposal(
+                    USER_ONE,
+                    proposal_id=first_proposal.id,
+                    expected_version=first_proposal.version,
+                    expected_hash=first_proposal.proposal_hash,
+                    action="confirmed",
+                    now=created_at + timedelta(minutes=2),
+                )
+
+            pending = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"q" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            newest = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"r" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            proposal_after_supersede = store.proposals(USER_ONE)
+            expired_proposal, expired_action = store.decide_proposal(
+                USER_ONE,
+                proposal_id=newest.id,
+                expected_version=newest.version,
+                expected_hash=newest.proposal_hash,
+                action="deferred",
+                now=created_at + timedelta(hours=1),
+            )
             intelligence = store.latest_intelligence(USER_ONE)
         finally:
             database.close()
@@ -522,6 +591,19 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert current_policy.securities_tax_rate_percent == Decimal("15")
         assert current_policy.uncertainty_haircut_percent == Decimal("3")
         assert current_policy.credit_loss_haircut_percent == Decimal("2")
+        assert proposal_before[0].id == first_proposal.id
+        assert proposal_before[0].status == "pending"
+        assert decided_proposal.id == first_proposal.id
+        assert confirmed.action == "confirmed"
+        superseded = next(
+            item
+            for item in proposal_after_supersede
+            if item.id == pending.id
+        )
+        assert superseded.status == "revoked"
+        assert superseded.decision_reason == "superseded_by_new_proposal"
+        assert expired_proposal.id == newest.id
+        assert expired_action.action == "expired"
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
@@ -533,6 +615,25 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             for item in intelligence["sources"]
         )
 
+        proposal_id = first_proposal.id
+        action_id = confirmed.id
+        with pytest.raises(
+            psycopg.errors.RaiseException,
+            match="immutable proposal",
+        ):
+            runtime.execute(
+                "UPDATE portfolio_proposals SET version = version + 1 WHERE id = %s",
+                (proposal_id,),
+            )
+        with pytest.raises(
+            psycopg.errors.RaiseException,
+            match="immutable proposal",
+        ):
+            runtime.execute(
+                "DELETE FROM portfolio_proposal_actions WHERE id = %s",
+                (action_id,),
+            )
+
         runtime.execute(
             "SELECT set_config('omnicio.user_id', %s, false)",
             (str(USER_TWO),),
@@ -542,6 +643,12 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         ).fetchone()[0] == 0
         assert runtime.execute(
             "SELECT count(*) FROM balancing_policy_versions"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_proposals"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_proposal_actions"
         ).fetchone()[0] == 0
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
