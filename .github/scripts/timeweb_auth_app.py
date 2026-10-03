@@ -663,8 +663,20 @@ if [ -f "$NGINX_SITE" ]; then
 fi
 
 cat > "$NGINX_SITE.new" <<'EOF'
+map $request_method $omnicio_write_limit_key {
+    default "";
+    POST $binary_remote_addr;
+    PUT $binary_remote_addr;
+    PATCH $binary_remote_addr;
+    DELETE $binary_remote_addr;
+}
+
 limit_req_zone $binary_remote_addr zone=omnicio_auth_start:10m rate=10r/m;
 limit_req_zone $binary_remote_addr zone=omnicio_auth_callback:10m rate=30r/m;
+limit_req_zone $binary_remote_addr zone=omnicio_api_per_ip:10m rate=120r/m;
+limit_req_zone $omnicio_write_limit_key zone=omnicio_api_write:10m rate=30r/m;
+limit_req_zone $binary_remote_addr zone=omnicio_health:1m rate=120r/m;
+limit_conn_zone $binary_remote_addr zone=omnicio_api_connections:10m;
 
 server {
     listen 80;
@@ -700,9 +712,14 @@ server {
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" always;
 
+    client_max_body_size 64k;
+    client_body_timeout 10s;
+
     location = /api/auth/vkid/start {
         limit_req zone=omnicio_auth_start burst=5 nodelay;
         limit_req_status 429;
+        limit_conn omnicio_api_connections 20;
+        limit_conn_status 429;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -717,6 +734,8 @@ server {
     location = /api/auth/vkid/callback {
         limit_req zone=omnicio_auth_callback burst=10 nodelay;
         limit_req_status 429;
+        limit_conn omnicio_api_connections 20;
+        limit_conn_status 429;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -729,6 +748,11 @@ server {
     }
 
     location /api/ {
+        limit_req zone=omnicio_api_per_ip burst=60 nodelay;
+        limit_req zone=omnicio_api_write burst=15 nodelay;
+        limit_req_status 429;
+        limit_conn omnicio_api_connections 20;
+        limit_conn_status 429;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -741,6 +765,10 @@ server {
     }
 
     location /health/ {
+        limit_req zone=omnicio_health burst=30 nodelay;
+        limit_req_status 429;
+        limit_conn omnicio_api_connections 20;
+        limit_conn_status 429;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
