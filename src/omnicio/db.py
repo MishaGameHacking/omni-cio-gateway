@@ -92,6 +92,24 @@ class Database:
                           AND column_name = 'role'
                     )
                     AND (
+                        SELECT count(*) = 8
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'instrument_catalog'
+                          AND column_name = ANY (
+                              ARRAY[
+                                  'nominal_value',
+                                  'nominal_currency',
+                                  'maturity_date',
+                                  'floating_coupon',
+                                  'perpetual',
+                                  'amortization',
+                                  'subordinated',
+                                  'liquidity'
+                              ]
+                          )
+                    )
+                    AND (
                         SELECT count(*) = 9
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
