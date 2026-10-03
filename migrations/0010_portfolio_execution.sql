@@ -94,7 +94,7 @@ BEGIN
         RAISE EXCEPTION 'execution source fields are immutable';
     END IF;
 
-    IF NOT EXISTS (
+    IF TG_OP = 'INSERT' AND NOT EXISTS (
         SELECT 1
         FROM portfolio_proposals AS p
         JOIN portfolio_proposal_actions AS a
