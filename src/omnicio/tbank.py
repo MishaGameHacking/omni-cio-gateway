@@ -149,6 +149,8 @@ class TBankPortfolioPosition:
     blocked: bool
     current_nkd: TBankMoney | None = None
     blocked_lots: str = "0"
+    average_price_fifo: TBankMoney | None = None
+    quantity_lots: str = "0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -883,6 +885,8 @@ class TBankInvestClient:
                     blocked=blocked_raw,
                     current_nkd=_money(position.get("currentNkd")),
                     blocked_lots=_quotation(position.get("blockedLots")) or "0",
+                    average_price_fifo=_money(position.get("averagePositionPriceFifo")),
+                    quantity_lots=_quotation(position.get("quantityLots")) or "0",
                 )
             )
 
