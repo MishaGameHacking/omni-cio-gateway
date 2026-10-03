@@ -1293,6 +1293,11 @@ def _scenario_before_after(
         Decimal("0"),
     )
     after_nav = max(Decimal("0"), nav_rub - total_cost)
+    after_cash = (
+        cash_rub + scenario.residual_cash_rub
+        if scenario.kind == "replace"
+        else scenario.residual_cash_rub
+    )
     return {
         "before": _portfolio_state_payload(
             before,
@@ -1302,7 +1307,7 @@ def _scenario_before_after(
         "after": _portfolio_state_payload(
             after,
             nav_rub=after_nav,
-            cash_rub=scenario.residual_cash_rub,
+            cash_rub=after_cash,
         ),
     }
 
