@@ -304,7 +304,7 @@ class PortfolioExecutionService:
                 request_id=str(leg.request_id),
                 price_type=leg.limit_price_type,
             )
-        except (BrokerSandboxRequired, BrokerConnectionError) as exc:
+        except BrokerConnectionError as exc:
             self.store.mark_run_reconciling(
                 user_id,
                 run_id=run.id,
