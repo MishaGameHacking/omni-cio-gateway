@@ -90,6 +90,7 @@ class FakeStore:
         self.claimed = False
         self.lock_available = True
         self.recover_running_values: list[bool] = []
+        self.reinvestment_sync_calls = 0
 
     def observer_lock(self):
         return nullcontext(self.lock_available)
@@ -170,6 +171,19 @@ class FakeStore:
         assert user_id == USER_ID
         assert account_id == "account-1"
         return self.state
+
+    def sync_reinvestment_income_credits(
+        self,
+        user_id: UUID,
+        *,
+        account_id: str,
+        observed_at: datetime,
+    ) -> int:
+        assert user_id == USER_ID
+        assert account_id == "account-1"
+        assert observed_at.tzinfo is not None
+        self.reinvestment_sync_calls += 1
+        return 2
 
     def save_history_page(
         self,
@@ -367,6 +381,8 @@ def test_daily_observer_pages_history_and_finishes_once() -> None:
     assert store.saved_evidence == 1
     assert store.finished[0][0] == "succeeded"
     assert store.finished[0][1]["history_status"] == "complete"
+    assert store.finished[0][1]["reinvestment_income_credits_new"] == 2
+    assert store.reinvestment_sync_calls == 1
 
 
 def test_daily_observer_resumes_durable_cursor_window() -> None:
@@ -439,6 +455,8 @@ def test_missing_account_open_date_degrades_without_inventing_history() -> None:
     assert result.status == "degraded"
     assert broker.seen_cursors == []
     assert store.finished[0][1]["history_status"] == "opened_date_missing"
+    assert store.finished[0][1]["reinvestment_income_credits_new"] == 0
+    assert store.reinvestment_sync_calls == 0
 
 
 def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
