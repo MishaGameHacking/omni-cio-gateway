@@ -372,55 +372,104 @@ class TBankInvestClient:
         seen: set[str] = set()
         for raw in _required_list(payload, "instruments"):
             item = _required_object(raw, "instrument metadata")
-            uid = _text(item.get("uid")).strip()
-            if not uid or uid in seen:
-                raise TBankUnavailable("T-Invest metadata has missing or duplicate uid")
-            seen.add(uid)
+            parsed = _instrument_metadata(item, instrument_type)
+            if parsed.uid in seen:
+                raise TBankUnavailable("T-Invest metadata has duplicate uid")
+            seen.add(parsed.uid)
+            result.append(parsed)
+        return tuple(result)
 
-            lot_raw = item.get("lot", 0)
-            if isinstance(lot_raw, bool):
-                raise TBankUnavailable("T-Invest metadata has invalid lot size")
-            try:
-                lot = int(str(lot_raw))
-            except ValueError as exc:
-                raise TBankUnavailable("T-Invest metadata has invalid lot size") from exc
-            if lot < 0:
-                raise TBankUnavailable("T-Invest metadata has invalid lot size")
-
-            required_tests = tuple(
-                _text(value).strip()
-                for value in _optional_list(item, "requiredTests")
-                if _text(value).strip()
+    def get_bond_metadata(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+    ) -> TBankInstrumentMetadata:
+        uid = _validate_provider_id(instrument_uid, "instrument uid")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="BondBy",
+            body={
+                "idType": "INSTRUMENT_ID_TYPE_UID",
+                "id": uid,
+            },
+        )
+        item = _required_object(payload.get("instrument"), "bond metadata")
+        parsed = _instrument_metadata(item, "bond")
+        if parsed.uid != uid:
+            raise TBankUnavailable(
+                "T-Invest BondBy returned a different instrument"
             )
+        return parsed
 
+    def get_daily_candles(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 90,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        uid = _validate_provider_id(instrument_uid, "instrument uid")
+        if from_at.tzinfo is None or to_at.tzinfo is None:
+            raise ValueError("candle window boundaries must be timezone-aware")
+        if from_at >= to_at:
+            raise ValueError("candle window start must be before end")
+        if not 1 <= limit <= 2400:
+            raise ValueError("daily candle limit must be between 1 and 2400")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetCandles",
+            body={
+                "instrumentId": uid,
+                "from": _utc_timestamp(from_at),
+                "to": _utc_timestamp(to_at),
+                "interval": "CANDLE_INTERVAL_DAY",
+                "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                "limit": limit,
+            },
+        )
+        result: list[TBankHistoricCandle] = []
+        for raw in _required_list(payload, "candles"):
+            item = _required_object(raw, "historic candle")
+            close = _quotation(item.get("close"))
+            candle_time = _optional_provider_timestamp(item.get("time"))
+            complete = item.get("isComplete")
+            volume_raw = item.get("volume")
+            if (
+                close is None
+                or Decimal(close) <= 0
+                or candle_time is None
+                or not isinstance(complete, bool)
+                or isinstance(volume_raw, bool)
+                or volume_raw is None
+            ):
+                raise TBankUnavailable(
+                    "T-Invest historic candle is missing required fields"
+                )
+            try:
+                volume = int(str(volume_raw))
+            except ValueError as exc:
+                raise TBankUnavailable(
+                    "T-Invest historic candle has invalid volume"
+                ) from exc
+            if volume < 0:
+                raise TBankUnavailable(
+                    "T-Invest historic candle has negative volume"
+                )
             result.append(
-                TBankInstrumentMetadata(
-                    uid=uid,
-                    name=_text(item.get("name")).strip(),
-                    ticker=_text(item.get("ticker")).strip(),
-                    isin=_text(item.get("isin")).strip(),
-                    instrument_type=instrument_type,
-                    sector=_text(item.get("sector")).strip(),
-                    country_of_risk=_text(item.get("countryOfRisk")).strip().upper(),
-                    for_qual_investor=_optional_bool(item, "forQualInvestorFlag"),
-                    figi=_text(item.get("figi")).strip(),
-                    asset_uid=_text(item.get("assetUid")).strip(),
-                    position_uid=_text(item.get("positionUid")).strip(),
-                    currency=_text(item.get("currency")).strip().upper(),
-                    class_code=_text(item.get("classCode")).strip(),
-                    lot=lot,
-                    for_iis=_optional_bool(item, "forIisFlag"),
-                    api_trade_available=_optional_bool(item, "apiTradeAvailableFlag"),
-                    buy_available=_optional_bool(item, "buyAvailableFlag"),
-                    sell_available=_optional_bool(item, "sellAvailableFlag"),
-                    required_tests=required_tests,
-                    nominal=_money(item.get("nominal")),
-                    maturity_date=_optional_provider_timestamp(item.get("maturityDate")),
-                    floating_coupon=_optional_bool(item, "floatingCouponFlag"),
-                    perpetual=_optional_bool(item, "perpetualFlag"),
-                    amortization=_optional_bool(item, "amortizationFlag"),
-                    subordinated=_optional_bool(item, "subordinatedFlag"),
-                    liquidity=_optional_bool(item, "liquidityFlag"),
+                TBankHistoricCandle(
+                    instrument_uid=uid,
+                    close=close,
+                    volume_lots=volume,
+                    time=candle_time,
+                    is_complete=complete,
                 )
             )
         return tuple(result)
@@ -1427,6 +1476,99 @@ class TBankInvestClient:
         if not isinstance(payload_raw, dict):
             raise TBankUnavailable("T-Invest API returned invalid payload")
         return cast(dict[str, object], payload_raw)
+
+
+def _instrument_metadata(
+    item: dict[str, object],
+    instrument_type: str,
+) -> TBankInstrumentMetadata:
+    uid = _text(item.get("uid")).strip()
+    if not uid:
+        raise TBankUnavailable("T-Invest metadata has missing uid")
+
+    lot_raw = item.get("lot", 0)
+    if isinstance(lot_raw, bool):
+        raise TBankUnavailable("T-Invest metadata has invalid lot size")
+    try:
+        lot = int(str(lot_raw))
+    except ValueError as exc:
+        raise TBankUnavailable("T-Invest metadata has invalid lot size") from exc
+    if lot < 0:
+        raise TBankUnavailable("T-Invest metadata has invalid lot size")
+
+    coupon_quantity_raw = item.get("couponQuantityPerYear", 0)
+    if isinstance(coupon_quantity_raw, bool):
+        raise TBankUnavailable("T-Invest metadata has invalid coupon frequency")
+    try:
+        coupon_quantity = int(str(coupon_quantity_raw))
+    except ValueError as exc:
+        raise TBankUnavailable(
+            "T-Invest metadata has invalid coupon frequency"
+        ) from exc
+    if coupon_quantity < 0:
+        raise TBankUnavailable("T-Invest metadata has invalid coupon frequency")
+
+    required_tests = tuple(
+        _text(value).strip()
+        for value in _optional_list(item, "requiredTests")
+        if _text(value).strip()
+    )
+    ratings: list[TBankRating] = []
+    for raw in _optional_list(item, "ratings"):
+        rating = _required_object(raw, "bond rating")
+        under_watch = rating.get("isUnderWatch")
+        if not isinstance(under_watch, bool):
+            raise TBankUnavailable(
+                "T-Invest bond rating has invalid watch flag"
+            )
+        agency = _text(rating.get("agencyName")).strip()
+        level = _text(rating.get("ratingLevel")).strip()
+        if not agency or not level:
+            raise TBankUnavailable("T-Invest bond rating is incomplete")
+        ratings.append(
+            TBankRating(
+                agency_name=agency,
+                rating_level=level,
+                rating_date=_optional_provider_timestamp(
+                    rating.get("ratingDate")
+                ),
+                forecast=_text(rating.get("forecast")).strip(),
+                is_under_watch=under_watch,
+            )
+        )
+
+    return TBankInstrumentMetadata(
+        uid=uid,
+        name=_text(item.get("name")).strip(),
+        ticker=_text(item.get("ticker")).strip(),
+        isin=_text(item.get("isin")).strip(),
+        instrument_type=instrument_type,
+        sector=_text(item.get("sector")).strip(),
+        country_of_risk=_text(item.get("countryOfRisk")).strip().upper(),
+        for_qual_investor=_optional_bool(item, "forQualInvestorFlag"),
+        figi=_text(item.get("figi")).strip(),
+        asset_uid=_text(item.get("assetUid")).strip(),
+        position_uid=_text(item.get("positionUid")).strip(),
+        currency=_text(item.get("currency")).strip().upper(),
+        class_code=_text(item.get("classCode")).strip(),
+        lot=lot,
+        for_iis=_optional_bool(item, "forIisFlag"),
+        api_trade_available=_optional_bool(item, "apiTradeAvailableFlag"),
+        buy_available=_optional_bool(item, "buyAvailableFlag"),
+        sell_available=_optional_bool(item, "sellAvailableFlag"),
+        required_tests=required_tests,
+        nominal=_money(item.get("nominal")),
+        maturity_date=_optional_provider_timestamp(item.get("maturityDate")),
+        floating_coupon=_optional_bool(item, "floatingCouponFlag"),
+        perpetual=_optional_bool(item, "perpetualFlag"),
+        amortization=_optional_bool(item, "amortizationFlag"),
+        subordinated=_optional_bool(item, "subordinatedFlag"),
+        liquidity=_optional_bool(item, "liquidityFlag"),
+        coupon_quantity_per_year=coupon_quantity,
+        call_date=_optional_provider_timestamp(item.get("callDate")),
+        risk_level=_text(item.get("riskLevel")).strip(),
+        ratings=tuple(ratings),
+    )
 
 
 def _validate_provider_id(value: str, name: str) -> str:
