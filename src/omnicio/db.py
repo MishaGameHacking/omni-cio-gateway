@@ -39,6 +39,16 @@ class RegistrationCapacityError(RuntimeError):
     """Raised when the configured user-account capacity is exhausted."""
 
 
+class ActiveLiveExecutionError(RuntimeError):
+    """Raised when cleanup would race with an unfinished production execution."""
+
+
+def live_execution_lock_key(user_id: UUID) -> str:
+    """Return the shared transaction-lock key for live execution and cleanup."""
+
+    return f"portfolio-live-execution:{user_id}"
+
+
 class Database:
     """Thin persistence adapter for authentication state."""
 
@@ -358,6 +368,10 @@ class Database:
 
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (live_execution_lock_key(user_id),),
+            )
+            cur.execute(
                 """
                 SELECT vk_user_id
                 FROM vkid_identities
@@ -410,7 +424,7 @@ class Database:
                 (user.id,),
             )
             if cur.fetchone() is not None:
-                raise PermissionError(
+                raise ActiveLiveExecutionError(
                     "active live execution must be reconciled before account deletion"
                 )
 
@@ -551,6 +565,10 @@ class Database:
     def delete_tbank_connection(self, user_id: UUID) -> bool:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (live_execution_lock_key(user_id),),
+            )
+            cur.execute(
                 """
                 SELECT environment
                 FROM tbank_connection
@@ -586,7 +604,7 @@ class Database:
                 (user_id,),
             )
             if cur.fetchone() is not None:
-                raise PermissionError(
+                raise ActiveLiveExecutionError(
                     "active live execution must be reconciled before broker disconnect"
                 )
             cur.execute(
