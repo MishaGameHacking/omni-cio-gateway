@@ -7,7 +7,7 @@ import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -118,6 +118,43 @@ class ProposalStateError(RuntimeError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+class ReinvestmentMandateError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+@dataclass(frozen=True, slots=True)
+class ReinvestmentMandateRecord:
+    id: UUID
+    user_id: UUID
+    account_id: str
+    version: int
+    profile_version: int
+    policy_version: int
+    allow_dividends: bool
+    allow_coupons: bool
+    cash_reserve_rub: Decimal
+    max_order_notional_rub: Decimal
+    max_daily_notional_rub: Decimal
+    max_monthly_notional_rub: Decimal
+    max_slippage_bps: int
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReinvestmentIncomeSummary:
+    mandate_id: UUID
+    observed_count: int
+    observed_rub: Decimal
+    dividends_rub: Decimal
+    coupons_rub: Decimal
+    verified_rub: Decimal
+    last_credit_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2075,6 +2112,419 @@ class PortfolioStore:
             "sources": source_rows,
         }
 
+    def current_reinvestment_mandate(
+        self,
+        user_id: UUID,
+        *,
+        now: datetime,
+    ) -> ReinvestmentMandateRecord | None:
+        if now.tzinfo is None:
+            raise ValueError("reinvestment mandate time must be timezone-aware")
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    user_id,
+                    account_id,
+                    version,
+                    profile_version,
+                    policy_version,
+                    allow_dividends,
+                    allow_coupons,
+                    cash_reserve_rub,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    max_monthly_notional_rub,
+                    max_slippage_bps,
+                    created_at,
+                    expires_at,
+                    revoked_at
+                FROM portfolio_reinvestment_mandates
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                  AND expires_at > %s
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (user_id, now.astimezone(UTC)),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return _reinvestment_mandate(cast(dict[str, Any], row))
+
+    def create_reinvestment_mandate(
+        self,
+        user_id: UUID,
+        *,
+        account_id: str,
+        profile_version: int,
+        policy_version: int,
+        allow_dividends: bool,
+        allow_coupons: bool,
+        cash_reserve_rub: Decimal,
+        max_order_notional_rub: Decimal,
+        max_daily_notional_rub: Decimal,
+        max_monthly_notional_rub: Decimal,
+        max_slippage_bps: int,
+        session_digest: bytes,
+        expires_at: datetime,
+        now: datetime,
+    ) -> ReinvestmentMandateRecord:
+        if now.tzinfo is None or expires_at.tzinfo is None:
+            raise ValueError("reinvestment mandate times must be timezone-aware")
+        now_utc = now.astimezone(UTC)
+        expires_utc = expires_at.astimezone(UTC)
+        if not 1 <= len(account_id) <= 128:
+            raise ValueError("reinvestment mandate account is invalid")
+        if profile_version <= 0 or policy_version <= 0:
+            raise ValueError("reinvestment mandate policy versions are invalid")
+        if not allow_dividends and not allow_coupons:
+            raise ValueError("reinvestment mandate requires an eligible income type")
+        if len(session_digest) != 32:
+            raise ValueError("reinvestment mandate session digest must be SHA-256")
+        if expires_utc <= now_utc or expires_utc > now_utc + timedelta(days=90):
+            raise ValueError("reinvestment mandate expiry must be within 90 days")
+        if not 0 <= max_slippage_bps <= 500:
+            raise ValueError("reinvestment mandate slippage is invalid")
+
+        money_values = (
+            cash_reserve_rub,
+            max_order_notional_rub,
+            max_daily_notional_rub,
+            max_monthly_notional_rub,
+        )
+        kopeck = Decimal("0.01")
+        if any(not value.is_finite() for value in money_values):
+            raise ValueError("reinvestment mandate money values must be finite")
+        if cash_reserve_rub < 0 or max_order_notional_rub <= 0:
+            raise ValueError("reinvestment mandate money caps are invalid")
+        if (
+            max_daily_notional_rub < max_order_notional_rub
+            or max_monthly_notional_rub < max_daily_notional_rub
+        ):
+            raise ValueError("reinvestment mandate cap hierarchy is invalid")
+        if any(value.quantize(kopeck) != value for value in money_values):
+            raise ValueError("reinvestment mandate money values require kopeck precision")
+
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"portfolio-reinvestment-mandate:{user_id}",),
+            )
+            cur.execute(
+                """
+                SELECT version
+                FROM investment_profile_versions
+                WHERE user_id = %s
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            profile_row = cur.fetchone()
+            if (
+                profile_row is None
+                or int(cast(dict[str, Any], profile_row)["version"]) != profile_version
+            ):
+                raise ReinvestmentMandateError("reinvestment_profile_stale")
+
+            cur.execute(
+                """
+                SELECT version
+                FROM balancing_policy_versions
+                WHERE user_id = %s
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            policy_row = cur.fetchone()
+            if (
+                policy_row is None
+                or int(cast(dict[str, Any], policy_row)["version"]) != policy_version
+            ):
+                raise ReinvestmentMandateError("reinvestment_policy_stale")
+
+            cur.execute(
+                """
+                UPDATE portfolio_reinvestment_mandates
+                SET revoked_at = COALESCE(revoked_at, %s)
+                WHERE user_id = %s
+                  AND revoked_at IS NULL
+                """,
+                (now_utc, user_id),
+            )
+            cur.execute(
+                """
+                SELECT COALESCE(max(version), 0) + 1 AS next_version
+                FROM portfolio_reinvestment_mandates
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            version_row = cur.fetchone()
+            version = (
+                int(cast(dict[str, Any], version_row)["next_version"])
+                if version_row is not None
+                else 1
+            )
+            cur.execute(
+                """
+                INSERT INTO portfolio_reinvestment_mandates (
+                    user_id,
+                    account_id,
+                    version,
+                    profile_version,
+                    policy_version,
+                    allow_dividends,
+                    allow_coupons,
+                    cash_reserve_rub,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    max_monthly_notional_rub,
+                    max_slippage_bps,
+                    created_session_digest,
+                    created_at,
+                    expires_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s
+                )
+                RETURNING
+                    id,
+                    user_id,
+                    account_id,
+                    version,
+                    profile_version,
+                    policy_version,
+                    allow_dividends,
+                    allow_coupons,
+                    cash_reserve_rub,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    max_monthly_notional_rub,
+                    max_slippage_bps,
+                    created_at,
+                    expires_at,
+                    revoked_at
+                """,
+                (
+                    user_id,
+                    account_id,
+                    version,
+                    profile_version,
+                    policy_version,
+                    allow_dividends,
+                    allow_coupons,
+                    cash_reserve_rub,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    max_monthly_notional_rub,
+                    max_slippage_bps,
+                    session_digest,
+                    now_utc,
+                    expires_utc,
+                ),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError("reinvestment mandate insert returned no row")
+            return _reinvestment_mandate(cast(dict[str, Any], row))
+
+    def revoke_reinvestment_mandate(
+        self,
+        user_id: UUID,
+        *,
+        now: datetime,
+    ) -> ReinvestmentMandateRecord | None:
+        if now.tzinfo is None:
+            raise ValueError("reinvestment mandate revocation time must be timezone-aware")
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"portfolio-reinvestment-mandate:{user_id}",),
+            )
+            cur.execute(
+                """
+                UPDATE portfolio_reinvestment_mandates
+                SET revoked_at = COALESCE(revoked_at, %s)
+                WHERE id = (
+                    SELECT id
+                    FROM portfolio_reinvestment_mandates
+                    WHERE user_id = %s
+                      AND revoked_at IS NULL
+                    ORDER BY version DESC
+                    LIMIT 1
+                    FOR UPDATE
+                )
+                RETURNING
+                    id,
+                    user_id,
+                    account_id,
+                    version,
+                    profile_version,
+                    policy_version,
+                    allow_dividends,
+                    allow_coupons,
+                    cash_reserve_rub,
+                    max_order_notional_rub,
+                    max_daily_notional_rub,
+                    max_monthly_notional_rub,
+                    max_slippage_bps,
+                    created_at,
+                    expires_at,
+                    revoked_at
+                """,
+                (now.astimezone(UTC), user_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return _reinvestment_mandate(cast(dict[str, Any], row))
+
+    def sync_reinvestment_income_credits(
+        self,
+        user_id: UUID,
+        *,
+        account_id: str,
+        observed_at: datetime,
+    ) -> int:
+        if observed_at.tzinfo is None:
+            raise ValueError("reinvestment income observation time must be timezone-aware")
+        observed_utc = observed_at.astimezone(UTC)
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                INSERT INTO portfolio_reinvestment_income_credits (
+                    mandate_id,
+                    user_id,
+                    account_id,
+                    source_operation_observation_id,
+                    operation_type,
+                    credited_at,
+                    amount_rub,
+                    source_semantic_hash,
+                    source_observed_at
+                )
+                SELECT
+                    m.id,
+                    o.user_id,
+                    o.account_id,
+                    o.id,
+                    o.operation_type,
+                    o.operation_date,
+                    o.payment_value,
+                    o.semantic_hash,
+                    o.observed_at
+                FROM operation_observations AS o
+                JOIN portfolio_reinvestment_mandates AS m
+                  ON m.user_id = o.user_id
+                 AND m.account_id = o.account_id
+                 AND o.operation_date >= m.created_at
+                 AND o.operation_date < m.expires_at
+                 AND (m.revoked_at IS NULL OR o.operation_date < m.revoked_at)
+                WHERE o.user_id = %s
+                  AND o.account_id = %s
+                  AND o.operation_date <= %s
+                  AND o.operation_state = 'OPERATION_STATE_EXECUTED'
+                  AND o.operation_type IN (
+                      'OPERATION_TYPE_DIVIDEND',
+                      'OPERATION_TYPE_COUPON'
+                  )
+                  AND lower(COALESCE(o.payment_currency, '')) = 'rub'
+                  AND o.payment_value > 0
+                  AND (
+                      (o.operation_type = 'OPERATION_TYPE_DIVIDEND'
+                       AND m.allow_dividends)
+                      OR
+                      (o.operation_type = 'OPERATION_TYPE_COUPON'
+                       AND m.allow_coupons)
+                  )
+                ON CONFLICT DO NOTHING
+                RETURNING id
+                """,
+                (user_id, account_id, observed_utc),
+            )
+            return len(cur.fetchall())
+
+    def reinvestment_income_summary(
+        self,
+        user_id: UUID,
+        mandate_id: UUID,
+    ) -> ReinvestmentIncomeSummary:
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    count(*) AS observed_count,
+                    COALESCE(sum(amount_rub), 0) AS observed_rub,
+                    COALESCE(
+                        sum(amount_rub) FILTER (
+                            WHERE operation_type = 'OPERATION_TYPE_DIVIDEND'
+                        ),
+                        0
+                    ) AS dividends_rub,
+                    COALESCE(
+                        sum(amount_rub) FILTER (
+                            WHERE operation_type = 'OPERATION_TYPE_COUPON'
+                        ),
+                        0
+                    ) AS coupons_rub,
+                    COALESCE(
+                        sum(amount_rub) FILTER (
+                            WHERE verification_status = 'verified'
+                        ),
+                        0
+                    ) AS verified_rub,
+                    max(credited_at) AS last_credit_at
+                FROM portfolio_reinvestment_income_credits
+                WHERE user_id = %s
+                  AND mandate_id = %s
+                """,
+                (user_id, mandate_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise RuntimeError("reinvestment income summary returned no row")
+            data = cast(dict[str, Any], row)
+            return ReinvestmentIncomeSummary(
+                mandate_id=mandate_id,
+                observed_count=int(data["observed_count"]),
+                observed_rub=Decimal(data["observed_rub"]),
+                dividends_rub=Decimal(data["dividends_rub"]),
+                coupons_rub=Decimal(data["coupons_rub"]),
+                verified_rub=Decimal(data["verified_rub"]),
+                last_credit_at=cast(datetime | None, data["last_credit_at"]),
+            )
+
     def save_history_page(
         self,
         user_id: UUID,
@@ -2308,6 +2758,27 @@ def _proposal_record(row: dict[str, Any]) -> PortfolioProposalRecord:
         decision_user_reason=str(row.get("decision_user_reason") or ""),
         deferred_until=cast(datetime | None, row.get("deferred_until")),
         decided_at=cast(datetime | None, row.get("decided_at")),
+    )
+
+
+def _reinvestment_mandate(row: dict[str, Any]) -> ReinvestmentMandateRecord:
+    return ReinvestmentMandateRecord(
+        id=cast(UUID, row["id"]),
+        user_id=cast(UUID, row["user_id"]),
+        account_id=str(row["account_id"]),
+        version=int(row["version"]),
+        profile_version=int(row["profile_version"]),
+        policy_version=int(row["policy_version"]),
+        allow_dividends=bool(row["allow_dividends"]),
+        allow_coupons=bool(row["allow_coupons"]),
+        cash_reserve_rub=Decimal(row["cash_reserve_rub"]),
+        max_order_notional_rub=Decimal(row["max_order_notional_rub"]),
+        max_daily_notional_rub=Decimal(row["max_daily_notional_rub"]),
+        max_monthly_notional_rub=Decimal(row["max_monthly_notional_rub"]),
+        max_slippage_bps=int(row["max_slippage_bps"]),
+        created_at=cast(datetime, row["created_at"]),
+        expires_at=cast(datetime, row["expires_at"]),
+        revoked_at=cast(datetime | None, row.get("revoked_at")),
     )
 
 
