@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import ANY, patch
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
