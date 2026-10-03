@@ -1506,11 +1506,12 @@
 
     clean.forEach((candle, index) => {
       const x = padX + step * (index + 0.5);
-      const direction = candle.closeValue > candle.openValue
-        ? "market-candle-up"
-        : candle.closeValue < candle.openValue
-          ? "market-candle-down"
-          : "market-candle-flat";
+      let direction = "market-candle-flat";
+      if (candle.closeValue > candle.openValue) {
+        direction = "market-candle-up";
+      } else if (candle.closeValue < candle.openValue) {
+        direction = "market-candle-down";
+      }
       const incomplete = candle.is_complete === false ? " market-candle-incomplete" : "";
       svg.append(chartNode("line", {
         x1: x,
@@ -1668,15 +1669,41 @@
     if (!(bounds.width > 0)) {
       return;
     }
-    const ratio = Math.max(0, Math.min(0.999999, (event.clientX - bounds.left) / bounds.width));
-    const index = Math.min(candles.length - 1, Math.floor(ratio * candles.length));
-    const candle = candles[index];
+    const pointerRatio = Math.max(
+      0,
+      Math.min(1, (event.clientX - bounds.left) / bounds.width),
+    );
     const viewBox = String(instrumentMarketChart.getAttribute("viewBox") || "0 0 900 320")
       .split(/\s+/u)
       .map(Number);
     const width = Number.isFinite(viewBox[2]) ? viewBox[2] : 900;
     const height = Number.isFinite(viewBox[3]) ? viewBox[3] : 320;
-    const x = ratio * width;
+
+    let candle = candles[0];
+    let x = pointerRatio * width;
+    if (instrumentMarketMode === "candles") {
+      const padX = 30;
+      const plotWidth = width - padX * 2;
+      const plotRatio = Math.max(0, Math.min(0.999999, (x - padX) / plotWidth));
+      const index = Math.min(candles.length - 1, Math.floor(plotRatio * candles.length));
+      candle = candles[index];
+      x = padX + (plotWidth / candles.length) * (index + 0.5);
+    } else {
+      const padX = 24;
+      const plotWidth = width - padX * 2;
+      const minTime = candles[0].timestamp;
+      const maxTime = candles[candles.length - 1].timestamp;
+      const timeSpan = Math.max(maxTime - minTime, 1);
+      const plotRatio = Math.max(0, Math.min(1, (x - padX) / plotWidth));
+      const targetTime = minTime + plotRatio * timeSpan;
+      candle = candles.reduce((nearest, candidate) => (
+        Math.abs(candidate.timestamp - targetTime) < Math.abs(nearest.timestamp - targetTime)
+          ? candidate
+          : nearest
+      ), candles[0]);
+      x = padX + ((candle.timestamp - minTime) / timeSpan) * plotWidth;
+    }
+
     removeInstrumentMarketCrosshair();
     instrumentMarketChart.append(chartNode("line", {
       x1: x,
@@ -1744,17 +1771,12 @@
       offline: "Автоматические запросы к T-Invest остановлены после нескольких ошибок. Нажмите «Повторить» для новой попытки.",
       invalid: "Идентификатор инструмента не принят поставщиком.",
     };
-    setStateBadge(
-      instrumentMarketState,
-      state === "reconnect"
-        ? "Нужен токен"
-        : state === "disconnected"
-          ? "Нет подключения"
-          : state === "offline"
-            ? "Поток остановлен"
-            : "Degraded",
-      "state-next",
-    );
+    const badgeText = {
+      reconnect: "Нужен токен",
+      disconnected: "Нет подключения",
+      offline: "Поток остановлен",
+    }[state] || "Degraded";
+    setStateBadge(instrumentMarketState, badgeText, "state-next");
     instrumentMarketNote.textContent = messages[state] || messages.unavailable;
     if (state !== "unavailable") {
       instrumentMarketRetry.classList.remove("hidden");
