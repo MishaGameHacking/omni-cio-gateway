@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS portfolio_live_execution_mandates (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS portfolio_live_execution_mandates_active_idx
-    ON portfolio_live_execution_mandates (user_id, account_id)
+    ON portfolio_live_execution_mandates (user_id)
     WHERE revoked_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS portfolio_live_execution_mandates_user_created_idx
@@ -94,6 +94,10 @@ FOR EACH ROW
 EXECUTE FUNCTION omnicio_reject_execution_delete();
 
 ALTER TABLE portfolio_execution_runs
+    ADD COLUMN IF NOT EXISTS live_mandate_id uuid
+        REFERENCES portfolio_live_execution_mandates(id) ON DELETE CASCADE;
+
+ALTER TABLE portfolio_execution_runs
     DROP CONSTRAINT IF EXISTS portfolio_execution_runs_mode_check,
     DROP CONSTRAINT IF EXISTS portfolio_execution_runs_provider_environment_check,
     DROP CONSTRAINT IF EXISTS portfolio_execution_runs_mode_environment;
@@ -110,14 +114,17 @@ ALTER TABLE portfolio_execution_runs
         (
             mode = 'shadow'
             AND provider_environment IS NULL
+            AND live_mandate_id IS NULL
         )
         OR (
             mode = 'sandbox'
             AND provider_environment = 'sandbox'
+            AND live_mandate_id IS NULL
         )
         OR (
             mode = 'live'
             AND provider_environment = 'prod'
+            AND live_mandate_id IS NOT NULL
         )
     );
 
@@ -140,6 +147,7 @@ BEGIN
         NEW.account_id,
         NEW.mode,
         NEW.provider_environment,
+        NEW.live_mandate_id,
         NEW.created_session_digest
     ) IS DISTINCT FROM (
         OLD.user_id,
@@ -150,6 +158,7 @@ BEGIN
         OLD.account_id,
         OLD.mode,
         OLD.provider_environment,
+        OLD.live_mandate_id,
         OLD.created_session_digest
     ) THEN
         RAISE EXCEPTION 'execution source fields are immutable';
@@ -201,7 +210,8 @@ BEGIN
        AND NOT EXISTS (
            SELECT 1
            FROM portfolio_live_execution_mandates AS m
-           WHERE m.user_id = NEW.user_id
+           WHERE m.id = NEW.live_mandate_id
+             AND m.user_id = NEW.user_id
              AND m.account_id = NEW.account_id
              AND m.revoked_at IS NULL
              AND m.expires_at > now()
