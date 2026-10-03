@@ -177,6 +177,12 @@ class ExecutionStore:
             or max_daily_notional_rub < max_order_notional_rub
         ):
             raise ValueError("live mandate notional caps are invalid")
+        kopeck = Decimal("0.01")
+        if (
+            max_order_notional_rub.quantize(kopeck) != max_order_notional_rub
+            or max_daily_notional_rub.quantize(kopeck) != max_daily_notional_rub
+        ):
+            raise ValueError("live mandate caps require kopeck precision")
         if expires_at.tzinfo is None:
             raise ValueError("live mandate expiry must be timezone-aware")
         expiry = expires_at.astimezone(UTC)
