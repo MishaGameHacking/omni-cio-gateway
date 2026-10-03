@@ -854,10 +854,13 @@ class PortfolioStore:
                         ticker,
                         instrument_type,
                         quantity,
+                        quantity_lots,
                         current_price_value,
                         current_price_currency,
                         current_nkd_value,
                         current_nkd_currency,
+                        average_price_fifo_value,
+                        average_price_fifo_currency,
                         blocked,
                         blocked_lots,
                         value_rub,
@@ -868,7 +871,8 @@ class PortfolioStore:
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s
                     )
                     """,
                     (
@@ -879,10 +883,17 @@ class PortfolioStore:
                         position.ticker,
                         position.instrument_type,
                         Decimal(position.quantity),
+                        Decimal(position.quantity_lots),
                         _money_decimal(position.current_price),
                         position.current_price.currency if position.current_price else None,
                         _money_decimal(position.current_nkd),
                         position.current_nkd.currency if position.current_nkd else None,
+                        _money_decimal(position.average_price_fifo),
+                        (
+                            position.average_price_fifo.currency
+                            if position.average_price_fifo
+                            else None
+                        ),
                         position.blocked,
                         Decimal(position.blocked_lots),
                         (
