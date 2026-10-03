@@ -588,6 +588,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("button.dataset.executionAccountId", script)
         self.assertIn("Отправить следующую Sandbox limit-заявку", script)
         self.assertEqual(script.count('executionRefresh.addEventListener("click"'), 1)
+        self.assertEqual(script.count('executionHistory.addEventListener("click"'), 1)
         self.assertIn("Live execution остаётся выключен", script)
         self.assertIn("R6 Sandbox токен должен разрешать тестовые методы песочницы", page)
         self.assertIn('@app.get("/api/portfolio/executions")', backend)
