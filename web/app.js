@@ -2075,15 +2075,50 @@
     EXECUTION_STATUS_LABELS[value] || String(value || "—")
   );
 
+  const EXECUTION_MODE_LABELS = {
+    shadow: "Shadow",
+    sandbox: "Sandbox",
+    live: "Live canary",
+  };
+
   const executionModeLabel = (value) => (
-    value === "shadow"
-      ? "Shadow"
-      : value === "sandbox"
-        ? "Sandbox"
-        : value === "live"
-          ? "Live canary"
-          : String(value || "—")
+    EXECUTION_MODE_LABELS[value] || String(value || "—")
   );
+
+  const executionAdvanceLabel = (run) => {
+    if (run.mode === "live") {
+      return run.status === "created"
+        ? "Отправить реальную limit-заявку"
+        : "Сверить Live по request ID";
+    }
+    return run.status === "created"
+      ? "Отправить следующую Sandbox limit-заявку"
+      : "Сверить Sandbox";
+  };
+
+  const executionStartSuccessMessage = (mode) => {
+    if (mode === "shadow") {
+      return "Shadow-репетиция записана. Broker mutation не выполнялась.";
+    }
+    if (mode === "sandbox") {
+      return "Sandbox state machine запущена. Production-заявка не создавалась.";
+    }
+    return (
+      "Live-canary run создан. Реальная заявка ещё не отправлена: "
+      + "проверьте детали и нажмите отдельную кнопку отправки."
+    );
+  };
+
+  const executionMutationSuccessMessage = (mode, action) => {
+    if (mode === "live") {
+      return action === "cancel"
+        ? "Live cancel/reconciliation записан в immutable журнал."
+        : "Live состояние сверено по сохранённому request ID.";
+    }
+    return action === "cancel"
+      ? "Sandbox cancel/reconciliation записан в immutable журнал."
+      : "Состояние Sandbox сверено по сохранённому request ID.";
+  };
 
   const terminalExecutionStatus = (value) => (
     ["succeeded", "cancelled", "failed"].includes(value)
@@ -2354,21 +2389,22 @@
           : "Sandbox требует тот же exact account_id, из которого построен R5 proposal.";
         return;
       }
-      if (mode === "live") {
-        element.classList.toggle("hidden", !liveOperatorEnabled);
-        const ready = (
-          liveOperatorEnabled
-          && liveConnected
-          && activeMandateId !== ""
-          && activeMandateAccount === connectedAccountId
-          && proposalAccountId === connectedAccountId
-          && scenarioKind === "deploy_cash"
-        );
-        element.disabled = !ready;
-        element.title = ready
-          ? "Создать live-run. Реальная заявка появится только после отдельного действия «Отправить»."
-          : "Live требует active mandate, exact production account и deploy_cash canary.";
+      if (mode !== "live") {
+        return;
       }
+      element.classList.toggle("hidden", !liveOperatorEnabled);
+      const ready = (
+        liveOperatorEnabled
+        && liveConnected
+        && activeMandateId !== ""
+        && activeMandateAccount === connectedAccountId
+        && proposalAccountId === connectedAccountId
+        && scenarioKind === "deploy_cash"
+      );
+      element.disabled = !ready;
+      element.title = ready
+        ? "Создать live-run. Реальная заявка появится только после отдельного действия «Отправить»."
+        : "Live требует active mandate, exact production account и deploy_cash canary.";
     });
 
     executionHistory.querySelectorAll("button[data-execution-action]").forEach((element) => {
@@ -2376,9 +2412,7 @@
         return;
       }
       const mode = element.dataset.executionMode || "";
-      const runStatus = element.dataset.executionStatus || "";
       const executionAccountId = element.dataset.executionAccountId || "";
-      const runMandateId = element.dataset.executionMandateId || "";
       if (mode === "sandbox") {
         const accountMatches = (
           sandboxConnected
@@ -2391,32 +2425,34 @@
           : "Для управления run подключите тот же exact Sandbox-счёт.";
         return;
       }
-      if (mode === "live") {
-        const accountMatches = (
-          liveConnected
-          && connectedAccountId !== ""
-          && executionAccountId === connectedAccountId
-        );
-        const action = element.dataset.executionAction || "";
-        const needsSubmissionAuthority = (
-          action === "advance"
-          && runStatus === "created"
-        );
-        const submissionAuthorityReady = (
-          liveOperatorEnabled
-          && activeMandateId !== ""
-          && runMandateId === activeMandateId
-        );
-        element.disabled = (
-          !accountMatches
-          || (needsSubmissionAuthority && !submissionAuthorityReady)
-        );
-        element.title = !accountMatches
-          ? "Для recovery подключите тот же exact production-счёт."
-          : needsSubmissionAuthority && !submissionAuthorityReady
-            ? "Kill switch/expiry блокирует отправку. Pending run можно безопасно завершить кнопкой «Отменить Live»."
-            : "";
+      if (mode !== "live") {
+        return;
       }
+
+      const accountMatches = (
+        liveConnected
+        && connectedAccountId !== ""
+        && executionAccountId === connectedAccountId
+      );
+      if (!accountMatches) {
+        element.disabled = true;
+        element.title = "Для recovery подключите тот же exact production-счёт.";
+        return;
+      }
+
+      const needsSubmissionAuthority = (
+        element.dataset.executionAction === "advance"
+        && element.dataset.executionStatus === "created"
+      );
+      const submissionAuthorityReady = (
+        liveOperatorEnabled
+        && activeMandateId !== ""
+        && element.dataset.executionMandateId === activeMandateId
+      );
+      element.disabled = needsSubmissionAuthority && !submissionAuthorityReady;
+      element.title = element.disabled
+        ? "Kill switch/expiry блокирует отправку. Pending run можно безопасно завершить кнопкой «Отменить Live»."
+        : "";
     });
   };
 
@@ -2786,13 +2822,7 @@
         const advance = document.createElement("button");
         advance.type = "button";
         advance.className = "button button-primary";
-        advance.textContent = run.mode === "live"
-          ? run.status === "created"
-            ? "Отправить реальную limit-заявку"
-            : "Сверить Live по request ID"
-          : run.status === "created"
-            ? "Отправить следующую Sandbox limit-заявку"
-            : "Сверить Sandbox";
+        advance.textContent = executionAdvanceLabel(run);
         advance.dataset.executionAction = "advance";
         advance.dataset.executionId = String(run.id || "");
         advance.dataset.executionAccountId = String(run.account_id || "");
@@ -2859,11 +2889,7 @@
       ) ? result.executions : [];
       renderExecutions(runs);
       const latestRun = runs[0];
-      const latestRunId = (
-        latestRun !== null
-        && typeof latestRun === "object"
-        && typeof latestRun.id === "string"
-      ) ? latestRun.id : "";
+      const latestRunId = typeof latestRun?.id === "string" ? latestRun.id : "";
       if (inspectLatest && latestRunId) {
         await loadExecutionDetails(latestRunId);
       }
@@ -2928,8 +2954,7 @@
         || connectedTbankEnvironment !== "prod"
         || !connectedAccountId
         || proposalAccountId !== connectedAccountId
-        || !liveMandate
-        || liveMandate.account_id !== connectedAccountId
+        || liveMandate?.account_id !== connectedAccountId
       )
     ) {
       showMessage(
@@ -2961,25 +2986,14 @@
           mode,
         }),
       });
-      const runId = (
-        result !== null
-        && typeof result === "object"
-        && result.execution !== null
-        && typeof result.execution === "object"
-        && typeof result.execution.id === "string"
-      ) ? result.execution.id : "";
-      if (!runId) {
-        throw new Error("execution response is missing run id");
+      const runId = typeof result?.execution?.id === "string"
+        ? result.execution.id
+        : "";
+      if (!UUID_PATTERN.test(runId)) {
+        throw new TypeError("execution response is missing a valid run id");
       }
 
-      showMessage(
-        executionMessage,
-        mode === "shadow"
-          ? "Shadow-репетиция записана. Broker mutation не выполнялась."
-          : mode === "sandbox"
-            ? "Sandbox state machine запущена. Production-заявка не создавалась."
-            : "Live-canary run создан. Реальная заявка ещё не отправлена: проверьте детали и нажмите отдельную кнопку отправки.",
-      );
+      showMessage(executionMessage, executionStartSuccessMessage(mode));
       await loadExecutions();
       await loadExecutionDetails(runId);
     } catch (error) {
@@ -3010,7 +3024,12 @@
     }
     const runId = button.dataset.executionId || "";
     const action = button.dataset.executionAction || "";
-    if (!runId || !["advance", "cancel"].includes(action)) {
+    const mode = button.dataset.executionMode || "";
+    if (
+      !UUID_PATTERN.test(runId)
+      || !["advance", "cancel"].includes(action)
+      || !["sandbox", "live"].includes(mode)
+    ) {
       showMessage(
         executionMessage,
         "Действие запуска повреждено. Обновите журнал перед повтором.",
@@ -3027,12 +3046,7 @@
         method: "POST",
         body: JSON.stringify({}),
       });
-      showMessage(
-        executionMessage,
-        action === "cancel"
-          ? "Sandbox cancel/reconciliation записан в immutable журнал."
-          : "Состояние Sandbox сверено по сохранённому request ID.",
-      );
+      showMessage(executionMessage, executionMutationSuccessMessage(mode, action));
       await loadExecutions();
       await loadExecutionDetails(runId);
     } catch (error) {
