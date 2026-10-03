@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 from psycopg.errors import UniqueViolation
 
-from .db import Database
+from .db import Database, live_execution_lock_key
 from .execution import (
     ExecutionLegStatus,
     ExecutionMode,
@@ -504,15 +504,15 @@ class ExecutionStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            if mode == "live":
+                cur.execute(
+                    _ADVISORY_XACT_LOCK_SQL,
+                    (live_execution_lock_key(user_id),),
+                )
             cur.execute(
                 _ADVISORY_XACT_LOCK_SQL,
                 (f"portfolio-execution:{user_id}:{proposal_id}:{mode}",),
             )
-            if mode == "live":
-                cur.execute(
-                    _ADVISORY_XACT_LOCK_SQL,
-                    (f"portfolio-live-execution:{user_id}:{plan.account_id}",),
-                )
 
             existing = self._existing_run(
                 cur,
