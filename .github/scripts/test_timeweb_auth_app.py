@@ -847,6 +847,33 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn('"purpose": "maskable"', manifest)
 
+    def test_web_design_foundation_has_semantic_states_and_safe_controls(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
+
+        for token in (
+            "--surface-sunken:",
+            "--surface-raised:",
+            "--shadow-card:",
+            "--topbar-bg:",
+        ):
+            self.assertIn(token, stylesheet)
+
+        self.assertIn('body[data-theme="light"]', stylesheet)
+        self.assertIn('body[data-theme="dark"]', stylesheet)
+        self.assertIn(".state-badge::before", stylesheet)
+        self.assertIn(".state-ok::before", stylesheet)
+        self.assertIn(".state-next::before", stylesheet)
+        self.assertIn(".state-error::before", stylesheet)
+        self.assertIn('input[type="number"]', stylesheet)
+        self.assertIn('input[type="search"]', stylesheet)
+        self.assertIn("textarea:focus-visible", stylesheet)
+        self.assertIn("@media (max-width: 420px)", stylesheet)
+        self.assertIn("@media (prefers-contrast: more)", stylesheet)
+        self.assertIn("scrollbar-gutter: stable", stylesheet)
+        self.assertIn(".proposal-decision-actions .button", stylesheet)
+        self.assertIn(".segmented-control button", stylesheet)
+
     def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
@@ -992,7 +1019,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.14.4"', project)
+        self.assertIn('version = "0.15.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
