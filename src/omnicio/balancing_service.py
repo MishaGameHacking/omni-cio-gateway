@@ -1343,7 +1343,7 @@ def _apply_trade_to_position_state(
     if trade.action == "sell":
         if existing is None:
             return
-        lots = max(0, int(existing["lots"]) - trade.lots)
+        lots = max(0, _integer(existing["lots"]) - trade.lots)
         value = max(
             Decimal("0"),
             cast(Decimal, existing["value_rub"]) - trade.notional_rub,
@@ -1371,7 +1371,7 @@ def _apply_trade_to_position_state(
             "value_rub": trade.notional_rub,
         }
         return
-    existing["lots"] = int(existing["lots"]) + trade.lots
+    existing["lots"] = _integer(existing["lots"]) + trade.lots
     existing["value_rub"] = (
         cast(Decimal, existing["value_rub"]) + trade.notional_rub
     )
