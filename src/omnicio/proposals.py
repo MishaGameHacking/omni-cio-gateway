@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Literal, cast
 from uuid import UUID
 
 from .portfolio_store import (
