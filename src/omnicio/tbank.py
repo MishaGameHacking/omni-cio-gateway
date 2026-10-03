@@ -89,6 +89,22 @@ class TBankMoney:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankLastPrice:
+    instrument_uid: str
+    price: str
+    time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TBankAccruedInterest:
+    instrument_uid: str
+    date: datetime
+    value: str
+    value_percent: str
+    nominal: str
+
+
+@dataclass(frozen=True, slots=True)
 class TBankAssetTotal:
     kind: str
     money: TBankMoney
@@ -131,6 +147,13 @@ class TBankInstrumentMetadata:
     buy_available: bool | None = None
     sell_available: bool | None = None
     required_tests: tuple[str, ...] = ()
+    nominal: TBankMoney | None = None
+    maturity_date: datetime | None = None
+    floating_coupon: bool | None = None
+    perpetual: bool | None = None
+    amortization: bool | None = None
+    subordinated: bool | None = None
+    liquidity: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,6 +358,101 @@ class TBankInvestClient:
                     buy_available=_optional_bool(item, "buyAvailableFlag"),
                     sell_available=_optional_bool(item, "sellAvailableFlag"),
                     required_tests=required_tests,
+                    nominal=_money(item.get("nominal")),
+                    maturity_date=_optional_provider_timestamp(item.get("maturityDate")),
+                    floating_coupon=_optional_bool(item, "floatingCouponFlag"),
+                    perpetual=_optional_bool(item, "perpetualFlag"),
+                    amortization=_optional_bool(item, "amortizationFlag"),
+                    subordinated=_optional_bool(item, "subordinatedFlag"),
+                    liquidity=_optional_bool(item, "liquidityFlag"),
+                )
+            )
+        return tuple(result)
+
+    def get_last_prices(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankLastPrice, ...]:
+        clean = tuple(
+            dict.fromkeys(
+                _validate_provider_id(value, "instrument uid")
+                for value in instrument_uids
+            )
+        )
+        if not clean:
+            return ()
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetLastPrices",
+            body={
+                "instrumentId": list(clean),
+                "lastPriceType": "LAST_PRICE_EXCHANGE",
+                "instrumentStatus": "INSTRUMENT_STATUS_BASE",
+            },
+        )
+        requested = set(clean)
+        seen: set[str] = set()
+        result: list[TBankLastPrice] = []
+        for raw in _required_list(payload, "lastPrices"):
+            item = _required_object(raw, "last price")
+            uid = _text(item.get("instrumentUid")).strip()
+            if not uid or uid not in requested or uid in seen:
+                raise TBankUnavailable("T-Invest last prices returned invalid instrument uid")
+            seen.add(uid)
+            price = _quotation(item.get("price"))
+            quote_time = _optional_provider_timestamp(item.get("time"))
+            if price is None or Decimal(price) <= 0 or quote_time is None:
+                raise TBankUnavailable("T-Invest last price is missing required fields")
+            result.append(
+                TBankLastPrice(
+                    instrument_uid=uid,
+                    price=price,
+                    time=quote_time,
+                )
+            )
+        return tuple(result)
+
+    def get_accrued_interests(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankAccruedInterest, ...]:
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method="GetAccruedInterests",
+            body=_instrument_window_body(instrument_uid, from_at, to_at),
+        )
+        result: list[TBankAccruedInterest] = []
+        for raw in _required_list(payload, "accruedInterests"):
+            item = _required_object(raw, "accrued interest")
+            date = _optional_provider_timestamp(item.get("date"))
+            value = _quotation(item.get("value"))
+            value_percent = _quotation(item.get("valuePercent"))
+            nominal = _quotation(item.get("nominal"))
+            if (
+                date is None
+                or value is None
+                or value_percent is None
+                or nominal is None
+            ):
+                raise TBankUnavailable("T-Invest accrued interest is missing required fields")
+            result.append(
+                TBankAccruedInterest(
+                    instrument_uid=instrument_uid,
+                    date=date,
+                    value=value,
+                    value_percent=value_percent,
+                    nominal=nominal,
                 )
             )
         return tuple(result)
