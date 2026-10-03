@@ -52,7 +52,7 @@ def _candidate(
     sector: str = "technology",
     issuer: str | None = None,
     group: str | None = None,
-    rating: str = "bbb",
+    rating: str = "not_applicable",
     lot_cost: str = "5000",
     expected_gain: str = "700",
     fee: str = "10",
@@ -61,7 +61,7 @@ def _candidate(
     credit_loss: str = "20",
     liquidity_penalty: str = "10",
     liquidity_days: int = 2,
-    term_months: int = 60,
+    term_months: int = 0,
     ytw: Decimal | None = None,
     duration: Decimal | None = None,
     evidence_complete: bool = True,
@@ -69,6 +69,8 @@ def _candidate(
     if asset_class == "bond":
         ytw = ytw if ytw is not None else Decimal("12")
         duration = duration if duration is not None else Decimal("2.5")
+        if term_months == 0:
+            term_months = 60
     return Candidate(
         instrument_uid=uid,
         ticker=uid.upper(),
@@ -121,7 +123,7 @@ def _holding(
         sector=sector,
         issuer_id=f"issuer-{uid}",
         group_id=f"group-{uid}",
-        rating_bucket="bbb",
+        rating_bucket="not_applicable",
         currency="RUB",
         risk_state=risk_state,  # type: ignore[arg-type]
         lots=2,
@@ -313,7 +315,7 @@ def test_turnover_budget_blocks_replace_even_when_candidate_is_better() -> None:
         cash_rub=Decimal("10000"),
         holdings=(holding,),
         candidates=(candidate,),
-        policy=_policy(turnover_budget_rub=Decimal("25000")),
+        policy=_policy(turnover_budget_rub=Decimal("24999")),
     )
 
     replacement = preview.replacements[0]
