@@ -5,7 +5,7 @@ import json
 import ssl
 import urllib.error
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 from uuid import UUID
 
@@ -19,6 +19,7 @@ from omnicio.tbank import (
     TBankAccruedInterest,
     TBankAssetTotal,
     TBankFxQuote,
+    TBankHistoricCandle,
     TBankInstrument,
     TBankInstrumentMetadata,
     TBankInvestClient,
@@ -760,6 +761,80 @@ def test_bond_metadata_preserves_structure_required_for_r4_screening() -> None:
     assert item.subordinated is True
     assert item.liquidity is True
     assert item.required_tests == ("test_bonds_risk",)
+
+
+def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> None:
+    client = TBankInvestClient()
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    response = FakeResponse(
+        {
+            "candles": [
+                {
+                    "close": {"units": "99", "nano": 500000000},
+                    "volume": "42",
+                    "time": "2026-10-02T00:00:00Z",
+                    "isComplete": True,
+                    "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_daily_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            from_at=now - timedelta(days=30),
+            to_at=now,
+        )
+
+    assert result == (
+        TBankHistoricCandle(
+            instrument_uid="bond-uid",
+            close="99.5",
+            volume_lots=42,
+            time=datetime(2026, 10, 2, 0, 0, tzinfo=UTC),
+            is_complete=True,
+            source="CANDLE_SOURCE_EXCHANGE",
+        ),
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("MarketDataService/GetCandles")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": "bond-uid",
+        "from": "2026-09-03T05:00:00Z",
+        "to": "2026-10-03T05:00:00Z",
+        "interval": "CANDLE_INTERVAL_DAY",
+        "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+    }
+
+
+def test_tbank_daily_candles_reject_non_exchange_response() -> None:
+    client = TBankInvestClient()
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    response = FakeResponse(
+        {
+            "candles": [
+                {
+                    "close": {"units": "100", "nano": 0},
+                    "volume": "1",
+                    "time": "2026-10-02T00:00:00Z",
+                    "isComplete": True,
+                    "candleSourceType": "CANDLE_SOURCE_DEALER_WEEKEND",
+                }
+            ]
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response):
+        with pytest.raises(TBankUnavailable, match="exchange-sourced"):
+            client.get_daily_exchange_candles(
+                "t.fake-owner-credential-1234567890",
+                "prod",
+                "bond-uid",
+                from_at=now - timedelta(days=30),
+                to_at=now,
+            )
 
 
 def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
