@@ -10,6 +10,7 @@ from uuid import UUID
 
 from .broker import BrokerService
 from .cbr import CBRClient, CBRRate, CBRUnavailable
+from .tbank import TBankLastPrice, TBankTradingStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,16 +268,12 @@ def _instrument_live_state(
     instrument_uid: str,
     *,
     observed: datetime,
-    last_price: object,
-    trading: object,
+    last_price: TBankLastPrice | None,
+    trading: TBankTradingStatus,
     live_after_seconds: int,
 ) -> InstrumentLiveState:
-    from .tbank import TBankLastPrice, TBankTradingStatus
-
-    price = last_price if isinstance(last_price, TBankLastPrice) else None
-    status = trading if isinstance(trading, TBankTradingStatus) else None
-    if status is None:
-        raise ValueError("market trading status unavailable")
+    price = last_price
+    status = trading
 
     quote_time: datetime | None = None
     age_seconds: int | None = None
