@@ -170,6 +170,12 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("max-parallel: 4", workflow)
+        self.assertIn("Full tests (includes security)", workflow)
+        self.assertIn(
+            'command: \'"%OMNICIO_PYTHON%" -m pytest\'',
+            workflow,
+        )
+        self.assertNotIn("name: Security tests", workflow)
         self.assertIn(
             "github.event_name == 'push' && github.ref == 'refs/heads/main'",
             workflow,
