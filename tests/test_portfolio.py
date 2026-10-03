@@ -14,6 +14,7 @@ from omnicio.db import ActiveLiveExecutionError
 from omnicio.execution_service import ExecutionServiceError
 from omnicio.execution_store import ExecutionLedgerError
 from omnicio.main import app
+from omnicio.market import InstrumentMarketCandle, InstrumentMarketSnapshot
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
 from omnicio.portfolio_store import (
     BalancingPolicyRecord,
@@ -209,6 +210,67 @@ def test_duplicate_identity_is_rejected_instead_of_double_counted() -> None:
     item = position("duplicate", "1", "100")
     with pytest.raises(PortfolioAnalysisError):
         analyze_portfolio(portfolio(item, item), cash(), ())
+
+
+def test_instrument_market_http_is_private_and_uses_session_tenant() -> None:
+    now = datetime.now(UTC)
+    snapshot = InstrumentMarketSnapshot(
+        instrument_uid="uid-1",
+        period="1m",
+        interval="CANDLE_INTERVAL_4_HOUR",
+        source="T-Invest exchange candles",
+        observed_at=now.isoformat(),
+        last_price="101.5",
+        quote_time=now.isoformat(),
+        quote_age_seconds=0,
+        quote_status="live",
+        trading_status="SECURITY_TRADING_STATUS_NORMAL_TRADING",
+        api_trade_available=True,
+        limit_order_available=True,
+        market_order_available=False,
+        candles=(
+            InstrumentMarketCandle(
+                time=(now - timedelta(hours=4)).isoformat(),
+                open="100",
+                high="102",
+                low="99",
+                close="101",
+                volume_lots=10,
+                is_complete=True,
+            ),
+        ),
+    )
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.market_service") as market,
+    ):
+        user.return_value.id = "server-user"
+        market.return_value.instrument_snapshot.return_value = snapshot
+        response = TestClient(app).get(
+            "/api/market/instruments/uid-1?period=1m&user_id=attacker",
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    body = response.json()
+    assert body["instrument_uid"] == "uid-1"
+    assert body["candles"][0]["close"] == "101"
+    market.return_value.instrument_snapshot.assert_called_once_with(
+        "server-user",
+        "uid-1",
+        period="1m",
+    )
+
+
+def test_instrument_market_http_rejects_unsupported_period() -> None:
+    with patch("omnicio.main.authenticated_user") as user:
+        user.return_value.id = "server-user"
+        response = TestClient(app).get(
+            "/api/market/instruments/uid-1?period=all",
+        )
+
+    assert response.status_code == 422
 
 
 def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
