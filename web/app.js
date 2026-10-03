@@ -39,6 +39,8 @@
   const balanceMaxUnknown = document.querySelector("#balance-max-unknown");
   const balanceMaxTerm = document.querySelector("#balance-max-term");
   const balanceTurnoverBudget = document.querySelector("#balance-turnover-budget");
+  const balanceDailyParticipation = document.querySelector("#balance-daily-participation");
+  const balanceTaxRate = document.querySelector("#balance-tax-rate");
   const balanceNoTradeBand = document.querySelector("#balance-no-trade-band");
   const balanceMinReplaceBenefit = document.querySelector("#balance-min-replace-benefit");
 
@@ -1916,6 +1918,10 @@
     balanceMaxUnknown.value = String(policy.max_unknown_percent);
     balanceMaxTerm.value = String(policy.max_term_months);
     balanceTurnoverBudget.value = String(policy.turnover_budget_percent);
+    balanceDailyParticipation.value = String(
+      policy.max_daily_turnover_participation_percent
+    );
+    balanceTaxRate.value = String(policy.securities_tax_rate_percent);
     balanceNoTradeBand.value = String(policy.no_trade_band_percent);
     balanceMinReplaceBenefit.value = String(policy.min_replace_benefit_rub);
   };
@@ -2353,6 +2359,8 @@
           max_unknown_percent: balanceMaxUnknown.value,
           max_term_months: Number(balanceMaxTerm.value),
           turnover_budget_percent: balanceTurnoverBudget.value,
+          max_daily_turnover_participation_percent: balanceDailyParticipation.value,
+          securities_tax_rate_percent: balanceTaxRate.value,
           no_trade_band_percent: balanceNoTradeBand.value,
           min_replace_benefit_rub: balanceMinReplaceBenefit.value,
         }),
