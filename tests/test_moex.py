@@ -302,7 +302,7 @@ def test_bond_snapshot_rejects_mismatched_security() -> None:
         MoexIssClient().bond_snapshot("RU000A000001", "TQCB")
 
 
-@pytest.mark.parametrize("value", ["", "bad/value", " "])
+@pytest.mark.parametrize("value", ["", ".", "..", "bad/value", " "])
 def test_iss_identifiers_are_validated_before_network(value: str) -> None:
     with (
         patch("http.client.HTTPSConnection") as client,
