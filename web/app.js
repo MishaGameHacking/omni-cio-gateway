@@ -4690,6 +4690,33 @@
     return button instanceof HTMLButtonElement ? button : null;
   };
 
+  allocationViewButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.allocationView;
+      if (!["class", "currency", "sector", "position"].includes(view)) {
+        return;
+      }
+      selectedAllocationView = view;
+      renderPortfolioAllocationView();
+    });
+  });
+
+  positionsList.addEventListener("click", (event) => {
+    const button = closestButtonTarget(event, "[data-instrument-detail]");
+    if (button && button.dataset.instrumentDetail) {
+      void openInstrumentDetail(button.dataset.instrumentDetail);
+    }
+  });
+
+  positionsTableBody.addEventListener("click", (event) => {
+    const button = closestButtonTarget(event, "[data-instrument-detail]");
+    if (button && button.dataset.instrumentDetail) {
+      void openInstrumentDetail(button.dataset.instrumentDetail);
+    }
+  });
+
+  instrumentDetailClose.addEventListener("click", closeInstrumentDetail);
+
   homeAttentionList.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-home-attention-view]");
     const view = button?.dataset.homeAttentionView;
