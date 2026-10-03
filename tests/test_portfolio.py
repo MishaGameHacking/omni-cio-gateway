@@ -590,6 +590,7 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
     snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
     draft = ProposalDraft(
         source_snapshot_id=snapshot_id,
+        account_id="account-1",
         profile_version=3,
         policy_version=2,
         scenario_kind="deploy_cash",
@@ -604,6 +605,7 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
         user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=1,
         source_snapshot_id=snapshot_id,
+        account_id="account-1",
         profile_version=3,
         policy_version=2,
         scenario_kind="deploy_cash",
@@ -646,6 +648,7 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
                 "/api/portfolio/proposals",
                 json={"scenario_kind": "deploy_cash"},
                 headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "proposal-session-token"},
             )
 
         assert response.status_code == 201
@@ -658,10 +661,10 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
             "server-user",
         )
         store.return_value.create_proposal.assert_called_once()
-        assert (
-            store.return_value.create_proposal.call_args.args[0]
-            == "server-user"
-        )
+        call = store.return_value.create_proposal.call_args
+        assert call.args[0] == "server-user"
+        assert call.kwargs["account_id"] == "account-1"
+        assert len(call.kwargs["session_digest"]) == 32
     finally:
         if previous_database is None:
             delattr(app.state, "database")
@@ -678,6 +681,7 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
         user_id=UUID("00000000-0000-0000-0000-000000000901"),
         version=4,
         source_snapshot_id=snapshot_id,
+        account_id="account-1",
         profile_version=3,
         policy_version=2,
         scenario_kind="deploy_cash",
@@ -696,6 +700,8 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
         proposal_version=4,
         proposal_hash=b"y" * 32,
         reason="user_decision",
+        user_reason="",
+        deferred_until=None,
         acted_at=now + timedelta(minutes=1),
     )
     database = type(
@@ -724,6 +730,7 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
                     "proposal_hash": (b"y" * 32).hex(),
                 },
                 headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "decision-session-token"},
             )
 
         assert response.status_code == 200
@@ -736,6 +743,65 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
         assert call.kwargs["expected_version"] == 4
         assert call.kwargs["expected_hash"] == b"y" * 32
         assert call.kwargs["action"] == "confirmed"
+        assert len(call.kwargs["session_digest"]) == 32
+        assert call.kwargs["user_reason"] == ""
+        assert call.kwargs["deferred_until"] is None
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_proposal_reject_requires_reason_and_defer_requires_future_date() -> None:
+    proposal_id = "22222222-2222-2222-2222-222222222222"
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: True},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {"terms": "current"}
+            store.return_value.decide_proposal.side_effect = ValueError(
+                "proposal rejection reason is required"
+            )
+
+            rejected = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "reject",
+                    "proposal_version": 4,
+                    "proposal_hash": (b"y" * 32).hex(),
+                    "reason": "",
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "reject-session-token"},
+            )
+            assert rejected.status_code == 422
+
+            store.return_value.decide_proposal.side_effect = ValueError(
+                "proposal defer time must be in the future"
+            )
+            deferred = TestClient(app).post(
+                f"/api/portfolio/proposals/{proposal_id}/decision",
+                json={
+                    "action": "defer",
+                    "proposal_version": 4,
+                    "proposal_hash": (b"y" * 32).hex(),
+                    "deferred_until": "2020-01-01T00:00:00Z",
+                },
+                headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "defer-session-token"},
+            )
+            assert deferred.status_code == 422
     finally:
         if previous_database is None:
             delattr(app.state, "database")
@@ -772,6 +838,7 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
                     "proposal_hash": (b"y" * 32).hex(),
                 },
                 headers={"Origin": "https://omnicio.ru"},
+                cookies={"omnicio_session": "replay-session-token"},
             )
 
         assert response.status_code == 409
