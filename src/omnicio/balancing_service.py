@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
@@ -22,21 +24,24 @@ from .intelligence import (
     EVIDENCE_RETRIEVAL_MAX_AGE,
     assess_candidate_fundamental_risk,
 )
-from .moex import MoexError, MoexIssClient
 from .portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
 from .tbank import (
     TBankAssetFundamental,
+    TBankBondCoupon,
+    TBankBondEvent,
+    TBankHistoricCandle,
     TBankInstrumentMetadata,
     TBankLastPrice,
     TBankMoney,
+    TBankRating,
     TBankUnavailable,
 )
 
 LIVE_CANDIDATE_LIMIT = 4
 LIVE_REPLACEMENT_LIMIT = 4
 MARKET_QUOTE_MAX_AGE = timedelta(minutes=15)
-MOEX_LIQUIDITY_WINDOW_DAYS = 45
-MOEX_LIQUIDITY_MIN_OBSERVED_DAYS = 10
+TBANK_LIQUIDITY_WINDOW_DAYS = 45
+TBANK_LIQUIDITY_MIN_OBSERVED_DAYS = 10
 
 _RISK_STATES: set[str] = {
     "data_missing",
@@ -206,10 +211,9 @@ def build_live_balancing_payload(
     policy_record: BalancingPolicyRecord | None,
     context: dict[str, object] | None,
     broker: BrokerService,
-    moex: MoexIssClient,
     now: datetime | None = None,
 ) -> dict[str, object]:
-    """Enrich a bounded candidate set with read-only broker and MOEX evidence."""
+    """Enrich a bounded candidate set with read-only T-Invest evidence."""
     observed_at = (now or datetime.now(UTC)).astimezone(UTC)
     durable = build_balancing_payload(
         profile=profile,
@@ -341,14 +345,13 @@ def build_live_balancing_payload(
                 profile=profile,
                 policy_record=policy_record,
                 broker=broker,
-                moex=moex,
                 fundamental=fundamental_by_asset.get(
                     str(row.get("asset_uid") or "")
                 ),
                 last_price=price_by_uid.get(uid),
                 observed_at=observed_at,
             )
-        except (BrokerConnectionError, MoexError, TBankUnavailable, ValueError):
+        except (BrokerConnectionError, TBankUnavailable, ValueError):
             candidate = _candidate(
                 row,
                 context=context,
@@ -393,7 +396,6 @@ def build_live_balancing_payload(
                 row=row,
                 policy_record=policy_record,
                 broker=broker,
-                moex=moex,
                 observed_at=observed_at,
             )
         except (BrokerConnectionError, MoexError, TBankUnavailable, ValueError):
@@ -421,8 +423,8 @@ def build_live_balancing_payload(
         "market_quote_max_age_seconds": int(
             MARKET_QUOTE_MAX_AGE.total_seconds()
         ),
-        "liquidity_window_days": MOEX_LIQUIDITY_WINDOW_DAYS,
-        "liquidity_min_observed_days": MOEX_LIQUIDITY_MIN_OBSERVED_DAYS,
+        "liquidity_window_days": TBANK_LIQUIDITY_WINDOW_DAYS,
+        "liquidity_min_observed_days": TBANK_LIQUIDITY_MIN_OBSERVED_DAYS,
         "tax_rate_percent": str(policy_record.securities_tax_rate_percent),
         "max_daily_turnover_participation_percent": str(
             policy_record.max_daily_turnover_participation_percent
