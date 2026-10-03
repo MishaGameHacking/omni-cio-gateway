@@ -24,6 +24,8 @@ from omnicio.tbank import (
     TBankInvestClient,
     TBankLastPrice,
     TBankMoney,
+    TBankOrderBook,
+    TBankOrderLevel,
     TBankOrderPrice,
     TBankPortfolio,
     TBankPortfolioPosition,
@@ -114,6 +116,44 @@ def test_tbank_get_user_info_parses_qualification_context() -> None:
     assert request.get_header("Authorization") == f"Bearer {credential}"
     assert json.loads(request.data.decode()) == {}
     assert "provider-user-id" not in repr(info)
+
+
+def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instrumentUid": "bond-uid",
+            "isConsistent": True,
+            "time": "2026-10-03T05:00:00Z",
+            "bids": [
+                {"price": {"units": "99", "nano": 900000000}, "quantity": "12"}
+            ],
+            "asks": [
+                {"price": {"units": "100", "nano": 100000000}, "quantity": "8"}
+            ],
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_order_book(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            depth=10,
+        )
+
+    assert result == TBankOrderBook(
+        instrument_uid="bond-uid",
+        bids=(TBankOrderLevel("99.9", 12),),
+        asks=(TBankOrderLevel("100.1", 8),),
+        time=datetime(2026, 10, 3, 5, 0, tzinfo=UTC),
+        is_consistent=True,
+    )
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("MarketDataService/GetOrderBook")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": "bond-uid",
+        "depth": 10,
+    }
 
 
 def test_tbank_order_price_is_read_only_cost_estimate() -> None:
