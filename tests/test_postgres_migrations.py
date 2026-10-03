@@ -792,6 +792,19 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 mode="sandbox",
                 session_digest=b"e" * 32,
             )
+            with pytest.raises(
+                ValueError,
+                match="kopeck precision",
+            ):
+                execution_store.create_live_mandate(
+                    USER_ONE,
+                    account_id="account-1",
+                    max_order_notional_rub=Decimal("3000.001"),
+                    max_daily_notional_rub=Decimal("5000"),
+                    session_digest=b"l" * 32,
+                    expires_at=created_at + timedelta(minutes=30),
+                    now=created_at + timedelta(minutes=5),
+                )
             live_mandate = execution_store.create_live_mandate(
                 USER_ONE,
                 account_id="account-1",
