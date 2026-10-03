@@ -8,6 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -37,8 +38,68 @@ class MoexBondSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class MoexLiquiditySnapshot:
+    secid: str
+    board_id: str
+    observed_days: int
+    average_daily_value_rub: Decimal
+    total_value_rub: Decimal
+    source_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class MoexIssClient:
     timeout_seconds: int = 10
+
+    def bond_liquidity(
+        self,
+        secid: str,
+        board_id: str,
+        *,
+        from_date: date,
+        till_date: date,
+    ) -> MoexLiquiditySnapshot | None:
+        sec = _identifier(secid, "security id")
+        board = _identifier(board_id, "board id")
+        if from_date > till_date:
+            raise ValueError("MOEX liquidity window is invalid")
+        path = (
+            f"{MOEX_ISS_ROOT}/history/engines/stock/markets/bonds/boards/"
+            f"{urllib.parse.quote(board, safe='')}/securities/"
+            f"{urllib.parse.quote(sec, safe='')}.json"
+        )
+        query = urllib.parse.urlencode(
+            {
+                "iss.meta": "off",
+                "history.columns": "TRADEDATE,SECID,BOARDID,VALUE",
+                "from": from_date.isoformat(),
+                "till": till_date.isoformat(),
+            }
+        )
+        url = f"{path}?{query}"
+        payload = self._get_payload(url)
+        rows = _rows(payload, "history")
+        values: list[Decimal] = []
+        for row in rows:
+            returned_secid = str(row.get("SECID") or "").strip()
+            returned_board = str(row.get("BOARDID") or "").strip()
+            if returned_secid != sec or returned_board != board:
+                raise MoexError("MOEX ISS history returned a different security")
+            value = _decimal(row.get("VALUE"))
+            if value is None or value < 0:
+                raise MoexError("MOEX ISS history has invalid traded value")
+            values.append(value)
+        if not values:
+            return None
+        total = sum(values, Decimal("0"))
+        return MoexLiquiditySnapshot(
+            secid=sec,
+            board_id=board,
+            observed_days=len(values),
+            average_daily_value_rub=total / Decimal(len(values)),
+            total_value_rub=total,
+            source_url=url,
+        )
 
     def bond_snapshot(self, secid: str, board_id: str) -> MoexBondSnapshot | None:
         sec = _identifier(secid, "security id")
@@ -77,27 +138,7 @@ class MoexIssClient:
             }
         )
         url = f"{path}?{query}"
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": "omnicio-r4-evidence/1.0"},
-        )
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self.timeout_seconds,
-                context=ssl.create_default_context(),
-            ) as response:
-                payload_raw = json.loads(response.read().decode("utf-8"))
-        except (
-            OSError,
-            UnicodeError,
-            json.JSONDecodeError,
-            urllib.error.URLError,
-        ) as exc:
-            raise MoexError("MOEX ISS is unavailable") from exc
-        if not isinstance(payload_raw, dict):
-            raise MoexError("MOEX ISS returned malformed payload")
-        payload = cast(dict[str, object], payload_raw)
+        payload = self._get_payload(url)
         securities = _first_row(payload, "securities")
         marketdata = _first_row(payload, "marketdata")
         if securities is None and marketdata is None:
@@ -144,25 +185,59 @@ class MoexIssClient:
         )
 
 
-def _first_row(
+    def _get_payload(self, url: str) -> dict[str, object]:
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": "omnicio-r4-evidence/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.timeout_seconds,
+                context=ssl.create_default_context(),
+            ) as response:
+                payload_raw = json.loads(response.read().decode("utf-8"))
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+            urllib.error.URLError,
+        ) as exc:
+            raise MoexError("MOEX ISS is unavailable") from exc
+        if not isinstance(payload_raw, dict):
+            raise MoexError("MOEX ISS returned malformed payload")
+        return cast(dict[str, object], payload_raw)
+
+
+def _rows(
     payload: dict[str, object],
     key: str,
-) -> dict[str, object] | None:
+) -> tuple[dict[str, object], ...]:
     block = payload.get(key)
     if not isinstance(block, dict):
-        return None
+        return ()
     data = cast(dict[str, object], block)
     columns_raw = data.get("columns")
     rows_raw = data.get("data")
     if not isinstance(columns_raw, list) or not isinstance(rows_raw, list):
         raise MoexError(f"MOEX ISS {key} block is malformed")
-    if not rows_raw:
-        return None
     columns = [str(item) for item in columns_raw]
-    row = rows_raw[0]
-    if not isinstance(row, list) or len(row) != len(columns):
-        raise MoexError(f"MOEX ISS {key} row is malformed")
-    return dict(zip(columns, cast(list[object], row), strict=True))
+    result: list[dict[str, object]] = []
+    for raw in rows_raw:
+        if not isinstance(raw, list) or len(raw) != len(columns):
+            raise MoexError(f"MOEX ISS {key} row is malformed")
+        result.append(
+            dict(zip(columns, cast(list[object], raw), strict=True))
+        )
+    return tuple(result)
+
+
+def _first_row(
+    payload: dict[str, object],
+    key: str,
+) -> dict[str, object] | None:
+    rows = _rows(payload, key)
+    return rows[0] if rows else None
 
 
 def _identifier(value: str, label: str) -> str:
