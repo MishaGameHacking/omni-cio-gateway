@@ -792,6 +792,51 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 mode="sandbox",
                 session_digest=b"e" * 32,
             )
+            live_mandate = execution_store.create_live_mandate(
+                USER_ONE,
+                account_id="account-1",
+                max_order_notional_rub=Decimal("3000"),
+                max_daily_notional_rub=Decimal("5000"),
+                session_digest=b"l" * 32,
+                expires_at=created_at + timedelta(minutes=30),
+                now=created_at + timedelta(minutes=5),
+            )
+            live_run, live_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="live",
+                session_digest=b"e" * 32,
+            )
+            revoked_mandate = execution_store.revoke_live_mandate(
+                USER_ONE,
+                now=created_at + timedelta(minutes=6),
+            )
+            with pytest.raises(
+                ExecutionLedgerError,
+                match="live_mandate_inactive",
+            ):
+                execution_store.transition_leg(
+                    USER_ONE,
+                    run_id=live_run.id,
+                    leg_id=live_legs[0].id,
+                    expected_statuses=("pending",),
+                    new_status="submitting",
+                    event_type="live_preflight_passed",
+                    details={"request_id": str(live_legs[0].request_id)},
+                    now=created_at + timedelta(minutes=6),
+                )
+            cancelled_live_run, cancelled_live_leg = execution_store.transition_leg(
+                USER_ONE,
+                run_id=live_run.id,
+                leg_id=live_legs[0].id,
+                expected_statuses=("pending",),
+                new_status="cancelled",
+                event_type="cancelled_before_submission",
+                details={"reason": "kill_switch_regression"},
+                now=created_at + timedelta(minutes=7),
+            )
 
             stale_execution_ready = store.create_proposal(
                 USER_ONE,
@@ -915,6 +960,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert sandbox_run.id != shadow_run.id
         assert sandbox_run.provider_environment == "sandbox"
         assert sandbox_legs[0].request_id != shadow_legs[0].request_id
+        assert live_run.mode == "live"
+        assert live_run.provider_environment == "prod"
+        assert live_run.live_mandate_id == live_mandate.id
+        assert revoked_mandate is not None
+        assert revoked_mandate.id == live_mandate.id
+        assert revoked_mandate.revoked_at is not None
+        assert cancelled_live_run.status == "cancelled"
+        assert cancelled_live_leg.status == "cancelled"
         assert policy_after_confirmation.version == 3
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
