@@ -201,6 +201,18 @@ def test_security_identity_does_not_accept_near_isin_match() -> None:
         )
 
 
+def test_security_identity_rejects_query_delimiters_before_network() -> None:
+    with (
+        patch("http.client.HTTPSConnection") as client,
+        pytest.raises(ValueError, match="security query"),
+    ):
+        MoexIssClient().security_identity(
+            "RU000A000001&extra=1",
+            expected_isin="RU000A000001",
+        )
+    client.assert_not_called()
+
+
 def test_bond_liquidity_averages_history_value_without_hidden_participation() -> None:
     response = FakeResponse(
         {
