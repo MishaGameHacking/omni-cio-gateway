@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
@@ -431,9 +432,66 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         database = Database(_runtime_url())
         database.open()
         try:
-            intelligence = PortfolioStore(database).latest_intelligence(USER_ONE)
+            store = PortfolioStore(database)
+            first_policy = store.save_balancing_policy(
+                USER_ONE,
+                max_instrument_percent=Decimal("20"),
+                max_sector_percent=Decimal("30"),
+                max_issuer_percent=Decimal("20"),
+                max_group_percent=Decimal("25"),
+                max_share_percent=Decimal("70"),
+                max_bond_percent=Decimal("80"),
+                max_etf_percent=Decimal("70"),
+                max_below_grade_percent=Decimal("5"),
+                max_unknown_percent=Decimal("0"),
+                max_term_months=120,
+                turnover_budget_percent=Decimal("25"),
+                no_trade_band_percent=Decimal("1"),
+                min_replace_benefit_rub=Decimal("500"),
+            )
+            duplicate_policy = store.save_balancing_policy(
+                USER_ONE,
+                max_instrument_percent=Decimal("20"),
+                max_sector_percent=Decimal("30"),
+                max_issuer_percent=Decimal("20"),
+                max_group_percent=Decimal("25"),
+                max_share_percent=Decimal("70"),
+                max_bond_percent=Decimal("80"),
+                max_etf_percent=Decimal("70"),
+                max_below_grade_percent=Decimal("5"),
+                max_unknown_percent=Decimal("0"),
+                max_term_months=120,
+                turnover_budget_percent=Decimal("25"),
+                no_trade_band_percent=Decimal("1"),
+                min_replace_benefit_rub=Decimal("500"),
+            )
+            revised_policy = store.save_balancing_policy(
+                USER_ONE,
+                max_instrument_percent=Decimal("15"),
+                max_sector_percent=Decimal("30"),
+                max_issuer_percent=Decimal("20"),
+                max_group_percent=Decimal("25"),
+                max_share_percent=Decimal("70"),
+                max_bond_percent=Decimal("80"),
+                max_etf_percent=Decimal("70"),
+                max_below_grade_percent=Decimal("5"),
+                max_unknown_percent=Decimal("0"),
+                max_term_months=120,
+                turnover_budget_percent=Decimal("25"),
+                no_trade_band_percent=Decimal("1"),
+                min_replace_benefit_rub=Decimal("500"),
+            )
+            current_policy = store.current_balancing_policy(USER_ONE)
+            intelligence = store.latest_intelligence(USER_ONE)
         finally:
             database.close()
+        assert first_policy.version == 1
+        assert duplicate_policy.id == first_policy.id
+        assert duplicate_policy.version == 1
+        assert revised_policy.version == 2
+        assert current_policy is not None
+        assert current_policy.version == 2
+        assert current_policy.max_instrument_percent == Decimal("15")
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
@@ -452,6 +510,36 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert runtime.execute(
             "SELECT count(*) FROM portfolio_risk_assessments"
         ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM balancing_policy_versions"
+        ).fetchone()[0] == 0
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            runtime.execute(
+                """
+                INSERT INTO balancing_policy_versions (
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub
+                )
+                VALUES (
+                    %s, 3, 10, 20, 10, 15, 60, 80, 60, 0, 0, 120, 20, 1, 500
+                )
+                """,
+                (USER_ONE,),
+            )
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             runtime.execute(
