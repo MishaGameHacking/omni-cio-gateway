@@ -915,7 +915,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.13.1"', project)
+        self.assertIn('version = "0.13.2"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
