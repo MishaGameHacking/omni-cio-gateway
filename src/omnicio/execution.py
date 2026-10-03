@@ -133,16 +133,6 @@ def provider_leg_status(value: str) -> ExecutionLegStatus:
         raise ExecutionStateError("provider_order_status_unknown") from exc
 
 
-def terminal_leg_status(status: ExecutionLegStatus) -> bool:
-    return status in {
-        "filled",
-        "cancelled",
-        "rejected",
-        "failed",
-        "shadow_filled",
-    }
-
-
 def run_status_for_legs(
     statuses: tuple[ExecutionLegStatus, ...],
 ) -> ExecutionRunStatus:
@@ -167,8 +157,6 @@ def run_status_for_legs(
         for status in statuses
     ):
         return "running"
-    if all(terminal_leg_status(status) for status in statuses):
-        return "failed"
     return "running"
 
 
