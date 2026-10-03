@@ -84,6 +84,9 @@ def settings(**overrides: object) -> Settings:
         "terms_version": "2026-10-02-v5",
         "vkid_flow_ttl_seconds": 600,
         "session_ttl_seconds": 34_560_000,
+        "portfolio_live_execution_enabled": False,
+        "portfolio_live_max_order_rub": 10_000,
+        "portfolio_live_max_daily_rub": 20_000,
     }
     values.update(overrides)
     return Settings(**values)
