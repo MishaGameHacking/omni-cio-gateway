@@ -98,6 +98,87 @@ def test_bond_snapshot_uses_official_iss_fields_and_conservative_ytw() -> None:
     assert "CALLOPTIONDURATION" in request.full_url
 
 
+def test_security_identity_matches_exact_isin_and_exposes_official_issuer() -> None:
+    response = FakeResponse(
+        {
+            "securities": {
+                "columns": [
+                    "secid",
+                    "isin",
+                    "is_traded",
+                    "emitent_id",
+                    "emitent_title",
+                    "emitent_inn",
+                    "primary_boardid",
+                ],
+                "data": [
+                    [
+                        "TESTBOND",
+                        "RU000A000001",
+                        1,
+                        1234,
+                        "Тестовый эмитент",
+                        "7700000000",
+                        "TQCB",
+                    ],
+                    [
+                        "OTHER",
+                        "RU000A000002",
+                        1,
+                        9999,
+                        "Другой эмитент",
+                        "7800000000",
+                        "TQCB",
+                    ],
+                ],
+            }
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        identity = MoexIssClient().security_identity(
+            "RU000A000001",
+            expected_isin="RU000A000001",
+        )
+
+    assert identity is not None
+    assert identity.secid == "TESTBOND"
+    assert identity.isin == "RU000A000001"
+    assert identity.issuer_id == "1234"
+    assert identity.issuer_inn == "7700000000"
+    assert identity.primary_board_id == "TQCB"
+    assert identity.is_traded is True
+    assert "/iss/securities.json?" in urlopen.call_args.args[0].full_url
+
+
+def test_security_identity_does_not_accept_near_isin_match() -> None:
+    response = FakeResponse(
+        {
+            "securities": {
+                "columns": [
+                    "secid",
+                    "isin",
+                    "is_traded",
+                    "emitent_id",
+                    "emitent_title",
+                    "emitent_inn",
+                    "primary_boardid",
+                ],
+                "data": [
+                    ["OTHER", "RU000A000002", 1, 9999, "Other", "7800000000", "TQCB"]
+                ],
+            }
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response):
+        assert (
+            MoexIssClient().security_identity(
+                "RU000A000001",
+                expected_isin="RU000A000001",
+            )
+            is None
+        )
+
+
 def test_bond_liquidity_averages_history_value_without_hidden_participation() -> None:
     response = FakeResponse(
         {
