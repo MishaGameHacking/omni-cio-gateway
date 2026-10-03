@@ -22,21 +22,33 @@ class FakeResponse:
 class FakeConnection:
     def __init__(self, response: FakeResponse) -> None:
         self.response = response
-        self.requests: list[tuple[str, str, dict[str, str]]] = []
+        self.requests: list[tuple[str, str]] = []
+        self.headers: list[tuple[str, str]] = []
+        self.ended = False
 
     def close(self) -> None:
         return None
 
-    def request(
+    def putrequest(
         self,
         method: str,
         target: str,
         *,
-        headers: dict[str, str],
+        skip_host: bool,
+        skip_accept_encoding: bool,
     ) -> None:
-        self.requests.append((method, target, headers))
+        assert skip_host is True
+        assert skip_accept_encoding is True
+        self.requests.append((method, target))
+
+    def putheader(self, name: str, value: str) -> None:
+        self.headers.append((name, value))
+
+    def endheaders(self) -> None:
+        self.ended = True
 
     def getresponse(self) -> FakeResponse:
+        assert self.ended is True
         return self.response
 
 
@@ -107,7 +119,7 @@ def test_bond_snapshot_uses_official_iss_fields_and_conservative_ytw() -> None:
     assert snapshot.value_today_rub == Decimal("15000000.0")
     assert snapshot.volume_today == Decimal("14500.0")
     client.assert_called_once()
-    method, target, headers = connection.requests[0]
+    method, target = connection.requests[0]
     assert method == "GET"
     assert target.startswith(
         "/iss/engines/stock/markets/bonds/boards/"
@@ -115,7 +127,8 @@ def test_bond_snapshot_uses_official_iss_fields_and_conservative_ytw() -> None:
     )
     assert "YIELDTOOFFER" in target
     assert "CALLOPTIONDURATION" in target
-    assert headers["Accept"] == "application/json"
+    assert ("Host", "iss.moex.com") in connection.headers
+    assert ("Accept", "application/json") in connection.headers
 
 
 def test_security_identity_matches_exact_isin_and_exposes_official_issuer() -> None:
@@ -289,7 +302,7 @@ def test_bond_snapshot_rejects_mismatched_security() -> None:
         MoexIssClient().bond_snapshot("RU000A000001", "TQCB")
 
 
-@pytest.mark.parametrize("value", ["", "bad/value", " "])
+@pytest.mark.parametrize("value", ["", ".", "..", "bad/value", " "])
 def test_iss_identifiers_are_validated_before_network(value: str) -> None:
     with (
         patch("http.client.HTTPSConnection") as client,
@@ -300,14 +313,24 @@ def test_iss_identifiers_are_validated_before_network(value: str) -> None:
 
 
 
-def test_moex_fetch_rejects_off_origin_url_before_network() -> None:
+@pytest.mark.parametrize(
+    "target",
+    (
+        "https://evil.example/iss/securities.json?q=RU000A000001",
+        "//evil.example/iss/securities.json",
+        "/iss/securities.json?q=x%0d%0aHost:evil.example",
+        "/iss/securities.json?q=%ZZ",
+        "/other/securities.json?q=RU000A000001",
+    ),
+)
+def test_moex_fetch_rejects_non_relative_or_unsafe_target_before_network(
+    target: str,
+) -> None:
     with (
         patch("http.client.HTTPSConnection") as client,
-        pytest.raises(MoexError, match="fixed provider origin"),
+        pytest.raises(MoexError, match="request target"),
     ):
-        MoexIssClient()._get_payload(
-            "https://evil.example/iss/securities.json?q=RU000A000001"
-        )
+        MoexIssClient()._get_payload(target)
     client.assert_not_called()
 
 
@@ -321,3 +344,24 @@ def test_moex_fetch_rejects_non_success_http_status() -> None:
             "RU000A000001",
             expected_isin="RU000A000001",
         )
+
+
+
+def test_moex_transport_uses_only_fixed_tls_authority() -> None:
+    response = FakeResponse({"securities": {"columns": [], "data": []}})
+    connection = FakeConnection(response)
+    with patch("http.client.HTTPSConnection", return_value=connection) as client:
+        MoexIssClient().security_identity(
+            "RU000A000001",
+            expected_isin="RU000A000001",
+        )
+
+    client.assert_called_once()
+    args = client.call_args.args
+    assert args[:2] == ("iss.moex.com", 443)
+    assert connection.requests
+    method, target = connection.requests[0]
+    assert method == "GET"
+    assert target.startswith("/iss/")
+    assert "://" not in target
+    assert ("Host", "iss.moex.com") in connection.headers
