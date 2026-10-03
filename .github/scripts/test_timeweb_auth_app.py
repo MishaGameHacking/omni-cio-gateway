@@ -874,6 +874,52 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn(".proposal-decision-actions .button", stylesheet)
         self.assertIn(".segmented-control button", stylesheet)
 
+    def test_command_center_uses_live_portfolio_state_without_fake_history(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
+        manifest = (root / "web" / "manifest.webmanifest").read_text(encoding="utf-8")
+
+        for element_id in (
+            "home-portfolio-total",
+            "home-daily-change",
+            "home-daily-relative",
+            "home-free-cash",
+            "home-position-count",
+            "home-attention-count",
+            "home-snapshot-time",
+            "home-portfolio-summary-state",
+            "home-allocation",
+            "home-attention-state",
+            "home-attention-list",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn("Командный центр", page)
+        self.assertIn("Портфель — главное сейчас", page)
+        self.assertIn("Незаблокированные RUB", page)
+        self.assertIn("Требует внимания", page)
+        self.assertIn("ЦБ РФ — действует сегодня", page)
+        self.assertIn('content="#f4f7fb"', page)
+        self.assertIn('"background_color": "#f4f7fb"', manifest)
+        self.assertIn('"theme_color": "#f4f7fb"', manifest)
+
+        self.assertIn("renderHomePortfolioSummary", script)
+        self.assertIn("homeUnblockedRub", script)
+        self.assertIn("homePortfolioAttention", script)
+        self.assertIn("homeAttentionBuckets", script)
+        self.assertIn("lastPortfolioSnapshot", script)
+        self.assertIn('/api/broker/tbank/portfolio', script)
+        self.assertIn("resetHomePortfolioSummary", script)
+        self.assertNotIn("Math.random", script)
+        self.assertNotIn("/api/portfolio/history", script)
+
+        self.assertIn(".command-kpis", stylesheet)
+        self.assertIn(".attention-item", stylesheet)
+        self.assertIn(".market-card-compact", stylesheet)
+        self.assertIn("@media (max-width: 420px)", stylesheet)
+
     def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
@@ -1019,7 +1065,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.15.0"', project)
+        self.assertIn('version = "0.16.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
