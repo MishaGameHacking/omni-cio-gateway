@@ -27,7 +27,6 @@ from .config import Settings, load_settings
 from .db import Database, UserRecord
 from .intelligence import rating_source_references
 from .market import MarketService
-from .moex import MoexIssClient
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
     BalancingPolicyRecord,
@@ -740,7 +739,6 @@ def portfolio_balancing(
         policy_record=store.current_balancing_policy(user.id),
         context=store.latest_balancing_context(user.id),
         broker=broker_service(request),
-        moex=MoexIssClient(),
     )
     response.headers["Cache-Control"] = "private, no-store"
     return payload
