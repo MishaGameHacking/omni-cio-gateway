@@ -1133,7 +1133,7 @@ def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
     }
 
 
-def test_tbank_intraday_exchange_candles_validate_ohlc_and_limit() -> None:
+def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> None:
     client = TBankInvestClient()
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     response = FakeResponse(
@@ -1161,7 +1161,6 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_limit() -> None:
             from_at=now - timedelta(hours=8),
             to_at=now,
             interval="CANDLE_INTERVAL_5_MIN",
-            limit=300,
         )
 
     assert candles == (
@@ -1185,8 +1184,27 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_limit() -> None:
         "to": "2026-10-03T05:00:00Z",
         "interval": "CANDLE_INTERVAL_5_MIN",
         "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
-        "limit": 300,
     }
+
+
+def test_tbank_exchange_candles_reject_too_short_window_before_network() -> None:
+    client = TBankInvestClient()
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+
+    with (
+        patch("urllib.request.urlopen") as urlopen,
+        pytest.raises(ValueError, match="must exceed candle interval"),
+    ):
+        client.get_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-1",
+            from_at=now - timedelta(minutes=5),
+            to_at=now,
+            interval="CANDLE_INTERVAL_5_MIN",
+        )
+
+    urlopen.assert_not_called()
 
 
 def test_tbank_trading_status_is_bound_to_requested_instrument() -> None:
