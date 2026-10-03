@@ -1487,7 +1487,7 @@
         value: Number(item.nav_rub),
       }))
       .filter((item) => Number.isFinite(item.value));
-    renderSeriesChart(
+    const homeEnough = renderSeriesChart(
       homeHistoryChart,
       homeChartPoints,
       {minimumPoints: 2},
@@ -1497,23 +1497,31 @@
 
     if (!enough) {
       setStateBadge(portfolioHistoryState, "Недостаточно истории", "state-next");
-      setStateBadge(homeHistoryState, "Недостаточно истории", "state-next");
       portfolioHistoryNote.textContent = (
         chartPoints.length === 1
           ? "Есть один реальный снимок. Для линии нужно минимум два снимка того же счёта и окружения."
           : "История появится после сохранения tenant-scoped снимков портфеля."
       );
-      homeHistoryNote.textContent = portfolioHistoryNote.textContent;
     } else {
       setStateBadge(
         portfolioHistoryState,
         `Снимков: ${chartPoints.length}`,
         "state-ok",
       );
-      setStateBadge(homeHistoryState, `Снимков: ${homeChartPoints.length}`, "state-ok");
       portfolioHistoryNote.textContent = (
         "Точки используют captured_at сохранённых snapshot. Это не market timestamp и не время сделки."
       );
+    }
+
+    if (!homeEnough) {
+      setStateBadge(homeHistoryState, "Недостаточно истории", "state-next");
+      homeHistoryNote.textContent = (
+        homeChartPoints.length === 1
+          ? "За последние 90 дней сохранён только один реальный снимок."
+          : "За последние 90 дней недостаточно сохранённой истории для линии."
+      );
+    } else {
+      setStateBadge(homeHistoryState, `Снимков: ${homeChartPoints.length}`, "state-ok");
       homeHistoryNote.textContent = (
         "Главная показывает до 90 дней реальных сохранённых снимков текущего счёта и окружения."
       );
