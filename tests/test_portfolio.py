@@ -317,6 +317,8 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
         turnover_budget_percent=Decimal("25"),
         max_daily_turnover_participation_percent=Decimal("5"),
         securities_tax_rate_percent=Decimal("15"),
+        uncertainty_haircut_percent=Decimal("3"),
+        credit_loss_haircut_percent=Decimal("2"),
         no_trade_band_percent=Decimal("1"),
         min_replace_benefit_rub=Decimal("500"),
         created_at=now,
@@ -339,6 +341,8 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
     assert payload["max_instrument_percent"] == "20"
     assert payload["max_daily_turnover_participation_percent"] == "5"
     assert payload["securities_tax_rate_percent"] == "15"
+    assert payload["uncertainty_haircut_percent"] == "3"
+    assert payload["credit_loss_haircut_percent"] == "2"
     assert payload["system_constraints"]["allowed_currencies"] == ["RUB"]
     assert payload["system_constraints"]["new_buy_risk_states"] == ["normal"]
     store.return_value.current_balancing_policy.assert_called_once_with("server-user")
@@ -359,6 +363,8 @@ def test_balancing_policy_write_requires_origin_and_current_consent() -> None:
         "turnover_budget_percent": "25",
         "max_daily_turnover_participation_percent": "5",
         "securities_tax_rate_percent": "15",
+        "uncertainty_haircut_percent": "3",
+        "credit_loss_haircut_percent": "2",
         "no_trade_band_percent": "1",
         "min_replace_benefit_rub": "500",
     }
