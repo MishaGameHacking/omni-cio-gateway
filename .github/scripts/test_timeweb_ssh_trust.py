@@ -16,6 +16,8 @@ import timeweb_domain_tls as tls
 from timeweb_ssh_trust import (
     managed_server_identity,
     ssh_base_args,
+    ssh_executable,
+    ssh_keygen_executable,
     trusted_host_entry,
     trusted_host_fingerprint,
 )
@@ -107,7 +109,7 @@ class SshTrustTests(unittest.TestCase):
             args: list[str], **kwargs: object,
         ) -> subprocess.CompletedProcess[str]:
             nonlocal ssh_calls
-            if args[0] == "/usr/bin/ssh-keygen":
+            if args[0] == ssh_keygen_executable():
                 private_key = pathlib.Path(args[args.index("-f") + 1])
                 private_key.with_suffix(".pub").write_text("synthetic-public-key")
                 return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
@@ -166,11 +168,11 @@ class SshTrustTests(unittest.TestCase):
         ssh_calls: list[list[str]] = []
 
         def execute(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-            if args[0] == "/usr/bin/ssh-keygen":
+            if args[0] == ssh_keygen_executable():
                 private_key = pathlib.Path(args[args.index("-f") + 1])
                 private_key.with_suffix(".pub").write_text("synthetic-public-key")
             else:
-                self.assertEqual(args[0], "/usr/bin/ssh")
+                self.assertEqual(args[0], ssh_executable())
                 option = next(arg for arg in args if arg.startswith("UserKnownHostsFile="))
                 path = pathlib.Path(option.split("=", 1)[1])
                 paths.append(path)
@@ -219,7 +221,7 @@ class SshTrustTests(unittest.TestCase):
             args: list[str], **kwargs: object,
         ) -> subprocess.CompletedProcess[str]:
             nonlocal ssh_attempts
-            if args[0] == "/usr/bin/ssh-keygen":
+            if args[0] == ssh_keygen_executable():
                 private_key = pathlib.Path(args[args.index("-f") + 1])
                 private_key.with_suffix(".pub").write_text("synthetic-public-key")
                 return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
@@ -278,7 +280,7 @@ class SshTrustTests(unittest.TestCase):
             config = dict(line.split(" ", 1) for line in result.stdout.splitlines())
             self.assertEqual(config["stricthostkeychecking"], "true")
             self.assertEqual(config["userknownhostsfile"], str(root / "known_hosts"))
-            self.assertEqual(config["globalknownhostsfile"], "/dev/null")
+            self.assertEqual(config["globalknownhostsfile"].casefold(), os.devnull.casefold())
             self.assertEqual(config["hostkeyalgorithms"], "ssh-ed25519")
             self.assertEqual(config["identityagent"], "none")
             self.assertEqual(config["passwordauthentication"], "no")
