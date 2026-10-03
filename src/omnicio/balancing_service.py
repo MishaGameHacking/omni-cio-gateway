@@ -348,7 +348,23 @@ def build_live_balancing_payload(
                 last_price=price_by_uid.get(uid),
                 observed_at=observed_at,
             )
-        except (BrokerConnectionError, MoexError, TBankUnavailable, ValueError):
+        except MoexError:
+            candidate = _candidate(
+                row,
+                context=context,
+                policy=_policy(
+                    profile,
+                    policy_record,
+                    _decimal(context.get("nav_rub")) or Decimal("0"),
+                ),
+                observed_at=observed_at,
+            )
+            candidate = _with_candidate_blocker(
+                candidate,
+                "moex_runtime_transport_security_gate",
+            )
+            sources = ()
+        except (BrokerConnectionError, TBankUnavailable, ValueError):
             candidate = _candidate(
                 row,
                 context=context,

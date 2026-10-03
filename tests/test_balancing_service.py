@@ -12,6 +12,7 @@ from omnicio.balancing_service import (
 )
 from omnicio.moex import (
     MoexBondSnapshot,
+    MoexIssClient,
     MoexLiquiditySnapshot,
     MoexSecurityIdentity,
 )
@@ -380,6 +381,34 @@ def test_live_r4_bond_enrichment_can_produce_integer_lot_scenario() -> None:
     assert deploy["trades"][0]["instrument_uid"] == "candidate-1"
     assert payload["execution_enabled"] is False
     assert payload["proposal_enabled"] is False
+
+
+def test_live_r4_real_moex_runtime_fails_closed_without_network() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    broker = SimpleNamespace(
+        candidate_market_yields=lambda user_id, uids: (
+            TBankMarketYield("candidate-1", "12.5", now),
+        ),
+        candidate_fundamentals=lambda user_id, asset_uids: (_fundamental(now),),
+        candidate_last_prices=lambda user_id, uids: (
+            TBankLastPrice("candidate-1", "100", now),
+        ),
+    )
+
+    payload = build_live_balancing_payload(
+        user_id=USER_ID,
+        profile=_profile(),
+        policy_record=_policy(max_unknown_percent=Decimal("20")),
+        context=_context(now),
+        broker=broker,  # type: ignore[arg-type]
+        moex=MoexIssClient(),
+        now=now,
+    )
+
+    assert payload["status"] == "observed"
+    assert payload["execution_enabled"] is False
+    assert payload["eligible_candidate_count"] == 0
+    assert "moex_runtime_transport_security_gate" in payload["screening"][0]["reasons"]
 
 
 def test_live_r4_degrades_to_durable_preview_when_broker_evidence_fails() -> None:
