@@ -9,7 +9,7 @@ from uuid import UUID
 
 from .broker import BrokerService
 from .cbr import CBRClient, CBRRate, CBRUnavailable
-from .tbank import TBankLastPrice, TBankTradingStatus
+from .tbank import TBankLastPrice, TBankTradingStatus, TBankUnavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,13 +226,13 @@ class MarketService:
 
 def _required_market_price(value: str | None) -> str:
     if value is None:
-        raise ValueError("market candle is missing OHLC price")
+        raise TBankUnavailable("T-Invest market candle is missing OHLC price")
     try:
         number = Decimal(value)
     except InvalidOperation as exc:
-        raise ValueError("market candle contains invalid OHLC price") from exc
+        raise TBankUnavailable("T-Invest market candle contains invalid OHLC price") from exc
     if not number.is_finite() or number <= 0:
-        raise ValueError("market candle contains non-positive OHLC price")
+        raise TBankUnavailable("T-Invest market candle contains non-positive OHLC price")
     return value
 
 
