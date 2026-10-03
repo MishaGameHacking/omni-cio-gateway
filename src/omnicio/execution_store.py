@@ -922,7 +922,7 @@ class ExecutionStore:
                         ELSE submitted_at
                     END,
                     last_checked_at = CASE
-                        WHEN %s IS NOT NULL THEN %s
+                        WHEN %s::text IS NOT NULL THEN %s
                         ELSE last_checked_at
                     END,
                     terminal_at = COALESCE(%s, terminal_at)
