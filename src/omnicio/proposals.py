@@ -228,7 +228,7 @@ def proposal_material_hash(payload: dict[str, object]) -> bytes:
         "methodology": payload.get("methodology"),
         "execution_enabled": payload.get("execution_enabled"),
     }
-    normalized = _normalize_json(material)
+    normalized = _normalize(material)
     return hashlib.sha256(
         _canonical_json(normalized).encode("utf-8"),
         usedforsecurity=False,
