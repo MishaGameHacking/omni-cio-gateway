@@ -35,6 +35,8 @@ def build_balancing_payload(
     policy_record: BalancingPolicyRecord | None,
     context: dict[str, object] | None,
     now: datetime | None = None,
+    holdings_override: tuple[Holding, ...] | None = None,
+    candidates_override: tuple[Candidate, ...] | None = None,
 ) -> dict[str, object]:
     """Build a fail-closed, non-executable preview from persisted evidence."""
     observed_at = (now or datetime.now(UTC)).astimezone(UTC)
@@ -84,16 +86,24 @@ def build_balancing_payload(
 
     holdings_rows = _dict_rows(context.get("holdings"))
     candidate_rows = _dict_rows(context.get("candidates"))
-    holdings = tuple(_holding(row) for row in holdings_rows)
+    holdings = (
+        holdings_override
+        if holdings_override is not None
+        else tuple(_holding(row) for row in holdings_rows)
+    )
     policy = _policy(profile, policy_record, nav_rub)
-    candidates = tuple(
-        _candidate(
-            row,
-            context=context,
-            policy=policy,
-            observed_at=observed_at,
+    candidates = (
+        candidates_override
+        if candidates_override is not None
+        else tuple(
+            _candidate(
+                row,
+                context=context,
+                policy=policy,
+                observed_at=observed_at,
+            )
+            for row in candidate_rows
         )
-        for row in candidate_rows
     )
 
     screened = screen_candidates(candidates, policy)
