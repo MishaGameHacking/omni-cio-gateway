@@ -176,7 +176,7 @@ class SshTrustTests(unittest.TestCase):
                 option = next(arg for arg in args if arg.startswith("UserKnownHostsFile="))
                 path = pathlib.Path(option.split("=", 1)[1])
                 paths.append(path)
-                self.assertEqual(path.read_text(), ENTRY + "\n")
+                self.assertEqual(path.read_text(encoding="utf-8"), ENTRY + "\n")
                 self.assertIn("StrictHostKeyChecking=yes", args)
                 ssh_calls.append(args)
             return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
@@ -209,7 +209,7 @@ class SshTrustTests(unittest.TestCase):
         workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
         for filename in workflows:
             with self.subTest(filename=filename):
-                content = (workflow_dir / filename).read_text()
+                content = (workflow_dir / filename).read_text(encoding="utf-8")
                 self.assertIn("group: omnicio-production-ssh", content)
                 self.assertIn("queue: max", content)
                 self.assertIn("cancel-in-progress: false", content)
