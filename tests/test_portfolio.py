@@ -543,6 +543,94 @@ def test_analysis_endpoint_has_no_write_method() -> None:
 
 
 
+def test_portfolio_visualization_http_is_private_and_tenant_scoped() -> None:
+    payload = {
+        "status": "pending",
+        "history": [],
+        "latest": None,
+    }
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-resolved-user"
+        store.return_value.portfolio_visualization.return_value = payload
+        response = TestClient(app).get(
+            "/api/portfolio/visualization?history_limit=30&user_id=attacker"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json() == payload
+    store.return_value.portfolio_visualization.assert_called_once_with(
+        "server-resolved-user",
+        history_limit=30,
+    )
+
+
+def test_portfolio_visualization_requires_session_before_store_access() -> None:
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        auth.return_value.refresh_session.return_value = None
+        response = TestClient(app).get("/api/portfolio/visualization")
+
+    assert response.status_code == 401
+    store.assert_not_called()
+
+
+def test_instrument_visualization_http_is_private_and_tenant_scoped() -> None:
+    payload = {
+        "status": "observed",
+        "account_id": "account-1",
+        "history": [],
+        "latest": {"instrument_uid": "uid-1"},
+        "payouts": [],
+        "sources": [],
+    }
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-resolved-user"
+        store.return_value.instrument_visualization.return_value = payload
+        response = TestClient(app).get(
+            "/api/portfolio/instruments/uid-1/visualization"
+            "?history_limit=30&user_id=attacker"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["account_id"] == "account-1"
+    store.return_value.instrument_visualization.assert_called_once_with(
+        "server-resolved-user",
+        "uid-1",
+        history_limit=30,
+    )
+
+
+def test_instrument_visualization_rejects_missing_or_invalid_identifier() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-resolved-user"
+        store.return_value.instrument_visualization.return_value = None
+        missing = TestClient(app).get(
+            "/api/portfolio/instruments/missing/visualization"
+        )
+        assert missing.status_code == 404
+
+        store.return_value.instrument_visualization.side_effect = ValueError(
+            "instrument_uid must contain 1 to 128 non-padded characters"
+        )
+        invalid = TestClient(app).get(
+            "/api/portfolio/instruments/%20bad%20/visualization"
+        )
+        assert invalid.status_code == 422
+
+
 def test_balancing_preview_http_is_private_tenant_scoped_and_read_only() -> None:
     expected = {
         "status": "observed",
