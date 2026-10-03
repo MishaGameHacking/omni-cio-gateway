@@ -1962,12 +1962,18 @@
   );
 
   const syncSandboxStartControls = () => {
+    const available = tbankIsConnected && tbankEnvironment === "sandbox";
     proposalHistory.querySelectorAll('[data-execution-start="sandbox"]').forEach((button) => {
-      const available = tbankIsConnected && tbankEnvironment === "sandbox";
       button.disabled = !available;
       button.title = available
         ? "Запустить exact-пакет в T-Invest Sandbox"
         : "Для sandbox подключите T-Invest в контуре «Песочница»";
+    });
+    executionHistory.querySelectorAll("[data-execution-action]").forEach((button) => {
+      button.disabled = !available;
+      button.title = available
+        ? ""
+        : "Для управления run снова подключите тот же Sandbox-счёт.";
     });
   };
 
