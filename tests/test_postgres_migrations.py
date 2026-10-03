@@ -13,6 +13,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
+from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
 from omnicio.portfolio_store import PortfolioStore, ProposalStateError
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -41,14 +42,38 @@ def _apply_all_migrations() -> None:
             conn.execute(migration.read_text())
 
 
+def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
+    migration = (ROOT / "migrations" / "0010_portfolio_execution.sql").read_text()
+
+    assert "omnicio_validate_execution_run_source" in migration
+    assert "AS $omnicio$" in migration
+    assert "execution leg source fields are immutable" in migration
+    assert "portfolio_execution_legs_source_guard" in migration
+    assert "UNIQUE (id, run_id, user_id)" in migration
+    assert "FOREIGN KEY (leg_id, run_id, user_id)" in migration
+    assert "REFERENCES portfolio_execution_legs(id, run_id, user_id)" in migration
+    assert "TG_OP = 'INSERT' AND NOT EXISTS" in migration
+    assert "p.expires_at > now()" in migration
+    assert "p.source_snapshot_id, p.account_id" in migration
+    assert "omnicio.financial_cleanup" in migration
+    assert "'account_delete'" in migration
+    assert "'broker_disconnect'" in migration
+    assert "portfolio_proposals_source_snapshot_tenant_fkey" in migration
+    assert "AS $omnicio_cleanup$" in migration
+    assert "\nAS $\n" not in migration
+    database_source = (ROOT / "src" / "omnicio" / "db.py").read_text()
+    assert "set_config('omnicio.financial_cleanup', 'account_delete', true)" in database_source
+    assert "set_config('omnicio.financial_cleanup', 'broker_disconnect', true)" in database_source
+
+
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0009_portfolio_proposals.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0010_portfolio_execution.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        # The additive R5 migration is safe to retry before release. Once
+        # The additive R6 migration is safe to retry before release. Once
         # accepted on main it becomes immutable migration history.
-        admin.execute((ROOT / "migrations" / "0009_portfolio_proposals.sql").read_text())
+        admin.execute((ROOT / "migrations" / "0010_portfolio_execution.sql").read_text())
 
         table_names = {
             row[0]
@@ -77,6 +102,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "balancing_policy_versions",
             "portfolio_proposals",
             "portfolio_proposal_actions",
+            "portfolio_execution_runs",
+            "portfolio_execution_legs",
+            "portfolio_execution_events",
         } <= table_names
 
         protected = {
@@ -99,13 +127,16 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_risk_assessments',
                           'balancing_policy_versions',
                           'portfolio_proposals',
-                          'portfolio_proposal_actions'
+                          'portfolio_proposal_actions',
+                          'portfolio_execution_runs',
+                          'portfolio_execution_legs',
+                          'portfolio_execution_events'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 11
+        assert len(protected) == 14
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
@@ -659,6 +690,165 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 material_current=True,
                 now=created_at + timedelta(hours=1),
             )
+            execution_ready = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="provider-bond-uid",
+                replaced_instrument_uid=None,
+                proposal_hash=b"x" * 32,
+                session_digest=b"s" * 32,
+                payload={
+                    "schema": "omnicio.portfolio.proposal.v1",
+                    "execution_enabled": False,
+                    "source": {
+                        "snapshot_id": str(snapshot_id),
+                        "account_id": "account-1",
+                        "profile_version": 1,
+                        "policy_version": 2,
+                    },
+                    "scenario": {
+                        "status": "feasible",
+                        "trades": [
+                            {
+                                "action": "buy",
+                                "instrument_uid": "provider-bond-uid",
+                                "ticker": "BOND",
+                                "lots": 2,
+                                "limit_price": "101.25",
+                                "limit_price_type": "point",
+                                "max_spend_rub": "2500",
+                                "min_proceeds_rub": None,
+                            }
+                        ],
+                    },
+                },
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            execution_proposal, execution_confirmation = store.decide_proposal(
+                USER_ONE,
+                proposal_id=execution_ready.id,
+                expected_version=execution_ready.version,
+                expected_hash=execution_ready.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=3),
+            )
+            execution_store = ExecutionStore(database)
+            shadow_run, shadow_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="shadow",
+                session_digest=b"e" * 32,
+            )
+            duplicate_run, duplicate_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="shadow",
+                session_digest=b"e" * 32,
+            )
+            sandbox_run, sandbox_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="sandbox",
+                session_digest=b"e" * 32,
+            )
+
+            stale_execution_ready = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="provider-bond-uid",
+                replaced_instrument_uid=None,
+                proposal_hash=b"z" * 32,
+                session_digest=b"s" * 32,
+                payload={
+                    "schema": "omnicio.portfolio.proposal.v1",
+                    "execution_enabled": False,
+                    "source": {
+                        "snapshot_id": str(snapshot_id),
+                        "account_id": "account-1",
+                        "profile_version": 1,
+                        "policy_version": 2,
+                    },
+                    "scenario": {
+                        "status": "feasible",
+                        "trades": [
+                            {
+                                "action": "buy",
+                                "instrument_uid": "provider-bond-uid",
+                                "ticker": "BOND",
+                                "lots": 1,
+                                "limit_price": "101.25",
+                                "limit_price_type": "point",
+                                "max_spend_rub": "1300",
+                                "min_proceeds_rub": None,
+                            }
+                        ],
+                    },
+                },
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            stale_execution_proposal, _ = store.decide_proposal(
+                USER_ONE,
+                proposal_id=stale_execution_ready.id,
+                expected_version=stale_execution_ready.version,
+                expected_hash=stale_execution_ready.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=4),
+            )
+            policy_after_confirmation = store.save_balancing_policy(
+                USER_ONE,
+                max_instrument_percent=Decimal("14"),
+                max_sector_percent=Decimal("30"),
+                max_issuer_percent=Decimal("20"),
+                max_group_percent=Decimal("25"),
+                max_share_percent=Decimal("70"),
+                max_bond_percent=Decimal("80"),
+                max_etf_percent=Decimal("70"),
+                max_below_grade_percent=Decimal("5"),
+                max_unknown_percent=Decimal("0"),
+                max_term_months=120,
+                turnover_budget_percent=Decimal("25"),
+                max_daily_turnover_participation_percent=Decimal("5"),
+                securities_tax_rate_percent=Decimal("15"),
+                uncertainty_haircut_percent=Decimal("3"),
+                credit_loss_haircut_percent=Decimal("2"),
+                no_trade_band_percent=Decimal("1"),
+                min_replace_benefit_rub=Decimal("500"),
+            )
+            with pytest.raises(
+                ExecutionLedgerError,
+                match="proposal_policy_stale",
+            ):
+                execution_store.create_run(
+                    USER_ONE,
+                    proposal_id=stale_execution_proposal.id,
+                    expected_version=stale_execution_proposal.version,
+                    expected_hash=stale_execution_proposal.proposal_hash,
+                    mode="shadow",
+                    session_digest=b"e" * 32,
+                )
+
             intelligence = store.latest_intelligence(USER_ONE)
         finally:
             database.close()
@@ -690,6 +880,15 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert expired_proposal.id == newest.id
         assert expired_action.action == "expired"
         assert expired_action.deferred_until is None
+        assert execution_confirmation.action == "confirmed"
+        assert shadow_run.mode == "shadow"
+        assert shadow_run.provider_environment is None
+        assert shadow_legs[0].request_id == duplicate_legs[0].request_id
+        assert duplicate_run.id == shadow_run.id
+        assert sandbox_run.id != shadow_run.id
+        assert sandbox_run.provider_environment == "sandbox"
+        assert sandbox_legs[0].request_id != shadow_legs[0].request_id
+        assert policy_after_confirmation.version == 3
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
@@ -735,6 +934,15 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         ).fetchone()[0] == 0
         assert runtime.execute(
             "SELECT count(*) FROM portfolio_proposal_actions"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_runs"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_legs"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_events"
         ).fetchone()[0] == 0
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
@@ -786,3 +994,39 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 """,
                 (USER_ONE,),
             )
+
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        admin.execute(
+            """
+            INSERT INTO vkid_identities (user_id, vk_user_id, verified_at)
+            VALUES (%s, 'r6-delete-regression', now())
+            """,
+            (USER_ONE,),
+        )
+
+    database = Database(DATABASE_URL)
+    database.open()
+    try:
+        assert database.delete_user_account(USER_ONE) is True
+    finally:
+        database.close()
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        assert admin.execute(
+            "SELECT count(*) FROM users WHERE id = %s",
+            (USER_ONE,),
+        ).fetchone()[0] == 0
+        for table in (
+            "portfolio_proposals",
+            "portfolio_proposal_actions",
+            "portfolio_execution_runs",
+            "portfolio_execution_legs",
+            "portfolio_execution_events",
+        ):
+            assert admin.execute(
+                sql.SQL("SELECT count(*) FROM {} WHERE user_id = %s").format(
+                    sql.Identifier(table)
+                ),
+                (USER_ONE,),
+            ).fetchone()[0] == 0

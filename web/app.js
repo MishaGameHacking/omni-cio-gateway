@@ -153,6 +153,11 @@
   const proposalCreateOptions = document.querySelector("#proposal-create-options");
   const proposalHistory = document.querySelector("#proposal-history");
   const proposalMessage = document.querySelector("#proposal-message");
+  const executionStatus = document.querySelector("#execution-status");
+  const executionRefresh = document.querySelector("#execution-refresh");
+  const executionHistory = document.querySelector("#execution-history");
+  const executionDetails = document.querySelector("#execution-details");
+  const executionMessage = document.querySelector("#execution-message");
 
   const owlState = document.querySelector("#owl-state");
   const owlLastRefresh = document.querySelector("#owl-last-refresh");
@@ -205,6 +210,9 @@
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
   let proposalRequestInFlight = false;
+  let executionRequestInFlight = false;
+  let tbankEnvironment = null;
+  let tbankAccountId = null;
   let owlTimer = null;
   let usdRubEventSource = null;
   let usdRubFallbackTimer = null;
@@ -336,7 +344,7 @@
     currentView = view;
     viewTitle.textContent = VIEW_TITLES[view];
 
-    desktopNavItems.forEach((item) => {
+  desktopNavItems.forEach((item) => {
       const active = item.dataset.view === view;
       item.classList.toggle("is-active", active);
       if (active) {
@@ -1910,6 +1918,79 @@
     return controls;
   };
 
+  const EXECUTION_STATUS_LABELS = {
+    created: "Создан",
+    running: "Выполняется",
+    reconciling: "Требует сверки",
+    succeeded: "Завершён",
+    cancelled: "Отменён",
+    failed: "Ошибка",
+  };
+
+  const executionStatusLabel = (value) => (
+    EXECUTION_STATUS_LABELS[value] || String(value || "—")
+  );
+
+  const executionModeLabel = (value) => (
+    value === "shadow" ? "Shadow" : value === "sandbox" ? "Sandbox" : String(value || "—")
+  );
+
+  const terminalExecutionStatus = (value) => (
+    ["succeeded", "cancelled", "failed"].includes(value)
+  );
+
+  const syncSandboxStartControls = () => {
+    const sandboxConnected = tbankIsConnected && tbankEnvironment === "sandbox";
+    proposalHistory.querySelectorAll('[data-execution-start="sandbox"]').forEach((button) => {
+      const accountMatches = (
+        sandboxConnected
+        && tbankAccountId
+        && button.dataset.proposalAccountId === tbankAccountId
+      );
+      button.disabled = !accountMatches;
+      button.title = accountMatches
+        ? "Создать run для exact-пакета этого Sandbox-счёта"
+        : "Sandbox требует тот же exact account_id, из которого построен R5 proposal.";
+    });
+    executionHistory.querySelectorAll("[data-execution-action]").forEach((button) => {
+      const accountMatches = (
+        sandboxConnected
+        && tbankAccountId
+        && button.dataset.executionAccountId === tbankAccountId
+      );
+      button.disabled = !accountMatches;
+      button.title = accountMatches
+        ? ""
+        : "Для управления run подключите тот же exact Sandbox-счёт.";
+    });
+  };
+
+  const proposalExecutionControls = (proposal) => {
+    const controls = document.createElement("div");
+    controls.className = "proposal-decision-actions";
+
+    const shadow = document.createElement("button");
+    shadow.type = "button";
+    shadow.className = "button button-secondary";
+    shadow.textContent = "Shadow-репетиция";
+    shadow.dataset.executionStart = "shadow";
+
+    const sandbox = document.createElement("button");
+    sandbox.type = "button";
+    sandbox.className = "button button-secondary";
+    sandbox.textContent = "Создать Sandbox-run";
+    sandbox.dataset.executionStart = "sandbox";
+
+    for (const button of [shadow, sandbox]) {
+      button.dataset.proposalId = proposal.id;
+      button.dataset.proposalVersion = String(proposal.version);
+      button.dataset.proposalHash = proposal.hash;
+      button.dataset.proposalAccountId = proposal.account_id || "";
+      controls.append(button);
+    }
+    return controls;
+  };
+
   const renderProposals = (items) => {
     proposalHistory.replaceChildren();
     const proposals = Array.isArray(items) ? items : [];
@@ -1943,6 +2024,8 @@
 
       if (proposal.status === "pending") {
         row.append(proposalDecisionControls(proposal));
+      } else if (proposal.status === "confirmed") {
+        row.append(proposalExecutionControls(proposal));
       }
       proposalHistory.append(row);
     });
@@ -1969,6 +2052,7 @@
     } else {
       setStateBadge(proposalStatus, "Нет активного предложения", "state-next");
     }
+    syncSandboxStartControls();
   };
 
   const loadProposals = async () => {
@@ -2007,6 +2091,7 @@
         `Зафиксирована immutable версия v${result.proposal.version}. Подтверждение не отправляет заявки брокеру.`,
       );
       await loadProposals();
+      await loadExecutions();
     } catch (error) {
       showMessage(
         proposalMessage,
@@ -2070,6 +2155,7 @@
         `${proposalStatusLabel(result.proposal.status)}. Broker execution выключен.`,
       );
       await loadProposals();
+      await loadExecutions();
     } catch (error) {
       showMessage(
         proposalMessage,
@@ -2084,6 +2170,280 @@
     } finally {
       button.disabled = false;
       proposalRequestInFlight = false;
+    }
+  };
+
+  const renderExecutionDetails = (payload) => {
+    executionDetails.replaceChildren();
+    const run = payload?.execution;
+    if (!run) {
+      appendEmptyState(executionDetails, "Выберите запуск из журнала.");
+      return;
+    }
+
+    const summary = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = [
+      executionModeLabel(run.mode),
+      executionStatusLabel(run.status),
+      `proposal v${run.proposal_version}`,
+    ].join(" · ");
+    const details = document.createElement("small");
+    details.textContent = [
+      `run: ${String(run.id || "").slice(0, 8)}…`,
+      `account: ••••${String(run.account_id || "").slice(-6)}`,
+      run.error_code ? `код: ${run.error_code}` : "",
+      `создан: ${formatDateTime(run.created_at)}`,
+    ].filter(Boolean).join(" · ");
+    summary.append(title, details);
+    executionDetails.append(summary);
+
+    (run.legs || []).forEach((leg) => {
+      const row = document.createElement("div");
+      const legTitle = document.createElement("strong");
+      legTitle.textContent = [
+        `#${Number(leg.leg_index) + 1}`,
+        leg.action === "buy" ? "BUY" : "SELL",
+        executionStatusLabel(leg.status),
+      ].join(" · ");
+      const legDetails = document.createElement("small");
+      legDetails.textContent = [
+        `UID: ${String(leg.instrument_uid || "").slice(0, 16)}…`,
+        `лоты: ${leg.lots_executed}/${leg.lots_requested}`,
+        `limit: ${leg.limit_price} (${leg.limit_price_type})`,
+        `request: ${String(leg.request_id || "").slice(0, 8)}…`,
+        `сумма: ${formatMoney({currency: "RUB", value: leg.executed_amount_rub})}`,
+        `комиссия: ${formatMoney({currency: "RUB", value: leg.executed_commission_rub})}`,
+      ].join(" · ");
+      row.append(legTitle, legDetails);
+      executionDetails.append(row);
+    });
+
+    (payload.events || []).slice(-12).forEach((event) => {
+      const row = document.createElement("div");
+      const eventTitle = document.createElement("strong");
+      eventTitle.textContent = `Событие · ${event.event_type}`;
+      const eventDetails = document.createElement("small");
+      eventDetails.textContent = formatDateTime(event.created_at);
+      row.append(eventTitle, eventDetails);
+      executionDetails.append(row);
+    });
+  };
+
+  const loadExecutionDetails = async (runId) => {
+    try {
+      const payload = await api(`/api/portfolio/executions/${runId}`, {method: "GET"});
+      renderExecutionDetails(payload);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      executionDetails.replaceChildren();
+      appendEmptyState(executionDetails, "Не удалось загрузить состояние запуска.");
+    }
+  };
+
+  const renderExecutions = (items) => {
+    executionHistory.replaceChildren();
+    const runs = Array.isArray(items) ? items : [];
+
+    runs.slice(0, 12).forEach((run) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = [
+        executionModeLabel(run.mode),
+        executionStatusLabel(run.status),
+        `proposal v${run.proposal_version}`,
+      ].join(" · ");
+      const details = document.createElement("small");
+      details.textContent = [
+        `run: ${String(run.id || "").slice(0, 8)}…`,
+        `создан: ${formatDateTime(run.created_at)}`,
+        run.error_code ? `код: ${run.error_code}` : "",
+      ].filter(Boolean).join(" · ");
+
+      const actions = document.createElement("div");
+      actions.className = "proposal-decision-actions";
+
+      const inspect = document.createElement("button");
+      inspect.type = "button";
+      inspect.className = "button button-secondary";
+      inspect.textContent = "Детали";
+      inspect.dataset.executionInspect = run.id;
+      actions.append(inspect);
+
+      if (run.mode === "sandbox" && !terminalExecutionStatus(run.status)) {
+        const advance = document.createElement("button");
+        advance.type = "button";
+        advance.className = "button button-primary";
+        const firstPending = run.status === "created";
+        advance.textContent = firstPending
+          ? "Отправить следующую Sandbox limit-заявку"
+          : "Сверить Sandbox";
+        advance.dataset.executionAction = "advance";
+        advance.dataset.executionId = run.id;
+        advance.dataset.executionAccountId = run.account_id || "";
+
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "button button-danger-secondary";
+        cancel.textContent = "Отменить Sandbox";
+        cancel.dataset.executionAction = "cancel";
+        cancel.dataset.executionId = run.id;
+        cancel.dataset.executionAccountId = run.account_id || "";
+
+        actions.append(advance, cancel);
+      }
+
+      row.append(title, details, actions);
+      executionHistory.append(row);
+    });
+
+    if (!executionHistory.childElementCount) {
+      appendEmptyState(
+        executionHistory,
+        "R6 ещё не запускался. Сначала подтвердите R5-предложение.",
+      );
+      executionDetails.replaceChildren();
+      appendEmptyState(executionDetails, "Состояние запуска появится после shadow/sandbox.");
+      setStateBadge(executionStatus, "Live выключен · запусков нет", "state-next");
+      return;
+    }
+
+    const active = runs.find((run) => !terminalExecutionStatus(run.status));
+    if (active) {
+      setStateBadge(
+        executionStatus,
+        `${executionModeLabel(active.mode)} · ${executionStatusLabel(active.status)}`,
+        active.status === "reconciling" ? "state-error" : "state-next",
+      );
+    } else {
+      setStateBadge(executionStatus, "Live выключен · журнал готов", "state-ok");
+    }
+  };
+
+  const loadExecutions = async ({inspectLatest = false} = {}) => {
+    try {
+      const result = await api("/api/portfolio/executions", {method: "GET"});
+      renderExecutions(result.executions || []);
+      if (inspectLatest && result.executions?.length) {
+        await loadExecutionDetails(result.executions[0].id);
+      }
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      executionHistory.replaceChildren();
+      executionDetails.replaceChildren();
+      appendEmptyState(executionHistory, "Не удалось загрузить R6 execution ledger.");
+      setStateBadge(executionStatus, "Ошибка чтения R6", "state-error");
+    }
+  };
+
+  const startExecution = async (button) => {
+    if (executionRequestInFlight) {
+      return;
+    }
+    const mode = button.dataset.executionStart;
+    if (
+      mode === "sandbox"
+      && (
+        tbankEnvironment !== "sandbox"
+        || !tbankAccountId
+        || button.dataset.proposalAccountId !== tbankAccountId
+      )
+    ) {
+      showMessage(
+        executionMessage,
+        "Sandbox-run требует тот же exact Sandbox account_id, из которого построено подтверждённое предложение.",
+        true,
+      );
+      return;
+    }
+
+    executionRequestInFlight = true;
+    showMessage(executionMessage, "");
+    button.disabled = true;
+    try {
+      const result = await api("/api/portfolio/executions", {
+        method: "POST",
+        body: JSON.stringify({
+          proposal_id: button.dataset.proposalId,
+          proposal_version: Number(button.dataset.proposalVersion),
+          proposal_hash: button.dataset.proposalHash,
+          mode,
+        }),
+      });
+      showMessage(
+        executionMessage,
+        mode === "shadow"
+          ? "Shadow-репетиция записана. Broker mutation не выполнялась."
+          : "Sandbox state machine запущена. Live execution остаётся выключен.",
+      );
+      await loadExecutions();
+      await loadExecutionDetails(result.execution.id);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        executionMessage,
+        error.status === 409
+          ? `Запуск не выполнен: ${error.message}. Проверьте exact proposal и контур счёта.`
+          : "R6 запуск не выполнен. Production-заявка не создавалась.",
+        true,
+      );
+    } finally {
+      button.disabled = false;
+      executionRequestInFlight = false;
+      syncSandboxStartControls();
+    }
+  };
+
+  const mutateExecution = async (button) => {
+    if (executionRequestInFlight) {
+      return;
+    }
+    const runId = button.dataset.executionId;
+    const action = button.dataset.executionAction;
+    if (!runId || !["advance", "cancel"].includes(action)) {
+      return;
+    }
+
+    executionRequestInFlight = true;
+    showMessage(executionMessage, "");
+    button.disabled = true;
+    try {
+      await api(`/api/portfolio/executions/${runId}/${action}`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      showMessage(
+        executionMessage,
+        action === "cancel"
+          ? "Sandbox cancel/reconciliation записан в immutable журнал."
+          : "Состояние Sandbox сверено по сохранённому request ID.",
+      );
+      await loadExecutions();
+      await loadExecutionDetails(runId);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        executionMessage,
+        error.status === 503
+          ? "Provider недоступен. Run оставлен в безопасном состоянии для последующей сверки."
+          : `R6 действие не выполнено: ${error.message}.`,
+        true,
+      );
+    } finally {
+      button.disabled = false;
+      executionRequestInFlight = false;
     }
   };
 
@@ -2167,6 +2527,9 @@
     homeConnectionCard.classList.remove("is-offline", "is-error");
     topConnectionIndicator.classList.remove("is-offline", "is-error");
     tbankIsConnected = Boolean(status.connected);
+    tbankEnvironment = status.connected ? status.environment : null;
+    tbankAccountId = status.connected ? String(status.account_id || "") : null;
+    syncSandboxStartControls();
 
     if (!status.connected) {
       portfolioLoaded = false;
@@ -2238,6 +2601,9 @@
     topConnectionIndicator.classList.add("is-error");
     topConnectionText.textContent = "Ошибка T-Invest";
     tbankIsConnected = false;
+    tbankEnvironment = null;
+    tbankAccountId = null;
+    syncSandboxStartControls();
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
     lastPortfolioRefreshAt = 0;
@@ -2372,6 +2738,7 @@
     void loadInvestmentProfile();
     void loadBalancingPolicy();
     void loadProposals();
+    void loadExecutions({inspectLatest: true});
   };
 
   const showAuth = () => {
@@ -2530,18 +2897,44 @@
     void loadAnalysis();
   });
 
+  const closestActionTarget = (event, selector) => {
+    const target = event.target;
+    return target instanceof Element ? target.closest(selector) : null;
+  };
+
   proposalCreateOptions.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-proposal-create]");
+    const button = closestActionTarget(event, "[data-proposal-create]");
     if (button) {
       void createProposal(button);
     }
   });
 
   proposalHistory.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-proposal-decision]");
-    if (button) {
-      void decideProposal(button);
+    const decisionButton = closestActionTarget(event, "[data-proposal-decision]");
+    if (decisionButton) {
+      void decideProposal(decisionButton);
+      return;
     }
+    const executionButton = closestActionTarget(event, "[data-execution-start]");
+    if (executionButton) {
+      void startExecution(executionButton);
+    }
+  });
+
+  executionHistory.addEventListener("click", (event) => {
+    const inspect = closestActionTarget(event, "[data-execution-inspect]");
+    if (inspect) {
+      void loadExecutionDetails(inspect.dataset.executionInspect);
+      return;
+    }
+    const action = closestActionTarget(event, "[data-execution-action]");
+    if (action) {
+      void mutateExecution(action);
+    }
+  });
+
+  executionRefresh.addEventListener("click", () => {
+    void loadExecutions({inspectLatest: true});
   });
 
   desktopNavItems.forEach((item) => {

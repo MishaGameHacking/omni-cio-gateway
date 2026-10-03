@@ -524,6 +524,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/portfolio/intelligence",
             "/api/portfolio/balancing",
             "/api/portfolio/proposals",
+            "/api/portfolio/executions",
             "/api/profile/balancing",
             "/api/broker/tbank/instruments/search",
             "/api/market/usd-rub",
@@ -563,6 +564,43 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("PostOrder", backend)
         self.assertNotIn("CancelOrder", backend)
         self.assertNotIn("ReplaceOrder", backend)
+
+    def test_r6_ui_exposes_only_shadow_and_sandbox_execution_controls(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text()
+        script = (root / "web" / "app.js").read_text()
+        backend = (root / "src" / "omnicio" / "main.py").read_text()
+        tbank = (root / "src" / "omnicio" / "tbank.py").read_text()
+
+        for element_id in (
+            "execution-status",
+            "execution-refresh",
+            "execution-history",
+            "execution-details",
+            "execution-message",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn('"/api/portfolio/executions"', script)
+        self.assertIn('shadow.dataset.executionStart = "shadow"', script)
+        self.assertIn('sandbox.dataset.executionStart = "sandbox"', script)
+        self.assertIn("button.dataset.proposalAccountId", script)
+        self.assertIn("button.dataset.executionAccountId", script)
+        self.assertIn("Отправить следующую Sandbox limit-заявку", script)
+        self.assertEqual(script.count('executionRefresh.addEventListener("click"'), 1)
+        self.assertEqual(script.count('executionHistory.addEventListener("click"'), 1)
+        self.assertIn("Live execution остаётся выключен", script)
+        self.assertIn("R6 Sandbox токен должен разрешать тестовые методы песочницы", page)
+        self.assertIn('@app.get("/api/portfolio/executions")', backend)
+        self.assertIn('@app.post("/api/portfolio/executions"', backend)
+        self.assertIn('"/api/portfolio/executions/{run_id}/advance"', backend)
+        self.assertIn('"/api/portfolio/executions/{run_id}/cancel"', backend)
+        self.assertIn('"live_execution_enabled": False', backend)
+        self.assertIn('service="SandboxService"', tbank)
+        self.assertIn('method="PostSandboxOrder"', tbank)
+        self.assertIn('"confirmMarginTrade": False', tbank)
+        self.assertNotIn('method="PostOrder"', tbank)
+        self.assertNotIn('method="ReplaceOrder"', tbank)
 
     def test_versioned_balancing_policy_has_explicit_limits_and_no_trade_authority(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -842,7 +880,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.12.0"', project)
+        self.assertIn('version = "0.13.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
