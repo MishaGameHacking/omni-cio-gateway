@@ -747,10 +747,16 @@ def _policy(
 def _holding(row: dict[str, object]) -> Holding:
     value = _decimal(row.get("value_rub")) or Decimal("0")
     quantity = _decimal(row.get("quantity")) or Decimal("0")
+    quantity_lots = _decimal(row.get("quantity_lots"))
     lot = _integer(row.get("lot"))
     lots = 0
     quantity_misaligned = True
-    if lot > 0 and quantity >= 0:
+    if quantity_lots is not None and quantity_lots >= 0:
+        integral_lots = quantity_lots.to_integral_value()
+        if quantity_lots == integral_lots:
+            lots = int(integral_lots)
+            quantity_misaligned = False
+    elif lot > 0 and quantity >= 0:
         raw_lots = quantity / Decimal(lot)
         integral = raw_lots.to_integral_value()
         if raw_lots == integral:
