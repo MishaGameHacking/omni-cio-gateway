@@ -1665,6 +1665,403 @@ class PortfolioStore:
                     assessments_written += 1
         return documents_written, assessments_written
 
+    def portfolio_visualization(
+        self,
+        user_id: UUID,
+        *,
+        history_limit: int = 90,
+        now: datetime | None = None,
+    ) -> dict[str, object]:
+        if not 2 <= history_limit <= 365:
+            raise ValueError("history_limit must be between 2 and 365")
+        observed_at = now or datetime.now(UTC)
+        if observed_at.tzinfo is None:
+            raise ValueError("visualization time must be timezone-aware")
+        observed_at = observed_at.astimezone(UTC)
+
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    account_id,
+                    environment,
+                    captured_at,
+                    created_at,
+                    analysis_status,
+                    nav_rub,
+                    rub_cash_total,
+                    rub_cash_blocked,
+                    rub_cash_unblocked,
+                    limits_loading_in_progress,
+                    evidence
+                FROM portfolio_snapshots
+                WHERE user_id = %s
+                ORDER BY captured_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            latest_row = cur.fetchone()
+            if latest_row is None:
+                return {
+                    "status": "pending",
+                    "history": [],
+                    "latest": None,
+                }
+
+            latest = dict(cast(dict[str, Any], latest_row))
+            snapshot_id = cast(UUID, latest["id"])
+            account_id = str(latest["account_id"])
+            environment = str(latest["environment"])
+
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    captured_at,
+                    created_at,
+                    analysis_status,
+                    nav_rub
+                FROM portfolio_snapshots
+                WHERE user_id = %s
+                  AND account_id = %s
+                  AND environment = %s
+                ORDER BY captured_at DESC, created_at DESC
+                LIMIT %s
+                """,
+                (user_id, account_id, environment, history_limit),
+            )
+            history_rows = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT
+                    p.instrument_uid,
+                    p.figi,
+                    p.ticker,
+                    p.instrument_type,
+                    p.quantity,
+                    p.current_price_value,
+                    p.current_price_currency,
+                    p.average_price_fifo_value,
+                    p.average_price_fifo_currency,
+                    p.blocked,
+                    p.blocked_lots,
+                    p.value_rub,
+                    p.nav_percent,
+                    p.sector,
+                    p.country_of_risk,
+                    p.for_qual_investor,
+                    COALESCE(c.instrument_uid, '') AS catalog_instrument_uid,
+                    COALESCE(c.asset_uid, '') AS asset_uid,
+                    COALESCE(c.name, '') AS name,
+                    COALESCE(c.currency, p.current_price_currency, '') AS currency,
+                    c.provider_retrieved_at AS catalog_retrieved_at,
+                    COALESCE(r.state, 'data_missing') AS risk_state,
+                    COALESCE(r.rating_status, 'data_missing') AS rating_status,
+                    COALESCE(r.fundamental_status, 'data_missing') AS fundamental_status,
+                    COALESCE(r.source_status, 'data_missing') AS source_status,
+                    COALESCE(r.reasons, '[]'::jsonb) AS risk_reasons,
+                    r.assessed_at
+                FROM portfolio_snapshot_positions AS p
+                LEFT JOIN instrument_catalog AS c
+                  ON c.provider = 'tbank'
+                 AND (
+                     c.instrument_uid = p.instrument_uid
+                     OR (p.figi <> '' AND c.figi = p.figi)
+                 )
+                LEFT JOIN portfolio_risk_assessments AS r
+                  ON r.snapshot_id = p.snapshot_id
+                 AND r.user_id = p.user_id
+                 AND r.instrument_uid = p.instrument_uid
+                WHERE p.snapshot_id = %s
+                  AND p.user_id = %s
+                ORDER BY p.nav_percent DESC NULLS LAST, p.value_rub DESC NULLS LAST, p.ticker
+                """,
+                (snapshot_id, user_id),
+            )
+            positions = [dict(row) for row in cur.fetchall()]
+
+        captured_at = cast(datetime, latest["captured_at"]).astimezone(UTC)
+        evidence = latest.get("evidence")
+        analysis: dict[str, object] = {}
+        if isinstance(evidence, dict):
+            raw_analysis = evidence.get("analysis")
+            if isinstance(raw_analysis, dict):
+                analysis = dict(cast(dict[str, object], raw_analysis))
+
+        for position in positions:
+            assessed_at = cast(datetime | None, position.get("assessed_at"))
+            position["assessment_freshness"] = _freshness_status(
+                assessed_at,
+                now=observed_at,
+            )
+
+        history = [
+            {
+                "snapshot_id": str(row["id"]),
+                "captured_at": row["captured_at"],
+                "recorded_at": row["created_at"],
+                "analysis_status": row["analysis_status"],
+                "nav_rub": row["nav_rub"],
+            }
+            for row in reversed(history_rows)
+        ]
+        return {
+            "status": "observed",
+            "history": history,
+            "latest": {
+                "snapshot_id": str(snapshot_id),
+                "account_id": account_id,
+                "environment": environment,
+                "captured_at": captured_at,
+                "recorded_at": latest["created_at"],
+                "snapshot_freshness": _freshness_status(
+                    captured_at,
+                    now=observed_at,
+                ),
+                "analysis_status": latest["analysis_status"],
+                "nav_rub": latest["nav_rub"],
+                "rub_cash_total": latest["rub_cash_total"],
+                "rub_cash_blocked": latest["rub_cash_blocked"],
+                "rub_cash_unblocked": latest["rub_cash_unblocked"],
+                "limits_loading_in_progress": latest["limits_loading_in_progress"],
+                "sector_coverage_percent": analysis.get("sector_coverage_percent"),
+                "valued_security_count": analysis.get("valued_security_count"),
+                "security_count": analysis.get("security_count"),
+                "positions": positions,
+            },
+        }
+
+    def instrument_visualization(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        history_limit: int = 90,
+        now: datetime | None = None,
+    ) -> dict[str, object] | None:
+        if not 1 <= len(instrument_uid) <= 128 or instrument_uid != instrument_uid.strip():
+            raise ValueError("instrument_uid must contain 1 to 128 non-padded characters")
+        if not 2 <= history_limit <= 365:
+            raise ValueError("history_limit must be between 2 and 365")
+        observed_at = now or datetime.now(UTC)
+        if observed_at.tzinfo is None:
+            raise ValueError("visualization time must be timezone-aware")
+        observed_at = observed_at.astimezone(UTC)
+
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                """
+                SELECT account_id, environment
+                FROM portfolio_snapshots
+                WHERE user_id = %s
+                ORDER BY captured_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            account_row = cur.fetchone()
+            if account_row is None:
+                return None
+            account = cast(dict[str, Any], account_row)
+            account_id = str(account["account_id"])
+            environment = str(account["environment"])
+
+            cur.execute(
+                """
+                SELECT
+                    s.id AS snapshot_id,
+                    s.captured_at,
+                    s.created_at AS recorded_at,
+                    s.analysis_status,
+                    p.instrument_uid,
+                    p.figi,
+                    p.ticker,
+                    p.instrument_type,
+                    p.quantity,
+                    p.current_price_value,
+                    p.current_price_currency,
+                    p.average_price_fifo_value,
+                    p.average_price_fifo_currency,
+                    p.blocked,
+                    p.blocked_lots,
+                    p.value_rub,
+                    p.nav_percent,
+                    p.sector,
+                    p.country_of_risk,
+                    p.for_qual_investor,
+                    COALESCE(c.instrument_uid, '') AS catalog_instrument_uid,
+                    COALESCE(c.asset_uid, '') AS asset_uid,
+                    COALESCE(c.name, '') AS name,
+                    COALESCE(c.currency, p.current_price_currency, '') AS currency,
+                    c.provider_retrieved_at AS catalog_retrieved_at,
+                    COALESCE(r.state, 'data_missing') AS risk_state,
+                    COALESCE(r.rating_status, 'data_missing') AS rating_status,
+                    COALESCE(r.fundamental_status, 'data_missing') AS fundamental_status,
+                    COALESCE(r.source_status, 'data_missing') AS source_status,
+                    COALESCE(r.reasons, '[]'::jsonb) AS risk_reasons,
+                    COALESCE(r.evidence, '{}'::jsonb) AS risk_evidence,
+                    r.assessed_at
+                FROM portfolio_snapshot_positions AS p
+                JOIN portfolio_snapshots AS s
+                  ON s.id = p.snapshot_id
+                 AND s.user_id = p.user_id
+                LEFT JOIN instrument_catalog AS c
+                  ON c.provider = 'tbank'
+                 AND (
+                     c.instrument_uid = p.instrument_uid
+                     OR (p.figi <> '' AND c.figi = p.figi)
+                 )
+                LEFT JOIN portfolio_risk_assessments AS r
+                  ON r.snapshot_id = p.snapshot_id
+                 AND r.user_id = p.user_id
+                 AND r.instrument_uid = p.instrument_uid
+                WHERE p.user_id = %s
+                  AND p.instrument_uid = %s
+                  AND s.account_id = %s
+                  AND s.environment = %s
+                ORDER BY s.captured_at DESC, s.created_at DESC
+                LIMIT %s
+                """,
+                (user_id, instrument_uid, account_id, environment, history_limit),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+            if not rows:
+                return None
+
+            latest = rows[0]
+            subjects = [
+                value
+                for value in (
+                    instrument_uid,
+                    str(latest.get("catalog_instrument_uid") or ""),
+                    str(latest.get("asset_uid") or ""),
+                )
+                if value
+            ]
+            subjects = list(dict.fromkeys(subjects))
+
+            cur.execute(
+                """
+                SELECT DISTINCT ON (
+                    pe.provider,
+                    pe.instrument_uid,
+                    pe.event_type,
+                    pe.provider_key
+                )
+                    pe.provider,
+                    pe.instrument_uid,
+                    pe.event_type,
+                    pe.provider_key,
+                    pe.announced_at,
+                    pe.record_at,
+                    pe.expected_at,
+                    pe.actual_at,
+                    pe.amount,
+                    pe.currency,
+                    pe.status,
+                    sd.source_url,
+                    sd.first_retrieved_at
+                FROM payout_events AS pe
+                JOIN source_documents AS sd
+                  ON sd.id = pe.source_document_id
+                WHERE pe.instrument_uid = ANY (%s)
+                ORDER BY
+                    pe.provider,
+                    pe.instrument_uid,
+                    pe.event_type,
+                    pe.provider_key,
+                    sd.first_retrieved_at DESC,
+                    pe.id DESC
+                LIMIT 100
+                """,
+                (subjects,),
+            )
+            payouts = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT
+                    sd.provider,
+                    sd.document_type,
+                    sd.subject_uid,
+                    sd.source_url,
+                    sd.published_at,
+                    sd.effective_at,
+                    max(sr.retrieved_at) AS retrieved_at,
+                    count(DISTINCT sd.id) AS versions
+                FROM source_documents AS sd
+                JOIN source_retrievals AS sr
+                  ON sr.source_document_id = sd.id
+                WHERE sd.subject_uid = ANY (%s)
+                GROUP BY
+                    sd.provider,
+                    sd.document_type,
+                    sd.subject_uid,
+                    sd.source_url,
+                    sd.published_at,
+                    sd.effective_at
+                ORDER BY max(sr.retrieved_at) DESC
+                LIMIT 100
+                """,
+                (subjects,),
+            )
+            sources = [dict(row) for row in cur.fetchall()]
+
+        latest_captured_at = cast(datetime, latest["captured_at"]).astimezone(UTC)
+        for source in sources:
+            retrieved_at = cast(datetime | None, source.get("retrieved_at"))
+            source["freshness_status"] = _freshness_status(
+                retrieved_at,
+                now=observed_at,
+            )
+        history = [
+            {
+                "snapshot_id": str(row["snapshot_id"]),
+                "captured_at": row["captured_at"],
+                "recorded_at": row["recorded_at"],
+                "analysis_status": row["analysis_status"],
+                "quantity": row["quantity"],
+                "price_value": row["current_price_value"],
+                "price_currency": row["current_price_currency"],
+                "value_rub": row["value_rub"],
+                "nav_percent": row["nav_percent"],
+                "blocked": row["blocked"],
+                "blocked_lots": row["blocked_lots"],
+            }
+            for row in reversed(rows)
+        ]
+        return {
+            "status": "observed",
+            "account_id": account_id,
+            "environment": environment,
+            "snapshot_freshness": _freshness_status(
+                latest_captured_at,
+                now=observed_at,
+            ),
+            "latest": {
+                key: value
+                for key, value in latest.items()
+                if key not in {"risk_evidence"}
+            },
+            "risk_evidence": latest.get("risk_evidence") or {},
+            "history": history,
+            "payouts": payouts,
+            "sources": sources,
+        }
+
     def latest_balancing_context(
         self,
         user_id: UUID,
