@@ -744,6 +744,30 @@ class ExecutionStore:
             if run.status in _TERMINAL_RUNS:
                 raise ExecutionLedgerError("execution_already_terminal")
 
+            if run.mode == "live" and new_status == "submitting":
+                if run.live_mandate_id is None:
+                    raise ExecutionLedgerError("live_mandate_inactive")
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM portfolio_live_execution_mandates
+                    WHERE id = %s
+                      AND user_id = %s
+                      AND account_id = %s
+                      AND revoked_at IS NULL
+                      AND expires_at > %s
+                    FOR SHARE
+                    """,
+                    (
+                        run.live_mandate_id,
+                        user_id,
+                        run.account_id,
+                        observed_at,
+                    ),
+                )
+                if cur.fetchone() is None:
+                    raise ExecutionLedgerError("live_mandate_inactive")
+
             cur.execute(
                 """
                 SELECT
