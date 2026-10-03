@@ -10,20 +10,19 @@ from omnicio.balancing_service import (
     build_balancing_payload,
     build_live_balancing_payload,
 )
-from omnicio.moex import (
-    MoexBondSnapshot,
-    MoexLiquiditySnapshot,
-    MoexSecurityIdentity,
-)
 from omnicio.portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
 from omnicio.tbank import (
     TBankAssetFundamental,
+    TBankBondCoupon,
+    TBankHistoricCandle,
+    TBankInstrumentMetadata,
     TBankLastPrice,
     TBankMarketYield,
     TBankMoney,
     TBankOrderBook,
     TBankOrderLevel,
     TBankOrderPrice,
+    TBankRating,
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -294,6 +293,65 @@ def _fundamental(now: datetime) -> TBankAssetFundamental:
     )
 
 
+def _bond_metadata(
+    now: datetime,
+    *,
+    uid: str = "candidate-1",
+    nominal: str = "1000",
+    under_watch: bool = False,
+) -> TBankInstrumentMetadata:
+    return TBankInstrumentMetadata(
+        uid=uid,
+        name="Bond",
+        ticker="BOND",
+        isin="RU0000000001",
+        instrument_type="bond",
+        sector="finance",
+        country_of_risk="RU",
+        for_qual_investor=False,
+        asset_uid="asset-1",
+        currency="RUB",
+        class_code="TQCB",
+        lot=1,
+        for_iis=True,
+        api_trade_available=True,
+        buy_available=True,
+        sell_available=True,
+        nominal=TBankMoney("RUB", nominal),
+        maturity_date=now + timedelta(days=365),
+        floating_coupon=False,
+        perpetual=False,
+        amortization=False,
+        subordinated=False,
+        liquidity=True,
+        coupon_quantity_per_year=1,
+        call_date=None,
+        risk_level="RISK_LEVEL_LOW",
+        ratings=(
+            TBankRating(
+                agency_name="Test RA",
+                rating_level="BBB+(RU)",
+                rating_date=now - timedelta(days=30),
+                forecast="stable",
+                is_under_watch=under_watch,
+            ),
+        ),
+    )
+
+
+def _daily_candles(now: datetime) -> tuple[TBankHistoricCandle, ...]:
+    return tuple(
+        TBankHistoricCandle(
+            instrument_uid="candidate-1",
+            close="100",
+            volume_lots=1000,
+            time=now - timedelta(days=index + 1),
+            is_complete=True,
+        )
+        for index in range(20)
+    )
+
+
 def test_live_r4_bond_enrichment_can_produce_integer_lot_scenario() -> None:
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     context = _context(now)
@@ -305,6 +363,22 @@ def test_live_r4_bond_enrichment_can_produce_integer_lot_scenario() -> None:
         candidate_last_prices=lambda user_id, uids: (
             TBankLastPrice("candidate-1", "100", now),
         ),
+        candidate_bond_metadata=lambda user_id, uid: _bond_metadata(now),
+        candidate_bond_coupons=lambda user_id, uid, **kwargs: (
+            TBankBondCoupon(
+                instrument_uid=uid,
+                coupon_date=now + timedelta(days=365),
+                coupon_number=1,
+                fix_date=None,
+                pay_one_bond=TBankMoney("RUB", "100"),
+                coupon_type="COUPON_TYPE_CONSTANT",
+                coupon_start_date=now,
+                coupon_end_date=now + timedelta(days=365),
+                coupon_period_days=365,
+            ),
+        ),
+        candidate_bond_events=lambda user_id, uid, **kwargs: (),
+        candidate_daily_candles=lambda user_id, uid, **kwargs: _daily_candles(now),
         candidate_order_book=lambda user_id, uid, depth=10: TBankOrderBook(
             instrument_uid=uid,
             bids=(TBankOrderLevel("99.9", 100),),
@@ -321,50 +395,13 @@ def test_live_r4_bond_enrichment_can_produce_integer_lot_scenario() -> None:
             bond_aci_value=TBankMoney("RUB", "20"),
         ),
     )
-    moex = SimpleNamespace(
-        security_identity=lambda query, expected_isin="": MoexSecurityIdentity(
-            secid="TESTBOND",
-            isin="RU0000000001",
-            issuer_id="1234",
-            issuer_name="Issuer",
-            issuer_inn="7700000000",
-            primary_board_id="TQCB",
-            is_traded=True,
-            source_url="https://iss.moex.com/iss/securities.json",
-        ),
-        bond_snapshot=lambda secid, board: MoexBondSnapshot(
-            secid=secid,
-            board_id=board,
-            yield_percent=Decimal("12.5"),
-            yield_to_offer_percent=Decimal("12"),
-            call_option_yield_percent=None,
-            ytw_percent=Decimal("12"),
-            duration_days=Decimal("700"),
-            call_option_duration_days=None,
-            accrued_interest_rub=Decimal("20"),
-            value_today_rub=Decimal("10000000"),
-            volume_today=Decimal("10000"),
-            offer_date="",
-            maturity_date="2027-10-03",
-            source_url="https://iss.moex.com/iss/bond.json",
-        ),
-        bond_liquidity=lambda secid, board, **kwargs: MoexLiquiditySnapshot(
-            secid=secid,
-            board_id=board,
-            observed_days=20,
-            average_daily_value_rub=Decimal("1000000"),
-            total_value_rub=Decimal("20000000"),
-            source_url="https://iss.moex.com/iss/history.json",
-        ),
-    )
 
     payload = build_live_balancing_payload(
         user_id=USER_ID,
         profile=_profile(),
-        policy_record=_policy(max_unknown_percent=Decimal("20")),
+        policy_record=_policy(),
         context=context,
         broker=broker,  # type: ignore[arg-type]
-        moex=moex,  # type: ignore[arg-type]
         now=now,
     )
 
@@ -372,14 +409,81 @@ def test_live_r4_bond_enrichment_can_produce_integer_lot_scenario() -> None:
     assert payload["eligible_candidate_count"] == 1
     screening = payload["screening"][0]
     assert screening["eligible"] is True
+    assert screening["rating_bucket"] == "bbb"
     assert screening["risk_state"] == "normal"
-    assert "issuer_identity_verified_by_moex" in screening["notes"]
+    assert Decimal(screening["ytw_percent"]) > Decimal("0")
+    assert Decimal(screening["duration_years"]) > Decimal("0")
+    assert "rating_from_tinvest_bond_metadata" in screening["notes"]
+    assert "ytw_from_tinvest_coupon_cashflows" in screening["notes"]
+    assert "liquidity_from_tinvest_exchange_daily_candles" in screening["notes"]
     deploy = payload["scenarios"]["deploy_cash"]
     assert deploy["status"] == "feasible"
     assert deploy["trades"][0]["lots"] == 14
     assert deploy["trades"][0]["instrument_uid"] == "candidate-1"
     assert payload["execution_enabled"] is False
     assert payload["proposal_enabled"] is False
+
+
+def test_rating_under_watch_blocks_new_candidate_via_risk_state() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    context = _context(now)
+    broker = SimpleNamespace(
+        candidate_market_yields=lambda user_id, uids: (
+            TBankMarketYield("candidate-1", "12.5", now),
+        ),
+        candidate_fundamentals=lambda user_id, asset_uids: (_fundamental(now),),
+        candidate_last_prices=lambda user_id, uids: (
+            TBankLastPrice("candidate-1", "100", now),
+        ),
+        candidate_bond_metadata=lambda user_id, uid: _bond_metadata(
+            now,
+            under_watch=True,
+        ),
+        candidate_bond_coupons=lambda user_id, uid, **kwargs: (
+            TBankBondCoupon(
+                instrument_uid=uid,
+                coupon_date=now + timedelta(days=365),
+                coupon_number=1,
+                fix_date=None,
+                pay_one_bond=TBankMoney("RUB", "100"),
+                coupon_type="COUPON_TYPE_CONSTANT",
+                coupon_start_date=now,
+                coupon_end_date=now + timedelta(days=365),
+                coupon_period_days=365,
+            ),
+        ),
+        candidate_bond_events=lambda user_id, uid, **kwargs: (),
+        candidate_daily_candles=lambda user_id, uid, **kwargs: _daily_candles(now),
+        candidate_order_book=lambda user_id, uid, depth=10: TBankOrderBook(
+            instrument_uid=uid,
+            bids=(TBankOrderLevel("99.9", 100),),
+            asks=(TBankOrderLevel("100.1", 100),),
+            time=now,
+            is_consistent=True,
+        ),
+        candidate_order_price=lambda user_id, uid, **kwargs: TBankOrderPrice(
+            total_order_amount=TBankMoney("RUB", "1025"),
+            initial_order_amount=TBankMoney("RUB", "1000"),
+            executed_commission_rub=TBankMoney("RUB", "5"),
+            service_commission=TBankMoney("RUB", "0"),
+            deal_commission=TBankMoney("RUB", "5"),
+            bond_aci_value=TBankMoney("RUB", "20"),
+        ),
+    )
+
+    payload = build_live_balancing_payload(
+        user_id=USER_ID,
+        profile=_profile(),
+        policy_record=_policy(),
+        context=context,
+        broker=broker,  # type: ignore[arg-type]
+        now=now,
+    )
+
+    screening = payload["screening"][0]
+    assert screening["risk_state"] == "watch"
+    assert screening["eligible"] is False
+    assert "risk_state_not_allowed" in screening["reasons"]
 
 
 def test_live_r4_degrades_to_durable_preview_when_broker_evidence_fails() -> None:
@@ -395,7 +499,6 @@ def test_live_r4_degrades_to_durable_preview_when_broker_evidence_fails() -> Non
         policy_record=_policy(max_unknown_percent=Decimal("20")),
         context=_context(now),
         broker=BrokenBroker(),  # type: ignore[arg-type]
-        moex=SimpleNamespace(),  # type: ignore[arg-type]
         now=now,
     )
 
@@ -429,7 +532,7 @@ def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
             "sector": "finance",
             "lot": 1,
             "currency": "RUB",
-            "nominal_value": Decimal("1000"),
+            "nominal_value": Decimal("10000"),
             "nominal_currency": "RUB",
             "maturity_date": now + timedelta(days=365),
             "floating_coupon": False,
@@ -441,11 +544,32 @@ def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
             "issuer_id": "issuer-held",
             "group_id": "group-held",
             "issuer_country_code": "RU",
-            "issuer_source_url": "https://example.invalid/issuer",
+            "issuer_source_url": "https://developer.tbank.ru/invest/",
             "risk_state": "critical",
             "rating_status": "data_missing",
         }
     ]
+
+    def metadata(user_id: object, uid: str) -> TBankInstrumentMetadata:
+        if uid == "held-bond":
+            return _bond_metadata(now, uid=uid, nominal="10000")
+        return _bond_metadata(now)
+
+    def coupons(user_id: object, uid: str, **kwargs: object) -> tuple[TBankBondCoupon, ...]:
+        amount = "100" if uid == "held-bond" else "100"
+        return (
+            TBankBondCoupon(
+                instrument_uid=uid,
+                coupon_date=now + timedelta(days=365),
+                coupon_number=1,
+                fix_date=None,
+                pay_one_bond=TBankMoney("RUB", amount),
+                coupon_type="COUPON_TYPE_CONSTANT",
+                coupon_start_date=now,
+                coupon_end_date=now + timedelta(days=365),
+                coupon_period_days=365,
+            ),
+        )
 
     def order_book(user_id: object, uid: str, depth: int = 10) -> TBankOrderBook:
         return TBankOrderBook(
@@ -459,7 +583,7 @@ def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
     def order_price(user_id: object, uid: str, **kwargs: object) -> TBankOrderPrice:
         if uid == "held-bond":
             return TBankOrderPrice(
-                total_order_amount=TBankMoney("RUB", "20050"),
+                total_order_amount=TBankMoney("RUB", "20150"),
                 initial_order_amount=TBankMoney("RUB", "20000"),
                 executed_commission_rub=TBankMoney("RUB", "50"),
                 service_commission=TBankMoney("RUB", "0"),
@@ -467,11 +591,11 @@ def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
                 bond_aci_value=TBankMoney("RUB", "100"),
             )
         return TBankOrderPrice(
-            total_order_amount=TBankMoney("RUB", "6040"),
-            initial_order_amount=TBankMoney("RUB", "6000"),
-            executed_commission_rub=TBankMoney("RUB", "20"),
+            total_order_amount=TBankMoney("RUB", "1025"),
+            initial_order_amount=TBankMoney("RUB", "1000"),
+            executed_commission_rub=TBankMoney("RUB", "5"),
             service_commission=TBankMoney("RUB", "0"),
-            deal_commission=TBankMoney("RUB", "20"),
+            deal_commission=TBankMoney("RUB", "5"),
             bond_aci_value=TBankMoney("RUB", "20"),
         )
 
@@ -483,66 +607,20 @@ def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
         candidate_last_prices=lambda user_id, uids: (
             TBankLastPrice("candidate-1", "100", now),
         ),
+        candidate_bond_metadata=metadata,
+        candidate_bond_coupons=coupons,
+        candidate_bond_events=lambda user_id, uid, **kwargs: (),
+        candidate_daily_candles=lambda user_id, uid, **kwargs: _daily_candles(now),
         candidate_order_book=order_book,
         candidate_order_price=order_price,
-    )
-
-    def identity(query: str, expected_isin: str = "") -> MoexSecurityIdentity:
-        held = expected_isin == "RU0000000002"
-        return MoexSecurityIdentity(
-            secid="HELDBOND" if held else "TESTBOND",
-            isin=expected_isin,
-            issuer_id="2222" if held else "1234",
-            issuer_name="Held issuer" if held else "Candidate issuer",
-            issuer_inn="7700000001" if held else "7700000000",
-            primary_board_id="TQCB",
-            is_traded=True,
-            source_url="https://iss.moex.com/iss/securities.json",
-        )
-
-    def bond_snapshot(secid: str, board: str) -> MoexBondSnapshot:
-        held = secid == "HELDBOND"
-        ytw = Decimal("6") if held else Decimal("12")
-        return MoexBondSnapshot(
-            secid=secid,
-            board_id=board,
-            yield_percent=ytw,
-            yield_to_offer_percent=ytw,
-            call_option_yield_percent=None,
-            ytw_percent=ytw,
-            duration_days=Decimal("700"),
-            call_option_duration_days=None,
-            accrued_interest_rub=Decimal("20"),
-            value_today_rub=Decimal("10000000"),
-            volume_today=Decimal("10000"),
-            offer_date="",
-            maturity_date="2027-10-03",
-            source_url="https://iss.moex.com/iss/bond.json",
-        )
-
-    moex = SimpleNamespace(
-        security_identity=identity,
-        bond_snapshot=bond_snapshot,
-        bond_liquidity=lambda secid, board, **kwargs: MoexLiquiditySnapshot(
-            secid=secid,
-            board_id=board,
-            observed_days=20,
-            average_daily_value_rub=Decimal("1000000"),
-            total_value_rub=Decimal("20000000"),
-            source_url="https://iss.moex.com/iss/history.json",
-        ),
     )
 
     payload = build_live_balancing_payload(
         user_id=USER_ID,
         profile=_profile(),
-        policy_record=_policy(
-            max_unknown_percent=Decimal("20"),
-            turnover_budget_percent=Decimal("100"),
-        ),
+        policy_record=_policy(turnover_budget_percent=Decimal("100")),
         context=context,
         broker=broker,  # type: ignore[arg-type]
-        moex=moex,  # type: ignore[arg-type]
         now=now,
     )
 
@@ -553,3 +631,4 @@ def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
     assert Decimal(replacement["trades"][0]["tax_rub"]) > Decimal("0")
     assert replacement["target_instrument_uid"] == "candidate-1"
     assert payload["execution_enabled"] is False
+
