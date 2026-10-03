@@ -13,6 +13,7 @@ from omnicio.tbank import (
     TBankHistoricCandle,
     TBankLastPrice,
     TBankTradingStatus,
+    TBankUnavailable,
 )
 
 
@@ -248,6 +249,42 @@ def test_market_service_instrument_snapshot_preserves_quote_time_ohlc_and_status
     assert snapshot.candles[0].low == "99"
     assert snapshot.candles[0].close == "102"
     assert snapshot.candles[0].is_complete is True
+
+
+def test_market_service_rejects_malformed_provider_ohlc_as_unavailable() -> None:
+    broker = FakeBroker(datetime.now(UTC).isoformat())
+    original = broker.market_exchange_candles
+
+    def malformed(*args: object, **kwargs: object) -> tuple[TBankHistoricCandle, ...]:
+        candles = original(*args, **kwargs)  # type: ignore[arg-type]
+        candle = candles[0]
+        return (
+            TBankHistoricCandle(
+                instrument_uid=candle.instrument_uid,
+                open=None,
+                high=candle.high,
+                low=candle.low,
+                close=candle.close,
+                volume_lots=candle.volume_lots,
+                time=candle.time,
+                is_complete=candle.is_complete,
+                source=candle.source,
+            ),
+        )
+
+    broker.market_exchange_candles = malformed  # type: ignore[method-assign]
+    service = MarketService(
+        broker=broker,  # type: ignore[arg-type]
+        cbr=FakeCBR(),  # type: ignore[arg-type]
+        live_after_seconds=30,
+    )
+
+    with pytest.raises(TBankUnavailable, match="missing OHLC"):
+        service.instrument_snapshot(
+            UUID("00000000-0000-0000-0000-000000000001"),
+            "uid-1",
+            period="1m",
+        )
 
 
 def test_market_service_rejects_unknown_instrument_period_before_provider_read() -> None:
