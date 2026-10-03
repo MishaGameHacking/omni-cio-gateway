@@ -24,6 +24,7 @@ from .tbank import (
     TBankDividend,
     TBankEnvironment,
     TBankFxQuote,
+    TBankHistoricCandle,
     TBankInstrument,
     TBankInstrumentMetadata,
     TBankInvestClient,
@@ -213,6 +214,83 @@ class BrokerService:
             portfolio=portfolio,
             positions=positions,
             refreshed_at=datetime.now(UTC),
+        )
+
+    def candidate_bond_metadata(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> TBankInstrumentMetadata:
+        _record, credential, environment = self._connected_credential(user_id)
+        return cast(
+            TBankInstrumentMetadata,
+            self._paced_evidence_read(
+                self.tbank.get_bond_metadata,
+                credential,
+                environment,
+                instrument_uid,
+            ),
+        )
+
+    def candidate_bond_coupons(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankBondCoupon, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return cast(
+            tuple[TBankBondCoupon, ...],
+            self._paced_evidence_read(
+                self.tbank.get_bond_coupons,
+                credential,
+                environment,
+                instrument_uid,
+                from_at=from_at,
+                to_at=to_at,
+            ),
+        )
+
+    def candidate_bond_events(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankBondEvent, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return cast(
+            tuple[TBankBondEvent, ...],
+            self._paced_evidence_read(
+                self.tbank.get_bond_events,
+                credential,
+                environment,
+                instrument_uid,
+                from_at=from_at,
+                to_at=to_at,
+            ),
+        )
+
+    def candidate_daily_candles(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 90,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_daily_candles(
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+            limit=limit,
         )
 
     def candidate_market_yields(
