@@ -2365,19 +2365,24 @@
           && connectedAccountId !== ""
           && executionAccountId === connectedAccountId
         );
-        const newSubmissionAllowed = (
-          runStatus !== "created"
-          || (
-            liveOperatorEnabled
-            && activeMandateId !== ""
-            && runMandateId === activeMandateId
-          )
+        const action = element.dataset.executionAction || "";
+        const needsSubmissionAuthority = (
+          action === "advance"
+          && runStatus === "created"
         );
-        element.disabled = !(accountMatches && newSubmissionAllowed);
+        const submissionAuthorityReady = (
+          liveOperatorEnabled
+          && activeMandateId !== ""
+          && runMandateId === activeMandateId
+        );
+        element.disabled = (
+          !accountMatches
+          || (needsSubmissionAuthority && !submissionAuthorityReady)
+        );
         element.title = !accountMatches
           ? "Для recovery подключите тот же exact production-счёт."
-          : !newSubmissionAllowed
-            ? "Kill switch/expiry блокирует новую заявку. Уже отправленные legs остаются доступны для сверки."
+          : needsSubmissionAuthority && !submissionAuthorityReady
+            ? "Kill switch/expiry блокирует отправку. Pending run можно безопасно завершить кнопкой «Отменить Live»."
             : "";
       }
     });
