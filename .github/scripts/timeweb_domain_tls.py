@@ -372,8 +372,7 @@ def configure_remote_https(
     ]
     result = subprocess.run(
         command,
-        input=REMOTE_SCRIPT,
-        text=True,
+        input=REMOTE_SCRIPT.encode("utf-8"),
         timeout=900,
         check=False,
     )
