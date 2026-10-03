@@ -1077,6 +1077,14 @@
                       <input id="balance-tax-rate" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
                     </div>
                     <div class="field">
+                      <label for="balance-uncertainty-haircut">Haircut неопределённости, %</label>
+                      <input id="balance-uncertainty-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-credit-haircut">Кредитный stress-haircut, %</label>
+                      <input id="balance-credit-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
                       <label for="balance-no-trade-band">No-trade band, % позиции</label>
                       <input id="balance-no-trade-band" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
                     </div>
@@ -1086,8 +1094,9 @@
                     </div>
                   </div>
                   <p class="field-hint">
-                    Ставка налога — явное сценарное допущение пользователя, а не автоматически
-                    определённый налоговый статус. Лимит участия ограничивает долю подтверждённого
+                    Ставка налога и оба haircut — явные сценарные допущения пользователя.
+                    Кредитный haircut не является вероятностью дефолта и не выдаётся за
+                    откалиброванный прогноз. Налоговый процент не определяется автоматически. Лимит участия ограничивает долю подтверждённого
                     среднедневного оборота, которую optimizer вправе считать доступной для выхода.
                     Системные границы текущего R4: новые покупки только RUB-инструментов
                     классов акции/облигации/фонды со статусом риска <code>normal</code>.
