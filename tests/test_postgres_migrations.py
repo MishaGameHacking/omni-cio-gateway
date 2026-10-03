@@ -52,6 +52,7 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
     assert "UNIQUE (id, run_id, user_id)" in migration
     assert "FOREIGN KEY (leg_id, run_id, user_id)" in migration
     assert "REFERENCES portfolio_execution_legs(id, run_id, user_id)" in migration
+    assert "TG_OP = 'INSERT' AND NOT EXISTS" in migration
     assert "p.expires_at > now()" in migration
     assert "p.source_snapshot_id, p.account_id" in migration
 
