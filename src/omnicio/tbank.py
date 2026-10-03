@@ -537,30 +537,28 @@ class TBankInvestClient:
         from_at: datetime,
         to_at: datetime,
         interval: str,
-        limit: int | None = None,
     ) -> tuple[TBankHistoricCandle, ...]:
         instrument = _validate_provider_id(instrument_uid, "instrument uid")
         allowed_intervals = {
-            "CANDLE_INTERVAL_5_MIN": (timedelta(days=7), 2400),
-            "CANDLE_INTERVAL_30_MIN": (timedelta(weeks=3), 1200),
-            "CANDLE_INTERVAL_HOUR": (timedelta(days=93), 2400),
-            "CANDLE_INTERVAL_4_HOUR": (timedelta(days=93), 700),
-            "CANDLE_INTERVAL_DAY": (timedelta(days=366 * 6), 2400),
+            "CANDLE_INTERVAL_5_MIN": (timedelta(minutes=5), timedelta(days=7)),
+            "CANDLE_INTERVAL_30_MIN": (timedelta(minutes=30), timedelta(weeks=3)),
+            "CANDLE_INTERVAL_HOUR": (timedelta(hours=1), timedelta(days=93)),
+            "CANDLE_INTERVAL_4_HOUR": (timedelta(hours=4), timedelta(days=93)),
+            "CANDLE_INTERVAL_DAY": (timedelta(days=1), timedelta(days=366 * 6)),
         }
-        interval_limits = allowed_intervals.get(interval)
-        if interval_limits is None:
+        interval_bounds = allowed_intervals.get(interval)
+        if interval_bounds is None:
             raise ValueError("unsupported candle interval")
-        max_window, max_limit = interval_limits
+        min_window, max_window = interval_bounds
         if from_at.tzinfo is None or to_at.tzinfo is None:
             raise ValueError("candle boundaries must be timezone-aware")
         if from_at > to_at:
             raise ValueError("candle start must not be after end")
-        if to_at - from_at > max_window:
+        requested_window = to_at - from_at
+        if requested_window <= min_window:
+            raise ValueError("candle window must exceed candle interval")
+        if requested_window > max_window:
             raise ValueError("candle window exceeds interval limit")
-        if limit is not None and not 1 <= limit <= max_limit:
-            raise ValueError(
-                f"candle limit must be between 1 and {max_limit} for {interval}"
-            )
 
         body: dict[str, object] = {
             "instrumentId": instrument,
@@ -569,8 +567,6 @@ class TBankInvestClient:
             "interval": interval,
             "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
         }
-        if limit is not None:
-            body["limit"] = limit
 
         payload = self._post(
             token=token,
