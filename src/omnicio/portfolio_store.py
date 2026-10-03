@@ -460,7 +460,8 @@ class PortfolioStore:
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s
                 )
                 RETURNING
                     id,
