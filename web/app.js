@@ -204,7 +204,6 @@
   let analysisInFlight = false;
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
-  let lastBalancingPayload = null;
   let proposalRequestInFlight = false;
   let owlTimer = null;
   let usdRubEventSource = null;
@@ -2091,7 +2090,6 @@
   const loadBalancing = async () => {
     try {
       const payload = await api("/api/portfolio/balancing", {method: "GET"});
-      lastBalancingPayload = payload;
       renderBalancing(payload);
       renderProposalCreateOptions(payload);
     } catch (error) {
@@ -2099,7 +2097,6 @@
         location.reload();
         return;
       }
-      lastBalancingPayload = null;
       balancingScenarios.replaceChildren();
       balancingScreening.replaceChildren();
       renderProposalCreateOptions(null);
