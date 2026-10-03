@@ -857,16 +857,19 @@ def decide_portfolio_proposal(
         )
     try:
         expected_hash = parse_proposal_hash(body.proposal_hash)
+        decision_action: Literal["confirmed", "rejected", "deferred"]
+        if body.action == "confirm":
+            decision_action = "confirmed"
+        elif body.action == "reject":
+            decision_action = "rejected"
+        else:
+            decision_action = "deferred"
         proposal, decision = portfolio_store(request).decide_proposal(
             user.id,
             proposal_id=proposal_id,
             expected_version=body.proposal_version,
             expected_hash=expected_hash,
-            action={
-                "confirm": "confirmed",
-                "reject": "rejected",
-                "defer": "deferred",
-            }[body.action],
+            action=decision_action,
             now=datetime.now(UTC),
         )
     except ValueError as exc:
