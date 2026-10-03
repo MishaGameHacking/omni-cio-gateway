@@ -140,11 +140,58 @@
   const portfolioDailyRelative = document.querySelector("#portfolio-daily-relative");
   const portfolioPositionCount = document.querySelector("#portfolio-position-count");
   const portfolioRefreshed = document.querySelector("#portfolio-refreshed");
+  const portfolioFreeCash = requiredElement("#portfolio-free-cash");
   const assetAllocation = document.querySelector("#asset-allocation");
+  const portfolioAllocationNote = requiredElement("#portfolio-allocation-note");
+  const allocationViewButtons = [...document.querySelectorAll("[data-allocation-view]")];
   const cashList = document.querySelector("#cash-list");
   const cashLoadingNote = document.querySelector("#cash-loading-note");
   const positionsList = document.querySelector("#positions-list");
+  const positionsTableBody = requiredElement("#positions-table-body");
+  const positionsFreshnessNote = requiredElement("#positions-freshness-note");
   const portfolioRetry = document.querySelector("[data-portfolio-retry]");
+  const homeHistoryState = requiredElement("#home-history-state");
+  const homeHistoryChart = requiredElement("#home-portfolio-history-chart");
+  const homeHistoryFacts = requiredElement("#home-history-facts");
+  const homeHistoryNote = requiredElement("#home-history-note");
+  const portfolioHistoryState = requiredElement("#portfolio-history-state");
+  const portfolioHistoryPeriods = requiredElement("#portfolio-history-periods");
+  const portfolioHistoryPeriodButtons = [
+    ...portfolioHistoryPeriods.querySelectorAll("[data-portfolio-history-days]"),
+  ];
+  const portfolioHistoryChart = requiredElement("#portfolio-history-chart");
+  const portfolioHistoryFacts = requiredElement("#portfolio-history-facts");
+  const portfolioHistoryNote = requiredElement("#portfolio-history-note");
+  const portfolioDrawdownState = requiredElement("#portfolio-drawdown-state");
+  const portfolioDrawdownChart = requiredElement("#portfolio-drawdown-chart");
+  const portfolioDrawdownNote = requiredElement("#portfolio-drawdown-note");
+  const portfolioCoverageState = requiredElement("#portfolio-coverage-state");
+  const portfolioSectorCoverage = requiredElement("#portfolio-sector-coverage");
+  const portfolioValuedCount = requiredElement("#portfolio-valued-count");
+  const portfolioSnapshotStatus = requiredElement("#portfolio-snapshot-status");
+  const portfolioSnapshotTime = requiredElement("#portfolio-snapshot-time");
+  const instrumentDetail = requiredElement("#instrument-detail");
+  const instrumentDetailTitle = requiredElement("#instrument-detail-title");
+  const instrumentDetailSubtitle = requiredElement("#instrument-detail-subtitle");
+  const instrumentDetailClose = requiredElement("#instrument-detail-close");
+  const instrumentDetailLoading = requiredElement("#instrument-detail-loading");
+  const instrumentDetailContent = requiredElement("#instrument-detail-content");
+  const instrumentDetailValue = requiredElement("#instrument-detail-value");
+  const instrumentDetailWeight = requiredElement("#instrument-detail-weight");
+  const instrumentDetailPrice = requiredElement("#instrument-detail-price");
+  const instrumentDetailPriceTime = requiredElement("#instrument-detail-price-time");
+  const instrumentDetailQuantity = requiredElement("#instrument-detail-quantity");
+  const instrumentDetailBlocked = requiredElement("#instrument-detail-blocked");
+  const instrumentDetailPnl = requiredElement("#instrument-detail-pnl");
+  const instrumentDetailPnlTime = requiredElement("#instrument-detail-pnl-time");
+  const instrumentDetailRisk = requiredElement("#instrument-detail-risk");
+  const instrumentDetailRiskTime = requiredElement("#instrument-detail-risk-time");
+  const instrumentHistoryChart = requiredElement("#instrument-history-chart");
+  const instrumentHistoryNote = requiredElement("#instrument-history-note");
+  const instrumentEvidenceSummary = requiredElement("#instrument-evidence-summary");
+  const instrumentPayouts = requiredElement("#instrument-payouts");
+  const instrumentSources = requiredElement("#instrument-sources");
+  const instrumentDetailMessage = requiredElement("#instrument-detail-message");
 
   const analysisRefresh = document.querySelector("#analysis-refresh");
   const analysisStatus = document.querySelector("#analysis-status");
@@ -236,6 +283,13 @@
   let portfolioRequestInFlight = false;
   let lastPortfolioSnapshot = null;
   let lastPortfolioRefreshAt = 0;
+  let portfolioVisualizationLoaded = false;
+  let portfolioVisualizationInFlight = false;
+  let lastPortfolioVisualization = null;
+  let selectedAllocationView = "class";
+  let selectedPortfolioHistoryDays = 90;
+  let instrumentDetailRequestInFlight = false;
+  let instrumentDetailGeneration = 0;
   let analysisInFlight = false;
   let analysisGeneration = 0;
   let lastAnalysisAt = 0;
@@ -281,6 +335,19 @@
       throw new TypeError("API path UUID is invalid");
     }
     return segment.toLowerCase();
+  };
+
+  const instrumentPathSegment = (value) => {
+    const segment = String(value || "");
+    if (
+      segment.length < 1
+      || segment.length > 128
+      || segment !== segment.trim()
+      || /[\\/?#\u0000-\u001f\u007f]/u.test(segment)
+    ) {
+      throw new TypeError("Instrument path segment is invalid");
+    }
+    return encodeURIComponent(segment);
   };
 
   const executionActionSegment = (value) => {
@@ -486,6 +553,8 @@
 
     if (view === "portfolio" && tbankIsConnected && !portfolioLoaded) {
       void loadPortfolioData();
+    } else if (view === "portfolio" && !portfolioVisualizationLoaded) {
+      void loadPortfolioVisualization();
     }
     if (
       view === "decisions"
@@ -1145,25 +1214,646 @@
     cashLoadingNote.classList.toggle("hidden", !loadingLimits);
   };
 
-  const renderPositions = (positions) => {
-    positionsList.replaceChildren();
-    if (!positions?.length) {
-      appendEmptyState(positionsList, "В портфеле нет инструментов.");
+  const storedMoney = (value, currency = "RUB") => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "—";
+    }
+    return formatMoney({currency, value: String(number)});
+  };
+
+  const storedPercent = (value, {sign = false} = {}) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? formatPercent(number, {sign}) : "—";
+  };
+
+  const riskStateLabel = (value) => ({
+    data_missing: "Данных недостаточно",
+    normal: "Норма",
+    watch: "Наблюдение",
+    elevated: "Повышенный риск",
+    critical: "Критический риск",
+    confirmed_default: "Подтверждённый дефолт",
+  }[value] || String(value || "Не подтверждено"));
+
+  const riskStateClass = (value) => {
+    if (value === "confirmed_default" || value === "critical") {
+      return "state-error";
+    }
+    if (value === "watch" || value === "elevated" || value === "data_missing") {
+      return "state-next";
+    }
+    return value === "normal" ? "state-ok" : "";
+  };
+
+  const setChartFacts = (container, history) => {
+    const values = history
+      .map((item) => ({
+        value: Number(item.nav_rub),
+        capturedAt: item.captured_at,
+      }))
+      .filter((item) => Number.isFinite(item.value));
+    const cells = [...container.querySelectorAll("dd")];
+    if (!values.length || cells.length < 4) {
+      cells.forEach((cell) => {
+        cell.textContent = "—";
+      });
+      return;
+    }
+    const minimum = values.reduce(
+      (current, item) => item.value < current.value ? item : current,
+      values[0],
+    );
+    const maximum = values.reduce(
+      (current, item) => item.value > current.value ? item : current,
+      values[0],
+    );
+    const first = values[0];
+    const last = values[values.length - 1];
+    cells[0].textContent = `${storedMoney(first.value)} · ${formatDateTime(first.capturedAt)}`;
+    cells[1].textContent = storedMoney(minimum.value);
+    cells[2].textContent = storedMoney(maximum.value);
+    cells[3].textContent = `${storedMoney(last.value)} · ${formatDateTime(last.capturedAt)}`;
+  };
+
+  const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+  const chartNode = (name, attributes = {}) => {
+    const node = document.createElementNS(SVG_NAMESPACE, name);
+    Object.entries(attributes).forEach(([key, value]) => {
+      node.setAttribute(key, String(value));
+    });
+    return node;
+  };
+
+  const renderSeriesChart = (
+    svg,
+    points,
+    {
+      valueKey = "value",
+      timeKey = "captured_at",
+      minimumPoints = 2,
+      zeroLine = false,
+    } = {},
+  ) => {
+    svg.replaceChildren();
+    const clean = (points || [])
+      .map((item) => ({
+        time: new Date(item?.[timeKey]).getTime(),
+        value: Number(item?.[valueKey]),
+      }))
+      .filter((item) => Number.isFinite(item.time) && Number.isFinite(item.value));
+    if (clean.length < minimumPoints) {
+      return false;
+    }
+
+    const viewBox = String(svg.getAttribute("viewBox") || "0 0 900 260")
+      .split(/\s+/u)
+      .map(Number);
+    const width = Number.isFinite(viewBox[2]) ? viewBox[2] : 900;
+    const height = Number.isFinite(viewBox[3]) ? viewBox[3] : 260;
+    const padX = 24;
+    const padY = 20;
+    const times = clean.map((item) => item.time);
+    const values = clean.map((item) => item.value);
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+    let minValue = Math.min(...values);
+    let maxValue = Math.max(...values);
+    if (zeroLine) {
+      minValue = Math.min(minValue, 0);
+      maxValue = Math.max(maxValue, 0);
+    }
+    if (minValue === maxValue) {
+      const padding = Math.max(Math.abs(minValue) * 0.02, 1);
+      minValue -= padding;
+      maxValue += padding;
+    }
+    const timeSpan = Math.max(maxTime - minTime, 1);
+    const valueSpan = Math.max(maxValue - minValue, 1);
+
+    const x = (time) => padX + ((time - minTime) / timeSpan) * (width - padX * 2);
+    const y = (value) => (
+      padY + ((maxValue - value) / valueSpan) * (height - padY * 2)
+    );
+
+    for (let index = 0; index < 4; index += 1) {
+      const lineY = padY + ((height - padY * 2) * index) / 3;
+      const grid = chartNode("line", {
+        x1: padX,
+        y1: lineY,
+        x2: width - padX,
+        y2: lineY,
+        class: "portfolio-chart-grid",
+      });
+      svg.append(grid);
+    }
+    if (zeroLine && minValue < 0 && maxValue > 0) {
+      svg.append(chartNode("line", {
+        x1: padX,
+        y1: y(0),
+        x2: width - padX,
+        y2: y(0),
+        class: "portfolio-chart-zero",
+      }));
+    }
+
+    const path = clean
+      .map((item, index) => (
+        `${index === 0 ? "M" : "L"} ${x(item.time).toFixed(2)} ${y(item.value).toFixed(2)}`
+      ))
+      .join(" ");
+    if (!zeroLine) {
+      const firstPoint = clean[0];
+      const lastPoint = clean[clean.length - 1];
+      svg.append(chartNode("path", {
+        d: `${path} L ${x(lastPoint.time).toFixed(2)} ${(height - padY).toFixed(2)} L ${x(firstPoint.time).toFixed(2)} ${(height - padY).toFixed(2)} Z`,
+        class: "portfolio-chart-area",
+      }));
+    }
+    svg.append(chartNode("path", {
+      d: path,
+      class: "portfolio-chart-line",
+      fill: "none",
+    }));
+
+    const first = clean[0];
+    const last = clean[clean.length - 1];
+    [first, last].forEach((item) => {
+      svg.append(chartNode("circle", {
+        cx: x(item.time),
+        cy: y(item.value),
+        r: 4,
+        class: "portfolio-chart-point",
+      }));
+    });
+    return true;
+  };
+
+  const historyTimestamp = (item) => {
+    const timestamp = new Date(item?.captured_at).getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  };
+
+  const historySpanDays = (history) => {
+    const times = (history || []).map(historyTimestamp).filter(Number.isFinite);
+    if (times.length < 2) {
+      return 0;
+    }
+    return (Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000);
+  };
+
+  const historyForDays = (history, days) => {
+    if (!Number.isFinite(days) || !(days > 0) || !history?.length) {
+      return history || [];
+    }
+    const latest = historyTimestamp(history[history.length - 1]);
+    if (latest === null) {
+      return history || [];
+    }
+    const cutoff = latest - days * 24 * 60 * 60 * 1000;
+    return history.filter((item) => {
+      const timestamp = historyTimestamp(item);
+      return timestamp !== null && timestamp >= cutoff;
+    });
+  };
+
+  const syncPortfolioHistoryPeriods = (history) => {
+    const span = historySpanDays(history);
+    const available = portfolioHistoryPeriodButtons
+      .map((button) => Number(button.dataset.portfolioHistoryDays))
+      .filter((days) => Number.isFinite(days) && span >= days);
+    portfolioHistoryPeriodButtons.forEach((button) => {
+      const days = Number(button.dataset.portfolioHistoryDays);
+      const visible = Number.isFinite(days) && span >= days;
+      button.classList.toggle("hidden", !visible);
+      button.setAttribute(
+        "aria-pressed",
+        String(visible && days === selectedPortfolioHistoryDays),
+      );
+    });
+    portfolioHistoryPeriods.classList.toggle("hidden", available.length === 0);
+    if (!available.includes(selectedPortfolioHistoryDays)) {
+      selectedPortfolioHistoryDays = available.length
+        ? Math.max(...available)
+        : Number.POSITIVE_INFINITY;
+    }
+    portfolioHistoryPeriodButtons.forEach((button) => {
+      const days = Number(button.dataset.portfolioHistoryDays);
+      button.setAttribute(
+        "aria-pressed",
+        String(!button.classList.contains("hidden") && days === selectedPortfolioHistoryDays),
+      );
+    });
+  };
+
+  const drawdownSeries = (history) => {
+    let peak = null;
+    return (history || [])
+      .map((item) => {
+        const value = Number(item.nav_rub);
+        if (!Number.isFinite(value) || value < 0) {
+          return null;
+        }
+        peak = peak === null ? value : Math.max(peak, value);
+        const drawdown = peak > 0 ? ((value / peak) - 1) * 100 : 0;
+        return {
+          captured_at: item.captured_at,
+          drawdown_percent: drawdown,
+        };
+      })
+      .filter(Boolean);
+  };
+
+  const renderPortfolioHistory = (history) => {
+    const allPoints = Array.isArray(history) ? history : [];
+    syncPortfolioHistoryPeriods(allPoints);
+    const points = historyForDays(allPoints, selectedPortfolioHistoryDays);
+    const chartPoints = points
+      .map((item) => ({
+        captured_at: item.captured_at,
+        value: Number(item.nav_rub),
+      }))
+      .filter((item) => Number.isFinite(item.value));
+    const enough = renderSeriesChart(
+      portfolioHistoryChart,
+      chartPoints,
+      {minimumPoints: 2},
+    );
+    const homePoints = historyForDays(allPoints, 90);
+    const homeChartPoints = homePoints
+      .map((item) => ({
+        captured_at: item.captured_at,
+        value: Number(item.nav_rub),
+      }))
+      .filter((item) => Number.isFinite(item.value));
+    const homeEnough = renderSeriesChart(
+      homeHistoryChart,
+      homeChartPoints,
+      {minimumPoints: 2},
+    );
+    setChartFacts(portfolioHistoryFacts, points);
+    setChartFacts(homeHistoryFacts, homePoints);
+
+    if (!enough) {
+      setStateBadge(portfolioHistoryState, "Недостаточно истории", "state-next");
+      portfolioHistoryNote.textContent = (
+        chartPoints.length === 1
+          ? "Есть один реальный снимок. Для линии нужно минимум два снимка того же счёта и окружения."
+          : "История появится после сохранения tenant-scoped снимков портфеля."
+      );
+    } else {
+      setStateBadge(
+        portfolioHistoryState,
+        `Снимков: ${chartPoints.length}`,
+        "state-ok",
+      );
+      portfolioHistoryNote.textContent = (
+        "Точки используют captured_at сохранённых snapshot. Это не market timestamp и не время сделки."
+      );
+    }
+
+    if (!homeEnough) {
+      setStateBadge(homeHistoryState, "Недостаточно истории", "state-next");
+      homeHistoryNote.textContent = (
+        homeChartPoints.length === 1
+          ? "За последние 90 дней сохранён только один реальный снимок."
+          : "За последние 90 дней недостаточно сохранённой истории для линии."
+      );
+    } else {
+      setStateBadge(homeHistoryState, `Снимков: ${homeChartPoints.length}`, "state-ok");
+      homeHistoryNote.textContent = (
+        "Главная показывает до 90 дней реальных сохранённых снимков текущего счёта и окружения."
+      );
+    }
+
+    const drawdowns = drawdownSeries(points);
+    const drawdownReady = drawdowns.length >= 5 && renderSeriesChart(
+      portfolioDrawdownChart,
+      drawdowns,
+      {
+        valueKey: "drawdown_percent",
+        minimumPoints: 5,
+        zeroLine: true,
+      },
+    );
+    if (!drawdownReady) {
+      portfolioDrawdownChart.replaceChildren();
+      setStateBadge(portfolioDrawdownState, "Недостаточно истории", "state-next");
+      portfolioDrawdownNote.textContent = (
+        "Для drawdown нужно минимум пять подтверждённых снимков одного счёта."
+      );
+    } else {
+      const minimum = Math.min(
+        ...drawdowns.map((item) => Number(item.drawdown_percent)),
+      );
+      setStateBadge(portfolioDrawdownState, "История подтверждена", "state-ok");
+      portfolioDrawdownNote.textContent = (
+        `Максимальная наблюдавшаяся просадка: ${formatPercent(minimum)}. `
+        + "Расчёт только по сохранённым NAV snapshot."
+      );
+    }
+  };
+
+  const persistedPositionMap = () => {
+    const positions = lastPortfolioVisualization?.latest?.positions;
+    const result = new Map();
+    if (!Array.isArray(positions)) {
+      return result;
+    }
+    positions.forEach((item) => {
+      for (const key of [item.instrument_uid, item.figi, item.catalog_instrument_uid]) {
+        if (typeof key === "string" && key) {
+          result.set(key, item);
+        }
+      }
+    });
+    return result;
+  };
+
+  const livePositionIdentity = (position) => (
+    String(position?.instrument_uid || position?.figi || "")
+  );
+
+  const appendExposureRows = (container, rows, emptyMessage) => {
+    container.replaceChildren();
+    if (!rows.length) {
+      appendEmptyState(container, emptyMessage);
+      return;
+    }
+    rows.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "allocation-row";
+      const label = document.createElement("div");
+      label.className = "allocation-label";
+      const title = document.createElement("strong");
+      title.textContent = item.label;
+      const percent = document.createElement("span");
+      percent.textContent = Number.isFinite(item.percent)
+        ? formatPercent(item.percent)
+        : "Доля не подтверждена";
+      label.append(title, percent);
+
+      const track = document.createElement("div");
+      track.className = "allocation-track";
+      track.setAttribute("role", "img");
+      track.setAttribute(
+        "aria-label",
+        `${item.label}: ${Number.isFinite(item.percent) ? formatPercent(item.percent) : "доля не подтверждена"}`,
+      );
+      const fill = document.createElement("div");
+      fill.className = "allocation-fill";
+      fill.style.width = `${Math.max(0, Math.min(100, item.percent || 0))}%`;
+      track.append(fill);
+
+      const amount = document.createElement("div");
+      amount.className = "allocation-value";
+      amount.textContent = storedMoney(item.value);
+      row.append(label, track, amount);
+      container.append(row);
+    });
+  };
+
+  const visualizationExposureRows = (mode) => {
+    const latest = lastPortfolioVisualization?.latest;
+    const positions = Array.isArray(latest?.positions) ? latest.positions : [];
+    const nav = Number(latest?.nav_rub);
+    const valued = positions.filter((item) => {
+      const value = Number(item.value_rub);
+      return Number.isFinite(value) && value >= 0;
+    });
+    if (!valued.length) {
+      return [];
+    }
+
+    if (mode === "position") {
+      return valued
+        .map((item) => {
+          const value = Number(item.value_rub);
+          const percent = Number(item.nav_percent);
+          return {
+            label: item.ticker || item.name || item.instrument_uid || "Инструмент",
+            value,
+            percent: Number.isFinite(percent)
+              ? percent
+              : (nav > 0 ? value / nav * 100 : Number.NaN),
+          };
+        })
+        .sort((left, right) => right.value - left.value)
+        .slice(0, 12);
+    }
+
+    const groups = new Map();
+    valued.forEach((item) => {
+      let key = "Не определено";
+      if (mode === "currency") {
+        key = String(item.currency || "Не определено").toUpperCase();
+      } else if (mode === "sector") {
+        key = String(item.sector || "Не определено");
+      }
+      groups.set(key, (groups.get(key) || 0) + Number(item.value_rub));
+    });
+    return [...groups.entries()]
+      .map(([label, value]) => ({
+        label,
+        value,
+        percent: nav > 0 ? value / nav * 100 : Number.NaN,
+      }))
+      .sort((left, right) => right.value - left.value);
+  };
+
+  const renderPortfolioAllocationView = () => {
+    allocationViewButtons.forEach((button) => {
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.allocationView === selectedAllocationView),
+      );
+    });
+
+    if (selectedAllocationView === "class") {
+      renderAllocation(lastPortfolioSnapshot?.portfolio?.asset_totals || []);
+      portfolioAllocationNote.textContent = (
+        "Классы активов — текущий ответ T-Invest. Сумма и доли могут включать денежные компоненты брокера."
+      );
       return;
     }
 
-    positions.forEach((position) => {
-      const row = document.createElement("div");
-      row.className = "position-row";
+    const rows = visualizationExposureRows(selectedAllocationView);
+    appendExposureRows(
+      assetAllocation,
+      rows,
+      "Для этого разреза нет подтверждённых оценённых позиций.",
+    );
+    const latest = lastPortfolioVisualization?.latest;
+    if (selectedAllocationView === "sector") {
+      const coverage = Number(latest?.sector_coverage_percent);
+      portfolioAllocationNote.textContent = Number.isFinite(coverage)
+        ? `Секторное покрытие сохранённого снимка: ${formatPercent(coverage)}. Неизвестные сектора остаются отдельной категорией.`
+        : "Секторное покрытие не подтверждено; неизвестные сектора не распределяются по догадке.";
+    } else if (selectedAllocationView === "currency") {
+      portfolioAllocationNote.textContent = (
+        "Валютный разрез показывает валюту инструмента для оценённых позиций; неоценённые позиции не перераспределяются."
+      );
+    } else {
+      portfolioAllocationNote.textContent = (
+        "Показаны крупнейшие оценённые позиции по сохранённому снимку. Доля относится к NAV этого snapshot."
+      );
+    }
+  };
 
+  const renderPortfolioCoverage = (latest) => {
+    if (!latest) {
+      portfolioSectorCoverage.textContent = "—";
+      portfolioValuedCount.textContent = "—";
+      portfolioSnapshotStatus.textContent = "—";
+      portfolioSnapshotTime.textContent = "—";
+      setStateBadge(portfolioCoverageState, "Нет снимка", "state-next");
+      return;
+    }
+    const coverage = Number(latest.sector_coverage_percent);
+    const valued = Number(latest.valued_security_count);
+    const total = Number(latest.security_count);
+    portfolioSectorCoverage.textContent = Number.isFinite(coverage)
+      ? formatPercent(coverage)
+      : "Не подтверждено";
+    portfolioValuedCount.textContent = Number.isFinite(valued) && Number.isFinite(total)
+      ? `${valued} из ${total}`
+      : "—";
+    portfolioSnapshotStatus.textContent = {
+      observed: "Наблюдается",
+      partial: "Частичное покрытие",
+      needs_reconciliation: "Требуется сверка",
+    }[latest.analysis_status] || String(latest.analysis_status || "Не подтверждено");
+    portfolioSnapshotTime.textContent = formatDateTime(latest.captured_at);
+
+    if (latest.analysis_status === "needs_reconciliation") {
+      setStateBadge(portfolioCoverageState, "Нужна сверка", "state-error");
+    } else if (latest.snapshot_freshness === "stale" || latest.analysis_status === "partial") {
+      setStateBadge(portfolioCoverageState, "Неполные данные", "state-next");
+    } else {
+      setStateBadge(portfolioCoverageState, "Снимок получен", "state-ok");
+    }
+  };
+
+  const positionRiskBadge = (persisted) => {
+    const badge = document.createElement("span");
+    const state = persisted?.risk_state || "data_missing";
+    badge.className = "state-badge position-risk-badge";
+    badge.textContent = riskStateLabel(state);
+    const stateClass = riskStateClass(state);
+    if (stateClass) {
+      badge.classList.add(stateClass);
+    }
+    return badge;
+  };
+
+  const positionDetailButton = (position) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button button-secondary position-detail-button";
+    button.textContent = "Детали";
+    button.dataset.instrumentDetail = livePositionIdentity(position);
+    if (!button.dataset.instrumentDetail) {
+      button.disabled = true;
+      button.title = "T-Invest не вернул стабильный идентификатор инструмента.";
+    }
+    return button;
+  };
+
+  const renderPositions = (positions) => {
+    positionsList.replaceChildren();
+    positionsTableBody.replaceChildren();
+    if (!positions?.length) {
+      appendEmptyState(positionsList, "В портфеле нет инструментов.");
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 7;
+      cell.textContent = "В портфеле нет инструментов.";
+      row.append(cell);
+      positionsTableBody.append(row);
+      return;
+    }
+
+    const persisted = persistedPositionMap();
+    const snapshotAt = lastPortfolioVisualization?.latest?.captured_at;
+    positionsFreshnessNote.textContent = [
+      lastPortfolioSnapshot?.refreshed_at
+        ? `Цена/доходность: чтение T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
+        : "",
+      snapshotAt
+        ? `оценка/доля/risk: snapshot ${formatDateTime(snapshotAt)}`
+        : "оценка/доля/risk: сохранённый snapshot пока недоступен",
+    ].filter(Boolean).join(" · ");
+
+    positions.forEach((position) => {
+      const identity = livePositionIdentity(position);
+      const stored = persisted.get(identity) || persisted.get(position.figi) || null;
+      const titleText = position.ticker || stored?.name || position.figi || "Инструмент";
+      const typeText = INSTRUMENT_LABELS[position.instrument_type]
+        || position.instrument_type
+        || "Инструмент";
+      const valueText = storedMoney(stored?.value_rub);
+      const weightText = storedPercent(stored?.nav_percent);
+      const priceText = formatMoney(position.current_price);
+      const yieldText = formatPercent(position.expected_yield_percent, {sign: true});
+      const blockedLots = numericValue(position.blocked_lots);
+
+      const tableRow = document.createElement("tr");
+      const instrumentCell = document.createElement("td");
+      const tableTitle = document.createElement("strong");
+      tableTitle.textContent = titleText;
+      const tableMeta = document.createElement("small");
+      tableMeta.textContent = [
+        stored?.name && stored.name !== titleText ? stored.name : "",
+        typeText,
+        formatQuantity(position.quantity) + " шт.",
+      ].filter(Boolean).join(" · ");
+      instrumentCell.append(tableTitle, tableMeta);
+
+      const valueCell = document.createElement("td");
+      valueCell.textContent = valueText;
+      const weightCell = document.createElement("td");
+      weightCell.textContent = weightText;
+      const priceCell = document.createElement("td");
+      priceCell.textContent = priceText;
+      const yieldCell = document.createElement("td");
+      yieldCell.textContent = yieldText;
+      applySignedClass(yieldCell, position.expected_yield_percent);
+      const stateCell = document.createElement("td");
+      stateCell.append(positionRiskBadge(stored));
+      if (position.blocked || blockedLots > 0) {
+        const blocked = document.createElement("small");
+        blocked.className = "position-blocked";
+        blocked.textContent = blockedLots > 0
+          ? `Блокировка: ${formatQuantity(position.blocked_lots)}`
+          : "Есть блокировка";
+        stateCell.append(blocked);
+      }
+      const actionCell = document.createElement("td");
+      actionCell.append(positionDetailButton(position));
+      tableRow.append(
+        instrumentCell,
+        valueCell,
+        weightCell,
+        priceCell,
+        yieldCell,
+        stateCell,
+        actionCell,
+      );
+      positionsTableBody.append(tableRow);
+
+      const card = document.createElement("article");
+      card.className = "position-row portfolio-position-card";
       const name = document.createElement("div");
       name.className = "position-name";
       const ticker = document.createElement("strong");
-      ticker.textContent = position.ticker || position.figi || "Инструмент";
+      ticker.textContent = titleText;
       const type = document.createElement("span");
-      type.textContent = INSTRUMENT_LABELS[position.instrument_type] || position.instrument_type || "Инструмент";
-      name.append(ticker, type);
-      const blockedLots = numericValue(position.blocked_lots);
+      type.textContent = [
+        stored?.name && stored.name !== titleText ? stored.name : "",
+        typeText,
+      ].filter(Boolean).join(" · ");
+      name.append(ticker, type, positionRiskBadge(stored));
       if (position.blocked || blockedLots > 0) {
         const blocked = document.createElement("em");
         blocked.className = "position-blocked";
@@ -1173,34 +1863,311 @@
         name.append(blocked);
       }
 
-      const quantity = document.createElement("div");
-      quantity.className = "position-cell";
-      const quantityLabel = document.createElement("span");
-      quantityLabel.textContent = "Количество";
-      const quantityValue = document.createElement("strong");
-      quantityValue.textContent = formatQuantity(position.quantity);
-      quantity.append(quantityLabel, quantityValue);
-
-      const price = document.createElement("div");
-      price.className = "position-cell";
-      const priceLabel = document.createElement("span");
-      priceLabel.textContent = "Текущая цена";
-      const priceValue = document.createElement("strong");
-      priceValue.textContent = formatMoney(position.current_price);
-      price.append(priceLabel, priceValue);
-
-      const yieldCell = document.createElement("div");
-      yieldCell.className = "position-cell";
-      const yieldLabel = document.createElement("span");
-      yieldLabel.textContent = "Доходность";
-      const yieldValue = document.createElement("strong");
-      yieldValue.textContent = formatPercent(position.expected_yield_percent, {sign: true});
-      applySignedClass(yieldValue, position.expected_yield_percent);
-      yieldCell.append(yieldLabel, yieldValue);
-
-      row.append(name, quantity, price, yieldCell);
-      positionsList.append(row);
+      const cards = [
+        ["Количество", formatQuantity(position.quantity)],
+        ["Оценка", valueText],
+        ["Доля", weightText],
+        ["Текущая цена", priceText],
+        ["Доходность", yieldText],
+      ];
+      card.append(name);
+      cards.forEach(([labelText, value]) => {
+        const cell = document.createElement("div");
+        cell.className = "position-cell";
+        const label = document.createElement("span");
+        label.textContent = labelText;
+        const strong = document.createElement("strong");
+        strong.textContent = value;
+        if (labelText === "Доходность") {
+          applySignedClass(strong, position.expected_yield_percent);
+        }
+        cell.append(label, strong);
+        card.append(cell);
+      });
+      const action = document.createElement("div");
+      action.className = "position-card-action";
+      action.append(positionDetailButton(position));
+      card.append(action);
+      positionsList.append(card);
     });
+  };
+
+  const resetPortfolioVisualization = (message = "История портфеля пока недоступна.") => {
+    portfolioVisualizationLoaded = false;
+    lastPortfolioVisualization = null;
+    portfolioHistoryChart.replaceChildren();
+    homeHistoryChart.replaceChildren();
+    portfolioDrawdownChart.replaceChildren();
+    setChartFacts(portfolioHistoryFacts, []);
+    setChartFacts(homeHistoryFacts, []);
+    setStateBadge(portfolioHistoryState, "Нет истории", "state-next");
+    setStateBadge(homeHistoryState, "Нет истории", "state-next");
+    setStateBadge(portfolioDrawdownState, "Недостаточно истории", "state-next");
+    portfolioHistoryNote.textContent = message;
+    homeHistoryNote.textContent = message;
+    portfolioDrawdownNote.textContent = "Для drawdown нужно минимум пять подтверждённых снимков одного счёта.";
+    renderPortfolioCoverage(null);
+    if (lastPortfolioSnapshot) {
+      renderPositions(lastPortfolioSnapshot.portfolio?.positions || []);
+      renderPortfolioAllocationView();
+    }
+  };
+
+  const renderPortfolioVisualization = (payload) => {
+    lastPortfolioVisualization = payload;
+    portfolioVisualizationLoaded = true;
+    const history = Array.isArray(payload?.history) ? payload.history : [];
+    renderPortfolioHistory(history);
+    renderPortfolioCoverage(payload?.latest || null);
+    renderPortfolioAllocationView();
+    if (lastPortfolioSnapshot) {
+      renderPositions(lastPortfolioSnapshot.portfolio?.positions || []);
+    }
+  };
+
+  const loadPortfolioVisualization = async ({force = false} = {}) => {
+    if (portfolioVisualizationInFlight || (portfolioVisualizationLoaded && !force)) {
+      return;
+    }
+    portfolioVisualizationInFlight = true;
+    if (!lastPortfolioVisualization) {
+      setStateBadge(portfolioHistoryState, "Загружаем", "");
+      setStateBadge(homeHistoryState, "Загружаем", "");
+    }
+    try {
+      const payload = await api(
+        "/api/portfolio/visualization?history_limit=365",
+        {method: "GET"},
+      );
+      renderPortfolioVisualization(payload);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (lastPortfolioVisualization) {
+        setStateBadge(portfolioHistoryState, "История устарела", "state-next");
+        setStateBadge(homeHistoryState, "История устарела", "state-next");
+        portfolioHistoryNote.textContent = (
+          "Не удалось обновить сохранённую историю. Показаны последние подтверждённые точки."
+        );
+        homeHistoryNote.textContent = portfolioHistoryNote.textContent;
+      } else {
+        resetPortfolioVisualization(
+          "Не удалось получить сохранённую историю. Live-портфель остаётся доступен отдельно.",
+        );
+      }
+    } finally {
+      portfolioVisualizationInFlight = false;
+    }
+  };
+
+  const livePositionForIdentity = (identity) => (
+    (lastPortfolioSnapshot?.portfolio?.positions || []).find((position) => (
+      position?.instrument_uid === identity || position?.figi === identity
+    )) || null
+  );
+
+  const renderInstrumentDetail = (payload, requestedIdentity) => {
+    const latest = payload?.latest || {};
+    const livePosition = livePositionForIdentity(requestedIdentity);
+    instrumentDetailTitle.textContent = latest.ticker || latest.name || latest.instrument_uid || "Инструмент";
+    instrumentDetailSubtitle.textContent = [
+      latest.name && latest.name !== latest.ticker ? latest.name : "",
+      INSTRUMENT_LABELS[latest.instrument_type] || latest.instrument_type,
+      latest.sector || "Сектор не подтверждён",
+      payload.snapshot_freshness === "stale" ? "snapshot устарел" : "",
+    ].filter(Boolean).join(" · ");
+
+    instrumentDetailValue.textContent = storedMoney(latest.value_rub);
+    instrumentDetailWeight.textContent = Number.isFinite(Number(latest.nav_percent))
+      ? `Доля NAV: ${formatPercent(latest.nav_percent)}`
+      : "Доля NAV не подтверждена";
+    const livePrice = livePosition?.current_price;
+    instrumentDetailPrice.textContent = livePrice
+      ? formatMoney(livePrice)
+      : storedMoney(
+          latest.current_price_value,
+          latest.current_price_currency || latest.currency || "RUB",
+        );
+    instrumentDetailPriceTime.textContent = livePosition && lastPortfolioSnapshot?.refreshed_at
+      ? `T-Invest: ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
+      : `snapshot: ${formatDateTime(latest.captured_at)}`;
+    instrumentDetailQuantity.textContent = livePosition
+      ? formatQuantity(livePosition.quantity)
+      : formatQuantity(latest.quantity);
+    instrumentDetailBlocked.textContent = latest.blocked || Number(latest.blocked_lots) > 0
+      ? `Есть блокировка · лотов: ${formatQuantity(latest.blocked_lots)}`
+      : "Блокировок не зафиксировано";
+    if (livePosition) {
+      instrumentDetailPnl.textContent = formatPercent(
+        livePosition.expected_yield_percent,
+        {sign: true},
+      );
+      applySignedClass(instrumentDetailPnl, livePosition.expected_yield_percent);
+      const dailyYield = formatMoney(livePosition.daily_yield, {sign: true});
+      instrumentDetailPnlTime.textContent = [
+        dailyYield !== "—" ? `сегодня ${dailyYield}` : "",
+        lastPortfolioSnapshot?.refreshed_at
+          ? `T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
+          : "",
+      ].filter(Boolean).join(" · ") || "Текущий ответ T-Invest";
+    } else {
+      instrumentDetailPnl.textContent = "—";
+      instrumentDetailPnl.classList.remove("value-positive", "value-negative");
+      instrumentDetailPnlTime.textContent = "Live P&L не подтверждён";
+    }
+    instrumentDetailRisk.textContent = riskStateLabel(latest.risk_state);
+    instrumentDetailRisk.classList.remove("value-positive", "value-negative");
+    if (["critical", "confirmed_default"].includes(latest.risk_state)) {
+      instrumentDetailRisk.classList.add("value-negative");
+    }
+    instrumentDetailRiskTime.textContent = latest.assessed_at
+      ? `оценено ${formatDateTime(latest.assessed_at)} · ${latest.assessment_freshness || "freshness unknown"}`
+      : "Risk assessment отсутствует";
+
+    const history = Array.isArray(payload?.history) ? payload.history : [];
+    const historyReady = renderSeriesChart(
+      instrumentHistoryChart,
+      history,
+      {valueKey: "value_rub", minimumPoints: 2},
+    );
+    instrumentHistoryNote.textContent = historyReady
+      ? `Снимков позиции: ${history.length}. Время точки — captured_at snapshot, не биржевой timestamp.`
+      : "Недостаточно сохранённых оценок позиции для линии.";
+
+    instrumentEvidenceSummary.replaceChildren();
+    const evidenceItems = [
+      ["Risk state", riskStateLabel(latest.risk_state)],
+      ["Рейтинг", riskStateLabel(latest.rating_status)],
+      ["Фундаментальные данные", riskStateLabel(latest.fundamental_status)],
+      ["Источник risk", String(latest.source_status || "Не подтверждено")],
+      [
+        "Причины",
+        Array.isArray(latest.risk_reasons) && latest.risk_reasons.length
+          ? latest.risk_reasons.join(" · ")
+          : "Нет подтверждённых причин",
+      ],
+    ];
+    evidenceItems.forEach(([labelText, valueText]) => {
+      const row = document.createElement("div");
+      const label = document.createElement("span");
+      label.textContent = labelText;
+      const value = document.createElement("strong");
+      value.textContent = valueText;
+      row.append(label, value);
+      instrumentEvidenceSummary.append(row);
+    });
+
+    instrumentPayouts.replaceChildren();
+    (payload?.payouts || []).forEach((event) => {
+      const row = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = {
+        dividend: "Дивиденд",
+        coupon: "Купон",
+        bond_event: "Событие облигации",
+      }[event.event_type] || String(event.event_type || "Событие");
+      const details = document.createElement("small");
+      details.textContent = [
+        event.status || "статус не подтверждён",
+        event.amount === null || event.amount === undefined
+          ? ""
+          : storedMoney(event.amount, event.currency || "RUB"),
+        event.expected_at ? `ожидается ${formatDateTime(event.expected_at)}` : "",
+        event.actual_at ? `факт ${formatDateTime(event.actual_at)}` : "",
+      ].filter(Boolean).join(" · ");
+      row.append(title, details);
+      instrumentPayouts.append(row);
+    });
+    if (!instrumentPayouts.childElementCount) {
+      appendEmptyState(instrumentPayouts, "Подтверждённых выплат или событий нет.");
+    }
+
+    instrumentSources.replaceChildren();
+    (payload?.sources || []).forEach((source) => {
+      const row = document.createElement("div");
+      const title = analysisSourceNode({
+        name: [source.provider, source.document_type].filter(Boolean).join(" · ") || "Источник",
+        url: source.source_url || "",
+      });
+      const details = document.createElement("small");
+      details.textContent = [
+        source.freshness_status || "freshness unknown",
+        source.retrieved_at ? `получено ${formatDateTime(source.retrieved_at)}` : "",
+        Number.isFinite(Number(source.versions)) ? `версий: ${source.versions}` : "",
+      ].filter(Boolean).join(" · ");
+      row.append(title, details);
+      instrumentSources.append(row);
+    });
+    if (!instrumentSources.childElementCount) {
+      appendEmptyState(instrumentSources, "Evidence sources ещё не сохранены.");
+    }
+  };
+
+  const openInstrumentDetail = async (instrumentUid) => {
+    if (instrumentDetailRequestInFlight) {
+      return;
+    }
+    let segment;
+    try {
+      segment = instrumentPathSegment(instrumentUid);
+    } catch {
+      showMessage(
+        instrumentDetailMessage,
+        "T-Invest не вернул допустимый идентификатор инструмента.",
+        true,
+      );
+      return;
+    }
+    const generation = ++instrumentDetailGeneration;
+    instrumentDetailRequestInFlight = true;
+    instrumentDetail.classList.remove("hidden");
+    instrumentDetailLoading.classList.remove("hidden");
+    instrumentDetailContent.classList.add("hidden");
+    showMessage(instrumentDetailMessage, "");
+    instrumentDetail.scrollIntoView({block: "start", behavior: "auto"});
+    try {
+      const payload = await api(
+        `/api/portfolio/instruments/${segment}/visualization?history_limit=90`,
+        {method: "GET"},
+      );
+      if (generation !== instrumentDetailGeneration) {
+        return;
+      }
+      renderInstrumentDetail(payload, instrumentUid);
+      instrumentDetailLoading.classList.add("hidden");
+      instrumentDetailContent.classList.remove("hidden");
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (generation !== instrumentDetailGeneration) {
+        return;
+      }
+      instrumentDetailLoading.classList.add("hidden");
+      showMessage(
+        instrumentDetailMessage,
+        error.status === 404
+          ? "Для этой позиции ещё нет сохранённой tenant-scoped истории."
+          : "Не удалось загрузить детали инструмента. Торговые действия не выполнялись.",
+        true,
+      );
+    } finally {
+      if (generation === instrumentDetailGeneration) {
+        instrumentDetailRequestInFlight = false;
+      }
+    }
+  };
+
+  const closeInstrumentDetail = () => {
+    instrumentDetailGeneration += 1;
+    instrumentDetailRequestInFlight = false;
+    instrumentDetail.classList.add("hidden");
+    instrumentDetailLoading.classList.add("hidden");
+    instrumentDetailContent.classList.add("hidden");
+    showMessage(instrumentDetailMessage, "");
   };
 
   const showPortfolioMode = (mode) => {
@@ -1406,6 +2373,7 @@
 
   const renderPortfolio = (snapshot) => {
     const portfolio = snapshot.portfolio;
+    lastPortfolioSnapshot = snapshot;
     portfolioTotal.textContent = formatMoney(portfolio.total);
     portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
     applySignedClass(portfolioYield, portfolio.expected_yield_percent);
@@ -1414,13 +2382,16 @@
     portfolioDailyRelative.textContent = formatPercent(portfolio.daily_yield_percent, {sign: true});
     portfolioPositionCount.textContent = String(portfolio.positions?.length || 0);
     portfolioRefreshed.textContent = `Обновлено ${formatDateTime(snapshot.refreshed_at)}`;
+    const unblockedRub = homeUnblockedRub(snapshot);
+    portfolioFreeCash.textContent = unblockedRub === null
+      ? "Не подтверждены"
+      : storedMoney(unblockedRub);
 
-    renderAllocation(portfolio.asset_totals);
+    renderPortfolioAllocationView();
     renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
     renderPositions(portfolio.positions);
     renderHomePortfolioSummary(snapshot);
 
-    lastPortfolioSnapshot = snapshot;
     lastPortfolioRefreshAt = Date.now();
     portfolioLoaded = true;
     updateOwlState(snapshot.refreshed_at);
@@ -1435,6 +2406,8 @@
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
       lastPortfolioRefreshAt = 0;
+      resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
+      portfolioFreeCash.textContent = "—";
       updateOwlState(null);
       updateGuard(null);
       resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
@@ -1464,6 +2437,7 @@
     try {
       const snapshot = await api("/api/broker/tbank/portfolio", {method: "GET"});
       renderPortfolio(snapshot);
+      void loadPortfolioVisualization({force});
     } catch (error) {
       if (error.status === 401) {
         location.reload();
@@ -1484,6 +2458,7 @@
         setStateBadge(owlState, "Ошибка обновления", "state-next");
       } else {
         portfolioLoaded = false;
+        portfolioFreeCash.textContent = "—";
         showPortfolioMode("error");
         portfolioErrorText.textContent = needsReconnect
           ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
@@ -3448,6 +4423,8 @@
       resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
+      resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
+      portfolioFreeCash.textContent = "—";
       lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
       overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Интеграции».";
@@ -3519,6 +4496,8 @@
     }]);
     setHomeAttentionBucket("portfolio", []);
     resetHomePortfolioSummary("Состояние T-Invest не подтверждено.");
+    resetPortfolioVisualization("Состояние T-Invest не подтверждено; история не обновлялась.");
+    portfolioFreeCash.textContent = "—";
     overviewAccount.textContent = "Не удалось проверить подключение";
     overviewConnectionText.textContent = "Обновите страницу или попробуйте позже.";
     homeConnectionCard.classList.add("is-error");
@@ -3831,6 +4810,47 @@
     const button = target.closest(selector);
     return button instanceof HTMLButtonElement ? button : null;
   };
+
+  portfolioHistoryPeriodButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.classList.contains("hidden") || !lastPortfolioVisualization) {
+        return;
+      }
+      const days = Number(button.dataset.portfolioHistoryDays);
+      if (!Number.isFinite(days)) {
+        return;
+      }
+      selectedPortfolioHistoryDays = days;
+      renderPortfolioHistory(lastPortfolioVisualization.history || []);
+    });
+  });
+
+  allocationViewButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.allocationView;
+      if (!["class", "currency", "sector", "position"].includes(view)) {
+        return;
+      }
+      selectedAllocationView = view;
+      renderPortfolioAllocationView();
+    });
+  });
+
+  positionsList.addEventListener("click", (event) => {
+    const button = closestButtonTarget(event, "[data-instrument-detail]");
+    if (button && button.dataset.instrumentDetail) {
+      void openInstrumentDetail(button.dataset.instrumentDetail);
+    }
+  });
+
+  positionsTableBody.addEventListener("click", (event) => {
+    const button = closestButtonTarget(event, "[data-instrument-detail]");
+    if (button && button.dataset.instrumentDetail) {
+      void openInstrumentDetail(button.dataset.instrumentDetail);
+    }
+  });
+
+  instrumentDetailClose.addEventListener("click", closeInstrumentDetail);
 
   homeAttentionList.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-home-attention-view]");

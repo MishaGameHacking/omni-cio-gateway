@@ -9,6 +9,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tarfile
 import tempfile
@@ -920,6 +921,71 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn(".market-card-compact", stylesheet)
         self.assertIn("@media (max-width: 420px)", stylesheet)
 
+    def test_portfolio_visualization_uses_persisted_tenant_history_and_semantic_mobile_cards(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        page = (root / "web" / "index.html").read_text(encoding="utf-8")
+        script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
+
+        for element_id in (
+            "home-portfolio-history-chart",
+            "portfolio-free-cash",
+            "portfolio-history-state",
+            "portfolio-history-periods",
+            "portfolio-history-chart",
+            "portfolio-drawdown-chart",
+            "portfolio-coverage-state",
+            "portfolio-sector-coverage",
+            "portfolio-valued-count",
+            "positions-table-body",
+            "positions-list",
+            "instrument-detail",
+            "instrument-detail-pnl",
+            "instrument-detail-pnl-time",
+            "instrument-history-chart",
+            "instrument-evidence-summary",
+            "instrument-payouts",
+            "instrument-sources",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+
+        self.assertIn('data-portfolio-history-days="30"', page)
+        self.assertIn('data-portfolio-history-days="90"', page)
+        self.assertIn('data-portfolio-history-days="180"', page)
+        self.assertIn('data-portfolio-history-days="365"', page)
+        self.assertIn('data-allocation-view="class"', page)
+        self.assertIn('data-allocation-view="currency"', page)
+        self.assertIn('data-allocation-view="sector"', page)
+        self.assertIn('data-allocation-view="position"', page)
+        self.assertIn("Время точки — captured_at", page)
+        self.assertIn("Не торговый бюджет", page)
+        ids = re.findall(r'\\bid="([^"]+)"', page)
+        self.assertEqual(len(ids), len(set(ids)), "dashboard HTML contains duplicate ids")
+
+        self.assertIn("/api/portfolio/visualization?history_limit=365", script)
+        self.assertIn("/api/portfolio/instruments/", script)
+        self.assertIn("instrumentPathSegment", script)
+        self.assertIn("createElementNS", script)
+        self.assertIn("renderSeriesChart", script)
+        self.assertIn("drawdownSeries", script)
+        self.assertIn("historyForDays", script)
+        self.assertIn("syncPortfolioHistoryPeriods", script)
+        self.assertIn("livePositionForIdentity", script)
+        self.assertIn("instrumentDetailPnl", script)
+        self.assertIn("snapshot_freshness", script)
+        self.assertIn("risk_state", script)
+        self.assertNotIn("Math.random", script)
+        self.assertNotIn("innerHTML", script)
+
+        self.assertIn(".portfolio-position-table", stylesheet)
+        self.assertIn(".portfolio-position-cards", stylesheet)
+        self.assertIn(".portfolio-chart-line", stylesheet)
+        self.assertIn(".portfolio-chart-area", stylesheet)
+        self.assertIn(".portfolio-history-periods", stylesheet)
+        self.assertIn(".instrument-detail", stylesheet)
+        self.assertIn("@media (max-width: 820px)", stylesheet)
+        self.assertIn("@media (max-width: 420px)", stylesheet)
+
     def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
@@ -1065,7 +1131,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.16.0"', project)
+        self.assertIn('version = "0.17.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

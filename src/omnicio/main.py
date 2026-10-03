@@ -836,6 +836,60 @@ def _live_balancing_for_user(
 
 
 @app.get(
+    "/api/portfolio/visualization",
+    responses={401: {"description": "Authenticated session required"}},
+)
+def portfolio_visualization(
+    request: Request,
+    response: Response,
+    history_limit: int = Query(default=90, ge=2, le=365),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    payload = portfolio_store(request).portfolio_visualization(
+        user.id,
+        history_limit=history_limit,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return payload
+
+
+@app.get(
+    "/api/portfolio/instruments/{instrument_uid}/visualization",
+    responses={
+        401: {"description": "Authenticated session required"},
+        404: {"description": "Instrument is not present in the current account history"},
+    },
+)
+def portfolio_instrument_visualization(
+    instrument_uid: str,
+    request: Request,
+    response: Response,
+    history_limit: int = Query(default=90, ge=2, le=365),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        payload = portfolio_store(request).instrument_visualization(
+            user.id,
+            instrument_uid,
+            history_limit=history_limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="instrument visualization unavailable",
+        )
+    response.headers["Cache-Control"] = "private, no-store"
+    return payload
+
+
+@app.get(
     "/api/portfolio/balancing",
     responses={401: {"description": "Authenticated session required"}},
 )

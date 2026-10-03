@@ -559,6 +559,61 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         database.open()
         try:
             store = PortfolioStore(database)
+
+            visualization = store.portfolio_visualization(
+                USER_ONE,
+                history_limit=30,
+            )
+            assert visualization["status"] == "observed"
+            latest_visualization = visualization["latest"]
+            assert isinstance(latest_visualization, dict)
+            assert latest_visualization["account_id"] == "account-1"
+            assert latest_visualization["environment"] == "prod"
+            assert latest_visualization["nav_rub"] == Decimal("1000")
+            assert len(visualization["history"]) == 1
+            positions = latest_visualization["positions"]
+            assert isinstance(positions, list)
+            assert any(
+                item["instrument_uid"] == "FIGI-ONLY"
+                and item["catalog_instrument_uid"] == "provider-bond-uid"
+                for item in positions
+            )
+
+            other_tenant_visualization = store.portfolio_visualization(
+                USER_TWO,
+                history_limit=30,
+            )
+            assert other_tenant_visualization == {
+                "status": "pending",
+                "history": [],
+                "latest": None,
+            }
+
+            instrument_visualization = store.instrument_visualization(
+                USER_ONE,
+                "FIGI-ONLY",
+                history_limit=30,
+            )
+            assert instrument_visualization is not None
+            assert instrument_visualization["account_id"] == "account-1"
+            assert len(instrument_visualization["history"]) == 1
+            assert instrument_visualization["latest"]["ticker"] == "TESTBOND"
+            assert any(
+                item["instrument_uid"] == "provider-bond-uid"
+                and item["event_type"] == "coupon"
+                for item in instrument_visualization["payouts"]
+            )
+            assert any(
+                item["subject_uid"] == "provider-bond-uid"
+                and item["document_type"] == "bond_coupon"
+                for item in instrument_visualization["sources"]
+            )
+            assert store.instrument_visualization(
+                USER_TWO,
+                "FIGI-ONLY",
+                history_limit=30,
+            ) is None
+
             first_policy = store.save_balancing_policy(
                 USER_ONE,
                 max_instrument_percent=Decimal("20"),
