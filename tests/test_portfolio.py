@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
 from omnicio.main import app
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
-from omnicio.portfolio_store import InvestmentProfileRecord
+from omnicio.portfolio_store import BalancingPolicyRecord, InvestmentProfileRecord
 from omnicio.tbank import (
     TBankAssetTotal,
     TBankInstrumentMetadata,
@@ -292,6 +292,129 @@ def test_investment_profile_rejects_non_finite_decimal_values() -> None:
             "max_drawdown_percent": "10",
             "liquidity_horizon_days": 7,
             "allow_below_investment_grade": False,
+        },
+        headers={"Origin": "https://omnicio.ru"},
+    )
+    assert response.status_code == 422
+
+
+def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
+    now = datetime.now(UTC)
+    policy = BalancingPolicyRecord(
+        id=1,
+        user_id="server-user",
+        version=2,
+        max_instrument_percent=Decimal("20"),
+        max_sector_percent=Decimal("30"),
+        max_issuer_percent=Decimal("20"),
+        max_group_percent=Decimal("25"),
+        max_share_percent=Decimal("70"),
+        max_bond_percent=Decimal("80"),
+        max_etf_percent=Decimal("70"),
+        max_below_grade_percent=Decimal("5"),
+        max_unknown_percent=Decimal("0"),
+        max_term_months=120,
+        turnover_budget_percent=Decimal("25"),
+        no_trade_band_percent=Decimal("1"),
+        min_replace_benefit_rub=Decimal("500"),
+        created_at=now,
+    )
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+    ):
+        user.return_value.id = "server-user"
+        store.return_value.current_balancing_policy.return_value = policy
+        response = TestClient(app).get(
+            "/api/profile/balancing?user_id=attacker",
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    payload = response.json()["policy"]
+    assert payload["version"] == 2
+    assert payload["max_instrument_percent"] == "20"
+    assert payload["system_constraints"]["allowed_currencies"] == ["RUB"]
+    assert payload["system_constraints"]["new_buy_risk_states"] == ["normal"]
+    store.return_value.current_balancing_policy.assert_called_once_with("server-user")
+
+
+def test_balancing_policy_write_requires_origin_and_current_consent() -> None:
+    payload = {
+        "max_instrument_percent": "20",
+        "max_sector_percent": "30",
+        "max_issuer_percent": "20",
+        "max_group_percent": "25",
+        "max_share_percent": "70",
+        "max_bond_percent": "80",
+        "max_etf_percent": "70",
+        "max_below_grade_percent": "5",
+        "max_unknown_percent": "0",
+        "max_term_months": 120,
+        "turnover_budget_percent": "25",
+        "no_trade_band_percent": "1",
+        "min_replace_benefit_rub": "500",
+    }
+    database = type(
+        "ConsentDatabase",
+        (),
+        {"has_legal_versions": lambda self, user_id, versions: False},
+    )()
+    previous_database = getattr(app.state, "database", None)
+    app.state.database = database
+
+    try:
+        with (
+            patch("omnicio.main.authenticated_user") as user,
+            patch("omnicio.main.portfolio_store") as store,
+            patch("omnicio.main.service") as auth,
+        ):
+            user.return_value.id = "server-user"
+            auth.return_value.legal_versions.return_value = {
+                "privacy_policy": "2026-10-02-v6",
+                "personal_data_consent": "2026-10-02-v6",
+                "terms": "2026-10-02-v6",
+            }
+
+            cross_origin = TestClient(app).put(
+                "/api/profile/balancing",
+                json=payload,
+                headers={"Origin": "https://evil.example"},
+            )
+            assert cross_origin.status_code == 403
+
+            missing_consent = TestClient(app).put(
+                "/api/profile/balancing",
+                json=payload,
+                headers={"Origin": "https://omnicio.ru"},
+            )
+            assert missing_consent.status_code == 409
+            store.return_value.save_balancing_policy.assert_not_called()
+    finally:
+        if previous_database is None:
+            delattr(app.state, "database")
+        else:
+            app.state.database = previous_database
+
+
+def test_balancing_policy_rejects_non_finite_decimal_values() -> None:
+    response = TestClient(app).put(
+        "/api/profile/balancing",
+        json={
+            "max_instrument_percent": "NaN",
+            "max_sector_percent": "30",
+            "max_issuer_percent": "20",
+            "max_group_percent": "25",
+            "max_share_percent": "70",
+            "max_bond_percent": "80",
+            "max_etf_percent": "70",
+            "max_below_grade_percent": "5",
+            "max_unknown_percent": "0",
+            "max_term_months": 120,
+            "turnover_budget_percent": "25",
+            "no_trade_band_percent": "1",
+            "min_replace_benefit_rub": "500",
         },
         headers={"Origin": "https://omnicio.ru"},
     )
