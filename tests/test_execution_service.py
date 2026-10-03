@@ -43,6 +43,7 @@ def _run(*, status: str = "running") -> ExecutionRunRecord:
         account_id="sandbox-account",
         mode="sandbox",
         provider_environment="sandbox",
+        live_mandate_id=None,
         status=status,  # type: ignore[arg-type]
         error_code="",
         created_at=NOW - timedelta(minutes=1),
