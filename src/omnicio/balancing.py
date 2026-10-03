@@ -248,6 +248,13 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("currency_not_allowed")
     if candidate.risk_state not in policy.allowed_risk_states:
         reasons.append("risk_state_not_allowed")
+    if (
+        candidate.rating_bucket == "below_grade"
+        and policy.max_below_grade_percent <= 0
+    ):
+        reasons.append("below_grade_not_allowed")
+    if candidate.rating_bucket == "unknown" and policy.max_unknown_percent <= 0:
+        reasons.append("unknown_rating_not_allowed")
     if candidate.liquidity_days is None or candidate.max_liquid_lots is None:
         reasons.append("liquidity_evidence_missing")
     elif (
