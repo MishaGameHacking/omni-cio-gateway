@@ -855,7 +855,6 @@ class AuthAppDeployTests(unittest.TestCase):
             "--surface-sunken:",
             "--surface-raised:",
             "--shadow-card:",
-            "--shadow-raised:",
             "--topbar-bg:",
         ):
             self.assertIn(token, stylesheet)
@@ -872,6 +871,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("@media (max-width: 420px)", stylesheet)
         self.assertIn("@media (prefers-contrast: more)", stylesheet)
         self.assertIn("scrollbar-gutter: stable", stylesheet)
+        self.assertIn(".proposal-decision-actions .button", stylesheet)
+        self.assertIn(".segmented-control button", stylesheet)
 
     def test_personal_dashboard_is_mobile_safe_and_respects_reduced_motion(self) -> None:
         root = SCRIPT_DIR.parent.parent
