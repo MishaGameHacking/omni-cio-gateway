@@ -100,7 +100,10 @@ jobs:
           import urllib.request
 
           repository = "MishaGameHacking/omni-cio-gateway"
-          r6_head = "f688bdfa8dbbd17252fb65a8759a4d72c1ff3550"
+          diagnostic_heads = (
+              ("R6", "f688bdfa8dbbd17252fb65a8759a4d72c1ff3550", "pullRequest=691"),
+              ("UX", "53a8f370c7c57dd886ab26471c7eb7a426d3b981", "pullRequest=692"),
+          )
           headers = {
               "Accept": "application/vnd.github+json",
               "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
@@ -113,34 +116,36 @@ jobs:
               with urllib.request.urlopen(request, timeout=15) as response:
                   return json.load(response)
 
-          checks = get(
-              f"https://api.github.com/repos/{repository}/commits/{r6_head}"
-              "/check-runs?filter=all&per_page=100"
-          )["check_runs"]
-          sonar = [
-              check for check in checks
-              if check.get("name") == "SonarCloud Code Analysis"
-              and check.get("details_url", "").endswith("pullRequest=691")
-          ]
-          if len(sonar) != 1:
-              raise SystemExit(f"expected one R6 Sonar check, got {len(sonar)}")
-          annotations = get(sonar[0]["output"]["annotations_url"])
-          print(json.dumps({"annotation_count": len(annotations)}, sort_keys=True))
-          for annotation in annotations:
-              print(
-                  json.dumps(
-                      {
-                          "path": annotation.get("path"),
-                          "start_line": annotation.get("start_line"),
-                          "end_line": annotation.get("end_line"),
-                          "annotation_level": annotation.get("annotation_level"),
-                          "title": annotation.get("title"),
-                          "message": annotation.get("message"),
-                      },
-                      ensure_ascii=True,
-                      sort_keys=True,
+          for label, head, scope in diagnostic_heads:
+              checks = get(
+                  f"https://api.github.com/repos/{repository}/commits/{head}"
+                  "/check-runs?filter=all&per_page=100"
+              )["check_runs"]
+              sonar = [
+                  check for check in checks
+                  if check.get("name") == "SonarCloud Code Analysis"
+                  and check.get("details_url", "").endswith(scope)
+              ]
+              if len(sonar) != 1:
+                  raise SystemExit(f"expected one {label} Sonar check, got {len(sonar)}")
+              annotations = get(sonar[0]["output"]["annotations_url"])
+              print(json.dumps({"label": label, "annotation_count": len(annotations)}, sort_keys=True))
+              for annotation in annotations:
+                  print(
+                      json.dumps(
+                          {
+                              "label": label,
+                              "path": annotation.get("path"),
+                              "start_line": annotation.get("start_line"),
+                              "end_line": annotation.get("end_line"),
+                              "annotation_level": annotation.get("annotation_level"),
+                              "title": annotation.get("title"),
+                              "message": annotation.get("message"),
+                          },
+                          ensure_ascii=True,
+                          sort_keys=True,
+                      )
                   )
-              )
           PY
 
   self_hosted:
