@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot
 from omnicio.execution_service import ExecutionServiceError
+from omnicio.execution_store import ExecutionLedgerError
 from omnicio.main import app
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
 from omnicio.portfolio_store import (
@@ -1089,6 +1090,33 @@ def test_execution_create_accepts_only_proposal_identity_and_safe_mode() -> None
         )
     assert live_mode.status_code == 409
     assert live_mode.json()["detail"] == "live_execution_disabled"
+
+
+def test_execution_create_maps_active_live_run_to_conflict() -> None:
+    body = {
+        "proposal_id": "00000000-0000-0000-0000-000000000905",
+        "proposal_version": 2,
+        "proposal_hash": "ef" * 32,
+        "mode": "live",
+    }
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main._require_current_legal_consent"),
+        patch("omnicio.main.execution_service") as executor,
+    ):
+        user.return_value.id = "server-user"
+        executor.return_value.start.side_effect = ExecutionLedgerError(
+            "live_execution_already_active"
+        )
+        response = TestClient(app).post(
+            "/api/portfolio/executions",
+            json=body,
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "live-session"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "live_execution_already_active"
 
 
 def test_execution_create_requires_origin_before_execution_service() -> None:
