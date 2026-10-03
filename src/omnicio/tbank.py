@@ -8,7 +8,7 @@ import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Literal, cast
 
@@ -86,6 +86,16 @@ class TBankFxQuote:
 class TBankMoney:
     currency: str
     value: str
+
+
+@dataclass(frozen=True, slots=True)
+class TBankHistoricCandle:
+    instrument_uid: str
+    close: str
+    volume_lots: int
+    time: datetime
+    is_complete: bool
+    source: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +409,85 @@ class TBankInvestClient:
                     amortization=_optional_bool(item, "amortizationFlag"),
                     subordinated=_optional_bool(item, "subordinatedFlag"),
                     liquidity=_optional_bool(item, "liquidityFlag"),
+                )
+            )
+        return tuple(result)
+
+    def get_daily_exchange_candles(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        if from_at.tzinfo is None or to_at.tzinfo is None:
+            raise ValueError("candle boundaries must be timezone-aware")
+        if from_at > to_at:
+            raise ValueError("candle start must not be after end")
+        if to_at - from_at > timedelta(days=366):
+            raise ValueError("candle window must not exceed one calendar year")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetCandles",
+            body={
+                "instrumentId": instrument,
+                "from": _utc_timestamp(from_at),
+                "to": _utc_timestamp(to_at),
+                "interval": "CANDLE_INTERVAL_DAY",
+                "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+            },
+        )
+        result: list[TBankHistoricCandle] = []
+        seen_times: set[datetime] = set()
+        for raw in _required_list(payload, "candles"):
+            item = _required_object(raw, "historic candle")
+            close = _quotation(item.get("close"))
+            candle_time = _optional_provider_timestamp(item.get("time"))
+            volume_raw = item.get("volume")
+            complete = item.get("isComplete")
+            source = _text(item.get("candleSourceType")).strip()
+            if (
+                close is None
+                or Decimal(close) <= 0
+                or candle_time is None
+                or isinstance(volume_raw, bool)
+                or not isinstance(complete, bool)
+            ):
+                raise TBankUnavailable(
+                    "T-Invest historic candle is missing required fields"
+                )
+            try:
+                volume = int(str(volume_raw))
+            except ValueError as exc:
+                raise TBankUnavailable(
+                    "T-Invest historic candle has invalid volume"
+                ) from exc
+            if volume < 0:
+                raise TBankUnavailable(
+                    "T-Invest historic candle has negative volume"
+                )
+            if source and source != "CANDLE_SOURCE_EXCHANGE":
+                raise TBankUnavailable(
+                    "T-Invest historic candle is not exchange-sourced"
+                )
+            if candle_time in seen_times:
+                raise TBankUnavailable(
+                    "T-Invest historic candles contain duplicate timestamps"
+                )
+            seen_times.add(candle_time)
+            result.append(
+                TBankHistoricCandle(
+                    instrument_uid=instrument,
+                    close=close,
+                    volume_lots=volume,
+                    time=candle_time,
+                    is_complete=complete,
+                    source=source or "CANDLE_SOURCE_EXCHANGE",
                 )
             )
         return tuple(result)
