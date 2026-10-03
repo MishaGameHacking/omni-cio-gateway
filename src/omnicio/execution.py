@@ -150,8 +150,10 @@ def run_status_for_legs(
         return "failed"
     if all(status in {"filled", "shadow_filled"} for status in statuses):
         return "succeeded"
-    if any(status == "failed" for status in statuses):
+    if any(status in {"failed", "rejected"} for status in statuses):
         return "failed"
+    if any(status == "cancelled" for status in statuses):
+        return "cancelled"
     if any(status == "reconciling" for status in statuses):
         return "reconciling"
     if any(
@@ -165,8 +167,6 @@ def run_status_for_legs(
         for status in statuses
     ):
         return "running"
-    if all(status in {"cancelled", "rejected"} for status in statuses):
-        return "cancelled"
     if all(terminal_leg_status(status) for status in statuses):
         return "failed"
     return "running"
