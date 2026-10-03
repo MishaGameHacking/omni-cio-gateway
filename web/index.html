@@ -835,11 +835,101 @@
                   <span class="state-badge state-next" id="execution-status">Live выключен</span>
                 </header>
                 <p class="card-description">
-                  R6 исполняет только подтверждённую exact-версию R5-предложения.
-                  Shadow не обращается к broker order API. Sandbox использует только
-                  <code>SandboxService</code>, limit-заявки и заранее сохранённый request ID.
-                  Production OrdersService на этом этапе отсутствует.
+                  R6 исполняет подтверждённую exact-версию R5-предложения в Shadow или
+                  T-Invest Sandbox. R7 добавляет отдельную production-boundary, но она
+                  не включается автоматически: нужен server-side feature gate, exact
+                  production-счёт, явный краткоживущий mandate и повторное подтверждение
+                  пользователя. Пока опубликованные legal-документы v6 описывают режим
+                  без реальных поручений, production live остаётся выключен.
                 </p>
+
+                <section class="portfolio-card" aria-labelledby="live-mandate-title">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">R7 · Production authority</p>
+                      <h4 id="live-mandate-title">Разрешение на ограниченный live-canary</h4>
+                    </div>
+                    <span class="state-badge state-next" id="live-mandate-status">
+                      Проверяем gate
+                    </span>
+                  </header>
+                  <p id="live-mandate-summary" class="field-hint">
+                    Это отдельное разрешение, а не настройка входа или T-Invest.
+                    Оно никогда не создаётся автоматически.
+                  </p>
+                  <form
+                    id="live-mandate-form"
+                    class="form-stack hidden"
+                    aria-describedby="live-mandate-help"
+                    novalidate
+                  >
+                    <div id="live-mandate-help" class="field-hint">
+                      Canary допускает только подтверждённый <code>deploy_cash</code>,
+                      buy-only, limit + Fill-and-Kill, без margin. Укажите собственные
+                      лимиты не выше server-side caps и срок не более 24 часов.
+                    </div>
+                    <div class="constraint-form-grid">
+                      <div class="field">
+                        <label for="live-max-order">Максимум одной заявки, ₽</label>
+                        <input
+                          id="live-max-order"
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          inputmode="decimal"
+                          required
+                        >
+                      </div>
+                      <div class="field">
+                        <label for="live-max-daily">Максимум за день, ₽</label>
+                        <input
+                          id="live-max-daily"
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          inputmode="decimal"
+                          required
+                        >
+                      </div>
+                      <div class="field">
+                        <label for="live-expires-at">Разрешение действует до</label>
+                        <input id="live-expires-at" type="datetime-local" required>
+                      </div>
+                      <div class="field">
+                        <label for="live-profile-id">ID профиля для подтверждения</label>
+                        <input
+                          id="live-profile-id"
+                          type="text"
+                          inputmode="numeric"
+                          autocomplete="off"
+                          pattern="[0-9]{9}"
+                          maxlength="9"
+                          placeholder="000000001"
+                          required
+                        >
+                      </div>
+                    </div>
+                    <label class="check">
+                      <input id="live-confirm" type="checkbox" required>
+                      <span>
+                        Я понимаю, что после отдельного запуска подтверждённого пакета
+                        OmniCIO сможет отправить реальные limit-поручения в пределах этих
+                        caps. Отзыв разрешения блокирует новые поручения, но не скрывает
+                        уже отправленные — их нужно сверить или отменить.
+                      </span>
+                    </label>
+                    <div class="proposal-decision-actions">
+                      <button id="live-mandate-save" class="button button-danger-secondary" type="submit">
+                        Создать live-разрешение
+                      </button>
+                      <button id="live-mandate-revoke" class="button button-secondary hidden" type="button">
+                        Kill switch · запретить новые заявки
+                      </button>
+                    </div>
+                  </form>
+                  <p id="live-mandate-message" class="message" role="status" aria-live="polite"></p>
+                </section>
+
                 <section class="portfolio-two-column">
                   <div>
                     <div class="portfolio-card-header">
@@ -956,9 +1046,10 @@
                     required
                   >
                   <p id="tbank-token-help" class="field-hint">
-                    Для аналитики production-счёта OmniCIO не использует live-исполнение.
-                    Для R6 Sandbox токен должен разрешать тестовые методы песочницы.
-                    Transfer-access OmniCIO не требуется.
+                    Для аналитики production-счёта достаточно read-доступа. R6 Sandbox
+                    требует тестовые методы песочницы. R7 production-live, если он отдельно
+                    активирован сервером и пользователем, требует write-доступ только к
+                    выбранному счёту; transfer-access OmniCIO не требуется.
                   </p>
                 </div>
 
