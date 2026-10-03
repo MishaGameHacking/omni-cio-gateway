@@ -510,6 +510,20 @@ def _enrich_bond_candidate(
             "issuer_group_not_verified",
         ), ()
 
+    maturity = info.maturity_date
+    nominal = info.nominal
+    if (
+        maturity is None
+        or maturity <= observed_at
+        or nominal is None
+        or nominal.currency.upper() != "RUB"
+        or base.lot_size <= 0
+    ):
+        return _with_candidate_blocker(base, "bond_term_missing"), ()
+    nominal_per_bond = _money_rub(nominal)
+    if nominal_per_bond <= 0:
+        raise ValueError("bond nominal must be positive")
+
     assessment = assess_candidate_fundamental_risk(
         info,
         fundamental,
@@ -538,10 +552,14 @@ def _enrich_bond_candidate(
     if best_bid <= 0 or best_ask <= best_bid:
         return _with_candidate_blocker(base, "order_book_unusable"), ()
 
+    ask_currency_per_bond = _bond_points_to_currency(
+        best_ask,
+        nominal_per_bond,
+    )
     order_price = broker.candidate_order_price(
         user_id,
         base.instrument_uid,
-        price=str(best_ask),
+        price=str(ask_currency_per_bond),
         direction="buy",
         quantity_lots=1,
     )
@@ -563,20 +581,6 @@ def _enrich_bond_candidate(
         or abs(total - expected_total) > tolerance
     ):
         raise ValueError("invalid T-Invest order price evidence")
-
-    maturity = info.maturity_date
-    nominal = info.nominal
-    if (
-        maturity is None
-        or maturity <= observed_at
-        or nominal is None
-        or nominal.currency.upper() != "RUB"
-        or base.lot_size <= 0
-    ):
-        return _with_candidate_blocker(base, "bond_term_missing"), ()
-    nominal_per_bond = _money_rub(nominal)
-    if nominal_per_bond <= 0:
-        raise ValueError("bond nominal must be positive")
 
     cashflow_to = maturity + timedelta(days=1)
     coupons = broker.candidate_bond_coupons(
@@ -986,6 +990,20 @@ def _fresh_market_time(value: datetime | None, now: datetime) -> bool:
         return False
     normalized = value.astimezone(UTC)
     return normalized <= now and now - normalized <= MARKET_QUOTE_MAX_AGE
+
+
+def _bond_points_to_currency(
+    price_points: Decimal,
+    nominal_per_bond: Decimal,
+) -> Decimal:
+    if (
+        not price_points.is_finite()
+        or price_points <= 0
+        or not nominal_per_bond.is_finite()
+        or nominal_per_bond <= 0
+    ):
+        raise ValueError("bond price conversion requires positive finite values")
+    return price_points / Decimal("100") * nominal_per_bond
 
 
 def _money_rub(value: TBankMoney) -> Decimal:
