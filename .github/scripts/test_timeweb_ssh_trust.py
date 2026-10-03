@@ -166,19 +166,28 @@ class SshTrustTests(unittest.TestCase):
     def _exercise_consumer(self, consumer: str) -> None:
         paths: list[pathlib.Path] = []
         ssh_calls: list[list[str]] = []
+        binary_inputs: list[bytes] = []
 
-        def execute(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        def execute(args: list[str], **kwargs: object) -> subprocess.CompletedProcess:
             if args[0] == ssh_keygen_executable():
                 private_key = pathlib.Path(args[args.index("-f") + 1])
                 private_key.with_suffix(".pub").write_text("synthetic-public-key")
-            else:
-                self.assertEqual(args[0], ssh_executable())
-                option = next(arg for arg in args if arg.startswith("UserKnownHostsFile="))
-                path = pathlib.Path(option.split("=", 1)[1])
-                paths.append(path)
-                self.assertEqual(path.read_text(encoding="utf-8"), ENTRY + "\n")
-                self.assertIn("StrictHostKeyChecking=yes", args)
-                ssh_calls.append(args)
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+            self.assertEqual(args[0], ssh_executable())
+            option = next(arg for arg in args if arg.startswith("UserKnownHostsFile="))
+            path = pathlib.Path(option.split("=", 1)[1])
+            paths.append(path)
+            self.assertEqual(path.read_text(encoding="utf-8"), ENTRY + "\n")
+            self.assertIn("StrictHostKeyChecking=yes", args)
+            ssh_calls.append(args)
+
+            payload = kwargs.get("input")
+            if payload is not None:
+                self.assertIsInstance(payload, bytes)
+                self.assertNotIn(b"\r\n", payload)
+                binary_inputs.append(payload)
+                return subprocess.CompletedProcess(args, 0, stdout=b"", stderr=b"")
             return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
         with self.subTest(consumer=consumer), patch.dict(
@@ -190,14 +199,47 @@ class SshTrustTests(unittest.TestCase):
                 with postgres.EphemeralSsh(
                     client=client, server_id=9235089, server_ip=SERVER,
                 ) as session:
-                    session.run("true")
+                    self.assertEqual(
+                        session.run(
+                            "bash -s",
+                            input_text="set -e\nprintf 'ok\\n'\n",
+                        ),
+                        "",
+                    )
             else:
                 tls.configure_with_ephemeral_key(client=client, server_id=9235089)
             self.assertEqual(len(ssh_calls), 2)
+            self.assertEqual(len(binary_inputs), 1)
+            self.assertTrue(binary_inputs[0].endswith(b"\n"))
             client.attach_ssh_key.assert_called_once_with(9235089, 123)
             client.detach_ssh_key.assert_called_once_with(9235089, 123)
             client.delete_ssh_key.assert_called_once_with(123)
             self.assertTrue(all(not path.exists() for path in paths))
+
+    def test_postgres_rejects_non_utf8_remote_output(self) -> None:
+        def execute(
+            args: list[str], **kwargs: object,
+        ) -> subprocess.CompletedProcess:
+            if args[0] == ssh_keygen_executable():
+                private_key = pathlib.Path(args[args.index("-f") + 1])
+                private_key.with_suffix(".pub").write_text("synthetic-public-key")
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            if kwargs.get("input") is None:
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(args, 0, stdout=b"\\xff", stderr=b"")
+
+        with patch.dict(
+            os.environ, {"TIMEWEB_SSH_KNOWN_HOSTS": ENTRY},
+        ), patch.object(subprocess, "run", side_effect=execute):
+            client = Mock()
+            client.create_ssh_key.return_value = 123
+            with postgres.EphemeralSsh(
+                client=client, server_id=9235089, server_ip=SERVER,
+            ) as session, self.assertRaisesRegex(
+                postgres.InfraError,
+                "invalid UTF-8",
+            ):
+                session.run("cat", input_text="payload\n")
 
     def test_production_ssh_mutations_share_one_serial_queue(self) -> None:
         workflows = (
