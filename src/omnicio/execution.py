@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 from uuid import UUID
 
-from .portfolio_store import PortfolioProposalRecord
+if TYPE_CHECKING:
+    from .portfolio_store import PortfolioProposalRecord
 
 ExecutionMode = Literal["shadow", "sandbox"]
 ExecutionRunStatus = Literal[
