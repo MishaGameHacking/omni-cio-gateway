@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - ".github/workflows/timeweb-white-site.yml"
       - ".github/workflows/timeweb-white-site-ci.yml"
       - ".github/scripts/timeweb_white_site.py"
@@ -19,7 +20,7 @@ jobs:
     name: Test reconciler
     permissions:
       contents: read
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
 
     steps:
@@ -27,10 +28,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
       - name: Run Timeweb reconciler regression tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/test_timeweb_white_site.py
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\test_timeweb_white_site.py'
 
