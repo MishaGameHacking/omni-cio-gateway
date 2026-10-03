@@ -2413,6 +2413,250 @@
     }
   };
 
+  const setReinvestmentInputsDisabled = (disabled) => {
+    for (const element of [
+      reinvestmentReserve,
+      reinvestmentMaxOrder,
+      reinvestmentMaxDaily,
+      reinvestmentMaxMonthly,
+      reinvestmentSlippage,
+      reinvestmentExpiresAt,
+      reinvestmentProfileId,
+      reinvestmentDividends,
+      reinvestmentCoupons,
+      reinvestmentConfirm,
+    ]) {
+      element.disabled = disabled;
+    }
+  };
+
+  const renderReinvestment = (payload) => {
+    const source = payload && typeof payload === "object" ? payload : {};
+    const income = source.income && typeof source.income === "object"
+      ? source.income
+      : {};
+    reinvestmentMandate = source.mandate && typeof source.mandate === "object"
+      ? source.mandate
+      : null;
+
+    reinvestmentObserved.textContent = formatRub(income.observed_rub || "0");
+    reinvestmentSpendable.textContent = formatRub(income.spendable_rub || "0");
+    reinvestmentBreakdown.textContent = [
+      "Дивиденды: " + formatRub(income.dividends_rub || "0"),
+      "Купоны: " + formatRub(income.coupons_rub || "0"),
+      "подтверждено к расходованию: " + formatRub(income.verified_rub || "0"),
+    ].join(" · ");
+
+    if (source.execution_enabled !== false || source.stage !== "r8_foundation") {
+      reinvestmentForm.classList.add("hidden");
+      reinvestmentRevoke.classList.add("hidden");
+      setStateBadge(reinvestmentStatus, "Safety boundary не подтверждён", "state-error");
+      reinvestmentSummary.textContent = (
+        "Сервер вернул неожиданный execution boundary. Мандат нельзя изменять до проверки."
+      );
+      return;
+    }
+
+    const connectedProduction = (
+      source.connected_environment === "prod"
+      && typeof source.connected_account_id === "string"
+      && source.connected_account_id !== ""
+    );
+    if (!connectedProduction) {
+      reinvestmentForm.classList.add("hidden");
+      setStateBadge(reinvestmentStatus, "Нужен production-счёт", "state-next");
+      reinvestmentSummary.textContent = (
+        "Для R8.1 подключите собственный production-счёт T-Invest. "
+        + "Sandbox и отсутствие счёта не создают мандат реинвестирования."
+      );
+      return;
+    }
+
+    reinvestmentForm.classList.remove("hidden");
+    if (reinvestmentMandate) {
+      setStateBadge(reinvestmentStatus, "Мандат активен · без исполнения", "state-ok");
+      reinvestmentSummary.textContent = [
+        "Версия " + String(reinvestmentMandate.version || "—"),
+        "действует до " + formatDateTime(reinvestmentMandate.expires_at),
+        "автопокупка выключена",
+      ].join(" · ");
+      reinvestmentReserve.value = String(reinvestmentMandate.cash_reserve_rub || "");
+      reinvestmentMaxOrder.value = String(reinvestmentMandate.max_order_notional_rub || "");
+      reinvestmentMaxDaily.value = String(reinvestmentMandate.max_daily_notional_rub || "");
+      reinvestmentMaxMonthly.value = String(reinvestmentMandate.max_monthly_notional_rub || "");
+      reinvestmentSlippage.value = String(reinvestmentMandate.max_slippage_bps ?? "");
+      reinvestmentDividends.checked = Boolean(reinvestmentMandate.allow_dividends);
+      reinvestmentCoupons.checked = Boolean(reinvestmentMandate.allow_coupons);
+      setReinvestmentInputsDisabled(true);
+      reinvestmentSave.classList.add("hidden");
+      reinvestmentRevoke.classList.remove("hidden");
+      return;
+    }
+
+    setStateBadge(reinvestmentStatus, "Мандат не создан", "state-next");
+    reinvestmentSummary.textContent = (
+      "Мандат не даёт торговых полномочий на R8.1. После сохранения система "
+      + "сможет только вести evidence-ledger выплат внутри его срока."
+    );
+    setReinvestmentInputsDisabled(false);
+    reinvestmentSave.classList.remove("hidden");
+    reinvestmentRevoke.classList.add("hidden");
+  };
+
+  const loadReinvestment = async () => {
+    try {
+      const payload = await api("/api/portfolio/reinvestment", {method: "GET"});
+      renderReinvestment(payload);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      reinvestmentMandate = null;
+      reinvestmentForm.classList.add("hidden");
+      setStateBadge(reinvestmentStatus, "Нет подтверждённых данных", "state-error");
+      reinvestmentSummary.textContent = (
+        "R8.1 недоступен без успешной server-side проверки. "
+        + "Никакой бюджет реинвестирования не считается доступным."
+      );
+      reinvestmentSpendable.textContent = formatRub("0");
+    }
+  };
+
+  const saveReinvestmentMandate = async () => {
+    if (reinvestmentRequestInFlight || reinvestmentMandate) {
+      return;
+    }
+    showMessage(reinvestmentMessage, "");
+    if (!validateFormWithMessage(
+      reinvestmentForm,
+      reinvestmentMessage,
+      "Проверьте параметры мандата R8.1.",
+    )) {
+      return;
+    }
+
+    const reserve = Number(reinvestmentReserve.value);
+    const maxOrder = Number(reinvestmentMaxOrder.value);
+    const maxDaily = Number(reinvestmentMaxDaily.value);
+    const maxMonthly = Number(reinvestmentMaxMonthly.value);
+    const slippage = Number(reinvestmentSlippage.value);
+    const expires = new Date(reinvestmentExpiresAt.value);
+    const now = Date.now();
+    if (
+      !reinvestmentDividends.checked && !reinvestmentCoupons.checked
+      || !Number.isFinite(reserve) || reserve < 0
+      || !Number.isFinite(maxOrder) || maxOrder <= 0
+      || !Number.isFinite(maxDaily) || maxDaily < maxOrder
+      || !Number.isFinite(maxMonthly) || maxMonthly < maxDaily
+      || !Number.isInteger(slippage) || slippage < 0 || slippage > 500
+      || Number.isNaN(expires.getTime())
+      || expires.getTime() <= now
+      || expires.getTime() > now + 90 * 24 * 60 * 60 * 1000
+      || reinvestmentProfileId.value.trim() !== currentProfileId
+      || !reinvestmentConfirm.checked
+    ) {
+      showMessage(
+        reinvestmentMessage,
+        "Выберите хотя бы один тип выплат, проверьте иерархию лимитов, срок до 90 дней и введите свой ID профиля.",
+        true,
+      );
+      return;
+    }
+
+    if (!window.confirm(
+      "Сохранить отзывной мандат R8.1? Он не отправляет заявки и не делает учтённые выплаты доступными для автопокупки.",
+    )) {
+      return;
+    }
+
+    reinvestmentRequestInFlight = true;
+    reinvestmentSave.disabled = true;
+    try {
+      await api("/api/portfolio/reinvestment", {
+        method: "PUT",
+        body: JSON.stringify({
+          allow_dividends: reinvestmentDividends.checked,
+          allow_coupons: reinvestmentCoupons.checked,
+          cash_reserve_rub: reinvestmentReserve.value,
+          max_order_notional_rub: reinvestmentMaxOrder.value,
+          max_daily_notional_rub: reinvestmentMaxDaily.value,
+          max_monthly_notional_rub: reinvestmentMaxMonthly.value,
+          max_slippage_bps: slippage,
+          expires_at: expires.toISOString(),
+          confirm_public_id: reinvestmentProfileId.value.trim(),
+          confirm_reinvestment: true,
+        }),
+      });
+      showMessage(
+        reinvestmentMessage,
+        "Мандат R8.1 сохранён. Брокерские заявки не отправлялись.",
+      );
+      await loadReinvestment();
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      const messages = {
+        "updated legal consent required": "Нужны документы v7. Выйдите и войдите через VK ID снова, приняв актуальные версии.",
+        reinvestment_prod_account_required: "Подключите собственный production-счёт T-Invest.",
+        investment_profile_required: "Сначала заполните инвестиционный профиль.",
+        balancing_policy_required: "Сначала сохраните лимиты балансировки.",
+        profile_id_confirmation_mismatch: "ID профиля не совпадает.",
+      };
+      showMessage(
+        reinvestmentMessage,
+        messages[error.message] || (
+          error.status === 422
+            ? "Проверьте лимиты, срок, точность сумм до копейки и выбранные типы выплат."
+            : "Мандат не сохранён. Действующие данные не изменены."
+        ),
+        true,
+      );
+    } finally {
+      reinvestmentSave.disabled = false;
+      reinvestmentRequestInFlight = false;
+    }
+  };
+
+  const revokeReinvestmentMandate = async () => {
+    if (reinvestmentRequestInFlight || !reinvestmentMandate) {
+      return;
+    }
+    if (!window.confirm(
+      "Отозвать мандат R8.1? Новые выплаты больше не будут относиться к этому мандату.",
+    )) {
+      return;
+    }
+    reinvestmentRequestInFlight = true;
+    reinvestmentRevoke.disabled = true;
+    try {
+      await api("/api/portfolio/reinvestment", {method: "DELETE"});
+      showMessage(
+        reinvestmentMessage,
+        "Мандат отозван. Автоматических брокерских действий не выполнялось.",
+      );
+      reinvestmentMandate = null;
+      reinvestmentProfileId.value = "";
+      reinvestmentConfirm.checked = false;
+      await loadReinvestment();
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        reinvestmentMessage,
+        "Не удалось подтвердить отзыв. До успешной server-side проверки считайте прежний мандат действующим.",
+        true,
+      );
+    } finally {
+      reinvestmentRevoke.disabled = false;
+      reinvestmentRequestInFlight = false;
+    }
+  };
+
   const syncExecutionControls = () => {
     const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
     const sandboxConnected = tbankIsConnected && connectedTbankEnvironment === "sandbox";
