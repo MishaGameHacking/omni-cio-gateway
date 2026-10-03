@@ -541,6 +541,8 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for element_id in (
             "auth-card",
+            "legal-update-card",
+            "legal-update-relogin",
             "profile-panel",
             "vkid-form",
             "tbank-form",
@@ -1020,6 +1022,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Сервис временно перегружен", script)
         self.assertIn("Изменения не подтверждены", script)
         self.assertIn("apiErrorMessage(response, body)", script)
+        self.assertIn('profile.legal_current !== false', script)
+        self.assertIn('location.replace("/?legal_update=1")', script)
+        self.assertIn("Документы обновлены", script)
 
     def test_r8_reinvestment_ui_is_evidence_only_and_explains_limits(self) -> None:
         root = SCRIPT_DIR.parent.parent
