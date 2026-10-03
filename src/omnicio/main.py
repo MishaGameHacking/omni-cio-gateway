@@ -647,12 +647,14 @@ async def instrument_market_stream(
 
     async def events() -> AsyncIterator[str]:
         retry_delay = 3
+        consecutive_failures = 0
         yield "retry: 5000\n\n"
         while True:
             if await request.is_disconnected():
                 break
 
             payload: dict[str, object]
+            stop_after_event = False
             try:
                 state = await asyncio.to_thread(
                     market.instrument_live_state,
@@ -664,29 +666,42 @@ async def instrument_market_stream(
                 event = "status"
                 delay = 15
                 retry_delay = 3
+                consecutive_failures = 0
             except TBankTokenRejected:
                 payload = {"state": "reconnect"}
                 event = "status"
                 delay = 30
                 retry_delay = 3
+                consecutive_failures = 0
             except ValueError:
                 payload = {"state": "invalid"}
                 event = "status"
                 delay = 30
                 retry_delay = 3
+                consecutive_failures = 0
             except (TBankUnavailable, BrokerConnectionError, SecurityValueError):
-                payload = {"state": "unavailable"}
-                event = "status"
-                delay = retry_delay
-                retry_delay = min(retry_delay * 2, 30)
+                consecutive_failures += 1
+                if consecutive_failures >= 6:
+                    payload = {"state": "offline"}
+                    event = "status"
+                    delay = 0
+                    stop_after_event = True
+                else:
+                    payload = {"state": "unavailable"}
+                    event = "status"
+                    delay = retry_delay
+                    retry_delay = min(retry_delay * 2, 30)
             else:
                 payload = asdict(state)
                 event = "market"
                 delay = 5
                 retry_delay = 3
+                consecutive_failures = 0
 
             data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             yield f"event: {event}\ndata: {data}\n\n"
+            if stop_after_event:
+                break
             await asyncio.sleep(delay)
 
     return StreamingResponse(
