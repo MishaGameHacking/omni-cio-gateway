@@ -103,6 +103,7 @@ class Candidate:
     credit_loss_rub_per_lot: Decimal
     liquidity_penalty_rub_per_lot: Decimal
     liquidity_days: int | None
+    max_liquid_lots: int | None
     term_months: int | None
     ytw_percent: Decimal | None
     duration_years: Decimal | None
@@ -246,9 +247,13 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("currency_not_allowed")
     if candidate.risk_state not in policy.allowed_risk_states:
         reasons.append("risk_state_not_allowed")
-    if candidate.liquidity_days is None:
+    if candidate.liquidity_days is None or candidate.max_liquid_lots is None:
         reasons.append("liquidity_evidence_missing")
-    elif candidate.liquidity_days < 0 or candidate.liquidity_days > policy.max_liquidity_days:
+    elif (
+        candidate.liquidity_days < 0
+        or candidate.liquidity_days > policy.max_liquidity_days
+        or candidate.max_liquid_lots <= 0
+    ):
         reasons.append("liquidity_limit")
     if candidate.term_months is not None and candidate.term_months < 0:
         reasons.append("term_limit")
@@ -542,6 +547,7 @@ def _max_buy_lots(
 
     limits = [
         _floor_lots(cash_available, transaction),
+        candidate.max_liquid_lots or 0,
         _floor_lots(turnover_remaining, exposure_value),
         _capacity_lots(
             nav_rub,
