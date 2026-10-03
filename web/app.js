@@ -155,6 +155,10 @@
   const homeHistoryFacts = requiredElement("#home-history-facts");
   const homeHistoryNote = requiredElement("#home-history-note");
   const portfolioHistoryState = requiredElement("#portfolio-history-state");
+  const portfolioHistoryPeriods = requiredElement("#portfolio-history-periods");
+  const portfolioHistoryPeriodButtons = [
+    ...portfolioHistoryPeriods.querySelectorAll("[data-portfolio-history-days]"),
+  ];
   const portfolioHistoryChart = requiredElement("#portfolio-history-chart");
   const portfolioHistoryFacts = requiredElement("#portfolio-history-facts");
   const portfolioHistoryNote = requiredElement("#portfolio-history-note");
@@ -283,6 +287,7 @@
   let portfolioVisualizationInFlight = false;
   let lastPortfolioVisualization = null;
   let selectedAllocationView = "class";
+  let selectedPortfolioHistoryDays = 90;
   let instrumentDetailRequestInFlight = false;
   let instrumentDetailGeneration = 0;
   let analysisInFlight = false;
@@ -1385,6 +1390,63 @@
     return true;
   };
 
+  const historyTimestamp = (item) => {
+    const timestamp = new Date(item?.captured_at).getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  };
+
+  const historySpanDays = (history) => {
+    const times = (history || []).map(historyTimestamp).filter(Number.isFinite);
+    if (times.length < 2) {
+      return 0;
+    }
+    return (Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000);
+  };
+
+  const historyForDays = (history, days) => {
+    if (!Number.isFinite(days) || !(days > 0) || !history?.length) {
+      return history || [];
+    }
+    const latest = historyTimestamp(history[history.length - 1]);
+    if (latest === null) {
+      return history || [];
+    }
+    const cutoff = latest - days * 24 * 60 * 60 * 1000;
+    return history.filter((item) => {
+      const timestamp = historyTimestamp(item);
+      return timestamp !== null && timestamp >= cutoff;
+    });
+  };
+
+  const syncPortfolioHistoryPeriods = (history) => {
+    const span = historySpanDays(history);
+    const available = portfolioHistoryPeriodButtons
+      .map((button) => Number(button.dataset.portfolioHistoryDays))
+      .filter((days) => Number.isFinite(days) && span >= days);
+    portfolioHistoryPeriodButtons.forEach((button) => {
+      const days = Number(button.dataset.portfolioHistoryDays);
+      const visible = Number.isFinite(days) && span >= days;
+      button.classList.toggle("hidden", !visible);
+      button.setAttribute(
+        "aria-pressed",
+        String(visible && days === selectedPortfolioHistoryDays),
+      );
+    });
+    portfolioHistoryPeriods.classList.toggle("hidden", available.length === 0);
+    if (!available.includes(selectedPortfolioHistoryDays)) {
+      selectedPortfolioHistoryDays = available.length
+        ? Math.max(...available)
+        : Number.POSITIVE_INFINITY;
+    }
+    portfolioHistoryPeriodButtons.forEach((button) => {
+      const days = Number(button.dataset.portfolioHistoryDays);
+      button.setAttribute(
+        "aria-pressed",
+        String(!button.classList.contains("hidden") && days === selectedPortfolioHistoryDays),
+      );
+    });
+  };
+
   const drawdownSeries = (history) => {
     let peak = null;
     return (history || [])
@@ -1404,7 +1466,9 @@
   };
 
   const renderPortfolioHistory = (history) => {
-    const points = Array.isArray(history) ? history : [];
+    const allPoints = Array.isArray(history) ? history : [];
+    syncPortfolioHistoryPeriods(allPoints);
+    const points = historyForDays(allPoints, selectedPortfolioHistoryDays);
     const chartPoints = points
       .map((item) => ({
         captured_at: item.captured_at,
@@ -1416,13 +1480,20 @@
       chartPoints,
       {minimumPoints: 2},
     );
+    const homePoints = historyForDays(allPoints, 90);
+    const homeChartPoints = homePoints
+      .map((item) => ({
+        captured_at: item.captured_at,
+        value: Number(item.nav_rub),
+      }))
+      .filter((item) => Number.isFinite(item.value));
     renderSeriesChart(
       homeHistoryChart,
-      chartPoints,
+      homeChartPoints,
       {minimumPoints: 2},
     );
     setChartFacts(portfolioHistoryFacts, points);
-    setChartFacts(homeHistoryFacts, points);
+    setChartFacts(homeHistoryFacts, homePoints);
 
     if (!enough) {
       setStateBadge(portfolioHistoryState, "Недостаточно истории", "state-next");
@@ -1439,12 +1510,12 @@
         `Снимков: ${chartPoints.length}`,
         "state-ok",
       );
-      setStateBadge(homeHistoryState, `Снимков: ${chartPoints.length}`, "state-ok");
+      setStateBadge(homeHistoryState, `Снимков: ${homeChartPoints.length}`, "state-ok");
       portfolioHistoryNote.textContent = (
         "Точки используют captured_at сохранённых snapshot. Это не market timestamp и не время сделки."
       );
       homeHistoryNote.textContent = (
-        "История построена только по сохранённым снимкам текущего счёта и окружения."
+        "Главная показывает до 90 дней реальных сохранённых снимков текущего счёта и окружения."
       );
     }
 
@@ -1857,7 +1928,7 @@
     }
     try {
       const payload = await api(
-        "/api/portfolio/visualization?history_limit=90",
+        "/api/portfolio/visualization?history_limit=365",
         {method: "GET"},
       );
       renderPortfolioVisualization(payload);
@@ -4731,6 +4802,20 @@
     const button = target.closest(selector);
     return button instanceof HTMLButtonElement ? button : null;
   };
+
+  portfolioHistoryPeriodButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.classList.contains("hidden") || !lastPortfolioVisualization) {
+        return;
+      }
+      const days = Number(button.dataset.portfolioHistoryDays);
+      if (!Number.isFinite(days)) {
+        return;
+      }
+      selectedPortfolioHistoryDays = days;
+      renderPortfolioHistory(lastPortfolioVisualization.history || []);
+    });
+  });
 
   allocationViewButtons.forEach((button) => {
     button.addEventListener("click", () => {
