@@ -209,11 +209,11 @@ def proposal_material_hash(payload: dict[str, object]) -> bytes:
         for raw in evidence:
             if not isinstance(raw, dict):
                 continue
-            source = cast(dict[str, object], raw)
+            evidence_source = cast(dict[str, object], raw)
             material_sources.append(
                 {
-                    key: source[key]
-                    for key in sorted(source)
+                    key: evidence_source[key]
+                    for key in sorted(evidence_source)
                     if key != "retrieved_at"
                 }
             )
