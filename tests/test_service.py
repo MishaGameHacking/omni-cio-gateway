@@ -12,6 +12,7 @@ from omnicio.db import (
     RegistrationCapacityError,
     RegistrationClosedError,
     UserRecord,
+    live_execution_lock_key,
 )
 from omnicio.service import (
     AccountDeletionRejected,
@@ -90,6 +91,13 @@ def settings(**overrides: object) -> Settings:
     }
     values.update(overrides)
     return Settings(**values)
+
+
+def test_live_execution_cleanup_lock_is_stable_and_user_scoped() -> None:
+    user_id = UUID("00000000-0000-0000-0000-000000000123")
+    assert live_execution_lock_key(user_id) == (
+        "portfolio-live-execution:00000000-0000-0000-0000-000000000123"
+    )
 
 
 def test_vkid_login_creates_user_session_without_owner_binding() -> None:
