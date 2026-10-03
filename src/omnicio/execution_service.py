@@ -531,7 +531,7 @@ class PortfolioExecutionService:
         amount = _executed_amount(state)
         commission = _executed_commission(state)
         if leg.action == "buy" and leg.max_spend_rub is not None:
-            if amount + commission > leg.max_spend_rub:
+            if amount > leg.max_spend_rub:
                 self.store.mark_run_reconciling(
                     user_id,
                     run_id=run.id,
