@@ -417,7 +417,11 @@ def _eligible_for_live_enrichment(
         return False
     if not str(row.get("instrument_uid") or ""):
         return False
-    if not str(row.get("isin") or "") or not str(row.get("class_code") or ""):
+    if (
+        not str(row.get("issuer_id") or "")
+        or str(row.get("issuer_country_code") or "").upper() != "RU"
+        or not str(row.get("group_id") or "")
+    ):
         return False
     nominal = _decimal(row.get("nominal_value"))
     if nominal is None or nominal <= 0:
@@ -428,7 +432,11 @@ def _eligible_for_live_enrichment(
     if isinstance(required_tests, list) and required_tests:
         return False
     broker_user = context.get("broker_user")
-    qualified = broker_user.get("qualified") if isinstance(broker_user, dict) else None
+    qualified = (
+        broker_user.get("qualified")
+        if isinstance(broker_user, dict)
+        else None
+    )
     if row.get("for_qual_investor") is True and qualified is not True:
         return False
     account = context.get("account")
