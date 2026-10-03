@@ -9,6 +9,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tarfile
 import tempfile
