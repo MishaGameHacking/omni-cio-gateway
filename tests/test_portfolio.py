@@ -1001,6 +1001,38 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
             app.state.database = previous_database
 
 
+def test_me_exposes_legal_reconsent_state_without_browser_authority() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.settings") as cfg,
+    ):
+        user.return_value.id = "server-user"
+        user.return_value.public_id = 1
+        user.return_value.status = "active"
+        user.return_value.role = "user"
+        auth.return_value.legal_versions.return_value = {
+            "privacy_policy": "2026-10-03-v7",
+            "personal_data_consent": "2026-10-03-v7",
+            "terms": "2026-10-03-v7",
+        }
+        auth.return_value.database.has_legal_versions.return_value = False
+        cfg.return_value.session_ttl_seconds = 3600
+
+        response = TestClient(app).get(
+            "/api/me?legal_current=true",
+            cookies={"omnicio_session": "server-session"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["legal_current"] is False
+    auth.return_value.database.has_legal_versions.assert_called_once_with(
+        "server-user",
+        auth.return_value.legal_versions.return_value,
+    )
+
+
 def test_reinvestment_body_rejects_browser_account_authority_and_sub_kopeck_caps() -> None:
     base = {
         "allow_dividends": True,
